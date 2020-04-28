@@ -155,7 +155,10 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     if (include_virtuals)
-        available_columns.insert(available_columns.end(), getVirtuals().begin(), getVirtuals().end());
+    {
+        auto virtuals = getVirtuals();
+        available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
+    }
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -425,10 +428,9 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-const NamesAndTypesList & IStorage::getVirtuals() const
+NamesAndTypesList IStorage::getVirtuals() const
 {
-    static const NamesAndTypesList virtuals;
-    return virtuals;
+    return {};
 }
 
 }

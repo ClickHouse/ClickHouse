@@ -63,7 +63,7 @@ public:
             size_t max_block_size,
             unsigned num_streams) override;
 
-    const NamesAndTypesList & getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override;
 
 private:
     bool hasStateColumn(const Names & column_names) const;

@@ -182,7 +182,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// virtual column will be overriden and inaccessible.
     ///
     /// By default return empty list of columns.
-    virtual const NamesAndTypesList & getVirtuals() const;
+    virtual NamesAndTypesList getVirtuals() const;
 
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);

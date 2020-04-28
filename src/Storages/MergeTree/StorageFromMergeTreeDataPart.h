@@ -56,7 +56,7 @@ public:
 
     Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
-    const NamesAndTypesList & getVirtuals() const override
+    NamesAndTypesList getVirtuals() const override
     {
         return part->storage.getVirtuals();
     }

@@ -616,12 +616,11 @@ BlockInputStreams StorageLiveView::watch(
     }
 }
 
-const NamesAndTypesList & StorageLiveView::getVirtuals() const
+NamesAndTypesList StorageLiveView::getVirtuals() const
 {
-    static NamesAndTypesList virtuals = {
+    return NamesAndTypesList{
         NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
     };
-    return virtuals;
 }
 
 void registerStorageLiveView(StorageFactory & factory)

@@ -338,14 +338,12 @@ void registerStorageHDFS(StorageFactory & factory)
     });
 }
 
-const NamesAndTypesList & StorageHDFS::getVirtuals() const
+NamesAndTypesList StorageHDFS::getVirtuals() const
 {
-    static const NamesAndTypesList virtuals = {
+    return NamesAndTypesList{
         {"_path", std::make_shared<DataTypeString>()},
         {"_file", std::make_shared<DataTypeString>()}
     };
-
-    return virtuals;
 }
 }
 

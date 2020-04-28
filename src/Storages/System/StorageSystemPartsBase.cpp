@@ -276,11 +276,10 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     setColumns(tmp_columns);
 }
 
-const NamesAndTypesList & StorageSystemPartsBase::getVirtuals() const
+NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
 {
-    static const NamesAndTypesList virtuals = {
+    return NamesAndTypesList{
         NameAndTypePair("_state", std::make_shared<DataTypeString>())
     };
-    return virtuals;
 }
 }

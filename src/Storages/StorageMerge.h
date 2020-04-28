@@ -49,7 +49,6 @@ private:
     String source_database;
     OptimizedRegularExpression table_name_regexp;
     Context global_context;
-    NamesAndTypesList virtuals;
 
     using StorageWithLockAndName = std::tuple<StoragePtr, TableStructureReadLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
@@ -64,7 +63,7 @@ private:
 
     DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
-    const NamesAndTypesList & getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageMerge(
