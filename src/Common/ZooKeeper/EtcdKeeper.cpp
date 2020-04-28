@@ -308,6 +308,14 @@ namespace Coordination
         etcdserverpb::WatchResponse response;
         etcdserverpb::WatchCreateRequest create_request;
         create_request.set_key(key);
+        std::string range_end = key;
+        if(list_watch)
+        {
+            std::cout << "WATCH WITH PREFIX" << std::endl;
+            int ascii = (int)range_end[range_end.length() - 1];
+            range_end.back() = ascii+1;
+            create_request.set_range_end(range_end);
+        }
         request.mutable_create_request()->CopyFrom(create_request);
         stream_->Write(request, (void*)WatchConnType::WRITE);
         LOG_DEBUG(log, "WATCH " << key << list_watch);
@@ -317,7 +325,7 @@ namespace Coordination
     {
         stream_->Read(&response_, (void*)WatchConnType::READ);
         if (response_.created()) {
-            LOG_ERROR(log, "Watch created");
+            LOG_DEBUG(log, "Watch created");
         } else if (response_.events_size()) {
             std::cout << "WATCH RESP " << response_.DebugString() << std::endl;
             for (auto event : response_.events()) {
@@ -349,7 +357,7 @@ namespace Coordination
                 }
             }
         } else {
-            LOG_ERROR(log, "Returned watch without created flag and without event.");
+            LOG_DEBUG(log, "Returned watch without created flag and without event.");
         }
     }
  
@@ -981,10 +989,21 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
                         if (dynamic_cast<const ListRequest *>(info.request.get())) {
                             list_watch = true;
                         }
+                        std::lock_guard lock(watches_mutex);
+                        if (list_watch)
+                        {
+                            list_watches[info.request->getPath()].emplace_back(std::move(info.watch));
+
+                        }
+                        else
+                        {
+                            watches[info.request->getPath()].emplace_back(std::move(info.watch));
+                        }
                         callWatchRequest(info.request->getPath(), list_watch, watch_stub_, watch_cq_);
                     }
 
                     std::lock_guard lock(operations_mutex);
+                    std::cout << "ADD XID" << info.request->xid << std::endl;
                     operations[info.request->xid] = info;
 
                     if (expired)
@@ -1028,7 +1047,7 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
                     XID xid = call->xid;
 
-                    LOG_DEBUG(log, "XID" << xid);
+                    LOG_DEBUG(log, "XID COMP" << xid);
 
                     auto it = operations.find(xid);
                     if (it == operations.end())
@@ -1047,13 +1066,17 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
                         if (!request_info.request->callRequired(got_tag))
                         {
+                            std::cout << "NOT RQUERED " << xid << std::endl;
                             response = request_info.request->makeResponseFromTag(got_tag);
                             response->removeRootPath(root_path);
                             if (request_info.callback)
-                            request_info.callback(*response);
+                            {
+                                request_info.callback(*response);
+                            }
                         }
                         else
                         {
+                            std::cout << "RQUERED " << xid << std::endl;
                             operations[request_info.request->xid] = request_info;
                             EtcdKeeper::AsyncCall* call = new EtcdKeeper::AsyncCall;
                             call->xid = request_info.request->xid;
@@ -1215,7 +1238,7 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
             if (!info.request->xid)
             {
                 info.request->xid = next_xid.fetch_add(1);
-                LOG_DEBUG(log, "XID" << next_xid);
+                LOG_DEBUG(log, "PUSH XID" << next_xid);
 
                 if (info.request->xid < 0)
                     throw Exception("XID overflow", ZSESSIONEXPIRED);
