@@ -1,4 +1,3 @@
-# Trigger new image build
 # docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:19.10
 
