@@ -128,7 +128,7 @@ public:
     void updateCounters(ProfileEvents::Counters & profile_events);
 
 private:
-    ::taskstats stats;
+    ::taskstats stats;  //-V730_NOINIT
     std::function<::taskstats()> stats_getter;
 
     enum class MetricsProvider

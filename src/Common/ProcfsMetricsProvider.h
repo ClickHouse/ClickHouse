@@ -4,6 +4,7 @@
 #include <boost/noncopyable.hpp>
 
 
+#if defined(__linux__)
 struct taskstats;
 
 namespace DB
@@ -12,14 +13,14 @@ namespace DB
 class ProcfsMetricsProvider : private boost::noncopyable
 {
 public:
-    /// TODO: Do we want to use the supplied thread_id for fetching metrics for arbitrary pids/threads?
     ProcfsMetricsProvider(const pid_t /*tid*/);
     ~ProcfsMetricsProvider();
 
     /// Updates only a part of taskstats struct's fields:
-    ///  - cpu_run_virtual_total, cpu_delay_total (when /proc/[tid]/schedstat is available)
-    ///  - blkio_delay_total                      (when /proc/[tid]/stat is available)
-    ///  - rchar, wchar, read_bytes, write_bytes  (when /prod/[tid]/io is available)
+    ///  - cpu_run_virtual_total, cpu_delay_total (when /proc/thread-self/schedstat is available)
+    ///  - blkio_delay_total                      (when /proc/thread-self/stat is available)
+    ///  - rchar, wchar, read_bytes, write_bytes  (when /prod/thread-self/io is available)
+    /// See: man procfs
     void getTaskStats(::taskstats & out_stats) const;
 
     /// Tells whether this metrics (via Procfs) is provided on the current platform
@@ -34,7 +35,10 @@ private:
     int thread_schedstat_fd = -1;
     int thread_stat_fd = -1;
     int thread_io_fd = -1;
-    int stats_version = 1;
+
+    /// This field is used for compatibility with TasksStatsCounters::incrementProfileEvents()
+    unsigned short stats_version = 1;
 };
 
 }
+#endif

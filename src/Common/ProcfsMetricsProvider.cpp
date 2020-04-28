@@ -1,15 +1,19 @@
 #include "ProcfsMetricsProvider.h"
 
+#if defined(__linux__)
+
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
+#include <common/find_symbols.h>
+
 #include <cassert>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <linux/taskstats.h>
 
-#include <cstdio>
 
 namespace DB
 {
@@ -28,7 +32,7 @@ static constexpr auto thread_io = "/proc/thread-self/io";
 
 namespace
 {
-[[noreturn]] inline static void throwWithFailedToOpenFile(const std::string & filename)
+[[noreturn]] inline void throwWithFailedToOpenFile(const std::string & filename)
 {
     throwFromErrno(
             "Cannot open file " + filename,
@@ -62,14 +66,13 @@ ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_s
 }
 
 
-bool ProcfsMetricsProvider::isAvailable() {
-    /// TODO: Add a simple feature test
-    int fd = ::open(thread_schedstat, O_RDONLY);
-    if (-1 == fd)
-        return false;
+bool ProcfsMetricsProvider::isAvailable()
+{
+    struct stat sb;
+    int res = ::stat(thread_schedstat, &sb);
 
-    ::close(fd);
-    return true;
+    /// Verify that procfs is mounted, one of the stats file exists and is a regular file
+    return res != -1 && (sb.st_mode & S_IFMT) == S_IFREG;
 }
 
 
@@ -125,25 +128,29 @@ void ProcfsMetricsProvider::getTaskStats(::taskstats & out_stats) const
 void ProcfsMetricsProvider::readParseAndSetThreadCPUStat(::taskstats & out_stats, char * buf, size_t buf_size) const
 {
     ssize_t res = readFromFD(thread_schedstat_fd, thread_schedstat, buf, buf_size);
-    buf[res] = '\0';
+    ReadBufferFromMemory in_schedstat(buf, res);
 
-    std::sscanf(buf, "%llu %llu", &out_stats.cpu_run_virtual_total, &out_stats.cpu_delay_total);
+    readIntText(out_stats.cpu_run_virtual_total, in_schedstat);
+    skipWhitespaceIfAny(in_schedstat);
+    readIntText(out_stats.cpu_delay_total, in_schedstat);
 }
 
 
 void ProcfsMetricsProvider::readParseAndSetThreadBlkIOStat(::taskstats & out_stats, char * buf, size_t buf_size) const
 {
     ssize_t res = readFromFD(thread_stat_fd, thread_stat, buf, buf_size - 1);
-    buf[res] = '\0';
+    ReadBufferFromMemory in_stat(buf, res);
 
-    std::sscanf(
-            buf,
-            "%*s%*s%*s%*s%*s%*s%*s%*s%*s%*s""%*s%*s%*s%*s%*s%*s%*s%*s%*s%*s"
-            "%*s%*s%*s%*s%*s%*s%*s%*s%*s%*s""%*s%*s%*s%*s%*s%*s%*s%*s%*s%*s"
-            "%*s%llu",  /// Read field #42 - Aggregated block I/O delays, measured in clock ticks (centiseconds)
-            &out_stats.blkio_delay_total);
+    /// We need to skip the first 41 fields of the string read from /proc/thread-self/stat.
+    for (int i = 0; i < 41; ++i)
+    {
+        in_stat.position() = find_first_symbols<' ', '\t'>(in_stat.position(), in_stat.buffer().end());
+        skipWhitespaceIfAny(in_stat);
+    }
 
-    out_stats.blkio_delay_total *= 10000000ul;
+    /// Read field #42 - Aggregated block I/O delays, measured in clock ticks (centiseconds)
+    readIntText(out_stats.blkio_delay_total, in_stat);
+    out_stats.blkio_delay_total *= 10000000ul;  /// We need to return time in nanoseconds
 }
 
 
@@ -171,3 +178,5 @@ void ProcfsMetricsProvider::readParseAndSetThreadIOStat(::taskstats & out_stats,
     readIntText(out_stats.write_bytes, in_thread_io);
 }
 }
+
+#endif
