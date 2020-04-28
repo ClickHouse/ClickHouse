@@ -18,40 +18,18 @@ namespace ErrorCodes
 namespace
 {
 
-struct WithOverflowPolicy
-{
-    /// Overflow, meaning that the returned type is the same as the input type.
-    static DataTypePtr promoteType(const DataTypePtr & data_type) { return data_type; }
-};
-
-struct WithoutOverflowPolicy
-{
-    /// No overflow, meaning we promote the types if necessary.
-    static DataTypePtr promoteType(const DataTypePtr & data_type)
-    {
-        if (!data_type->canBePromoted())
-            throw Exception{"Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return data_type->promoteNumericType();
-    }
-};
-
 template <bool overflow, bool tuple_argument>
 struct SumMap
 {
     template <typename T>
-    using F = AggregateFunctionSumMap<T,
-        std::conditional_t<overflow, WithOverflowPolicy, WithoutOverflowPolicy>,
-        tuple_argument>;
+    using F = AggregateFunctionSumMap<T, overflow, tuple_argument>;
 };
 
 template <bool overflow, bool tuple_argument>
 struct SumMapFiltered
 {
     template <typename T>
-    using F = AggregateFunctionSumMapFiltered<T,
-        std::conditional_t<overflow, WithOverflowPolicy, WithoutOverflowPolicy>,
-        tuple_argument>;
+    using F = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
 };
 
 
@@ -62,9 +40,10 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
     if (arguments.size() == 1)
     {
-        // sumMap is a transitive function, so it can be stored in SimpleAggregateFunction columns.
-        // There is a caveat: it must support sumMap(sumMap(...)), e.g. it must be able to accept its
-        // own output as an input. This is why we also support Tuple(keys, values) as an argument. 
+        // sumMap state is fully given by its result, so it can be stored in
+        // SimpleAggregateFunction columns. There is a caveat: it must support
+        // sumMap(sumMap(...)), e.g. it must be able to accept its own output as
+        // an input. This is why it also accepts a Tuple(keys, values) argument.
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         if (!tuple_type)
             throw Exception("When function " + name + " gets one argument it must be a tuple",
