@@ -92,6 +92,11 @@ static FormatSettings getOutputFormatSetting(const Settings & settings, const Co
 {
     FormatSettings format_settings;
     format_settings.enable_streaming = settings.output_format_enable_streaming;
+    /// Check query context to see if streaming mode was auto set based on the query type
+    if (context.hasQueryContext())
+    {
+         format_settings.enable_streaming |= context.getQueryContext().getSettings().output_format_enable_streaming;
+    }
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;

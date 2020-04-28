@@ -180,6 +180,20 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
             query_log->add(elem);
 }
 
+static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
+{
+    if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
+    {
+        if (ast_insert_into->watch)
+        {
+            if (context.hasQueryContext())
+            {
+                Context & query_context = const_cast<Context &>(context).getQueryContext();
+                query_context.setSetting("output_format_enable_streaming", 1);
+            }
+        }
+    }
+}
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
@@ -245,6 +259,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         throw;
     }
+
+    setQuerySpecificSettings(ast, context);
 
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
@@ -636,6 +652,7 @@ void executeQuery(
 
     ASTPtr ast;
     BlockIO streams;
+
 
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr, true);
 
