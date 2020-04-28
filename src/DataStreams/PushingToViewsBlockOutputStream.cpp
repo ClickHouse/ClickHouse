@@ -236,14 +236,22 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
 
         if (view.query)
         {
+            /// We prepare columns set for our temporary storage from a single block.
+            /// It's union of columns from the block, and columns of source storage,
+            /// because block may not contain alias columns.
+            auto columns = storage->getColumns();
+            for (const auto & column : block.getNamesAndTypesList())
+                if (!columns.has(column.name))
+                    columns.add(ColumnDescription{column.name, column.type});
+
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
+
             Context local_context = *views_context;
             local_context.addViewSource(
                 StorageValues::create(
-                    storage->getStorageID(),
-                    ColumnsDescription(block.getNamesAndTypesList()), block));
+                    storage->getStorageID(), columns, block));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
