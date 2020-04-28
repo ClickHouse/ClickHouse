@@ -1,4 +1,5 @@
-#include <Core/MySQLClient.h>
+#include "MySQLClient.h"
+#include <Core/MySQLReplication.h>
 
 namespace DB
 {
@@ -10,8 +11,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
-MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_)
-    : host(host_), port(port_), user(user_), password(std::move(password_)), database(std::move(database_))
+MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_)
+    : host(host_), port(port_), user(user_), password(std::move(password_))
 {
     client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }
@@ -23,14 +24,21 @@ bool MySQLClient::connect()
         disconnect();
     }
 
+    const Poco::Timespan connection_timeout(10 * 1e9);
+    const Poco::Timespan receive_timeout(5 * 1e9);
+    const Poco::Timespan send_timeout(5 * 1e9);
+
     socket = std::make_unique<Poco::Net::StreamSocket>();
     address = DNSResolver::instance().resolveAddress(host, port);
-    socket->connect(*address);
+    socket->connect(*address, connection_timeout);
+    socket->setReceiveTimeout(receive_timeout);
+    socket->setSendTimeout(send_timeout);
+    socket->setNoDelay(true);
+    connected = true;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
     packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
-    connected = true;
     return handshake();
 }
 
@@ -51,7 +59,7 @@ bool MySQLClient::handshake()
     packet_sender->receivePacket(handshake);
     if (handshake.auth_plugin_name != mysql_native_password)
     {
-        throw Exception(
+        throw MySQLClientError(
             "Only support " + mysql_native_password + " auth plugin name, but got " + handshake.auth_plugin_name,
             ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
@@ -97,12 +105,7 @@ bool MySQLClient::writeCommand(char command, String query)
     return ret;
 }
 
-bool MySQLClient::ping()
-{
-    return writeCommand(Command::COM_PING, "");
-}
-
-bool MySQLClient::registerSlave(UInt32 slave_id)
+bool MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
 {
     RegisterSlave register_slave(slave_id);
     packet_sender->sendPacket<RegisterSlave>(register_slave, true);
@@ -113,23 +116,33 @@ bool MySQLClient::registerSlave(UInt32 slave_id)
     if (packet_response.getType() == PACKET_ERR)
     {
         last_error = packet_response.err.error_message;
+        return false;
     }
-    return (packet_response.getType() != PACKET_ERR);
+    return true;
 }
 
-bool MySQLClient::binlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
+bool MySQLClient::ping()
 {
+    return writeCommand(Command::COM_PING, "");
+}
+
+bool MySQLClient::requestBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
+{
+    if (!registerSlaveOnMaster(slave_id))
+    {
+        return false;
+    }
+
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
     packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
+    return true;
+}
 
-    PacketResponse packet_response(client_capability_flags);
-    packet_sender->receivePacket(packet_response);
-    packet_sender->resetSequenceId();
-    if (packet_response.getType() == PACKET_ERR)
-    {
-        last_error = packet_response.err.error_message;
-    }
-    return (packet_response.getType() != PACKET_ERR);
+BinlogEventPtr MySQLClient::readOneBinlogEvent()
+{
+    MySQLFlavor mysql;
+    packet_sender->receivePacket(mysql);
+    return mysql.binlogEvent();
 }
 
 String MySQLClient::error()
