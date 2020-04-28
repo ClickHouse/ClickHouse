@@ -12,12 +12,6 @@
 #include "InterserverIOHTTPHandler.h"
 #include "PrometheusRequestHandler.h"
 
-#if USE_RE2_ST
-#include <re2_st/re2.h>
-#else
-#define re2_st re2
-#endif
-
 
 namespace DB
 {

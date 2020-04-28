@@ -8,11 +8,6 @@
 #include <Common/HTMLForm.h>
 
 #include <re2/re2.h>
-#if USE_RE2_ST
-#include <re2_st/re2.h>
-#else
-#define re2_st re2
-#endif
 
 namespace CurrentMetrics
 {
@@ -26,7 +21,7 @@ namespace DB
 
 class WriteBufferFromHTTPServerResponse;
 
-typedef std::shared_ptr<const re2_st::RE2> CompiledRegexPtr;
+typedef std::shared_ptr<const re2::RE2> CompiledRegexPtr;
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {

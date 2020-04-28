@@ -783,9 +783,9 @@ void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & req
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        re2_st::StringPiece matches[num_captures];
-        re2_st::StringPiece input(begin, end - begin);
-        if (compiled_regex->Match(input, 0, end - begin, re2_st::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
+        re2::StringPiece matches[num_captures];
+        re2::StringPiece input(begin, end - begin);
+        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
             {
@@ -840,7 +840,7 @@ static inline bool capturingNamedQueryParam(NameSet receive_params, const Compil
 
 static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
 {
-    auto compiled_regex = std::make_shared<const re2_st::RE2>(expression);
+    auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
         throw Exception("Cannot compile re2: " + expression + " for http handling rule, error: " +
