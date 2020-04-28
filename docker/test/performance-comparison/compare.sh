@@ -100,7 +100,7 @@ function run_tests
     # changes.
     test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
 
-    for x in {test-times,skipped-tests,wall-clock-times}.tsv
+    for x in {test-times,skipped-tests,wall-clock-times,report-thresholds,client-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
@@ -161,7 +161,8 @@ function run_tests
         mv "$test_name-err.log" "$test_name-warn.log"
 
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
-        grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
+        sed -n 's/^client-time/$test_name/p' < "$test_name-raw.tsv" >> "client-times.tsv"
+        sed -n 's/^threshold/$test_name/p' < "$test_name-raw.tsv" >> "report-thresholds.tsv"
         skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
         if [ "$skipped" != "" ]
         then
@@ -267,23 +268,17 @@ parallel --verbose --null < analyze-commands.txt
 function report
 {
 
-for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
-do
-    # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
-    # absolutely atrocious way. This should be done by the file() function itself.
-    paste -d' ' \
-        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
-        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
-        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
-done
+rm -r report ||:
+mkdir report ||:
+
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
-cat analyze-errors.log >> report-errors.rep ||:
-cat profile-errors.log >> report-errors.rep ||:
+cat analyze-errors.log >> report/errors.log ||:
+cat profile-errors.log >> report/errors.log ||:
 
 clickhouse-local --query "
-create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
+create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
         -- FIXME Comparison mode doesn't make sense for queries that complete
         -- immediately, so for now we pretend they don't exist. We don't want to
@@ -291,36 +286,56 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
         -- but the right way to do this is not yet clear.
         (left + right) / 2 < 0.02 as short,
 
-        not short and abs(diff) > 0.05 and abs(diff) > threshold as changed,
+        not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
+        not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
         
-        not short and not changed and threshold > 0.05 as unstable,
+        not short and not changed_fail and stat_threshold > report_threshold + 0.05 as unstable_fail,
+        not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
-        left, right, diff, threshold,
-        replaceAll(_file, '-report.tsv', '') test,
-
+        left, right, diff, stat_threshold,
+        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
+        reports.test,
         -- Truncate long queries.
         if(length(query) < 300, query, substr(query, 1, 298) || '...') query
-    from file('*-report.tsv', TSV, 'left float, right float, diff float, threshold float, query text');
+    from
+        (
+            select *,
+                replaceAll(_file, '-report.tsv', '') test
+            from file('*-report.tsv', TSV, 'left float, right float, diff float, stat_threshold float, query text')
+        ) reports
+        left join file('report-thresholds.tsv', TSV, 'test text, report_threshold float') thresholds
+        using test
+        ;
 
-create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
-    select left, right, diff, threshold, test, query from queries where changed
+-- keep the table in old format so that we can analyze new and old data together
+create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
+    as select short, changed_fail, unstable_fail, left, right, diff, stat_threshold, test, query
+    from queries
+    ;
+
+create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
+    select left, right, diff, stat_threshold, changed_fail, test, query from queries where changed_show
     order by abs(diff) desc;
 
-create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
-    select left, right, diff, threshold, test, query from queries where unstable
-    order by threshold desc;
+create table unstable_queries_tsv engine File(TSV, 'report/unstable-queries.tsv') as
+    select left, right, diff, stat_threshold, unstable_fail, test, query from queries where unstable_show
+    order by stat_threshold desc;
 
-create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
-    select test, sum(unstable) u, sum(changed) c, u + c s from queries
+create table queries_for_flamegraph engine File(TSVWithNamesAndTypes, 'report/queries-for-flamegraph.tsv') as
+    select query, test from queries where unstable_show or changed_show
+    ;
+
+create table unstable_tests_tsv engine File(TSV, 'report/bad-tests.tsv') as
+    select test, sum(unstable_fail) u, sum(changed_fail) c, u + c s from queries
     group by test having s > 0 order by s desc;
 
-create table query_time engine Memory as select *, replaceAll(_file, '-client-time.tsv', '') test
-    from file('*-client-time.tsv', TSV, 'query text, client float, server float');
+create table query_time engine Memory as select *
+    from file('client-times.tsv', TSV, 'test text, query text, client float, server float');
 
 create table wall_clock engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
 
-create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
+create table slow_on_client_tsv engine File(TSV, 'report/slow-on-client.tsv') as
     select client, server, floor(client/server, 3) p, query
     from query_time where p > 1.02 order by p desc;
 
@@ -334,7 +349,7 @@ create table test_time engine Memory as
     where query_time.query = queries.query
     group by test;
 
-create table test_times_tsv engine File(TSV, 'test-times.tsv') as
+create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
     select wall_clock.test, real,
         floor(total_client_time, 3),
         queries,
@@ -345,20 +360,30 @@ create table test_times_tsv engine File(TSV, 'test-times.tsv') as
     from test_time join wall_clock using test
     order by avg_real_per_query desc;
 
-create table all_tests_tsv engine File(TSV, 'all-queries.tsv') as
-    select left, right, diff,
+create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
+    select changed_fail, unstable_fail,
+        left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        threshold, test, query
+        stat_threshold, test, query
     from queries order by test, query;
-" 2> >(head -2 >> report-errors.rep) ||:
+" 2> >(tee -a report/errors.log 1>&2)
+
+for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
+do
+    # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
+    # absolutely atrocious way. This should be done by the file() function itself.
+    paste -d' ' \
+        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
+        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
+        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
+done
 
 for version in {right,left}
 do
 clickhouse-local --query "
-create view queries as
-    select * from file('queries.rep', TSVWithNamesAndTypes,
-        'short int, changed int, unstable int, left float, right float,
-            diff float, threshold float, test text, query text');
+create view queries_for_flamegraph as
+    select * from file('report/queries-for-flamegraph.tsv', TSVWithNamesAndTypes,
+        'query text, test text');
 
 create view query_log as select *
     from file('$version-query-log.tsv', TSVWithNamesAndTypes,
@@ -377,9 +402,9 @@ create table addresses_join_$version engine Join(any, left, address) as
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes,
         'unstable-query-runs.$version.rep') as
-    select query_id, query from query_log
-    join queries using query
-    where query_id not like 'prewarm %' and (unstable or changed)
+    select query, query_id from query_log
+    where query in (select query from queries_for_flamegraph)
+        and query_id not like 'prewarm %'
     ;
 
 create table unstable_query_log engine File(Vertical,
@@ -427,10 +452,10 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
     from (select * from unstable_run_metrics
         union all select * from unstable_run_traces
         union all select * from unstable_run_metrics_2) mm
-    join queries using query
+    join queries_for_flamegraph using query
     group by query, metric
     having d > 0.5
-    order by any(threshold) desc, query desc, d desc
+    order by query desc, d desc
     ;
 
 create table stacks engine File(TSV, 'stacks.$version.rep') as
@@ -447,7 +472,7 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
     join unstable_query_runs using query_id
     group by query, trace
     ;
-" 2> >(head -2 >> report-errors.rep) ||: # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
+" 2> >(tee -a report/errors.log 1>&2) # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
 done
 wait
 
@@ -524,12 +549,12 @@ case "$stage" in
     echo Servers stopped.
     ;&
 "analyze_queries")
-    time analyze_queries ||:
+    time analyze_queries
     ;&
 "report")
-    time report ||:
+    time report
 
-    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(head -2 >> report-errors.rep) ||:
+    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
 esac

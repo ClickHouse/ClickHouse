@@ -95,7 +95,8 @@ def tableRow(cell_values, cell_attributes = []):
     return tr(''.join([td(v, a)
         for v, a in itertools.zip_longest(
             cell_values, cell_attributes,
-            fillvalue = '')]))
+            fillvalue = '')
+        if a is not None]))
 
 def tableHeader(r):
     return tr(''.join([th(f) for f in r]))
@@ -148,7 +149,7 @@ if args.report == 'main':
              open('right-commit.txt').read()]]])
 
     def print_changes():
-        rows = tsvRows('changed-perf.tsv')
+        rows = tsvRows('report/changed-perf.tsv')
         if not rows:
             return
 
@@ -160,22 +161,25 @@ if args.report == 'main':
             'New, s',                                          # 1
             'Relative difference (new&nbsp;-&nbsp;old)/old',   # 2
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
-            'Test',                                            # 4
-            'Query',                                           # 5
+            # Failed                                           # 4
+            'Test',                                            # 5
+            'Query',                                           # 6
             ]
 
         print(tableHeader(columns))
 
         attrs = ['' for c in columns]
+        attrs[4] = None
         for row in rows:
-            attrs[2] = ''
-            if abs(float(row[2])) > 0.10:
+            if int(row[4]):
                 if float(row[2]) < 0.:
                     faster_queries += 1
                     attrs[2] = 'style="background: #adbdff"'
                 else:
                     slower_queries += 1
                     attrs[2] = 'style="background: #ffb0a0"'
+            else:
+                attrs[2] = ''
 
             print(tableRow(row, attrs))
 
@@ -183,7 +187,7 @@ if args.report == 'main':
 
     print_changes()
 
-    slow_on_client_rows = tsvRows('slow-on-client.tsv')
+    slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
         ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
@@ -193,7 +197,7 @@ if args.report == 'main':
         global unstable_queries
         global very_unstable_queries
 
-        unstable_rows = tsvRows('unstable-queries.tsv')
+        unstable_rows = tsvRows('report/unstable-queries.tsv')
         if not unstable_rows:
             return
 
@@ -204,16 +208,18 @@ if args.report == 'main':
             'New, s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
             'p&nbsp;<&nbsp;0.001 threshold', #3
-            'Test', #4
-            'Query' #5
+            # Failed #4
+            'Test', #5
+            'Query' #6
         ]
 
         print(tableStart('Unstable queries'))
         print(tableHeader(columns))
 
         attrs = ['' for c in columns]
+        attrs[4] = None
         for r in unstable_rows:
-            if float(r[3]) > 0.2:
+            if int(r[4]):
                 very_unstable_queries += 1
                 attrs[3] = 'style="background: #ffb0a0"'
             else:
@@ -234,11 +240,11 @@ if args.report == 'main':
 
     printSimpleTable('Tests with most unstable queries',
         ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
-        tsvRows('bad-tests.tsv'))
+        tsvRows('report/bad-tests.tsv'))
 
     def print_test_times():
         global slow_average_tests
-        rows = tsvRows('test-times.tsv')
+        rows = tsvRows('report/test-times.tsv')
         if not rows:
             return
 
@@ -279,7 +285,7 @@ if args.report == 'main':
     print_test_times()
 
     # Add the errors reported by various steps of comparison script
-    report_errors += [l.strip() for l in open('report-errors.rep')]
+    report_errors += [l.strip() for l in open('report/errors.log')]
     if len(report_errors):
         print(tableStart('Errors while building the report'))
         print(tableHeader(['Error']))
@@ -346,39 +352,41 @@ elif args.report == 'all-queries':
              open('right-commit.txt').read()]]])
 
     def print_all_queries():
-        rows = tsvRows('all-queries.tsv')
+        rows = tsvRows('report/all-queries.tsv')
         if not rows:
             return
 
         columns = [
-            'Old, s', #0
-            'New, s', #1
-            'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'Times speedup/slowdown',                 #3
-            'p&nbsp;<&nbsp;0.001 threshold',          #4
-            'Test',                                   #5
-            'Query',                                  #6
+            # Changed #0
+            # Unstable #1
+            'Old, s', #2
+            'New, s', #3
+            'Relative difference (new&nbsp;-&nbsp;old)/old', #4
+            'Times speedup/slowdown',                 #5
+            'p&nbsp;<&nbsp;0.001 threshold',          #6
+            'Test',                                   #7
+            'Query',                                  #8
             ]
 
         print(tableStart('All query times'))
         print(tableHeader(columns))
 
         attrs = ['' for c in columns]
+        attrs[0] = None
+        attrs[1] = None
         for r in rows:
-            threshold = float(r[3])
-            if threshold > 0.2:
-                attrs[4] = 'style="background: #ffb0a0"'
+            if int(r[1]):
+                attrs[6] = 'style="background: #ffb0a0"'
+            else:
+                attrs[6] = ''
+
+            if int(r[0]):
+                if float(r[4]) > 0.:
+                    attrs[4] = 'style="background: #ffb0a0"'
+                else:
+                    attrs[4] = 'style="background: #adbdff"'
             else:
                 attrs[4] = ''
-
-            diff = float(r[2])
-            if abs(diff) > threshold and threshold >= 0.05:
-                if diff > 0.:
-                    attrs[3] = 'style="background: #ffb0a0"'
-                else:
-                    attrs[3] = 'style="background: #adbdff"'
-            else:
-                attrs[3] = ''
 
             print(tableRow(r, attrs))
 
