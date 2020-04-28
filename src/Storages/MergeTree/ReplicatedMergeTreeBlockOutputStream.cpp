@@ -31,8 +31,8 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
-    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_, bool deduplicate_)
-    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), max_parts_per_block(max_parts_per_block_), deduplicate(deduplicate_),
+    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_, bool deduplicate_, UInt64 write_timestamp_)
+    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), max_parts_per_block(max_parts_per_block_), deduplicate(deduplicate_), write_timestamp(write_timestamp_),
     log(&Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
@@ -128,7 +128,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
+        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, write_timestamp);
 
         String block_id;
 

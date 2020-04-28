@@ -24,7 +24,7 @@ class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 public:
     ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_,
         size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block_,
-        bool deduplicate_);
+        bool deduplicate_, UInt64 write_timestamp_);
 
     Block getHeader() const override;
     void writePrefix() override;
@@ -61,6 +61,8 @@ private:
 
     bool deduplicate = true;
     bool last_block_is_duplicate = false;
+
+    UInt64 write_timestamp;
 
     using Logger = Poco::Logger;
     Logger * log;

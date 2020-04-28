@@ -188,7 +188,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, UInt64 timestamp)
 {
     Block & block = block_with_partition.block;
 
@@ -243,6 +243,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    new_data_part->timestamp = timestamp;
 
     /// The name could be non-unique in case of stale files from previous runs.
     String full_path = new_data_part->getFullRelativePath();

@@ -3079,7 +3079,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
-        query_settings.insert_quorum, query_settings.insert_quorum_timeout.totalMilliseconds(), query_settings.max_partitions_per_insert_block, deduplicate);
+        query_settings.insert_quorum, query_settings.insert_quorum_timeout.totalMilliseconds(), query_settings.max_partitions_per_insert_block, deduplicate, context.getSettingsRef().merge_tree_write_timestamp);
 }
 
 
@@ -3599,7 +3599,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false, query_context.getSettingsRef().merge_tree_write_timestamp);   /// TODO Allow to use quorum here.
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         String old_name = loaded_parts[i]->name;

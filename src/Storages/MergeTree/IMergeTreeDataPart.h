@@ -172,6 +172,12 @@ public:
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
 
+    /// write_timestamp of operation that has created current part
+    UInt64 timestamp = 0;
+    // Part can be deleted only when read_timestamp's of all queries is greater than can_delete_timestamp
+    // This value should be set when state is modified to Outdated
+    UInt64 can_delete_timestamp = 0;
+
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.
