@@ -45,7 +45,8 @@ using namespace GatherUtils;
   */
 
 template <typename From, typename To>
-inline To special_cast(From x) {
+inline To special_cast(From x)
+{
     if constexpr (is_big_int_v<To> && std::is_same_v<From, UInt8>)
         return static_cast<To>(static_cast<UInt16>(x));
     else

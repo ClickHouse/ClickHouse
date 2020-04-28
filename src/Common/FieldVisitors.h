@@ -156,25 +156,29 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const bUInt128 & x) const {
+    T operator() (const bUInt128 & x) const
+    {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else
             return static_cast<T>(x);
     }
-    T operator() (const bInt128 & x) const {
+    T operator() (const bInt128 & x) const
+    {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else
             return static_cast<T>(x);
     }
-    T operator() (const bUInt256 & x) const {
+    T operator() (const bUInt256 & x) const
+    {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else
             return static_cast<T>(x);
     }
-    T operator() (const bInt256 & x) const {
+    T operator() (const bInt256 & x) const
+    {
         if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else

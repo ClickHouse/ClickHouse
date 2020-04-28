@@ -8,8 +8,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Result, typename A, typename B> 
-inline Result applySpecial(A /*a*/, B /*b*/) {
+template <typename Result, typename A, typename B>
+inline Result applySpecial(A /*a*/, B /*b*/)
+{
     throw Exception("DivideFloatingImpl are not implemented for big integers", ErrorCodes::LOGICAL_ERROR);
 }
 

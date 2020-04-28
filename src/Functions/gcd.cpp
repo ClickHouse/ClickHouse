@@ -20,16 +20,16 @@ struct GCDImpl
     template <typename Result = ResultType>
     static inline Result apply([[maybe_unused]] A a, [[maybe_unused]] B b)
     {
-        if constexpr (is_big_int_v<A> || is_big_int_v<B>) {
+        if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception("GCD is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-        }
-        else {
+        else
+        {
             throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
             throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
             return std::gcd(
                 typename NumberTraits::ToInteger<Result>::Type(a),
                 typename NumberTraits::ToInteger<Result>::Type(b));
-        }        
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

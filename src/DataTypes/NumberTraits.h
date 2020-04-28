@@ -34,16 +34,15 @@ constexpr size_t nextSize(size_t size)
 }
 
 template <bool is_signed>
-constexpr size_t nextSize2(size_t size) {
+constexpr size_t nextSize2(size_t size)
+{
     // old way for built-in integers
     if (size <= 8) return nextSize(size);
 
-    if constexpr (is_signed) {
+    if constexpr (is_signed)
         return size <= 32 ? 32 : 48;
-    }
-    else {
+    else
         return size <= 32 ? 16 : 48;
-    }
 }
 
 template <bool is_signed, bool is_floating, size_t size>

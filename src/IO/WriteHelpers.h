@@ -109,12 +109,10 @@ void writeBigIntBinary(const T & x, WriteBuffer & buf)
     auto limbs = int_backend.limbs();
 
     // signed 256-bit boost integer is actually 257-bit :/
-    if (int_backend.isneg()) {
+    if (int_backend.isneg())
         buf.write(1);
-    }
-    else{
+    else
         buf.write(0);
-    }
 
     buf.write(reinterpret_cast<const char *>(limbs), int_backend.internal_limb_count * sizeof(*limbs));
 }

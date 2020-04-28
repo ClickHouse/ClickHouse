@@ -8,12 +8,13 @@ namespace DB
 {
 
 template <typename Result, typename A, typename B>
-inline Result applySpecial(A a, B b) {
+inline Result applySpecial(A a, B b)
+{
     if constexpr (std::is_same_v<A, UInt8>)
-        return static_cast<Result>(static_cast<UInt16>(a)) < static_cast<Result>(b) 
+        return static_cast<Result>(static_cast<UInt16>(a)) < static_cast<Result>(b)
                     ? static_cast<Result>(static_cast<UInt16>(a)) : static_cast<Result>(b);
     else
-        return static_cast<Result>(a) < static_cast<Result>(static_cast<UInt16>(b)) 
+        return static_cast<Result>(a) < static_cast<Result>(static_cast<UInt16>(b))
                     ? static_cast<Result>(a) : static_cast<Result>(static_cast<UInt16>(b));
 }
 

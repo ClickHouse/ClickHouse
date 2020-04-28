@@ -69,22 +69,26 @@ StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char
 }
 
 template <>
-StringRef ColumnVector<bUInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+StringRef ColumnVector<bUInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const
+{
     throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <>
-StringRef ColumnVector<bInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+StringRef ColumnVector<bInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const
+{
     throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <>
-StringRef ColumnVector<bUInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+StringRef ColumnVector<bUInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const
+{
     throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <>
-StringRef ColumnVector<bInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+StringRef ColumnVector<bInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const
+{
     throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
@@ -314,13 +318,15 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (!is_big_int_v<T>) {
+        if constexpr (!is_big_int_v<T>)
+        {
             memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
             if (size > count)
                 memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
         }
-        else {
+        else
+        {
             for (size_t i = 0; i < count; i++)
                 new_col.data[i] = data[i];
         }
@@ -363,8 +369,10 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     data.resize(old_size + length);
     if constexpr (!is_big_int_v<T>)
         memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
-    else {
-        for (size_t i = 0; i < length; i++) {
+    else
+    {
+        for (size_t i = 0; i < length; i++)
+        {
             data[old_size + i] = src_vec.data[start + i];
         }
     }
@@ -433,7 +441,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
             ++data_pos;
         }
     }
-    else {
+    else
+    {
         auto filt_pos = filt.begin();
         auto filt_end = filt.end();
         auto data_pos = data.begin();

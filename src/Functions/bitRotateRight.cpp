@@ -8,8 +8,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename Result, typename A, typename B> 
-inline Result applySpecial(A /*a*/, B /*b*/) {
+template <typename Result, typename A, typename B>
+inline Result applySpecial(A /*a*/, B /*b*/)
+{
     throw Exception("Bit rotate is not implemented for big integers", ErrorCodes::LOGICAL_ERROR);
     // if constexpr (std::is_same_v<A, UInt8>)
     //     return (static_cast<Result>(static_cast<UInt16>(a)) >> static_cast<Result>(b))
@@ -24,7 +25,7 @@ struct BitRotateRightImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
-    static constexpr bool is_special = is_big_int_v<ResultType>; 
+    static constexpr bool is_special = is_big_int_v<ResultType>;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)

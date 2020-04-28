@@ -23,7 +23,8 @@ struct LCMImpl
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception("LCM is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-        else {
+        else
+        {
             throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
             throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
             return std::lcm(
