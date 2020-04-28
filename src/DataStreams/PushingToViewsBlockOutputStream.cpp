@@ -241,7 +241,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// of source storage, because block doesn't contain aliases.
             ColumnsDescription columns(block.getNamesAndTypesList());
             const auto & columns_from_storage = storage->getColumns();
-            for (const auto & column : columns_from_storage)
+            for (const auto & column : columns_from_storage.getAliases())
                 if (!columns.has(column.name))
                     columns.add(columns_from_storage.get(column.name));
 
