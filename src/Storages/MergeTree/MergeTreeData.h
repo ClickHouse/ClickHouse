@@ -361,7 +361,7 @@ public:
     }
 
     bool supportsSettings() const override { return true; }
-    const NamesAndTypesList & getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
 

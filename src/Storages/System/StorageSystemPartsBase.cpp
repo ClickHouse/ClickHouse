@@ -278,11 +278,10 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     setInMemoryMetadata(meta);
 }
 
-const NamesAndTypesList & StorageSystemPartsBase::getVirtuals() const
+NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
 {
-    static NamesAndTypesList VIRTUALS = {
+    return NamesAndTypesList{
         NameAndTypePair("_state", std::make_shared<DataTypeString>())
     };
-    return VIRTUALS;
 }
 }

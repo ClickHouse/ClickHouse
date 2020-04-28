@@ -3609,14 +3609,13 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
     return result;
 }
 
-const NamesAndTypesList & MergeTreeData::getVirtuals() const
+NamesAndTypesList MergeTreeData::getVirtuals() const
 {
-    static const NamesAndTypesList VIRTUALS = {
+    return NamesAndTypesList{
         NameAndTypePair("_part", std::make_shared<DataTypeString>()),
         NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
     };
-    return VIRTUALS;
 }
 }
