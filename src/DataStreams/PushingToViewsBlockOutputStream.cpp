@@ -236,13 +236,14 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
 
         if (view.query)
         {
-            /// We prepare columns set for our temporary storage from a single block.
-            /// It's union of columns from the block, and columns of source storage,
-            /// because block may not contain alias columns.
-            auto columns = storage->getColumns();
-            for (const auto & column : block.getNamesAndTypesList())
+            /// We prepare columns set for our temporary storage from a single
+            /// block. It's union of columns from the block, and alias columns
+            /// of source storage, because block doesn't contain aliases.
+            ColumnsDescription columns(block.getNamesAndTypesList());
+            const auto & columns_from_storage = storage->getColumns();
+            for (const auto & column : columns_from_storage)
                 if (!columns.has(column.name))
-                    columns.add(ColumnDescription{column.name, column.type});
+                    columns.add(columns_from_storage.get(column.name));
 
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
