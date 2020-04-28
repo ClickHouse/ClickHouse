@@ -158,7 +158,7 @@ std::optional<UInt64> StorageMergeTree::totalBytes() const
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
+    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block, context.getSettingsRef().merge_tree_write_timestamp);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
