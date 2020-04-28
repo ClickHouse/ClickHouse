@@ -162,25 +162,34 @@ int main(int, char **)
     }
 
     {
-        UInt32 slave_id = 123;
-        MySQLClient client1("127.0.0.1", 9001, "default", "123", "");
-        if (!client1.connect())
+        /*
+        UInt32 slave_id = 9004;
+        MySQLClient slave("127.0.0.1", 9001, "default", "123");
+        if (!slave.connect())
         {
-            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            std::cerr << "Connect Error: " << slave.error() << std::endl;
             return 1;
         }
 
-        if (!client1.ping())
+        if (!slave.ping())
         {
-            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            std::cerr << "Connect Error: " << slave.error() << std::endl;
             return 1;
         }
 
-        if (!client1.binlogDump(slave_id, "", 315))
+        if (!slave.requestBinlogDump(slave_id, "mysql-bin.000005", 4))
         {
-            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            std::cerr << "Connect Error: " << slave.error() << std::endl;
             assert(0);
         }
+
+        while (true)
+        {
+            auto event = slave.readOneBinlogEvent();
+            event->dump();
+            ASSERT(event != nullptr)
+        }
+         */
     }
     return 0;
 }

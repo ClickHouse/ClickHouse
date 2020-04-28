@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/MySQLProtocol.h>
+#include <Core/MySQLReplication.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -15,17 +16,24 @@
 namespace DB
 {
 using namespace MySQLProtocol;
+using namespace MySQLReplication;
+
+class MySQLClientError : public DB::Exception
+{
+public:
+    using Exception::Exception;
+};
 
 class MySQLClient
 {
 public:
-    MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_);
+    MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_);
     bool connect();
     void disconnect();
     bool ping();
-    bool registerSlave(UInt32 slave_id);
-    bool binlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
     String error();
+    bool requestBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
+    BinlogEventPtr readOneBinlogEvent();
 
 private:
     String host;
@@ -50,6 +58,7 @@ private:
     std::shared_ptr<PacketSender> packet_sender;
 
     bool handshake();
+    bool registerSlaveOnMaster(UInt32 slave_id);
     bool writeCommand(char command, String query);
 };
 
