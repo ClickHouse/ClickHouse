@@ -52,6 +52,7 @@ node1 = cluster.add_instance('node1', config_dir="configs", with_zookeeper=True)
 node2 = cluster.add_instance('node2', config_dir="configs", with_zookeeper=True)
 
 settings_default = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
+settings_compact_only = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 1000000, 'min_bytes_for_wide_part' : 0}
 settings_not_adaptive = {'index_granularity' : 64, 'index_granularity_bytes' : 0, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
 
 node3 = cluster.add_instance('node3', config_dir="configs", with_zookeeper=True)
@@ -69,6 +70,7 @@ def start_cluster():
         cluster.start()
 
         create_tables('polymorphic_table', [node1, node2], [settings_default, settings_default], "shard1")
+        create_tables('compact_parts_only', [node1, node2], [settings_compact_only, settings_compact_only], "shard1")
         create_tables('non_adaptive_table', [node1, node2], [settings_not_adaptive, settings_default], "shard1")
         create_tables('polymorphic_table_compact', [node3, node4], [settings_compact, settings_wide], "shard2")
         create_tables('polymorphic_table_wide', [node3, node4], [settings_wide, settings_compact], "shard2")
@@ -137,6 +139,31 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
 
     second_node.query("SELECT count(ss) FROM polymorphic_table") == "2000\n"
     second_node.query("SELECT uniqExact(ss) FROM polymorphic_table") == "600\n"
+
+# Checks mostly that merge from compact part to compact part works.
+def test_compact_parts_only(start_cluster):
+    for i in range(20):
+        insert_random_data('compact_parts_only', node1, 100)
+        insert_random_data('compact_parts_only', node2, 100)
+
+    node1.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+
+    assert node1.query("SELECT count() FROM compact_parts_only") == "4000\n"
+    assert node2.query("SELECT count() FROM compact_parts_only") == "4000\n"
+
+    assert node1.query("SELECT DISTINCT part_type FROM system.parts WHERE table = 'compact_parts_only' AND active") == "Compact\n"
+    assert node2.query("SELECT DISTINCT part_type FROM system.parts WHERE table = 'compact_parts_only' AND active") == "Compact\n"
+
+    node1.query("OPTIMIZE TABLE compact_parts_only FINAL")
+    node2.query("SYSTEM SYNC REPLICA compact_parts_only", timeout=20)
+    assert node2.query("SELECT count() FROM compact_parts_only") == "4000\n"
+
+    expected = "Compact\t1\n"
+    assert TSV(node1.query("SELECT part_type, count() FROM system.parts " \
+        "WHERE table = 'compact_parts_only' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
+    assert TSV(node2.query("SELECT part_type, count() FROM system.parts " \
+        "WHERE table = 'compact_parts_only' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
 
 
 # Check that follower replicas create parts of the same type, which leader has chosen at merge.
