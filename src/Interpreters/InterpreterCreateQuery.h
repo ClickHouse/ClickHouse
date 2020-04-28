@@ -14,6 +14,9 @@ namespace DB
 
 class Context;
 class ASTCreateQuery;
+class ASTAlterQuery;
+class ASTAlterCommandList;
+class ASTAlterCommand;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
 

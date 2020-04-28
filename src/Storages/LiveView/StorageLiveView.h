@@ -67,6 +67,7 @@ public:
     }
     ASTPtr getInnerBlocksQuery();
 
+    StoragePtr tryGetTargetTable() const;
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -84,7 +85,7 @@ public:
     /// must be called with mutex locked
     bool hasActiveUsers()
     {
-        return active_ptr.use_count() > 1;
+        return active_ptr.use_count() > 1 || !target_table_id.empty();
     }
     /// No users thread mutex, predicate and wake up condition
     void startNoUsersThread(const UInt64 & timeout);
@@ -153,7 +154,7 @@ public:
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
 
     /// Read new data blocks that store query result
-    bool getNewBlocks();
+    bool getNewBlocks(const Context & context);
 
     Block getHeader() const;
 
@@ -167,6 +168,7 @@ public:
 
 private:
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
+    StorageID target_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
@@ -177,6 +179,9 @@ private:
     /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
     mutable Block sample_block;
+
+    /// Write new blocsk to target table if any
+    void writeNewBlocksToTargetTable(const Context & context);
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
