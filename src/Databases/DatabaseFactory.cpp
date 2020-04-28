@@ -1,28 +1,23 @@
+#include <Databases/DatabaseFactory.h>
+
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/MySQL/createMySQLDatabase.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/parseAddress.h>
-#include "DatabaseFactory.h"
 #include <Poco/File.h>
 #include <Poco/Path.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
-
-#if USE_MYSQL
-#    include <Databases/DatabaseMySQL.h>
-#    include <Interpreters/evaluateConstantExpression.h>
-#endif
-
 
 namespace DB
 {
@@ -94,42 +89,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         return std::make_shared<DatabaseDictionary>(database_name, context);
 
 #if USE_MYSQL
-
     else if (engine_name == "MySQL")
-    {
-        const ASTFunction * engine = engine_define->engine;
-
-        if (!engine->arguments || engine->arguments->children.size() != 4)
-            throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
-                            ErrorCodes::BAD_ARGUMENTS);
-
-
-        ASTs & arguments = engine->arguments->children;
-        arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
-
-        const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], "MySQL");
-        const auto & database_name_in_mysql = safeGetLiteralValue<String>(arguments[1], "MySQL");
-        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], "MySQL");
-        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], "MySQL");
-
-        try
-        {
-            const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
-            auto mysql_pool = mysqlxx::Pool(database_name_in_mysql, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
-
-            auto mysql_database = std::make_shared<DatabaseMySQL>(
-                context, database_name, metadata_path, engine_define, database_name_in_mysql, std::move(mysql_pool));
-
-            mysql_database->empty(); /// test database is works fine.
-            return mysql_database;
-        }
-        catch (...)
-        {
-            const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
-        }
-    }
-
+        return createMySQLDatabase(database_name, metadata_path, engine_define, context);
 #endif
 
     else if (engine_name == "Lazy")

@@ -9,7 +9,7 @@
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/convertMySQLDataType.h>
-#    include <Databases/DatabaseMySQL.h>
+#    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/Operators.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -70,6 +70,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_pool(std::move(pool))
 {
+    empty(); /// test database is works fine.
 }
 
 bool DatabaseMySQL::empty() const
