@@ -461,15 +461,12 @@ Examples:
 
 Allows a user to execute [dictGet](../functions/ext_dict_functions.md#dictget), [dictHas](../functions/ext_dict_functions.md#dicthas), [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy), [dictIsIn](../functions/ext_dict_functions.md#dictisin) functions.
 
-Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet` with such dictionaries.
-
 Level of privilege: `DICTIONARY`.
 
 **Examples**
 
 - `GRANT dictGet ON mydb.mydictionary TO john`
 - `GRANT dictGet ON mydictionary TO john`
-- `GRANT dictGet ON 'no_database'.mydictionary TO john`
 
 ### ALL {#grant-all}
 
