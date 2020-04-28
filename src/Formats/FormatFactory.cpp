@@ -356,6 +356,7 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
+    registerInputFormatProcessorArrow(*this);
     registerInputFormatProcessorAvro(*this);
     registerOutputFormatProcessorAvro(*this);
 #endif
