@@ -127,6 +127,7 @@ SRCS(
     Transforms/ReverseTransform.cpp
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
+    Transforms/SquashingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
 )
 
