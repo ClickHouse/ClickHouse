@@ -39,7 +39,7 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
+    git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Note: please, substitute *your\_github\_username* with what is appropriate!
