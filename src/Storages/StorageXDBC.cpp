@@ -97,10 +97,6 @@ Pipes StorageXDBC::read(const Names & column_names,
 
 BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context & context) {
     bridge_helper->startBridgeSync();
-    LOG_INFO(log, "TAAAK");
-    LOG_INFO(log, remote_database_name);
-    LOG_INFO(log, remote_table_name);
-//    LOG_INFO(log, bridge_helper->getConnectionString());
 
     // some copypaste
     NamesAndTypesList cols;
