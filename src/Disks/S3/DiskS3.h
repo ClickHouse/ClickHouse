@@ -1,14 +1,10 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "Disks/DiskFactory.h"
+#include "DynamicProxyConfiguration.h"
 
-#if USE_AWS_S3
-#    include "DiskFactory.h"
-
-#    include <aws/s3/S3Client.h>
-#    include <Poco/DirectoryIterator.h>
+#include <aws/s3/S3Client.h>
+#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -26,6 +22,7 @@ public:
     DiskS3(
         String name_,
         std::shared_ptr<Aws::S3::S3Client> client_,
+        std::unique_ptr<S3::DynamicProxyConfiguration> proxy_configuration_,
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
@@ -105,6 +102,7 @@ private:
 private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
+    std::unique_ptr<S3::DynamicProxyConfiguration> proxy_configuration;
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
@@ -116,5 +114,3 @@ private:
 };
 
 }
-
-#endif

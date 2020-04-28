@@ -92,18 +92,25 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
+        return create(cfg, access_key_id, secret_access_key);
+    }
+
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+        Aws::Client::ClientConfiguration & cfg,
+        const String & access_key_id,
+        const String & secret_access_key)
+    {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
         return std::make_shared<Aws::S3::S3Client>(
-                credentials, // Aws credentials.
-                std::move(cfg), // Client configuration.
-                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-                endpoint.empty() // Use virtual addressing only if endpoint is not specified.
+            credentials, // Aws credentials.
+            std::move(cfg), // Client configuration.
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+            cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
 
-
-    URI::URI(const Poco::URI & uri_)
+URI::URI(const Poco::URI & uri_)
     {
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
