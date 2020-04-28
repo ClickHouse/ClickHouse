@@ -450,6 +450,7 @@ private:
 // TODO: multiple stream read and index read
 Pipes StorageJoin::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -459,7 +460,7 @@ Pipes StorageJoin::read(
     check(column_names);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, getSampleBlockForColumns(column_names)));
+    pipes.emplace_back(std::make_shared<JoinSource>(*join, max_block_size, metadata_version->getSampleBlockForColumns(column_names, {})));
 
     return pipes;
 }

@@ -27,6 +27,7 @@ StorageSystemDisks::StorageSystemDisks(const std::string & name_)
 
 Pipes StorageSystemDisks::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -63,7 +64,7 @@ Pipes StorageSystemDisks::read(
     Chunk chunk(std::move(res_columns), num_rows);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_version->getSampleBlock(), std::move(chunk)));
 
     return pipes;
 }

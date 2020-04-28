@@ -26,6 +26,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        StorageMetadataPtr metadata,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -35,6 +36,7 @@ public:
     Pipes readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
+        StorageMetadataPtr metadata,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,

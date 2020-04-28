@@ -70,7 +70,7 @@ try
             block.insert(column);
         }
 
-        BlockOutputStreamPtr out = table->write({}, context);
+        BlockOutputStreamPtr out = table->write({}, table->getInMemoryMetadata(), context);
         out->write(block);
     }
 
@@ -82,7 +82,7 @@ try
 
         QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-        BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
+        BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, table->getInMemoryMetadata(), {}, context, stage, 8192, 1)[0]));
 
         Block sample;
         {

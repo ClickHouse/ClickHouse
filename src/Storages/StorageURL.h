@@ -18,13 +18,14 @@ class IStorageURLBase : public IStorage
 public:
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_version,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_version, const Context & context) override;
 
 protected:
     IStorageURLBase(
@@ -47,6 +48,7 @@ private:
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_version,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
@@ -54,6 +56,7 @@ private:
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_version,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,

@@ -236,6 +236,7 @@ private:
 
 Pipes StorageSystemColumns::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -248,7 +249,7 @@ Pipes StorageSystemColumns::read(
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample_block = getSampleBlock();
+    Block sample_block = metadata_version->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample_block.columns());

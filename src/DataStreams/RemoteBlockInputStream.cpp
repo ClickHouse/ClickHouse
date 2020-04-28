@@ -148,7 +148,7 @@ void RemoteBlockInputStream::sendExternalTables()
 
                 Pipes pipes;
 
-                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
+                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), cur->getInMemoryMetadata(), {}, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();

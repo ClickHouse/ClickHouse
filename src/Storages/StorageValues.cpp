@@ -19,6 +19,7 @@ StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescripti
 
 Pipes StorageValues::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_version*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,

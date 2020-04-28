@@ -30,12 +30,13 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const std::string & n
 }
 
 Pipes StorageSystemStoragePolicies::read(
-        const Names & column_names,
-        const SelectQueryInfo & /*query_info*/,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
 
@@ -78,7 +79,7 @@ Pipes StorageSystemStoragePolicies::read(
     Chunk chunk(std::move(res_columns), num_rows);
 
     Pipes pipes;
-    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(getSampleBlock(), std::move(chunk)));
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(metadata_version->getSampleBlock(), std::move(chunk)));
 
     return pipes;
 }

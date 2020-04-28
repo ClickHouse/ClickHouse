@@ -17,7 +17,7 @@ class ReplicatedMergeTreeBlockOutputStream;
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(const StoragePtr & storage_,
+    PushingToViewsBlockOutputStream(const StoragePtr & storage_, const StorageMetadataPtr & metadata_,
         const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
     Block getHeader() const override;
@@ -29,6 +29,7 @@ public:
 
 private:
     StoragePtr storage;
+    StorageMetadataPtr metadata;
     BlockOutputStreamPtr output;
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
 

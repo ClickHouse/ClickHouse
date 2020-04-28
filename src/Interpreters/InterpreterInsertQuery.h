@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -33,7 +34,7 @@ public:
 
 private:
     StoragePtr getTable(ASTInsertQuery & query);
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const;
+    Block getSampleBlock(const ASTInsertQuery & query, const StorageMetadataPtr & metadata, const NamesAndTypesList & virtuals) const;
 
     ASTPtr query_ptr;
     const Context & context;

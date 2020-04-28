@@ -58,13 +58,14 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_version,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_version, const Context & context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.

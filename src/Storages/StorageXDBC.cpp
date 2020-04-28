@@ -53,7 +53,9 @@ std::string StorageXDBC::getReadMethod() const
     return Poco::Net::HTTPRequest::HTTP_POST;
 }
 
-std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(const Names & column_names,
+std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -62,20 +64,23 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(c
     NamesAndTypesList cols;
     for (const String & name : column_names)
     {
-        auto column_data = getColumns().getPhysical(name);
+        auto column_data = metadata_version->getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     return bridge_helper->getURLParams(cols.toString(), max_block_size);
 }
 
-std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const Names & /*column_names*/,
+std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
+    const Names & /*column_names*/,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
-    String query = transformQueryForExternalDatabase(query_info,
-        getColumns().getOrdinary(),
+    String query = transformQueryForExternalDatabase(
+        query_info,
+        metadata_version->getColumns().getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
         remote_table_name,
@@ -84,7 +89,9 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const N
     return [query](std::ostream & os) { os << "query=" << query; };
 }
 
-Pipes StorageXDBC::read(const Names & column_names,
+Pipes StorageXDBC::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -94,7 +101,7 @@ Pipes StorageXDBC::read(const Names & column_names,
     check(column_names);
 
     bridge_helper->startBridgeSync();
-    return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    return IStorageURLBase::read(column_names, metadata_version, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 

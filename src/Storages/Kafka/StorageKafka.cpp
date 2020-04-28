@@ -111,6 +111,7 @@ StorageKafka::StorageKafka(
 
 Pipes StorageKafka::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /* query_info */,
     const Context & context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -131,7 +132,7 @@ Pipes StorageKafka::read(
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
         /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, metadata_version, context, column_names, 1)));
     }
 
     LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
@@ -139,11 +140,11 @@ Pipes StorageKafka::read(
 }
 
 
-BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const Context & context)
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_version, const Context & context)
 {
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
-    return std::make_shared<KafkaBlockOutputStream>(*this, context);
+    return std::make_shared<KafkaBlockOutputStream>(*this, metadata_version, context);
 }
 
 
@@ -368,7 +369,7 @@ bool StorageKafka::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream
-            = std::make_shared<KafkaBlockInputStream>(*this, kafka_context, block_io.out->getHeader().getNames(), block_size, false);
+            = std::make_shared<KafkaBlockInputStream>(*this, getInMemoryMetadata(), kafka_context, block_io.out->getHeader().getNames(), block_size, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL

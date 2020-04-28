@@ -290,6 +290,7 @@ public:
       */
     virtual Pipes read(
         const Names & /*column_names*/,
+        const StorageMetadataPtr & /* metadata */,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -302,12 +303,13 @@ public:
     /** The same as read, but returns BlockInputStreams.
      */
     BlockInputStreams readStreams(
-            const Names & /*column_names*/,
-            const SelectQueryInfo & /*query_info*/,
-            const Context & /*context*/,
-            QueryProcessingStage::Enum /*processed_stage*/,
-            size_t /*max_block_size*/,
-            unsigned /*num_streams*/);
+        const Names & /*column_names*/,
+        const StorageMetadataPtr & /* metadata */,
+        const SelectQueryInfo & /*query_info*/,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        unsigned /*num_streams*/);
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
@@ -317,6 +319,7 @@ public:
       */
     virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /* metadata */,
         const Context & /*context*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);

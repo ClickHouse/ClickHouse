@@ -215,9 +215,9 @@ public:
 
     using FilesInfoPtr = std::shared_ptr<FilesInfo>;
 
-    static Block getHeader(StorageFile & storage, bool need_path_column, bool need_file_column)
+    static Block getHeader(const StorageMetadataPtr & metadata, bool need_path_column, bool need_file_column)
     {
-        auto header = storage.getSampleBlock();
+        auto header = metadata->getSampleBlock();
 
         /// Note: AddingDefaultsBlockInputStream doesn't change header.
 
@@ -231,12 +231,14 @@ public:
 
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
+        const StorageMetadataPtr & metadata_,
         const Context & context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnDefaults column_defaults_)
-        : SourceWithProgress(getHeader(*storage_, files_info_->need_path_column, files_info_->need_file_column))
+        : SourceWithProgress(getHeader(metadata_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
+        , metadata(metadata_)
         , files_info(std::move(files_info_))
         , column_defaults(std::move(column_defaults_))
         , context(context_)
@@ -358,6 +360,7 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
+    StorageMetadataPtr metadata;
     FilesInfoPtr files_info;
     String current_path;
     Block sample_block;
@@ -378,6 +381,7 @@ private:
 
 Pipes StorageFile::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -414,7 +418,7 @@ Pipes StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, context, max_block_size, files_info, getColumns().getDefaults()));
+            this_ptr, metadata_version, context, max_block_size, files_info, metadata_version->getColumns().getDefaults()));
 
     return pipes;
 }
@@ -423,10 +427,11 @@ Pipes StorageFile::read(
 class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageFileBlockOutputStream(StorageFile & storage_,
+    StorageFileBlockOutputStream(StorageFile & storage_,
+        const StorageMetadataPtr & metadata_,
         const CompressionMethod compression_method,
         const Context & context)
-        : storage(storage_), lock(storage.rwlock)
+        : storage(storage_), metadata(metadata_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
         {
@@ -446,10 +451,10 @@ public:
                 compression_method, 3);
         }
 
-        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), context);
+        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, metadata->getSampleBlock(), context);
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -473,6 +478,7 @@ public:
 
 private:
     StorageFile & storage;
+    StorageMetadataPtr metadata;
     std::unique_lock<std::shared_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
@@ -480,12 +486,13 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
+    const StorageMetadataPtr & metadata_version,
     const Context & context)
 {
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
-    return std::make_shared<StorageFileBlockOutputStream>(*this,
+    return std::make_shared<StorageFileBlockOutputStream>(*this, metadata_version,
         chooseCompressionMethod(paths[0], compression_method), context);
 }
 

@@ -174,6 +174,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(cons
 
 Pipes StorageMaterializedView::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -187,7 +188,7 @@ Pipes StorageMaterializedView::read(
     if (query_info.order_by_optimizer)
         query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
-    Pipes pipes = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    Pipes pipes = storage->read(column_names, metadata, query_info, context, processed_stage, max_block_size, num_streams);
 
     for (auto & pipe : pipes)
         pipe.addTableLock(lock);
@@ -195,12 +196,12 @@ Pipes StorageMaterializedView::read(
     return pipes;
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)
+BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & metadata, const Context & context)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockStructureForShare(
             true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-    auto stream = storage->write(query, context);
+    auto stream = storage->write(query, metadata, context);
     stream->addTableLock(lock);
     return stream;
 }

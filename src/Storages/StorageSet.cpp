@@ -30,15 +30,16 @@ namespace ErrorCodes
 class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
-    SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
+    SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_,
         const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_);
 
-    Block getHeader() const override { return table.getSampleBlock(); }
+    Block getHeader() const override { return metadata->getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageSetOrJoinBase & table;
+    StorageMetadataPtr metadata;
     String backup_path;
     String backup_tmp_path;
     String backup_file_name;
@@ -48,14 +49,20 @@ private:
 };
 
 
-SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
-    const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_)
-    : table(table_),
-    backup_path(backup_path_), backup_tmp_path(backup_tmp_path_),
-    backup_file_name(backup_file_name_),
-    backup_buf(backup_tmp_path + backup_file_name),
-    compressed_backup_buf(backup_buf),
-    backup_stream(compressed_backup_buf, 0, table.getSampleBlock())
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
+    StorageSetOrJoinBase & table_,
+    const StorageMetadataPtr & metadata_,
+    const String & backup_path_,
+    const String & backup_tmp_path_,
+    const String & backup_file_name_)
+    : table(table_)
+    , metadata(metadata_)
+    , backup_path(backup_path_)
+    , backup_tmp_path(backup_tmp_path_)
+    , backup_file_name(backup_file_name_)
+    , backup_buf(backup_tmp_path + backup_file_name)
+    , compressed_backup_buf(backup_buf)
+    , backup_stream(compressed_backup_buf, 0, metadata->getSampleBlock())
 {
 }
 
@@ -79,10 +86,10 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_version, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(id) + ".bin");
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_version, path, path + "tmp/", toString(id) + ".bin");
 }
 
 

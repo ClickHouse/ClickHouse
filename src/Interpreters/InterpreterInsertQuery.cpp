@@ -67,19 +67,19 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     return DatabaseCatalog::instance().getTable(query.table_id);
 }
 
-Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
+Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StorageMetadataPtr & metadata, const NamesAndTypesList & virtuals) const
 {
-    Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
+    Block table_sample_non_materialized = metadata->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
     {
         if (no_destination)
-            return table->getSampleBlockWithVirtuals();
+            return metadata->getSampleBlockWithVirtuals(virtuals);
         else
             return table_sample_non_materialized;
     }
 
-    Block table_sample = table->getSampleBlock();
+    Block table_sample = metadata->getSampleBlock();
     /// Form the block based on the column names from the query
     Block res;
     for (const auto & identifier : query.columns->children)
@@ -109,10 +109,11 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
+    StorageMetadataPtr metadata = table->getInMemoryMetadata();
     auto table_lock = table->lockStructureForShare(
             true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-    auto query_sample_block = getSampleBlock(query, table);
+    auto query_sample_block = getSampleBlock(query, metadata, table->getVirtuals());
     if (!query.table_function)
         context.checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
@@ -215,9 +216,9 @@ BlockIO InterpreterInsertQuery::execute()
             /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
             ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
             if (table->noPushingToViews() && !no_destination)
-                out = table->write(query_ptr, context);
+                out = table->write(query_ptr, metadata, context);
             else
-                out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
+                out = std::make_shared<PushingToViewsBlockOutputStream>(table, metadata, context, query_ptr, no_destination);
 
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).

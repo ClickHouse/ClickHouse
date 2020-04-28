@@ -15,11 +15,13 @@
 
 namespace DB
 {
-
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const StoragePtr & storage_,
-    const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
-    : storage(storage_), context(context_), query_ptr(query_ptr_)
+    const StorageMetadataPtr & metadata_,
+    const Context & context_,
+    const ASTPtr & query_ptr_,
+    bool no_destination)
+    : storage(storage_), metadata(metadata_), context(context_), query_ptr(query_ptr_)
 {
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
@@ -86,9 +88,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, dependent_table->getInMemoryMetadata(), *views_context, ASTPtr(), true);
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, dependent_table->getInMemoryMetadata(), *views_context, ASTPtr());
 
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
     }
@@ -96,7 +98,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /* Do not push to destination table if the flag is set */
     if (!no_destination)
     {
-        output = storage->write(query_ptr, context);
+        output = storage->write(query_ptr, metadata, context);
         replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
     }
 }
@@ -107,9 +109,9 @@ Block PushingToViewsBlockOutputStream::getHeader() const
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
     if (output)
-        return storage->getSampleBlock();
+        return metadata->getSampleBlock();
     else
-        return storage->getSampleBlockWithVirtuals();
+        return metadata->getSampleBlockWithVirtuals(storage->getVirtuals());
 }
 
 
@@ -240,7 +242,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// block. It's union of columns from the block, and alias columns
             /// of source storage, because block doesn't contain aliases.
             ColumnsDescription columns(block.getNamesAndTypesList());
-            const auto & columns_from_storage = storage->getColumns();
+            const auto & columns_from_storage = metadata->getColumns();
             for (const auto & column : columns_from_storage.getAliases())
                 if (!columns.has(column.name))
                     columns.add(columns_from_storage.get(column.name));

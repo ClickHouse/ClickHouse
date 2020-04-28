@@ -125,6 +125,7 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
 
 Pipes StorageSystemNumbers::read(
     const Names & column_names,
+    const StorageMetadataPtr &,
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,

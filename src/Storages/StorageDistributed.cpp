@@ -470,6 +470,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
 
 Pipes StorageDistributed::read(
     const Names & column_names,
+    const StorageMetadataPtr & /*metadata_version*/,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -501,7 +502,7 @@ Pipes StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & context)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_version, const Context & context)
 {
     auto cluster = getCluster();
     const auto & settings = context.getSettingsRef();
@@ -526,7 +527,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
+        context, *this, metadata_version, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
         insert_sync, timeout);
 }
 

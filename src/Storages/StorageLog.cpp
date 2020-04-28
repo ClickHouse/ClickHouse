@@ -114,8 +114,9 @@ private:
 class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit LogBlockOutputStream(StorageLog & storage_)
+    explicit LogBlockOutputStream(StorageLog & storage_,const StorageMetadataPtr & metadata_)
         : storage(storage_),
+        metadata(metadata_),
         lock(storage.rwlock),
         marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
     {
@@ -133,12 +134,13 @@ public:
         }
     }
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata->getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
 private:
     StorageLog & storage;
+    StorageMetadataPtr metadata;
     std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
@@ -577,6 +579,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
 Pipes StorageLog::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -586,7 +589,7 @@ Pipes StorageLog::read(
     check(column_names);
     loadMarks();
 
-    NamesAndTypesList all_columns = Nested::collect(getColumns().getAllPhysical().addTypes(column_names));
+    NamesAndTypesList all_columns = Nested::collect(metadata_version->getColumns().getAllPhysical().addTypes(column_names));
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
@@ -620,11 +623,10 @@ Pipes StorageLog::read(
     return pipes;
 }
 
-BlockOutputStreamPtr StorageLog::write(
-    const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_version, const Context & /*context*/)
 {
     loadMarks();
-    return std::make_shared<LogBlockOutputStream>(*this);
+    return std::make_shared<LogBlockOutputStream>(*this, metadata_version);
 }
 
 CheckResults StorageLog::checkData(const ASTPtr & /* query */, const Context & /* context */)

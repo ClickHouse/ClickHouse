@@ -145,6 +145,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 Pipes MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
+    StorageMetadataPtr metadata,
     const SelectQueryInfo & query_info,
     const Context & context,
     const UInt64 max_block_size,
@@ -152,13 +153,14 @@ Pipes MergeTreeDataSelectExecutor::read(
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     return readFromParts(
-        data.getDataPartsVector(), column_names_to_return, query_info, context,
+        data.getDataPartsVector(), column_names_to_return, metadata, query_info, context,
         max_block_size, num_streams, max_block_numbers_to_read);
 }
 
 Pipes MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
+    StorageMetadataPtr metadata,
     const SelectQueryInfo & query_info,
     const Context & context,
     const UInt64 max_block_size,
@@ -203,7 +205,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList available_real_columns = metadata->getColumns().getAllPhysical();
 
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())

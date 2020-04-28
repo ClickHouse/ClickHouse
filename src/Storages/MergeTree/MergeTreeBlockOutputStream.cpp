@@ -8,7 +8,7 @@ namespace DB
 
 Block MergeTreeBlockOutputStream::getHeader() const
 {
-    return storage.getSampleBlock();
+    return metadata->getSampleBlock();
 }
 
 

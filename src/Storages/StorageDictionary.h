@@ -17,6 +17,7 @@ public:
     void checkTableCanBeDropped() const override;
 
     Pipes read(const Names & column_names,
+        const StorageMetadataPtr & metadata,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,

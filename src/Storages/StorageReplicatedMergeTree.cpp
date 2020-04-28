@@ -3066,6 +3066,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 
 Pipes StorageReplicatedMergeTree::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -3080,10 +3081,10 @@ Pipes StorageReplicatedMergeTree::read(
     if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
-        return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
+        return reader.read(column_names, metadata, query_info, context, max_block_size, num_streams, &max_added_blocks);
     }
 
-    return reader.read(column_names, query_info, context, max_block_size, num_streams);
+    return reader.read(column_names, metadata, query_info, context, max_block_size, num_streams);
 }
 
 
@@ -3127,7 +3128,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Context & context)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata, const Context & context)
 {
     const auto storage_settings_ptr = getSettings();
     assertNotReadonly();
@@ -3135,7 +3136,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
     const Settings & query_settings = context.getSettingsRef();
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
-    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
+    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this, metadata,
         query_settings.insert_quorum, query_settings.insert_quorum_timeout.totalMilliseconds(), query_settings.max_partitions_per_insert_block, deduplicate);
 }
 
@@ -3660,7 +3661,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, getInMemoryMetadata(), 0, 0, 0, false);   /// TODO Allow to use quorum here.
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         String old_name = loaded_parts[i]->name;

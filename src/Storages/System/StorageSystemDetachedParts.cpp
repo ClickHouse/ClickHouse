@@ -46,17 +46,18 @@ protected:
     }
 
     Pipes read(
-            const Names & /* column_names */,
-            const SelectQueryInfo & query_info,
-            const Context & context,
-            QueryProcessingStage::Enum /*processed_stage*/,
-            const size_t /*max_block_size*/,
-            const unsigned /*num_streams*/) override
+        const Names & /* column_names */,
+        const StorageMetadataPtr & metadata_version,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        const size_t /*max_block_size*/,
+        const unsigned /*num_streams*/) override
     {
         StoragesInfoStream stream(query_info, context);
 
         /// Create the result.
-        Block block = getSampleBlock();
+        Block block = metadata_version->getSampleBlock();
         MutableColumns new_columns = block.cloneEmptyColumns();
 
         while (StoragesInfo info = stream.next())

@@ -90,12 +90,13 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 }
 
 Pipes StorageSystemZeros::read(
-        const Names & column_names,
-        const SelectQueryInfo &,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t max_block_size,
-        unsigned num_streams)
+    const Names & column_names,
+    const StorageMetadataPtr & /*metadata*/,
+    const SelectQueryInfo &,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned num_streams)
 {
     check(column_names);
 

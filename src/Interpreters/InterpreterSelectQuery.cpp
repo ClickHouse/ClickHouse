@@ -1388,6 +1388,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     else if (storage)
     {
         /// Table.
+        StorageMetadataPtr metadata = storage->getInMemoryMetadata();
 
         if (max_streams == 0)
             throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
@@ -1418,9 +1419,9 @@ void InterpreterSelectQuery::executeFetchColumns(
         Pipes pipes;
 
         if (pipeline_with_processors)
-            pipes = storage->read(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+            pipes = storage->read(required_columns, metadata, query_info, *context, processing_stage, max_block_size, max_streams);
         else
-            streams = storage->readStreams(required_columns, query_info, *context, processing_stage, max_block_size, max_streams);
+            streams = storage->readStreams(required_columns, metadata, query_info, *context, processing_stage, max_block_size, max_streams);
 
         if (streams.empty() && !pipeline_with_processors)
         {

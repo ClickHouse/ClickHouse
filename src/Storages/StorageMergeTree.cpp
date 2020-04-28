@@ -137,13 +137,14 @@ StorageMergeTree::~StorageMergeTree()
 
 Pipes StorageMergeTree::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query_info, context, max_block_size, num_streams);
+    return reader.read(column_names, metadata_version, query_info, context, max_block_size, num_streams);
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows() const
@@ -156,9 +157,9 @@ std::optional<UInt64> StorageMergeTree::totalBytes() const
     return getTotalActiveSizeInBytes();
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
+    return std::make_shared<MergeTreeBlockOutputStream>(*this, metadata, context.getSettingsRef().max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const

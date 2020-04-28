@@ -13,14 +13,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    StorageKafka & storage_,
+    StorageMetadataPtr metadata_,
+    const Context & context_,
+    const Names & columns,
+    size_t max_block_size_,
+    bool commit_in_suffix_)
     : storage(storage_)
+    , metadata(metadata_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
-    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
+    , non_virtual_header(metadata->getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
+    , virtual_header(metadata->getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}, storage.getVirtuals()))
 
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
@@ -44,7 +50,7 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
 
 Block KafkaBlockInputStream::getHeader() const
 {
-    return storage.getSampleBlockForColumns(column_names);
+    return metadata->getSampleBlockForColumns(column_names, storage.getVirtuals());
 }
 
 void KafkaBlockInputStream::readPrefixImpl()

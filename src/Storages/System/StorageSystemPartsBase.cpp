@@ -220,12 +220,13 @@ StoragesInfo StoragesInfoStream::next()
 }
 
 Pipes StorageSystemPartsBase::read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        const size_t /*max_block_size*/,
-        const unsigned /*num_streams*/)
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names);
 
@@ -233,7 +234,7 @@ Pipes StorageSystemPartsBase::read(
 
     /// Create the result.
 
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = metadata_version->getSampleBlock().cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
 

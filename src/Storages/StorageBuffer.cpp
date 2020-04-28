@@ -150,6 +150,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
 
 Pipes StorageBuffer::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -182,7 +183,7 @@ Pipes StorageBuffer::read(
                 query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(destination);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
-            pipes_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+            pipes_from_dst = destination->read(column_names, metadata_version, query_info, context, processed_stage, max_block_size, num_streams);
         }
         else
         {
@@ -219,7 +220,7 @@ Pipes StorageBuffer::read(
             }
             else
             {
-                pipes_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+                pipes_from_dst = destination->read(columns_intersection, metadata_version, query_info, context, processed_stage, max_block_size, num_streams);
                 for (auto & pipe : pipes_from_dst)
                 {
                     pipe.addSimpleTransform(std::make_shared<AddingMissedTransform>(
@@ -326,9 +327,9 @@ static void appendBlock(const Block & from, Block & to)
 class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+    explicit BufferBlockOutputStream(StorageBuffer & storage_, const StorageMetadataPtr & metadata_) : storage(storage_), metadata(metadata_) {}
 
-    Block getHeader() const override { return storage.getSampleBlock(); }
+    Block getHeader() const override { return metadata->getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -404,6 +405,7 @@ public:
     }
 private:
     StorageBuffer & storage;
+    StorageMetadataPtr metadata;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
     {
@@ -434,9 +436,9 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_version, const Context & /*context*/)
 {
-    return std::make_shared<BufferBlockOutputStream>(*this);
+    return std::make_shared<BufferBlockOutputStream>(*this, metadata_version);
 }
 
 

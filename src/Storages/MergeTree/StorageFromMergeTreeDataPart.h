@@ -21,6 +21,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_version,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
@@ -28,7 +29,7 @@ public:
         unsigned num_streams) override
     {
         return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-                {part}, column_names, query_info, context, max_block_size, num_streams);
+            {part}, column_names, metadata_version, query_info, context, max_block_size, num_streams);
     }
 
 

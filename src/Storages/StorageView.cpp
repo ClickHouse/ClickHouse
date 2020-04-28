@@ -50,6 +50,7 @@ StorageView::StorageView(
 
 Pipes StorageView::read(
     const Names & column_names,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -84,8 +85,7 @@ Pipes StorageView::read(
 
         /// And also convert to expected structure.
         pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-            pipe.getHeader(), getSampleBlockForColumns(column_names),
-            ConvertingTransform::MatchColumnsMode::Name));
+            pipe.getHeader(), metadata_version->getSampleBlockForColumns(column_names, {}), ConvertingTransform::MatchColumnsMode::Name));
     }
 
     return pipes;

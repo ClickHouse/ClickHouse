@@ -32,7 +32,7 @@ try
     context.makeGlobalContext();
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    auto stream = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 10, 1)[0]));
+    auto stream = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, table->getInMemoryMetadata(), {}, context, stage, 10, 1)[0]));
     LimitBlockInputStream input(stream, 10, 96);
     BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
 

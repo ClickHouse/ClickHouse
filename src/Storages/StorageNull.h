@@ -24,6 +24,7 @@ public:
 
     Pipes read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_version,
         const SelectQueryInfo &,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processing_stage*/,
@@ -31,13 +32,13 @@ public:
         unsigned) override
     {
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<NullSource>(getSampleBlockForColumns(column_names)));
+        pipes.emplace_back(std::make_shared<NullSource>(metadata_version->getSampleBlockForColumns(column_names, {})));
         return pipes;
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_version, const Context &) override
     {
-        return std::make_shared<NullBlockOutputStream>(getSampleBlock());
+        return std::make_shared<NullBlockOutputStream>(metadata_version->getSampleBlock());
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
