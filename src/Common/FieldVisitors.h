@@ -135,12 +135,7 @@ public:
 
     T operator() (const UInt64 & x) const { return x; }
     T operator() (const Int64 & x) const { return x; }
-    T operator() (const Float64 & x) const {
-        if constexpr (is_big_int_v<T>)
-            return static_cast<Int64>(x);
-        else
-            return x; 
-    }
+    T operator() (const Float64 & x) const { return static_cast<T>(x); }
 
     T operator() (const UInt128 &) const
     {
@@ -161,17 +156,29 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const bUInt128 &) const {
-        throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    T operator() (const bUInt128 & x) const {
+        if constexpr (IsDecimalNumber<T>)
+            return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else
+            return static_cast<T>(x);
     }
-    T operator() (const bInt128 &) const {
-        throw Exception("Cannot convert Int128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    T operator() (const bInt128 & x) const {
+        if constexpr (IsDecimalNumber<T>)
+            return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else
+            return static_cast<T>(x);
     }
-    T operator() (const bUInt256 &) const {
-        throw Exception("Cannot convert UInt256 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    T operator() (const bUInt256 & x) const {
+        if constexpr (IsDecimalNumber<T>)
+            return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else
+            return static_cast<T>(x);
     }
-    T operator() (const bInt256 &) const {
-        throw Exception("Cannot convert Int256 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    T operator() (const bInt256 & x) const {
+        if constexpr (IsDecimalNumber<T>)
+            return static_cast<T>(static_cast<typename T::NativeType>(x));
+        else
+            return static_cast<T>(x);
     }
 };
 
@@ -325,45 +332,45 @@ public:
         return cantCompare(l, r);
     }
 
-//    template <typename T>
-//    bool operator() (const bUInt128 & l, const T & r) const
-//    {
-//        if constexpr (std::is_same_v<T, bUInt128>)
-//            return l == r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
-//
-//    template <typename T>
-//    bool operator() (const bInt128 & l, const T & r) const
-//    {
-//        if constexpr (std::is_same_v<T, bInt128>)
-//            return l == r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
+    template <typename T>
+    bool operator() (const bUInt128 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bUInt128>)
+            return l == r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
-    template <typename T> bool operator() (const bUInt128 & l, const T & r) const { return cantCompare(l, r); }
-    template <typename T> bool operator() (const bInt128 & l, const T & r) const { return cantCompare(l, r); }
-    template <typename T> bool operator() (const bUInt256 & l, const T & r) const { return cantCompare(l, r); }
-    template <typename T> bool operator() (const bInt256 & l, const T & r) const { return cantCompare(l, r); }
+    template <typename T>
+    bool operator() (const bInt128 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bInt128>)
+            return l == r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
-    bool operator() (const bUInt128 & l, const bUInt128 & r) const { return l == r; }
-    bool operator() (const bInt128 & l, const bInt128 & r) const { return l == r; }
-    bool operator() (const bUInt256 & l, const bUInt256 & r) const { return l == r; }
-    bool operator() (const bInt256 & l, const bInt256 & r) const { return l == r; }
+    template <typename T>
+    bool operator() (const bUInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bUInt256>)
+            return l == r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
-//    template <typename T>
-//    bool operator() (const bInt256 & l, const T & r) const
-//    {
-//        if constexpr (std::is_same_v<T, bInt256>)
-//            return l == r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
+    template <typename T>
+    bool operator() (const bInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bInt256>)
+            return l == r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
 private:
     template <typename T, typename U>
@@ -485,55 +492,45 @@ public:
         return cantCompare(l, r);
     }
 
-//    template <typename T>
-//    bool operator() (const bUInt128 & l, const T & r) const
-//    {
-//        if constexpr (std::is_same_v<T, bUInt128>)
-//            return l < r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
-//
-//    template <typename T>
-//    bool operator() (const bInt128 & l, const T & r) const
-//    {
-//        if constexpr (std::is_same_v<T, bInt128>)
-//            return l < r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
+    template <typename T>
+    bool operator() (const bUInt128 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bUInt128>)
+            return l < r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
-    template <typename T> bool operator() (const bUInt128 & l, const T & r) const { return cantCompare(l, r); }
-    template <typename T> bool operator() (const bInt128 & l, const T & r) const { return cantCompare(l, r); }
-    template <typename T> bool operator() (const bUInt256 & l, const T & r) const { return cantCompare(l, r); }
-    template <typename T> bool operator() (const bInt256 & l, const T & r) const { return cantCompare(l, r); }
+    template <typename T>
+    bool operator() (const bInt128 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bInt128>)
+            return l < r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
-    bool operator() (const bUInt128 & l, const bUInt128 & r) const { return l < r; }
-    bool operator() (const bInt128 & l, const bInt128 & r) const { return l < r; }
-    bool operator() (const bUInt256 & l, const bUInt256 & r) const { return l < r; }
-    bool operator() (const bInt256 & l, const bInt256 & r) const { return l < r; }
+    template <typename T>
+    bool operator() (const bUInt256 & l, const T & r) const
+    {
+        if constexpr (is_integral_v<T>)
+            return l < r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
-//    template <typename T>
-//    bool operator() (const bUInt256 & l, const T & r) const
-//    {
-//        if constexpr (is_integral_v<T>)
-//            return l < r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
-
-//    template <typename T>
-//    bool operator() (const bInt256 & l, const T & r) const
-//    {
-//        if constexpr (std::is_same_v<T, bInt256>)
-//            return l < r;
-//        if constexpr (std::is_same_v<T, Null>)
-//            return false;
-//        return cantCompare(l, r);
-//    }
+    template <typename T>
+    bool operator() (const bInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bInt256>)
+            return l < r;
+        else if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
 
 private:
     template <typename T, typename U>
@@ -579,10 +576,10 @@ public:
         return x.getValue() != 0;
     }
 
-    bool operator() (bUInt128 &) const { throw Exception("Cannot sum UInt128", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (bInt128 &) const { throw Exception("Cannot sum Int128", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (bUInt256 &) const { throw Exception("Cannot sum UInt256", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (bInt256 &) const { throw Exception("Cannot sum Int256", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (bUInt128 & x) const { x += get<bUInt128>(rhs); return x != 0; }
+    bool operator() (bInt128 & x) const { x += get<bInt128>(rhs); return x != 0; }
+    bool operator() (bUInt256 & x) const { x += get<bUInt256>(rhs); return x != 0; }
+    bool operator() (bInt256 & x) const { x += get<bInt256>(rhs); return x != 0; }
 };
 
 }
