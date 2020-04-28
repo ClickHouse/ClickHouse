@@ -298,6 +298,7 @@ namespace Coordination
  
         Watches watches;
         Watches list_watches;   /// Watches for 'list' request (watches on children).
+        std::mutex watches_mutex;
  
         void createWatchCallBack(const String & path);
  
