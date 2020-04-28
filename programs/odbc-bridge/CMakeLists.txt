@@ -5,6 +5,7 @@ set(CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/IdentifierQuoteHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MainHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockInputStream.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockOutputStream.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBridge.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/PingHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/validateODBCConnectionString.cpp

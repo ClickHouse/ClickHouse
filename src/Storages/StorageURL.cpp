@@ -112,53 +112,21 @@ namespace
         BlockInputStreamPtr reader;
         bool initialized = false;
     };
-
-    class StorageURLBlockOutputStream : public IBlockOutputStream
-    {
-    public:
-        StorageURLBlockOutputStream(const Poco::URI & uri,
-            const String & format,
-            const Block & sample_block_,
-            const Context & context,
-            const ConnectionTimeouts & timeouts,
-            const CompressionMethod compression_method)
-            : sample_block(sample_block_)
-        {
-            write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
-                compression_method, 3);
-            writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
-        }
-
-        Block getHeader() const override
-        {
-            return sample_block;
-        }
-
-        void write(const Block & block) override
-        {
-            writer->write(block);
-        }
-
-        void writePrefix() override
-        {
-            writer->writePrefix();
-        }
-
-        void writeSuffix() override
-        {
-            writer->writeSuffix();
-            writer->flush();
-            write_buf->finalize();
-        }
-
-    private:
-        Block sample_block;
-        std::unique_ptr<WriteBuffer> write_buf;
-        BlockOutputStreamPtr writer;
-    };
 }
 
+StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
+        const String & format,
+        const Block & sample_block_,
+        const Context & context,
+        const ConnectionTimeouts & timeouts,
+        const CompressionMethod compression_method)
+        : sample_block(sample_block_)
+{
+    write_buf = wrapWriteBufferWithCompressionMethod(
+            std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
+            compression_method, 3);
+    writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
+}
 
 std::string IStorageURLBase::getReadMethod() const
 {
