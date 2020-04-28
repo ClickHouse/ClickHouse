@@ -16,12 +16,12 @@ class QueryTimestampsManager
 public:
     static QueryTimestamps registerQuery()
     {
-        return getSingleton().registerQuery();
+        return getSingleton().registerQueryImpl();
     }
 
     static void endQuery(QueryTimestamps timestamps)
     {
-        return getSingleton().endQuery(timestamps);
+        return getSingleton().endQueryImpl(timestamps);
     }
 
     static UInt64 getMinReadTimestamp()

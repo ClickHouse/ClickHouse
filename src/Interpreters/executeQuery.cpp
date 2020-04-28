@@ -1,6 +1,7 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/QueryTimestampsManager.h>
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -154,6 +155,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
 
     const Settings & settings = context.getSettingsRef();
 
+    QueryTimestampsManager::endQuery({
+        .read_timestamp = settings.merge_tree_read_timestamp,
+        .write_timestamp = settings.merge_tree_write_timestamp,
+    });
+
     /// Log the start of query execution into the table if necessary.
     QueryLogElement elem;
 
@@ -199,6 +205,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         context.makeQueryContext();
         CurrentThread::attachQueryContext(context);
+        Settings new_settings = context.getSettings();
+        auto timestamps = QueryTimestampsManager::registerQuery();
+        new_settings.merge_tree_write_timestamp = timestamps.write_timestamp;
+        new_settings.merge_tree_read_timestamp = timestamps.read_timestamp;
+        context.setSettings(new_settings);
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -422,8 +433,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
+            auto finish_callback = [elem, &context, internal, log_queries, log_queries_min_type = settings.log_queries_min_type] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
+                if (!internal)
+                {
+                    QueryTimestampsManager::endQuery({
+                        .read_timestamp = context.getSettingsRef().merge_tree_read_timestamp,
+                        .write_timestamp = context.getSettingsRef().merge_tree_write_timestamp,
+                    });
+                }
+
                 QueryStatus * process_list_elem = context.getProcessListElement();
 
                 if (!process_list_elem)
@@ -491,8 +510,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, internal, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
             {
+                if (!internal)
+                {
+                    QueryTimestampsManager::endQuery({
+                        .read_timestamp = context.getSettingsRef().merge_tree_read_timestamp,
+                        .write_timestamp = context.getSettingsRef().merge_tree_write_timestamp,
+                    });
+                }
+
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
