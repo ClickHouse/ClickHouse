@@ -11,7 +11,37 @@
         <size>1000M</size>
         <count>10</count>
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+
+        <!-- Per level overrides (legacy):
+
+        For example to suppress logging of the ConfigReloader you can use:
+        NOTE: levels.logger is reserved, see below.
+        -->
+        <!--
+        <levels>
+          <ConfigReloader>none</ConfigReloader>
+        </levels>
+        -->
+
+        <!-- Per level overrides:
+
+        For example to suppress logging of the RBAC for default user you can use:
+        (But please note that the logger name maybe changed from version to version, even after minor upgrade)
+        -->
+        <!--
+        <levels>
+          <logger>
+            <name>ContextAccess (default)</name>
+            <level>none</level>
+          </logger>
+          <logger>
+            <name>DatabaseOrdinary (test)</name>
+            <level>none</level>
+          </logger>
+        </levels>
+        -->
     </logger>
+
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
