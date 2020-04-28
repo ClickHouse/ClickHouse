@@ -519,7 +519,7 @@ public:
     template <typename T>
     bool operator() (const bUInt256 & l, const T & r) const
     {
-        if constexpr (is_integral_v<T>)
+        if constexpr (std::is_same_v<T, bUInt256>)
             return l < r;
         else if constexpr (std::is_same_v<T, Null>)
             return false;
