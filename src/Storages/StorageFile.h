@@ -52,7 +52,7 @@ public:
         const Context & context;
     };
 
-    const NamesAndTypesList & getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override;
 
 protected:
     friend class StorageFileSource;

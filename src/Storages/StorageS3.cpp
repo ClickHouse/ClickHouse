@@ -351,13 +351,12 @@ void registerStorageS3(StorageFactory & factory)
     });
 }
 
-const NamesAndTypesList & StorageS3::getVirtuals() const
+NamesAndTypesList StorageS3::getVirtuals() const
 {
-    static const NamesAndTypesList virtuals = {
+    return NamesAndTypesList{
         {"_path", std::make_shared<DataTypeString>()},
         {"_file", std::make_shared<DataTypeString>()}
     };
-    return virtuals;
 }
 
 }

@@ -28,7 +28,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    const NamesAndTypesList & getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageHDFS(const String & uri_,

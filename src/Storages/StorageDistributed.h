@@ -120,7 +120,7 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    const NamesAndTypesList & getVirtuals() const override;
+    NamesAndTypesList getVirtuals() const override;
 
     String remote_database;
     String remote_table;

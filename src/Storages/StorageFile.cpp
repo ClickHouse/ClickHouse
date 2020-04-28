@@ -600,13 +600,11 @@ void registerStorageFile(StorageFactory & factory)
             .source_access_type = AccessType::FILE,
         });
 }
-const NamesAndTypesList & StorageFile::getVirtuals() const
+NamesAndTypesList StorageFile::getVirtuals() const
 {
-    static const NamesAndTypesList virtuals = {
+    return NamesAndTypesList{
         {"_path", std::make_shared<DataTypeString>()},
         {"_file", std::make_shared<DataTypeString>()}
     };
-
-    return virtuals;
 }
 }

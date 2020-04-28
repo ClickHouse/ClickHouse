@@ -628,16 +628,15 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
-const NamesAndTypesList & StorageKafka::getVirtuals() const
+NamesAndTypesList StorageKafka::getVirtuals() const
 {
-    static const NamesAndTypesList virtuals = {
-            {"_topic", std::make_shared<DataTypeString>()},
-            {"_key", std::make_shared<DataTypeString>()},
-            {"_offset", std::make_shared<DataTypeUInt64>()},
-            {"_partition", std::make_shared<DataTypeUInt64>()},
-            {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
+    return NamesAndTypesList{
+        {"_topic", std::make_shared<DataTypeString>()},
+        {"_key", std::make_shared<DataTypeString>()},
+        {"_offset", std::make_shared<DataTypeUInt64>()},
+        {"_partition", std::make_shared<DataTypeUInt64>()},
+        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
     };
-    return virtuals;
 }
 
 }
