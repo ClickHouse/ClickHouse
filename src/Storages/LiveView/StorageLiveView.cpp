@@ -165,7 +165,7 @@ void StorageLiveView::writeIntoLiveView(
     const Block & block,
     const Context & context)
 {
-    BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(live_view);
+    BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(live_view, context);
 
     /// Check if live view has any readers if not
     /// just reset blocks to empty and do nothing else
@@ -263,6 +263,7 @@ StorageLiveView::StorageLiveView(
 
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, global_context, table_id_.table_name, inner_subquery);
+    target_table_id = query.to_table_id;
 
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
@@ -275,6 +276,13 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
+}
+
+StoragePtr StorageLiveView::tryGetTargetTable() const
+{
+    if (!target_table_id.empty())
+        return DatabaseCatalog::instance().tryGetTable(target_table_id);
+    return {};
 }
 
 NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
@@ -330,7 +338,32 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
     return inner_blocks_query->clone();
 }
 
-bool StorageLiveView::getNewBlocks()
+void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
+{
+    auto target_table_storage = tryGetTargetTable();
+    if (target_table_storage)
+    {
+        auto lock = target_table_storage->lockStructureForShare(
+            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto target_table_stream = target_table_storage->write(getInnerQuery(), context);
+        auto query_context = const_cast<Context &>(context);
+        query_context.setSetting("output_format_enable_streaming", 1);
+        target_table_stream->writePrefix();
+
+        BlocksPtr blocks;
+        if (*blocks_ptr)
+            blocks = (*blocks_ptr);
+
+        if (blocks)
+        {
+            for (auto & block : *blocks)
+                target_table_stream->write(block);
+        }
+        target_table_stream->writeSuffix();
+    }
+}
+
+bool StorageLiveView::getNewBlocks(const Context & context)
 {
     SipHash hash;
     UInt128 key;
@@ -371,6 +404,7 @@ bool StorageLiveView::getNewBlocks()
             (*blocks_ptr) = new_blocks;
             (*blocks_metadata_ptr) = new_blocks_metadata;
             updated = true;
+            writeNewBlocksToTargetTable(context);
         }
     }
     return updated;
@@ -522,7 +556,7 @@ void StorageLiveView::refresh(const Context & context)
     auto alter_lock = lockAlterIntention(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     {
         std::lock_guard lock(mutex);
-        if (getNewBlocks())
+        if (getNewBlocks(context))
             condition.notify_all();
     }
 }
@@ -530,7 +564,7 @@ void StorageLiveView::refresh(const Context & context)
 Pipes StorageLiveView::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -540,7 +574,7 @@ Pipes StorageLiveView::read(
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
         {
-            if (getNewBlocks())
+            if (getNewBlocks(context))
                 condition.notify_all();
         }
         pipes.emplace_back(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
@@ -589,7 +623,7 @@ BlockInputStreams StorageLiveView::watch(
             std::lock_guard lock(mutex);
             if (!(*blocks_ptr))
             {
-                if (getNewBlocks())
+                if (getNewBlocks(context))
                     condition.notify_all();
             }
         }
@@ -620,7 +654,7 @@ BlockInputStreams StorageLiveView::watch(
             std::lock_guard lock(mutex);
             if (!(*blocks_ptr))
             {
-                if (getNewBlocks())
+                if (getNewBlocks(context))
                     condition.notify_all();
             }
         }
