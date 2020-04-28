@@ -389,6 +389,9 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
     if (settings.distributed_group_by_no_merge)
         return true;
+    if (!settings.optimize_distributed_group_by_sharding_key)
+        return false;
+
     /// Distributed-over-Distributed (see getQueryProcessingStageImpl())
     if (to_stage == QueryProcessingStage::WithMergeableState)
         return false;
