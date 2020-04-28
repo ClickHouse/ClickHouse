@@ -17,7 +17,10 @@ import mdx_clickhouse
 def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(args.website_dir),
+        loader=jinja2.FileSystemLoader([
+            args.website_dir,
+            os.path.join(args.docs_dir, '_includes')
+        ]),
         extensions=[
             'jinja2.ext.i18n',
             'jinja2_highlight.HighlightExtension'

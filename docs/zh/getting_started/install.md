@@ -14,31 +14,17 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ## 可用的安装选项 {#ke-yong-de-an-zhuang-xuan-xiang}
 
-<a name="install-from-deb-packages"></a>
-\#\#\# 为Debian/Ubuntu安装 {\#from-deb-packages}
-
-在`/etc/apt/sources.list` (或创建`/etc/apt/sources.list.d/clickhouse.list`文件)中添加仓库：
-
-``` text
-deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
-```
-
-如果你想使用最新的测试版本，请使用'testing'替换'stable'。
+建议为Debian或Ubuntu使用官方的预编译`deb`软件包。 运行以下命令以安装软件包：
 
 然后运行：
 
 ``` bash
-sudo apt-get install dirmngr    # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
+{% include 'install/deb.sh' %}
 ```
 
-你也可以从这里手动下载安装包：https://repo.yandex.ru/clickhouse/deb/stable/main/。
+你也可以从这里手动下载安装包：https://repo.clickhouse.tech/deb/stable/main/。
 
-ClickHouse包含访问控制配置，它们位于`users.xml`文件中(与'config.xml'同目录)。
-默认情况下，允许从任何地方使用默认的'default'用户无密码的访问ClickHouse。参考'user/default/networks'。
-有关更多信息，请参考«Configuration files»部分。
+如果你想使用最新的测试版本，请使用`testing`替换`stable`。
 
 ### 来自RPM包 {#from-rpm-packages}
 

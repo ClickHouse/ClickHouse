@@ -13,18 +13,12 @@ Al pasar por este tutorial, aprenderá cómo configurar un clúster de ClickHous
 
 ## Configuración de nodo único {#single-node-setup}
 
-Para posponer las complejidades de un entorno distribuido, comenzaremos con la implementación de ClickHouse en un único servidor o máquina virtual. ClickHouse generalmente se instala desde [deb](index.md#install-from-deb-packages) o [RPM](index.md#from-rpm-packages) paquetes, pero hay [alternativa](index.md#from-docker-image) para los sistemas operativos que no los admiten.
+Para posponer las complejidades de un entorno distribuido, comenzaremos con la implementación de ClickHouse en un único servidor o máquina virtual. ClickHouse generalmente se instala desde [deb](install.md#install-from-deb-packages) o [RPM](install.md#from-rpm-packages) paquetes, pero hay [alternativa](install.md#from-docker-image) para los sistemas operativos que no los admiten.
 
 Por ejemplo, ha elegido `deb` paquetes y ejecutado:
 
 ``` bash
-sudo apt-get install dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb http://repo.clickhouse.tech/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
+{% include 'install/deb.sh' %}
 ```
 
 ¿qué tenemos en los paquetes que tengo instalados:

@@ -26,22 +26,15 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 توصیه می شود به استفاده از رسمی از پیش وارد شده `deb` بسته برای دبیان یا اوبونتو.
 
-برای نصب بسته های رسمی اضافه کردن مخزن یاندکس در `/etc/apt/sources.list` یا در یک جداگانه `/etc/apt/sources.list.d/clickhouse.list` پرونده:
-
-      deb http://repo.clickhouse.tech/deb/stable/ main/
-
-اگر شما می خواهید به استفاده از نسخه های اخیر, جایگزین کردن `stable` با `testing` (این است که برای محیط های تست خود را توصیه می شود).
-
 سپس این دستورات را برای نصب بسته ها اجرا کنید:
 
 ``` bash
-sudo apt-get install dirmngr # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
+{% include 'install/deb.sh' %}{% include 'install/deb.sh' %}
 ```
 
-شما همچنین می توانید بسته ها را به صورت دستی از اینجا دانلود و نصب کنید: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+اگر شما می خواهید به استفاده از نسخه های اخیر, جایگزین کردن `stable` با `testing` (این است که برای محیط های تست خود را توصیه می شود).
+
+شما همچنین می توانید بسته ها را به صورت دستی از اینجا دانلود و نصب کنید: https://repo.clickhouse.tech/deb/stable/main/.
 
 #### بستهها {#packages}
 
