@@ -13,18 +13,12 @@ toc_title: "\u0627\u0645\u0648\u0632\u0634"
 
 ## راه اندازی تک گره {#single-node-setup}
 
-برای به تعویق انداختن پیچیدگی های یک محیط توزیع, ما با استقرار کلیک بر روی یک سرور و یا ماشین مجازی شروع. خانه کلیک است که معمولا از نصب [دب](index.md#install-from-deb-packages) یا [دور در دقیقه](index.md#from-rpm-packages) بسته, اما وجود دارد [جایگزین ها](index.md#from-docker-image) برای سیستم عامل هایی که هیچ پشتیبانی نمی کنند.
+برای به تعویق انداختن پیچیدگی های یک محیط توزیع, ما با استقرار کلیک بر روی یک سرور و یا ماشین مجازی شروع. خانه کلیک است که معمولا از نصب [دب](install.md#install-from-deb-packages) یا [دور در دقیقه](install.md#from-rpm-packages) بسته, اما وجود دارد [جایگزین ها](install.md#from-docker-image) برای سیستم عامل هایی که هیچ پشتیبانی نمی کنند.
 
 مثلا, شما را انتخاب کرده اند `deb` بسته ها و اعدام:
 
 ``` bash
-sudo apt-get install dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb http://repo.clickhouse.tech/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
+{% include 'install/deb.sh' %}
 ```
 
 در بسته هایی که نصب شده اند چه چیزی داریم:
