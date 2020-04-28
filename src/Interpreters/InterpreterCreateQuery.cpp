@@ -19,6 +19,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
@@ -693,6 +695,27 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         return InterpreterInsertQuery(insert,
             create.temporary ? context.getSessionContext() : context,
             context.getSettingsRef().insert_allow_materialized_columns).execute();
+    }
+    /// If the query is CREATE LIVE VIEW [db.]table TO [db.]target_table,
+    /// then trigger ALTER LIVE VIEW [db.]table REFRESH to cause the target table prepopulation
+    if (!create.attach && create.is_live_view && !create.to_table_id.empty())
+    {
+        auto alter = std::make_shared<ASTAlterQuery>();
+        alter->is_live_view = true;
+        alter->database = create.database;
+        alter->table = create.table;
+        ASTPtr command_list = std::make_shared<ASTAlterCommandList>();
+        alter->set(alter->command_list, command_list);
+        auto command = std::make_shared<ASTAlterCommand>();
+        command->type = ASTAlterCommand::LIVE_VIEW_REFRESH;
+        alter->command_list->add(std::move(command));
+
+        if (create.temporary && !context.getSessionContext().hasQueryContext())
+            context.getSessionContext().makeQueryContext();
+
+        auto alter_interpreter = InterpreterAlterQuery(alter,
+            create.temporary ? context.getSessionContext() : context);
+        return alter_interpreter.execute();
     }
 
     return {};
