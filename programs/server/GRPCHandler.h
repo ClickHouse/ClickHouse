@@ -16,14 +16,16 @@
 #include <grpc++/server_builder.h>
 #include <grpc++/server_context.h>
 #include "GrpcConnection.grpc.pb.h"
+#include <Processors/Formats/LazyOutputFormat.h>
+#include "WriteBufferFromGRPC.h"
 
 using GRPCConnection::QueryRequest;
 using GRPCConnection::QueryResponse;
 using GRPCConnection::GRPC;
- namespace DB
- {
- class CommonCallData
- {
+namespace DB
+{
+class CommonCallData
+{
      public:
      GRPC::AsyncService* Service;
      grpc::ServerCompletionQueue* notification_cq;
@@ -40,41 +42,73 @@ using GRPCConnection::GRPC;
                {}
           virtual ~CommonCallData() {}
           virtual void respond() = 0;
- };
+};
 
 class CallDataQuery : public CommonCallData {
      public:
           CallDataQuery(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* notification_cq_, grpc::ServerCompletionQueue* new_call_cq_, IServer* server_, Poco::Logger * log_)
-          : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context()) {
+          : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context()), pool(1) {
+               out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this);
                Service->RequestQuery(&gRPCcontext, &request, &responder, new_call_cq, notification_cq, this);
           }
           void ParseQuery();
           void ExecuteQuery();
-
+          void ProgressQuery();
+          void FinishQuery();
           virtual void respond() override
           {
-               new CallDataQuery(Service, notification_cq, new_call_cq, iServer, log);
-               try {
+               LOG_TRACE(log, "respond: " << out->onProgress() << out->isFinished());
+               // if (!progress && !finished)
+               if (!out->onProgress() && !out->isFinished())
+               {
+                    new CallDataQuery(Service, notification_cq, new_call_cq, iServer, log);
+               // try {
                     ParseQuery();
                     ExecuteQuery();
-                    GRPCConnection::QuerySettings queryResult;
-                    response.set_query("Result: \n" + resultQuery);
-                    
-               } catch(...) {
-                    tryLogCurrentException(log);
-                    std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-                    int exception_code = getCurrentExceptionCode();
-                    response.set_exception_occured(exception_message);
+               // } else if (progress && !finished) {
+               } else if (out->onProgress() && !out->isFinished()) {
+                    ProgressQuery();
+               // } else if (finished) {
+               } else if (out->isFinished()) {
+                    delete this;
                }
-               responder.Finish(response, grpc::Status::OK, this);
+                         
+               // } 
+               // catch(...) {
+               //      tryLogCurrentException(log);
+               //      std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
+               //      int exception_code = getCurrentExceptionCode();
+               //      response.set_exception_occured(exception_message);
+               // }
+
+               // finished = true;
+               // out->next();
+               // responder.Write(response, (void*)this);
+               // responder.Finish(grpc::Status(), (void*)this);
+               // responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), (void*)this);
+
           }
           
      private:
           QueryRequest request;
           QueryResponse response;
-          grpc::ServerAsyncResponseWriter<QueryResponse> responder;
-          Context context;
+          grpc::ServerAsyncWriter<QueryResponse> responder;
           String resultQuery;
+
+          Stopwatch progress_watch;
+          std::shared_ptr<LazyOutputFormat> lazy_format;
+          BlockIO io;
+          PipelineExecutorPtr executor;
+          Context context;
+          ThreadPool pool;
+          std::atomic_bool exception = false;
+          // std::atomic_bool finished = false;
+
+          std::shared_ptr<WriteBufferFromGRPC> out;
+          bool progress = false;
+          bool finished = false;
+
+
 };
 
 class GRPCServer final : public Poco::Runnable {
@@ -94,7 +128,7 @@ class GRPCServer final : public Poco::Runnable {
      void stop() {
           Server->Shutdown();
           notification_cq->Shutdown();
-          // notification_cq->Shutdown();
+          new_call_cq->Shutdown();
      }
      virtual void run() override {
           HandleRpcs();
@@ -112,23 +146,30 @@ class GRPCServer final : public Poco::Runnable {
                     
                     GPR_ASSERT(new_call_cq->Next(&tag, &ok));
                     GPR_ASSERT(ok);
-                    delete static_cast<CallDataQuery*>(tag);
+                    LOG_TRACE(log, "LABEL:       " << *static_cast<int*>(tag));
+                    auto thread = ThreadFromGlobalPool{&CallDataQuery::respond, static_cast<CallDataQuery*>(tag)};
+                    thread.detach();
+                    // static_cast<CallDataQuery*>(tag)->respond();
+
+                    // delete static_cast<CallDataQuery*>(tag);
+                    // static_cast<CallDataQuery*>(tag)->DeleteIfFinished();
 
                }
           };
           // rpc event "new connection / close(waiting for connect)" call-back by this completion queue
           auto handle_requests_completion = [&]
-         {
+          {
                void* tag;
                bool ok;
                while (true)
                {
                     GPR_ASSERT(notification_cq->Next(&tag, &ok));
                     GPR_ASSERT(ok);
+                    // static_cast<CallDataQuery*>(tag)->respond();
                     auto thread = ThreadFromGlobalPool{&CallDataQuery::respond, static_cast<CallDataQuery*>(tag)};
                     thread.detach();
                }
-        };
+          };
 
           auto notification_cq_thread = ThreadFromGlobalPool{handle_requests_completion};
           auto new_call_cq_thread = ThreadFromGlobalPool{handle_calls_completion};
@@ -144,7 +185,6 @@ class GRPCServer final : public Poco::Runnable {
           GRPC::AsyncService Service;
           std::unique_ptr<grpc::Server> Server;
           std::string server_address;
- };
-
+};
 
  }

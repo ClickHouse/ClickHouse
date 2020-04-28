@@ -1,7 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
-
+#include <stdlib.h>
 #include <grpc++/channel.h>
 #include <grpc++/client_context.h>
 #include <grpc++/create_channel.h>
@@ -26,7 +26,9 @@ class GRPCClient {
             
             GRPCConnection::QuerySettings querySettigs;
             querySettigs.set_query(query);
-            querySettigs.set_query_id("123");
+
+            int id = rand();
+            querySettigs.set_query_id(std::to_string(id));
             
             request.set_allocated_query_info(&querySettigs);
 
@@ -35,7 +37,12 @@ class GRPCClient {
             void* got_tag = (void*)1;
             bool ok = false;
             
-            status = stub_->Query(&context, request, &reply);
+            std::unique_ptr<grpc::ClientReader<GRPCConnection::QueryResponse> > reader(stub_->Query(&context, request));
+            while (reader->Read(&reply)) {
+                if (!reply.progress_tmp().empty()) {
+                std::cout << "Progress: " << reply.progress_tmp() << std::endl;
+                }
+            }
 
             request.release_query_info();
             request.release_user_info();
@@ -59,15 +66,15 @@ int main(int argc, char** argv) {
     ch_args.SetMaxReceiveMessageSize(-1);
     GRPCClient client(
      grpc::CreateCustomChannel(argv[1], grpc::InsecureChannelCredentials(), ch_args));
-    std::cout << client.Query("CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
-    std::cout << client.Query("CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
-    std::cout << client.Query("INSERT INTO t VALUES (1),(2),(3)") << std::endl;
-    std::cout << client.Query("INSERT INTO t VALUES (4),(5),(6)") << std::endl;
-    std::cout << client.Query("INSERT INTO t FORMAT Values (7),(8),(9) ") << std::endl;
-    std::cout << client.Query("SELECT count() FROM numbers(10000000000)") << std::endl;
-    std::cout << client.Query("INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") << std::endl;
-    std::cout << client.Query("SELECT a FROM t ORDER BY a") << std::endl;
-    std::cout << client.Query("DROP TABLE t") << std::endl;
+    // std::cout << client.Query("CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
+    // std::cout << client.Query("CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
+    // std::cout << client.Query("INSERT INTO t VALUES (1),(2),(3)") << std::endl;
+    // std::cout << client.Query("INSERT INTO t VALUES (4),(5),(6)") << std::endl;
+    // std::cout << client.Query("INSERT INTO t FORMAT Values (7),(8),(9) ") << std::endl;
+    std::cout << client.Query("SELECT count() FROM numbers(1)") << std::endl;
+    // std::cout << client.Query("INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") << std::endl;
+    // std::cout << client.Query("SELECT a FROM t ORDER BY a") << std::endl;
+    // std::cout << client.Query("DROP TABLE t") << std::endl;
     std::cout << client.Query("SELECT 100") << std::endl;
     std::cout << client.Query("SELECT count() FROM numbers(10000000000)") << std::endl;
     std::cout << client.Query("SELECT count() FROM numbers(100)") << std::endl;

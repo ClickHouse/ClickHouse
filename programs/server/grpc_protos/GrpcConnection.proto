@@ -31,8 +31,9 @@ message QueryResponse {
    string query = 1;
    string exception_occured = 2;
    Progress progress = 3;
+   string progress_tmp = 4;
 }
 
 service GRPC {
-   rpc Query(QueryRequest) returns (QueryResponse) {}
+   rpc Query(QueryRequest) returns (stream QueryResponse) {}
 } 
