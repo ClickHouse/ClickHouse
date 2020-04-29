@@ -36,8 +36,8 @@ def create_tables(name, nodes, node_settings, shard):
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}')
         PARTITION BY toYYYYMM(date)
         ORDER BY id
-        SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = {index_granularity_bytes}, 
-        min_rows_for_wide_part = {min_rows_for_wide_part}, min_bytes_for_wide_part = {min_bytes_for_wide_part}
+        SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes}, 
+        min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part}
         '''.format(name=name, shard=shard, repl=i, **settings))
 
 def create_tables_old_format(name, nodes, shard):
@@ -51,18 +51,23 @@ def create_tables_old_format(name, nodes, shard):
 node1 = cluster.add_instance('node1', config_dir="configs", with_zookeeper=True)
 node2 = cluster.add_instance('node2', config_dir="configs", with_zookeeper=True)
 
-settings_default = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
-settings_compact_only = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 1000000, 'min_bytes_for_wide_part' : 0}
-settings_not_adaptive = {'index_granularity' : 64, 'index_granularity_bytes' : 0, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
+settings_default = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
+settings_compact_only = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 1000000, 'min_rows_for_compact_part' : 0}
+settings_not_adaptive = {'index_granularity_bytes' : 0, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
 
 node3 = cluster.add_instance('node3', config_dir="configs", with_zookeeper=True)
 node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/no_leader.xml'], with_zookeeper=True)
 
-settings_compact = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
-settings_wide = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 0, 'min_bytes_for_wide_part' : 0}
+settings_compact = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
+settings_wide = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 0, 'min_rows_for_compact_part' : 0}
 
 node5 = cluster.add_instance('node5', config_dir='configs', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
 node6 = cluster.add_instance('node6', config_dir='configs', main_configs=['configs/compact_parts.xml'], with_zookeeper=True)
+
+settings_in_memory = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 256}
+
+node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True)
+node10 = cluster.add_instance('node10', config_dir="configs", with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -75,6 +80,7 @@ def start_cluster():
         create_tables('polymorphic_table_compact', [node3, node4], [settings_compact, settings_wide], "shard2")
         create_tables('polymorphic_table_wide', [node3, node4], [settings_wide, settings_compact], "shard2")
         create_tables_old_format('polymorphic_table', [node5, node6], "shard3")
+        create_tables('in_memory_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard4")
 
         yield cluster
 
@@ -84,8 +90,8 @@ def start_cluster():
 @pytest.mark.parametrize(
     ('first_node', 'second_node'),
     [
-        (node1, node2),
-        (node5, node6)
+        (node1, node2), # compact parts
+        (node5, node6), # compact parts, old-format
     ]
 )
 def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
@@ -198,8 +204,8 @@ def test_different_part_types_on_replicas(start_cluster, table, part_type):
 node7 = cluster.add_instance('node7', config_dir="configs", with_zookeeper=True, image='yandex/clickhouse-server:19.17.8.54', stay_alive=True, with_installed_binary=True)
 node8 = cluster.add_instance('node8', config_dir="configs", with_zookeeper=True)
 
-settings7 = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760}
-settings8 = {'index_granularity' : 64, 'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_bytes_for_wide_part' : 0}
+settings7 = {'index_granularity_bytes' : 10485760}
+settings8 = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 0}
 
 @pytest.fixture(scope="module")
 def start_cluster_diff_versions():
@@ -212,7 +218,7 @@ def start_cluster_diff_versions():
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/shard5/{name}', '1')
             PARTITION BY toYYYYMM(date)
             ORDER BY id
-            SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = {index_granularity_bytes}
+            SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes}
             '''.format(name=name, **settings7)
             )
 
@@ -222,7 +228,7 @@ def start_cluster_diff_versions():
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/shard5/{name}', '2')
             PARTITION BY toYYYYMM(date)
             ORDER BY id
-            SETTINGS index_granularity = {index_granularity}, index_granularity_bytes = {index_granularity_bytes},
+            SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes},
             min_rows_for_wide_part = {min_rows_for_wide_part}, min_bytes_for_wide_part = {min_bytes_for_wide_part}
             '''.format(name=name, **settings8)
             )
@@ -287,3 +293,21 @@ def test_polymorphic_parts_non_adaptive(start_cluster):
         "WHERE table = 'non_adaptive_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV("Wide\t2\n")
 
     assert node1.contains_in_log("<Warning> default.non_adaptive_table: Table can't create parts with adaptive granularity")
+
+def test_in_memory(start_cluster):
+    node9.query("SYSTEM STOP MERGES")
+    node10.query("SYSTEM STOP MERGES")
+
+    for size in [200, 200, 300, 600]:
+        insert_random_data('in_memory_table', node9, size)
+    node10.query("SYSTEM SYNC REPLICA in_memory_table", timeout=20)
+
+    assert node9.query("SELECT count() FROM in_memory_table") == "1300\n"
+    assert node10.query("SELECT count() FROM in_memory_table") == "1300\n"
+
+    expected = "Compact\t1\nInMemory\t2\nWide\t1\n"
+
+    assert TSV(node9.query("SELECT part_type, count() FROM system.parts " \
+        "WHERE table = 'in_memory_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
+    assert TSV(node10.query("SELECT part_type, count() FROM system.parts " \
+        "WHERE table = 'in_memory_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)

@@ -19,7 +19,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
     {
         {"partition",                                  std::make_shared<DataTypeString>()},
         {"name",                                       std::make_shared<DataTypeString>()},
-        {"part_type",                                      std::make_shared<DataTypeString>()},
+        {"part_type",                                  std::make_shared<DataTypeString>()},
         {"active",                                     std::make_shared<DataTypeUInt8>()},
         {"marks",                                      std::make_shared<DataTypeUInt64>()},
         {"rows",                                       std::make_shared<DataTypeUInt64>()},
@@ -111,8 +111,16 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
         columns_[i++]->insert(info.database);
         columns_[i++]->insert(info.table);
         columns_[i++]->insert(info.engine);
-        columns_[i++]->insert(part->disk->getName());
-        columns_[i++]->insert(part->getFullPath());
+        if (part->isStoredOnDisk())
+        {
+            columns_[i++]->insert(part->disk->getName());
+            columns_[i++]->insert(part->getFullPath());
+        }
+        else
+        {
+            columns_[i++]->insertDefault();
+            columns_[i++]->insertDefault();
+        }
 
         if (has_state_column)
             columns_[i++]->insert(part->stateString());

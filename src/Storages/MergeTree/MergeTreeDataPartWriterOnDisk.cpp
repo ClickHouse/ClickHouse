@@ -222,6 +222,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
+    while (current_mark < )
     for (size_t i = index_offset; i < rows;)
     {
         if (storage.hasPrimaryKey())
