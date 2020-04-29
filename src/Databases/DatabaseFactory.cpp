@@ -1,4 +1,5 @@
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
@@ -69,7 +70,7 @@ DatabasePtr DatabaseFactory::getImpl(
 {
     String engine_name = engine_define->engine->name;
 
-    if (engine_name != "MySQL" && engine_name != "Lazy" && engine_define->engine->arguments)
+    if (engine_name != "MySQL" && engine_name != "Lazy" && engine_name != "Replicated" && engine_define->engine->arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
     if (engine_define->engine->parameters || engine_define->partition_by || engine_define->primary_key || engine_define->order_by ||
@@ -136,6 +137,20 @@ DatabasePtr DatabaseFactory::getImpl(
 
         const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
+    }
+
+    else if (engine_name == "Replicated")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 2)
+            throw Exception("Replicated database requires zoo_path and replica_name arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
+
+        const auto zoo_path = arguments[0]->as<ASTLiteral>()->value.safeGet<String>();
+        const auto replica_name = arguments[1]->as<ASTLiteral>()->value.safeGet<String>();
+        return std::make_shared<DatabaseReplicated>(database_name, metadata_path, zoo_path, replica_name, context);
     }
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);

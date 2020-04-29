@@ -24,16 +24,17 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
-    void removeTable(
+    void dropTable(
         const Context & context,
-        const String & table_name) override;
+        const String & table_name,
+        bool no_delay) override;
 
     void renameTable(
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        TableStructureWriteLockHolder & lock) override;
+        bool exchange) override;
 
     void drop(const Context & context) override;
 

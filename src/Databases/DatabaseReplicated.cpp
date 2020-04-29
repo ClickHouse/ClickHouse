@@ -125,8 +125,8 @@ void DatabaseReplicated::createTable(
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
         zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
-        zkutil::CreateMode::Persistent));
+    //ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
+        //zkutil::CreateMode::Persistent));
 //    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", getColumns().toString(),
 //        zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "",
@@ -160,23 +160,24 @@ void DatabaseReplicated::renameTable(
         const String & table_name,
         IDatabase & to_database,
         const String & to_table_name,
-        TableStructureWriteLockHolder & lock)
+        bool exchange)
 {
     // try
-    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, lock);
-    // replicated stuff
-    String statement = getObjectDefinitionFromCreateQuery(query);
+    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange);
+    // replicated stuff; what to put to a znode
+    // String statement = getObjectDefinitionFromCreateQuery(query);
     // this one is fairly more complex
 }
 
-void DatabaseReplicated::removeTable(
+void DatabaseReplicated::dropTable(
         const Context & context,
-        const String & table_name)
+        const String & table_name,
+        bool no_delay)
 {
     // try
-    DatabaseOnDisk::removeTable(context, table_name);
+    DatabaseOnDisk::dropTable(context, table_name, no_delay);
     // replicated stuff
-    String statement = getObjectDefinitionFromCreateQuery(query);
+    //String statement = getObjectDefinitionFromCreateQuery(query);
     // ...
 }
 
@@ -184,13 +185,26 @@ void DatabaseReplicated::drop(const Context & context)
 {
     DatabaseOnDisk::drop(context);
     // replicated stuff
-    String statement = getObjectDefinitionFromCreateQuery(query);
+    //String statement = getObjectDefinitionFromCreateQuery(query);
     // should it be possible to recover after a drop. 
     // if not, we can just delete all the zookeeper nodes starting from
     // zookeeper path. does it work recursively? hope so...
 }
 
-void DatabaseOrdinary::loadStoredObjects(
+// sync replica's zookeeper metadata
+void DatabaseReplicated::syncReplicaState(Context & context) {
+    auto c = context; // fixes unuser parameter error
+    return;
+}
+
+// get the up to date metadata from zookeeper to local metadata dir
+// for replicated (only?) tables
+void DatabaseReplicated::updateMetadata(Context & context) {
+    auto c = context; // fixes unuser parameter error
+    return;
+}
+
+void DatabaseReplicated::loadStoredObjects(
     Context & context,
     bool has_force_restore_data_flag)
 {
@@ -201,15 +215,6 @@ void DatabaseOrdinary::loadStoredObjects(
 
 }
 
-// sync replica's zookeeper metadata
-void syncReplicaState(Context & context) {
 
-}
-
-// get the up to date metadata from zookeeper to local metadata dir
-// for replicated (only?) tables
-void updateMetadata(Context & context) {
-
-}
 
 }
