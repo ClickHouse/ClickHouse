@@ -58,7 +58,7 @@ struct SyntaxAnalyzerResult
         collectSourceColumns(add_special);
     }
 
-    void collectSourceColumns(bool add_virtuals);
+    void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Scalars & getScalars() const { return scalars; }
