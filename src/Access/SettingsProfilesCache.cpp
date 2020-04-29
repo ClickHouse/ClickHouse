@@ -183,7 +183,7 @@ void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & element
 std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings(
     const UUID & user_id,
     const SettingsProfileElements & settings_from_user,
-    const std::vector<UUID> & enabled_roles,
+    const boost::container::flat_set<UUID> & enabled_roles,
     const SettingsProfileElements & settings_from_enabled_roles)
 {
     std::lock_guard lock{mutex};

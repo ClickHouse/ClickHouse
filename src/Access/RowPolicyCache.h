@@ -18,7 +18,7 @@ public:
     RowPolicyCache(const AccessControlManager & access_control_manager_);
     ~RowPolicyCache();
 
-    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles);
+    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles);
 
 private:
     using ParsedConditions = EnabledRowPolicies::ParsedConditions;

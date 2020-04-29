@@ -39,20 +39,20 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
     else
     {
         ExtendedRoleSet roles_from_query{*query.roles, access_control};
-        std::vector<UUID> new_current_roles;
+        boost::container::flat_set<UUID> new_current_roles;
         if (roles_from_query.all)
         {
             for (const auto & id : user->granted_roles.roles)
                 if (roles_from_query.match(id))
-                    new_current_roles.push_back(id);
+                    new_current_roles.emplace(id);
         }
         else
         {
             for (const auto & id : roles_from_query.getMatchingIDs())
             {
-                if (!user->granted_roles.roles.contains(id))
+                if (!user->granted_roles.roles.count(id))
                     throw Exception("Role should be granted to set current", ErrorCodes::SET_NON_GRANTED_ROLE);
-                new_current_roles.push_back(id);
+                new_current_roles.emplace(id);
             }
         }
         session_context.setCurrentRoles(new_current_roles);
@@ -85,7 +85,7 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Exten
     {
         for (const auto & id : roles_from_query.getMatchingIDs())
         {
-            if (!user.granted_roles.roles.contains(id))
+            if (!user.granted_roles.roles.count(id))
                 throw Exception("Role should be granted to set default", ErrorCodes::SET_NON_GRANTED_ROLE);
         }
     }

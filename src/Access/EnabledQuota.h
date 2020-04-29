@@ -23,7 +23,7 @@ public:
     {
         UUID user_id;
         String user_name;
-        std::vector<UUID> enabled_roles;
+        boost::container::flat_set<UUID> enabled_roles;
         Poco::Net::IPAddress client_address;
         String client_key;
 
