@@ -33,11 +33,52 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
 }
 
+namespace
+{
+
 template <typename T>
-void ColumnVector<T>::insertData([[maybe_unused]] const char * pos, size_t /*length*/)
+struct BigIntPayload
+{
+    static_assert(!is_big_int_v<T>);
+    static constexpr size_t size = 0;
+};
+
+template <> struct BigIntPayload<bUInt128> { static constexpr size_t size = 16; };
+template <> struct BigIntPayload<bInt128> { static constexpr size_t size = 16; };
+template <> struct BigIntPayload<bUInt256> { static constexpr size_t size = 32; };
+template <> struct BigIntPayload<bInt256> { static constexpr size_t size = 32; };
+
+
+template <typename T>
+StringRef serializeBigIntIntoArena(const T & x, Arena & arena, char const *& begin)
+{
+    // TODO: fix signedness
+    size_t bytesize = BigIntPayload<T>::size;
+
+    auto pos = arena.allocContinue(bytesize, begin);
+    export_bits(x, pos, 8, false);
+
+    return StringRef(pos, bytesize);
+}
+
+template <typename T>
+T deserializeBigInt(const char * pos)
+{
+    T x{};
+    size_t bytesize = BigIntPayload<T>::size;
+
+    // TODO: fix signedness
+    import_bits(x, pos, pos + bytesize, false);
+
+    return x;
+}
+}
+
+template <typename T>
+void ColumnVector<T>::insertData(const char * pos, size_t /*length*/)
 {
     if constexpr (is_big_int_v<T>)
-        throw Exception("Big ints is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+        data.push_back(deserializeBigInt<T>(pos));
     else
         data.push_back(unalignedLoad<T>(pos));
 }
@@ -63,64 +104,29 @@ void ColumnVector<T>::popBack(size_t n)
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    auto pos = arena.allocContinue(sizeof(T), begin);
-    unalignedStore<T>(pos, data[n]);
-    return StringRef(pos, sizeof(T));
-}
-
-template <>
-StringRef ColumnVector<bUInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const
-{
-    throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-StringRef ColumnVector<bInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const
-{
-    throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-StringRef ColumnVector<bUInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const
-{
-    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-StringRef ColumnVector<bInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const
-{
-    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+    if constexpr (is_big_int_v<T>)
+        return serializeBigIntIntoArena(data[n], arena, begin);
+    else
+    {
+        auto pos = arena.allocContinue(sizeof(T), begin);
+        unalignedStore<T>(pos, data[n]);
+        return StringRef(pos, sizeof(T));
+    }
 }
 
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
-}
-
-template <>
-const char * ColumnVector<bUInt128>::deserializeAndInsertFromArena(const char *)
-{
-    throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-const char * ColumnVector<bInt128>::deserializeAndInsertFromArena(const char *)
-{
-    throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-const char * ColumnVector<bUInt256>::deserializeAndInsertFromArena(const char *)
-{
-    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-const char * ColumnVector<bInt256>::deserializeAndInsertFromArena(const char *)
-{
-    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+    if constexpr (is_big_int_v<T>)
+    {
+        data.push_back(deserializeBigInt<T>(pos));
+        return pos + BigIntPayload<T>::size;
+    }
+    else
+    {
+        data.push_back(unalignedLoad<T>(pos));
+        return pos + sizeof(T);
+    }
 }
 
 template <typename T>

@@ -259,4 +259,34 @@ inline size_t getLengthOfVarInt(Int64 x)
     return getLengthOfVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)));
 }
 
+// template <typename Ostr>
+// inline void writeVarUInt(const bUInt128 & x, Ostr & ostr)
+// {
+//     // splitting by 32 bits
+//     // subject to improvement
+//     static constexpr UInt64 bit32mask = (1ULL << 32) - 1; 
+
+//     writeVarInt(static_cast<UInt64>(x >> 96), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 64) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 32) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>(x & bit32mask), ostr);
+// }
+
+
+// template <typename Ostr>
+// inline void writeVarUInt(const bUInt256 & x, Ostr & ostr)
+// {
+//     // splitting by 32 bits
+//     // subject to improvement
+//     static constexpr UInt64 bit32mask = (1ULL << 32) - 1; 
+
+//     writeVarInt(static_cast<UInt64>(x >> 224), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 192) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 160) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 128) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 96) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 64) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>((x >> 32) & bit32mask), ostr);
+//     writeVarInt(static_cast<UInt64>(x & bit32mask), ostr);
+// }
 }

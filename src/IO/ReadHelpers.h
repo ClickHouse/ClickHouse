@@ -119,6 +119,28 @@ inline void readFloatBinary(T & x, ReadBuffer & buf)
     readPODBinary(x, buf);
 }
 
+template <typename T>
+void readBigIntBinary(T & x, ReadBuffer & buf)
+{
+    size_t bytesize = 32;
+    if constexpr (std::is_same_v<T, bUInt128> || std::is_same_v<T, bInt128>)
+        bytesize = 16;
+
+    [[maybe_unused]] char is_negative;
+    if constexpr (is_signed_v<T>)
+        readChar(is_negative, buf);
+
+    std::vector<char> bytes(bytesize, 0);
+    buf.readStrict(bytes.data(), bytesize);
+
+    import_bits(x, bytes.begin(), bytes.end(), false);
+
+    if constexpr (is_signed_v<T>)
+    {
+        if (is_negative)
+            x = -x;
+    }
+}
 
 inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRING_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
@@ -745,9 +767,8 @@ inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-template <typename T> void readBigIntBinary(T &, ReadBuffer &) { /* TBD */ }
-inline void readBinary(bUInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(bInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(bUInt128 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
+inline void readBinary(bInt128 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 inline void readBinary(bUInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 inline void readBinary(bInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 

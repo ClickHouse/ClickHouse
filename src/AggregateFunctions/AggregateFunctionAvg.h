@@ -27,7 +27,12 @@ struct AggregateFunctionAvgData
     {
         if constexpr (std::is_floating_point_v<ResultT>)
             if constexpr (std::numeric_limits<ResultT>::is_iec559)
-                return static_cast<ResultT>(numerator) / denominator; /// allow division by zero
+            {
+                if constexpr (is_big_int_v<Denominator>)
+                    return static_cast<ResultT>(numerator) / static_cast<ResultT>(denominator);
+                else
+                    return static_cast<ResultT>(numerator) / denominator; /// allow division by zero
+            }
 
         if (denominator == 0)
             return static_cast<ResultT>(0);
@@ -71,7 +76,7 @@ public:
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         writeBinary(this->data(place).numerator, buf);
-        writeVarUInt(this->data(place).denominator, buf);
+        writeVarUInt(static_cast<UInt64>(this->data(place).denominator), buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override

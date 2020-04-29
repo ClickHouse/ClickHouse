@@ -105,16 +105,24 @@ inline void writeStringBinary(const StringRef & s, WriteBuffer & buf)
 template <typename T>
 void writeBigIntBinary(const T & x, WriteBuffer & buf)
 {
-    const auto & int_backend = x.backend();
-    auto limbs = int_backend.limbs();
+    // probably should export directly to buffer
+    size_t bytesize = 32;
+    if constexpr (std::is_same_v<T, bUInt128> || std::is_same_v<T, bInt128>)
+        bytesize = 16;
 
-    // signed 256-bit boost integer is actually 257-bit :/
-    if (int_backend.isneg())
-        buf.write(1);
-    else
-        buf.write(0);
+    std::vector<char> bytes(bytesize, 0);
+    export_bits(x, std::back_inserter(bytes), 8, false);
 
-    buf.write(reinterpret_cast<const char *>(limbs), int_backend.internal_limb_count * sizeof(*limbs));
+    if constexpr (is_signed_v<T>)
+    {
+        // signed 256-bit boost integer is actually 257-bit :/
+        if (x < 0)
+            buf.write(1);
+        else
+            buf.write(0);
+    }
+
+    buf.write(bytes.data(), bytesize);
 }
 
 template <typename T>
@@ -837,8 +845,8 @@ inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
-inline void writeBinary(const bUInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const bInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const bUInt128 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const bInt128 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 inline void writeBinary(const bUInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 

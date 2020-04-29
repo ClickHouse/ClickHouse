@@ -8,10 +8,14 @@
     M(UInt16) \
     M(UInt32) \
     M(UInt64) \
+    M(bUInt128) \
+    M(bUInt256) \
     M(Int8) \
     M(Int16) \
     M(Int32) \
     M(Int64) \
+    M(bInt128) \
+    M(bInt256) \
     M(Float32) \
     M(Float64)
 
@@ -80,6 +84,8 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     if (which.idx == TypeIndex::UInt16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::bUInt128) return new AggregateFunctionTemplate<bUInt128, Data<bUInt128>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::bUInt256) return new AggregateFunctionTemplate<bUInt256, Data<bUInt256>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
