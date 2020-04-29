@@ -42,8 +42,6 @@ TEST(IndexGranularityCompactParts, FillGranularitySequenceOfBlocks)
 
         fillIndexGranularityImpl(index_granularity, index_offset, granularity, rows2);
 
-        /// index_offset is increased, because we didn't add new granule
-        EXPECT_EQ(index_offset, rows2);
         EXPECT_EQ(index_granularity.getMarksCount(), 1);
         EXPECT_EQ(index_granularity.getMarkRows(0), rows1 + rows2);
     }
@@ -61,8 +59,6 @@ TEST(IndexGranularityCompactParts, FillGranularitySequenceOfBlocks)
 
         fillIndexGranularityImpl(index_granularity, index_offset, granularity, rows2);
 
-        /// index_offset is not increased, because new granule was added
-        EXPECT_EQ(index_offset, granularity - rows1);
         EXPECT_EQ(index_granularity.getMarksCount(), 2);
         EXPECT_EQ(index_granularity.getMarkRows(0), granularity);
         EXPECT_EQ(index_granularity.getMarkRows(1), rows1 + rows2 - granularity);

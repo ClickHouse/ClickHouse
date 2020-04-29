@@ -217,21 +217,22 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
-    for (size_t i = index_offset; i < rows;)
+    size_t current_row = index_offset;
+    size_t total_marks = index_granularity.getMarksCount();
+
+    while (index_mark < total_marks && current_row < rows)
     {
         if (storage.hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, i);
-                primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
+                index_columns[j]->insertFrom(*primary_column.column, current_row);
+                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
             }
         }
 
-        i += index_granularity.getMarkRows(current_mark++);
-        if (current_mark >= index_granularity.getMarksCount())
-            break;
+        current_row += index_granularity.getMarkRows(index_mark++);
     }
 
     /// store last index row to write final mark at the end of column

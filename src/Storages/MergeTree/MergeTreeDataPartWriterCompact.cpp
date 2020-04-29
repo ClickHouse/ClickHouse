@@ -91,7 +91,7 @@ void MergeTreeDataPartWriterCompact::write(
 void MergeTreeDataPartWriterCompact::writeBlock(const Block & block)
 {
     size_t total_rows = block.rows();
-    size_t from_mark = current_mark;
+    size_t from_mark = getCurrentMark();
     size_t current_row = 0;
 
     while (current_row < total_rows)
@@ -166,13 +166,12 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     stream.reset();
 }
 
-void fillIndexGranularityImpl(
+static void fillIndexGranularityImpl(
     MergeTreeIndexGranularity & index_granularity,
-    size_t & index_offset,
+    size_t index_offset,
     size_t index_granularity_for_block,
     size_t rows_in_block)
 {
-    bool initial_marks_count = index_granularity.getMarksCount();
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
     {
         size_t rows_left_in_block = rows_in_block - current_row;
@@ -194,17 +193,13 @@ void fillIndexGranularityImpl(
             index_granularity.appendMark(index_granularity_for_block);
         }
     }
-
-    /// Primary index shouldn't be written, if there was no granule added
-    if (initial_marks_count == index_granularity.getMarksCount())
-        index_offset = std::max(index_offset, rows_in_block);
 }
 
 void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     fillIndexGranularityImpl(
         index_granularity,
-        index_offset,
+        getIndexOffset(),
         index_granularity_for_block,
         rows_in_block);
 }

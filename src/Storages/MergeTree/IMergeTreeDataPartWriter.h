@@ -112,6 +112,9 @@ protected:
     size_t computeIndexGranularity(const Block & block);
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block);
 
+    size_t getCurrentMark() const { return current_mark; }
+    size_t getIndexOffset() const { return index_offset; }
+
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -131,11 +134,6 @@ protected:
 
     bool compute_granularity;
     bool with_final_mark;
-
-    size_t current_mark = 0;
-
-    /// The offset to the first row of the block for which you want to write the index.
-    size_t index_offset = 0;
 
     size_t next_mark = 0;
     size_t next_index_offset = 0;
@@ -162,6 +160,14 @@ protected:
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;
+
+private:
+    /// Data is already written up to this mark.
+    size_t current_mark = 0;
+    /// The offset to the first row of the block for which you want to write the index.
+    size_t index_offset = 0;
+    /// Index is already serialized up to this mark.
+    size_t index_mark = 0;
 };
 
 }
