@@ -218,7 +218,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
-    data.check(real_column_names);
+    metadata->check(real_column_names, data.getVirtuals());
 
     const Settings & settings = context.getSettingsRef();
     Names primary_key_columns = data.primary_key_columns;

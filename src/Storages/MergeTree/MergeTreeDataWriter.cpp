@@ -128,13 +128,13 @@ void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
 
 }
 
-BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts)
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
         return result;
 
-    data.check(block, true);
+    metadata->check(block, true);
     block.checkNumberOfRows();
 
     if (!data.partition_key_expr) /// Table is not partitioned.

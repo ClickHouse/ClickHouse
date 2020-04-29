@@ -159,18 +159,18 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, bool include_virtuals = false) const;
+    //void check(const Names & column_names, bool include_virtuals = false) const;
 
     /// Check that all the requested names are in the table and have the correct types.
-    void check(const NamesAndTypesList & columns) const;
+    //void check(const NamesAndTypesList & columns) const;
 
     /// Check that all names from the intersection of `names` and `columns` are in the table and have the same types.
-    void check(const NamesAndTypesList & columns, const Names & column_names) const;
+    //void check(const NamesAndTypesList & columns, const Names & column_names) const;
 
     /// Check that the data block contains all the columns of the table with the correct types,
     /// contains only the columns of the table, and all the columns are different.
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
-    void check(const Block & block, bool need_all = false) const;
+    //void check(const Block & block, bool need_all = false) const;
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage

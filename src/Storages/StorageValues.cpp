@@ -17,14 +17,14 @@ StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescripti
 
 Pipes StorageValues::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_version*/,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    check(column_names, true);
+    metadata_version->check(column_names, getVirtuals());
 
     Pipes pipes;
 

@@ -123,14 +123,14 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
 
 Pipes StorageSystemNumbers::read(
     const Names & column_names,
-    const StorageMetadataPtr &,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names);
+    metadata_version->check(column_names, getVirtuals());
 
     if (limit && *limit < max_block_size)
     {

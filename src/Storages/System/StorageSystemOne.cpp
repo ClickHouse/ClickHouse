@@ -20,14 +20,14 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 Pipes StorageSystemOne::read(
     const Names & column_names,
-    const StorageMetadataPtr & /*metadata_version*/,
+    const StorageMetadataPtr & metadata_version,
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_version->check(column_names, getVirtuals());
 
     Block header{ColumnWithTypeAndName(
             DataTypeUInt8().createColumn(),

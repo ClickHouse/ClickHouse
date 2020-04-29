@@ -241,7 +241,7 @@ Pipes StorageSystemColumns::read(
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_version->check(column_names, getVirtuals());
 
     /// Create a mask of what columns are needed in the result.
 

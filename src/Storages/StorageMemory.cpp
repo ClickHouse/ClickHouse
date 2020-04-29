@@ -71,7 +71,7 @@ public:
 
     void write(const Block & block) override
     {
-        storage.check(block, true);
+        metadata->check(block, true);
         std::lock_guard lock(storage.mutex);
         storage.data.push_back(block);
     }
@@ -98,7 +98,7 @@ Pipes StorageMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    check(column_names);
+    metadata->check(column_names, getVirtuals());
 
     std::lock_guard lock(mutex);
 

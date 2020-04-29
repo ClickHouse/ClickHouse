@@ -335,7 +335,7 @@ public:
             return;
 
         // Check table structure.
-        storage.check(block, true);
+        metadata->check(block, true);
 
         size_t rows = block.rows();
         if (!rows)

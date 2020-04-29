@@ -67,7 +67,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 private:
-    bool hasStateColumn(const Names & column_names) const;
+    bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata, const NamesAndTypesList & virtuals) const;
 
 protected:
     const FormatSettings format_settings;

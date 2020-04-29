@@ -275,7 +275,7 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
 
 void LogBlockOutputStream::write(const Block & block)
 {
-    storage.check(block, true);
+    metadata->check(block, true);
 
     /// The set of written offset columns so that you do not write shared offsets of columns for nested structures multiple times
     WrittenStreams written_streams;
@@ -584,7 +584,7 @@ Pipes StorageLog::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names);
+    metadata_version->check(column_names, getVirtuals());
     loadMarks();
 
     NamesAndTypesList all_columns = Nested::collect(metadata_version->getColumns().getAllPhysical().addTypes(column_names));

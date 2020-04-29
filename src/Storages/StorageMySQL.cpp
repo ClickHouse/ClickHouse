@@ -70,7 +70,7 @@ Pipes StorageMySQL::read(
     size_t max_block_size_,
     unsigned)
 {
-    check(column_names_);
+    metadata_version->check(column_names_, getVirtuals());
     String query = transformQueryForExternalDatabase(
         query_info_, metadata_version->getColumns().getOrdinary(), IdentifierQuotingStyle::BackticksMySQL, remote_database_name, remote_table_name, context_);
 

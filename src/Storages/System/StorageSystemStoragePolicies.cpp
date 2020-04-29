@@ -36,7 +36,7 @@ Pipes StorageSystemStoragePolicies::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    check(column_names);
+    metadata_version->check(column_names, getVirtuals());
 
     MutableColumnPtr col_policy_name = ColumnString::create();
     MutableColumnPtr col_volume_name = ColumnString::create();

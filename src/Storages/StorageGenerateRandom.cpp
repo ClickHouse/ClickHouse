@@ -431,7 +431,7 @@ Pipes StorageGenerateRandom::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names, true);
+    metadata_version->check(column_names, getVirtuals());
 
     Pipes pipes;
     pipes.reserve(num_streams);
