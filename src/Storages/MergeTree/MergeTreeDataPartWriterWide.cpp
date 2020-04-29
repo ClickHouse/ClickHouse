@@ -209,17 +209,18 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     size_t total_rows = column.size();
     size_t current_row = 0;
-    size_t current_column_mark = current_mark;
+    size_t current_column_mark = getCurrentMark();
+    size_t current_index_offset = getIndexOffset();
     while (current_row < total_rows)
     {
         size_t rows_to_write;
         bool write_marks = true;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-        if (current_row == 0 && index_offset != 0)
+        if (current_row == 0 && current_index_offset != 0)
         {
             write_marks = false;
-            rows_to_write = index_offset;
+            rows_to_write = current_index_offset;
         }
         else
         {
