@@ -1,6 +1,7 @@
 #include "DynamicProxyConfiguration.h"
 
 #include <utility>
+#include <common/logger_useful.h>
 
 namespace DB::S3
 {
@@ -18,7 +19,9 @@ Aws::Client::ClientConfigurationPerRequest DynamicProxyConfiguration::getConfigu
     cfg.proxyHost = proxies[index].getHost();
     cfg.proxyPort = proxies[index].getPort();
 
-    return cfg;
+	LOG_DEBUG(&Logger::get("AWSClient"), "Use proxy: " << proxies[index].toString());
+
+	return cfg;
 }
 
 }
