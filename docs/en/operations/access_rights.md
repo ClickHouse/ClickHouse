@@ -18,11 +18,14 @@ You can configure access entities using:
 
 - SQL-driven workflow.
 
-    You need to [enable](#enabling-access-control) this functionality. We recommend using this workflow instead of the configuration files approach.
+    You need to [enable](#enabling-access-control) this functionality.
 
 - Server [configuration files](configuration_files.md) `users.xml` and `config.xml`.
 
-We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can softly move to SQL-driven workflow.
+We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can softly move to SQL-driven workflow. 
+
+!!! note "Warning"
+    You can't manage the same access entity by both configuration methods simultaneously.
 
 
 ## Usage {#access-control-usage}
@@ -33,17 +36,17 @@ If you just start using ClickHouse, you can use the following scenario:
 
 1. [Enable](#enabling-access-control) SQL-driven access control and account management for the `default` user.
 2. Login under the `default` user account and create all the required users. Don't forget to create an administrator account (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
-3. Restrict permissions for the `default` user and disable SQL-driven access control and account management for it.
+3. [Restrict permissions](settings/permissions_for_queries.md#permissions_for_queries) for the `default` user and disable SQL-driven access control and account management for it.
 
 ### Properties of Current Solution {#access-control-properties}
 
 - You can grant permissions for databases and tables even if they are not exist.
-- If a table was deleted, all the privileges that correspond to this table are not revoked. So, if new table is created later with the same name all the privileges become again actual. To revoke privileges corresponding to the deleted table, you need to perform, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
+- If a table was deleted, all the privileges that correspond to this table are not revoked. So, if a new table is created later with the same name all the privileges become again actual. To revoke privileges corresponding to the deleted table, you need to perform, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
 - There is no lifetime settings for privileges.
 
 ## User account {#user-account-management}
 
-A user account is a configuration that allows to authorize someone in ClickHouse. A user account contains:
+A user account is an access entity that allows to authorize someone in ClickHouse. A user account contains:
 
 - Identification information.
 - [Privileges](../sql_reference/statements/grant.md#grant-privileges) that define a scope of queries the user can perform.
@@ -61,14 +64,14 @@ Management queries:
 - [DROP USER](../sql_reference/statements/misc.md#drop-user-statement)
 - [SHOW CREATE USER](../sql_reference/statements/show.md#show-create-user-statement)
 
-### Settings Application {#access-control-settings-application}
+### Settings Applying {#access-control-settings-applying}
 
-Settings can be set by different ways: for a user account, in its granted roles and settings profiles. At a user login, if a setting is set in different access entities, the value and constrains of this setting are applied corresponding to the following hierarchy (from higher priority to lower):
+Settings can be set by different ways: for a user account, in its granted roles and settings profiles. At a user login, if a setting is set in different access entities, the value and constrains of this setting are applied by the following priorities (from higher to lower):
 
 1. User account setting.
-2. The settings of default roles of the user account. If a setting is set in some roles, then order of the setting application is undefined.
-3. The settings in settings profiles assigned to a user or to it default roles. If a setting is set in some profiles, then order of setting application is undefined.
-4. Settings applied to all the server by default or in the [default profile](server_configuration_parameters/settings.md#default-profile).
+2. The settings of default roles of the user account. If a setting is set in some roles, then order of the setting applying is undefined.
+3. The settings in settings profiles assigned to a user or to its default roles. If a setting is set in some profiles, then order of setting applying is undefined.
+4. Settings applied to all the server by default or from the [default profile](server_configuration_parameters/settings.md#default-profile).
 
 
 ## Role {#role-management}
