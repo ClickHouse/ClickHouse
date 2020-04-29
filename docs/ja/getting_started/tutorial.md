@@ -13,18 +13,12 @@ toc_title: Tutorial
 
 ## 単一ノード設定 {#single-node-setup}
 
-分散環境の複雑さを延期するには、まず、単一のサーバーまたは仮想マシンにclickhouseを展開します。 clickhouseは通常からインストール [deb](index.md#install-from-deb-packages) または [rpm](index.md#from-rpm-packages) パッケージがあります [代替案](index.md#from-docker-image) の営業システムな支援します。
+分散環境の複雑さを延期するには、まず、単一のサーバーまたは仮想マシンにclickhouseを展開します。 clickhouseは通常からインストール [deb](install.md#install-from-deb-packages) または [rpm](install.md#from-rpm-packages) パッケージがあります [代替案](install.md#from-docker-image) の営業システムな支援します。
 
 たとえば、次の項目を選択しました `deb` パッケージと実行:
 
 ``` bash
-sudo apt-get install dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb http://repo.clickhouse.tech/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
+{% include 'install/deb.sh' %}
 ```
 
 インストールされたパッケージには何がありますか:

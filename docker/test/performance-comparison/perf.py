@@ -48,6 +48,10 @@ infinite_sign = root.find('.//average_speed_not_changing_for_ms')
 if infinite_sign is not None:
     raise Exception('Looks like the test is infinite (sign 1)')
 
+# Print report threshold for the test if it is set.
+if 'max_ignored_relative_change' in root.attrib:
+    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
+
 # Open connections
 servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
 connections = [clickhouse_driver.Client(**server) for server in servers]

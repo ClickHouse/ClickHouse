@@ -1,4 +1,3 @@
-{% highlight "bash" %}
 export LATEST_VERSION=$(curl -s https://repo.clickhouse.tech/tgz/stable/ | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 curl -O https://repo.clickhouse.tech/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
@@ -18,4 +17,3 @@ sudo /etc/init.d/clickhouse-server start
 
 tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
 sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
-{% endhighlight %}

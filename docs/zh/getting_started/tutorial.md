@@ -13,18 +13,12 @@ toc_title: "\u6559\u7A0B"
 
 ## 单节点设置 {#single-node-setup}
 
-为了推迟分布式环境的复杂性，我们将首先在单个服务器或虚拟机上部署ClickHouse。 ClickHouse通常是从安装 [黛布](index.md#install-from-deb-packages) 或 [rpm](index.md#from-rpm-packages) 包，但也有 [替代办法](index.md#from-docker-image) 对于不支持它们的操作系统。
+为了推迟分布式环境的复杂性，我们将首先在单个服务器或虚拟机上部署ClickHouse。 ClickHouse通常是从安装 [黛布](install.md#install-from-deb-packages) 或 [rpm](install.md#from-rpm-packages) 包，但也有 [替代办法](install.md#from-docker-image) 对于不支持它们的操作系统。
 
 例如，您选择了 `deb` 包和执行:
 
 ``` bash
-sudo apt-get install dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb http://repo.clickhouse.tech/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
+{% include 'install/deb.sh' %}
 ```
 
 我们在安装的软件包中有什么:
