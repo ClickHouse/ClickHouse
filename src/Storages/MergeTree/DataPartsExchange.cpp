@@ -1,6 +1,9 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 #include <IO/HTTPCommon.h>
 #include <ext/scope_guard.h>
 #include <Poco/File.h>
@@ -54,6 +57,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
     String part_name = params.get("part");
+    String part_type = params.get("part_type", "Wide"); // TODO: correct type with old versions
 
     const auto data_settings = data.getSettings();
 
@@ -84,24 +88,16 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     LOG_TRACE(log, "Sending part " << part_name);
 
     try
-    {
+    {   
         auto storage_lock = data.lockStructureForShare(
-                false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
+            false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
 
-        MergeTreeData::DataPartPtr part = findPart(part_name);
+        auto part = findPart(part_name);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
-        /// We'll take a list of files from the list of checksums.
-        MergeTreeData::DataPart::Checksums checksums = part->checksums;
-        /// Add files that are not in the checksum list.
-        checksums.files["checksums.txt"];
-        checksums.files["columns.txt"];
-
-        MergeTreeData::DataPart::Checksums data_checksums;
-
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
-            writeBinary(checksums.getTotalSizeOnDisk(), out);
+            writeBinary(part->checksums.getTotalSizeOnDisk(), out);
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
         {
@@ -110,37 +106,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
             writeBinary(ttl_infos_buffer.str(), out);
         }
 
-        writeBinary(checksums.files.size(), out);
-        for (const auto & it : checksums.files)
-        {
-            String file_name = it.first;
-
-            auto disk = part->disk;
-            String path = part->getFullRelativePath() + file_name;
-
-            UInt64 size = disk->getFileSize(path);
-
-            writeStringBinary(it.first, out);
-            writeBinary(size, out);
-
-            auto file_in = disk->readFile(path);
-            HashingWriteBuffer hashing_out(out);
-            copyData(*file_in, hashing_out, blocker.getCounter());
-
-            if (blocker.isCancelled())
-                throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
-
-            if (hashing_out.count() != size)
-                throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-
-            writePODBinary(hashing_out.getHash(), out);
-
-            if (file_name != "checksums.txt" &&
-                file_name != "columns.txt")
-                data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
-        }
-
-        part->checksums.checkEqual(data_checksums, false);
+        if (part_type == "InMemory")
+            sendPartFromMemory(part, out, storage_lock);
+        else
+            sendPartFromDisk(part, out, storage_lock);
     }
     catch (const NetException &)
     {
@@ -160,6 +129,61 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
 }
 
+void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, TableStructureReadLockHolder &)
+{
+    auto part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get());
+    if (!part_in_memory)
+        throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::NO_SUCH_DATA_PART); // TODO error code
+    
+    NativeBlockOutputStream block_out(out, 0, data.getSampleBlock());
+    block_out.write(part_in_memory->block);
+
+    // TODO send checksums
+}
+
+void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, TableStructureReadLockHolder &)
+{
+    /// We'll take a list of files from the list of checksums.
+    MergeTreeData::DataPart::Checksums checksums = part->checksums;
+    /// Add files that are not in the checksum list.
+    checksums.files["checksums.txt"];
+    checksums.files["columns.txt"];
+
+    MergeTreeData::DataPart::Checksums data_checksums;
+
+    writeBinary(checksums.files.size(), out);
+    for (const auto & it : checksums.files)
+    {
+        String file_name = it.first;
+
+        auto disk = part->disk;
+        String path = part->getFullRelativePath() + file_name;
+
+        UInt64 size = disk->getFileSize(path);
+
+        writeStringBinary(it.first, out);
+        writeBinary(size, out);
+
+        auto file_in = disk->readFile(path);
+        HashingWriteBuffer hashing_out(out);
+        copyData(*file_in, hashing_out, blocker.getCounter());
+
+        if (blocker.isCancelled())
+            throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+
+        if (hashing_out.count() != size)
+            throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+
+        writePODBinary(hashing_out.getHash(), out);
+
+        if (file_name != "checksums.txt" &&
+            file_name != "columns.txt")
+            data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
+    }
+
+    part->checksums.checkEqual(data_checksums, false);
+}
+
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
     /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
@@ -174,6 +198,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & part_name,
+    const String & part_type,
     const String & replica_path,
     const String & host,
     int port,
@@ -196,6 +221,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         {"endpoint",                getEndpointId(replica_path)},
         {"part",                    part_name},
+        {"part_type",               part_type},
         {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)},
         {"compress",                "false"}
     });
@@ -244,10 +270,48 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
 
-    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, replica_path, in)
+        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
 }
 
-MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
+    const String & part_name,
+    const String & /* replica_path */,
+    PooledReadWriteBufferFromHTTP & in)
+{
+    NativeBlockInputStream block_in(in, 0);
+    auto block = block_in.read();
+    MergeTreeData::MutableDataPartPtr new_data_part =
+        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, nullptr);
+
+    new_data_part->is_temp = true;
+    new_data_part->setColumns(block.getNamesAndTypesList());
+    new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
+
+    auto partition_block = block;
+    data.partition_key_expr->execute(partition_block);
+    auto & partition = new_data_part->partition.value;
+    size_t partition_columns_num = data.partition_key_sample.columns();
+    partition.resize(partition_columns_num);
+
+    for (size_t i = 0; i < partition_columns_num; ++i)
+    {
+        const auto & column_name = data.partition_key_sample.getByPosition(i).name;
+        const auto & partition_column = partition_block.getByName(column_name).column;
+        partition[i] = (*partition_column)[0];
+    }
+
+    MergedBlockOutputStream part_out(new_data_part, block.getNamesAndTypesList(), {}, nullptr);
+    part_out.writePrefix();
+    part_out.write(block);
+    part_out.writeSuffixAndFinalizePart(new_data_part);
+
+    // TODO validate checksums
+
+    return new_data_part;
+}
+
+MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & part_name,
     const String & replica_path,
     bool to_detached,

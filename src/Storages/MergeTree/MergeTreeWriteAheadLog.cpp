@@ -60,7 +60,7 @@ void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> & /*write_
     out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
     block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, storage.getSampleBlock());
     min_block_number = std::numeric_limits<Int64>::max();
-    max_block_number = 0;
+    max_block_number = std::numeric_limits<Int64>::min();
 }
 
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()

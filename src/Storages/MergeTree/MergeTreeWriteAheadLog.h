@@ -48,7 +48,7 @@ private:
     std::unique_ptr<NativeBlockOutputStream> block_out;
 
     Int64 min_block_number = std::numeric_limits<Int64>::max();
-    Int64 max_block_number = 0;
+    Int64 max_block_number = std::numeric_limits<Int64>::min();
 
     mutable std::mutex write_mutex;
 };
