@@ -10,7 +10,7 @@ DynamicProxyConfiguration::DynamicProxyConfiguration(std::vector<Poco::URI> _pro
 }
 
 
-Aws::Client::ClientConfigurationPerRequest DynamicProxyConfiguration::getConfiguration(const Aws::Http::HttpRequest &) const
+Aws::Client::ClientConfigurationPerRequest DynamicProxyConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
 {
     /// Avoid atomic increment if number of proxies is 1.
     size_t index = proxies.size() > 1 ? (access_counter++) % proxies.size() : 0;

@@ -35,7 +35,7 @@ namespace
 
     void checkRemoveAccess(IDisk & disk) { disk.remove("test_acl"); }
 
-    std::unique_ptr<S3::DynamicProxyConfiguration> getProxyConfiguration(const Poco::Util::AbstractConfiguration * config)
+    std::shared_ptr<S3::DynamicProxyConfiguration> getProxyConfiguration(const Poco::Util::AbstractConfiguration * config)
     {
         if (config->has("proxy"))
         {
@@ -59,7 +59,7 @@ namespace
                 }
 
             if (!proxies.empty())
-                return std::make_unique<S3::DynamicProxyConfiguration>(proxies);
+                return std::make_shared<S3::DynamicProxyConfiguration>(proxies);
         }
         return nullptr;
     }
@@ -73,7 +73,7 @@ void registerDiskS3(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       const Context & context) -> DiskPtr {
-        auto disk_config = config.createView(config_prefix);
+        const auto * disk_config = config.createView(config_prefix);
 
         Poco::File disk{context.getPath() + "disks/" + name};
         disk.createDirectories();
@@ -86,13 +86,9 @@ void registerDiskS3(DiskFactory & factory)
 
         cfg.endpointOverride = uri.endpoint;
 
-        auto proxy_configuration = getProxyConfiguration(disk_config);
-        if (proxy_configuration)
-        {
-            auto & configuration = *proxy_configuration;
-            cfg.perRequestConfiguration
-                = std::bind(&DB::S3::DynamicProxyConfiguration::getConfiguration, &configuration, std::placeholders::_1);
-        }
+        auto proxy_config = getProxyConfiguration(disk_config);
+        if (proxy_config)
+            cfg.perRequestConfiguration = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
 
         auto client = S3::ClientFactory::instance().create(
             cfg,
@@ -104,7 +100,7 @@ void registerDiskS3(DiskFactory & factory)
         auto s3disk = std::make_shared<DiskS3>(
             name,
             client,
-            std::move(proxy_configuration),
+            std::move(proxy_config),
             uri.bucket,
             uri.key,
             metadata_path,
