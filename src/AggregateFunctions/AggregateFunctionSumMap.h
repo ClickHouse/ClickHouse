@@ -50,8 +50,7 @@ struct AggregateFunctionSumMapData
   *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
   */
 
-template <typename T, typename Derived, bool overflow,
-    bool tuple_argument>
+template <typename T, typename Derived, bool overflow, bool tuple_argument>
 class AggregateFunctionSumMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>
 {
@@ -84,7 +83,7 @@ public:
                 result_type = value_type;
             }
             else
-            {    
+            {
                 // No overflow, meaning we promote the types if necessary.
                 if (!value_type->canBePromoted())
                 {
@@ -100,22 +99,21 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    void add(AggregateDataPtr place, const IColumn** _columns, const size_t row_num, Arena *) const override
+    static const auto & getArgumentColumns(const IColumn**& columns)
     {
-        std::conditional_t<tuple_argument,
-                const std::vector<ColumnTuple::WrappedPtr>,
-                const IColumn**> * columns_ptr;
-
         if constexpr (tuple_argument)
         {
-            columns_ptr = &static_cast<const ColumnTuple *>(_columns[0])->getColumns();
+            return assert_cast<const ColumnTuple *>(columns[0])->getColumns();
         }
         else
         {
-            columns_ptr = &_columns;
+            return columns;
         }
+    }
 
-        auto & columns = *columns_ptr;
+    void add(AggregateDataPtr place, const IColumn** _columns, const size_t row_num, Arena *) const override
+    {
+        const auto & columns = getArgumentColumns(_columns);
 
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
