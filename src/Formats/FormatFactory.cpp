@@ -91,6 +91,7 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
 static FormatSettings getOutputFormatSetting(const Settings & settings, const Context & context)
 {
     FormatSettings format_settings;
+    format_settings.enable_streaming = settings.output_format_enable_streaming;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
@@ -277,6 +278,10 @@ OutputFormatPtr FormatFactory::getOutputFormat(
       *  which only work with full columns.
       */
     auto format = output_getter(buf, sample, std::move(callback), format_settings);
+
+    /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
+    if (format_settings.enable_streaming)
+        format->setAutoFlush();
 
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
