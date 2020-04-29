@@ -161,8 +161,8 @@ function run_tests
         mv "$test_name-err.log" "$test_name-warn.log"
 
         grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
-        sed -n 's/^client-time/$test_name/p' < "$test_name-raw.tsv" >> "client-times.tsv"
-        sed -n 's/^threshold/$test_name/p' < "$test_name-raw.tsv" >> "report-thresholds.tsv"
+        sed -n "s/^client-time/$test_name/p" < "$test_name-raw.tsv" >> "client-times.tsv"
+        sed -n "s/^threshold/$test_name/p" < "$test_name-raw.tsv" >> "report-thresholds.tsv"
         skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
         if [ "$skipped" != "" ]
         then
@@ -183,11 +183,11 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        gdb -p $pid --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
-    for i in {1..10}
+    for _ in {1..10}
     do
         if ! pkill -f clickhouse
         then
@@ -230,7 +230,7 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv *-report.tsv ||:
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv ||:
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with 
@@ -246,14 +246,14 @@ do
     for query in $(cut -d'	' -f1 "$test_file" | sort | uniq)
     do
         query_prefix="$test_name.q$query_index"
-        query_index=$(($query_index + 1))
+        query_index=$((query_index + 1))
         grep -F "$query	" "$test_file" > "$query_prefix.tmp"
         printf "%s\0\n" \
             "clickhouse-local \
-                --file "$query_prefix.tmp" \
+                --file \"$query_prefix.tmp\" \
                 --structure 'query text, run int, version UInt32, time float' \
                 --query \"$(cat "$script_dir/eqmed.sql")\" \
-                >> "$test_name-report.tsv"" \
+                >> \"$test_name-report.tsv\"" \
                 2>> analyze-errors.log \
             >> analyze-commands.txt
     done
@@ -345,8 +345,8 @@ create table test_time engine Memory as
         minIf(client, not short) query_min,
         count(*) queries,
         sum(short) short_queries
-    from query_time, queries
-    where query_time.query = queries.query
+    from query_time full join queries
+    on query_time.query = queries.query
     group by test;
 
 create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
@@ -357,7 +357,7 @@ create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
         floor(query_max, 3),
         floor(real / queries, 3) avg_real_per_query,
         floor(query_min, 3)
-    from test_time join wall_clock using test
+    from test_time full join wall_clock using test
     order by avg_real_per_query desc;
 
 create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
