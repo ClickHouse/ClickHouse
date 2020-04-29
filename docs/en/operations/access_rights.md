@@ -37,7 +37,7 @@ If you just start using ClickHouse, you can use the following scenario:
 
 ### Properties of Current Solution {#access-control-properties}
 
-- You can grant permissions for databases and tables even if they are not exist.
+- You can grant permissions for databases and tables even if they do not exist.
 - If a table was deleted, all the privileges that correspond to this table are not revoked. So, if new table is created later with the same name all the privileges become again actual. To revoke privileges corresponding to the deleted table, you need to perform, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
 - There is no lifetime settings for privileges.
 
