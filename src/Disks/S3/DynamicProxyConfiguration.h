@@ -12,13 +12,13 @@ class DynamicProxyConfiguration
 public:
     explicit DynamicProxyConfiguration(std::vector<Poco::URI> _proxies);
     /// Returns proxy configuration on each HTTP request.
-    Aws::Client::ClientConfigurationPerRequest getConfiguration(const Aws::Http::HttpRequest & request) const;
+    Aws::Client::ClientConfigurationPerRequest getConfiguration(const Aws::Http::HttpRequest & request);
 
 private:
     /// List of configured proxies.
     const std::vector<Poco::URI> proxies;
     /// Access counter to get proxy using round-robin strategy.
-    mutable std::atomic<size_t> access_counter;
+    std::atomic<size_t> access_counter;
 };
 
 }
