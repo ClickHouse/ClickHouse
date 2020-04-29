@@ -19,9 +19,9 @@ Aws::Client::ClientConfigurationPerRequest DynamicProxyConfiguration::getConfigu
     cfg.proxyHost = proxies[index].getHost();
     cfg.proxyPort = proxies[index].getPort();
 
-	LOG_DEBUG(&Logger::get("AWSClient"), "Use proxy: " << proxies[index].toString());
+    LOG_DEBUG(&Logger::get("AWSClient"), "Use proxy: " << proxies[index].toString());
 
-	return cfg;
+    return cfg;
 }
 
 }
