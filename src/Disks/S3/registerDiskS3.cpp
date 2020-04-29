@@ -37,18 +37,29 @@ namespace
 
     std::unique_ptr<S3::DynamicProxyConfiguration> getProxyConfiguration(const Poco::Util::AbstractConfiguration * config)
     {
-        if (config->has("proxies"))
+        if (config->has("proxy"))
         {
             std::vector<String> keys;
-            config->keys("proxies", keys);
+            config->keys("proxy", keys);
 
             std::vector<Poco::URI> proxies;
             for (const auto & key : keys)
                 if (startsWith(key, "uri"))
-                    proxies.emplace_back(config->getString("proxies." + key));
+                {
+                    Poco::URI proxy_uri(config->getString("proxy." + key));
+
+                    if (proxy_uri.getScheme() != "http")
+                        throw Exception("Only HTTP scheme is allowed in proxy configuration at the moment, proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                    if (proxy_uri.getHost().empty())
+                        throw Exception("Empty host in proxy configuration, proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+
+                    proxies.push_back(proxy_uri);
+
+                    LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: " << proxy_uri.toString());
+                }
 
             if (!proxies.empty())
-                return std::make_unique<DB::S3::DynamicProxyConfiguration>(proxies);
+                return std::make_unique<S3::DynamicProxyConfiguration>(proxies);
         }
         return nullptr;
     }
