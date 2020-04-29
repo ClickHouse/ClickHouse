@@ -9,7 +9,6 @@
 
 namespace DB
 {
-
 namespace MySQLReplication
 {
     using namespace MySQLProtocol;
@@ -84,7 +83,7 @@ namespace MySQLReplication
         virtual void dump() = 0;
     };
 
-    class EventHeader : public IBinlogEvent
+    class EventHeader
     {
     public:
         UInt32 timestamp;
@@ -97,8 +96,8 @@ namespace MySQLReplication
         EventHeader() = default;
         ~EventHeader() = default;
 
-        void parse(ReadBuffer & payload) override ;
-        void dump() override ;
+        void parse(ReadBuffer & payload);
+        void dump() ;
     };
 
     class FormatDescriptionEvent : public IBinlogEvent
@@ -111,11 +110,11 @@ namespace MySQLReplication
         String event_type_header_length;
 
         FormatDescriptionEvent() = default;
-        ~FormatDescriptionEvent() = default;
+        ~FormatDescriptionEvent() override = default;
 
         EventType type() override { return FORMAT_DESCRIPTION_EVENT; }
         void parse(ReadBuffer & payload) override;
-        void dump() override ;
+        void dump() override;
     };
 
     class RotateEvent : public IBinlogEvent
@@ -125,11 +124,11 @@ namespace MySQLReplication
         String next_binlog;
 
         RotateEvent() = default;
-        ~RotateEvent() = default;
+        ~RotateEvent() override = default;
 
         EventType type() override { return ROTATE_EVENT; }
         void parse(ReadBuffer & payload) override;
-        void dump() override ;
+        void dump() override;
     };
 
     class IFlavor
@@ -146,7 +145,7 @@ namespace MySQLReplication
         BinlogEventPtr event;
 
         MySQLFlavor() = default;
-        ~MySQLFlavor() = default;
+        ~MySQLFlavor() override = default;
 
         String getName() override { return "MySQL"; }
         void readPayloadImpl(ReadBuffer & payload) override;

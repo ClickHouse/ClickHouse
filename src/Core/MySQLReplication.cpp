@@ -80,18 +80,17 @@ void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     switch (event_header.type)
     {
         case FORMAT_DESCRIPTION_EVENT: {
-            event = std::make_shared<FormatDescriptionEvent>(FormatDescriptionEvent());
+            event = std::make_shared<FormatDescriptionEvent>();
             event->parse(payload);
             break;
         }
         case ROTATE_EVENT: {
-            event = std::make_shared<RotateEvent>(RotateEvent());
+            event = std::make_shared<RotateEvent>();
             event->parse(payload);
             break;
         }
         default:
-            throw ReplicationError("Unsupported event: " + event_header.type, ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-            break;
+            throw ReplicationError("Unsupported event: " + std::to_string(event_header.type), ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 }
 
