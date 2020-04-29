@@ -698,7 +698,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     }
     /// If the query is CREATE LIVE VIEW [db.]table TO [db.]target_table,
     /// then trigger ALTER LIVE VIEW [db.]table REFRESH to cause the target table prepopulation
-    if (!create.attach && create.is_live_view && !create.to_table_id.empty())
+    if (!create.attach && create.is_live_view && (!create.to_table_id.empty() || create.to_table_function))
     {
         auto alter = std::make_shared<ASTAlterQuery>();
         alter->is_live_view = true;

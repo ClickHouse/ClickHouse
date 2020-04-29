@@ -67,6 +67,7 @@ public:
     ASTExpressionList * tables = nullptr;
     //FIXME
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
+    ASTPtr to_table_function;    /// FOR CREATE LIVE VIEW lv TO [TABLE] FUNCTION table
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;

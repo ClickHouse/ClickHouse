@@ -486,6 +486,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_function("FUNCTION");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -493,9 +495,11 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
+    ParserFunction table_function_p{false};
 
     ASTPtr table;
     ASTPtr to_table;
+    ASTPtr to_table_function;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -542,8 +546,18 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     // TO [db.]table
     if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
-        if (!table_name_p.parse(pos, to_table, expected))
-            return false;
+        s_table.ignore(pos, expected);
+
+        if (s_function.ignore(pos, expected))
+        {
+            if (!table_function_p.parse(pos, to_table_function, expected))
+                return false;
+        }
+        else
+        {
+            if (!table_name_p.parse(pos, to_table, expected))
+                return false;
+        }
     }
 
     /// Optional - a list of columns can be specified. It must fully comply with SELECT.
@@ -577,7 +591,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    if (to_table)
+    if (to_table_function)
+        query->to_table_function = to_table_function;
+    else if (to_table)
         query->to_table_id = getTableIdentifier(to_table);
 
     query->set(query->columns_list, columns_list);

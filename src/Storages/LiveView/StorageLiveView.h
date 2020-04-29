@@ -13,6 +13,7 @@ limitations under the License. */
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -67,7 +68,7 @@ public:
     }
     ASTPtr getInnerBlocksQuery();
 
-    StoragePtr tryGetTargetTable() const;
+    StoragePtr tryGetTargetTable(const Context & context) const;
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -85,7 +86,7 @@ public:
     /// must be called with mutex locked
     bool hasActiveUsers()
     {
-        return active_ptr.use_count() > 1 || !target_table_id.empty();
+        return active_ptr.use_count() > 1 || !target_table_id.empty() || target_table_function;
     }
     /// No users thread mutex, predicate and wake up condition
     void startNoUsersThread(const UInt64 & timeout);
@@ -169,6 +170,7 @@ public:
 private:
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
+    ASTPtr target_table_function = nullptr;
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result

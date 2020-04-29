@@ -25,6 +25,7 @@ limitations under the License. */
 #include <DataStreams/copyData.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewBlockInputStream.h>
@@ -264,7 +265,8 @@ StorageLiveView::StorageLiveView(
     auto inner_query_tmp = inner_query->clone();
     select_table_id = extractDependentTable(inner_query_tmp, global_context, table_id_.table_name, inner_subquery);
     target_table_id = query.to_table_id;
-
+    if (query.to_table_function)
+        target_table_function = query.to_table_function->clone();
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     if (query.live_view_timeout)
@@ -278,9 +280,16 @@ StorageLiveView::StorageLiveView(
     active_ptr = std::make_shared<bool>(true);
 }
 
-StoragePtr StorageLiveView::tryGetTargetTable() const
+StoragePtr StorageLiveView::tryGetTargetTable(const Context & context) const
 {
-    if (!target_table_id.empty())
+    if (target_table_function)
+    {
+        const auto * table_function = target_table_function->as<ASTFunction>();
+        const auto & factory = TableFunctionFactory::instance();
+        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+        return table_function_ptr->execute(target_table_function, context, table_function_ptr->getName());
+    }
+    else if (!target_table_id.empty())
         return DatabaseCatalog::instance().tryGetTable(target_table_id);
     return {};
 }
@@ -340,14 +349,18 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
 
 void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
 {
-    auto target_table_storage = tryGetTargetTable();
+    auto target_table_storage = tryGetTargetTable(context);
+
     if (target_table_storage)
     {
         auto lock = target_table_storage->lockStructureForShare(
             true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        auto target_table_stream = target_table_storage->write(getInnerQuery(), context);
+
         auto query_context = const_cast<Context &>(context);
         query_context.setSetting("output_format_enable_streaming", 1);
+
+        auto target_table_stream = target_table_storage->write(getInnerQuery(), query_context);
+
         target_table_stream->writePrefix();
 
         BlocksPtr blocks;
@@ -359,6 +372,7 @@ void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
             for (auto & block : *blocks)
                 target_table_stream->write(block);
         }
+
         target_table_stream->writeSuffix();
     }
 }
@@ -553,7 +567,8 @@ void StorageLiveView::drop()
 
 void StorageLiveView::refresh(const Context & context)
 {
-    auto alter_lock = lockAlterIntention(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = lockAlterIntention(
+        context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     {
         std::lock_guard lock(mutex);
         if (getNewBlocks(context))

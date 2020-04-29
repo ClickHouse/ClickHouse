@@ -13,16 +13,18 @@ class LiveViewBlockOutputStream : public IBlockOutputStream
 public:
     explicit LiveViewBlockOutputStream(StorageLiveView & storage_, const Context & context) : storage(storage_) 
     {
-        auto target_table_storage = storage.tryGetTargetTable();
+        auto target_table_storage = storage.tryGetTargetTable(context);
         if (target_table_storage)
         {
             auto lock = target_table_storage->lockStructureForShare(
                 true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            target_table_stream = target_table_storage->write(storage.getInnerQuery(), context);
-            target_table_stream->addTableLock(lock);
+
             auto query_context = const_cast<Context &>(context);
             query_context.setSetting("output_format_enable_streaming", 1);
-        }
+
+            target_table_stream = target_table_storage->write(storage.getInnerQuery(), query_context);
+            target_table_stream->addTableLock(lock);
+	}
     }
 
     void writePrefix() override
