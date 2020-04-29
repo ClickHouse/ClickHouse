@@ -162,7 +162,6 @@ int main(int, char **)
     }
 
     {
-        /*
         UInt32 slave_id = 9004;
         MySQLClient slave("127.0.0.1", 9001, "default", "123");
         if (!slave.connect())
@@ -189,7 +188,6 @@ int main(int, char **)
             event->dump();
             ASSERT(event != nullptr)
         }
-         */
     }
     return 0;
 }

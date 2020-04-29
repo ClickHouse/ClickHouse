@@ -2,11 +2,6 @@
 
 namespace DB::MySQLReplication
 {
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int UNEXPECTED_PACKET_FROM_SERVER;
-}
 
 /// https://dev.mysql.com/doc/internals/en/binlog-event-header.html
 void EventHeader::parse(ReadBuffer & payload)
@@ -43,6 +38,7 @@ void FormatDescriptionEvent::parse(ReadBuffer & payload)
 
 void FormatDescriptionEvent::dump()
 {
+    header.dump();
     std::cerr << "=== FormatDescriptionEvent ===" << std::endl;
 }
 
@@ -55,6 +51,7 @@ void RotateEvent::parse(ReadBuffer & payload)
 
 void RotateEvent::dump()
 {
+    header.dump();
     std::cerr << "=== RotateEvent ===" << std::endl;
     std::cerr << "Position: " << this->position << std::endl;
     std::cerr << "Next Binlog: " << this->next_binlog << std::endl;
@@ -82,15 +79,17 @@ void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
         case FORMAT_DESCRIPTION_EVENT: {
             event = std::make_shared<FormatDescriptionEvent>();
             event->parse(payload);
+            event->setHeader(event_header);
             break;
         }
         case ROTATE_EVENT: {
             event = std::make_shared<RotateEvent>();
             event->parse(payload);
+            event->setHeader(event_header);
             break;
         }
         default:
-            throw ReplicationError("Unsupported event: " + std::to_string(event_header.type), ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            throw ReplicationError("Unsupported event: " + std::to_string(event_header.type), ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 

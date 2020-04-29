@@ -73,16 +73,6 @@ namespace MySQLReplication
         using Exception::Exception;
     };
 
-    class IBinlogEvent
-    {
-    public:
-        virtual ~IBinlogEvent() = default;
-
-        virtual EventType type() { return UNKNOW_EVENT; }
-        virtual void parse(ReadBuffer & payload) = 0;
-        virtual void dump() = 0;
-    };
-
     class EventHeader
     {
     public:
@@ -97,7 +87,22 @@ namespace MySQLReplication
         ~EventHeader() = default;
 
         void parse(ReadBuffer & payload);
-        void dump() ;
+        void dump();
+    };
+
+    class IBinlogEvent
+    {
+    public:
+        virtual ~IBinlogEvent() = default;
+
+        virtual void dump() = 0;
+        virtual void parse(ReadBuffer & payload) = 0;
+
+        EventType type() { return header.type; }
+        void setHeader(EventHeader header_) { header = header_; }
+
+    protected:
+        EventHeader header;
     };
 
     class FormatDescriptionEvent : public IBinlogEvent
@@ -112,9 +117,8 @@ namespace MySQLReplication
         FormatDescriptionEvent() = default;
         ~FormatDescriptionEvent() override = default;
 
-        EventType type() override { return FORMAT_DESCRIPTION_EVENT; }
-        void parse(ReadBuffer & payload) override;
         void dump() override;
+        void parse(ReadBuffer & payload) override;
     };
 
     class RotateEvent : public IBinlogEvent
@@ -126,9 +130,8 @@ namespace MySQLReplication
         RotateEvent() = default;
         ~RotateEvent() override = default;
 
-        EventType type() override { return ROTATE_EVENT; }
-        void parse(ReadBuffer & payload) override;
         void dump() override;
+        void parse(ReadBuffer & payload) override;
     };
 
     class IFlavor
