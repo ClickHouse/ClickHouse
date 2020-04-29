@@ -166,9 +166,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
             auto & first_path = paths[0];
             Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
-            StorageInMemoryMetadata meta = *getInMemoryMetadata();
-            meta.setColumns(ColumnsDescription(header.getNamesAndTypesList()));
-            setInMemoryMetadata(meta);
+            setColumns(ColumnsDescription(header.getNamesAndTypesList()));
         }
     }
 }
@@ -191,11 +189,7 @@ StorageFile::StorageFile(CommonArguments args)
     , base_path(args.context.getPath())
 {
     if (args.format_name != "Distributed")
-    {
-        StorageInMemoryMetadata meta = *getInMemoryMetadata();
-        meta.setColumns(args.columns);
-        setInMemoryMetadata(meta);
-    }
+        setColumns(args.columns);
 
     setConstraints(args.constraints);
 }

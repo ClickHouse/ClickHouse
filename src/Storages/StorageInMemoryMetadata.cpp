@@ -344,5 +344,4 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-
 }

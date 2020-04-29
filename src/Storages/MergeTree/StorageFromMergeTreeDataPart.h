@@ -67,7 +67,7 @@ protected:
         : IStorage(getIDFromPart(part_))
         , part(part_)
     {
-        setInMemoryMetadata(*part_->storage.getInMemoryMetadata());
+        setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());
     }
 

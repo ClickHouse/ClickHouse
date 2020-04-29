@@ -77,9 +77,7 @@ StorageBuffer::StorageBuffer(
     , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
-    StorageInMemoryMetadata meta;
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
     setConstraints(constraints_);
 }
 
@@ -795,7 +793,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadata();
     params.apply(new_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
+    setColumns(std::move(new_metadata.columns));
 }
 
 

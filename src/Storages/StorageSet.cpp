@@ -101,9 +101,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const Context & context_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
     setConstraints(constraints_);
 
     if (relative_path_.empty())

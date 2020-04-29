@@ -337,9 +337,7 @@ StorageTinyLog::StorageTinyLog(
     , file_checker(disk, table_path + "sizes.json")
     , log(&Logger::get("StorageTinyLog"))
 {
-    StorageInMemoryMetadata meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
     setConstraints(constraints_);
 
     if (relative_path_.empty())

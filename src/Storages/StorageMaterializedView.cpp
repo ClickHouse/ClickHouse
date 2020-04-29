@@ -102,9 +102,7 @@ StorageMaterializedView::StorageMaterializedView(
     bool attach_)
     : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
-    StorageInMemoryMetadata current_metadata;
-    current_metadata.setColumns(columns_);
-    setInMemoryMetadata(current_metadata);
+    setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -156,15 +154,14 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
-
-    setInMemoryMetadata(getInMemoryMetadataImpl());
 }
 
-StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadataImpl() const
+
+StorageMetadataPtr StorageMaterializedView::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
     result.select = getSelectQuery();
-    return result;
+    return std::make_shared<const StorageInMemoryMetadata>(result);
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
@@ -285,7 +282,7 @@ void StorageMaterializedView::alter(
     }
     /// end modify query
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
+    setColumns(std::move(new_metadata.columns));
 }
 
 

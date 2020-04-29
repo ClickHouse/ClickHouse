@@ -3302,14 +3302,13 @@ void StorageReplicatedMergeTree::alter(
                 table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
-        StorageInMemoryMetadata metadata = *getInMemoryMetadata();
+        auto metadata = *getInMemoryMetadata();
         params.apply(metadata);
 
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
-        setInMemoryMetadata(metadata);
         return;
     }
 

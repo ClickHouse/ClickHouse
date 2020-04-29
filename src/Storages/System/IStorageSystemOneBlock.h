@@ -23,10 +23,7 @@ protected:
 public:
     IStorageSystemOneBlock(const String & name_) : IStorage({"system", name_})
     {
-        /// TODO (dumb name)
-        auto meta = *getInMemoryMetadata();
-        meta.setColumns(ColumnsDescription(Self::getNamesAndTypes()));
-        setInMemoryMetadata(meta);
+        setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
     Pipes read(

@@ -224,10 +224,7 @@ StorageStripeLog::StorageStripeLog(
     , file_checker(disk, table_path + "sizes.json")
     , log(&Logger::get("StorageStripeLog"))
 {
-
-    auto meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
     setConstraints(constraints_);
 
     if (relative_path_.empty())

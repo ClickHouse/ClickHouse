@@ -23,7 +23,7 @@ public:
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     bool hasInnerTable() const { return has_inner_table; }
 
-    StorageInMemoryMetadata getInMemoryMetadataImpl() const;
+    StorageMetadataPtr getInMemoryMetadata() const override;
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }

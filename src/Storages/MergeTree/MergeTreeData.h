@@ -331,7 +331,7 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 
-    StorageInMemoryMetadata getInMemoryMetadataImpl() const;
+    StorageMetadataPtr getInMemoryMetadata() const override;
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }

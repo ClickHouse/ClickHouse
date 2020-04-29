@@ -33,8 +33,6 @@ namespace ErrorCodes
 
 IStorage::IStorage(StorageID storage_id_)
     : storage_id(std::move(storage_id_))
-    , metadata(
-        std::make_unique<StorageInMemoryMetadata>(ColumnsDescription{}, IndicesDescription{}, ConstraintsDescription{}))
 {
 }
 
@@ -288,20 +286,13 @@ void IStorage::check(const Block & block, bool need_all) const
     }
 }
 
-//void IStorage::setColumns(ColumnsDescription columns_)
-//{
-//    if (columns_.getOrdinary().empty())
-//        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-//    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
-//
-//    columns = std::move(columns_);
-//
-//    for (const auto & column : old_virtuals)
-//    {
-//        if (!columns.has(column.name))
-//            columns.add(column);
-//    }
-//}
+void IStorage::setColumns(ColumnsDescription columns_)
+{
+    if (columns_.getOrdinary().empty())
+        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+    columns = std::move(columns_);
+}
 
 void IStorage::setIndices(IndicesDescription indices_)
 {
@@ -383,12 +374,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
 
 StorageMetadataPtr IStorage::getInMemoryMetadata() const
 {
-    return metadata.get();
-}
-
-void IStorage::setInMemoryMetadata(StorageInMemoryMetadata new_metadata)
-{
-    metadata.set(std::make_unique<const StorageInMemoryMetadata>(std::move(new_metadata)));
+    return std::make_shared<const StorageInMemoryMetadata>(getColumns(), getIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -401,7 +387,7 @@ void IStorage::alter(
     auto current_metadata = *getInMemoryMetadata();
     params.apply(current_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, current_metadata);
-    setInMemoryMetadata(current_metadata);
+    setColumns(std::move(current_metadata.columns));
 }
 
 

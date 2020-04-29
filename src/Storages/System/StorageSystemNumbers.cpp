@@ -118,9 +118,7 @@ private:
 StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
     : IStorage(table_id), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
 {
-    auto meta = *getInMemoryMetadata();
-    meta.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
-    setInMemoryMetadata(meta);
+    setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
 
 Pipes StorageSystemNumbers::read(

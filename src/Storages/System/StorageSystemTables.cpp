@@ -33,8 +33,7 @@ namespace ErrorCodes
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : IStorage({"system", name_})
 {
-    auto meta = *getInMemoryMetadata();
-    meta.setColumns(ColumnsDescription(
+    setColumns(ColumnsDescription(
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
@@ -56,7 +55,6 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
-    setInMemoryMetadata(meta);
 }
 
 

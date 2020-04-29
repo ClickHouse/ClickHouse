@@ -54,7 +54,7 @@ void StorageNull::alter(
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadata();
     params.apply(new_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
+    setColumns(std::move(new_metadata.columns));
 }
 
 }

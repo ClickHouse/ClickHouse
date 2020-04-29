@@ -12,9 +12,7 @@ namespace DB
 StorageValues::StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_)
     : IStorage(table_id_), res_block(res_block_)
 {
-    auto meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
 }
 
 Pipes StorageValues::read(

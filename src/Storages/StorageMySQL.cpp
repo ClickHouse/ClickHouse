@@ -56,9 +56,7 @@ StorageMySQL::StorageMySQL(
     , pool(std::move(pool_))
     , global_context(context_)
 {
-    auto meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
     setConstraints(constraints_);
 }
 

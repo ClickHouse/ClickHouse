@@ -101,9 +101,7 @@ StorageKafka::StorageKafka(
 {
     kafka_context.makeQueryContext();
 
-    StorageInMemoryMetadata meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 }

@@ -433,9 +433,7 @@ StorageLog::StorageLog(
     , max_compress_block_size(max_compress_block_size_)
     , file_checker(disk, table_path + "sizes.json")
 {
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns_);
-    setInMemoryMetadata(metadata);
+    setColumns(columns_);
     setConstraints(constraints_);
 
     if (relative_path_.empty())

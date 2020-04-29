@@ -56,9 +56,7 @@ StorageMerge::StorageMerge(
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
 {
-    StorageInMemoryMetadata meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
 }
 
 template <typename F>
@@ -417,7 +415,7 @@ void StorageMerge::alter(
     StorageInMemoryMetadata storage_metadata = *getInMemoryMetadata();
     params.apply(storage_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, storage_metadata);
-    setInMemoryMetadata(storage_metadata);
+    setColumns(storage_metadata.columns);
 }
 
 Block StorageMerge::getQueryHeader(

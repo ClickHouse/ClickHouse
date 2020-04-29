@@ -84,9 +84,7 @@ private:
 StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_)
     : IStorage(table_id_), multithreaded(multithreaded_), limit(limit_)
 {
-    auto meta = *getInMemoryMetadata();
-    meta.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
-    setInMemoryMetadata(meta);
+    setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
 }
 
 Pipes StorageSystemZeros::read(

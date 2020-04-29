@@ -244,11 +244,10 @@ MergeTreeData::MergeTreeData(
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
-    setInMemoryMetadata(getInMemoryMetadataImpl());
 }
 
 
-StorageInMemoryMetadata MergeTreeData::getInMemoryMetadataImpl() const
+StorageMetadataPtr MergeTreeData::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
@@ -270,7 +269,7 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadataImpl() const
     if (settings_ast)
         metadata.settings_ast = settings_ast->clone();
 
-    return metadata;
+    return std::make_shared<const StorageInMemoryMetadata>(metadata);
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -463,7 +462,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
 
     if (!only_check)
     {
-        setInMemoryMetadata(metadata);
+        setColumns(std::move(metadata.columns));
 
         order_by_ast = metadata.order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);

@@ -37,9 +37,7 @@ StorageView::StorageView(
     const ColumnsDescription & columns_)
     : IStorage(table_id_)
 {
-    StorageInMemoryMetadata meta = *getInMemoryMetadata();
-    meta.setColumns(columns_);
-    setInMemoryMetadata(meta);
+    setColumns(columns_);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);

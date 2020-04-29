@@ -60,7 +60,7 @@ try
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, table->getInMemoryMetadata(), {}, context, stage, 8192, 1)[0]));
     in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(modulo(number, 3), 1)");
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 

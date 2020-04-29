@@ -305,10 +305,8 @@ StorageDistributed::StorageDistributed(
     , storage_policy(storage_policy_)
     , relative_data_path(relative_data_path_)
 {
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(columns_);
+    setColumns(columns_);
     setConstraints(constraints_);
-    setInMemoryMetadata(metadata);
 
     if (sharding_key_)
     {
@@ -555,7 +553,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadata();
     params.apply(new_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
-    setInMemoryMetadata(new_metadata);
+    setColumns(std::move(new_metadata.columns));
 }
 
 

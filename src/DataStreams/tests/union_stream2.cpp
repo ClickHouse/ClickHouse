@@ -38,7 +38,7 @@ try
     StoragePtr table = DatabaseCatalog::instance().getTable({"default", "hits6"});
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
-    auto pipes = table->read(column_names, {}, context, stage, settings.max_block_size, settings.max_threads);
+    auto pipes = table->read(column_names, table->getInMemoryMetadata(), {}, context, stage, settings.max_block_size, settings.max_threads);
 
     BlockInputStreams streams(pipes.size());
 
