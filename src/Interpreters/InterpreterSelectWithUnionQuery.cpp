@@ -121,6 +121,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     }
     options.ignore_limits |= all_nested_ignore_limits;
     options.ignore_quota |= all_nested_ignore_quota;
+
 }
 
 
