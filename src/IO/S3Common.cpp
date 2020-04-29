@@ -66,7 +66,7 @@ namespace S3
 {
     ClientFactory::ClientFactory()
     {
-        aws_options = Aws::SDKOptions {};
+        aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
     }
@@ -110,7 +110,7 @@ namespace S3
         );
     }
 
-URI::URI(const Poco::URI & uri_)
+    URI::URI(const Poco::URI & uri_)
     {
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)

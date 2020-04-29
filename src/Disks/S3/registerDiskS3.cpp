@@ -95,7 +95,9 @@ void registerDiskS3(DiskFactory & factory)
         }
 
         auto client = S3::ClientFactory::instance().create(
-            cfg, disk_config->getString("access_key_id", ""), disk_config->getString("secret_access_key", ""));
+            cfg,
+            disk_config->getString("access_key_id", ""),
+            disk_config->getString("secret_access_key", ""));
 
         String metadata_path = context.getPath() + "disks/" + name + "/";
 
