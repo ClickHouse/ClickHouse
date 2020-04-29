@@ -295,8 +295,7 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         reports.test,
-        -- Truncate long queries.
-        if(length(query) < 300, query, substr(query, 1, 298) || '...') query
+        query
     from
         (
             select *,
@@ -357,7 +356,10 @@ create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
         floor(query_max, 3),
         floor(real / queries, 3) avg_real_per_query,
         floor(query_min, 3)
-    from test_time full join wall_clock using test
+    from test_time
+        -- wall clock times are also measured for skipped tests, so don't
+        -- do full join
+        left join wall_clock using test
     order by avg_real_per_query desc;
 
 create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
