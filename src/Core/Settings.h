@@ -178,6 +178,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingString, count_distinct_implementation, "uniqExact", "What aggregate function to use for implementation of count(DISTINCT ...)", 0) \
     \
+    M(SettingBool, output_format_enable_streaming, false, "Enable streaming in output formats that support it.", 0) \
     M(SettingBool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0) \
     \
     M(SettingBool, add_http_cors_header, false, "Write add http CORS header.", 0) \
