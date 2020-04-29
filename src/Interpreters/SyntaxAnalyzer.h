@@ -51,11 +51,11 @@ struct SyntaxAnalyzerResult
 
     bool maybe_optimize_trivial_count = false;
 
-    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_virtuals = true)
+    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_special = true)
         : storage(storage_)
         , source_columns(source_columns_)
     {
-        collectSourceColumns(add_virtuals);
+        collectSourceColumns(add_special);
     }
 
     void collectSourceColumns(bool add_virtuals);
