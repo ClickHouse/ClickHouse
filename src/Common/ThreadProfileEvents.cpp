@@ -26,23 +26,21 @@ std::unique_ptr<TasksStatsCounters> TasksStatsCounters::create(const UInt64 tid)
 
 TasksStatsCounters::MetricsProvider TasksStatsCounters::findBestAvailableProvider()
 {
-    static std::optional<MetricsProvider> provider;
+    /// This initialization is thread-safe and executed once since C++11
+    static std::optional<MetricsProvider> provider =
+        []() -> MetricsProvider
+        {
+            if (TaskStatsInfoGetter::checkPermissions())
+            {
+                return MetricsProvider::Netlink;
+            }
+            else if (ProcfsMetricsProvider::isAvailable())
+            {
+                return MetricsProvider::Procfs;
+            }
+            return MetricsProvider::None;
+        }();
 
-    if (!provider)
-    {
-        if (TaskStatsInfoGetter::checkPermissions())
-        {
-            provider = MetricsProvider::Netlink;
-        }
-        else if (ProcfsMetricsProvider::isAvailable())
-        {
-            provider = MetricsProvider::Procfs;
-        }
-        else
-        {
-            provider = MetricsProvider::None;
-        }
-    }
     return *provider;
 }
 
