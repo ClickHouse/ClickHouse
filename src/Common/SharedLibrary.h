@@ -3,7 +3,9 @@
 #include <dlfcn.h>
 #include <memory>
 #include <string>
+#include <mutex>
 #include <boost/noncopyable.hpp>
+#include <unordered_map>
 
 
 namespace DB
@@ -35,6 +37,23 @@ private:
     void * handle = nullptr;
 };
 
-using SharedLibraryPtr = std::shared_ptr<SharedLibrary>;
+using SharedLibrarySharedPtr = std::shared_ptr<SharedLibrary>;
+using SharedLibraryPtr = SharedLibrary *;
+
+class SharedLibraryFactory : private boost::noncopyable
+{
+private:
+    using SORegistry = std::unordered_map<std::string, SharedLibrarySharedPtr>;
+    SORegistry libraries;
+    std::mutex libraries_mutex;
+public:
+    static SharedLibraryFactory & instance();
+
+    SharedLibraryPtr get(const std::string & path, int flags = RTLD_LAZY);
+
+    bool tryUnload(const std::string & path);
+
+    void unloadAll();
+};
 
 }

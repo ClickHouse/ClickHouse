@@ -439,7 +439,12 @@ private:
 class CatBoostLibHolder: public CatBoostWrapperAPIProvider
 {
 public:
-    explicit CatBoostLibHolder(std::string lib_path_) : lib_path(std::move(lib_path_)), lib(lib_path) { initAPI(); }
+    explicit CatBoostLibHolder(std::string lib_path_)
+        : lib_path(std::move(lib_path_))
+    {
+        lib = SharedLibraryFactory::instance().get(lib_path);
+        initAPI();
+    }
 
     const CatBoostWrapperAPI & getAPI() const override { return api; }
     const std::string & getCurrentPath() const { return lib_path; }
@@ -447,15 +452,15 @@ public:
 private:
     CatBoostWrapperAPI api;
     std::string lib_path;
-    SharedLibrary lib;
+    SharedLibraryPtr lib;
 
     void initAPI();
 
     template <typename T>
-    void load(T& func, const std::string & name) { func = lib.get<T>(name); }
+    void load(T& func, const std::string & name) { func = lib->get<T>(name); }
 
     template <typename T>
-    void tryLoad(T& func, const std::string & name) { func = lib.tryGet<T>(name); }
+    void tryLoad(T& func, const std::string & name) { func = lib->tryGet<T>(name); }
 };
 
 void CatBoostLibHolder::initAPI()

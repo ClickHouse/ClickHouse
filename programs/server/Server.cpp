@@ -60,6 +60,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
+#include <Common/SharedLibrary.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <common/config_common.h>
@@ -1004,6 +1005,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             dns_cache_updater.reset();
             main_config_reloader.reset();
             users_config_reloader.reset();
+            SharedLibraryFactory::instance().unloadAll();
 
             if (current_connections)
             {

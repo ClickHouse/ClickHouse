@@ -46,4 +46,39 @@ void * SharedLibrary::getImpl(const std::string & name, bool no_throw)
 
     return res;
 }
+
+SharedLibraryFactory & SharedLibraryFactory::instance()
+{
+    static SharedLibraryFactory ret;
+    return ret;
+}
+
+
+SharedLibraryPtr SharedLibraryFactory::get(const std::string & path, int flags)
+{
+    std::lock_guard lock(libraries_mutex);
+    if (!libraries.count(path))
+        libraries[path] = std::make_shared<SharedLibrary>(path, flags);
+
+    return libraries[path].get();
+}
+
+
+bool SharedLibraryFactory::tryUnload(const std::string & path)
+{
+    std::lock_guard lock(libraries_mutex);
+    if (libraries.count(path))
+    {
+        libraries.erase(path);
+        return true;
+    }
+    return false;
+}
+
+void SharedLibraryFactory::unloadAll()
+{
+    std::lock_guard lock(libraries_mutex);
+    libraries.clear();
+}
+
 }

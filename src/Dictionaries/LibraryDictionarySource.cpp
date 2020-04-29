@@ -145,7 +145,7 @@ LibraryDictionarySource::LibraryDictionarySource(
             ErrorCodes::FILE_DOESNT_EXIST);
 
     description.init(sample_block);
-    library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
+    library = SharedLibraryFactory::instance().get(path, RTLD_LAZY
 #if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
         | RTLD_DEEPBIND
 #endif
