@@ -300,10 +300,10 @@ Example:
 ``` xml
 <http_handlers>
     <rule>
-        <url>/predefine_query</url>
+        <url>/predefined_query</url>
         <methods>POST,GET</methods>
         <handler>
-            <type>predefine_query_handler</type>
+            <type>predefined_query_handler</type>
             <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
         </handler>
     </rule>
@@ -316,10 +316,10 @@ Example:
 * You can now request the url directly for data in the Prometheus format:
 
 ``` bash
-$ curl -v 'http://localhost:8123/predefine_query'
+$ curl -v 'http://localhost:8123/predefined_query'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
-> GET /predefine_query HTTP/1.1
+> GET /predefined_query HTTP/1.1
 > Host: localhost:8123
 > User-Agent: curl/7.47.0
 > Accept: */*
@@ -407,7 +407,7 @@ Example:
 		    <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
 		</headers>
 		<handler>
-            <type>predefine_query_handler</type>
+            <type>predefined_query_handler</type>
 		    <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
 		    <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
 		</handler>
