@@ -28,6 +28,7 @@
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
@@ -698,7 +699,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -718,24 +719,19 @@ void Context::setCurrentRolesDefault()
     calculateAccessRights();
 }
 
-std::vector<UUID> Context::getCurrentRoles() const
+boost::container::flat_set<UUID> Context::getCurrentRoles() const
 {
-    return getAccess()->getCurrentRoles();
+    return getRolesInfo()->current_roles;
 }
 
-Strings Context::getCurrentRolesNames() const
+boost::container::flat_set<UUID> Context::getEnabledRoles() const
 {
-    return getAccess()->getCurrentRolesNames();
+    return getRolesInfo()->enabled_roles;
 }
 
-std::vector<UUID> Context::getEnabledRoles() const
+std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 {
-    return getAccess()->getEnabledRoles();
-}
-
-Strings Context::getEnabledRolesNames() const
-{
-    return getAccess()->getEnabledRolesNames();
+    return getAccess()->getRolesInfo();
 }
 
 

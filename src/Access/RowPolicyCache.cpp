@@ -99,7 +99,7 @@ RowPolicyCache::RowPolicyCache(const AccessControlManager & access_control_manag
 RowPolicyCache::~RowPolicyCache() = default;
 
 
-std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles)
+std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles)
 {
     std::lock_guard lock{mutex};
     ensureAllRowPoliciesRead();

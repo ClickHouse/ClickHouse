@@ -2,6 +2,7 @@
 
 #include <Access/MultipleAccessStorage.h>
 #include <Poco/AutoPtr.h>
+#include <boost/container/flat_set.hpp>
 #include <memory>
 
 
@@ -51,24 +52,24 @@ public:
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
-        const std::vector<UUID> & current_roles,
+        const boost::container::flat_set<UUID> & current_roles,
         bool use_default_roles,
         const Settings & settings,
         const String & current_database,
         const ClientInfo & client_info) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
-        const std::vector<UUID> & current_roles,
-        const std::vector<UUID> & current_roles_with_admin_option) const;
+        const boost::container::flat_set<UUID> & current_roles,
+        const boost::container::flat_set<UUID> & current_roles_with_admin_option) const;
 
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,
-        const std::vector<UUID> & enabled_roles) const;
+        const boost::container::flat_set<UUID> & enabled_roles) const;
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
         const UUID & user_id,
         const String & user_name,
-        const std::vector<UUID> & enabled_roles,
+        const boost::container::flat_set<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
         const String & custom_quota_key) const;
 
@@ -76,7 +77,7 @@ public:
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(const UUID & user_id,
                                                               const SettingsProfileElements & settings_from_user,
-                                                              const std::vector<UUID> & enabled_roles,
+                                                              const boost::container::flat_set<UUID> & enabled_roles,
                                                               const SettingsProfileElements & settings_from_enabled_roles) const;
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;

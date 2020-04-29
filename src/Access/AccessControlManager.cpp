@@ -42,7 +42,7 @@ public:
 
     std::shared_ptr<const ContextAccess> getContextAccess(
         const UUID & user_id,
-        const std::vector<UUID> & current_roles,
+        const boost::container::flat_set<UUID> & current_roles,
         bool use_default_roles,
         const Settings & settings,
         const String & current_database,
@@ -113,7 +113,7 @@ void AccessControlManager::setDefaultProfileName(const String & default_profile_
 
 std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     const UUID & user_id,
-    const std::vector<UUID> & current_roles,
+    const boost::container::flat_set<UUID> & current_roles,
     bool use_default_roles,
     const Settings & settings,
     const String & current_database,
@@ -124,21 +124,21 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
 
 
 std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
-    const std::vector<UUID> & current_roles,
-    const std::vector<UUID> & current_roles_with_admin_option) const
+    const boost::container::flat_set<UUID> & current_roles,
+    const boost::container::flat_set<UUID> & current_roles_with_admin_option) const
 {
     return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
 }
 
 
-std::shared_ptr<const EnabledRowPolicies> AccessControlManager::getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles) const
+std::shared_ptr<const EnabledRowPolicies> AccessControlManager::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     return row_policy_cache->getEnabledRowPolicies(user_id, enabled_roles);
 }
 
 
 std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
-    const UUID & user_id, const String & user_name, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
+    const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
 {
     return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, custom_quota_key);
 }
@@ -153,7 +153,7 @@ std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
 std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
     const UUID & user_id,
     const SettingsProfileElements & settings_from_user,
-    const std::vector<UUID> & enabled_roles,
+    const boost::container::flat_set<UUID> & enabled_roles,
     const SettingsProfileElements & settings_from_enabled_roles) const
 {
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);

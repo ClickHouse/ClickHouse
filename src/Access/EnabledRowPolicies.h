@@ -21,7 +21,7 @@ public:
     struct Params
     {
         UUID user_id;
-        std::vector<UUID> enabled_roles;
+        boost::container::flat_set<UUID> enabled_roles;
 
         auto toTuple() const { return std::tie(user_id, enabled_roles); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }

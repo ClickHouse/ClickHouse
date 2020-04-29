@@ -121,7 +121,6 @@ void ContextAccess::setUser(const UserPtr & user_) const
         subscription_for_roles_changes = {};
         enabled_roles = nullptr;
         roles_info = nullptr;
-        roles_with_admin_option = nullptr;
         enabled_row_policies = nullptr;
         enabled_quota = nullptr;
         enabled_settings = nullptr;
@@ -131,28 +130,27 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = &Poco::Logger::get("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    boost::container::flat_set<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)
     {
         for (const UUID & id : user->granted_roles.roles)
         {
             if (user->default_roles.match(id))
-                current_roles.push_back(id);
+                current_roles.emplace(id);
         }
-        boost::range::set_intersection(current_roles, user->granted_roles.roles_with_admin_option,
-                                       std::back_inserter(current_roles_with_admin_option));
     }
     else
     {
-        current_roles.reserve(params.current_roles.size());
-        for (const auto & id : params.current_roles)
-        {
-            if (user->granted_roles.roles.contains(id))
-                current_roles.push_back(id);
-            if (user->granted_roles.roles_with_admin_option.contains(id))
-                current_roles_with_admin_option.push_back(id);
-        }
+        boost::range::set_intersection(
+            params.current_roles,
+            user->granted_roles.roles,
+            std::inserter(current_roles, current_roles.end()));
     }
+
+    boost::range::set_intersection(
+        current_roles,
+        user->granted_roles.roles_with_admin_option,
+        std::inserter(current_roles_with_admin_option, current_roles_with_admin_option.end()));
 
     subscription_for_roles_changes = {};
     enabled_roles = manager->getEnabledRoles(current_roles, current_roles_with_admin_option);
@@ -170,7 +168,6 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    roles_with_admin_option.store(boost::make_shared<boost::container::flat_set<UUID>>(roles_info->enabled_roles_with_admin_option.begin(), roles_info->enabled_roles_with_admin_option.end()));
     boost::range::fill(result_access, nullptr /* need recalculate */);
     enabled_row_policies = manager->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
     enabled_quota = manager->getEnabledQuota(*params.user_id, user_name, roles_info->enabled_roles, params.address, params.quota_key);
@@ -357,9 +354,12 @@ void ContextAccess::checkAdminOption(const UUID & role_id) const
     if (isGranted(AccessType::ROLE_ADMIN))
         return;
 
-    auto roles_with_admin_option_loaded = roles_with_admin_option.load();
-    if (roles_with_admin_option_loaded && roles_with_admin_option_loaded->count(role_id))
+    auto info = getRolesInfo();
+    if (info && info->enabled_roles_with_admin_option.count(role_id))
         return;
+
+    if (!user)
+        throw Exception(user_name + ": User has been dropped", ErrorCodes::UNKNOWN_USER);
 
     std::optional<String> role_name = manager->readName(role_id);
     if (!role_name)
@@ -483,30 +483,6 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
 {
     std::lock_guard lock{mutex};
     return roles_info;
-}
-
-std::vector<UUID> ContextAccess::getCurrentRoles() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->current_roles : std::vector<UUID>{};
-}
-
-Strings ContextAccess::getCurrentRolesNames() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->getCurrentRolesNames() : Strings{};
-}
-
-std::vector<UUID> ContextAccess::getEnabledRoles() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->enabled_roles : std::vector<UUID>{};
-}
-
-Strings ContextAccess::getEnabledRolesNames() const
-{
-    std::lock_guard lock{mutex};
-    return roles_info ? roles_info->getEnabledRolesNames() : Strings{};
 }
 
 std::shared_ptr<const EnabledRowPolicies> ContextAccess::getRowPolicies() const
