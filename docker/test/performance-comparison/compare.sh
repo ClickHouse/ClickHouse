@@ -159,15 +159,6 @@ function run_tests
 
         # The test completed with zero status, so we treat stderr as warnings
         mv "$test_name-err.log" "$test_name-warn.log"
-
-        grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
-        sed -n "s/^client-time/$test_name/p" < "$test_name-raw.tsv" >> "client-times.tsv"
-        sed -n "s/^threshold/$test_name/p" < "$test_name-raw.tsv" >> "report-thresholds.tsv"
-        skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
-        if [ "$skipped" != "" ]
-        then
-            printf "%s\t%s\n" "$test_name" "$skipped">> skipped-tests.tsv
-        fi
     done
 
     unset TIMEFORMAT
@@ -230,7 +221,19 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv ||:
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv client-times.tsv report-thresholds.tsv ||:
+
+# Split the raw test output into files suitable for analysis.
+IFS=$'\n'
+for test_file in $(find . -maxdepth 1 -name "*-raw.tsv" -print)
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^query\t//p" < "$test_file" > "$test_name-queries.tsv"
+    sed -n "s/^client-time/$test_name/p" < "$test_file" >> "client-times.tsv"
+    sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "report-thresholds.tsv"
+    sed -n "s/^skipped/$test_name/p" < "$test_file" >> "skipped-tests.tsv"
+done
+unset IFS
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with 
@@ -289,7 +292,7 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
         not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
         
-        not short and not changed_fail and stat_threshold > report_threshold + 0.05 as unstable_fail,
+        not short and not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
         not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
