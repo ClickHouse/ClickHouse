@@ -93,7 +93,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
     }
 
-    /* Do not push to destination table if the flag is set */
+    /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
         output = storage->write(query_ptr, context);
