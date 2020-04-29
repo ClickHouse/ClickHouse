@@ -11,8 +11,6 @@ namespace DB
 {
 namespace MySQLReplication
 {
-    using namespace MySQLProtocol;
-
     class IBinlogEvent;
     using BinlogEventPtr = std::shared_ptr<IBinlogEvent>;
 
@@ -83,11 +81,8 @@ namespace MySQLReplication
         UInt32 log_pos;
         UInt16 flags;
 
-        EventHeader() = default;
-        ~EventHeader() = default;
-
+        void dump() const;
         void parse(ReadBuffer & payload);
-        void dump();
     };
 
     class IBinlogEvent
@@ -114,9 +109,6 @@ namespace MySQLReplication
         UInt8 event_header_length;
         String event_type_header_length;
 
-        FormatDescriptionEvent() = default;
-        ~FormatDescriptionEvent() override = default;
-
         void dump() override;
         void parse(ReadBuffer & payload) override;
     };
@@ -126,9 +118,6 @@ namespace MySQLReplication
     public:
         UInt64 position;
         String next_binlog;
-
-        RotateEvent() = default;
-        ~RotateEvent() override = default;
 
         void dump() override;
         void parse(ReadBuffer & payload) override;
@@ -142,13 +131,10 @@ namespace MySQLReplication
         virtual ~IFlavor() = default;
     };
 
-    class MySQLFlavor : public IFlavor, public ReadPacket
+    class MySQLFlavor : public IFlavor, public MySQLProtocol::ReadPacket
     {
     public:
         BinlogEventPtr event;
-
-        MySQLFlavor() = default;
-        ~MySQLFlavor() override = default;
 
         String getName() override { return "MySQL"; }
         void readPayloadImpl(ReadBuffer & payload) override;
