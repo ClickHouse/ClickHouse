@@ -11,10 +11,14 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToUInt16>();
     factory.registerFunction<FunctionToUInt32>();
     factory.registerFunction<FunctionToUInt64>();
+    factory.registerFunction<FunctionToUInt128>();
+    factory.registerFunction<FunctionToUInt256>();
     factory.registerFunction<FunctionToInt8>();
     factory.registerFunction<FunctionToInt16>();
     factory.registerFunction<FunctionToInt32>();
     factory.registerFunction<FunctionToInt64>();
+    factory.registerFunction<FunctionToInt128>();
+    factory.registerFunction<FunctionToInt256>();
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
 

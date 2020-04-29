@@ -104,8 +104,10 @@ inline bool_if_gt_int_vs_uint<TInt, TUInt> greaterOpTmpl(TUInt a, TInt b)
 {
     if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, UInt8>)
         return static_cast<TInt>(static_cast<UInt16>(a)) > static_cast<TInt>(b);
+    else if constexpr (is_big_int_v<TInt> && std::is_same_v<TUInt, DB::UInt128>)
+        return static_cast<bUInt128>(a) > b;
     else
-        return static_cast<TInt>(a) > static_cast<TInt>(b);
+        return static_cast<TInt>(a) > b;
 }
 
 template <typename TInt, typename TUInt>
@@ -199,7 +201,12 @@ inline bool_if_not_safe_conversion<A, B> greaterOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> greaterOp(A a, B b)
 {
-    return a > b;
+    if constexpr (is_big_int_v<A> && std::is_same_v<B, UInt8>)
+        return a > static_cast<UInt16>(b);
+    else if constexpr (is_big_int_v<B> && std::is_same_v<A, UInt8>)
+        return static_cast<UInt16>(a) > b;
+    else
+        return a > b;
 }
 
 // Case 3b. 64-bit integers vs floats comparison.
@@ -572,10 +579,14 @@ template <typename A, typename B> struct GreaterOrEqualsOp
 // DB::bUInt256 buint256{1};
 // DB::bInt256 bint256{1};
 
+// DB::Int128 int128{1};
+// DB::UInt128 uint128{1};
+
 // DB::Float32 f32{1};
 // DB::Float64 f64{1};
 // DB::UInt8 uint8{1};
 
+// static_assert(std::is_same_v<DB::bUInt128>
 // static_assert(is_integral_v<DB::bInt256> && is_integral_v<DB::bUInt128>);
 // static_assert(is_signed_v<DB::bInt256>);
 // static_assert(is_unsigned_v<DB::bUInt128>);
@@ -599,9 +610,14 @@ template <typename A, typename B> struct GreaterOrEqualsOp
 // auto c3 = accurate::notEqualsOp(buint256, uint8);
 // auto d3 = accurate::notEqualsOp(bint256, uint8);
 
-// auto a4 = accurate::lessOp(buint128, uint8);
-// auto b4 = accurate::lessOp(bint128, uint8);
-// auto c4 = accurate::lessOp(buint256, uint8);
-// auto d4 = accurate::lessOp(bint256, uint8);
+// auto a4 = accurate::lessOp(buint128, int128);
+// auto b4 = accurate::lessOp(bint128, int128);
+// auto c4 = accurate::lessOp(buint256, int128);
+// auto d4 = accurate::lessOp(bint256, int128);
+
+// auto a5 = accurate::lessOp(buint128, uint128);
+// auto b5 = accurate::lessOp(bint128, uint128);
+// auto c5 = accurate::lessOp(buint256, uint128);
+// auto d5 = accurate::lessOp(bint256, uint128);
 
 // static_assert(false);

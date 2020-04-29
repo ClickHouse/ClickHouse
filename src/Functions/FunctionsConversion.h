@@ -147,7 +147,12 @@ struct ConvertImpl
                         vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                 }
                 else
-                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                {
+                    if constexpr (is_big_int_v<ToFieldType> && std::is_same_v<FromFieldType, UInt8>)
+                        vec_to[i] = static_cast<ToFieldType>(static_cast<UInt16>(vec_from[i]));
+                    else
+                        vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                }
             }
 
             block.getByPosition(result).column = std::move(col_to);
@@ -1401,8 +1406,10 @@ struct ToNumberMonotonicity
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
-            if (left_float >= std::numeric_limits<T>::min() && left_float <= std::numeric_limits<T>::max()
-                && right_float >= std::numeric_limits<T>::min() && right_float <= std::numeric_limits<T>::max())
+            if (left_float >= static_cast<double>(std::numeric_limits<T>::min())
+                && left_float <= static_cast<double>(std::numeric_limits<T>::max())
+                && right_float >= static_cast<double>(std::numeric_limits<T>::min())
+                && right_float <= static_cast<double>(std::numeric_limits<T>::max()))
                 return { true };
 
             return {};
@@ -1532,10 +1539,14 @@ struct NameToUInt8 { static constexpr auto name = "toUInt8"; };
 struct NameToUInt16 { static constexpr auto name = "toUInt16"; };
 struct NameToUInt32 { static constexpr auto name = "toUInt32"; };
 struct NameToUInt64 { static constexpr auto name = "toUInt64"; };
+struct NameToUInt128 { static constexpr auto name = "toUInt128"; };
+struct NameToUInt256 { static constexpr auto name = "toUInt256"; };
 struct NameToInt8 { static constexpr auto name = "toInt8"; };
 struct NameToInt16 { static constexpr auto name = "toInt16"; };
 struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
+struct NameToInt128 { static constexpr auto name = "toInt128"; };
+struct NameToInt256 { static constexpr auto name = "toInt256"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
@@ -1544,10 +1555,14 @@ using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMono
 using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
 using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToNumberMonotonicity<UInt32>>;
 using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToNumberMonotonicity<UInt64>>;
+using FunctionToUInt128 = FunctionConvert<DataTypeUInt128, NameToUInt128, ToNumberMonotonicity<bUInt128>>;
+using FunctionToUInt256 = FunctionConvert<DataTypeUInt256, NameToUInt256, ToNumberMonotonicity<bUInt256>>;
 using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToNumberMonotonicity<Int8>>;
 using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToNumberMonotonicity<Int16>>;
 using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToNumberMonotonicity<Int32>>;
 using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToNumberMonotonicity<Int64>>;
+using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberMonotonicity<bInt128>>;
+using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<bInt256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToNumberMonotonicity<UInt16>>;
@@ -1567,10 +1582,14 @@ template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
 template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
 template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
 template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionTo<DataTypeUInt128> { using Type = FunctionToUInt128; };
+template <> struct FunctionTo<DataTypeUInt256> { using Type = FunctionToUInt256; };
 template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
 template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
 template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
 template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionTo<DataTypeInt128> { using Type = FunctionToInt128; };
+template <> struct FunctionTo<DataTypeInt256> { using Type = FunctionToInt256; };
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };

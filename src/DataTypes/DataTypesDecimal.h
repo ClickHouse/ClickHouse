@@ -143,7 +143,11 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
                                     ErrorCodes::DECIMAL_OVERFLOW);
             }
         }
-        return converted_value;
+
+        if constexpr (is_big_int_v<ToFieldType>)
+            return static_cast<typename FromFieldType::NativeType>(converted_value);
+        else
+            return converted_value;
     }
 }
 
