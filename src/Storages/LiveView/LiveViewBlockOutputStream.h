@@ -11,13 +11,27 @@ namespace DB
 class LiveViewBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit LiveViewBlockOutputStream(StorageLiveView & storage_) : storage(storage_) {}
+    explicit LiveViewBlockOutputStream(StorageLiveView & storage_, const Context & context) : storage(storage_)
+    {
+        auto target_table_storage = storage.tryGetTargetTable();
+        if (target_table_storage)
+        {
+            auto lock = target_table_storage->lockStructureForShare(
+                true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+            target_table_stream = target_table_storage->write(storage.getInnerQuery(), context);
+            target_table_stream->addTableLock(lock);
+            auto query_context = const_cast<Context &>(context);
+            query_context.setSetting("output_format_enable_streaming", 1);
+        }
+    }
 
     void writePrefix() override
     {
         new_blocks = std::make_shared<Blocks>();
         new_blocks_metadata = std::make_shared<BlocksMetadata>();
         new_hash = std::make_shared<SipHash>();
+        if (target_table_stream)
+            target_table_stream->writePrefix();
     }
 
     void writeSuffix() override
@@ -41,6 +55,8 @@ public:
                     block.rows(), new_blocks_metadata->version)->convertToFullColumnIfConst(),
                     std::make_shared<DataTypeUInt64>(),
                     "_version"});
+                if (target_table_stream)
+                    target_table_stream->write(block);
             }
 
             (*storage.blocks_ptr) = new_blocks;
@@ -52,12 +68,21 @@ public:
         new_blocks.reset();
         new_blocks_metadata.reset();
         new_hash.reset();
+
+        if (target_table_stream)
+            target_table_stream->writeSuffix();
     }
 
     void write(const Block & block) override
     {
         new_blocks->push_back(block);
         block.updateHash(*new_hash);
+    }
+
+    void flush() override
+    {
+        if (target_table_stream)
+            target_table_stream->flush();
     }
 
     Block getHeader() const override { return storage.getHeader(); }
@@ -69,6 +94,7 @@ private:
     BlocksMetadataPtr new_blocks_metadata;
     SipHashPtr new_hash;
     StorageLiveView & storage;
+    BlockOutputStreamPtr target_table_stream = nullptr;
 };
 
 }
