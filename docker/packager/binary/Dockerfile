@@ -26,6 +26,7 @@ RUN apt-get update -y \
             curl \
             gcc-9 \
             g++-9 \
+            llvm-10 \
             clang-10 \
             lld-10 \
             clang-tidy-10 \
