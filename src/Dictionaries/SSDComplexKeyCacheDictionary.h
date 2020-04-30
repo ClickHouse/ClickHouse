@@ -7,11 +7,15 @@
 #include <chrono>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Common/Arena.h>
+#include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
+#include <Common/SmallObjectPool.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
+#include <ext/scope_guard.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferAIO.h>
 #include <list>
@@ -20,11 +24,217 @@
 #include <variant>
 #include <vector>
 
+
 namespace DB
 {
 
-template <typename K, typename V>
-class CLRUCache
+class KeyRef
+{
+public:
+    explicit KeyRef(char * data) : ptr(data) {}
+
+    KeyRef() : ptr(nullptr) {}
+
+    inline UInt16 size() const {
+        return *reinterpret_cast<const UInt16 *>(ptr);
+    }
+
+    inline size_t fullSize() const {
+        return static_cast<size_t>(size()) + sizeof(UInt16);
+    }
+
+    inline char * data() const {
+        return ptr + sizeof(UInt16);
+    }
+
+    inline char * fullData() const {
+        return ptr;
+    }
+
+    inline char * fullData() {
+        return ptr;
+    }
+
+    inline const StringRef getRef() const {
+        return StringRef(data(), size());
+    }
+
+    inline bool operator==(const KeyRef & other) const {
+        return getRef() == other.getRef();
+    }
+
+    inline bool operator<(const KeyRef & other) const {
+        return getRef() <  other.getRef();
+    }
+
+private:
+    char * ptr;
+};
+
+using KeyRefs = std::vector<KeyRef>;
+}
+
+namespace std
+{
+    template <>
+    struct hash<DB::KeyRef>
+    {
+        size_t operator() (DB::KeyRef key_ref) const
+        {
+            return hasher(key_ref.getRef());
+        }
+
+        std::hash<StringRef> hasher;
+    };
+}
+
+namespace DB
+{
+
+using AttributeValueVariant = std::variant<
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
+        UInt128,
+        Int8,
+        Int16,
+        Int32,
+        Int64,
+        Decimal32,
+        Decimal64,
+        Decimal128,
+        Float32,
+        Float64,
+        String>;
+
+template <typename A>
+class ComplexKeysPoolImpl
+{
+public:
+    KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys)
+    {
+        if constexpr (std::is_same_v<A, SmallObjectPool>)
+        {
+            // not working now
+            const auto res = arena->alloc();
+            auto place = res;
+
+            for (const auto & key_column : key_columns)
+            {
+                const StringRef key = key_column->getDataAt(row);
+                memcpy(place, key.data, key.size);
+                place += key.size;
+            }
+
+            return KeyRef(res);
+        }
+        else
+        {
+            const auto keys_size = key_columns.size();
+            UInt16 sum_keys_size{};
+
+            for (size_t j = 0; j < keys_size; ++j)
+            {
+                keys[j] = key_columns[j]->getDataAt(row);
+                sum_keys_size += keys[j].size;
+                if (!key_columns[j]->valuesHaveFixedSize())  // String
+                    sum_keys_size += sizeof(size_t) + 1;
+            }
+
+            auto place = arena.alloc(sum_keys_size + sizeof(sum_keys_size));
+
+            auto key_start = place;
+            memcpy(key_start, &sum_keys_size, sizeof(sum_keys_size));
+            key_start += sizeof(sum_keys_size);
+            for (size_t j = 0; j < keys_size; ++j)
+            {
+                if (!key_columns[j]->valuesHaveFixedSize())  // String
+                {
+                    auto start = key_start;
+                    auto key_size = keys[j].size + 1;
+                    memcpy(key_start, &key_size, sizeof(size_t));
+                    key_start += sizeof(size_t);
+                    memcpy(key_start, keys[j].data, keys[j].size);
+                    key_start += keys[j].size;
+                    *key_start = '\0';
+                    ++key_start;
+                    keys[j].data = start;
+                    keys[j].size += sizeof(size_t) + 1;
+                }
+                else
+                {
+                    memcpy(key_start, keys[j].data, keys[j].size);
+                    keys[j].data = key_start;
+                    key_start += keys[j].size;
+                }
+            }
+
+            return KeyRef(place);
+        }
+    }
+
+    KeyRef copyKeyFrom(const KeyRef & key)
+    {
+        char * data = arena.alloc(key.fullSize());
+        memcpy(data, key.fullData(), key.fullSize());
+        return KeyRef(data);
+    }
+
+    void freeKey(const KeyRef & key)
+    {
+        if constexpr (std::is_same_v<A, ArenaWithFreeLists>)
+            arena.free(key.fullData(), key.fullSize());
+        else if constexpr (std::is_same_v<A, SmallObjectPool>)
+            arena.free(key.fullData());
+        else
+            throw Exception("Free not supported.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void rollback(const KeyRef & key)
+    {
+        if constexpr (std::is_same_v<A, Arena>)
+            arena.rollback(key.fullSize());
+        else
+            throw Exception("Rollback not supported.", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void writeKey(const KeyRef & key, WriteBuffer & buf)
+    {
+        buf.write(key.fullData(), key.fullSize());
+    }
+
+    void readKey(KeyRef & key, ReadBuffer & buf)
+    {
+        UInt16 sz;
+        readBinary(sz, buf);
+        char * data = nullptr;
+        if constexpr (std::is_same_v<A, SmallObjectPool>)
+            data = arena.alloc();
+        else
+            data = arena.alloc(sz + sizeof(sz));
+        memcpy(data, &sz, sizeof(sz));
+        buf.read(data + sizeof(sz), sz);
+        key = KeyRef(data);
+    }
+
+    void ignoreKey(ReadBuffer & buf) const
+    {
+        UInt16 sz;
+        readBinary(sz, buf);
+        buf.ignore(sz);
+    }
+
+private:
+    A arena;
+};
+
+using TemporalComplexKeysPool = ComplexKeysPoolImpl<Arena>;
+using ComplexKeysPool = ComplexKeysPoolImpl<ArenaWithFreeLists>;
+//using FixedComplexKeysPool = ComplexKeysPoolImpl<SmallObjectPool>;
+
+template <typename K, typename V, typename Pool>
+class ComplexKeyLRUCache
 {
     using Iter = typename std::list<K>::iterator;
 
@@ -35,7 +245,9 @@ class CLRUCache
     };
 
 public:
-    CLRUCache(size_t max_size_) : max_size(max_size_)
+    ComplexKeyLRUCache(size_t max_size_, Pool & keys_pool_)
+        : max_size(max_size_)
+        , keys_pool(keys_pool_)
     {
     }
 
@@ -50,6 +262,7 @@ public:
             item.val = val;
             if (queue.size() > max_size)
             {
+                keys_pool.freeKey(queue.front());
                 cache.erase(queue.front());
                 queue.pop_front();
             }
@@ -80,6 +293,8 @@ public:
         auto it = cache.find(key);
         if (it == std::end(cache))
             return false;
+        
+        keys_pool.freeKey(key);
         queue.erase(it->second.iter);
         cache.erase(it);
         return true;
@@ -107,27 +322,11 @@ private:
     std::unordered_map<K, Cell> cache;
     std::list<K> queue;
     size_t max_size;
+    Pool & keys_pool;
     std::mutex mutex;
 };
 
-using AttributeValueVariant = std::variant<
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        UInt128,
-        Int8,
-        Int16,
-        Int32,
-        Int64,
-        Decimal32,
-        Decimal64,
-        Decimal128,
-        Float32,
-        Float64,
-        String>;
-
-class SSDCachePartition
+class SSDComplexKeyCachePartition
 {
 public:
     struct Index final
@@ -168,9 +367,9 @@ public:
 
     using Offset = size_t;
     using Offsets = std::vector<Offset>;
-    using Key = IDictionary::Key;
 
-    SSDCachePartition(
+
+    SSDComplexKeyCachePartition(
             const AttributeUnderlyingType & key_structure,
             const std::vector<AttributeUnderlyingType> & attributes_structure,
             const std::string & dir_path,
@@ -181,22 +380,25 @@ public:
             const size_t write_buffer_size,
             const size_t max_stored_keys);
 
-    ~SSDCachePartition();
+    ~SSDComplexKeyCachePartition();
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
     template <typename Out, typename GetDefault>
-    void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getValue(const size_t attribute_index,
+            const Columns & key_columns, const DataTypes & key_types,
             ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
             std::chrono::system_clock::time_point now) const;
 
-    void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+    void getString(const size_t attribute_index,
+            const Columns & key_columns, const DataTypes & key_types,
             StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
-    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
-            std::vector<bool> & found, std::chrono::system_clock::time_point now) const;
+    void has(const Columns & key_columns, const DataTypes & key_types,
+            ResultArrayType<UInt8> & out, std::vector<bool> & found,
+            std::chrono::system_clock::time_point now) const;
 
     struct Attribute
     {
@@ -223,10 +425,17 @@ public:
     };
     using Attributes = std::vector<Attribute>;
 
-    size_t appendBlock(const Attribute & new_keys, const Attributes & new_attributes,
-            const PaddedPODArray<Metadata> & metadata, const size_t begin);
+    size_t appendBlock(
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Attributes & new_attributes,
+        const PaddedPODArray<Metadata> & metadata,
+        const size_t begin);
 
-    size_t appendDefaults(const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin);
+    size_t appendDefaults(
+        const KeyRefs & keys,
+        const PaddedPODArray<Metadata> & metadata,
+        const size_t begin);
 
     void clearOldestBlocks();
 
@@ -236,15 +445,22 @@ public:
 
     size_t getId() const;
 
-    PaddedPODArray<Key> getCachedIds(const std::chrono::system_clock::time_point now) const;
+    PaddedPODArray<KeyRef> getCachedIds(const std::chrono::system_clock::time_point now) const;
 
     double getLoadFactor() const;
 
     size_t getElementCount() const;
 
 private:
+    size_t append(
+        const KeyRefs & keys,
+        const Attributes & new_attributes,
+        const PaddedPODArray<Metadata> & metadata,
+        const size_t begin);
+
     template <typename SetFunc>
-    void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found) const;
+    void getImpl(const Columns & key_columns, const DataTypes & key_types,
+        SetFunc & set, std::vector<bool> & found) const;
 
     template <typename SetFunc>
     void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const;
@@ -253,6 +469,14 @@ private:
     void getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const;
 
     void ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const;
+
+    /*KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys) const;
+    void freeKey(const KeyRef key) const;
+
+    void writeKey(KeyRef key, WriteBuffer & buf);
+    template <typename ArenaForKey>
+    void readKey(KeyRef & key, ArenaForKey & arena, ReadBuffer & buf);
+    void ignoreKey(ReadBuffer & buf);*/
 
     const size_t file_id;
     const size_t max_size;
@@ -266,9 +490,10 @@ private:
 
     int fd = -1;
 
-    mutable CLRUCache<UInt64, Index> key_to_index;
+    ComplexKeysPool keys_pool;
+    mutable ComplexKeyLRUCache<KeyRef, Index, ComplexKeysPool> key_to_index;
+    KeyRefs keys_buffer;
 
-    Attribute keys_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;
 
     std::optional<Memory<>> memory;
@@ -280,16 +505,15 @@ private:
     size_t current_file_block_id = 0;
 };
 
-using SSDCachePartitionPtr = std::shared_ptr<SSDCachePartition>;
+using SSDComplexKeyCachePartitionPtr = std::shared_ptr<SSDComplexKeyCachePartition>;
 
 
-class SSDCacheStorage
+class SSDComplexKeyCacheStorage
 {
 public:
     using AttributeTypes = std::vector<AttributeUnderlyingType>;
-    using Key = SSDCachePartition::Key;
 
-    SSDCacheStorage(
+    SSDComplexKeyCacheStorage(
             const AttributeTypes & attributes_structure,
             const std::string & path,
             const size_t max_partitions_count,
@@ -299,29 +523,34 @@ public:
             const size_t write_buffer_size,
             const size_t max_stored_keys);
 
-    ~SSDCacheStorage();
+    ~SSDComplexKeyCacheStorage();
 
     template <typename T>
-    using ResultArrayType = SSDCachePartition::ResultArrayType<T>;
+    using ResultArrayType = SSDComplexKeyCachePartition::ResultArrayType<T>;
 
     template <typename Out, typename GetDefault>
-    void getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
+    void getValue(const size_t attribute_index, const Columns & key_columns, const DataTypes & key_types,
+            ResultArrayType<Out> & out, std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
+            TemporalComplexKeysPool & not_found_pool,
             GetDefault & get_default, std::chrono::system_clock::time_point now) const;
 
-    void getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-            StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
+    void getString(const size_t attribute_index, const Columns & key_columns, const DataTypes & key_types,
+            StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
+            TemporalComplexKeysPool & not_found_pool,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
-    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
-             std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const;
+    void has(const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
+            std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
+            TemporalComplexKeysPool & not_found_pool, std::chrono::system_clock::time_point now) const;
 
     template <typename PresentIdHandler, typename AbsentIdHandler>
-    void update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
-            PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
+    void update(DictionarySourcePtr & source_ptr,
+            const Columns & key_columns, const DataTypes & key_types,
+            const KeyRefs & required_keys, const std::vector<size_t> & required_rows,
+            PresentIdHandler && on_updated, AbsentIdHandler && on_key_not_found,
             const DictionaryLifetime lifetime);
 
-    PaddedPODArray<Key> getCachedIds() const;
+    PaddedPODArray<KeyRef> getCachedIds() const;
 
     std::exception_ptr getLastException() const { return last_update_exception; }
 
@@ -336,7 +565,7 @@ public:
     double getLoadFactor() const;
 
 private:
-    SSDCachePartition::Attributes createAttributesFromBlock(
+    SSDComplexKeyCachePartition::Attributes createAttributesFromBlock(
             const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
 
     void collectGarbage();
@@ -352,8 +581,8 @@ private:
     const size_t max_stored_keys;
 
     mutable std::shared_mutex rw_lock;
-    std::list<SSDCachePartitionPtr> partitions;
-    std::list<SSDCachePartitionPtr> partition_delete_queue;
+    std::list<SSDComplexKeyCachePartitionPtr> partitions;
+    std::list<SSDComplexKeyCachePartitionPtr> partition_delete_queue;
 
     Logger * const log;
 
@@ -371,10 +600,10 @@ private:
 };
 
 
-class SSDCacheDictionary final : public IDictionary
+class SSDComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
-    SSDCacheDictionary(
+    SSDComplexKeyCacheDictionary(
             const std::string & name_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
@@ -391,7 +620,9 @@ public:
     const std::string & getName() const override { return name; }
     const std::string & getFullName() const override { return getName(); }
 
-    std::string getTypeName() const override { return "SSDCache"; }
+    std::string getKeyDescription() const { return dict_struct.getKeyDescription(); }
+
+    std::string getTypeName() const override { return "SSDComplexKeyCache"; }
 
     size_t getBytesAllocated() const override { return 0; } // TODO: ?
 
@@ -410,7 +641,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
+        return std::make_shared<SSDComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
                 max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
     }
 
@@ -425,17 +656,21 @@ public:
         return dict_struct.attributes[getAttributeIndex(attribute_name)].injective;
     }
 
-    bool hasHierarchy() const override { return false; }
+    /*bool hasHierarchy() const { return false; }
 
-    void toParent(const PaddedPODArray<Key> &, PaddedPODArray<Key> &) const override { }
+    void toParent(const PaddedPODArray<Key> &, PaddedPODArray<Key> &) const { }*/
 
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 
     template <typename T>
-    using ResultArrayType = SSDCacheStorage::ResultArrayType<T>;
+    using ResultArrayType = SSDComplexKeyCacheStorage::ResultArrayType<T>;
 
 #define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -452,12 +687,14 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
+    void getString(const std::string & attribute_name, const Columns & key_columns,
+        const DataTypes & key_types, ColumnString * out) const;
 
 #define DECLARE(TYPE) \
     void get##TYPE( \
         const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
         const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
@@ -476,12 +713,16 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void
-    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
-    const;
+    void getString(const std::string & attribute_name, const Columns & key_columns,
+        const DataTypes & key_types, const ColumnString * const def, ColumnString * const out) const;
 
 #define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -498,9 +739,10 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
+    void getString(const std::string & attribute_name, const Columns & key_columns,
+        const DataTypes & key_types, const String & def, ColumnString * const out) const;
 
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -514,11 +756,15 @@ private:
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
-            const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+        const size_t attribute_index,
+        const Columns & key_columns, const DataTypes & key_types,
+        ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>
-    void getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
-            ColumnString * out, DefaultGetter && get_default) const;
+    void getItemsStringImpl(
+        const size_t attribute_index,
+        const Columns & key_columns, const DataTypes & key_types,
+        ColumnString * out, DefaultGetter && get_default) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;
@@ -535,7 +781,7 @@ private:
 
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<AttributeValueVariant> null_values;
-    mutable SSDCacheStorage storage;
+    mutable SSDComplexKeyCacheStorage storage;
     Logger * const log;
 
     mutable size_t bytes_allocated = 0;
