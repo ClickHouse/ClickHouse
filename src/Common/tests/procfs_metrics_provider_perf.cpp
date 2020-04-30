@@ -1,11 +1,12 @@
+#if defined(__linux__)
 #include <Common/ProcfsMetricsProvider.h>
 
 #include <iostream>
+#include <linux/taskstats.h>
+#endif
+
 
 #if defined(__linux__)
-#include <linux/taskstats.h>
-
-
 int main(int argc, char ** argv)
 {
     using namespace DB;
@@ -33,5 +34,8 @@ int main(int argc, char ** argv)
         std::cerr << stats.cpu_run_virtual_total - start_cpu_time << '\n';
     return 0;
 }
-
+#else
+int main()
+{
+}
 #endif
