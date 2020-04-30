@@ -13,18 +13,12 @@ En parcourant ce tutoriel, vous apprendrez à configurer un cluster ClickHouse s
 
 ## Configuration De Noeud Unique {#single-node-setup}
 
-Pour retarder les complexités d'un environnement distribué, nous allons commencer par déployer ClickHouse sur un seul serveur ou une machine virtuelle. ClickHouse est généralement installé à partir de [deb](index.md#install-from-deb-packages) ou [tr / min](index.md#from-rpm-packages) les paquets, mais il y a [alternative](index.md#from-docker-image) pour les systèmes d'exploitation qui ne sont pas les soutenir.
+Pour retarder les complexités d'un environnement distribué, nous allons commencer par déployer ClickHouse sur un seul serveur ou une machine virtuelle. ClickHouse est généralement installé à partir de [deb](install.md#install-from-deb-packages) ou [rpm](install.md#from-rpm-packages) les paquets, mais il y a [alternative](install.md#from-docker-image) pour les systèmes d'exploitation qui ne sont pas les soutenir.
 
 Par exemple, vous avez choisi `deb` paquets et exécutés:
 
 ``` bash
-sudo apt-get install dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb http://repo.clickhouse.tech/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
+{% include 'install/deb.sh' %}
 ```
 
 Quelles sont les paquets installés:

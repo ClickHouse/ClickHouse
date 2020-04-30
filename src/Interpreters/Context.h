@@ -131,6 +131,23 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+/// A small class which owns ContextShared.
+/// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
+struct SharedContextHolder
+{
+    ~SharedContextHolder();
+    SharedContextHolder();
+    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    SharedContextHolder(SharedContextHolder &&) noexcept;
+
+    SharedContextHolder & operator=(SharedContextHolder &&);
+
+    ContextShared * get() const { return shared.get(); }
+    void reset();
+private:
+    std::unique_ptr<ContextShared> shared;
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -140,8 +157,7 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
 class Context
 {
 private:
-    using Shared = std::shared_ptr<ContextShared>;
-    Shared shared;
+    ContextShared * shared;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -193,7 +209,8 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal();
+    static Context createGlobal(ContextShared * shared);
+    static SharedContextHolder createShared();
 
     Context(const Context &);
     Context & operator=(const Context &);
@@ -471,9 +488,11 @@ public:
       */
     void dropCaches() const;
 
+    BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;

@@ -1,20 +1,19 @@
-# generate {#generate}
+# generateRandom {#generateRandom}
 
 Генерирует случайные данные с заданной схемой.
 Позволяет заполнять тестовые таблицы данными.
 Поддерживает все типы данных, которые могут храниться в таблице, за исключением `LowCardinality` и `AggregateFunction`.
 
 ``` sql
-generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'max_string_length'[, 'random_seed']]]);
+generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
 ```
 
 **Входные параметры**
 - `name` — название соответствующего столбца.
 - `TypeName` — тип соответствующего столбца.
-- `limit` — количество строк для генерации.
 - `max_array_length` — максимальная длина массива для всех сгенерированных массивов. По умолчанию `10`.
 - `max_string_length` — максимальная длина строки для всех генерируемых строк. По умолчанию `10`.
-- `random_seed` — укажите состояние генератора случайных чисел вручную, чтобы получить стабильные результаты. По умолчанию `0` - генератор инициализируется случайным состоянием.
+- `random_seed` — укажите состояние генератора случайных чисел вручную, чтобы получить стабильные результаты. Если значение равно `NULL` - генератор инициализируется случайным состоянием.
 
 **Возвращаемое значение**
 
@@ -23,7 +22,7 @@ generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'ma
 ## Пример {#primer}
 
 ``` sql
-SELECT * FROM generate('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 3, 2, 10, 1);
+SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
 ```
 
 ``` text

@@ -140,7 +140,7 @@ void ThreadStatus::finalizePerformanceCounters()
     {
         if (global_context && query_context)
         {
-            auto & settings = query_context->getSettingsRef();
+            const auto & settings = query_context->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
                 if (auto thread_log = global_context->getQueryThreadLog())
                     logToQueryThreadLog(*thread_log);

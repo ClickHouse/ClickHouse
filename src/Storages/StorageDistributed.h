@@ -62,12 +62,11 @@ public:
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    /// Return true if distributed_group_by_no_merge may be applied.
+    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
     Pipes read(
         const Names & column_names,
@@ -79,12 +78,10 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop(TableStructureWriteLockHolder &) override {}
-
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
@@ -109,7 +106,7 @@ public:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    void requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
 
     void flushClusterNodesAllData();
 
@@ -122,6 +119,8 @@ public:
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+
+    NamesAndTypesList getVirtuals() const override;
 
     String remote_database;
     String remote_table;
@@ -183,8 +182,8 @@ protected:
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
         ConnectionPoolPtr conneciton_pool;
 
-        void flushAllData();
-        void shutdownAndDropAllData();
+        void flushAllData() const;
+        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     std::mutex cluster_nodes_mutex;

@@ -39,6 +39,6 @@ SimpleAggregateFunction(sum, Float64)
 7	14
 8	16
 9	18
-1	1	2	2.2.2.2	3
-10	2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222	20	20.20.20.20	5
-SimpleAggregateFunction(anyLast, Nullable(String))	SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String)))	SimpleAggregateFunction(anyLast, IPv4)	SimpleAggregateFunction(groupBitOr, UInt32)
+1	1	2	2.2.2.2	3	([1,2,3],[2,1,1])
+10	2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222	20	20.20.20.20	5	([2,3,4],[2,1,1])
+SimpleAggregateFunction(anyLast, Nullable(String))	SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String)))	SimpleAggregateFunction(anyLast, IPv4)	SimpleAggregateFunction(groupBitOr, UInt32)	SimpleAggregateFunction(sumMap, Tuple(Array(Int32), Array(Int64)))

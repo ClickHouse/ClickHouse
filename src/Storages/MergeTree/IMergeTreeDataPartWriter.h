@@ -45,9 +45,6 @@ public:
     ///  calling calculations of primary and skip indices.
     void next();
 
-    /// Count index_granularity for block and store in `index_granularity`
-    virtual void fillIndexGranularity(const Block & /* block */) {}
-
     virtual void initSkipIndices() {}
     virtual void initPrimaryIndex() {}
 
@@ -60,21 +57,25 @@ public:
     const MergeTreeIndices & getSkipIndices() { return skip_indices; }
 
 protected:
+    size_t getCurrentMark() const { return current_mark; }
+    size_t getIndexOffset() const { return index_offset; }
+
     const MergeTreeData & storage;
     NamesAndTypesList columns_list;
     MergeTreeIndices skip_indices;
     MergeTreeIndexGranularity index_granularity;
     MergeTreeWriterSettings settings;
 
-    size_t current_mark = 0;
-
-    /// The offset to the first row of the block for which you want to write the index.
-    size_t index_offset = 0;
-
     size_t next_mark = 0;
     size_t next_index_offset = 0;
 
     MutableColumns index_columns;
+
+private:
+    /// Data is already written up to this mark.
+    size_t current_mark = 0;
+    /// The offset to the first row of the block for which you want to write the index.
+    size_t index_offset = 0;
 };
 
 }

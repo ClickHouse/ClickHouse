@@ -345,6 +345,44 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └──────────────────────┴────────┘
 ```
 
+## gccMurmurHash {#gccmurmurhash}
+
+Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between CLang and GCC builds.
+
+**Syntax**
+
+```sql
+gccMurmurHash(par1, ...);
+```
+
+**Parameters**
+
+- `par1, ...` —  A variable number of parameters that can be any of the [supported data types](../../sql_reference/data_types/index.md#data_types).
+
+**Returned value**
+
+- Calculated hash value.
+
+Type: [UInt64](../../sql_reference/data_types/int_uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT 
+    gccMurmurHash(1, 2, 3) AS res1, 
+    gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
+```
+
+Result:
+
+``` text
+┌─────────────────res1─┬────────────────res2─┐
+│ 12384823029245979431 │ 1188926775431157506 │
+└──────────────────────┴─────────────────────┘
+```
+
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
@@ -440,5 +478,6 @@ Result:
 **See Also**
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/hash_functions/) <!--hide-->

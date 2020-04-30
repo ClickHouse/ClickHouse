@@ -38,7 +38,8 @@ public:
     std::vector<std::shared_ptr<IMergeTreeDataPart>> restore();
 
 private:
-    void rotate(const std::lock_guard<std::mutex> & write_lock);
+    void init();
+    void rotate();
 
     const MergeTreeData & storage;
     DiskPtr disk;

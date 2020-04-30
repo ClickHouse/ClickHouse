@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
-    auto symbol = symbol_index.findSymbol(address);
+    const auto * symbol = symbol_index.findSymbol(address);
     if (symbol)
         std::cerr << symbol->name << ": " << symbol->address_begin << " ... " << symbol->address_end << "\n";
     else
@@ -45,7 +45,7 @@ int main(int argc, char ** argv)
     else
         std::cerr << "dladdr: Not found\n";
 
-    auto object = symbol_index.findObject(getAddress());
+    const auto * object = symbol_index.findObject(getAddress());
     Dwarf dwarf(*object->elf);
 
     Dwarf::LocationInfo location;
