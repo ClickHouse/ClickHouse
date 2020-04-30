@@ -37,34 +37,24 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Data/src/Transaction.cpp
     )
 
-    add_library (poco_data ${SRCS})
+    add_library (_poco_data ${SRCS})
+    add_library (Poco::Data ALIAS _poco_data)
 
     if (COMPILER_GCC)
-        target_compile_options (poco_data PUBLIC -Wno-deprecated-copy)
+        target_compile_options (_poco_data PUBLIC -Wno-deprecated-copy)
     endif ()
-    target_include_directories (poco_data PUBLIC ${LIBRARY_DIR}/Data/include)
-    target_link_libraries (poco_data PUBLIC poco_foundation)
+    target_include_directories (_poco_data PUBLIC ${LIBRARY_DIR}/Data/include)
+    target_link_libraries (_poco_data PUBLIC Poco::Foundation)
 else ()
+    # NOTE: don't know why, but the GLOBAL is required here.
+    add_library (Poco::Data UNKNOWN IMPORTED GLOBAL)
+
     find_library(LIBRARY_POCO_DATA PocoData)
     find_path(INCLUDE_POCO_DATA Poco/Data/Data.h)
+    set_target_properties (Poco::Data PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_DATA})
+    set_target_properties (Poco::Data PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_DATA})
 
-    add_library (poco_data UNKNOWN IMPORTED)
-    set_property (TARGET poco_data PROPERTY IMPORTED_LOCATION ${LIBRARY_POCO_DATA})
-    set_property (TARGET poco_data PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_DATA})
+    target_link_libraries (Poco::Data INTERFACE Poco::Foundation)
 
-    set (CMAKE_REQUIRED_LIBRARIES poco_data)
-    check_cxx_source_compiles (
-        "
-        #include <Poco/Data/Time.h>
-
-        int main() {
-            Poco::Data::Time();
-        }
-        "
-        EXTERNAL_POCO_DATA_WORKS
-    )
-
-    if (NOT EXTERNAL_POCO_DATA_WORKS)
-        message (FATAL_ERROR "Poco::Data is unusable: ${LIBRARY_POCO_DATA} ${INCLUDE_POCO_DATA}")
-    endif ()
+    message (STATUS "Using Poco::Data: ${LIBRARY_POCO_DATA} ${INCLUDE_POCO_DATA}")
 endif ()

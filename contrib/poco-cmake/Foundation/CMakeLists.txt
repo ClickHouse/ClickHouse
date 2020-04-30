@@ -25,12 +25,10 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/pcre_xclass.c
     )
 
-    add_library (poco_foundation_pcre ${SRCS_PCRE})
+    add_library (_poco_foundation_pcre ${SRCS_PCRE})
+    add_library (Poco::Foundation::PCRE ALIAS _poco_foundation_pcre)
 
-    target_compile_options (poco_foundation_pcre
-        PRIVATE
-            -Wno-sign-compare
-    )
+    target_compile_options (_poco_foundation_pcre PRIVATE -Wno-sign-compare)
 
     # Foundation
 
@@ -190,15 +188,16 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/Windows1252Encoding.cpp
     )
 
-    add_library (poco_foundation ${SRCS})
+    add_library (_poco_foundation ${SRCS})
+    add_library (Poco::Foundation ALIAS _poco_foundation)
 
     if (COMPILER_GCC)
-        target_compile_options (poco_foundation
+        target_compile_options (_poco_foundation
             PUBLIC
                 -Wno-suggest-override
         )
     elseif (COMPILER_CLANG)
-        target_compile_options (poco_foundation
+        target_compile_options (_poco_foundation
             PUBLIC
                 -Wno-atomic-implicit-seq-cst
                 -Wno-deprecated
@@ -206,12 +205,12 @@ if (USE_INTERNAL_POCO_LIBRARY)
                 -Wno-zero-as-null-pointer-constant
         )
     endif ()
-    target_compile_options (poco_foundation
+    target_compile_options (_poco_foundation
         PUBLIC
             -Wno-sign-compare
             -Wno-unused-parameter
     )
-    target_compile_definitions (poco_foundation
+    target_compile_definitions (_poco_foundation
         PRIVATE
             POCO_UNBUNDLED
             POCO_UNBUNDLED_ZLIB
@@ -219,6 +218,15 @@ if (USE_INTERNAL_POCO_LIBRARY)
             POCO_ENABLE_CPP11
             POCO_OS_FAMILY_UNIX
     )
-    target_include_directories (poco_foundation PUBLIC ${LIBRARY_DIR}/Foundation/include)
-    target_link_libraries (poco_foundation PRIVATE poco_foundation_pcre zlib)
+    target_include_directories (_poco_foundation PUBLIC ${LIBRARY_DIR}/Foundation/include)
+    target_link_libraries (_poco_foundation PRIVATE Poco::Foundation::PCRE zlib)
+else ()
+    add_library (Poco::Foundation UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_FOUNDATION PocoFoundation)
+    find_path (INCLUDE_POCO_FOUNDATION Poco/Foundation.h)
+    set_target_properties (Poco::Foundation PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_FOUNDATION})
+    set_target_properties (Poco::Foundation PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_FOUNDATION})
+
+    message (STATUS "Using Poco::Foundation: ${LIBRARY_POCO_FOUNDATION} ${INCLUDE_POCO_FOUNDATION}")
 endif ()

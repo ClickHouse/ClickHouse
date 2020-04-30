@@ -11,9 +11,21 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Redis/src/Type.cpp
     )
 
-    add_library (poco_redis ${SRCS})
+    add_library (_poco_redis ${SRCS})
+    add_library (Poco::Redis ALIAS _poco_redis)
 
-    target_compile_options (poco_redis PUBLIC -Wno-shadow)
-    target_include_directories (poco_redis PUBLIC ${LIBRARY_DIR}/Redis/include)
-    target_link_libraries (poco_redis PUBLIC poco_net)
+    target_compile_options (_poco_redis PUBLIC -Wno-shadow)
+    target_include_directories (_poco_redis PUBLIC ${LIBRARY_DIR}/Redis/include)
+    target_link_libraries (_poco_redis PUBLIC Poco::Net)
+else ()
+    add_library (Poco::Redis UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_REDIS PocoRedis)
+    find_path (INCLUDE_POCO_REDIS Poco/Redis/Redis.h)
+    set_target_properties (Poco::Redis PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_REDIS})
+    set_target_properties (Poco::Redis PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_REDIS})
+
+    target_link_libraries (Poco::Redis INTERFACE Poco::Net)
+
+    message (STATUS "Using Poco::Redis: ${LIBRARY_POCO_REDIS} ${INCLUDE_POCO_REDIS}")
 endif ()

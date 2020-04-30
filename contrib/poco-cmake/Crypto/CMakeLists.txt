@@ -25,39 +25,27 @@ if (ENABLE_SSL)
             ${LIBRARY_DIR}/Crypto/src/X509Certificate.cpp
         )
 
-        add_library (poco_crypto ${SRCS})
+        add_library (_poco_crypto ${SRCS})
+        add_library (Poco::Crypto ALIAS _poco_crypto)
 
-        target_compile_options (poco_crypto PUBLIC -Wno-newline-eof)
-        target_include_directories (poco_crypto PUBLIC ${LIBRARY_DIR}/Crypto/include)
-        target_link_libraries (poco_crypto PUBLIC poco_foundation ssl)
+        target_compile_options (_poco_crypto PUBLIC -Wno-newline-eof)
+        target_include_directories (_poco_crypto PUBLIC ${LIBRARY_DIR}/Crypto/include)
+        target_link_libraries (_poco_crypto PUBLIC Poco::Foundation ssl)
     else ()
+        add_library (Poco::Crypto UNKNOWN IMPORTED GLOBAL)
+
         find_library(LIBRARY_POCO_CRYPTO PocoCrypto)
         find_path(INCLUDE_POCO_CRYPTO Poco/Crypto/Crypto.h)
+        set_target_properties (Poco::Crypto PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_CRYPTO})
+        set_target_properties (Poco::Crypto PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_CRYPTO})
 
-        add_library (poco_crypto UNKNOWN IMPORTED)
-        set_property (TARGET poco_crypto PROPERTY IMPORTED_LOCATION ${LIBRARY_POCO_CRYPTO})
-        set_property (TARGET poco_crypto PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_CRYPTO})
-
-        set (CMAKE_REQUIRED_LIBRARIES poco_crypto)
-        check_cxx_source_compiles (
-            "
-            #include <Poco/Crypto/Crypto.h>
-
-            int main() {
-                Poco::Crypto::initializeCrypto();
-            }
-            "
-            EXTERNAL_POCO_CRYPTO_WORKS
-        )
-
-        if (NOT EXTERNAL_POCO_CRYPTO_WORKS)
-            message (FATAL_ERROR "Poco::Crypto is unusable: ${LIBRARY_POCO_CRYPTO} ${INCLUDE_POCO_CRYPTO}")
-        endif ()
+        target_link_libraries (Poco::Crypto INTERFACE Poco::Foundation)
     endif ()
 
     message (STATUS "Using Poco::Crypto")
 else ()
-    add_library (poco_crypto INTERFACE)
+    add_library (_poco_crypto INTERFACE)
+    add_library (Poco::Crypto ALIAS _poco_crypto)
 
     message (STATUS "Not using Poco::Crypto")
 endif ()

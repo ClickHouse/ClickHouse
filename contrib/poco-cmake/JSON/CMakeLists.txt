@@ -5,7 +5,8 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/JSON/src/pdjson.c
     )
 
-    add_library (poco_json_pdjson ${SRCS_PDJSON})
+    add_library (_poco_json_pdjson ${SRCS_PDJSON})
+    add_library (Poco::JSON::Pdjson ALIAS _poco_json_pdjson)
 
     # Poco::JSON
 
@@ -24,8 +25,18 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/JSON/src/TemplateCache.cpp
     )
 
-    add_library (poco_json ${SRCS})
+    add_library (_poco_json ${SRCS})
+    add_library (Poco::JSON ALIAS _poco_json)
 
-    target_include_directories (poco_json PUBLIC ${LIBRARY_DIR}/JSON/include)
-    target_link_libraries (poco_json PUBLIC poco_foundation poco_json_pdjson)
+    target_include_directories (_poco_json PUBLIC ${LIBRARY_DIR}/JSON/include)
+    target_link_libraries (_poco_json PUBLIC Poco::Foundation Poco::JSON::Pdjson)
+else ()
+    add_library (Poco::JSON UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_JSON PocoJSON)
+    find_path (INCLUDE_POCO_JSON Poco/JSON/JSON.h)
+    set_target_properties (Poco::JSON PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_JSON})
+    set_target_properties (Poco::JSON PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_JSON})
+
+    message (STATUS "Using Poco::JSON: ${LIBRARY_POCO_JSON} ${INCLUDE_POCO_JSON}")
 endif ()

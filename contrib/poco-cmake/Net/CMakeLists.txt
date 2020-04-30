@@ -102,17 +102,18 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Net/src/WebSocketImpl.cpp
     )
 
-    add_library (poco_net ${SRCS})
+    add_library (_poco_net ${SRCS})
+    add_library (Poco::Net ALIAS _poco_net)
 
     if (OS_LINUX)
-        target_compile_definitions (poco_net PUBLIC POCO_HAVE_FD_EPOLL)
+        target_compile_definitions (_poco_net PUBLIC POCO_HAVE_FD_EPOLL)
     elseif (OS_DARWIN OR OS_FREEBSD)
-        target_compile_definitions (poco_net PUBLIC POCO_HAVE_FD_POLL)
+        target_compile_definitions (_poco_net PUBLIC POCO_HAVE_FD_POLL)
     endif ()
 
     if (COMPILER_CLANG)
         # clang-specific warnings
-        target_compile_options (poco_net
+        target_compile_options (_poco_net
             PRIVATE
                 -Wno-atomic-implicit-seq-cst
                 -Wno-extra-semi-stmt
@@ -120,11 +121,20 @@ if (USE_INTERNAL_POCO_LIBRARY)
                 -Wno-extra-semi
         )
     endif ()
-    target_compile_options (poco_net
+    target_compile_options (_poco_net
         PRIVATE
             -Wno-deprecated
             -Wno-extra-semi
     )
-    target_include_directories (poco_net PUBLIC ${LIBRARY_DIR}/Net/include)
-    target_link_libraries (poco_net PUBLIC poco_foundation)
+    target_include_directories (_poco_net PUBLIC ${LIBRARY_DIR}/Net/include)
+    target_link_libraries (_poco_net PUBLIC Poco::Foundation)
+else ()
+    add_library (Poco::Net UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_NET PocoNet)
+    find_path (INCLUDE_POCO_NET Poco/Net/Net.h)
+    set_target_properties (Poco::Net PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_NET})
+    set_target_properties (Poco::Net PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_NET})
+
+    message (STATUS "Using Poco::Net: ${LIBRARY_POCO_NET} ${INCLUDE_POCO_NET}")
 endif ()

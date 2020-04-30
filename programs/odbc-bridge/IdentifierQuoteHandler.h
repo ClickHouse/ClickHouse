@@ -3,10 +3,10 @@
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
-#include <Common/config.h>
 
-/** This handler establish connection to database, and retrieve quote style identifier
-  */
+#if USE_ODBC
+
+/// This handler establishes connection to database, and retrieve quote style identifier
 namespace DB
 {
 
@@ -26,3 +26,5 @@ private:
 };
 
 }
+
+#endif

@@ -30,9 +30,24 @@ if (ENABLE_SSL)
             ${LIBRARY_DIR}/NetSSL_OpenSSL/src/X509Certificate.cpp
         )
 
-        add_library (poco_net_ssl ${SRCS})
+        add_library (_poco_net_ssl ${SRCS})
+        add_library (Poco::Net::SSL ALIAS _poco_net_ssl)
 
-        target_include_directories (poco_net_ssl PUBLIC ${LIBRARY_DIR}/NetSSL_OpenSSL/include)
-        target_link_libraries (poco_net_ssl PUBLIC poco_crypto poco_net poco_util)
+        target_include_directories (_poco_net_ssl PUBLIC ${LIBRARY_DIR}/NetSSL_OpenSSL/include)
+        target_link_libraries (_poco_net_ssl PUBLIC Poco::Crypto Poco::Net Poco::Util)
+    else ()
+        add_library (Poco::Net::SSL UNKNOWN IMPORTED GLOBAL)
+
+        find_library (LIBRARY_POCO_NET_SSL PocoNetSSL)
+        find_path (INCLUDE_POCO_NET_SSL Poco/Net/NetSSL.h)
+        set_target_properties (Poco::Net::SSL PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_NET_SSL})
+        set_target_properties (Poco::Net::SSL PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_NET_SSL})
+
+        message (STATUS "Using Poco::Net::SSL: ${LIBRARY_POCO_NET_SSL} ${INCLUDE_POCO_NET_SSL}")
     endif ()
+else ()
+    add_library (_poco_net_ssl INTERFACE)
+    add_library (Poco::Net::SSL ALIAS _poco_net_ssl)
+
+    message (STATUS "Not using Poco::Net::SSL")
 endif ()

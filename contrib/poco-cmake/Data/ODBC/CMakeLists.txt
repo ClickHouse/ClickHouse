@@ -17,39 +17,27 @@ if (ENABLE_ODBC)
             ${LIBRARY_DIR}/Data/ODBC/src/Utility.cpp
         )
 
-        add_library (poco_data_odbc ${SRCS})
+        add_library (_poco_data_odbc ${SRCS})
+        add_library (Poco::Data::ODBC ALIAS _poco_data_odbc)
 
-        target_compile_options (poco_data_odbc PUBLIC -Wno-unused-variable)
-        target_include_directories (poco_data_odbc PUBLIC ${LIBRARY_DIR}/Data/ODBC/include)
-        target_link_libraries (poco_data_odbc PUBLIC poco_data unixodbc)
+        target_compile_options (Poco::Data::ODBC PUBLIC -Wno-unused-variable)
+        target_include_directories (Poco::Data::ODBC PUBLIC ${LIBRARY_DIR}/Data/ODBC/include)
+        target_link_libraries (Poco::Data::ODBC PUBLIC Poco::Data unixodbc)
     else ()
+        add_library (Poco::Data::ODBC UNKNOWN IMPORTED)
+
         find_library(LIBRARY_POCO_DATA_ODBC PocoDataODBC)
         find_path(INCLUDE_POCO_DATA_ODBC Poco/Data/ODBC/ODBC.h)
+        set_target_properties (Poco::Data::ODBC PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_DATA_ODBC})
+        set_target_properties (Poco::Data::ODBC PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_DATA_ODBC})
 
-        add_library (poco_data_odbc UNKNOWN IMPORTED)
-        set_property (TARGET poco_data_odbc PROPERTY IMPORTED_LOCATION ${LIBRARY_POCO_DATA_ODBC})
-        set_property (TARGET poco_data_odbc PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_DATA_ODBC})
-
-        set (CMAKE_REQUIRED_LIBRARIES poco_data_odbc)
-        check_cxx_source_compiles (
-            "
-            #include <Poco/Data/ODBC/Connector.h>
-
-            int main() {
-                Poco::Data::ODBC::Connector();
-            }
-            "
-            EXTERNAL_POCO_DATA_ODBC_WORKS
-        )
-
-        if (NOT EXTERNAL_POCO_DATA_ODBC_WORKS)
-            message (FATAL_ERROR "Poco::Data::ODBC is unusable: ${LIBRARY_POCO_DATA_ODBC} ${INCLUDE_POCO_DATA_ODBC}")
-        endif ()
+        target_link_libraries (Poco::Data::ODBC INTERFACE Poco::Data)
     endif ()
 
     message (STATUS "Using Poco::Data::ODBC")
 else ()
-    add_library (poco_data_odbc INTERFACE)
+    add_library (_poco_data_odbc INTERFACE)
+    add_library (Poco::Data::ODBC ALIAS _poco_data_odbc)
 
     message (STATUS "Not using Poco::Data::ODBC")
 endif ()

@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Common/config.h>
-#include <Interpreters/Context.h>
-#include <Poco/Logger.h>
-#include <Poco/Net/HTTPRequestHandler.h>
+#if USE_ODBC
+
+#    include <Interpreters/Context.h>
+#    include <Poco/Logger.h>
+#    include <Poco/Net/HTTPRequestHandler.h>
+#    include <Common/config.h>
 
 /** The structure of the table is taken from the query "SELECT * FROM table WHERE 1=0".
   * TODO: It would be much better to utilize ODBC methods dedicated for columns description.
@@ -29,3 +31,5 @@ private:
 };
 
 }
+
+#endif

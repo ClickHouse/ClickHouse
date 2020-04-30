@@ -8,9 +8,10 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/XML/src/xmltok.c
     )
 
-    add_library (poco_xml_expat ${SRCS_EXPAT})
+    add_library (_poco_xml_expat ${SRCS_EXPAT})
+    add_library (Poco::XML::Expat ALIAS _poco_xml_expat)
 
-    target_include_directories (poco_xml_expat PUBLIC ${LIBRARY_DIR}/XML/include)
+    target_include_directories (_poco_xml_expat PUBLIC ${LIBRARY_DIR}/XML/include)
 
     # Poco::XML
 
@@ -91,9 +92,19 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/XML/src/xmlparse.cpp
     )
 
-    add_library (poco_xml ${SRCS})
+    add_library (_poco_xml ${SRCS})
+    add_library (Poco::XML ALIAS _poco_xml)
 
-    target_compile_options (poco_xml PUBLIC -Wno-old-style-cast)
-    target_include_directories (poco_xml PUBLIC ${LIBRARY_DIR}/XML/include)
-    target_link_libraries (poco_xml PUBLIC poco_foundation poco_xml_expat)
+    target_compile_options (_poco_xml PUBLIC -Wno-old-style-cast)
+    target_include_directories (_poco_xml PUBLIC ${LIBRARY_DIR}/XML/include)
+    target_link_libraries (_poco_xml PUBLIC Poco::Foundation Poco::XML::Expat)
+else ()
+    add_library (Poco::XML UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_XML PocoXML)
+    find_path (INCLUDE_POCO_XML Poco/XML/XML.h)
+    set_target_properties (Poco::XML PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_XML})
+    set_target_properties (Poco::XML PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_XML})
+
+    message (STATUS "Using Poco::XML: ${LIBRARY_POCO_XML} ${INCLUDE_POCO_XML}")
 endif ()

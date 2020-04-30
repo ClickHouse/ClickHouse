@@ -19,9 +19,17 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
     {
 
         if (uri.getPath() == "/columns_info")
+#if USE_ODBC
             return new ODBCColumnsInfoHandler(keep_alive_timeout, context);
+#else
+            return nullptr;
+#endif
         else if (uri.getPath() == "/identifier_quote")
+#if USE_ODBC
             return new IdentifierQuoteHandler(keep_alive_timeout, context);
+#else
+            return nullptr;
+#endif
         else
             return new ODBCHandler(pool_map, keep_alive_timeout, context);
     }

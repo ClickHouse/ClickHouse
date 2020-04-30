@@ -15,8 +15,8 @@ set (CLICKHOUSE_ODBC_BRIDGE_LINK
         clickhouse_parsers
         daemon
         dbms
-        poco_data
-        poco_data_odbc
+        Poco::Data
+        Poco::Data::ODBC
 )
 
 clickhouse_program_add_library(odbc-bridge)

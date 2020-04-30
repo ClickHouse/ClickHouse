@@ -70,9 +70,9 @@ target_link_libraries (common
         ${CITYHASH_LIBRARIES}
         ${Boost_SYSTEM_LIBRARY}
         FastMemcpy
-        poco_net
-        poco_net_ssl
-        poco_util
+        Poco::Net
+        Poco::Net::SSL
+        Poco::Util
         replxx
 
     PRIVATE

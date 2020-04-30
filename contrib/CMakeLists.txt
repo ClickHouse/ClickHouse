@@ -16,6 +16,7 @@ add_subdirectory (murmurhash)
 add_subdirectory (poco-cmake)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
+add_subdirectory (unixodbc-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.
@@ -130,11 +131,6 @@ endif ()
 if (USE_RDKAFKA)
     add_subdirectory (cppkafka-cmake)
 endif()
-
-if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
-    add_subdirectory (unixodbc-cmake)
-    add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
-endif ()
 
 if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
     add_subdirectory (icu-cmake)

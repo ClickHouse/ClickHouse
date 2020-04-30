@@ -23,8 +23,18 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/MongoDB/src/UpdateRequest.cpp
     )
 
-    add_library (poco_mongodb ${SRCS})
+    add_library (_poco_mongodb ${SRCS})
+    add_library (Poco::MongoDB ALIAS _poco_mongodb)
 
-    target_include_directories (poco_mongodb PUBLIC ${LIBRARY_DIR}/MongoDB/include)
-    target_link_libraries (poco_mongodb PUBLIC poco_net)
+    target_include_directories (_poco_mongodb PUBLIC ${LIBRARY_DIR}/MongoDB/include)
+    target_link_libraries (_poco_mongodb PUBLIC Poco::Net)
+else ()
+    add_library (Poco::MongoDB UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_MONGODB PocoMongoDB)
+    find_path (INCLUDE_POCO_MONGODB Poco/MongoDB/MongoDB.h)
+    set_target_properties (Poco::MongoDB PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_MONGODB})
+    set_target_properties (Poco::MongoDB PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_MONGODB})
+
+    message (STATUS "Using Poco::MongoDB: ${LIBRARY_POCO_MONGODB} ${INCLUDE_POCO_MONGODB}")
 endif ()

@@ -401,6 +401,7 @@ target_link_libraries(clickhouse_common_io
             ${CITYHASH_LIBRARIES}
             ${ZLIB_LIBRARIES}
             pcg_random
+            Poco::Foundation
             roaring
 )
 
@@ -426,7 +427,7 @@ dbms_target_link_libraries (
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
-        poco_json
+        Poco::JSON
         string_utils
     PUBLIC
         ${Boost_SYSTEM_LIBRARY}

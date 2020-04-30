@@ -29,8 +29,18 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Util/src/XMLConfiguration.cpp
     )
 
-    add_library (poco_util ${SRCS})
+    add_library (_poco_util ${SRCS})
+    add_library (Poco::Util ALIAS _poco_util)
 
-    target_include_directories (poco_util PUBLIC ${LIBRARY_DIR}/Util/include)
-    target_link_libraries (poco_util PUBLIC poco_json poco_xml)
+    target_include_directories (_poco_util PUBLIC ${LIBRARY_DIR}/Util/include)
+    target_link_libraries (_poco_util PUBLIC Poco::Util Poco::XML)
+else ()
+    add_library (Poco::Util UNKNOWN IMPORTED GLOBAL)
+
+    find_library (LIBRARY_POCO_UTIL PocoUtil)
+    find_path (INCLUDE_POCO_UTIL Poco/Util/Util.h)
+    set_target_properties (Poco::Util PROPERTIES IMPORTED_LOCATION ${LIBRARY_POCO_UTIL})
+    set_target_properties (Poco::Util PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_UTIL})
+
+    message (STATUS "Using Poco::Util: ${LIBRARY_POCO_UTIL} ${INCLUDE_POCO_UTIL}")
 endif ()
