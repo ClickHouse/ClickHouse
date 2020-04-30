@@ -160,9 +160,6 @@ def translate_filter(key, value, _format, _):
             attempts = 10
             if '#' in href:
                 href, anchor = href.split('#', 1)
-
-            if href.endswith('.md'):
-                href = href.replace('_', '-')
             if anchor:
                 href = f'{href}#{anchor}'
             value[2][0] = href
