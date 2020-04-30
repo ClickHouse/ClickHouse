@@ -29,9 +29,17 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     : storage(storage_)
     , disk(disk_)
     , path(storage.getFullPathOnDisk(disk) + name)
-    , out(disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
-    , block_out(std::make_unique<NativeBlockOutputStream>(*out, 0, storage.getSampleBlock())) {}
+{
+    init();
+}
 
+void MergeTreeWriteAheadLog::init()
+{
+    out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, storage.getSampleBlock());
+    min_block_number = std::numeric_limits<Int64>::max();
+    max_block_number = std::numeric_limits<Int64>::min();
+}
 
 void MergeTreeWriteAheadLog::write(const Block & block, const String & part_name)
 {
@@ -47,20 +55,17 @@ void MergeTreeWriteAheadLog::write(const Block & block, const String & part_name
     block_out->flush();
 
     if (out->count() > MAX_WAL_BYTES)
-        rotate(lock);
+        rotate();
 }
 
-void MergeTreeWriteAheadLog::rotate(const std::lock_guard<std::mutex> & /*write_lock*/)
+void MergeTreeWriteAheadLog::rotate()
 {
     String new_name = String(WAL_FILE_NAME) + "_"
         + toString(min_block_number) + "_"
         + toString(max_block_number) + WAL_FILE_EXTENSION;
 
     Poco::File(path).renameTo(storage.getFullPathOnDisk(disk) + new_name);
-    out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, storage.getSampleBlock());
-    min_block_number = std::numeric_limits<Int64>::max();
-    max_block_number = std::numeric_limits<Int64>::min();
+    init();
 }
 
 MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()

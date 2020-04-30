@@ -65,7 +65,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
         sizeof(StackTrace::Frames) +           // collected stack trace, maximum capacity
         sizeof(TraceType) +                    // trace type
         sizeof(UInt64) +                       // thread_id
-        sizeof(UInt64);                         // size
+        sizeof(UInt64);                        // size
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 

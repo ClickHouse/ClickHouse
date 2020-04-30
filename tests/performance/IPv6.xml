@@ -1,14 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-        <any_of>
-            <min_time_not_changing_for_ms>5000</min_time_not_changing_for_ms>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
     <!-- The CAIDA UCSD IPv4 Routed /24 DNS Names Dataset - 20181130,
          http://www.caida.org/data/active/ipv4_dnsnames_dataset.xml.

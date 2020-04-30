@@ -14,7 +14,7 @@ namespace DB
 class ODBCColumnsInfoHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    ODBCColumnsInfoHandler(size_t keep_alive_timeout_, std::shared_ptr<Context> context_)
+    ODBCColumnsInfoHandler(size_t keep_alive_timeout_, Context & context_)
         : log(&Poco::Logger::get("ODBCColumnsInfoHandler")), keep_alive_timeout(keep_alive_timeout_), context(context_)
     {
     }
@@ -24,7 +24,7 @@ public:
 private:
     Poco::Logger * log;
     size_t keep_alive_timeout;
-    std::shared_ptr<Context> context;
+    Context & context;
 };
 }
 #endif

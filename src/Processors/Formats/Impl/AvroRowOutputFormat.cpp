@@ -286,7 +286,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns)
     avro::RecordSchema record_schema("row");
 
     size_t type_name_increment = 0;
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
         try
         {

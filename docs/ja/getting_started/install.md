@@ -25,22 +25,15 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 公式の事前コンパイルを使用することをお勧めします `deb` DebianやUbuntuのためのパッケージ.
 
-イ公式パッケージの追加のyandexリポジトリに `/etc/apt/sources.list` または別の `/etc/apt/sources.list.d/clickhouse.list` ファイル:
-
-      deb http://repo.clickhouse.tech/deb/stable/ main/
-
-最新のバージョンを使用する場合は、以下を置き換えます `stable` と `testing` (これはテスト環境に推奨されます)。
-
 そこにこれらのコマンド置パッケージ:
 
 ``` bash
-sudo apt-get install dirmngr # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
+{% include 'install/deb.sh' %}
 ```
 
-でもダウンロードとインストールパッケージを手動で下からもアクセスできます。https://repo.yandex.ru/clickhouse/deb/stable/main/.
+でもダウンロードとインストールパッケージを手動で下からもアクセスできます。https://repo.clickhouse.tech/deb/stable/main/.
+
+最新のバージョンを使用する場合は、以下を置き換えます `stable` と `testing` (これはテスト環境に推奨されます)。
 
 #### パッケージ {#packages}
 

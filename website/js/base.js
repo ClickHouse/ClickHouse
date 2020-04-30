@@ -73,11 +73,14 @@
             f = function () { n.parentNode.insertBefore(s, n); };
         s.type = "text/javascript";
         s.async = true;
-        s.src = "https://mc.yandex.ru/metrika/tag.js";
-
-        if (w.opera == "[object Opera]") {
-            d.addEventListener("DOMContentLoaded", f, false);
-        } else { f(); }
+        s.src = "/js/metrika.js";
+        if (window.location.hostname.endsWith('clickhouse.tech')) {
+            if (w.opera == "[object Opera]") {
+                d.addEventListener("DOMContentLoaded", f, false);
+            } else {
+                f();
+            }
+        }
     })(document, window, "yandex_metrika_callbacks2");
 
     var beforePrint = function() {

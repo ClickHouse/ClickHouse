@@ -70,14 +70,14 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity,
-        bool need_finish_last_granule);
+        const MergeTreeIndexGranularity & index_granularity);
 
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block) final;
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block) final;
 
-    /// Count index_granularity for block and store in `index_granularity`
-    void fillIndexGranularity(const Block & block) final;
+     /// Count index_granularity for block and store in `index_granularity`
+    size_t computeIndexGranularity(const Block & block);
+    virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block);
 
     void initSkipIndices() final;
     void initPrimaryIndex() final;
@@ -124,6 +124,10 @@ protected:
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;
+
+private:
+    /// Index is already serialized up to this mark.
+    size_t index_mark = 0;
 };
 
 }

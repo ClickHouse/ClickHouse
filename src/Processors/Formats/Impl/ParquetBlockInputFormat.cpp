@@ -84,7 +84,7 @@ private:
 
 static std::shared_ptr<arrow::io::RandomAccessFile>  as_arrow_file(ReadBuffer & in)
 {
-    if (auto fd_in = dynamic_cast<ReadBufferFromFileDescriptor*>(&in))
+    if (auto * fd_in = dynamic_cast<ReadBufferFromFileDescriptor*>(&in))
     {
         struct stat stat;
         auto res = ::fstat(fd_in->getFD(), &stat);
@@ -137,7 +137,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
-    auto &header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
 
     if (row_group_current >= row_group_total)
         return res;

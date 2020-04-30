@@ -107,7 +107,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        auto & settings = args.context.getSettingsRef();
+        const auto & settings = args.context.getSettingsRef();
 
         auto join_use_nulls = settings.join_use_nulls;
         auto max_rows_in_join = settings.max_rows_in_join;

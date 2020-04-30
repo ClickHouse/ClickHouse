@@ -103,4 +103,5 @@ def test_insert_clamps_settings():
 
     distributed.query("INSERT INTO proxy VALUES (toDate('2020-02-20'), 2, 2)")
     distributed.query("INSERT INTO proxy VALUES (toDate('2020-02-21'), 2, 2)", settings={"max_memory_usage": 5000000})
-    assert distributed.query("SELECT COUNT() FROM proxy") == "4\n"
+    distributed.query("SYSTEM FLUSH DISTRIBUTED proxy")
+    assert_eq_with_retry(distributed, "SELECT COUNT() FROM proxy", "4")

@@ -71,8 +71,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
-    const MergeTreeIndexGranularity & index_granularity_,
-    bool need_finish_last_granule_)
+    const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(storage_,
         columns_list_, indices_to_recalc_,
         index_granularity_, settings_)
@@ -82,7 +81,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
     , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
-    , need_finish_last_granule(need_finish_last_granule_)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
@@ -91,15 +89,15 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         disk->createDirectories(part_path);
 }
 
-static void fillIndexGranularityImpl(
+// Implemetation is splitted into static functions for ability
+/// of making unit tests without creation instance of IMergeTreeDataPartWriter,
+/// which requires a lot of dependencies and access to filesystem.
+static size_t computeIndexGranularityImpl(
     const Block & block,
     size_t index_granularity_bytes,
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
-    size_t index_offset,
-    MergeTreeIndexGranularity & index_granularity,
-    bool can_use_adaptive_index_granularity,
-    bool need_finish_last_granule = false)
+    bool can_use_adaptive_index_granularity)
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
@@ -126,43 +124,37 @@ static void fillIndexGranularityImpl(
 
     /// We should be less or equal than fixed index granularity
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
-
-    size_t current_row;
-    for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-    {
-        size_t rows_left_in_block = rows_in_block - current_row;
-
-        /// Try to extend last granule if it's needed and block is large enough
-        ///  or it shouldn't be first in granule (index_offset != 0).
-        if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block
-            && (rows_in_block >= index_granularity_for_block || index_offset != 0))
-        {
-            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
-            // So, real size of granule differs from index_granularity_for_block not more than 50%.
-            if (rows_left_in_block * 2 >= index_granularity_for_block)
-                index_granularity.appendMark(rows_left_in_block);
-            else
-                index_granularity.addRowsToLastMark(rows_left_in_block);
-        }
-        else
-        {
-            index_granularity.appendMark(index_granularity_for_block);
-        }
-    }
+    return index_granularity_for_block;
 }
 
-void MergeTreeDataPartWriterOnDisk::fillIndexGranularity(const Block & block)
+static void fillIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity,
+    size_t index_offset,
+    size_t index_granularity_for_block,
+    size_t rows_in_block)
+{
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+        index_granularity.appendMark(index_granularity_for_block);
+}
+
+size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block)
 {
     const auto storage_settings = storage.getSettings();
+    return computeIndexGranularityImpl(
+            block,
+            storage_settings->index_granularity_bytes,
+            storage_settings->index_granularity,
+            settings.blocks_are_granules_size,
+            settings.can_use_adaptive_granularity);
+}
+
+void MergeTreeDataPartWriterOnDisk::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
+{
     fillIndexGranularityImpl(
-        block,
-        storage_settings->index_granularity_bytes,
-        storage_settings->index_granularity,
-        settings.blocks_are_granules_size,
-        index_offset,
         index_granularity,
-        settings.can_use_adaptive_granularity,
-        need_finish_last_granule);
+        getIndexOffset(),
+        index_granularity_for_block,
+        rows_in_block);
 }
 
 void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
@@ -222,22 +214,22 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
-    while (current_mark < )
-    for (size_t i = index_offset; i < rows;)
+    size_t current_row = getIndexOffset();
+    size_t total_marks = index_granularity.getMarksCount();
+
+    while (index_mark < total_marks && current_row < rows)
     {
         if (storage.hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, i);
-                primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
+                index_columns[j]->insertFrom(*primary_column.column, current_row);
+                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
             }
         }
 
-        i += index_granularity.getMarkRows(current_mark++);
-        if (current_mark >= index_granularity.getMarksCount())
-            break;
+        current_row += index_granularity.getMarkRows(index_mark++);
     }
 
     /// store last index row to write final mark at the end of column
@@ -266,9 +258,10 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         while (prev_pos < rows)
         {
             UInt64 limit = 0;
-            if (prev_pos == 0 && index_offset != 0)
+            size_t current_index_offset = getIndexOffset();
+            if (prev_pos == 0 && current_index_offset != 0)
             {
-                limit = index_offset;
+                limit = current_index_offset;
             }
             else
             {

@@ -198,9 +198,9 @@ struct ValueGetterBuilderImpl<Type, Types...>
 {
     static ValueGetter build(const IColumn * x)
     {
-        if (const auto nullable_column = typeid_cast<const ColumnNullable *>(x))
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(x))
         {
-            if (const auto nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
+            if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
                 return [&null_data = nullable_column->getNullMapData(), &column_data = nested_column->getData()](size_t i)
                 { return Ternary::makeValue(column_data[i], null_data[i]); };
@@ -442,7 +442,7 @@ static void basicExecuteImpl(ColumnRawPtrs arguments, ColumnWithTypeAndName & re
     Columns converted_columns_holder;
     for (const IColumn * column : arguments)
     {
-        if (auto uint8_column = checkAndGetColumn<ColumnUInt8>(column))
+        if (const auto * uint8_column = checkAndGetColumn<ColumnUInt8>(column))
             uint8_args.push_back(uint8_column);
         else
         {

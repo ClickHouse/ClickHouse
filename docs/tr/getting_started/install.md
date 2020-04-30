@@ -27,14 +27,14 @@ Resmi önceden derlenmiş kullanılması tavsiye edilir `deb` Debian veya Ubuntu
 
 Resmi paketleri yüklemek için Yandex deposunu ekleyin `/etc/apt/sources.list` veya ayrı bir `/etc/apt/sources.list.d/clickhouse.list` Dosya:
 
-      deb http://repo.clickhouse.tech/deb/stable/ main/
+      deb https://repo.clickhouse.tech/deb/stable/ main/
 
 En son sürümü kullanmak istiyorsanız, değiştirin `stable` ile `testing` (bu, test ortamlarınız için önerilir).
 
 Sonra paketleri yüklemek için bu komutları çalıştırın:
 
 ``` bash
-sudo apt-get install dirmngr # optional
+sudo apt-get install apt-transport-https ca-certificates dirmngr # optional
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server

@@ -787,7 +787,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Смотрите также**
 
--   [Репликация](../../operations/server_configuration_parameters/settings.md)
+-   [Репликация](../../engines/table_engines/mergetree_family/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}

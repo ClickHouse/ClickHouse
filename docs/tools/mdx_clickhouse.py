@@ -4,6 +4,7 @@ from __future__ import unicode_literals
 
 import os
 
+import jinja2
 import markdown.inlinepatterns
 import markdown.extensions
 import markdown.util
@@ -85,6 +86,10 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         super(PatchedMacrosPlugin, self).on_config(config)
         self.env.comment_start_string = '{##'
         self.env.comment_end_string = '##}'
+        self.env.loader = jinja2.FileSystemLoader([
+            os.path.join(config.data['site_dir']),
+            os.path.join(config.data['extra']['includes_dir'])
+        ])
 
     def on_env(self, env, config, files):
         env.add_extension('jinja2.ext.i18n')

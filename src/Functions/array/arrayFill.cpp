@@ -80,7 +80,7 @@ struct ArrayFillImpl
         }
         else
         {
-            auto column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            const auto * column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_fill_const)
                 throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);

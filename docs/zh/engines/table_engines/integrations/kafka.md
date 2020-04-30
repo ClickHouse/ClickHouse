@@ -109,7 +109,7 @@ Kafka 特性：
 停止接收主题数据或更改转换逻辑，请 detach 物化视图：
 
       DETACH TABLE consumer;
-      ATTACH MATERIALIZED VIEW consumer;
+      ATTACH TABLE consumer;
 
 如果使用 `ALTER` 更改目标表，为了避免目标表与视图中的数据之间存在差异，推荐停止物化视图。
 

@@ -59,6 +59,7 @@ public:
     const auto & getSchemaName() const { return schema_name; }
     const auto & skipBroken() const { return skip_broken; }
 
+    NamesAndTypesList getVirtuals() const override;
 protected:
     StorageKafka(
         const StorageID & table_id_,
