@@ -2,22 +2,25 @@
 #include "Core/Block.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
+#include <common/logger_useful.h>
 #include <amqpcpp.h>
 
 namespace DB
 {
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
-        ChannelPtr channel_,
+        ChannelPtr producer_channel_,
         const String & routing_key_,
         const String & exchange_,
+        Poco::Logger * log_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_
 )
         : WriteBuffer(nullptr, 0)
-        , channel(channel_)
+        , producer_channel(producer_channel_)
         , routing_key(routing_key_)
         , exchange_name(exchange_)
+        , log(log_)
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
@@ -31,6 +34,8 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 
 void WriteBufferToRabbitMQProducer::count_row()
 {
+    LOG_TRACE(log, "count row");
+
     if (++rows % max_rows == 0)
     {
         const std::string & last_chunk = chunks.back();
@@ -47,9 +52,9 @@ void WriteBufferToRabbitMQProducer::count_row()
 
         payload.append(last_chunk, 0, last_chunk_size);
 
-        channel->declareExchange(exchange_name, AMQP::direct).onSuccess([&]()
+        producer_channel->declareExchange(exchange_name, AMQP::direct).onSuccess([&]()
            {
-               channel->publish(exchange_name, routing_key, payload).onError(
+               producer_channel->publish(exchange_name, routing_key, payload).onError(
                        [](const char * /* messsage */)
                        {
                        });
@@ -63,6 +68,8 @@ void WriteBufferToRabbitMQProducer::count_row()
 
 void WriteBufferToRabbitMQProducer::nextImpl()
 {
+    LOG_TRACE(log, "count row");
+
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);

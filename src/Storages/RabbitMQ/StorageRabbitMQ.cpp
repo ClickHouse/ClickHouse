@@ -71,6 +71,7 @@ StorageRabbitMQ::StorageRabbitMQ(
                                               {"_deliveryTag", std::make_shared<DataTypeString>()}
                                       }, true))
         , global_context(context_.getGlobalContext())
+        , rabbitmq_context(Context(global_context))
         , host_port(global_context.getMacros()->expand(host_port_))
         , routing_keys(global_context.getMacros()->expand(routing_keys_))
         , exchange_name(exchange_name_)
@@ -81,17 +82,25 @@ StorageRabbitMQ::StorageRabbitMQ(
         , skip_broken(skip_broken_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
-        , connection_handler(parseAddress(host_port, 5672), log)
-        , connection(&connection_handler,
-                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), "/")
+        , evbase(event_base_new())
+        , eventHandler(evbase, log)
+        , connection(&eventHandler,
+          AMQP::Address("rabbitmq1", 5672, AMQP::Login(eventHandler.get_user_name(), eventHandler.get_password()), "/"))
 {
+    rabbitmq_context.makeQueryContext();
+
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
+    while(!connection.ready())
+    {
+        event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+    }
+
     LOG_DEBUG(log, "Is connection ready? - " + std::to_string(connection.ready()));
     LOG_DEBUG(log, "Is connection usable? - " + std::to_string(connection.usable()));
-    LOG_DEBUG(log, "Is connection waiting for the answer from server? - " + std::to_string(connection.waiting()));
+
 }
 
 
@@ -103,6 +112,7 @@ Pipes StorageRabbitMQ::read(
         size_t /* max_block_size */,
         unsigned /* num_streams */)
 {
+    LOG_TRACE(log, "read stream");
     if (num_created_consumers == 0)
         return {};
 
@@ -122,7 +132,8 @@ Pipes StorageRabbitMQ::read(
 
 BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
 {
-    return std::make_shared<RabbitMQBlockOutputStream>(*this, context);
+    LOG_TRACE(log, "write stream");
+    return std::make_shared<RabbitMQBlockOutputStream>(*this, context, log);
 }
 
 
@@ -143,15 +154,8 @@ void StorageRabbitMQ::startup()
         }
     }
 
+
     task->activateAndSchedule();
-
-    LOG_DEBUG(log, "Available channels: " + std::to_string(connection.channels()));
-
-    /// if connection failed report about what has failed
-    // TODO:it will also close the connection, so it has to be restored
-    if (!connection.usable() || !connection.ready())
-        connection.fail("Connection failed.");
-
 }
 
 
@@ -172,11 +176,6 @@ void StorageRabbitMQ::shutdown()
 
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 {
-/*
- * Messages are pushed to consumers (and not pulled by consumers), so if there is no queue binding from exchange
- * to any queue with a routing key of the message, then the message is not routed anywhere from the exchange and lost.
- * So we declare queues and subscribe for messages here.
- */
     buffer->subscribe(exchange_name, routing_keys);
 
     std::lock_guard lock(mutex);
@@ -214,10 +213,11 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
+    LOG_TRACE(log, "create write buffer");
     /// Sharing one channel between publishers
     if (!publishing_channel)
     {
-        publishing_channel = std::make_shared<AMQP::Channel>(&connection);
+        publishing_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
         publishing_channel->confirmSelect()
             .onSuccess([&]()
@@ -236,25 +236,28 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
             });
     }
 
-    return std::make_shared<WriteBufferToRabbitMQProducer>(publishing_channel, routing_keys[0], exchange_name,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(publishing_channel, routing_keys[0], exchange_name, log,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
+    LOG_TRACE(log, "create read buffer");
     const Settings & settings = global_context.getSettingsRef();
     size_t batch_size = max_block_size;
     if (!batch_size)
         batch_size = settings.max_block_size.value;
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::Channel>(&connection),
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, 
             log, batch_size, stream_cancelled);
 }
 
 
 bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
+    LOG_TRACE(log, "check dependencies");
+
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (dependencies.empty())
@@ -289,18 +292,26 @@ void StorageRabbitMQ::threadFunc()
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
 
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        LOG_DEBUG(log, std::to_string(dependencies_count));
+        if (dependencies_count)
         {
-            if (!checkDependencies(table_id))
-                break;
+            LOG_DEBUG(log, std::to_string(stream_cancelled));
+            LOG_DEBUG(log, std::to_string(num_created_consumers));
+            LOG_DEBUG(log, std::to_string(dependencies_count));
 
-            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!stream_cancelled && num_created_consumers > 0)
+            {
+                if (!checkDependencies(table_id))
+                    break;
 
-            if (!streamToViews())
-                break;
+                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
+
+                if (!streamToViews())
+                    break;
+            }
         }
     }
     catch (...)
@@ -316,6 +327,8 @@ void StorageRabbitMQ::threadFunc()
 
 bool StorageRabbitMQ::streamToViews()
 {
+    LOG_TRACE(log, "stream to views");
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id);
     if (!table)
@@ -330,7 +343,7 @@ bool StorageRabbitMQ::streamToViews()
     if (block_size == 0)
         block_size = settings.max_block_size;
 
-    InterpreterInsertQuery interpreter(insert, global_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -340,7 +353,7 @@ bool StorageRabbitMQ::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream = std::make_shared<RabbitMQBlockInputStream>(
-                *this, global_context, block_io.out->getHeader().getNames(), block_size, log, false);
+                *this, rabbitmq_context, block_io.out->getHeader().getNames(), block_size, log, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -360,14 +373,15 @@ bool StorageRabbitMQ::streamToViews()
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
 
-    for (auto & stream : streams)
-        stream->as<RabbitMQBlockInputStream>()->commitNotSubscribed(routing_keys);
+    //for (auto & stream : streams)
+    //    stream->as<RabbitMQBlockInputStream>()->commitNotSubscribed(routing_keys);
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
     const BlockStreamProfileInfo & info = in->getProfileInfo();
     limits_applied = info.hasAppliedLimit();
 
+    LOG_TRACE(log, "7");
     return limits_applied;
 }
 
@@ -437,28 +451,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-
-        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
+        String format = rabbitmq_settings.rabbitmq_format.value;
         if (args_count >= 4)
         {
+            engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
+
             const auto * ast = engine_args[3]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
-            {
-                num_consumers = safeGet<UInt64>(ast->value);
-            }
-            else
-            {
-                throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-
-        String format = rabbitmq_settings.rabbitmq_format.value;
-        if (args_count >= 5)
-        {
-            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
-
-            const auto * ast = engine_args[4]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 format = safeGet<String>(ast->value);
@@ -470,11 +468,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         char row_delimiter = rabbitmq_settings.rabbitmq_row_delimiter;
-        if (args_count >= 6)
+        if (args_count >= 5)
         {
-            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
+            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
 
-            const auto * ast = engine_args[5]->as<ASTLiteral>();
+            const auto * ast = engine_args[4]->as<ASTLiteral>();
             String arg;
             if (ast && ast->value.getType() == Field::Types::String)
             {
@@ -499,9 +497,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         UInt64 max_block_size = static_cast<size_t>(rabbitmq_settings.rabbitmq_max_block_size);
-        if (args_count >= 7)
+        if (args_count >= 6)
         {
-            const auto * ast = engine_args[6]->as<ASTLiteral>();
+            const auto * ast = engine_args[5]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -513,9 +511,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         size_t skip_broken = static_cast<size_t>(rabbitmq_settings.rabbitmq_skip_broken_messages);
-        if (args_count >= 8)
+        if (args_count >= 7)
         {
-            const auto * ast = engine_args[7]->as<ASTLiteral>();
+            const auto * ast = engine_args[6]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -523,6 +521,20 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             else
             {
                 throw Exception("Number of broken messages to skip must be a non-negative integer", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
+        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
+        if (args_count >= 8)
+        {
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                num_consumers = safeGet<UInt64>(ast->value);
+            }
+            else
+            {
+                throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
             }
         }
 

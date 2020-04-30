@@ -3,21 +3,20 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/Context.h>
+#include <Poco/Semaphore.h>
+#include <ext/shared_ptr_helper.h>
+#include <mutex>
+#include <atomic>
 
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-
-#include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
-
-#include <mutex>
-#include <atomic>
+#include <event2/event.h>
 
 
 namespace DB
 {
 
-using ChannelPtr = std::shared_ptr<AMQP::Channel>;
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
 {
@@ -48,11 +47,13 @@ public:
 
     ProducerBufferPtr createWriteBuffer();
 
-    RabbitMQHandler & getHandler() { return connection_handler; }
+    RabbitMQHandler & getHandler() { return eventHandler; }
     const Names & getRoutingKeys() const { return routing_keys; }
 
     const String & getFormatName() const { return format_name; }
     const auto & skipBroken() const { return skip_broken; }
+
+    AMQP::TcpConnection & get_connection() { return connection; }
 
 protected:
     StorageRabbitMQ(
@@ -65,6 +66,7 @@ protected:
 
 private:
     Context global_context;
+    Context rabbitmq_context;
 
     const String host_port;
     Names routing_keys;
@@ -83,8 +85,9 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    RabbitMQHandler connection_handler;
-    AMQP::Connection connection;
+    event_base * evbase;
+    RabbitMQHandler eventHandler;
+    AMQP::TcpConnection connection;
 
     ChannelPtr publishing_channel; /// Shared between all publishers
     ChannelPtr consumer_channel; /// Unique to consumer

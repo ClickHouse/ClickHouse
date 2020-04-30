@@ -157,3 +157,9 @@
 [submodule "contrib/msgpack-c"]
 	path = contrib/msgpack-c
 	url = https://github.com/msgpack/msgpack-c
+[submodule "contrib/libevent"]
+	path = contrib/libevent
+	url = https://github.com/libevent/libevent.git
+[submodule "contrib/amqpcpp"]
+	path = contrib/amqpcpp
+	url = https://github.com/akalend/amqpcpp.git

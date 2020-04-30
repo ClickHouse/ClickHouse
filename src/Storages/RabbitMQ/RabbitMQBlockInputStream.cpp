@@ -46,6 +46,8 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
+    LOG_DEBUG(log, "read prefix" );
+
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
 
     buffer = storage.popReadBuffer(timeout);
@@ -54,23 +56,23 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     if (!buffer)
         return;
 
-    buffer->start_consuming(storage.getHandler());
+    buffer->startNonBlockEventLoop();
 }
 
 
 Block RabbitMQBlockInputStream::readImpl()
 {
+    LOG_DEBUG(log, "read impl" );
+
     if (!buffer)
         return Block();
-
-    LOG_DEBUG(log, "Starting writing data into table");
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
             storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
-
+    
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
     port.setNeeded();
@@ -163,6 +165,8 @@ Block RabbitMQBlockInputStream::readImpl()
 
 void RabbitMQBlockInputStream::readSuffixImpl()
 {
+    LOG_DEBUG(log, "read suffix impl");
+
     if (commit_in_suffix)
         commit();
 }
@@ -170,20 +174,18 @@ void RabbitMQBlockInputStream::readSuffixImpl()
 
 void RabbitMQBlockInputStream::commit()
 {
-    if (!buffer)
-        return;
-
-    buffer->start_consuming(storage.getHandler());
 }
 
 
 void RabbitMQBlockInputStream::commitNotSubscribed(const Names & routing_keys)
 {
+    LOG_DEBUG(log, "commit not subscribed");
+
     if (!buffer)
         return;
 
     buffer->commitNotSubscribed(routing_keys);
-    buffer->start_consuming(storage.getHandler());
+    buffer->startNonBlockEventLoop();
 }
 
 
