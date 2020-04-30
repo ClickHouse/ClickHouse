@@ -71,7 +71,7 @@ Pipes StorageInput::read(
     if (query_context.getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
-        query_context.initializeInput(shared_from_this());
+        query_context.initializeInput(metadata_version);
         pipes.emplace_back(std::make_shared<StorageInputSource>(query_context, metadata_version->getSampleBlock()));
         return pipes;
     }

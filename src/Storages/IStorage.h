@@ -152,8 +152,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// result structure doesn't affect storage.
     virtual StorageMetadataPtr getInMemoryMetadata() const;
 
-    Block getSampleBlock() const; /// ordinary + materialized.
-
     /// Return list of virtual columns (like _part, _table, etc). In the vast
     /// majority of cases virtual columns are static constant part of Storage
     /// class and don't depend on Storage object. But sometimes we have fake

@@ -209,7 +209,7 @@ void TCPHandler::runImpl()
             });
 
             /// Send structure of columns to client for function input()
-            query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
+            query_context->setInputInitializer([this] (Context & context, const StorageMetadataPtr & input_metadata)
             {
                 if (&context != &query_context.value())
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
@@ -220,11 +220,11 @@ void TCPHandler::runImpl()
                 if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
                 {
-                    sendTableColumns(input_storage->getColumns());
+                    sendTableColumns(input_metadata->getColumns());
                 }
 
                 /// Send block to the client - input storage structure.
-                state.input_header = input_storage->getSampleBlock();
+                state.input_header = input_metadata->getSampleBlock();
                 sendData(state.input_header);
             });
 

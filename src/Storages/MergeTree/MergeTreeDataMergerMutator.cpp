@@ -802,6 +802,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     MergedBlockOutputStream to{
         new_data_part,
+        metadata,
         merging_columns,
         data.skip_indices,
         compression_codec,
@@ -973,6 +974,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & metadata,
     const MutationCommands & commands,
     MergeListEntry & merge_entry,
     time_t time_of_mutation,
@@ -1075,6 +1077,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         auto part_indices = getIndicesForNewDataPart(data.skip_indices, for_file_renames);
         mutateAllPartColumns(
             new_data_part,
+            metadata,
             part_indices,
             in,
             time_of_mutation,
@@ -1551,6 +1554,7 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const M
 
 void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergeTreeData::MutableDataPartPtr new_data_part,
+    const StorageMetadataPtr & metadata,
     const MergeTreeIndices & skip_indices,
     BlockInputStreamPtr mutating_stream,
     time_t time_of_mutation,
@@ -1572,6 +1576,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
 
     MergedBlockOutputStream out{
         new_data_part,
+        metadata,
         new_data_part->getColumns(),
         skip_indices,
         compression_codec};

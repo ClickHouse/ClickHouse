@@ -82,13 +82,19 @@ protected:
         const StorageMetadataPtr & metadata);
 
     Pipes createSources(
-        const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-        const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+        const SelectQueryInfo & query_info,
+        const QueryProcessingStage::Enum & processed_stage,
+        const UInt64 max_block_size,
+        const Block & header,
+        const StorageWithLockAndName & storage_with_lock,
+        const StorageMetadataPtr & metadata_version,
         Names & real_column_names,
-        const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
+        const std::shared_ptr<Context> & modified_context,
+        size_t streams_num,
+        bool has_table_virtual_column,
         bool concat_streams = false);
 
-    void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
+    void convertingSourceStream(const Block & header, const StorageMetadataPtr & metadata_version, const Context & context, ASTPtr & query,
                                 Pipe & pipe, QueryProcessingStage::Enum processed_stage);
 };
 

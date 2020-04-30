@@ -243,7 +243,7 @@ Pipes StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block header = getSampleBlock();
+    Block header = metadata_version->getSampleBlock();
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 

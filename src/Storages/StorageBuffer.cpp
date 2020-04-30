@@ -167,10 +167,10 @@ Pipes StorageBuffer::read(
         auto destination_lock = destination->lockStructureForShare(
                 false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
+        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_version, destination](const String& column_name)
         {
             const auto & dest_columns = destination->getColumns();
-            const auto & our_columns = getColumns();
+            const auto & our_columns = metadata_version->getColumns();
             return dest_columns.hasPhysical(column_name) &&
                    dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
         });
@@ -186,7 +186,7 @@ Pipes StorageBuffer::read(
         else
         {
             /// There is a struct mismatch and we need to convert read blocks from the destination table.
-            const Block header = getSampleBlock();
+            const Block header = metadata_version->getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
             const auto & dest_columns = destination->getColumns();

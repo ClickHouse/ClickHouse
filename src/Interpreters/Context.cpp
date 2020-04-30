@@ -2042,12 +2042,12 @@ void Context::setInputInitializer(InputInitializer && initializer)
 }
 
 
-void Context::initializeInput(const StoragePtr & input_storage)
+void Context::initializeInput(const StorageMetadataPtr & input_metadata)
 {
     if (!input_initializer_callback)
         throw Exception("Input initializer is not set", ErrorCodes::LOGICAL_ERROR);
 
-    input_initializer_callback(*this, input_storage);
+    input_initializer_callback(*this, input_metadata);
     /// Reset callback
     input_initializer_callback = {};
 }

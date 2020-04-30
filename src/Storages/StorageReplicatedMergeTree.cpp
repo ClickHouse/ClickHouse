@@ -1150,6 +1150,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 {
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = getSettings();
+    StorageMetadataPtr metadata_snapshot = getInMemoryMetadata();
     LOG_TRACE(log, "Executing log entry to mutate part " << source_part_name << " to " << entry.new_part_name);
 
     DataPartPtr source_part = getActiveContainingPart(source_part_name);
@@ -1219,7 +1220,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, entry.create_time, global_context, reserved_space, table_lock);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, metadata_snapshot, commands, *merge_entry, entry.create_time, global_context, reserved_space, table_lock);
         renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try

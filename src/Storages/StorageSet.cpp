@@ -121,7 +121,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
     set(std::make_shared<Set>(SizeLimits(), false, true))
 {
-    Block header = getSampleBlock();
+    Block header = getInMemoryMetadata()->getSampleBlock();
     header = header.sortColumns();
     set->setHeader(header);
 
@@ -140,7 +140,7 @@ void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
     Poco::File(path).createDirectories();
     Poco::File(path + "tmp/").createDirectories();
 
-    Block header = getSampleBlock();
+    Block header = getInMemoryMetadata()->getSampleBlock();
     header = header.sortColumns();
 
     increment = 0;

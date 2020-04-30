@@ -113,6 +113,7 @@ public:
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
+        const StorageMetadataPtr & metadata,
         const MutationCommands & commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
@@ -178,6 +179,7 @@ private:
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
+        const StorageMetadataPtr & metadata,
         const MergeTreeIndices & skip_indices,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,

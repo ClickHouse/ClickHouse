@@ -36,9 +36,10 @@ try
     column_names.push_back("WatchID");
 
     StoragePtr table = DatabaseCatalog::instance().getTable({"default", "hits6"});
+    StorageMetadataPtr metadata = table->getInMemoryMetadata();
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
-    auto pipes = table->read(column_names, table->getInMemoryMetadata(), {}, context, stage, settings.max_block_size, settings.max_threads);
+    auto pipes = table->read(column_names, metadata, {}, context, stage, settings.max_block_size, settings.max_threads);
 
     BlockInputStreams streams(pipes.size());
 
@@ -49,7 +50,7 @@ try
     stream = std::make_shared<LimitBlockInputStream>(stream, 10, 0);
 
     WriteBufferFromFileDescriptor wb(STDERR_FILENO);
-    Block sample = table->getSampleBlock();
+    Block sample = metadata->getSampleBlock();
     BlockOutputStreamPtr out = context.getOutputFormat("TabSeparated", wb, sample);
 
     copyData(*stream, *out);

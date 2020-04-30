@@ -188,7 +188,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     return result;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata)
 {
     Block & block = block_with_partition.block;
 
@@ -229,7 +229,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     for (const auto & ttl_entry : data.move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
+    NamesAndTypesList columns = metadata->getColumns().getAllPhysical().filter(block.getNames());
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
 
     auto new_data_part = data.createPart(
@@ -295,7 +295,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    MergedBlockOutputStream out(new_data_part, columns, data.skip_indices, compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata, columns, data.skip_indices, compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

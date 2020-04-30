@@ -307,7 +307,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     StoragePtr storage = context.executeTableFunction(input_function);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(ast, istr,
-                        input_storage.getSampleBlock(), context, input_function);
+                        input_storage.getInMemoryMetadata()->getSampleBlock(), context, input_function);
                     input_storage.setInputStream(input_stream);
                 }
             }

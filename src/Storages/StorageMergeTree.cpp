@@ -668,6 +668,7 @@ bool StorageMergeTree::tryMutatePart()
 {
     auto table_lock_holder = lockStructureForShare(
             true, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    StorageMetadataPtr metadata_snapshot = getInMemoryMetadata();
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
@@ -761,7 +762,7 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry,
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, metadata_snapshot, commands, *merge_entry,
             time(nullptr), global_context, tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);

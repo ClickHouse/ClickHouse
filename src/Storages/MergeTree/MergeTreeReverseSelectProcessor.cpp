@@ -50,7 +50,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     :
     MergeTreeBaseSelectProcessor{
     replaceTypes(metadata_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals()), owned_data_part_),
-        storage_, prewhere_info_, max_block_size_rows_,
+        storage_, metadata_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
@@ -116,7 +116,7 @@ try
 
     auto size_predictor = (preferred_block_size_bytes == 0)
         ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata->getSampleBlock());
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,

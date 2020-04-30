@@ -51,16 +51,6 @@ const ConstraintsDescription & IStorage::getConstraints() const
     return constraints;
 }
 
-Block IStorage::getSampleBlock() const
-{
-    Block res;
-
-    for (const auto & column : getColumns().getAllPhysical())
-        res.insert({column.type->createColumn(), column.type, column.name});
-
-    return res;
-}
-
 void IStorage::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())

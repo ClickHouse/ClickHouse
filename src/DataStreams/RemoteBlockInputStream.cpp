@@ -144,18 +144,19 @@ void RemoteBlockInputStream::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
+                StorageMetadataPtr metadata = cur->getInMemoryMetadata();
                 QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
 
                 Pipes pipes;
 
-                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), cur->getInMemoryMetadata(), {}, context,
+                pipes = cur->read(cur->getColumns().getNamesOfPhysical(), metadata, {}, context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
 
                 if (pipes.empty())
-                    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromSingleChunk>(cur->getSampleBlock(), Chunk()));
+                    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromSingleChunk>(metadata->getSampleBlock(), Chunk()));
                 else if (pipes.size() == 1)
                     data->pipe = std::make_unique<Pipe>(std::move(pipes.front()));
                 else
