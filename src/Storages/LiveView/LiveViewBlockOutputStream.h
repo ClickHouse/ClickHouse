@@ -11,13 +11,16 @@ namespace DB
 class LiveViewBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit LiveViewBlockOutputStream(StorageLiveView & storage_, const Context & context) : storage(storage_) 
+    explicit LiveViewBlockOutputStream(StorageLiveView & storage_, const Context & context) : storage(storage_)
     {
         auto target_table_storage = storage.tryGetTargetTable(context);
         if (target_table_storage)
         {
             auto lock = target_table_storage->lockStructureForShare(
                 true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+            
+	    if (!storage.isTargetTableATableFunction())
+                context.checkAccess(AccessType::INSERT, target_table_storage->getStorageID(), storage.getHeader().getNames());
 
             auto query_context = const_cast<Context &>(context);
             query_context.setSetting("output_format_enable_streaming", 1);

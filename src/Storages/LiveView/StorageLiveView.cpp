@@ -246,7 +246,8 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(table_id_), global_context(local_context.getGlobalContext())
+    : IStorage(table_id_)
+    , global_context(local_context.getGlobalContext())
 {
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
@@ -282,32 +283,23 @@ StorageLiveView::StorageLiveView(
 
 StoragePtr StorageLiveView::tryGetTargetTable(const Context & context) const
 {
-    if (target_table_function)
+    std::lock_guard lock(target_table_storage);
+
+    if (!target_table_storage)
     {
-        const auto * table_function = target_table_function->as<ASTFunction>();
-        const auto & factory = TableFunctionFactory::instance();
-        TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
-        return table_function_ptr->execute(target_table_function, context, table_function_ptr->getName());
+        if (target_table_function)
+        {
+            const auto * table_function = target_table_function->as<ASTFunction>();
+            const auto & factory = TableFunctionFactory::instance();
+            TableFunctionPtr table_function_ptr = factory.get(table_function->name, context);
+            target_table_storage = table_function_ptr->execute(target_table_function, context, table_function_ptr->getName());
+        }
+        else if (!target_table_id.empty())
+        {
+            target_table_storage = DatabaseCatalog::instance().tryGetTable(target_table_id);
+        }
     }
-    else if (!target_table_id.empty())
-        return DatabaseCatalog::instance().tryGetTable(target_table_id);
-    return {};
-}
-
-NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageLiveView::hasColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return true;
-
-    return IStorage::hasColumn(column_name);
+    return target_table_storage;
 }
 
 Block StorageLiveView::getHeader() const
@@ -355,6 +347,9 @@ void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
     {
         auto lock = target_table_storage->lockStructureForShare(
             true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+	if (!isTargetTableATableFunction())
+            context.checkAccess(AccessType::INSERT, target_table_id, getHeader().getNames());
 
         auto query_context = const_cast<Context &>(context);
         query_context.setSetting("output_format_enable_streaming", 1);
@@ -678,6 +673,13 @@ BlockInputStreams StorageLiveView::watch(
 
         return { reader };
     }
+}
+
+NamesAndTypesList StorageLiveView::getVirtuals() const
+{
+    return NamesAndTypesList{
+        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
+    };
 }
 
 void registerStorageLiveView(StorageFactory & factory)

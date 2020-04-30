@@ -56,9 +56,6 @@ public:
     }
     StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
     {
@@ -68,10 +65,18 @@ public:
     }
     ASTPtr getInnerBlocksQuery();
 
+    bool isTargetTableATableFunction() 
+    { 
+	if (target_table_function)
+	    return true;
+	return false;
+    }
     StoragePtr tryGetTargetTable(const Context & context) const;
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
+
+    NamesAndTypesList getVirtuals() const override;
 
     bool isTemporary() { return is_temporary; }
 
@@ -171,6 +176,9 @@ private:
     StorageID select_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr target_table_function = nullptr;
+    /// Mutex to protect access to target table storage
+    mutable std::mutex target_table_storage_lock; 
+    mutable StoragePtr target_table_storage = nullptr;
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
