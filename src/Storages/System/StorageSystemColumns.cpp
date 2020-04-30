@@ -132,9 +132,6 @@ protected:
 
             for (const auto & column : columns)
             {
-                if (column.is_virtual)
-                    continue;
-
                 if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 

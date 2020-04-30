@@ -62,9 +62,6 @@ public:
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     bool isRemote() const override { return true; }
 
     /// Return true if distributed_group_by_no_merge may be applied.
@@ -122,6 +119,8 @@ public:
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+
+    NamesAndTypesList getVirtuals() const override;
 
     String remote_database;
     String remote_table;
