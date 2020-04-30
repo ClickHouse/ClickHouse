@@ -345,9 +345,14 @@ void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
     {
         auto lock = target_table_storage->lockStructureForShare(
             true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+        context.checkAccess(AccessType::INSERT, target_table_id, getHeader().getNames());
+
         auto target_table_stream = target_table_storage->write(getInnerQuery(), context);
+
         auto query_context = const_cast<Context &>(context);
         query_context.setSetting("output_format_enable_streaming", 1);
+
         target_table_stream->writePrefix();
 
         BlocksPtr blocks;

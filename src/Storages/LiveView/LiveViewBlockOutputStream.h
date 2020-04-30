@@ -18,8 +18,12 @@ public:
         {
             auto lock = target_table_storage->lockStructureForShare(
                 true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+            context.checkAccess(AccessType::INSERT, target_table_storage->getStorageID(), storage.getHeader().getNames());
+
             target_table_stream = target_table_storage->write(storage.getInnerQuery(), context);
             target_table_stream->addTableLock(lock);
+
             auto query_context = const_cast<Context &>(context);
             query_context.setSetting("output_format_enable_streaming", 1);
         }
