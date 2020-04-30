@@ -1230,4 +1230,14 @@ Type: URL
 
 Default value: Empty
 
+## background_pool_size {#background_pool_size}
+
+Sets the number of threads performing background operations in table engines (for example, concurrent merges in `MergeTree`-engine tables ). Applies at ClickHouse server startup and can't be changed in a user session. Adjusting this setting, you manage CPU and disk load. The lower value of the setting, the lower CPU and disk resources are required.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

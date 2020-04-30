@@ -1121,4 +1121,14 @@ Default value: 0.
 -   [Sampling Query Profiler](../optimizing_performance/sampling_query_profiler.md)
 -   System table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
+## background_pool_size {#background_pool_size}
+
+Задает количество потоков для выполнения фоновых операций в движках таблиц (например, параллельные слияния в таблицах движка `MergeTree`). Настройка применяется при запуске сервера ClickHouse и не может быть изменена во время сеанса. Настройка позволяет управлять загрузкой процессора и диска. Чем ниже значение настройки, тем меньше загрузка.
+
+Допустимые значения:
+
+-  Положительное целое число.
+
+Значение по умолчанию: 16.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
