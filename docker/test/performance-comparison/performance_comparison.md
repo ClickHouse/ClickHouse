@@ -54,7 +54,27 @@ docker/test/performance-comparison/perf.py --host=localhost --port=9000 --runs=1
 ```
 
 #### Run all tests on some custom configuration
-Technically possible, but inconvenient -- requires some scripting and setting up the directory structure. See `manual-run.sh` for inspiration. `compare.sh` has some stages which you can skip, specified by the `stage` environment variable.
+Start two servers manually on ports `9001` (old) and `9002` (new). Change to a
+new directory to be used as workspace for tests, and try something like this:
+```
+$ PATH=$PATH:~/ch4/build-gcc9-rel/programs \
+    CHPC_TEST_PATH=~/ch3/ch/tests/performance \
+    CHPC_TEST_GREP=visit_param \
+    stage=run_tests \
+    ~/ch3/ch/docker/test/performance-comparison/compare.sh
+```
+* `PATH` must contain `clickhouse-local` and `clickhouse-client`.
+* `CHPC_TEST_PATH` -- path to performance test cases, e.g. `tests/performance`.
+* `CHPC_TEST_GREP` -- a filter for which tests to run, as a grep pattern.
+* `stage` -- from which execution stage to start. To run the tests, use
+  `run_tests` stage.
+
+The tests will run, and the `report.html` will be generated in the current
+directory.
+
+More complex setup is possible, but inconvenient and requires some scripting.
+See `manual-run.sh` for inspiration.
+
 
 #### Statistical considerations
 Generating randomization distribution for medians is tricky. Suppose we have N
