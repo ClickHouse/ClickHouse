@@ -232,7 +232,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             UInt32 max_datetime64_whole_precision = 0;
             for (const auto & t : types)
             {
-                if (auto dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
+                if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
                 {
                     const auto whole_precision = dt64->getPrecision() - dt64->getScale();
                     max_datetime64_whole_precision = std::max(whole_precision, max_datetime64_whole_precision);

@@ -1,4 +1,5 @@
 #include <any>
+#include <limits>
 
 #include <common/logger_useful.h>
 
@@ -91,7 +92,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     {
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
-            if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column))
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column))
                 column.column = filterWithBlanks(column.column, nullable_column->getNullMapColumn().getData(), true);
 
         JoinCommon::removeColumnNullability(column);
@@ -121,7 +122,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
 static void changeNullability(MutableColumnPtr & mutable_column)
 {
     ColumnPtr column = std::move(mutable_column);
-    if (auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
         column = nullable->getNestedColumnPtr();
     else
         column = makeNullable(column);
@@ -161,7 +162,7 @@ static void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr &
 
     if (nullable_src && !nullable_dst)
     {
-        auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column);
+        const auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column);
         if (change_lowcard)
             dst_column = changeLowCardinality(nullable->getNestedColumnPtr(), dst_column);
         else
@@ -178,7 +179,7 @@ static void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr &
     {
         if (change_lowcard)
         {
-            if (auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column))
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column))
             {
                 dst_column = makeNullable(changeLowCardinality(nullable->getNestedColumnPtr(), dst_not_null));
                 assert_cast<ColumnNullable &>(*dst_column->assumeMutable()).applyNullMap(nullable->getNullMapColumn());
@@ -629,7 +630,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 Block HashJoin::structureRightBlock(const Block & block) const
 {
     Block structured_block;
-    for (auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
+    for (const auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
     {
         ColumnWithTypeAndName column = block.getByName(sample_column.name);
         if (sample_column.column->isNullable())
@@ -646,6 +647,11 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         throw Exception("Logical error: HashJoin was not initialized", ErrorCodes::LOGICAL_ERROR);
     if (overDictionary())
         throw Exception("Logical error: insert into hash-map in HashJoin over dictionary", ErrorCodes::LOGICAL_ERROR);
+
+    /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
+    /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
+    if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
+        throw Exception("Too many rows in right table block for HashJoin: " + toString(source_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
 
     /// There's no optimization for right side const columns. Remove constness if any.
     Block block = materializeBlock(source_block);
@@ -729,14 +735,14 @@ public:
         type_name.reserve(num_columns_to_add);
         right_indexes.reserve(num_columns_to_add);
 
-        for (auto & src_column : block_with_columns_to_add)
+        for (const auto & src_column : block_with_columns_to_add)
         {
             /// Don't insert column if it's in left block
             if (!block.has(src_column.name))
                 addColumn(src_column);
         }
 
-        for (auto & extra : extras)
+        for (const auto & extra : extras)
             addColumn(extra);
 
         for (auto & tn : type_name)
@@ -1206,8 +1212,8 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
 
 static void checkTypeOfKey(const Block & block_left, const Block & block_right)
 {
-    auto & [c1, left_type_origin, left_name] = block_left.safeGetByPosition(0);
-    auto & [c2, right_type_origin, right_name] = block_right.safeGetByPosition(0);
+    const auto & [c1, left_type_origin, left_name] = block_left.safeGetByPosition(0);
+    const auto & [c2, right_type_origin, right_name] = block_right.safeGetByPosition(0);
     auto left_type = removeNullable(left_type_origin);
     auto right_type = removeNullable(right_type_origin);
 

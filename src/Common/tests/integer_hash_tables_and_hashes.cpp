@@ -293,7 +293,7 @@ void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, V
     if (init)
         init(map);
 
-    for (auto end = data + size; data < end; ++data)
+    for (const auto * end = data + size; data < end; ++data)
         ++map[*data];
 
     watch.stop();

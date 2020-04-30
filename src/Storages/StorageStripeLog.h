@@ -35,11 +35,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(
-        const String & new_path_to_table_data,
-        const String & new_database_name,
-        const String & new_table_name,
-        TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     CheckResults checkData(const ASTPtr & /* query */, const Context & /* context */) override;
 

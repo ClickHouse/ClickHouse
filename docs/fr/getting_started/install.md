@@ -25,22 +25,16 @@ Pour exécuter ClickHouse sur des processeurs qui ne prennent pas en charge SSE 
 
 Il est recommandé d'utiliser officiel pré-compilé `deb` Paquets Pour Debian ou Ubuntu.
 
-Pour installer les paquets officiels ajoutez le référentiel Yandex dans `/etc/apt/sources.list` ou dans un autre `/etc/apt/sources.list.d/clickhouse.list` fichier:
-
-      deb http://repo.clickhouse.tech/deb/stable/ main/
-
-Si vous souhaitez utiliser la version la plus récente, remplacer `stable` avec `testing` (ceci est recommandé pour vos environnements de test).
 
 Exécutez ensuite ces commandes pour installer les paquets:
 
 ``` bash
-sudo apt-get install dirmngr # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
+{% include 'install/deb.sh' %}
 ```
 
-Vous pouvez également télécharger et installer des paquets manuellement à partir d'ici: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+Si vous souhaitez utiliser la version la plus récente, remplacer `stable` avec `testing` (ceci est recommandé pour vos environnements de test).
+
+Vous pouvez également télécharger et installer des paquets manuellement à partir d'ici: https://repo.clickhouse.tech/deb/stable/main/.
 
 #### Paquet {#packages}
 

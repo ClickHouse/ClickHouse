@@ -64,6 +64,7 @@ SRCS(
     isLocalAddress.cpp
     Macros.cpp
     malloc.cpp
+    MemoryStatisticsOS.cpp
     MemoryTracker.cpp
     new_delete.cpp
     OptimizedRegularExpression.cpp
@@ -77,6 +78,7 @@ SRCS(
     quoteString.cpp
     randomSeed.cpp
     RemoteHostFilter.cpp
+    renameat2.cpp
     RWLock.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp

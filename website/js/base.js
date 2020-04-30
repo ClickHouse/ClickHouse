@@ -74,10 +74,13 @@
         s.type = "text/javascript";
         s.async = true;
         s.src = "/js/metrika.js";
-
-        if (w.opera == "[object Opera]") {
-            d.addEventListener("DOMContentLoaded", f, false);
-        } else { f(); }
+        if (window.location.hostname.endsWith('clickhouse.tech')) {
+            if (w.opera == "[object Opera]") {
+                d.addEventListener("DOMContentLoaded", f, false);
+            } else {
+                f();
+            }
+        }
     })(document, window, "yandex_metrika_callbacks2");
 
     var beforePrint = function() {

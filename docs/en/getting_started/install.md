@@ -21,24 +21,15 @@ To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or P
 
 ### From DEB Packages {#install-from-deb-packages}
 
-It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu.
+It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
-To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
-
-      deb http://repo.clickhouse.tech/deb/stable/ main/
+``` bash
+{% include 'install/deb.sh' %}
+```
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
-Then run these commands to install packages:
-
-``` bash
-sudo apt-get install dirmngr # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
-```
-
-You can also download and install packages manually from [here](https://repo.yandex.ru/clickhouse/deb/stable/main/).
+You can also download and install packages manually from [here](https://repo.clickhouse.tech/deb/stable/main/).
 
 #### Packages {#packages}
 

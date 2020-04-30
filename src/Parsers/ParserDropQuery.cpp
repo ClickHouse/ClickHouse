@@ -21,6 +21,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
+    ParserKeyword s_no_delay("NO DELAY");
 
     ASTPtr database;
     ASTPtr table;
@@ -29,6 +30,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
+    bool no_delay = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -76,6 +78,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
             if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
+
+        if (s_no_delay.ignore(pos, expected))
+            no_delay = true;
     }
 
     auto query = std::make_shared<ASTDropQuery>();
@@ -86,6 +91,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
     query->is_view = is_view;
+    query->no_delay = no_delay;
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);

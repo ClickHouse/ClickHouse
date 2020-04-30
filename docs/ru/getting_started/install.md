@@ -16,24 +16,15 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ### Из DEB пакетов {#install-from-deb-packages}
 
-Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu.
-
-Чтобы установить официальные пакеты, пропишите репозиторий Яндекса в `/etc/apt/sources.list` или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`:
-
-    deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
-
-Если вы хотите использовать наиболее свежую тестовую, замените `stable` на `testing` (не рекомендуется для production окружений).
-
-Затем для самой установки пакетов выполните:
+Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu. Для установки пакетов выполните:
 
 ``` bash
-sudo apt-get install dirmngr    # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
+{% include 'install/deb.sh' %}
 ```
 
-Также эти пакеты можно скачать и установить вручную отсюда: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+Также эти пакеты можно скачать и установить вручную отсюда: https://repo.clickhouse.tech/deb/stable/main/.
+
+Если вы хотите использовать наиболее свежую версию, замените `stable` на `testing` (рекомендуется для тестовых окружений).
 
 ### Из RPM пакетов {#from-rpm-packages}
 
