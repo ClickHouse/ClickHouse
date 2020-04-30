@@ -26,19 +26,10 @@ thread_local ThreadStatus * current_thread = nullptr;
 ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
 {
+    last_rusage = std::make_unique<RUsageCounters>();
+
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
-
-    try
-    {
-        last_rusage = std::make_unique<RUsageCounters>();
-        if (TasksStatsCounters::checkIfAvailable())
-            taskstats = TasksStatsCounters::create(thread_id);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 
     current_thread = this;
 
@@ -81,6 +72,17 @@ void ThreadStatus::initPerformanceCounters()
     ++queries_started;
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
+    if (!taskstats)
+    {
+        try
+        {
+            taskstats = TasksStatsCounters::create(thread_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
     if (taskstats)
         taskstats->reset();
 }
