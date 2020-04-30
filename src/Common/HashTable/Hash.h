@@ -72,7 +72,7 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
+inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)) && !is_big_int_v<T>, DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
     auto * begin = reinterpret_cast<const char *>(&x);
@@ -81,6 +81,18 @@ intHashCRC32(const T & x, DB::UInt64 updated_value)
         updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
         begin += sizeof(DB::UInt64);
     }
+
+    return updated_value;
+}
+
+template <typename T>
+inline typename std::enable_if<is_big_int_v<T>, DB::UInt64>::type
+intHashCRC32(const T & x, DB::UInt64 updated_value)
+{
+    std::vector<UInt64> parts;
+    export_bits(x, std::back_inserter(parts), sizeof(UInt64), false);
+    for (const auto& part : parts)
+        updated_value = intHashCRC32(part, updated_value);
 
     return updated_value;
 }
@@ -189,6 +201,16 @@ struct DefaultHash<T, std::enable_if_t<is_arithmetic_v<T>>>
 };
 
 template <typename T>
+struct DefaultHash<T, std::enable_if_t<is_big_int_v<T>>>
+{
+    size_t operator() (T key) const
+    {
+        // taking only lower bits, probably should change it
+        return DefaultHash64<DB::UInt64>(static_cast<DB::UInt64>(key));
+    }
+};
+
+template <typename T>
 struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>>
 {
     size_t operator() (T key) const
@@ -213,7 +235,7 @@ inline size_t hashCRC32(T key)
 {
     union
     {
-        T in;
+        T in{}; // is it OK?
         DB::UInt64 out;
     } u;
     u.out = 0;
@@ -235,10 +257,14 @@ DEFINE_HASH(DB::UInt16)
 DEFINE_HASH(DB::UInt32)
 DEFINE_HASH(DB::UInt64)
 DEFINE_HASH(DB::UInt128)
+DEFINE_HASH(DB::bUInt128)
+DEFINE_HASH(DB::bUInt256)
 DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)
 DEFINE_HASH(DB::Int64)
+DEFINE_HASH(DB::bInt128)
+DEFINE_HASH(DB::bInt256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 

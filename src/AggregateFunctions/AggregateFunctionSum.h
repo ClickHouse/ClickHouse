@@ -138,7 +138,10 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = static_cast<const ColVecType &>(*columns[0]);
-        this->data(place).add(column.getData()[row_num]);
+        if constexpr (is_big_int_v<T>)
+            this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
+        else
+            this->data(place).add(column.getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

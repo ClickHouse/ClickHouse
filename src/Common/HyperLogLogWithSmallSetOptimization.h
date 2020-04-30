@@ -68,7 +68,7 @@ public:
                 else
                 {
                     toLarge();
-                    large->insert(value);
+                    large->insert(static_cast<Large>(value));
                 }
             }
         }

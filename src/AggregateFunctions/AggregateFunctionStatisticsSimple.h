@@ -423,11 +423,11 @@ public:
     {
         if constexpr (StatFunc::num_args == 2)
             this->data(place).add(
-                static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num],
-                static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]);
+                static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
+                static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
             this->data(place).add(
-                static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]);
+                static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
