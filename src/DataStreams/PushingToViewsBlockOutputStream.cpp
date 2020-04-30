@@ -94,7 +94,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     }
 
     /// Remove calculated scalar subquery results, because they can be calculated for real, not substituted tables.
-    if (views_context->hasQueryContext())
+    if (views_context && views_context->hasQueryContext())
         views_context->getQueryContext().dropScalars();
 
     /// Do not push to destination table if the flag is set
