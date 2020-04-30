@@ -19,3 +19,6 @@ SHOW CREATE TABLE memory_01069.mt; -- { serverError 60 }
 SHOW CREATE TABLE memory_01069.file;
 
 DROP DATABASE memory_01069;
+
+CREATE DATABASE memory_01069 ENGINE = Memory;
+DROP DATABASE memory_01069;
