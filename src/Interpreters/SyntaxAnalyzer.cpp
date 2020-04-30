@@ -846,7 +846,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     normalize(query, result.aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, context, 0, result.scalars);
+    executeScalarSubqueries(query, context, 0, result.scalars, false);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
