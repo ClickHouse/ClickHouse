@@ -2,6 +2,7 @@
 
     <settings>
         <max_partitions_per_insert_block>1024</max_partitions_per_insert_block>
+        <max_insert_threads>16</max_insert_threads>
     </settings>
 
     <substitutions>
@@ -30,16 +31,16 @@
     <create_query>create table collapsing_final_1024p_rnd (key1 UInt32, sign Int8, s UInt64) engine = CollapsingMergeTree(sign) order by (key1) partition by key1 % 1024 </create_query>
 
     <!-- 16 parts, 8192 * 1024 rows each -->
-    <fill_query>insert into collapsing_final_16p_ord select number, number, 1, number from numbers(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_rnd select sipHash64(number), number, 1, number from numbers(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_int_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_int_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_str_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers(8388608) </fill_query>
-    <fill_query>insert into collapsing_final_16p_str_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers(8388608) </fill_query>
+    <fill_query>insert into collapsing_final_16p_ord select number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into collapsing_final_16p_rnd select sipHash64(number), number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into collapsing_final_16p_int_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into collapsing_final_16p_int_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into collapsing_final_16p_str_keys_ord select number, number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
+    <fill_query>insert into collapsing_final_16p_str_keys_rnd select sipHash64(number), number, number, number, number, number, number, number, 1, number from numbers_mt(8388608) </fill_query>
 
     <!-- 1024 parts, 8192 * 2 rows each -->
-    <fill_query>insert into collapsing_final_1024p_ord select number, 1, number from numbers(16777216) </fill_query>
-    <fill_query>insert into collapsing_final_1024p_rnd select number, 1, number from numbers(16777216) </fill_query>
+    <fill_query>insert into collapsing_final_1024p_ord select number, 1, number from numbers_mt(16777216) </fill_query>
+    <fill_query>insert into collapsing_final_1024p_rnd select number, 1, number from numbers_mt(16777216) </fill_query>
 
     <fill_query>optimize table {collapsing} final</fill_query>
 
