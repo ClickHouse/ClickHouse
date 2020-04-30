@@ -143,13 +143,42 @@ def printSimpleTable(caption, columns, rows):
         print(tableRow(row))
     print(tableEnd())
 
+def print_tested_commits():
+    global report_errors
+    try:
+        printSimpleTable('Tested commits', ['Old', 'New'],
+            [['<pre>{}</pre>'.format(x) for x in
+                [open('left-commit.txt').read(),
+                 open('right-commit.txt').read()]]])
+    except:
+        # Don't fail if no commit info -- maybe it's a manual run.
+        report_errors.append(
+            traceback.format_exception_only(
+                *sys.exc_info()[:2])[-1])
+        pass
+
+def print_report_errors():
+    global report_errors
+    # Add the errors reported by various steps of comparison script
+    try:
+        report_errors += [l.strip() for l in open('report/errors.log')]
+    except:
+        report_errors.append(
+            traceback.format_exception_only(
+                *sys.exc_info()[:2])[-1])
+        pass
+
+    if len(report_errors):
+        print(tableStart('Errors while building the report'))
+        print(tableHeader(['Error']))
+        for x in report_errors:
+            print(tableRow([x]))
+        print(tableEnd())
+
 if args.report == 'main':
     print(header_template.format())
 
-    printSimpleTable('Tested commits', ['Old', 'New'],
-        [['<pre>{}</pre>'.format(x) for x in
-            [open('left-commit.txt').read(),
-             open('right-commit.txt').read()]]])
+    print_tested_commits()
 
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
@@ -288,15 +317,7 @@ if args.report == 'main':
 
     print_test_times()
 
-    # Add the errors reported by various steps of comparison script
-    report_errors += [l.strip() for l in open('report/errors.log')]
-    if len(report_errors):
-        print(tableStart('Errors while building the report'))
-        print(tableHeader(['Error']))
-        for x in report_errors:
-            print(tableRow([x]))
-        print(tableEnd())
-
+    print_report_errors()
 
     print("""
     <p class="links">
@@ -350,10 +371,7 @@ elif args.report == 'all-queries':
 
     print(header_template.format())
 
-    printSimpleTable('Tested commits', ['Old', 'New'],
-        [['<pre>{}</pre>'.format(x) for x in
-            [open('left-commit.txt').read(),
-             open('right-commit.txt').read()]]])
+    print_tested_commits()
 
     def print_all_queries():
         rows = tsvRows('report/all-queries.tsv')
@@ -404,6 +422,8 @@ elif args.report == 'all-queries':
         print(tableEnd())
 
     print_all_queries()
+
+    print_report_errors()
 
     print("""
     <p class="links">
