@@ -18,8 +18,8 @@ public:
         {
             auto lock = target_table_storage->lockStructureForShare(
                 true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-            
-	    if (!storage.isTargetTableATableFunction())
+
+            if (!storage.isTargetTableATableFunction())
                 context.checkAccess(AccessType::INSERT, target_table_storage->getStorageID(), storage.getHeader().getNames());
 
             auto query_context = const_cast<Context &>(context);
@@ -27,7 +27,7 @@ public:
 
             target_table_stream = target_table_storage->write(storage.getInnerQuery(), query_context);
             target_table_stream->addTableLock(lock);
-	}
+        }
     }
 
     void writePrefix() override

@@ -283,7 +283,7 @@ StorageLiveView::StorageLiveView(
 
 StoragePtr StorageLiveView::tryGetTargetTable(const Context & context) const
 {
-    std::lock_guard lock(target_table_storage);
+    std::lock_guard lock(target_table_storage_lock);
 
     if (!target_table_storage)
     {
@@ -341,22 +341,22 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
 
 void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
 {
-    auto target_table_storage = tryGetTargetTable(context);
+    auto target_storage = tryGetTargetTable(context);
 
-    if (target_table_storage)
+    if (target_storage)
     {
-        auto lock = target_table_storage->lockStructureForShare(
+        auto lock = target_storage->lockStructureForShare(
             true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-	if (!isTargetTableATableFunction())
+        if (!isTargetTableATableFunction())
             context.checkAccess(AccessType::INSERT, target_table_id, getHeader().getNames());
 
         auto query_context = const_cast<Context &>(context);
         query_context.setSetting("output_format_enable_streaming", 1);
 
-        auto target_table_stream = target_table_storage->write(getInnerQuery(), query_context);
+        auto target_stream = target_storage->write(getInnerQuery(), query_context);
 
-        target_table_stream->writePrefix();
+        target_stream->writePrefix();
 
         BlocksPtr blocks;
         if (*blocks_ptr)
@@ -365,10 +365,10 @@ void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
         if (blocks)
         {
             for (auto & block : *blocks)
-                target_table_stream->write(block);
+                target_stream->write(block);
         }
 
-        target_table_stream->writeSuffix();
+        target_stream->writeSuffix();
     }
 }
 

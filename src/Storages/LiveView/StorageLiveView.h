@@ -65,11 +65,11 @@ public:
     }
     ASTPtr getInnerBlocksQuery();
 
-    bool isTargetTableATableFunction() 
-    { 
-	if (target_table_function)
-	    return true;
-	return false;
+    bool isTargetTableATableFunction()
+    {
+        if (target_table_function)
+            return true;
+        return false;
     }
     StoragePtr tryGetTargetTable(const Context & context) const;
     /// It is passed inside the query and solved at its level.
@@ -177,7 +177,7 @@ private:
     StorageID target_table_id = StorageID::createEmpty();     /// Will be initialized in constructor
     ASTPtr target_table_function = nullptr;
     /// Mutex to protect access to target table storage
-    mutable std::mutex target_table_storage_lock; 
+    mutable std::mutex target_table_storage_lock;
     mutable StoragePtr target_table_storage = nullptr;
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
