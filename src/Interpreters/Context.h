@@ -330,6 +330,7 @@ public:
     const Block & getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+    void dropScalars();
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
