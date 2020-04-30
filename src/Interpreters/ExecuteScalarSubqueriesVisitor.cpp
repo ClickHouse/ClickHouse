@@ -88,32 +88,48 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         subquery_context.setSettings(subquery_settings);
 
         ASTPtr subquery_select = subquery.children.at(0);
-        BlockIO res = InterpreterSelectWithUnionQuery(
-                subquery_select, subquery_context, SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1)).execute();
 
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1);
+        options.analyze(data.only_analyze);
+
+        auto interpreter = InterpreterSelectWithUnionQuery(subquery_select, subquery_context, options);
         Block block;
-        try
+
+        if (data.only_analyze)
         {
-            block = res.in->read();
-
-            if (!block)
-            {
-                /// Interpret subquery with empty result as Null literal
-                auto ast_new = std::make_unique<ASTLiteral>(Null());
-                ast_new->setAlias(ast->tryGetAlias());
-                ast = std::move(ast_new);
-                return;
-            }
-
-            if (block.rows() != 1 || res.in->read())
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+            /// If query is only analyzed, then constants are not correct.
+            block = interpreter.getSampleBlock();
+            for (auto & column : block)
+                if (column.column->empty())
+                    column.column->cloneResized(1);
         }
-        catch (const Exception & e)
+        else
         {
-            if (e.code() == ErrorCodes::TOO_MANY_ROWS)
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-            else
-                throw;
+            BlockIO res = interpreter.execute();
+
+            try
+            {
+                block = res.in->read();
+
+                if (!block)
+                {
+                    /// Interpret subquery with empty result as Null literal
+                    auto ast_new = std::make_unique<ASTLiteral>(Null());
+                    ast_new->setAlias(ast->tryGetAlias());
+                    ast = std::move(ast_new);
+                    return;
+                }
+
+                if (block.rows() != 1 || res.in->read())
+                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::TOO_MANY_ROWS)
+                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+                else
+                    throw;
+            }
         }
 
         block = materializeBlock(block);
