@@ -801,7 +801,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
+    if (!select_options.only_analyze)
+        executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
