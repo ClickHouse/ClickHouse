@@ -66,7 +66,7 @@ ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_s
 }
 
 
-bool ProcfsMetricsProvider::isAvailable()
+bool ProcfsMetricsProvider::isAvailable() noexcept
 {
     struct stat sb;
     int res = ::stat(thread_schedstat, &sb);

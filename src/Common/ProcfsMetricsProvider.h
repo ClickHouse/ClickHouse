@@ -24,7 +24,7 @@ public:
     void getTaskStats(::taskstats & out_stats) const;
 
     /// Tells whether this metrics (via Procfs) is provided on the current platform
-    static bool isAvailable();
+    static bool isAvailable() noexcept;
 
 private:
     void readParseAndSetThreadCPUStat(::taskstats & out_stats, char *, size_t) const;
