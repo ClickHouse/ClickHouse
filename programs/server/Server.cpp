@@ -630,6 +630,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
+
+        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
+        if (total_memory_tracker_sample_probability)
+        {
+            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
+        }
     }
 #endif
 

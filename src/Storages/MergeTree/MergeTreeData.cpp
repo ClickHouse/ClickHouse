@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -1447,10 +1448,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     if (!merging_params.sign_column.empty())
         columns_alter_type_forbidden.insert(merging_params.sign_column);
 
-    std::map<String, const IDataType *> old_types;
+    std::map<String, DataTypePtr> old_types;
     for (const auto & column : getColumns().getAllPhysical())
-        old_types.emplace(column.name, column.type.get());
-
+        old_types.emplace(column.name, column.type);
 
     for (const AlterCommand & command : commands)
     {
@@ -1485,8 +1485,31 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 if (command.type == AlterCommand::MODIFY_COLUMN)
                 {
                     auto it = old_types.find(command.column_name);
-                    if (it == old_types.end() || !isMetadataOnlyConversion(it->second, command.data_type.get()))
-                        throw Exception("ALTER of key column " + command.column_name + " must be metadata-only", ErrorCodes::ILLEGAL_COLUMN);
+
+                    if (it == old_types.end())
+                        throw Exception("Cannot find column " + command.column_name + " to ALTER", ErrorCodes::LOGICAL_ERROR);
+
+                    const auto & old_type = it->second;
+                    const auto & new_type = command.data_type;
+
+                    if (!isMetadataOnlyConversion(old_type.get(), new_type.get()))
+                    {
+                        bool is_expanding = false;
+                        try
+                        {
+                            is_expanding = new_type->equals(*getLeastSupertype({old_type, new_type}));
+                        }
+                        catch (Exception & e)
+                        {
+                            e.addMessage("ALTER of key column is not possible, because the data type conversion can only be expanding"
+                                " (conversion to covering type)");
+                            throw;
+                        }
+
+                        if (!is_expanding)
+                            throw Exception("ALTER of key column " + command.column_name
+                                + " must be metadata-only or expanding (conversion to covering type)", ErrorCodes::ILLEGAL_COLUMN);
+                    }
                 }
             }
         }
