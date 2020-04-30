@@ -86,7 +86,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 
         const Settings & settings = query_context->getSettingsRef();
         if (settings.memory_profiler_step < UInt64(untracked_memory_limit))
-            untracked_memory = settings.memory_profiler_step;
+            untracked_memory_limit = settings.memory_profiler_step;
 
 #if defined(OS_LINUX)
         /// Set "nice" value if required.
