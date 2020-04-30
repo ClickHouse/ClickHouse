@@ -25,6 +25,7 @@ void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionarySSDCache(DictionaryFactory & factory);
+void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory);
 
 void registerDictionaries();

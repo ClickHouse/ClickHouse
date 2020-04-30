@@ -32,6 +32,7 @@ void registerDictionaries()
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
         registerDictionarySSDCache(factory);
+        registerDictionarySSDComplexKeyCache(factory);
         registerDictionaryPolygon(factory);
     }
 }

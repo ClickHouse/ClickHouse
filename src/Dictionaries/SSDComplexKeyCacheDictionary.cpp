@@ -1,4 +1,4 @@
-#include "SSDCacheDictionary.h"
+#include "SSDComplexKeyCacheDictionary.h"
 
 #include <algorithm>
 #include <Columns/ColumnsNumber.h>
@@ -92,6 +92,8 @@ namespace
 
     constexpr UInt8 HAS_NOT_FOUND = 2;
 
+    //constexpr UInt16 MAX_KEY_SIZE = std::numeric_limits<UInt16>::max();
+
     const std::string BIN_FILE_EXT = ".bin";
     const std::string IND_FILE_EXT = ".idx";
 
@@ -105,65 +107,65 @@ namespace
     }
 }
 
-SSDCachePartition::Metadata::time_point_t SSDCachePartition::Metadata::expiresAt() const
+SSDComplexKeyCachePartition::Metadata::time_point_t SSDComplexKeyCachePartition::Metadata::expiresAt() const
 {
     return ext::safe_bit_cast<time_point_t>(data & KEY_METADATA_EXPIRES_AT_MASK);
 }
-void SSDCachePartition::Metadata::setExpiresAt(const time_point_t & t)
+void SSDComplexKeyCachePartition::Metadata::setExpiresAt(const time_point_t & t)
 {
     data = ext::safe_bit_cast<time_point_urep_t>(t);
 }
 
-bool SSDCachePartition::Metadata::isDefault() const
+bool SSDComplexKeyCachePartition::Metadata::isDefault() const
 {
     return (data & KEY_METADATA_IS_DEFAULT_MASK) == KEY_METADATA_IS_DEFAULT_MASK;
 }
-void SSDCachePartition::Metadata::setDefault()
+void SSDComplexKeyCachePartition::Metadata::setDefault()
 {
     data |= KEY_METADATA_IS_DEFAULT_MASK;
 }
 
-bool SSDCachePartition::Index::inMemory() const
+bool SSDComplexKeyCachePartition::Index::inMemory() const
 {
     return (index & KEY_IN_MEMORY) == KEY_IN_MEMORY;
 }
 
-bool SSDCachePartition::Index::exists() const
+bool SSDComplexKeyCachePartition::Index::exists() const
 {
     return index != NOT_EXISTS;
 }
 
-void SSDCachePartition::Index::setNotExists()
+void SSDComplexKeyCachePartition::Index::setNotExists()
 {
     index = NOT_EXISTS;
 }
 
-void SSDCachePartition::Index::setInMemory(const bool in_memory)
+void SSDComplexKeyCachePartition::Index::setInMemory(const bool in_memory)
 {
     index = (index & ~KEY_IN_MEMORY) | (static_cast<size_t>(in_memory) << KEY_IN_MEMORY_BIT);
 }
 
-size_t SSDCachePartition::Index::getAddressInBlock() const
+size_t SSDComplexKeyCachePartition::Index::getAddressInBlock() const
 {
     return index & INDEX_IN_BLOCK_MASK;
 }
 
-void SSDCachePartition::Index::setAddressInBlock(const size_t address_in_block)
+void SSDComplexKeyCachePartition::Index::setAddressInBlock(const size_t address_in_block)
 {
     index = (index & ~INDEX_IN_BLOCK_MASK) | address_in_block;
 }
 
-size_t SSDCachePartition::Index::getBlockId() const
+size_t SSDComplexKeyCachePartition::Index::getBlockId() const
 {
     return (index & BLOCK_INDEX_MASK) >> INDEX_IN_BLOCK_BITS;
 }
 
-void SSDCachePartition::Index::setBlockId(const size_t block_id)
+void SSDComplexKeyCachePartition::Index::setBlockId(const size_t block_id)
 {
     index = (index & ~BLOCK_INDEX_MASK) | (block_id << INDEX_IN_BLOCK_BITS);
 }
 
-SSDCachePartition::SSDCachePartition(
+SSDComplexKeyCachePartition::SSDComplexKeyCachePartition(
         const AttributeUnderlyingType & /* key_structure */,
         const std::vector<AttributeUnderlyingType> & attributes_structure_,
         const std::string & dir_path,
@@ -180,12 +182,9 @@ SSDCachePartition::SSDCachePartition(
     , write_buffer_size(write_buffer_size_)
     , max_stored_keys(max_stored_keys_)
     , path(dir_path + "/" + std::to_string(file_id))
-    , key_to_index(max_stored_keys)
+    , key_to_index(max_stored_keys, keys_pool)
     , attributes_structure(attributes_structure_)
 {
-    keys_buffer.type = AttributeUnderlyingType::utUInt64;
-    keys_buffer.values = SSDCachePartition::Attribute::Container<UInt64>();
-
     std::filesystem::create_directories(std::filesystem::path{dir_path});
 
     {
@@ -206,28 +205,53 @@ SSDCachePartition::SSDCachePartition(
     }
 }
 
-SSDCachePartition::~SSDCachePartition()
+SSDComplexKeyCachePartition::~SSDComplexKeyCachePartition()
 {
     std::unique_lock lock(rw_lock);
     ::close(fd);
 }
 
-size_t SSDCachePartition::appendDefaults(
-    const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin)
+size_t SSDComplexKeyCachePartition::appendDefaults(
+    const KeyRefs & keys_in,
+    const PaddedPODArray<Metadata> & metadata,
+    const size_t begin)
 {
-    return appendBlock(new_keys, Attributes{}, metadata, begin);
+    std::unique_lock lock(rw_lock);
+    KeyRefs keys(keys_in.size());
+    for (size_t i = 0; i < keys_in.size(); ++i)
+    {
+        keys[i] = keys_pool.copyKeyFrom(keys_in[i]);
+    }
+    return append(keys, Attributes{}, metadata, begin);
 }
 
-size_t SSDCachePartition::appendBlock(
-    const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
+size_t SSDComplexKeyCachePartition::appendBlock(
+    const Columns & key_columns, const DataTypes & /* key_types */,
+    const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
 {
     std::unique_lock lock(rw_lock);
     if (!new_attributes.empty() && new_attributes.size() != attributes_structure.size())
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
-    const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
-    auto & ids_buffer = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
+    const auto keys_size = key_columns.size();
+    KeyRefs keys(key_columns.front()->size());
+    {
+        StringRefs tmp_keys_refs(keys_size);
+        for (size_t i = 0; i < key_columns.front()->size(); ++i)
+        {
+            keys[i] = keys_pool.allocKey(i, key_columns, tmp_keys_refs);
+        }
+    }
 
+    return append(keys, new_attributes, metadata, begin);
+}
+
+size_t SSDComplexKeyCachePartition::append(
+    const KeyRefs & keys,
+    const Attributes & new_attributes,
+    const PaddedPODArray<Metadata> & metadata,
+    const size_t begin)
+{
     if (!memory)
         memory.emplace(block_size * write_buffer_size, BUFFER_ALIGNMENT);
 
@@ -243,7 +267,6 @@ size_t SSDCachePartition::appendBlock(
     if (!write_buffer)
     {
         init_write_buffer();
-        //codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
     }
 
     bool flushed = false;
@@ -258,23 +281,26 @@ size_t SSDCachePartition::appendBlock(
         flushed = true;
     };
 
-    for (size_t index = begin; index < ids.size();)
+    for (size_t index = begin; index < keys.size();)
     {
+        Poco::Logger::get("test").information("wb off: " + std::to_string(write_buffer->offset()));
         Index cache_index;
         cache_index.setInMemory(true);
         cache_index.setBlockId(current_memory_block_id);
         cache_index.setAddressInBlock(write_buffer->offset());
 
         flushed = false;
-        if (2 * sizeof(UInt64) > write_buffer->available()) // place for key and metadata
+        if (keys[index].fullSize() + sizeof(UInt64) > write_buffer->available()) // place for key and metadata
         {
             finish_block();
         }
         else
         {
-            writeBinary(ids[index], *write_buffer);
+            keys_pool.writeKey(keys[index], *write_buffer);
             writeBinary(metadata[index].data, *write_buffer);
         }
+
+        Poco::Logger::get("test key").information("wb off: " + std::to_string(write_buffer->offset()));
 
         for (const auto & attribute : new_attributes)
         {
@@ -333,8 +359,8 @@ size_t SSDCachePartition::appendBlock(
 
         if (!flushed)
         {
-            key_to_index.set(ids[index], cache_index);
-            ids_buffer.push_back(ids[index]);
+            key_to_index.set(keys[index], cache_index);
+            keys_buffer.push_back(keys[index]);
             ++index;
             ++keys_in_block;
         }
@@ -342,17 +368,17 @@ size_t SSDCachePartition::appendBlock(
         {
             init_write_buffer();
         }
+        Poco::Logger::get("test final").information("wb off: " + std::to_string(write_buffer->offset()));
     }
-    return ids.size() - begin;
+    return keys.size() - begin;
 }
 
-void SSDCachePartition::flush()
+void SSDComplexKeyCachePartition::flush()
 {
     if (current_file_block_id >= max_size)
         clearOldestBlocks();
 
-    const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
-    if (ids.empty())
+    if (keys_buffer.empty())
         return;
 
     Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
@@ -413,17 +439,17 @@ void SSDCachePartition::flush()
         throwFromErrnoWithPath("Cannot fsync " + path + BIN_FILE_EXT, path + BIN_FILE_EXT, ErrorCodes::CANNOT_FSYNC);
 
     /// commit changes in index
-    for (size_t row = 0; row < ids.size(); ++row)
+    for (size_t row = 0; row < keys_buffer.size(); ++row)
     {
         Index index;
-        if (key_to_index.get(ids[row], index))
+        if (key_to_index.get(keys_buffer[row], index))
         {
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
             {
                 index.setInMemory(false);
                 index.setBlockId(current_file_block_id + index.getBlockId());
             }
-            key_to_index.set(ids[row], index);
+            key_to_index.set(keys_buffer[row], index);
         }
     }
 
@@ -431,17 +457,18 @@ void SSDCachePartition::flush()
     current_memory_block_id = 0;
 
     /// clear buffer
-    std::visit([](auto & attr) { attr.clear(); }, keys_buffer.values);
+    keys_buffer.clear();
 }
 
 template <typename Out, typename GetDefault>
-void SSDCachePartition::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
+void SSDComplexKeyCachePartition::getValue(
+    const size_t attribute_index, const Columns & key_columns, const DataTypes & key_types,
     ResultArrayType<Out> & out, std::vector<bool> & found, GetDefault & get_default,
     std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        buf.ignore(sizeof(Key)); // key
+        keys_pool.ignoreKey(buf);
         Metadata metadata;
         readVarUInt(metadata.data, buf);
 
@@ -458,16 +485,18 @@ void SSDCachePartition::getValue(const size_t attribute_index, const PaddedPODAr
         }
     };
 
-    getImpl(ids, set_value, found);
+    getImpl(key_columns, key_types, set_value, found);
 }
 
-void SSDCachePartition::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-    StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found, std::vector<size_t> & default_ids,
+void SSDComplexKeyCachePartition::getString(const size_t attribute_index,
+    const Columns & key_columns, const DataTypes & key_types,
+    StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
+    std::vector<size_t> & default_ids,
     std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        buf.ignore(sizeof(Key)); // key
+        keys_pool.ignoreKey(buf);
         Metadata metadata;
         readVarUInt(metadata.data, buf);
 
@@ -489,15 +518,16 @@ void SSDCachePartition::getString(const size_t attribute_index, const PaddedPODA
         }
     };
 
-    getImpl(ids, set_value, found);
+    getImpl(key_columns, key_types, set_value, found);
 }
 
-void SSDCachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
+void SSDComplexKeyCachePartition::has(
+    const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
     std::vector<bool> & found, std::chrono::system_clock::time_point now) const
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        buf.ignore(sizeof(Key)); // key
+        keys_pool.ignoreKey(buf);
         Metadata metadata;
         readVarUInt(metadata.data, buf);
 
@@ -505,21 +535,27 @@ void SSDCachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<
             out[index] = !metadata.isDefault();
     };
 
-    getImpl(ids, set_value, found);
+    getImpl(key_columns, key_types, set_value, found);
 }
 
 template <typename SetFunc>
-void SSDCachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set,
-    std::vector<bool> & found) const
+void SSDComplexKeyCachePartition::getImpl(
+    const Columns & key_columns, const DataTypes & /* key_types */,
+    SetFunc & set, std::vector<bool> & found) const
 {
+    TemporalComplexKeysPool tmp_keys_pool;
+    StringRefs tmp_refs(key_columns.size());
+
     std::shared_lock lock(rw_lock);
-    PaddedPODArray<Index> indices(ids.size());
-    for (size_t i = 0; i < ids.size(); ++i)
+    PaddedPODArray<Index> indices(key_columns.front()->size());
+    for (size_t i = 0; i < key_columns.front()->size(); ++i)
     {
+        auto key = tmp_keys_pool.allocKey(i, key_columns, tmp_refs);
+        SCOPE_EXIT(tmp_keys_pool.rollback(key));
         Index index;
         if (found[i])
             indices[i].setNotExists();
-        else if (key_to_index.get(ids[i], index))
+        else if (key_to_index.get(key, index))
             indices[i] = index;
         else
             indices[i].setNotExists();
@@ -530,7 +566,7 @@ void SSDCachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & se
 }
 
 template <typename SetFunc>
-void SSDCachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const
+void SSDComplexKeyCachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const
 {
     // Do not check checksum while reading from memory.
     for (size_t i = 0; i < indices.size(); ++i)
@@ -547,7 +583,7 @@ void SSDCachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices
 }
 
 template <typename SetFunc>
-void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const
+void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, SetFunc & set) const
 {
     std::vector<std::pair<Index, size_t>> index_to_out;
     for (size_t i = 0; i < indices.size(); ++i)
@@ -668,7 +704,7 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
     }
 }
 
-void SSDCachePartition::clearOldestBlocks()
+void SSDComplexKeyCachePartition::clearOldestBlocks()
 {
     Poco::Logger::get("GC").information("GC clear -----------------");
     // write_buffer_size, because we need to erase the whole buffer.
@@ -716,7 +752,8 @@ void SSDCachePartition::clearOldestBlocks()
         }
     }
 
-    std::vector<UInt64> keys;
+    TemporalComplexKeysPool tmp_keys_pool;
+    KeyRefs keys;
     keys.reserve(write_buffer_size);
 
     // TODO: писать кол-во значений
@@ -739,7 +776,8 @@ void SSDCachePartition::clearOldestBlocks()
         for (uint32_t j = 0; j < keys_in_current_block; ++j)
         {
             keys.emplace_back();
-            readBinary(keys.back(), read_buffer);
+            tmp_keys_pool.readKey(keys.back(), read_buffer);
+
             Metadata metadata;
             readBinary(metadata.data, read_buffer);
 
@@ -799,7 +837,7 @@ void SSDCachePartition::clearOldestBlocks()
     }
 }
 
-void SSDCachePartition::ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const
+void SSDComplexKeyCachePartition::ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const
 {
     for (size_t i = 0; i < attribute_index; ++i)
     {
@@ -837,39 +875,39 @@ void SSDCachePartition::ignoreFromBufferToAttributeIndex(const size_t attribute_
     }
 }
 
-size_t SSDCachePartition::getId() const
+size_t SSDComplexKeyCachePartition::getId() const
 {
     return file_id;
 }
 
-double SSDCachePartition::getLoadFactor() const
+double SSDComplexKeyCachePartition::getLoadFactor() const
 {
     std::shared_lock lock(rw_lock);
     return static_cast<double>(current_file_block_id) / max_size;
 }
 
-size_t SSDCachePartition::getElementCount() const
+size_t SSDComplexKeyCachePartition::getElementCount() const
 {
     std::shared_lock lock(rw_lock);
     return key_to_index.size();
 }
 
-PaddedPODArray<SSDCachePartition::Key> SSDCachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
+PaddedPODArray<KeyRef> SSDComplexKeyCachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
 {
     std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
-    PaddedPODArray<Key> array;
+    PaddedPODArray<KeyRef> array;
     for (const auto & [key, index] : key_to_index)
         array.push_back(key); // TODO: exclude default
     return array;
 }
 
-void SSDCachePartition::remove()
+void SSDComplexKeyCachePartition::remove()
 {
     std::unique_lock lock(rw_lock);
     std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
 }
 
-SSDCacheStorage::SSDCacheStorage(
+SSDComplexKeyCacheStorage::SSDComplexKeyCacheStorage(
         const AttributeTypes & attributes_structure_,
         const std::string & path_,
         const size_t max_partitions_count_,
@@ -886,11 +924,11 @@ SSDCacheStorage::SSDCacheStorage(
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
     , max_stored_keys(max_stored_keys_)
-    , log(&Poco::Logger::get("SSDCacheStorage"))
+    , log(&Poco::Logger::get("SSDComplexKeyCacheStorage"))
 {
 }
 
-SSDCacheStorage::~SSDCacheStorage()
+SSDComplexKeyCacheStorage::~SSDComplexKeyCacheStorage()
 {
     std::unique_lock lock(rw_lock);
     partition_delete_queue.splice(std::end(partition_delete_queue), partitions);
@@ -898,83 +936,126 @@ SSDCacheStorage::~SSDCacheStorage()
 }
 
 template <typename Out, typename GetDefault>
-void SSDCacheStorage::getValue(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-      ResultArrayType<Out> & out, std::unordered_map<Key, std::vector<size_t>> & not_found,
-      GetDefault & get_default, std::chrono::system_clock::time_point now) const
+void SSDComplexKeyCacheStorage::getValue(
+    const size_t attribute_index, const Columns & key_columns, const DataTypes & key_types,
+    ResultArrayType<Out> & out, std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
+    TemporalComplexKeysPool & not_found_pool,
+    GetDefault & get_default, std::chrono::system_clock::time_point now) const
 {
-    std::vector<bool> found(ids.size(), false);
+    size_t n = key_columns.front()->size();
+    std::vector<bool> found(n, false);
 
     {
         std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
-            partition->getValue<Out>(attribute_index, ids, out, found, get_default, now);
+            partition->getValue<Out>(attribute_index, key_columns, key_types, out, found, get_default, now);
     }
 
-    for (size_t i = 0; i < ids.size(); ++i)
+    size_t count_not_found = 0;
+    StringRefs tmp_refs(key_columns.size());
+    for (size_t i = 0; i < n; ++i)
+    {
         if (!found[i])
-            not_found[ids[i]].push_back(i);
+        {
+            auto key = not_found_pool.allocKey(i, key_columns, tmp_refs);
+            not_found[key].push_back(i);
+            ++count_not_found;
+        }
+    }
 
-    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-    hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
+    query_count.fetch_add(n, std::memory_order_relaxed);
+    hit_count.fetch_add(n - count_not_found, std::memory_order_release);
 }
 
-void SSDCacheStorage::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
-    StringRefs & refs, ArenaWithFreeLists & arena, std::unordered_map<Key, std::vector<size_t>> & not_found,
+void SSDComplexKeyCacheStorage::getString(
+    const size_t attribute_index, const Columns & key_columns, const DataTypes & key_types,
+    StringRefs & refs, ArenaWithFreeLists & arena,
+    std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
+    TemporalComplexKeysPool & not_found_pool,
     std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const
 {
-    std::vector<bool> found(ids.size(), false);
+    size_t n = key_columns.front()->size();
+    std::vector<bool> found(n, false);
 
     {
         std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
-            partition->getString(attribute_index, ids, refs, arena, found, default_ids, now);
+            partition->getString(attribute_index, key_columns, key_types, refs, arena, found, default_ids, now);
     }
 
-    for (size_t i = 0; i < ids.size(); ++i)
+    size_t count_not_found = 0;
+    StringRefs tmp_refs(key_columns.size());
+    for (size_t i = 0; i < n; ++i)
+    {
         if (!found[i])
-            not_found[ids[i]].push_back(i);
+        {
+            auto key = not_found_pool.allocKey(i, key_columns, tmp_refs);
+            not_found[key].push_back(i);
+            ++count_not_found;
+        }
+    }
 
-    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-    hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
+    query_count.fetch_add(n, std::memory_order_relaxed);
+    hit_count.fetch_add(n - count_not_found, std::memory_order_release);
 }
 
-void SSDCacheStorage::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
-     std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
+void SSDComplexKeyCacheStorage::has(
+    const Columns & key_columns, const DataTypes & key_types, ResultArrayType<UInt8> & out,
+    std::unordered_map<KeyRef, std::vector<size_t>> & not_found,
+    TemporalComplexKeysPool & not_found_pool, std::chrono::system_clock::time_point now) const
 {
-    for (size_t i = 0; i < ids.size(); ++i)
+    size_t n = key_columns.front()->size();
+    for (size_t i = 0; i < n; ++i)
         out[i] = HAS_NOT_FOUND;
-    std::vector<bool> found(ids.size(), false);
+    std::vector<bool> found(n, false);
 
     {
         std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
-            partition->has(ids, out, found, now);
-
-        for (size_t i = 0; i < ids.size(); ++i)
-            if (out[i] == HAS_NOT_FOUND)
-                not_found[ids[i]].push_back(i);
+            partition->has(key_columns, key_types, out, found, now);
     }
 
-    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-    hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
+    size_t count_not_found = 0;
+    StringRefs tmp_refs(key_columns.size());
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (out[i] == HAS_NOT_FOUND)
+        {
+            auto key = not_found_pool.allocKey(i, key_columns, tmp_refs);
+            not_found[key].push_back(i);
+            ++count_not_found;
+        }
+    }
+
+    query_count.fetch_add(n, std::memory_order_relaxed);
+    hit_count.fetch_add(n - count_not_found, std::memory_order_release);
 }
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
-void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Key> & requested_ids,
-        PresentIdHandler && on_updated, AbsentIdHandler && on_id_not_found,
-        const DictionaryLifetime lifetime)
+void SSDComplexKeyCacheStorage::update(
+    DictionarySourcePtr & source_ptr,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const KeyRefs & required_keys,
+    const std::vector<size_t> & required_rows,
+    PresentIdHandler && on_updated,
+    AbsentIdHandler && on_key_not_found,
+    const DictionaryLifetime lifetime)
 {
-    auto append_block = [this](const SSDCachePartition::Attribute & new_keys,
-            const SSDCachePartition::Attributes & new_attributes, const PaddedPODArray<SSDCachePartition::Metadata> & metadata)
+    auto append_block = [&key_types, this](
+        const Columns & new_keys,
+        const SSDComplexKeyCachePartition::Attributes & new_attributes,
+        const PaddedPODArray<SSDComplexKeyCachePartition::Metadata> & metadata)
     {
         size_t inserted = 0;
         while (inserted < metadata.size())
         {
             if (!partitions.empty())
-                inserted += partitions.front()->appendBlock(new_keys, new_attributes, metadata, inserted);
+                inserted += partitions.front()->appendBlock(
+                    new_keys, key_types, new_attributes, metadata, inserted);
             if (inserted < metadata.size())
             {
-                partitions.emplace_front(std::make_unique<SSDCachePartition>(
+                partitions.emplace_front(std::make_unique<SSDComplexKeyCachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
                         partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
@@ -985,15 +1066,19 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
     };
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::DictCacheRequests};
-    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, requested_ids.size());
+    ProfileEvents::increment(ProfileEvents::DictCacheKeysRequested, required_keys.size());
 
-    std::unordered_map<Key, UInt8> remaining_ids{requested_ids.size()};
-    for (const auto id : requested_ids)
-        remaining_ids.insert({id, 0});
+    std::unordered_map<KeyRef, UInt8> remaining_keys{required_keys.size()};
+    for (const auto & key : required_keys)
+        remaining_keys.insert({key, 0});
 
     const auto now = std::chrono::system_clock::now();
 
     {
+        const auto keys_size = key_columns.size();
+        StringRefs keys(keys_size);
+        TemporalComplexKeysPool tmp_keys_pool;
+
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         if (now > backoff_end_time)
@@ -1008,28 +1093,34 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
                 }
 
                 Stopwatch watch;
-                auto stream = source_ptr->loadIds(requested_ids);
+                auto stream = source_ptr->loadKeys(key_columns, required_rows);
                 stream->readPrefix();
 
                 while (const auto block = stream->read())
                 {
-                    const auto new_keys = std::move(createAttributesFromBlock(block, 0, { AttributeUnderlyingType::utUInt64 }).front());
-                    const auto new_attributes = createAttributesFromBlock(block, 1, attributes_structure);
+                    const auto new_key_columns = ext::map<Columns>(
+                        ext::range(0, keys_size),
+                        [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
 
-                    const auto & ids = std::get<SSDCachePartition::Attribute::Container<UInt64>>(new_keys.values);
+                    const auto new_attributes = createAttributesFromBlock(block, keys_size, attributes_structure);
 
-                    PaddedPODArray<SSDCachePartition::Metadata> metadata(ids.size());
+                    const auto rows_num = block.rows();
+                    
+                    PaddedPODArray<SSDComplexKeyCachePartition::Metadata> metadata(rows_num);
 
-                    for (const auto i : ext::range(0, ids.size()))
+                    for (const auto i : ext::range(0, rows_num))
                     {
+                        auto key = tmp_keys_pool.allocKey(i, new_key_columns, keys);
+                        SCOPE_EXIT(tmp_keys_pool.rollback(key));
+
                         std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                         metadata[i].setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
                         /// mark corresponding id as found
-                        on_updated(ids[i], i, new_attributes);
-                        remaining_ids[ids[i]] = 1;
+                        on_updated(key, i, new_attributes);
+                        remaining_keys[key] = 1;
                     }
 
-                    append_block(new_keys, new_attributes, metadata);
+                    append_block(new_key_columns, new_attributes, metadata);
                 }
 
                 stream->readSuffix();
@@ -1052,16 +1143,19 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
         }
     }
 
-    auto append_defaults = [this](const SSDCachePartition::Attribute & new_keys, const PaddedPODArray<SSDCachePartition::Metadata> & metadata)
+    auto append_defaults = [this](
+        const KeyRefs & new_keys,
+        const PaddedPODArray<SSDComplexKeyCachePartition::Metadata> & metadata)
     {
         size_t inserted = 0;
         while (inserted < metadata.size())
         {
             if (!partitions.empty())
-                inserted += partitions.front()->appendDefaults(new_keys, metadata, inserted);
+                inserted += partitions.front()->appendDefaults(
+                    new_keys, metadata, inserted);
             if (inserted < metadata.size())
             {
-                partitions.emplace_front(std::make_unique<SSDCachePartition>(
+                partitions.emplace_front(std::make_unique<SSDComplexKeyCachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
                         partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
@@ -1073,24 +1167,22 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
 
     size_t not_found_num = 0, found_num = 0;
     /// Check which ids have not been found and require setting null_value
-    SSDCachePartition::Attribute new_keys;
-    new_keys.type = AttributeUnderlyingType::utUInt64;
-    new_keys.values = SSDCachePartition::Attribute::Container<UInt64>();
+    KeyRefs default_keys;
 
-    PaddedPODArray<SSDCachePartition::Metadata> metadata;
+    PaddedPODArray<SSDComplexKeyCachePartition::Metadata> metadata;
     {
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
-        for (const auto & id_found_pair : remaining_ids)
+        for (const auto & key_found_pair : remaining_keys)
         {
-            if (id_found_pair.second)
+            if (key_found_pair.second)
             {
                 ++found_num;
                 continue;
             }
             ++not_found_num;
 
-            const auto id = id_found_pair.first;
+            const auto key = key_found_pair.first;
 
             if (update_error_count)
             {
@@ -1100,20 +1192,19 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
                 std::rethrow_exception(last_update_exception);
             }
 
-            // Set key
-            std::get<SSDCachePartition::Attribute::Container<UInt64>>(new_keys.values).push_back(id);
-
             std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
             metadata.emplace_back();
             metadata.back().setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
             metadata.back().setDefault();
 
+            default_keys.push_back(key);
+
             /// inform caller that the cell has not been found
-            on_id_not_found(id);
+            on_key_not_found(key);
         }
 
         if (not_found_num)
-            append_defaults(new_keys, metadata);
+            append_defaults(default_keys, metadata);
     }
 
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
@@ -1121,9 +1212,9 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
 
-PaddedPODArray<SSDCachePartition::Key> SSDCacheStorage::getCachedIds() const
+PaddedPODArray<KeyRef> SSDComplexKeyCacheStorage::getCachedIds() const
 {
-    PaddedPODArray<Key> array;
+    /*PaddedPODArray<Key> array;
 
     const auto now = std::chrono::system_clock::now();
 
@@ -1132,12 +1223,12 @@ PaddedPODArray<SSDCachePartition::Key> SSDCacheStorage::getCachedIds() const
     {
         const auto cached_in_partition = partition->getCachedIds(now);
         array.insert(std::begin(cached_in_partition), std::end(cached_in_partition));
-    }
+    }*/
 
-    return array;
+    return {};
 }
 
-double SSDCacheStorage::getLoadFactor() const
+double SSDComplexKeyCacheStorage::getLoadFactor() const
 {
     double result = 0;
     std::shared_lock lock(rw_lock);
@@ -1146,7 +1237,7 @@ double SSDCacheStorage::getLoadFactor() const
     return result / partitions.size();
 }
 
-size_t SSDCacheStorage::getElementCount() const
+size_t SSDComplexKeyCacheStorage::getElementCount() const
 {
     size_t result = 0;
     std::shared_lock lock(rw_lock);
@@ -1155,7 +1246,7 @@ size_t SSDCacheStorage::getElementCount() const
     return result;
 }
 
-void SSDCacheStorage::collectGarbage()
+void SSDComplexKeyCacheStorage::collectGarbage()
 {
     // add partitions to queue
     while (partitions.size() > max_partitions_count)
@@ -1171,10 +1262,10 @@ void SSDCacheStorage::collectGarbage()
     }
 }
 
-SSDCachePartition::Attributes SSDCacheStorage::createAttributesFromBlock(
+SSDComplexKeyCachePartition::Attributes SSDComplexKeyCacheStorage::createAttributesFromBlock(
         const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure)
 {
-    SSDCachePartition::Attributes attributes;
+    SSDComplexKeyCachePartition::Attributes attributes;
 
     const auto columns = block.getColumns();
     for (size_t i = 0; i < structure.size(); ++i)
@@ -1185,7 +1276,7 @@ SSDCachePartition::Attributes SSDCacheStorage::createAttributesFromBlock(
 #define DISPATCH(TYPE) \
         case AttributeUnderlyingType::ut##TYPE: \
             { \
-                SSDCachePartition::Attribute::Container<TYPE> values(column->size()); \
+                SSDComplexKeyCachePartition::Attribute::Container<TYPE> values(column->size()); \
                 memcpy(&values[0], column->getRawData().data, sizeof(TYPE) * values.size()); \
                 attributes.emplace_back(); \
                 attributes.back().type = structure[i]; \
@@ -1212,7 +1303,7 @@ SSDCachePartition::Attributes SSDCacheStorage::createAttributesFromBlock(
         case AttributeUnderlyingType::utString:
             {
                 attributes.emplace_back();
-                SSDCachePartition::Attribute::Container<String> values(column->size());
+                SSDComplexKeyCachePartition::Attribute::Container<String> values(column->size());
                 for (size_t j = 0; j < column->size(); ++j)
                 {
                     const auto ref = column->getDataAt(j);
@@ -1229,7 +1320,7 @@ SSDCachePartition::Attributes SSDCacheStorage::createAttributesFromBlock(
     return attributes;
 }
 
-SSDCacheDictionary::SSDCacheDictionary(
+SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -1254,7 +1345,7 @@ SSDCacheDictionary::SSDCacheDictionary(
     , max_stored_keys(max_stored_keys_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
             path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
-    , log(&Poco::Logger::get("SSDCacheDictionary"))
+    , log(&Poco::Logger::get("SSDComplexKeyCacheDictionary"))
 {
     LOG_INFO(log, "Using storage path '" << path << "'.");
     if (!this->source_ptr->supportsSelectiveLoad())
@@ -1264,17 +1355,21 @@ SSDCacheDictionary::SSDCacheDictionary(
 }
 
 #define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const \
+    void SSDComplexKeyCacheDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        ResultArrayType<TYPE> & out) const \
     { \
         const auto index = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); \
         getItemsNumberImpl<TYPE, TYPE>( \
-                index, \
-                ids, \
-                out, \
-                [&](const size_t) { return null_value; }); \
+            index, \
+            key_columns, \
+            key_types, \
+            out, \
+            [&](const size_t) { return null_value; }); \
     }
 
     DECLARE(UInt8)
@@ -1294,9 +1389,10 @@ SSDCacheDictionary::SSDCacheDictionary(
 #undef DECLARE
 
 #define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
+    void SSDComplexKeyCacheDictionary::get##TYPE( \
         const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
         const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const \
     { \
@@ -1304,7 +1400,8 @@ SSDCacheDictionary::SSDCacheDictionary(
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
             index, \
-            ids, \
+            key_columns, \
+            key_types, \
             out, \
             [&](const size_t row) { return def[row]; }); \
     }
@@ -1325,9 +1422,10 @@ SSDCacheDictionary::SSDCacheDictionary(
 #undef DECLARE
 
 #define DECLARE(TYPE) \
-    void SSDCacheDictionary::get##TYPE( \
+    void SSDComplexKeyCacheDictionary::get##TYPE( \
         const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
         const TYPE def, \
         ResultArrayType<TYPE> & out) const \
     { \
@@ -1335,7 +1433,8 @@ SSDCacheDictionary::SSDCacheDictionary(
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         getItemsNumberImpl<TYPE, TYPE>( \
             index, \
-            ids, \
+            key_columns, \
+            key_types, \
             out, \
             [&](const size_t) { return def; }); \
     }
@@ -1356,81 +1455,108 @@ SSDCacheDictionary::SSDCacheDictionary(
 #undef DECLARE
 
 template <typename AttributeType, typename OutputType, typename DefaultGetter>
-void SSDCacheDictionary::getItemsNumberImpl(
-        const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
+void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
+    const size_t attribute_index,
+    const Columns & key_columns, const DataTypes & key_types,
+    ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
     const auto now = std::chrono::system_clock::now();
 
-    std::unordered_map<Key, std::vector<size_t>> not_found_ids;
-    storage.getValue<OutputType>(attribute_index, ids, out, not_found_ids, get_default, now);
-    if (not_found_ids.empty())
+    TemporalComplexKeysPool not_found_pool;
+    std::unordered_map<KeyRef, std::vector<size_t>> not_found_keys;
+    storage.getValue<OutputType>(attribute_index, key_columns, key_types, out, not_found_keys, not_found_pool, get_default, now);
+    if (not_found_keys.empty())
         return;
 
-    std::vector<Key> required_ids(not_found_ids.size());
-    std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](const auto & pair) { return pair.first; });
+    std::vector<KeyRef> required_keys(not_found_keys.size());
+    std::transform(std::begin(not_found_keys), std::end(not_found_keys), std::begin(required_keys), [](const auto & pair) { return pair.first; });
+    std::vector<size_t> required_rows;
+    required_rows.reserve(required_keys.size());
+    for (const auto & key_ref : required_keys)
+        required_rows.push_back(not_found_keys[key_ref].front());
 
     storage.update(
             source_ptr,
-            required_ids,
-            [&](const auto id, const auto row, const auto & new_attributes)
+            key_columns,
+            key_types,
+            required_keys,
+            required_rows,
+            [&](const auto key, const auto row, const auto & new_attributes)
             {
-                for (const size_t out_row : not_found_ids[id])
-                    out[out_row] = std::get<SSDCachePartition::Attribute::Container<OutputType>>(new_attributes[attribute_index].values)[row];
+                for (const size_t out_row : not_found_keys[key])
+                    out[out_row] = std::get<SSDComplexKeyCachePartition::Attribute::Container<OutputType>>(new_attributes[attribute_index].values)[row];
             },
-            [&](const size_t id)
+            [&](const auto key)
             {
-                for (const size_t row : not_found_ids[id])
+                for (const size_t row : not_found_keys[key])
                     out[row] = get_default(row);
             },
             getLifetime());
 }
 
-void SSDCacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+void SSDComplexKeyCacheDictionary::getString(
+    const std::string & attribute_name,
+    const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
 {
     const auto index = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
     const auto null_value = StringRef{std::get<String>(null_values[index])};
 
-    getItemsStringImpl(index, ids, out, [&](const size_t) { return null_value; });
+    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return null_value; });
 }
 
-void SSDCacheDictionary::getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
+void SSDComplexKeyCacheDictionary::getString(
+        const std::string & attribute_name,
+        const Columns & key_columns, const DataTypes & key_types,
+        const ColumnString * const def, ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
-    getItemsStringImpl(index, ids, out, [&](const size_t row) { return def->getDataAt(row); });
+    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t row) { return def->getDataAt(row); });
 }
 
-void SSDCacheDictionary::getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
+void SSDComplexKeyCacheDictionary::getString(
+        const std::string & attribute_name,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const String & def,
+        ColumnString * const out) const
 {
     const auto index = getAttributeIndex(attribute_name);
     checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::utString);
 
-    getItemsStringImpl(index, ids, out, [&](const size_t) { return StringRef{def}; });
+    getItemsStringImpl(index, key_columns, key_types, out, [&](const size_t) { return StringRef{def}; });
 }
 
 template <typename DefaultGetter>
-void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
-        ColumnString * out, DefaultGetter && get_default) const
+void SSDComplexKeyCacheDictionary::getItemsStringImpl(
+    const size_t attribute_index,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    ColumnString * out,
+    DefaultGetter && get_default) const
 {
     const auto now = std::chrono::system_clock::now();
 
-    std::unordered_map<Key, std::vector<size_t>> not_found_ids;
+    TemporalComplexKeysPool not_found_pool;
+    std::unordered_map<KeyRef, std::vector<size_t>> not_found_keys;
 
-    StringRefs refs(ids.size());
+    const size_t n = key_columns.front()->size();
+
+    StringRefs refs(n);
     ArenaWithFreeLists string_arena;
     std::vector<size_t> default_rows;
-    storage.getString(attribute_index, ids, refs, string_arena, not_found_ids, default_rows, now);
+    storage.getString(
+        attribute_index, key_columns, key_types,
+        refs, string_arena, not_found_keys, not_found_pool, default_rows, now);
     std::sort(std::begin(default_rows), std::end(default_rows));
 
-    if (not_found_ids.empty())
+    if (not_found_keys.empty())
     {
         size_t default_index = 0;
-        for (size_t row = 0; row < ids.size(); ++row)
+        for (size_t row = 0; row < n; ++row)
         {
             if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
             {
@@ -1444,36 +1570,47 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
         return;
     }
 
-    std::vector<Key> required_ids(not_found_ids.size());
-    std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](const auto & pair) { return pair.first; });
+    std::vector<KeyRef> required_keys(not_found_keys.size());
+    std::transform(std::begin(not_found_keys), std::end(not_found_keys), std::begin(required_keys), [](const auto & pair) { return pair.first; });
 
-    std::unordered_map<Key, String> update_result;
+    std::unordered_map<KeyRef, String> update_result;
+
+    std::vector<size_t> required_rows;
+    required_rows.reserve(required_keys.size());
+    for (const auto & key_ref : required_keys)
+        required_rows.push_back(not_found_keys[key_ref].front());
 
     storage.update(
             source_ptr,
-            required_ids,
-            [&](const auto id, const auto row, const auto & new_attributes)
+            key_columns,
+            key_types,
+            required_keys,
+            required_rows,
+            [&](const auto key, const auto row, const auto & new_attributes)
             {
-                update_result[id] = std::get<SSDCachePartition::Attribute::Container<String>>(new_attributes[attribute_index].values)[row];
+                update_result[key] = std::get<SSDComplexKeyCachePartition::Attribute::Container<String>>(new_attributes[attribute_index].values)[row];
             },
-            [&](const size_t) {},
+            [&](const auto) {},
             getLifetime());
 
+    TemporalComplexKeysPool tmp_keys_pool;
+    StringRefs tmp_refs(key_columns.size());
     size_t default_index = 0;
-    for (size_t row = 0; row < ids.size(); ++row)
+    for (size_t row = 0; row < n; ++row)
     {
-        const auto & id = ids[row];
+        const auto key = tmp_keys_pool.allocKey(row, key_columns, tmp_refs);
+        SCOPE_EXIT(tmp_keys_pool.rollback(key));
         if (unlikely(default_index != default_rows.size() && default_rows[default_index] == row))
         {
             auto to_insert = get_default(row);
             out->insertData(to_insert.data, to_insert.size);
             ++default_index;
         }
-        else if (auto it = not_found_ids.find(id); it == std::end(not_found_ids))
+        else if (auto it = not_found_keys.find(key); it == std::end(not_found_keys))
         {
             out->insertData(refs[row].data, refs[row].size);
         }
-        else if (auto it_update = update_result.find(id); it_update != std::end(update_result))
+        else if (auto it_update = update_result.find(key); it_update != std::end(update_result))
         {
             out->insertData(it_update->second.data(), it_update->second.size());
         }
@@ -1485,41 +1622,54 @@ void SSDCacheDictionary::getItemsStringImpl(const size_t attribute_index, const 
     }
 }
 
-void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+void SSDComplexKeyCacheDictionary::has(
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    PaddedPODArray<UInt8> & out) const
 {
     const auto now = std::chrono::system_clock::now();
 
-    std::unordered_map<Key, std::vector<size_t>> not_found_ids;
-    storage.has(ids, out, not_found_ids, now);
-    if (not_found_ids.empty())
+    std::unordered_map<KeyRef, std::vector<size_t>> not_found_keys;
+    TemporalComplexKeysPool not_found_pool;
+    storage.has(key_columns, key_types, out, not_found_keys, not_found_pool, now);
+    if (not_found_keys.empty())
         return;
 
-    std::vector<Key> required_ids(not_found_ids.size());
-    std::transform(std::begin(not_found_ids), std::end(not_found_ids), std::begin(required_ids), [](const auto & pair) { return pair.first; });
+    std::vector<KeyRef> required_keys(not_found_keys.size());
+    std::transform(std::begin(not_found_keys), std::end(not_found_keys), std::begin(required_keys), [](const auto & pair) { return pair.first; });
+
+    std::vector<size_t> required_rows;
+    required_rows.reserve(required_keys.size());
+    for (const auto & key_ref : required_keys)
+        required_rows.push_back(not_found_keys[key_ref].front());
 
     storage.update(
             source_ptr,
-            required_ids,
-            [&](const auto id, const auto, const auto &)
+            key_columns,
+            key_types,
+            required_keys,
+            required_rows,
+            [&](const auto key, const auto, const auto &)
             {
-                for (const size_t out_row : not_found_ids[id])
+                for (const size_t out_row : not_found_keys[key])
                     out[out_row] = true;
             },
-            [&](const size_t id)
+            [&](const auto key)
             {
-                for (const size_t row : not_found_ids[id])
+                for (const size_t row : not_found_keys[key])
                     out[row] = false;
             },
             getLifetime());
 }
 
-BlockInputStreamPtr SSDCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr SSDComplexKeyCacheDictionary::getBlockInputStream(
+    const Names & /* column_names */, size_t /* max_block_size*/) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<SSDCacheDictionary, Key>;
-    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, storage.getCachedIds(), column_names);
+    //using BlockInputStreamType = DictionaryBlockInputStream<SSDComplexKeyCacheDictionary, Key>;
+    return nullptr;  //std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, storage.getCachedIds(), column_names);
 }
 
-size_t SSDCacheDictionary::getAttributeIndex(const std::string & attr_name) const
+size_t SSDComplexKeyCacheDictionary::getAttributeIndex(const std::string & attr_name) const
 {
     auto it = attribute_index_by_name.find(attr_name);
     if (it == std::end(attribute_index_by_name))
@@ -1528,7 +1678,7 @@ size_t SSDCacheDictionary::getAttributeIndex(const std::string & attr_name) cons
 }
 
 template <typename T>
-AttributeValueVariant SSDCacheDictionary::createAttributeNullValueWithTypeImpl(const Field & null_value)
+AttributeValueVariant SSDComplexKeyCacheDictionary::createAttributeNullValueWithTypeImpl(const Field & null_value)
 {
     AttributeValueVariant var_null_value = static_cast<T>(null_value.get<NearestFieldType<T>>());
     bytes_allocated += sizeof(T);
@@ -1536,14 +1686,14 @@ AttributeValueVariant SSDCacheDictionary::createAttributeNullValueWithTypeImpl(c
 }
 
 template <>
-AttributeValueVariant SSDCacheDictionary::createAttributeNullValueWithTypeImpl<String>(const Field & null_value)
+AttributeValueVariant SSDComplexKeyCacheDictionary::createAttributeNullValueWithTypeImpl<String>(const Field & null_value)
 {
     AttributeValueVariant var_null_value = null_value.get<String>();
     bytes_allocated += sizeof(StringRef);
     return var_null_value;
 }
 
-AttributeValueVariant SSDCacheDictionary::createAttributeNullValueWithType(const AttributeUnderlyingType type, const Field & null_value)
+AttributeValueVariant SSDComplexKeyCacheDictionary::createAttributeNullValueWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
     switch (type)
     {
@@ -1571,7 +1721,7 @@ case AttributeUnderlyingType::ut##TYPE: \
     throw Exception{"Unknown attribute type: " + std::to_string(static_cast<int>(type)), ErrorCodes::TYPE_MISMATCH};
 }
 
-void SSDCacheDictionary::createAttributes()
+void SSDComplexKeyCacheDictionary::createAttributes()
 {
     null_values.reserve(dict_struct.attributes.size());
     for (size_t i = 0; i < dict_struct.attributes.size(); ++i)
@@ -1587,7 +1737,7 @@ void SSDCacheDictionary::createAttributes()
     }
 }
 
-void registerDictionarySSDCache(DictionaryFactory & factory)
+void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & name,
                              const DictionaryStructure & dict_struct,
@@ -1595,8 +1745,8 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
+        if (dict_struct.id)
+            throw Exception{"'id' is not supported for dictionary of layout 'complex_key_cache'", ErrorCodes::UNSUPPORTED_METHOD};
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception{name
@@ -1605,51 +1755,51 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
         const auto & layout_prefix = config_prefix + ".layout";
 
-        const auto max_partitions_count = config.getInt(layout_prefix + ".ssd.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
+        const auto max_partitions_count = config.getInt(layout_prefix + ".ssd_complex_key.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
         if (max_partitions_count <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_partitions_count", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto block_size = config.getInt(layout_prefix + ".ssd.block_size", DEFAULT_SSD_BLOCK_SIZE);
+        const auto block_size = config.getInt(layout_prefix + ".ssd_complex_key.block_size", DEFAULT_SSD_BLOCK_SIZE);
         if (block_size <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto partition_size = config.getInt64(layout_prefix + ".ssd.partition_size", DEFAULT_FILE_SIZE);
+        const auto partition_size = config.getInt64(layout_prefix + ".ssd_complex_key.partition_size", DEFAULT_FILE_SIZE);
         if (partition_size <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) partition_size", ErrorCodes::BAD_ARGUMENTS};
         if (partition_size % block_size != 0)
             throw Exception{name + ": partition_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto read_buffer_size = config.getInt64(layout_prefix + ".ssd.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
+        const auto read_buffer_size = config.getInt64(layout_prefix + ".ssd_complex_key.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
         if (read_buffer_size <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) read_buffer_size", ErrorCodes::BAD_ARGUMENTS};
         if (read_buffer_size % block_size != 0)
             throw Exception{name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto write_buffer_size = config.getInt64(layout_prefix + ".ssd.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE);
+        const auto write_buffer_size = config.getInt64(layout_prefix + ".ssd_complex_key.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE);
         if (write_buffer_size <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) write_buffer_size", ErrorCodes::BAD_ARGUMENTS};
         if (write_buffer_size % block_size != 0)
             throw Exception{name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        auto path = config.getString(layout_prefix + ".ssd.path");
+        auto path = config.getString(layout_prefix + ".ssd_complex_key.path");
         if (path.empty())
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have empty path",
                             ErrorCodes::BAD_ARGUMENTS};
         if (path.at(0) != '/')
             path = std::filesystem::path{config.getString("path")}.concat(path).string();
 
-        const auto max_stored_keys = config.getInt64(layout_prefix + ".ssd.max_stored_keys", DEFAULT_MAX_STORED_KEYS);
+        const auto max_stored_keys = config.getInt64(layout_prefix + ".ssd_complex_key.max_stored_keys", DEFAULT_MAX_STORED_KEYS);
         if (max_stored_keys <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_stored_keys", ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<SSDCacheDictionary>(
+        return std::make_unique<SSDComplexKeyCacheDictionary>(
                 name, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, partition_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);
     };
-    factory.registerLayout("ssd", create_layout, false);
+    factory.registerLayout("ssd_complex_key", create_layout, true);
 }
 
 }
