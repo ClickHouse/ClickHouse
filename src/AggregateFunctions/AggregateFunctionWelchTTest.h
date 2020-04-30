@@ -144,7 +144,7 @@ struct AggregateFunctionWelchTTestData final {
     Ret get_result(Float64 t, Float64 dof, Float64 parametr) const
     {
         //find our table
-        int table;
+        int table = 0;
         for (int i = 0; i < SIGN_LVL_CNT; ++i)
         {
             if (CriticalValuesTable[i][0] == parametr)
@@ -249,12 +249,11 @@ public:
         Float64 dof = this->data(place).get_degrees_of_freed(sx, sy);
         Ret result = this->data(place).get_result(t_value, dof, significance_level);
 
-        auto & column = static_cast<ColVecResult &>(to);
+        //check the type
+        auto & column = static_cast<ColumnVector<Ret> &>(to);
         column.getData().push_back(result);
     }
 
 
-}
 };
-
 };
