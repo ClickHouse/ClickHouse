@@ -399,7 +399,7 @@ void SystemLog<LogElement>::prepareTable()
     if (table)
     {
         const Block expected = LogElement::createBlock();
-        const Block actual = table->getSampleBlockNonMaterialized();
+        const Block actual = table->getInMemoryMetadata()->getSampleBlockNonMaterialized();
 
         if (!blocksHaveEqualStructure(actual, expected))
         {

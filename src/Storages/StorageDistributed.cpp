@@ -525,7 +525,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        context, *this, metadata_version, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlockNonMaterialized()), cluster,
+        context, *this, metadata_version, createInsertToRemoteTableQuery(remote_database, remote_table, metadata_version->getSampleBlockNonMaterialized()), cluster,
         insert_sync, timeout);
 }
 

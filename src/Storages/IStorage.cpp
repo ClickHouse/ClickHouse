@@ -61,16 +61,6 @@ Block IStorage::getSampleBlock() const
     return res;
 }
 
-Block IStorage::getSampleBlockNonMaterialized() const
-{
-    Block res;
-
-    for (const auto & column : getColumns().getOrdinary())
-        res.insert({column.type->createColumn(), column.type, column.name});
-
-    return res;
-}
-
 Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;

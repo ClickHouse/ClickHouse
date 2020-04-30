@@ -153,7 +153,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     virtual StorageMetadataPtr getInMemoryMetadata() const;
 
     Block getSampleBlock() const; /// ordinary + materialized.
-    Block getSampleBlockNonMaterialized() const; /// ordinary.
     Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
 
     /// Return list of virtual columns (like _part, _table, etc). In the vast
