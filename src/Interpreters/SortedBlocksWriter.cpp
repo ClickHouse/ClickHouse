@@ -212,7 +212,7 @@ Block SortedBlocksReader::read()
     bool next_portion = false;
 
     {
-        std::unique_lock lock{mutex};
+        std::lock_guard lock{mutex};
 
         if (files_portion.empty())
             return {};

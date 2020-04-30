@@ -116,7 +116,7 @@ public:
 
     void addFiles(PremergedFiles && premerged)
     {
-        std::unique_lock lock{mutex};
+        std::lock_guard lock{mutex};
 
         if (!premerged.files.empty())
             files_portion.emplace_back(std::move(premerged));
