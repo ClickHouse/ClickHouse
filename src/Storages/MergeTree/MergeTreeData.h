@@ -361,31 +361,9 @@ public:
     }
 
     bool supportsSettings() const override { return true; }
+    NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
-
-    NameAndTypePair getColumn(const String & column_name) const override
-    {
-        if (column_name == "_part")
-            return NameAndTypePair("_part", std::make_shared<DataTypeString>());
-        if (column_name == "_part_index")
-            return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
-        if (column_name == "_partition_id")
-            return NameAndTypePair("_partition_id", std::make_shared<DataTypeString>());
-        if (column_name == "_sample_factor")
-            return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
-
-        return getColumns().getPhysical(column_name);
-    }
-
-    bool hasColumn(const String & column_name) const override
-    {
-        return getColumns().hasPhysical(column_name)
-            || column_name == "_part"
-            || column_name == "_part_index"
-            || column_name == "_partition_id"
-            || column_name == "_sample_factor";
-    }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);

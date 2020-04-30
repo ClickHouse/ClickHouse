@@ -5,7 +5,7 @@ toc_priority: 46
 toc_title: "Soluci\xF3n de problemas"
 ---
 
-# Solución de problemas {#troubleshooting}
+# Solución De Problemas {#troubleshooting}
 
 -   [Instalación](#troubleshooting-installation-errors)
 -   [Conexión al servidor](#troubleshooting-accepts-no-connections)
@@ -14,19 +14,19 @@ toc_title: "Soluci\xF3n de problemas"
 
 ## Instalación {#troubleshooting-installation-errors}
 
-### No puede obtener paquetes Deb del repositorio de Clickhouse con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### No Puede Obtener Paquetes Deb Del Repositorio De Clickhouse Con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Compruebe la configuración del firewall.
--   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting_started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
+-   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting-started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
 
-## Conexión al servidor {#troubleshooting-accepts-no-connections}
+## Conexión Al Servidor {#troubleshooting-accepts-no-connections}
 
 Posibles problemas:
 
 -   El servidor no se está ejecutando.
 -   Parámetros de configuración inesperados o incorrectos.
 
-### El servidor no se está ejecutando {#server-is-not-running}
+### El Servidor No Se está Ejecutando {#server-is-not-running}
 
 **Compruebe si el servidor está ejecutado**
 
@@ -95,7 +95,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 Este comando inicia el servidor como una aplicación interactiva con parámetros estándar del script de inicio automático. En este modo `clickhouse-server` imprime todos los mensajes de eventos en la consola.
 
-### Parámetros de configuración {#configuration-parameters}
+### Parámetros De configuración {#configuration-parameters}
 
 Comprobar:
 
@@ -105,7 +105,7 @@ Comprobar:
 
 -   Configuración del punto final.
 
-    Comprobar [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) y [Tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) configuración.
+    Comprobar [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) y [Tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) configuración.
 
     El servidor ClickHouse acepta conexiones localhost solo de forma predeterminada.
 
@@ -117,8 +117,8 @@ Comprobar:
 
     Comprobar:
 
-    -   El [Tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) configuración.
-    -   Ajustes para [Sertificados SSL](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   El [Tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) configuración.
+    -   Ajustes para [Sertificados SSL](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Utilice los parámetros adecuados mientras se conecta. Por ejemplo, utilice el `port_secure` parámetro con `clickhouse_client`.
 
@@ -126,7 +126,7 @@ Comprobar:
 
     Es posible que esté utilizando el nombre de usuario o la contraseña incorrectos.
 
-## Procesamiento de consultas {#troubleshooting-does-not-process-queries}
+## Procesamiento De Consultas {#troubleshooting-does-not-process-queries}
 
 Si ClickHouse no puede procesar la consulta, envía una descripción de error al cliente. En el `clickhouse-client` obtienes una descripción del error en la consola. Si está utilizando la interfaz HTTP, ClickHouse envía la descripción del error en el cuerpo de la respuesta. Por ejemplo:
 
@@ -139,7 +139,7 @@ Si empiezas `clickhouse-client` con el `stack-trace` parámetro, ClickHouse devu
 
 Es posible que vea un mensaje sobre una conexión rota. En este caso, puede repetir la consulta. Si la conexión se rompe cada vez que realiza la consulta, compruebe si hay errores en los registros del servidor.
 
-## Eficiencia del procesamiento de consultas {#troubleshooting-too-slow}
+## Eficiencia Del Procesamiento De Consultas {#troubleshooting-too-slow}
 
 Si ve que ClickHouse funciona demasiado lentamente, debe perfilar la carga en los recursos del servidor y la red para sus consultas.
 

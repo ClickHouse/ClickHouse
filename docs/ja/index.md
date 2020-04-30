@@ -1,6 +1,6 @@
 ---
 toc_priority: 3
-toc_title: 概観
+toc_title: "\u6982\u89B3"
 ---
 
 # ClickHouseとは? {#clickhousetoha}
@@ -66,11 +66,11 @@ OLAPシナリオは、他の一般的なシナリオ（OLTPやKey-Valueアクセ
 
 **行指向DBMS**
 
-![Row-oriented](images/row_oriented.gif#)
+![Row-oriented](images/row-oriented.gif#)
 
 **列指向DBMS**
 
-![Column-oriented](images/column_oriented.gif#)
+![Column-oriented](images/column-oriented.gif#)
 
 違いがわかりましたか？
 
