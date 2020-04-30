@@ -234,8 +234,18 @@ if (COMPILER_CLANG)
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-    set (CMAKE_AR "llvm-ar")
-    set (CMAKE_RANLIB "llvm-ranlib")
+
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    if (LLVM_AR_PATH)
+        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
+        set (CMAKE_AR ${LLVM_AR_PATH})
+    endif ()
+
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    if (LLVM_RANLIB_PATH)
+        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
+        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
+    endif ()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
