@@ -26,18 +26,18 @@ It is highly recommended to set up monitoring for:
 
 ClickHouse server has embedded instruments for self-state monitoring.
 
-To track server events use server logs. See the [logger](server_configuration_parameters/settings.md#server_configuration_parameters-logger) section of the configuration file.
+To track server events use server logs. See the [logger](server-configuration-parameters/settings.md#server_configuration_parameters-logger) section of the configuration file.
 
 ClickHouse collects:
 
 -   Different metrics of how the server uses computational resources.
 -   Common statistics on query processing.
 
-You can find metrics in the [system.metrics](../operations/system_tables.md#system_tables-metrics), [system.events](../operations/system_tables.md#system_tables-events), and [system.asynchronous\_metrics](../operations/system_tables.md#system_tables-asynchronous_metrics) tables.
+You can find metrics in the [system.metrics](../operations/system-tables.md#system_tables-metrics), [system.events](../operations/system-tables.md#system_tables-events), and [system.asynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) tables.
 
-You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
+You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
 
-You can configure ClickHouse to export metrics to [Prometheus](https://prometheus.io). See the [Prometheus section](server_configuration_parameters/settings.md#server_configuration_parameters-prometheus) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Prometheus by following their official [guide](https://prometheus.io/docs/prometheus/latest/installation/).
+You can configure ClickHouse to export metrics to [Prometheus](https://prometheus.io). See the [Prometheus section](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Prometheus by following their official [guide](https://prometheus.io/docs/prometheus/latest/installation/).
 
 Additionally, you can monitor server availability through the HTTP API. Send the `HTTP GET` request to `/ping`. If the server is available, it responds with `200 OK`.
 

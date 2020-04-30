@@ -5,9 +5,9 @@ toc_priority: 28
 toc_title: Interfaces Visuales
 ---
 
-# Interfaces visuales de desarrolladores de terceros {#visual-interfaces-from-third-party-developers}
+# Interfaces Visuales De Desarrolladores De Terceros {#visual-interfaces-from-third-party-developers}
 
-## De código abierto {#open-source}
+## De código Abierto {#open-source}
 
 ### Tabix {#tabix}
 
@@ -23,7 +23,7 @@ Función:
 
 [Documentación de Tabix](https://tabix.io/doc/).
 
-### Sistema abierto. {#houseops}
+### Sistema Abierto {#houseops}
 
 [Sistema abierto.](https://github.com/HouseOps/HouseOps) Es una interfaz de usuario / IDE para OSX, Linux y Windows.
 
@@ -78,7 +78,7 @@ Función:
 -   Vista previa de datos de tabla.
 -   Búsqueda de texto completo.
 
-### Sistema abierto. {#clickhouse-cli}
+### Sistema Abierto {#clickhouse-cli}
 
 [Sistema abierto.](https://github.com/hatarist/clickhouse-cli) es un cliente de línea de comandos alternativo para ClickHouse, escrito en Python 3.
 
@@ -89,7 +89,7 @@ Función:
 -   Soporte de buscapersonas para la salida de datos.
 -   Comandos similares a PostgreSQL personalizados.
 
-### Sistema abierto. {#clickhouse-flamegraph}
+### Sistema Abierto {#clickhouse-flamegraph}
 
 [Sistema abierto.](https://github.com/Slach/clickhouse-flamegraph) es una herramienta especializada para visualizar el `system.trace_log` como [Flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
@@ -124,7 +124,7 @@ Nivel de Cifrado WEP [disponible de forma gratuita](https://cloud.yandex.com/doc
 -   [Documentación de DataLens](https://cloud.yandex.com/docs/datalens/).
 -   [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) en la visualización de datos de una base de datos ClickHouse.
 
-### Software de Holística {#holistics-software}
+### Software De Holística {#holistics-software}
 
 [Holística](https://www.holistics.io/) es una plataforma de datos de pila completa y una herramienta de inteligencia de negocios.
 
@@ -145,7 +145,7 @@ Función:
 
 -   Desarrollo fácil y ágil utilizando LookML, un lenguaje que soporta curado
     [Modelado de datos](https://looker.com/platform/data-modeling) para apoyar a los redactores de informes y a los usuarios finales.
--   Potente integración de flujo de trabajo a través de Looker's [Acciones de datos](https://looker.com/platform/actions).
+-   Potente integración de flujo de trabajo a través de Looker’s [Acciones de datos](https://looker.com/platform/actions).
 
 [Cómo configurar ClickHouse en Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 

@@ -25,7 +25,7 @@ Ayarlar katmanlar halinde yapılandırılır, böylece sonraki her katman öncek
 -   Sorgu ayarları.
 
     -   ClickHouse konsol istemcisini etkileşimli olmayan modda başlatırken, başlangıç parametresini ayarlayın `--setting=value`.
-    -   HTTP API'sini kullanırken, CGI parametrelerini geçirin (`URL?setting_1=value&setting_2=value...`).
+    -   HTTP API’sini kullanırken, CGI parametrelerini geçirin (`URL?setting_1=value&setting_2=value...`).
 
 Yalnızca sunucu yapılandırma dosyasında yapılabilecek ayarlar bu bölümde yer almaz.
 
