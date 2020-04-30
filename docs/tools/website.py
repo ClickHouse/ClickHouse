@@ -82,7 +82,7 @@ def get_css_in(args):
 
 def get_js_in(args):
     return [
-        f"'{args.website_dir}/js/jquery-3.4.1.js'",
+        f"'{args.website_dir}/js/jquery.js'",
         f"'{args.website_dir}/js/popper.js'",
         f"'{args.website_dir}/js/bootstrap.js'",
         f"'{args.website_dir}/js/base.js'",
