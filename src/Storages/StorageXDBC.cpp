@@ -105,9 +105,9 @@ Pipes StorageXDBC::read(
 }
 
 
-Block StorageXDBC::getHeaderBlock(const Names & column_names) const
+Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_version) const
 {
-    return getSampleBlockForColumns(column_names);
+    return metadata_version->getSampleBlockForColumns(column_names, getVirtuals());
 }
 
 std::string StorageXDBC::getName() const

@@ -987,6 +987,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 
     const auto storage_settings_ptr = getSettings();
+    StorageMetadataPtr metadata_snapshot = getInMemoryMetadata();
 
     if (storage_settings_ptr->always_fetch_merged_part)
     {
@@ -1083,7 +1084,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, table_lock, entry.create_time, reserved_space, entry.deduplicate, entry.force_ttl);
+            future_merged_part, metadata_snapshot, *merge_entry, table_lock, entry.create_time, reserved_space, entry.deduplicate, entry.force_ttl);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 

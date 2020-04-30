@@ -26,7 +26,7 @@ public:
 
     Pipes read(
         const Names & column_names,
-        StorageMetadataPtr metadata,
+        const StorageMetadataPtr & metadata,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -36,7 +36,7 @@ public:
     Pipes readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
-        StorageMetadataPtr metadata,
+        const StorageMetadataPtr & metadata,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
@@ -50,6 +50,7 @@ private:
 
     Pipes spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
+        const StorageMetadataPtr & metadata,
         size_t num_streams,
         const Names & column_names,
         UInt64 max_block_size,
@@ -61,6 +62,7 @@ private:
 
     Pipes spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
+        const StorageMetadataPtr & metadata,
         size_t num_streams,
         const Names & column_names,
         UInt64 max_block_size,
@@ -73,6 +75,7 @@ private:
 
     Pipes spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
+        const StorageMetadataPtr & metadata,
         const Names & column_names,
         UInt64 max_block_size,
         bool use_uncompressed_cache,

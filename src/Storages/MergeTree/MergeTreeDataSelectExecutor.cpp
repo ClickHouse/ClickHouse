@@ -145,7 +145,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 Pipes MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    StorageMetadataPtr metadata,
+    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const Context & context,
     const UInt64 max_block_size,
@@ -160,7 +160,7 @@ Pipes MergeTreeDataSelectExecutor::read(
 Pipes MergeTreeDataSelectExecutor::readFromParts(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
-    StorageMetadataPtr metadata,
+    const StorageMetadataPtr & metadata,
     const SelectQueryInfo & query_info,
     const Context & context,
     const UInt64 max_block_size,
@@ -619,6 +619,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
         res = spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
+            metadata,
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
@@ -638,6 +639,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
         res = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
+            metadata,
             num_streams,
             column_names_to_read,
             max_block_size,
@@ -652,6 +654,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     {
         res = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
+            metadata,
             num_streams,
             column_names_to_read,
             max_block_size,
@@ -707,6 +710,7 @@ size_t roundRowsOrBytesToMarks(
 
 Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
+    const StorageMetadataPtr & metadata,
     size_t num_streams,
     const Names & column_names,
     UInt64 max_block_size,
@@ -765,7 +769,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, query_info.prewhere_info, true,
+            num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, metadata, query_info.prewhere_info, true,
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
@@ -794,7 +798,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         for (const auto & part : parts)
         {
             auto source = std::make_shared<MergeTreeSelectProcessor>(
-                data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                data, metadata, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
                 query_info.prewhere_info, true, reader_settings, virt_columns, part.part_index_in_query);
 
@@ -817,6 +821,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
 Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
+    const StorageMetadataPtr & metadata,
     size_t num_streams,
     const Names & column_names,
     UInt64 max_block_size,
@@ -977,7 +982,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             if (input_sorting_info->direction == 1)
             {
                 pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                        data, metadata, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
                     virt_columns, part.part_index_in_query));
@@ -985,7 +990,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             else
             {
                 pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                        data, metadata, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, query_info.prewhere_info, true, reader_settings,
                     virt_columns, part.part_index_in_query));
@@ -1019,6 +1024,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
 Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
+    const StorageMetadataPtr & metadata,
     const Names & column_names,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
@@ -1057,7 +1063,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     for (const auto & part : parts)
     {
         auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
-            data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+            data, metadata, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             query_info.prewhere_info, true, reader_settings,
             virt_columns, part.part_index_in_query);

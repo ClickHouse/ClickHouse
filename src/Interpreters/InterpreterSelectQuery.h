@@ -260,6 +260,7 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
+    StorageMetadataPtr metadata;
     StorageID table_id = StorageID::createEmpty();  /// Will be initialized if storage is not nullptr
     TableStructureReadLockHolder table_lock;
 

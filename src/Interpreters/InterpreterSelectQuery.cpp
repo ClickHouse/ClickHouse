@@ -257,6 +257,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         table_lock = storage->lockStructureForShare(
                 false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
+        metadata = storage->getInMemoryMetadata();
     }
 
     if (has_input || !joined_tables.resolveTables())
@@ -360,7 +361,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage)
         {
-            source_header = storage->getSampleBlockForColumns(required_columns);
+            source_header = metadata->getSampleBlockForColumns(required_columns, storage->getVirtuals());
 
             /// Fix source_header for filter actions.
             auto row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
@@ -368,7 +369,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             {
                 filter_info = std::make_shared<FilterInfo>();
                 filter_info->column_name = generateFilterActions(filter_info->actions, row_policy_filter, required_columns);
-                source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
+                source_header = metadata->getSampleBlockForColumns(filter_info->actions->getRequiredColumns(), storage->getVirtuals());
             }
         }
 
@@ -1388,8 +1389,6 @@ void InterpreterSelectQuery::executeFetchColumns(
     else if (storage)
     {
         /// Table.
-        StorageMetadataPtr metadata = storage->getInMemoryMetadata();
-
         if (max_streams == 0)
             throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
 
@@ -1425,7 +1424,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (streams.empty() && !pipeline_with_processors)
         {
-            streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
+            streams = {std::make_shared<NullBlockInputStream>(metadata->getSampleBlockForColumns(required_columns, storage->getVirtuals()))};
 
             if (query_info.prewhere_info)
             {
@@ -1457,7 +1456,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         /// Code is temporarily copy-pasted while moving to new pipeline.
         if (pipes.empty() && pipeline_with_processors)
         {
-            Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
+            Pipe pipe(std::make_shared<NullSource>(metadata->getSampleBlockForColumns(required_columns, storage->getVirtuals())));
 
             if (query_info.prewhere_info)
             {

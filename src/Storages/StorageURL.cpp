@@ -210,7 +210,7 @@ Pipes IStorageURLBase::read(
             context, processed_stage, max_block_size),
         format_name,
         getName(),
-        getHeaderBlock(column_names),
+        getHeaderBlock(column_names, metadata_version),
         context,
         metadata_version->getColumns().getDefaults(),
         max_block_size,

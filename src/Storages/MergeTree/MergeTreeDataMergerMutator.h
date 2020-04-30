@@ -106,6 +106,7 @@ public:
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
+        const StorageMetadataPtr & metadata,
         MergeListEntry & merge_entry, TableStructureReadLockHolder & table_lock_holder, time_t time_of_merge,
         const ReservationPtr & space_reservation, bool deduplicate, bool force_ttl);
 

@@ -545,6 +545,7 @@ bool StorageMergeTree::merge(
     auto table_lock_holder = lockStructureForShare(
             true, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
+    StorageMetadataPtr metadata_version = IStorage::getInMemoryMetadata();
     FutureMergedMutatedPart future_part;
 
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
@@ -621,7 +622,7 @@ bool StorageMergeTree::merge(
         bool force_ttl = (final && hasAnyTTL());
 
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, *merge_entry, table_lock_holder, time(nullptr),
+            future_part, metadata_version, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space, deduplicate, force_ttl);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
