@@ -66,13 +66,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
 
-            Context local_context = *views_context;
-            local_context.addViewSource(
-                StorageValues::create(
-                    storage->getStorageID(), storage->getColumns(), storage->getSampleBlock(), storage->getVirtuals()));
-
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, local_context, SelectQueryOptions().analyze()).getSampleBlock();
+            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze()).getSampleBlock();
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
@@ -85,7 +80,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert->columns = std::move(list);
 
             ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, local_context);
+            InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
             BlockIO io = interpreter.execute();
             out = io.out;
         }
