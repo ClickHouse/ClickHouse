@@ -141,7 +141,9 @@
          Data will be stored in system.trace_log table with query_id = empty string.
          Zero means disabled. Minimal effective value is 4 MiB.
       -->
-    <total_memory_profiler_step>4194304</total_memory_profiler_step>
+    <total_memory_profiler_step>1</total_memory_profiler_step>
+
+    <total_memory_tracker_sample_probability>1</total_memory_tracker_sample_probability>
 
     <!-- Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
          correct maximum value. -->
