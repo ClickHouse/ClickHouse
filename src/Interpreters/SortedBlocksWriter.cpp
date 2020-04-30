@@ -136,18 +136,25 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     return flushToFile(path, sample_block, sorted_input, codec);
 }
 
-SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
+SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
 {
+    SortedFiles files;
+    BlocksList blocks;
+
     /// wait other flushes if any
     {
         std::unique_lock lock{insert_mutex};
+
+        files.swap(sorted_files);
+        blocks.swap(inserted_blocks.blocks);
+        inserted_blocks.clear();
+
         flush_condvar.wait(lock, [&]{ return !flush_inflight; });
     }
 
     /// flush not flushed
-    if (!inserted_blocks.empty())
-        sorted_files.emplace_back(flush(inserted_blocks.blocks));
-    inserted_blocks.clear();
+    if (!blocks.empty())
+        files.emplace_back(flush(blocks));
 
     BlockInputStreams inputs;
     inputs.reserve(num_files_for_merge);
@@ -155,15 +162,15 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
     /// Merge by parts to save memory. It's possible to exchange disk I/O and memory by num_files_for_merge.
     {
         SortedFiles new_files;
-        new_files.reserve(sorted_files.size() / num_files_for_merge + 1);
+        new_files.reserve(files.size() / num_files_for_merge + 1);
 
-        while (sorted_files.size() > num_files_for_merge)
+        while (files.size() > num_files_for_merge)
         {
-            for (const auto & file : sorted_files)
+            for (const auto & file : files)
             {
                 inputs.emplace_back(streamFromFile(file));
 
-                if (inputs.size() == num_files_for_merge || &file == &sorted_files.back())
+                if (inputs.size() == num_files_for_merge || &file == &files.back())
                 {
                     MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
                     new_files.emplace_back(flushToFile(getPath(), sample_block, sorted_input, codec));
@@ -171,19 +178,22 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
                 }
             }
 
-            sorted_files.clear();
-            sorted_files.swap(new_files);
+            files.clear();
+            files.swap(new_files);
         }
 
-        for (const auto & file : sorted_files)
+        for (const auto & file : files)
             inputs.emplace_back(streamFromFile(file));
     }
 
-    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+    return PremergedFiles{std::move(files), std::move(inputs)};
+}
 
-    SortedFiles out = flushToManyFiles(getPath(), sample_block, sorted_input, codec, callback);
-    sorted_files.clear();
-    return out; /// There're also inserted_blocks counters as indirect output
+SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
+{
+    PremergedFiles files = premerge();
+    MergingSortedBlockInputStream sorted_input(files.streams, sort_description, rows_in_block);
+    return flushToManyFiles(getPath(), sample_block, sorted_input, codec, callback);
 }
 
 BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
@@ -194,6 +204,33 @@ BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) 
 String SortedBlocksWriter::getPath() const
 {
     return volume->getNextDisk()->getPath();
+}
+
+
+Block SortedBlocksReader::read()
+{
+    bool next_portion = false;
+
+    {
+        std::unique_lock lock{mutex};
+
+        if (files_portion.empty())
+            return {};
+
+        if (!stream)
+            stream = std::make_shared<MergingSortedBlockInputStream>(files_portion.front().streams, sort_description, max_rows_in_block);
+
+        if (Block block = stream->read())
+            return block;
+
+        stream.reset();
+        files_portion.pop_front();
+        next_portion = true;
+    }
+
+    if (next_portion)
+        return read();
+    return {};
 }
 
 }

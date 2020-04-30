@@ -471,6 +471,8 @@ void MergeJoin::mergeFlushedRightBlocks()
     flushed_right_blocks = disk_writer->finishMerge(callback);
     disk_writer.reset();
 
+    disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
+
     /// Get memory limit or approximate it from row limit and bytes per row factor
     UInt64 memory_limit = size_limits.max_bytes;
     UInt64 rows_limit = size_limits.max_rows;
@@ -497,9 +499,7 @@ bool MergeJoin::saveRightBlock(Block && block)
         bool has_memory = size_limits.softCheck(right_blocks.row_count, right_blocks.bytes);
         if (!has_memory)
         {
-            disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
-                                right_sample_block, right_sort_description, right_blocks,
-                                max_rows_in_right_block, max_files_to_merge, table_join->temporaryFilesCodec());
+            initRightTableWriter();
             is_in_memory = false;
         }
     }
@@ -517,11 +517,32 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
     return saveRightBlock(std::move(block));
 }
 
+bool MergeJoin::isContinuation(ExtraBlockPtr & not_processed) const
+{
+    return not_processed && !not_processed->empty();
+}
+
+void MergeJoin::setKeepGoing(ExtraBlockPtr & not_processed) const
+{
+    if (!not_processed)
+        not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
+}
+
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
     materializeBlockInplace(block);
     JoinCommon::removeLowCardinalityInplace(block);
+
+    /// TODO: premerge for in memory mode: reserve half of memory for left table
+
+    if (!disk_writer)
+    {
+        std::unique_lock lock(rwlock);
+
+        if (!disk_writer)
+            initLeftTableWriter(block.cloneEmpty());
+    }
 
     sortBlock(block, left_sort_description);
     if (is_in_memory)
@@ -533,10 +554,53 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
     else
     {
+        bool is_continuation = isContinuation(not_processed);
+
+        /// Try store new blocks on disk
+        if (block && !is_continuation)
+        {
+            disk_writer->insert(std::move(block)); /// lock inside: wait memory
+
+            setKeepGoing(not_processed);
+            return;
+        }
+
+        /// No source block. Try read block from disk
+        if (!block)
+        {
+            block = disk_reader->read();
+            if (!block)
+            {
+                std::unique_lock lock(rwlock); /// premerge barier
+
+                block = disk_reader->read();
+                if (!block)
+                {
+                    disk_reader->addFiles(disk_writer->premerge());
+                    block = disk_reader->read();
+                }
+            }
+        }
+
+        /// No more data. Do not keep going. Return empty block.
+        if (!block)
+        {
+            not_processed.reset();
+            return;
+        }
+
+        if (!is_continuation)
+            not_processed.reset();
+
+        /// join
+
         if (is_all_join)
             joinSortedBlock<false, true>(block, not_processed);
         else
             joinSortedBlock<false, false>(block, not_processed);
+
+        /// Back thread even with no data. We have some unfinished data on disk.
+        setKeepGoing(not_processed);
     }
 }
 
@@ -825,6 +889,24 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos)
     }
     else
         return loaded_right_blocks[pos];
+}
+
+void MergeJoin::initRightTableWriter()
+{
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
+                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
+                    table_join->temporaryFilesCodec());
+    disk_writer->addBlocks(right_blocks);
+    right_blocks.clear();
+}
+
+void MergeJoin::initLeftTableWriter(Block && left_sample_block)
+{
+    const size_t max_rows_in_left_block = 1000000000;
+
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
+                    left_sample_block, left_sort_description, max_rows_in_left_block, max_files_to_merge,
+                    table_join->temporaryFilesCodec());
 }
 
 }

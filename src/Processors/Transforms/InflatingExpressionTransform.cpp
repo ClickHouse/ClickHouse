@@ -52,10 +52,12 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
 Block InflatingExpressionTransform::readExecute(Chunk & chunk)
 {
     Block res;
-    if (likely(!not_processed))
+
+    /// Empty extra data means keep going even if we have finished input. There's some data inside expression.
+    if (likely(!not_processed || not_processed->empty()))
     {
         res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        if (res)
+        if (res || not_processed)
             expression->execute(res, not_processed, action_number);
     }
     else

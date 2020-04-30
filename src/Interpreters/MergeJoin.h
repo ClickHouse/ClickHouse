@@ -61,6 +61,7 @@ private:
     std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
     std::unique_ptr<SortedBlocksWriter> disk_writer;
+    std::unique_ptr<SortedBlocksReader> disk_reader;
     SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
     std::atomic<bool> is_in_memory{true};
@@ -103,6 +104,11 @@ private:
 
     void mergeInMemoryRightBlocks();
     void mergeFlushedRightBlocks();
+
+    void initRightTableWriter();
+    void initLeftTableWriter(Block && left_sample_block);
+    void setKeepGoing(ExtraBlockPtr & not_processed) const;
+    bool isContinuation(ExtraBlockPtr & not_processed) const;
 };
 
 }
