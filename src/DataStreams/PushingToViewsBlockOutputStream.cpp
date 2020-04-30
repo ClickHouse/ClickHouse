@@ -69,7 +69,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             Context local_context = *views_context;
             local_context.addViewSource(
                 StorageValues::create(
-                    storage->getStorageID(), storage->getColumns(), Block(), storage->getVirtuals()));
+                    storage->getStorageID(), storage->getColumns(), storage->getSampleBlock(), storage->getVirtuals()));
 
             /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, local_context, SelectQueryOptions().analyze()).getSampleBlock();
