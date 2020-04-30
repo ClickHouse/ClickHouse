@@ -8,7 +8,7 @@ toc_title: "\u5C0E\u5165"
 
 # 界面 {#interfaces}
 
-ﾂつｨﾂ姪"ﾂつ"ﾂ債ﾂづｭﾂつｹﾂづ債つｱﾂつｿﾂづｧﾂつｩﾂづｧ):
+ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹﾂづ債つｱﾂつｿﾂづｧﾂつｩﾂづｧ):
 
 -   [HTTP](http.md)、文書化され、直接使いやすいです。
 -   [ネイティブtcp](tcp.md) オーバーヘッドが少ない。
@@ -22,7 +22,7 @@ toc_title: "\u5C0E\u5165"
 
 また、clickhouseで作業するための幅広いサードパーティ製ライブラリもあります:
 
--   [クライアント](third-party/client_libraries.md)
+-   [クライアント](third-party/client-libraries.md)
 -   [統合](third-party/integrations.md)
 -   [ビジュアル](third-party/gui.md)
 

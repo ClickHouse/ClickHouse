@@ -7,7 +7,7 @@ toc_title: "MySQL Aray\xFCz\xFC"
 
 # MySQL Arayüzü {#mysql-interface}
 
-ClickHouse MySQL Tel protokolünü destekler. Tarafından etkinleştir canilebilir [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) yapılandırma dosyasında ayarlama:
+ClickHouse MySQL Tel protokolünü destekler. Tarafından etkinleştir canilebilir [mysql\_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-mysql_port) yapılandırma dosyasında ayarlama:
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -37,8 +37,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-Tüm MySQL istemcileri ile uyumluluk için, kullanıcı parolasını belirtmeniz önerilir [çift SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) yapılandırma dosyasında.
-Kullanarak kullanıcı şifresi belirt ifilirse [SHA256](../operations/settings/settings_users.md#password_sha256_hex), bazı istemciler (mysqljs ve komut satırı aracı mysql eski sürümleri) kimlik doğrulaması mümkün olmayacaktır.
+Tüm MySQL istemcileri ile uyumluluk için, kullanıcı parolasını belirtmeniz önerilir [çift SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) yapılandırma dosyasında.
+Kullanarak kullanıcı şifresi belirt ifilirse [SHA256](../operations/settings/settings-users.md#password_sha256_hex), bazı istemciler (mysqljs ve komut satırı aracı mysql eski sürümleri) kimlik doğrulaması mümkün olmayacaktır.
 
 Kısıtlama:
 

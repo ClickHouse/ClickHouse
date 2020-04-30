@@ -161,15 +161,11 @@ def translate_filter(key, value, _format, _):
             if '#' in href:
                 href, anchor = href.split('#', 1)
 
-            if filename:
-                while attempts and not os.path.exists(href):
-                    href = f'../{href}'
-                    attempts -= 1
+            if href.endswith('.md'):
+                href = href.replace('_', '-')
             if anchor:
                 href = f'{href}#{anchor}'
-
-            if attempts:
-                value[2][0] = href
+            value[2][0] = href
         return cls(*value)
     elif key == 'Header':
         if value[1][0].islower() and '_' not in value[1][0]:  # Preserve some manually specified anchors

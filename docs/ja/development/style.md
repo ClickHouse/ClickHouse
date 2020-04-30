@@ -211,7 +211,7 @@ for (Names::const_iterator it = column_names.begin(); it != column_names.end(); 
 
 **1.** コードのすべての非自明な部分にコメントを追加してください。
 
-これは非常に重要です。 書面でのコメントだけを更新したいのですが--このコードに必要な、又は間違っています。
+これは非常に重要です。 書面でのコメントだけを更新したいのですが–このコードに必要な、又は間違っています。
 
 ``` cpp
 /** Part of piece of memory, that can be used.
