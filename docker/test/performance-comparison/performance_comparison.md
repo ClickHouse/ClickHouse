@@ -53,6 +53,9 @@ More stages are available, e.g. restart servers or run the tests. See the code.
 docker/test/performance-comparison/perf.py --host=localhost --port=9000 --runs=1 tests/performance/logical_functions_small.xml
 ```
 
+#### Run all tests on some custom configuration
+Technically possible, but inconvenient -- requires some scripting and setting up the directory structure. See `manual-run.sh` for inspiration. `compare.sh` has some stages which you can skip, specified by the `stage` environment variable.
+
 #### Statistical considerations
 Generating randomization distribution for medians is tricky. Suppose we have N
 runs for each version, and then use the combined 2N run results to make a
