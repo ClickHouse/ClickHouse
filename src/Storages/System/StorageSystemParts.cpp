@@ -3,6 +3,8 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -17,41 +19,51 @@ namespace DB
 StorageSystemParts::StorageSystemParts(const std::string & name_)
     : StorageSystemPartsBase(name_,
     {
-        {"partition",                                  std::make_shared<DataTypeString>()},
-        {"name",                                       std::make_shared<DataTypeString>()},
-        {"part_type",                                      std::make_shared<DataTypeString>()},
-        {"active",                                     std::make_shared<DataTypeUInt8>()},
-        {"marks",                                      std::make_shared<DataTypeUInt64>()},
-        {"rows",                                       std::make_shared<DataTypeUInt64>()},
-        {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>()},
-        {"data_compressed_bytes",                      std::make_shared<DataTypeUInt64>()},
-        {"data_uncompressed_bytes",                    std::make_shared<DataTypeUInt64>()},
-        {"marks_bytes",                                std::make_shared<DataTypeUInt64>()},
-        {"modification_time",                          std::make_shared<DataTypeDateTime>()},
-        {"remove_time",                                std::make_shared<DataTypeDateTime>()},
-        {"refcount",                                   std::make_shared<DataTypeUInt32>()},
-        {"min_date",                                   std::make_shared<DataTypeDate>()},
-        {"max_date",                                   std::make_shared<DataTypeDate>()},
-        {"min_time",                                   std::make_shared<DataTypeDateTime>()},
-        {"max_time",                                   std::make_shared<DataTypeDateTime>()},
-        {"partition_id",                               std::make_shared<DataTypeString>()},
-        {"min_block_number",                           std::make_shared<DataTypeInt64>()},
-        {"max_block_number",                           std::make_shared<DataTypeInt64>()},
-        {"level",                                      std::make_shared<DataTypeUInt32>()},
-        {"data_version",                               std::make_shared<DataTypeUInt64>()},
-        {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
-        {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
-        {"is_frozen",                                  std::make_shared<DataTypeUInt8>()},
+        {"partition",                                   std::make_shared<DataTypeString>()},
+        {"name",                                        std::make_shared<DataTypeString>()},
+        {"part_type",                                   std::make_shared<DataTypeString>()},
+        {"active",                                      std::make_shared<DataTypeUInt8>()},
+        {"marks",                                       std::make_shared<DataTypeUInt64>()},
+        {"rows",                                        std::make_shared<DataTypeUInt64>()},
+        {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>()},
+        {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>()},
+        {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>()},
+        {"marks_bytes",                                 std::make_shared<DataTypeUInt64>()},
+        {"modification_time",                           std::make_shared<DataTypeDateTime>()},
+        {"remove_time",                                 std::make_shared<DataTypeDateTime>()},
+        {"refcount",                                    std::make_shared<DataTypeUInt32>()},
+        {"min_date",                                    std::make_shared<DataTypeDate>()},
+        {"max_date",                                    std::make_shared<DataTypeDate>()},
+        {"min_time",                                    std::make_shared<DataTypeDateTime>()},
+        {"max_time",                                    std::make_shared<DataTypeDateTime>()},
+        {"partition_id",                                std::make_shared<DataTypeString>()},
+        {"min_block_number",                            std::make_shared<DataTypeInt64>()},
+        {"max_block_number",                            std::make_shared<DataTypeInt64>()},
+        {"level",                                       std::make_shared<DataTypeUInt32>()},
+        {"data_version",                                std::make_shared<DataTypeUInt64>()},
+        {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>()},
+        {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>()},
+        {"is_frozen",                                   std::make_shared<DataTypeUInt8>()},
 
-        {"database",                                   std::make_shared<DataTypeString>()},
-        {"table",                                      std::make_shared<DataTypeString>()},
-        {"engine",                                     std::make_shared<DataTypeString>()},
-        {"disk_name",                                  std::make_shared<DataTypeString>()},
-        {"path",                                       std::make_shared<DataTypeString>()},
+        {"database",                                    std::make_shared<DataTypeString>()},
+        {"table",                                       std::make_shared<DataTypeString>()},
+        {"engine",                                      std::make_shared<DataTypeString>()},
+        {"disk_name",                                   std::make_shared<DataTypeString>()},
+        {"path",                                        std::make_shared<DataTypeString>()},
 
-        {"hash_of_all_files",                          std::make_shared<DataTypeString>()},
-        {"hash_of_uncompressed_files",                 std::make_shared<DataTypeString>()},
-        {"uncompressed_hash_of_compressed_files",      std::make_shared<DataTypeString>()}
+        {"hash_of_all_files",                           std::make_shared<DataTypeString>()},
+        {"hash_of_uncompressed_files",                  std::make_shared<DataTypeString>()},
+        {"uncompressed_hash_of_compressed_files",       std::make_shared<DataTypeString>()},
+
+        {"move_ttl_info",                               std::make_shared<DataTypeArray>(
+                                                            std::make_shared<DataTypeTuple>(
+                                                                DataTypes({
+                                                                    std::make_shared<DataTypeString>(),
+                                                                    std::make_shared<DataTypeDateTime>(),
+                                                                    std::make_shared<DataTypeDateTime>()
+                                                                }),
+                                                                Strings({"expression", "min", "max"})
+                                                            ))},
     }
     )
 {
@@ -128,6 +140,21 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         checksum = helper.uncompressed_hash_of_compressed_files;
         columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+
+        /// move_ttl_info
+        {
+            Array move_ttl_info_array;
+            move_ttl_info_array.reserve(part->ttl_infos.moves_ttl.size());
+            for (const auto & [expression, move_ttl_info] : part->ttl_infos.moves_ttl)
+            {
+                Tuple move_ttl_info_tuple;
+                move_ttl_info_tuple.push_back(expression);
+                move_ttl_info_tuple.push_back(static_cast<UInt32>(move_ttl_info.min));
+                move_ttl_info_tuple.push_back(static_cast<UInt32>(move_ttl_info.max));
+                move_ttl_info_array.emplace_back(std::move(move_ttl_info_tuple));
+            }
+            columns_[i++]->insert(move_ttl_info_array);
+        }
     }
 }
 
