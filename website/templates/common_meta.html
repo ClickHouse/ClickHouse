@@ -26,8 +26,9 @@
 
 {% if config and page %}
     {% for code, name in config.extra.languages.items() %}
-    <link rel="alternate" hreflang="{{ code }}" href="/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}" />
+    <link rel="alternate" hreflang="{{ code }}" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}" />
     {% endfor %}
+    <link rel="alternate" hreflang="x-default" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}en/{{ page.url }}" />
 {% endif %}
 
 {% for prefetch_item in prefetch_items %}
