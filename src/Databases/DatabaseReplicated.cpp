@@ -71,7 +71,7 @@ DatabaseReplicated::DatabaseReplicated(
     const String & zookeeper_path_,
     const String & replica_name_,
     const Context & context_)
-    : DatabaseOrdinary(name_, metadata_path_, context_)
+    : DatabaseOrdinary(name_, metadata_path_, "data/", "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , replica_name(replica_name_)
 {
@@ -89,24 +89,31 @@ DatabaseReplicated::DatabaseReplicated(
 
     if (!current_zookeeper)
     {
-        // TODO wtf is attach
-        // if (!attach)
-            throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+            throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
-        /// Do not activate the replica. It will be readonly.
-        // TODO is it relevant for engines?
-        // LOG_ERROR(log, "No ZooKeeper: database will be in readonly mode.");
-        // TODO is_readonly = true;
-        // return;
+
     }
 
-    // can the zk path exist and no metadata on disk be available at the same moment? if so, in such a case, the db instance must be restored.
+    // test without this fancy mess (prob wont work)
+    current_zookeeper->createAncestors(replica_path);
+    current_zookeeper->createOrUpdate(replica_path, String(), zkutil::CreateMode::Persistent);
 
-    current_zookeeper->createIfNotExists(zookeeper_path, String());
-    current_zookeeper->createIfNotExists(replica_path, String());
-    // TODO what to do?
-    // TODO createDatabaseIfNotExists ?
-    // TODO check database structure ?
+//    if (!current_zookeeper->exists(zookeeper_path)) {
+//
+//        LOG_DEBUG(log, "Creating database " << zookeeper_path);
+//        current_zookeeper->createAncestors(zookeeper_path);
+
+        // Coordination::Requests ops;
+        // ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
+        //     zkutil::CreateMode::Persistent));
+        // ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
+        //     zkutil::CreateMode::Persistent));
+
+        // Coordination::Responses responses;
+        // auto code = current_zookeeper->tryMulti(ops, responses);
+        // if (code && code != Coordination::ZNODEEXISTS)
+        //     throw Coordination::Exception(code);
+        // }
 }
 
 void DatabaseReplicated::createTable(
@@ -115,43 +122,16 @@ void DatabaseReplicated::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    // try
+    // try?
     DatabaseOnDisk::createTable(context, table_name, table, query);
 
-    // replicated stuff
+    // suppose it worked
     String statement = getObjectDefinitionFromCreateQuery(query);
-    auto zookeeper = getZooKeeper();
-    // TODO в чем прикол именно так создавать зиноды?
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
-        zkutil::CreateMode::Persistent));
-    //ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
-        //zkutil::CreateMode::Persistent));
-//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", getColumns().toString(),
-//        zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "",
-        zkutil::CreateMode::Persistent));
-//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/blocks", "",
-//        zkutil::CreateMode::Persistent));
-//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
-//        zkutil::CreateMode::Persistent));
-//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
-//        zkutil::CreateMode::Persistent)); /// /nonincrement_block_numbers dir is unused, but is created nonetheless for backwards compatibility.
-    // TODO do we need a leader here? (probably yes) what is it gonna do?       
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/leader_election", "",
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp", "",
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
-        zkutil::CreateMode::Persistent));
+    LOG_DEBUG(log, "CREATE TABLE STATEMENT " << statement);
 
-    Coordination::Responses responses;
-    auto code = zookeeper->tryMulti(ops, responses);
-    if (code && code != Coordination::ZNODEEXISTS)
-        throw Coordination::Exception(code);
-
-    // ...
-
+    // let's do dumb write to zk at the first iteration
+    current_zookeeper = getZooKeeper();
+    current_zookeeper->createOrUpdate(replica_path + "/" + table_name, statement, zkutil::CreateMode::Persistent);
 }
 
 
@@ -167,6 +147,14 @@ void DatabaseReplicated::renameTable(
     // replicated stuff; what to put to a znode
     // String statement = getObjectDefinitionFromCreateQuery(query);
     // this one is fairly more complex
+    current_zookeeper = getZooKeeper();
+
+    // no need for now to have stat
+    Coordination::Stat metadata_stat;
+    auto statement = current_zookeeper->get(replica_path + "/" + table_name, &metadata_stat);
+    current_zookeeper->createOrUpdate(replica_path + "/" + to_table_name, statement, zkutil::CreateMode::Persistent);
+    current_zookeeper->remove(replica_path + "/" + table_name);
+    // TODO add rename statement to the log
 }
 
 void DatabaseReplicated::dropTable(
@@ -176,9 +164,10 @@ void DatabaseReplicated::dropTable(
 {
     // try
     DatabaseOnDisk::dropTable(context, table_name, no_delay);
-    // replicated stuff
-    //String statement = getObjectDefinitionFromCreateQuery(query);
-    // ...
+
+    // let's do dumb remove from zk at the first iteration
+    current_zookeeper = getZooKeeper();
+    current_zookeeper->remove(replica_path + "/" + table_name);
 }
 
 void DatabaseReplicated::drop(const Context & context)
