@@ -54,7 +54,7 @@ Block InflatingExpressionTransform::readExecute(Chunk & chunk)
     Block res;
 
     /// Empty extra data means keep going even if we have finished input. There's some data inside expression.
-    if (likely(!not_processed || not_processed->empty()))
+    if (!not_processed || not_processed->empty())
     {
         res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
         if (res || not_processed)

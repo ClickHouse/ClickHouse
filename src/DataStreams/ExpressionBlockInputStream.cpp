@@ -55,10 +55,12 @@ Block InflatingExpressionBlockInputStream::readImpl()
     }
 
     Block res;
-    if (likely(!not_processed))
+
+    /// Empty extra data means keep going even if we have finished input. There's some data inside expression.
+    if (!not_processed || not_processed->empty())
     {
         res = children.back()->read();
-        if (res)
+        if (res || not_processed)
             expression->execute(res, not_processed, action_number);
     }
     else
