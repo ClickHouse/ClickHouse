@@ -14,19 +14,19 @@ toc_title: "D\xE9pannage"
 
 ## Installation {#troubleshooting-installation-errors}
 
-### Vous ne pouvez pas obtenir de paquets deb à partir du référentiel Clickhouse avec Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### Vous Ne Pouvez Pas Obtenir De Paquets Deb à Partir Du référentiel Clickhouse Avec Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Vérifiez les paramètres du pare-feu.
--   Si vous ne pouvez pas accéder au référentiel pour quelque raison que ce soit, téléchargez les packages comme décrit dans [Prise en main](../getting_started/index.md) article et les installer manuellement en utilisant le `sudo dpkg -i <packages>` commande. Vous aurez aussi besoin d' `tzdata` paquet.
+-   Si vous ne pouvez pas accéder au référentiel pour quelque raison que ce soit, téléchargez les packages comme décrit dans [Prise en main](../getting-started/index.md) article et les installer manuellement en utilisant le `sudo dpkg -i <packages>` commande. Vous aurez aussi besoin d’ `tzdata` paquet.
 
-## Connexion au serveur {#troubleshooting-accepts-no-connections}
+## Connexion Au Serveur {#troubleshooting-accepts-no-connections}
 
 Problèmes possibles:
 
--   Le serveur n'est pas en cours d'exécution.
+-   Le serveur n’est pas en cours d’exécution.
 -   Paramètres de configuration inattendus ou incorrects.
 
-### Le Serveur N'Est Pas En Cours D'Exécution {#server-is-not-running}
+### Le Serveur N’Est Pas En Cours D’Exécution {#server-is-not-running}
 
 **Vérifiez si le serveur est runnnig**
 
@@ -36,7 +36,7 @@ Commande:
 $ sudo service clickhouse-server status
 ```
 
-Si le serveur n'est pas en cours d'exécution, démarrez-le avec la commande:
+Si le serveur n’est pas en cours d’exécution, démarrez-le avec la commande:
 
 ``` bash
 $ sudo service clickhouse-server start
@@ -51,13 +51,13 @@ Si le serveur a démarré avec succès, vous devriez voir les chaînes:
 -   `<Information> Application: starting up.` — Server started.
 -   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
-Si `clickhouse-server` démarrage a échoué avec une erreur de configuration, vous devriez voir la `<Error>` chaîne avec une description de l'erreur. Exemple:
+Si `clickhouse-server` démarrage a échoué avec une erreur de configuration, vous devriez voir la `<Error>` chaîne avec une description de l’erreur. Exemple:
 
 ``` text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-Si vous ne voyez pas d'erreur à la fin du fichier, parcourez le fichier entier à partir de la chaîne:
+Si vous ne voyez pas d’erreur à la fin du fichier, parcourez le fichier entier à partir de la chaîne:
 
 ``` text
 <Information> Application: starting up.
@@ -81,7 +81,7 @@ Revision: 54413
 
 **Voir système.d les journaux**
 
-Si vous ne trouvez aucune information utile dans `clickhouse-server` journaux ou il n'y a pas de journaux, vous pouvez afficher `system.d` journaux à l'aide de la commande:
+Si vous ne trouvez aucune information utile dans `clickhouse-server` journaux ou il n’y a pas de journaux, vous pouvez afficher `system.d` journaux à l’aide de la commande:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
@@ -93,7 +93,7 @@ $ sudo journalctl -u clickhouse-server
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
-Cette commande démarre le serveur en tant qu'application interactive avec les paramètres standard du script de démarrage automatique. Dans ce mode `clickhouse-server` imprime tous les messages d'événement dans la console.
+Cette commande démarre le serveur en tant qu’application interactive avec les paramètres standard du script de démarrage automatique. Dans ce mode `clickhouse-server` imprime tous les messages d’événement dans la console.
 
 ### Paramètres De Configuration {#configuration-parameters}
 
@@ -105,37 +105,37 @@ Vérifier:
 
 -   Paramètres du point de terminaison.
 
-    Vérifier [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) et [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) paramètre.
+    Vérifier [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) et [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) paramètre.
 
     Clickhouse server accepte les connexions localhost uniquement par défaut.
 
 -   Paramètres du protocole HTTP.
 
-    Vérifiez les paramètres de protocole pour L'API HTTP.
+    Vérifiez les paramètres de protocole pour L’API HTTP.
 
 -   Paramètres de connexion sécurisés.
 
     Vérifier:
 
-    -   Le [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) paramètre.
-    -   Paramètres pour [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   Le [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) paramètre.
+    -   Paramètres pour [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
-    Utilisez les paramètres appropriés lors de la connexion. Par exemple, l'utilisation de la `port_secure` paramètre avec `clickhouse_client`.
+    Utilisez les paramètres appropriés lors de la connexion. Par exemple, l’utilisation de la `port_secure` paramètre avec `clickhouse_client`.
 
--   Les paramètres de l'utilisateur.
+-   Les paramètres de l’utilisateur.
 
-    Vous utilisez peut-être un mauvais nom d'utilisateur ou mot de passe.
+    Vous utilisez peut-être un mauvais nom d’utilisateur ou mot de passe.
 
 ## Traitement Des Requêtes {#troubleshooting-does-not-process-queries}
 
-Si ClickHouse ne peut pas traiter la requête, il envoie une description d'erreur au client. Dans le `clickhouse-client` vous obtenez une description de l'erreur dans la console. Si vous utilisez L'interface HTTP, ClickHouse envoie la description de l'erreur dans le corps de la réponse. Exemple:
+Si ClickHouse ne peut pas traiter la requête, il envoie une description d’erreur au client. Dans le `clickhouse-client` vous obtenez une description de l’erreur dans la console. Si vous utilisez L’interface HTTP, ClickHouse envoie la description de l’erreur dans le corps de la réponse. Exemple:
 
 ``` bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-Si vous commencez à `clickhouse-client` avec l' `stack-trace` paramètre, ClickHouse renvoie la trace de la pile du serveur avec la description d'une erreur.
+Si vous commencez à `clickhouse-client` avec l’ `stack-trace` paramètre, ClickHouse renvoie la trace de la pile du serveur avec la description d’une erreur.
 
 Vous pouvez voir un message sur une connexion rompue. Dans ce cas, vous pouvez répéter la requête. Si la connexion se rompt chaque fois que vous effectuez la requête, vérifiez les journaux du serveur pour détecter les erreurs.
 
@@ -143,4 +143,4 @@ Vous pouvez voir un message sur une connexion rompue. Dans ce cas, vous pouvez r
 
 Si vous voyez que ClickHouse fonctionne trop lentement, vous devez profiler la charge sur les ressources du serveur et le réseau pour vos requêtes.
 
-Vous pouvez utiliser l'utilitaire clickhouse-benchmark pour profiler les requêtes. Il indique le nombre de requêtes traitées par seconde, le nombre de lignes traitées par seconde, et les percentiles de temps de traitement des requêtes.
+Vous pouvez utiliser l’utilitaire clickhouse-benchmark pour profiler les requêtes. Il indique le nombre de requêtes traitées par seconde, le nombre de lignes traitées par seconde, et les percentiles de temps de traitement des requêtes.
