@@ -18,8 +18,6 @@ public:
         const Block & output_header,
         bool have_all_inputs_);
 
-    virtual ~IMergingTransformBase() = default;
-
     OutputPort & getOutputPort() { return outputs.front(); }
 
     /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
