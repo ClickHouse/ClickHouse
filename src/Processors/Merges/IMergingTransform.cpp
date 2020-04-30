@@ -183,7 +183,7 @@ static void filterChunk(Chunk & chunk, size_t selector_position)
     if (!chunk_info)
         throw Exception("IMergingTransformBase expected SelectorInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
 
-    auto & selector = chunk_info->selector;
+    const auto & selector = chunk_info->selector;
 
     IColumn::Filter filter;
     filter.resize_fill(selector.size());
