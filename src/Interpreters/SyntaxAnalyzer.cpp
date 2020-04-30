@@ -566,13 +566,14 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
+/// Special columns are non physical columns, for example ALIAS
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
         const ColumnsDescription & columns = storage->getColumns();
 
-        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
+        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
