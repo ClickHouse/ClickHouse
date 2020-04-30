@@ -92,10 +92,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
     }
 
-    /// Remove calculated scalar subquery results, because they can be calculated for real, not substituted tables.
-    if (views_context && views_context->hasQueryContext())
-        views_context->getQueryContext().dropScalars();
-
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
