@@ -677,7 +677,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
         {
             LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
                            "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
-                           " " << makeFormattedListOfShards(cluster));
+                           " " << makeFormattedListOfShards(optimized));
             return optimized;
         }
     }
