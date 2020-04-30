@@ -22,6 +22,9 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 
+# max seconds to run one query by itself, not counting preparation
+allowed_single_run_time = 2
+
 header_template = """
 <!DOCTYPE html>
 <html>
@@ -262,17 +265,18 @@ if args.report == 'main':
         print(tableStart('Test times'))
         print(tableHeader(columns))
         
-        runs = 13  # FIXME pass this as an argument
+        nominal_runs = 13  # FIXME pass this as an argument
+        total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[6]) > 3 * runs:
+            if float(r[6]) > 1.5 * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = 'style="background: #ffb0a0"'
             else:
                 attrs[6] = ''
 
-            if float(r[5]) > 4 * runs:
+            if float(r[5]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[5] = 'style="background: #ffb0a0"'
             else:
@@ -387,6 +391,13 @@ elif args.report == 'all-queries':
                     attrs[4] = 'style="background: #adbdff"'
             else:
                 attrs[4] = ''
+
+            if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
+                attrs[2] = 'style="background: #ffb0a0"'
+                attrs[3] = 'style="background: #ffb0a0"'
+            else:
+                attrs[2] = ''
+                attrs[3] = ''
 
             print(tableRow(r, attrs))
 
