@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
+"POT-Creation-Date: 2020-04-30 15:45+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: zh\n"
@@ -18,29 +18,44 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr "ClickHouse是一个快速开源的面向列的数据库管理系统，允许使用SQL查询实时生成分析数据报告"
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr "ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人"
+
+#: templates/common_meta.html:10 templates/common_meta.html:21
 msgid "ClickHouse DBMS"
 msgstr "ﾂ环板msｮﾂ嘉ｯﾂ偲"
 
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
-msgstr "ClickHouse是一个开源的面向列的数据库管理系统，允许使用SQL查询实时生成分析数据报告。"
+#: templates/common_meta.html:25
+msgid "open-source"
+msgstr "开源"
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
-msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:25
+msgid "relational"
+msgstr "关系"
+
+#: templates/common_meta.html:25
+msgid "analytics"
+msgstr "分析"
+
+#: templates/common_meta.html:25
+msgid "analytical"
+msgstr "分析"
+
+#: templates/common_meta.html:25
+msgid "Big Data"
+msgstr "大数据"
+
+#: templates/common_meta.html:25
+msgid "web-analytics"
+msgstr "网络分析"
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
@@ -254,4 +269,28 @@ msgstr "如果您有任何更多的想法或问题，请随时直接联系Yandex
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
 msgstr "打开JavaScript查看电子邮件地址"
+
+#~ msgid ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+#~ msgstr "ClickHouse是一个开源的面向列的数据库管理系统，允许使用SQL查询实时生成分析数据报告。"
+
+#~ msgid ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+#~ msgstr ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
 
