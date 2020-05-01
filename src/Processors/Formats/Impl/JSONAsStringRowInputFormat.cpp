@@ -19,7 +19,7 @@ JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, Re
 {
     if (header_.columns() > 1 || header_.getDataTypes()[0]->getTypeId() != TypeIndex::String)
     {
-        throw Exception("This input format is only suitable for tables with a single column of type String.",  ErrorCodes::LOGICAL_ERROR);
+        throw Exception("This input format is only suitable for tables with a single column of type String.", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -27,14 +27,12 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 {
     PeekableReadBufferCheckpoint checkpoint{buf};
     size_t balance = 0;
-    size_t object_size = 0;
     bool quotes = false;
 
     if (*buf.position() != '{')
-        throw Exception("JSON object must begin with '{'.",  ErrorCodes::INCORRECT_DATA);
+        throw Exception("JSON object must begin with '{'.", ErrorCodes::INCORRECT_DATA);
 
     ++buf.position();
-    ++object_size;
     ++balance;
 
     char * pos;
@@ -42,12 +40,11 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     while (balance)
     {
         if (buf.eof())
-            throw Exception("Unexpected end of file while parsing JSON object.",  ErrorCodes::INCORRECT_DATA);
+            throw Exception("Unexpected end of file while parsing JSON object.", ErrorCodes::INCORRECT_DATA);
 
         if (quotes)
         {
             pos = find_first_symbols<'"', '\\'>(buf.position(), buf.buffer().end());
-            object_size += pos - buf.position();
             buf.position() = pos;
             if (buf.position() == buf.buffer().end())
                 continue;
@@ -55,23 +52,19 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
             {
                 quotes = false;
                 ++buf.position();
-                ++object_size;
             }
             else if (*buf.position() == '\\')
             {
                 ++buf.position();
-                ++object_size;
                 if (!buf.eof())
                 {
                     ++buf.position();
-                    ++object_size;
                 }
             }
         }
         else
         {
             pos = find_first_symbols<'"', '{', '}', '\\'>(buf.position(), buf.buffer().end());
-            object_size += pos - buf.position();
             buf.position() = pos;
             if (buf.position() == buf.buffer().end())
                 continue;
@@ -79,36 +72,32 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
             {
                 ++balance;
                 ++buf.position();
-                ++object_size;
             }
             else if (*buf.position() == '}')
             {
                 --balance;
                 ++buf.position();
-                ++object_size;
             }
             else if (*buf.position() == '\\')
             {
                 ++buf.position();
-                ++object_size;
                 if (!buf.eof())
                 {
                     ++buf.position();
-                    ++object_size;
                 }
             }
             else if (*buf.position() == '"')
             {
                 quotes = true;
                 ++buf.position();
-                ++object_size;
             }
         }
     }
     buf.makeContinuousMemoryFromCheckpointToPos();
+    char * end = buf.position();
     buf.rollbackToCheckpoint();
-    column.insertData(buf.position(), object_size);
-    buf.position() += object_size;
+    column.insertData(buf.position(), end - buf.position());
+    buf.position() = end;
 }
 
 bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -123,10 +112,7 @@ bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         ++buf.position();
     skipWhitespaceIfAny(buf);
 
-    if (buf.eof())
-        return false;
-
-    return true;
+    return !buf.eof();
 }
 
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory)

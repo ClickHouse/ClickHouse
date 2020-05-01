@@ -1,3 +1,3 @@
-{"id" : 1, "date" : "01.01.2020", "string" : "123{{{\\"\\\\", "array" : [1, 2, 3], "map": {"a" : 1, "b" : 2, "c" : 3}}
-{"id" : 2, "date" : "01.02.2020", "string" : "{another\\" string}}", "array" : [3, 2, 1], "map" : {"z" : 1, "y" : 2, "x" : 3}}
-{"id" : 3, "date" : "01.03.2020", "string" : "one more string", "array" : [3,1,2], "map" : {"{" : 1, "}}" : 2}}
+{\n    "id" : 1,\n    "date" : "01.01.2020",\n    "string" : "123{{{\\"\\\\",\n    "array" : [1, 2, 3],\n    "map": {\n        "a" : 1,\n        "b" : 2,\n        "c" : 3\n    }\n}
+{\n    "id" : 2,\n    "date" : "01.02.2020",\n    "string" : "{another\\"\n    string}}",\n    "array" : [3, 2, 1],\n    "map" : {\n        "z" : 1,\n        "y" : 2, \n        "x" : 3\n    }\n}
+{\n    "id" : 3, \n    "date" : "01.03.2020", \n    "string" : "one more string", \n    "array" : [3,1,2], \n    "map" : {\n        "{" : 1, \n        "}}" : 2\n    }\n}
