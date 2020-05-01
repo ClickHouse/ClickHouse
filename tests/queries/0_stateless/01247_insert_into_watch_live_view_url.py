@@ -19,7 +19,7 @@ log = None
 for output_format in ['CSV', 'JSONEachRow', 'JSONEachRowWithProgress']:
     with shell(log=log) as bash:
         try:
-            bash.send("python \"%s\"" % os.path.join(CURDIR, 'helpers', 'httpechoserver.py'))
+            bash.send("python \"%s\" 3" % os.path.join(CURDIR, 'helpers', 'httpechoserver.py'))
             bash.expect("\n+")
             with client(name='client1>', log=log) as client1, client(name='client2>', log=log) as client2:
                 client1.expect(prompt)
@@ -62,7 +62,7 @@ for output_format in ['CSV', 'JSONEachRow', 'JSONEachRowWithProgress']:
                 client1.expect(prompt)
         finally:
             try:
-                for i in range(1):
+                for i in range(3):
                     requests.post(HTTP_SERVER_URL_STR, data=b"0\r\n", timeout=1)
             except Exception:
                 pass
