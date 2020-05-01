@@ -32,10 +32,10 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
     bool attach) const
 {
     if (!node->type)
-        throw Exception( "for index TYPE is required", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
 
     if (node->type->parameters && !node->type->parameters->children.empty())
-        throw Exception( "Index type can not have parameters", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
 
     boost::algorithm::to_lower(node->type->name);
     auto it = indexes.find(node->type->name);
