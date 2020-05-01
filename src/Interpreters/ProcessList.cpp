@@ -182,6 +182,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 /// Set up memory profiling
                 thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
             }
 
             thread_group->memory_tracker.setDescription("(for query)");
