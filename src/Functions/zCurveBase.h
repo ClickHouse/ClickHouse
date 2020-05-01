@@ -123,6 +123,7 @@ namespace DB
              * If this is changed, you should put result = RangeSet(ranges) here
              */
             result.data = ranges;
+            std::cerr << "KEK: done inverting range\n";
             return true;
         }
 
