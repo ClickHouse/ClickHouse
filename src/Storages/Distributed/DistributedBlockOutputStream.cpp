@@ -456,7 +456,7 @@ void DistributedBlockOutputStream::writeSuffix()
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block)
+IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block) const
 {
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
