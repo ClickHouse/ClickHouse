@@ -13,6 +13,7 @@ namespace Poco
     class Logger;
 }
 
+
 namespace DB
 {
 
@@ -25,20 +26,19 @@ public:
             ChannelPtr channel_,
             RabbitMQHandler & eventHandler_,
             Poco::Logger * log_,
-            size_t max_batch_size,
+            char row_delimiter_,
+            size_t max_batch_size, 
             const std::atomic<bool> & stopped_);
     ~ReadBufferFromRabbitMQConsumer() override;
 
     void allowNext() { allowed = true; } // Allow to read next message.
-    void subscribe(const String & exchange_name, const Names & routing_keys);
+    void initQueueBindings(const String & exchange_name, const Names & routing_keys);
+    void subscribe();
     void unsubscribe();
 
     void startEventLoop();
     void startNonBlockEventLoop();
     void stopEventLoop();
-
-    void commitNotSubscribed(const Names & routing_keys);
-    void commitViaGet(const Names & routing_keys);
 
     String getCurrentExchange() const { return current[-1].exchange; }
     String getCurrentRoutingKey() const { return current[-1].routingKey; }
@@ -67,13 +67,13 @@ private:
     ChannelPtr consumer_channel;
     RabbitMQHandler & eventHandler;
     Poco::Logger * log;
+    char row_delimiter;
     const size_t batch_size = 1;
     bool allowed = true, stalled = false;
     const std::atomic<bool> & stopped;
 
-    int cnt = 0;
-
     String consumerTag; // ID for the consumer
+    String queue_name = "RabbitMQQueue";
 
     std::vector<RabbitMQMessage>  messages;
     std::vector<RabbitMQMessage>::const_iterator current;

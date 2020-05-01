@@ -7,7 +7,6 @@
 #include <ext/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
-
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <event2/event.h>
@@ -47,13 +46,13 @@ public:
 
     ProducerBufferPtr createWriteBuffer();
 
+    AMQP::TcpConnection & get_connection() { return connection; }
     RabbitMQHandler & getHandler() { return eventHandler; }
+    const String & getExchangeName() const { return exchange_name; }
     const Names & getRoutingKeys() const { return routing_keys; }
 
     const String & getFormatName() const { return format_name; }
     const auto & skipBroken() const { return skip_broken; }
-
-    AMQP::TcpConnection & get_connection() { return connection; }
 
 protected:
     StorageRabbitMQ(

@@ -34,6 +34,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <amqpcpp.h>
 
+
 namespace DB
 {
 
@@ -112,7 +113,6 @@ Pipes StorageRabbitMQ::read(
         size_t /* max_block_size */,
         unsigned /* num_streams */)
 {
-    LOG_TRACE(log, "read stream");
     if (num_created_consumers == 0)
         return {};
 
@@ -132,15 +132,12 @@ Pipes StorageRabbitMQ::read(
 
 BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
 {
-    LOG_TRACE(log, "write stream");
     return std::make_shared<RabbitMQBlockOutputStream>(*this, context, log);
 }
 
 
 void StorageRabbitMQ::startup()
 {
-    LOG_DEBUG(log, "Starting consumers");
-
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
@@ -161,7 +158,6 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown()
 {
-    LOG_DEBUG(log, "Closing consumers");
     stream_cancelled = true;
 
     for (size_t i = 0; i < num_created_consumers; ++i)
@@ -176,7 +172,8 @@ void StorageRabbitMQ::shutdown()
 
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 {
-    buffer->subscribe(exchange_name, routing_keys);
+    // The messages will be lost if no queue is bound to the exchange, so init queue bindings 
+    buffer->initQueueBindings(exchange_name, routing_keys);
 
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
@@ -206,14 +203,12 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
     auto buffer = buffers.back();
     buffers.pop_back();
 
-    LOG_DEBUG(log, "Poping a consumer buffer");
     return buffer;
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    LOG_TRACE(log, "create write buffer");
     /// Sharing one channel between publishers
     if (!publishing_channel)
     {
@@ -236,28 +231,25 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
             });
     }
 
-    return std::make_shared<WriteBufferToRabbitMQProducer>(publishing_channel, routing_keys[0], exchange_name, log,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(publishing_channel, eventHandler, routing_keys[0], exchange_name, log,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    LOG_TRACE(log, "create read buffer");
     const Settings & settings = global_context.getSettingsRef();
     size_t batch_size = max_block_size;
     if (!batch_size)
         batch_size = settings.max_block_size.value;
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, 
-            log, batch_size, stream_cancelled);
+            log, row_delimiter, batch_size, stream_cancelled);
 }
 
 
 bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
-    LOG_TRACE(log, "check dependencies");
-
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (dependencies.empty())
@@ -286,21 +278,14 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::threadFunc()
 {
-    LOG_DEBUG(log, "threadFunc");
-
     try
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
         size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
 
-        LOG_DEBUG(log, std::to_string(dependencies_count));
         if (dependencies_count)
         {
-            LOG_DEBUG(log, std::to_string(stream_cancelled));
-            LOG_DEBUG(log, std::to_string(num_created_consumers));
-            LOG_DEBUG(log, std::to_string(dependencies_count));
-
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!stream_cancelled && num_created_consumers > 0)
             {
@@ -327,8 +312,6 @@ void StorageRabbitMQ::threadFunc()
 
 bool StorageRabbitMQ::streamToViews()
 {
-    LOG_TRACE(log, "stream to views");
-
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id);
     if (!table)
@@ -372,9 +355,6 @@ bool StorageRabbitMQ::streamToViews()
 
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
-
-    //for (auto & stream : streams)
-    //    stream->as<RabbitMQBlockInputStream>()->commitNotSubscribed(routing_keys);
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;

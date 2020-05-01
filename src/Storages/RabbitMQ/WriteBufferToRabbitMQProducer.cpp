@@ -7,8 +7,10 @@
 
 namespace DB
 {
+
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         ChannelPtr producer_channel_,
+        RabbitMQHandler & eventHandler_,
         const String & routing_key_,
         const String & exchange_,
         Poco::Logger * log_,
@@ -18,6 +20,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 )
         : WriteBuffer(nullptr, 0)
         , producer_channel(producer_channel_)
+        , eventHandler(eventHandler_)
         , routing_key(routing_key_)
         , exchange_name(exchange_)
         , log(log_)
@@ -34,8 +37,6 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 
 void WriteBufferToRabbitMQProducer::count_row()
 {
-    LOG_TRACE(log, "count row");
-
     if (++rows % max_rows == 0)
     {
         const std::string & last_chunk = chunks.back();
@@ -52,26 +53,51 @@ void WriteBufferToRabbitMQProducer::count_row()
 
         payload.append(last_chunk, 0, last_chunk_size);
 
-        producer_channel->declareExchange(exchange_name, AMQP::direct).onSuccess([&]()
+        producer_channel->declareExchange(exchange_name, AMQP::direct)
+        .onSuccess([&]() 
+        {
+           producer_channel->publish(exchange_name, routing_key, payload)
+           .onError([&](const char * message)
            {
-               producer_channel->publish(exchange_name, routing_key, payload).onError(
-                       [](const char * /* messsage */)
-                       {
-                       });
-           });
+               LOG_DEBUG(log, "Publish error: " << message);
+               stopEventLoop();
+           }); 
+
+           stopEventLoop();
+       });
 
         rows = 0;
         chunks.clear();
         set(nullptr, 0);
+
+        startEventLoop();
     }
 }
 
+
 void WriteBufferToRabbitMQProducer::nextImpl()
 {
-    LOG_TRACE(log, "count row");
-
     chunks.push_back(std::string());
     chunks.back().resize(chunk_size);
     set(chunks.back().data(), chunk_size);
 }
+
+
+void WriteBufferToRabbitMQProducer::startEventLoop()
+{
+    eventHandler.start();
+}
+
+
+void WriteBufferToRabbitMQProducer::startNonBlockEventLoop()
+{
+    eventHandler.startNonBlock();
+}
+
+
+void WriteBufferToRabbitMQProducer::stopEventLoop()
+{
+    eventHandler.stop();
+}
+
 }

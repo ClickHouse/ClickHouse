@@ -23,21 +23,16 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char
 }
 
 
-void RabbitMQHandler::onClosed(AMQP::TcpConnection * /* connection */)
-{
-    LOG_DEBUG(log, "Connection is closed successfully");
-} 
-
-
 void RabbitMQHandler::start()
 {
     LOG_DEBUG(log, "Event loop started.");
     event_base_dispatch(evbase);
 }
 
+
 void RabbitMQHandler::startNonBlock()
 {
-    LOG_DEBUG(log, "Event timeout loop started.");
+    LOG_DEBUG(log, "Event nonblock loop started.");
     event_base_loop(evbase, EVLOOP_NONBLOCK);
 }
 
@@ -47,6 +42,7 @@ void RabbitMQHandler::stop()
     LOG_DEBUG(log, "Event loop stopped.");
     event_base_loopbreak(evbase);
 }
+
 
 void RabbitMQHandler::free()
 {

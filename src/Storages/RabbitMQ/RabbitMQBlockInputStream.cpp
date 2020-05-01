@@ -56,7 +56,7 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     if (!buffer)
         return;
 
-    buffer->startNonBlockEventLoop();
+    buffer->subscribe();
 }
 
 
@@ -168,25 +168,8 @@ void RabbitMQBlockInputStream::readSuffixImpl()
     LOG_DEBUG(log, "read suffix impl");
 
     if (commit_in_suffix)
-        commit();
+    {
+    }
 }
-
-
-void RabbitMQBlockInputStream::commit()
-{
-}
-
-
-void RabbitMQBlockInputStream::commitNotSubscribed(const Names & routing_keys)
-{
-    LOG_DEBUG(log, "commit not subscribed");
-
-    if (!buffer)
-        return;
-
-    buffer->commitNotSubscribed(routing_keys);
-    buffer->startNonBlockEventLoop();
-}
-
 
 }

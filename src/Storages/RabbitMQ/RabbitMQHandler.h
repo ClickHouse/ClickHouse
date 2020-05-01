@@ -20,7 +20,6 @@ public:
     RabbitMQHandler(event_base * evbase_, Poco::Logger * log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
-    void onClosed(AMQP::TcpConnection * connection) override;
 
     void start();  /// this loop waits for active events and is stopped only after stop() method
     void startNonBlock(); /// this loop will not wait for events to become active and quits if there are no such events
@@ -39,4 +38,5 @@ private:
     String user_name;
     String password;
 };
+
 }

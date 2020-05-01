@@ -1,9 +1,9 @@
 #include <utility>
-
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <common/logger_useful.h>
 #include <amqpcpp.h>
+
 
 namespace DB
 {
@@ -12,12 +12,14 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr channel_,
         RabbitMQHandler & eventHandler_,
         Poco::Logger * log_,
+        char row_delimiter_,
         size_t max_batch_size,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(channel_))
         , eventHandler(eventHandler_)
         , log(log_)
+        , row_delimiter(row_delimiter_)
         , batch_size(max_batch_size)
         , stopped(stopped_)
         , consumerTag("")
@@ -57,18 +59,16 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, const Names & routing_keys)
+void ReadBufferFromRabbitMQConsumer::initQueueBindings(const String & exchange_name, const Names & routing_keys)
 {
-    consumer_channel->setQos(batch_size, false);
-        
     consumer_channel->declareExchange(exchange_name, AMQP::direct).onError([&](const char * message)
     {
         LOG_ERROR(log, "Exchange error - " << message);
         eventHandler.stop();
     });
 
-    consumer_channel->declareQueue(AMQP::exclusive)
-        .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
+    consumer_channel->declareQueue("RabbitMQQueue", AMQP::exclusive)
+        .onSuccess([&](const std::string & /* queue_name */, int /* msgcount */, int /* consumercount */)
         {
             for (auto & key : routing_keys)
             {
@@ -76,41 +76,11 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, con
                 .onSuccess([&]
                 {
                     LOG_TRACE(log, "Queue declared and bound to key.");
+                    stopEventLoop();
                 })
                 .onError([&](const char * message)
                 {
                     LOG_ERROR(log, "Failed to create queue binding: " << message);
-                    stopEventLoop();
-                });
-
-                consumer_channel->consume(queue_name, AMQP::noack)
-                .onSuccess([&](const std::string &consumer)
-                {
-                    LOG_TRACE(log, "Consumer is open");
-                    if (consumerTag == "")
-                        consumerTag = consumer;
-
-                        stopEventLoop();
-                })
-                .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
-                {
-                    LOG_DEBUG(log, "Message reseived");
-
-                    char * mes = const_cast<char *>(message.body());
-                    mes[message.bodySize()] = '\0';
-
-                    String message_received = std::string(message.body(), message.body() + message.bodySize());
-                    LOG_TRACE(log, message_received);
-
-                    messages.emplace_back(RabbitMQMessage(message_received, message.bodySize(),
-                    message.exchange(), message.routingkey(), deliveryTag, redelivered));
-                    this->stalled = false; 
-
-                    stopEventLoop();
-                })
-                .onError([&](const char * message)
-                {
-                    LOG_ERROR(log, "Failed to create consumer - " << message);
                     stopEventLoop();
                 });
             }
@@ -118,6 +88,47 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, con
     .onError([&](const char * message)
     {
         LOG_ERROR(log, "Failed to declare queue on the channel - " << message);
+        stopEventLoop();
+    });
+
+    startEventLoop();
+}
+
+
+void ReadBufferFromRabbitMQConsumer::subscribe()
+{
+    consumer_channel->consume(queue_name, AMQP::noack)
+    .onSuccess([&](const std::string &consumer)
+    {
+        LOG_TRACE(log, "Consumer is open");
+        if (consumerTag == "")
+            consumerTag = consumer;
+
+            stopEventLoop();
+    })
+    .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
+    {
+        char * mes = const_cast<char *>(message.body());
+        mes[message.bodySize()] = '\0';
+
+        String message_received = std::string(message.body(), message.body() + message.bodySize());
+        size_t message_size = message.bodySize();
+
+        if (row_delimiter != '\0')
+        {
+            message_received += row_delimiter;
+            message_size += 1;
+        }
+
+        messages.emplace_back(RabbitMQMessage(message_received, message_size,
+        message.exchange(), message.routingkey(), deliveryTag, redelivered));
+
+        this->stalled = false; 
+        stopEventLoop();
+    })
+    .onError([&](const char * message)
+    {
+        LOG_ERROR(log, "Failed to create consumer - " << message);
         stopEventLoop();
     });
 
@@ -153,13 +164,9 @@ void ReadBufferFromRabbitMQConsumer::stopEventLoop()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::commitNotSubscribed(const Names & /* routing_keys */)
-{
-}
-
 bool ReadBufferFromRabbitMQConsumer::nextImpl()
 {
-    if (stalled)
+    if (stalled || stopped)
         return false;
 
     if (current == messages.end())
@@ -174,8 +181,6 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
             return false;
         }
     }
-
-    LOG_DEBUG(log, "the message is - " << current->message);
 
     auto new_position = const_cast<char *>(current->message.c_str());
     BufferBase::set(new_position, current->size, 0);
