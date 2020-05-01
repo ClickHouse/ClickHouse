@@ -31,7 +31,7 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCpu;
 class QueryThreadLog;
-struct TasksStatsCounters;
+class TasksStatsCounters;
 struct RUsageCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
@@ -88,7 +88,7 @@ public:
     ~ThreadStatus();
 
     /// Linux's PID (or TGID) (the same id is shown by ps util)
-    UInt64 thread_id = 0;
+    const UInt64 thread_id = 0;
     /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
     Int32 os_thread_priority = 0;
 
@@ -194,14 +194,10 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
-    friend struct TasksStatsCounters;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
-    std::unique_ptr<TasksStatsCounters> last_taskstats;
-
-    /// Set to non-nullptr only if we have enough capabilities.
-    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+    std::unique_ptr<TasksStatsCounters> taskstats;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
