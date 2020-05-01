@@ -222,6 +222,24 @@ if (COMPILER_CLANG)
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
+
+    # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
+
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    if (LLVM_AR_PATH)
+        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
+        set (CMAKE_AR ${LLVM_AR_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
+    endif ()
+
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    if (LLVM_RANLIB_PATH)
+        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
+        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
+    endif ()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
