@@ -64,7 +64,9 @@ public:
     }
     ASTPtr getInnerBlocksQuery();
 
+    BlockOutputStreamPtr tryGetTargetTableOutputStream(const Context & context) const;
     StoragePtr tryGetTargetTable() const;
+
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }

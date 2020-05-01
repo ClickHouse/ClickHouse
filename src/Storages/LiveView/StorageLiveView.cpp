@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-
 static StorageID extractDependentTable(ASTPtr & query, Context & context, const String & table_name, ASTPtr & inner_subquery)
 {
     ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query);
@@ -240,7 +239,6 @@ void StorageLiveView::writeIntoLiveView(
     copyData(*data, *output);
 }
 
-
 StorageLiveView::StorageLiveView(
     const StorageID & table_id_,
     Context & local_context,
@@ -278,6 +276,33 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
+}
+
+BlockOutputStreamPtr StorageLiveView::tryGetTargetTableOutputStream(const Context & context) const
+{
+    auto storage = tryGetTargetTable();
+    BlockOutputStreamPtr out = nullptr;
+
+    if (storage)
+    {
+        auto query_ptr = getInnerQuery();
+        auto lock = storage->lockStructureForShare(
+            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+        context.checkAccess(AccessType::INSERT, storage->getStorageID(), getHeader().getNames());
+
+        auto query_context = const_cast<Context &>(context);
+        query_context.setSetting("output_format_enable_streaming", 1);
+
+        if (storage->noPushingToViews())
+            out = storage->write(query_ptr, query_context);
+        else
+            out = std::make_shared<PushingToViewsBlockOutputStream>(storage, query_context, query_ptr);
+
+        out->addTableLock(lock);
+    }
+
+    return out;
 }
 
 StoragePtr StorageLiveView::tryGetTargetTable() const
@@ -326,28 +351,11 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
 
 void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
 {
-    auto target_table_storage = tryGetTargetTable();
-    auto query_ptr = getInnerQuery();
+    auto out = tryGetTargetTableOutputStream(context);
 
-    if (target_table_storage)
+    if (out)
     {
-        auto lock = target_table_storage->lockStructureForShare(
-            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-
-        context.checkAccess(AccessType::INSERT, target_table_id, getHeader().getNames());
-
-        BlockOutputStreamPtr out;
-
-        if (target_table_storage->noPushingToViews())
-            out = target_table_storage->write(query_ptr, context);
-        else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(target_table_storage, context, query_ptr);
-
-        auto query_context = const_cast<Context &>(context);
-        query_context.setSetting("output_format_enable_streaming", 1);
-
         out->writePrefix();
-
         BlocksPtr blocks;
         if (*blocks_ptr)
             blocks = (*blocks_ptr);
