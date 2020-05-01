@@ -27,6 +27,7 @@ namespace DB
 {
 
 class TableJoin;
+class DictionaryReader;
 
 namespace JoinStuff
 {
@@ -148,7 +149,8 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
-    bool empty() { return data->type == Type::EMPTY; }
+    bool empty() const { return data->type == Type::EMPTY; }
+    bool overDictionary() const { return data->type == Type::DICT; }
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -186,7 +188,7 @@ public:
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
 
-    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty; }
+    bool alwaysReturnsEmptySet() const final { return isInnerOrRight(getKind()) && data->empty && !overDictionary(); }
 
     ASTTableJoin::Kind getKind() const { return kind; }
     ASTTableJoin::Strictness getStrictness() const { return strictness; }
@@ -220,11 +222,11 @@ public:
     {
         EMPTY,
         CROSS,
+        DICT,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
     };
-
 
     /** Different data structures, that are used to perform JOIN.
       */
@@ -247,6 +249,7 @@ public:
             {
                 case Type::EMPTY:            break;
                 case Type::CROSS:            break;
+                case Type::DICT:             break;
 
             #define M(NAME) \
                 case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
@@ -261,6 +264,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
@@ -277,6 +281,7 @@ public:
             {
                 case Type::EMPTY:            return 0;
                 case Type::CROSS:            return 0;
+                case Type::DICT:             return 0;
 
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;

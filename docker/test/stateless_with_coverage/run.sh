@@ -14,6 +14,11 @@ kill_clickhouse () {
             sleep 10
         fi
     done
+
+    echo "Will try to send second kill signal for sure"
+    kill `pgrep -u clickhouse` 2>/dev/null
+    sleep 5
+    echo "clickhouse pids" `ps aux | grep clickhouse` | ts '%Y-%m-%d %H:%M:%S'
 }
 
 start_clickhouse () {

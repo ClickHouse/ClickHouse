@@ -46,7 +46,7 @@ String CompressionCodecMultiple::getCodecDesc() const
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     UInt32 compressed_size = uncompressed_size;
-    for (auto & codec : codecs)
+    for (const auto & codec : codecs)
         compressed_size = codec->getCompressedReserveSize(compressed_size);
 
     ///    TotalCodecs  ByteForEachCodec       data

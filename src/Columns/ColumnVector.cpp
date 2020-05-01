@@ -36,7 +36,7 @@ namespace ErrorCodes
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    auto pos = arena.allocContinue(sizeof(T), begin);
+    auto * pos = arena.allocContinue(sizeof(T), begin);
     unalignedStore<T>(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
@@ -372,10 +372,10 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    auto it = res->getData().begin();
+    auto * it = res->getData().begin();
     for (size_t i = 0; i < size; ++i)
     {
-        const auto span_end = res->getData().begin() + offsets[i];
+        const auto * span_end = res->getData().begin() + offsets[i];
         for (; it != span_end; ++it)
             *it = data[i];
     }

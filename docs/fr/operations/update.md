@@ -17,4 +17,4 @@ $ sudo service clickhouse-server restart
 
 Si vous avez installé ClickHouse en utilisant autre chose que les paquets deb recommandés, utilisez la méthode de mise à jour appropriée.
 
-ClickHouse ne prend pas en charge une mise à jour distribuée. L'opération doit être effectuée consécutivement sur chaque serveur séparé. Ne pas mettre à jour tous les serveurs d'un cluster simultanément, ou le cluster sera indisponible pendant un certain temps.
+ClickHouse ne prend pas en charge une mise à jour distribuée. L’opération doit être effectuée consécutivement sur chaque serveur séparé. Ne pas mettre à jour tous les serveurs d’un cluster simultanément, ou le cluster sera indisponible pendant un certain temps.
