@@ -33,7 +33,7 @@ public:
 
 private:
     StoragePtr getTable(ASTInsertQuery & query);
-    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table);
+    Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const;
 
     ASTPtr query_ptr;
     const Context & context;

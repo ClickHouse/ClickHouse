@@ -10,7 +10,7 @@ toc_title: "\u6982\u8FF0"
 
 详细的一步一步的说明，帮助解决使用ClickHouse的各种任务列表:
 
--   [简单集群设置教程](../getting_started/tutorial.md)
--   [在ClickHouse中应用CatBoost模型](apply_catboost_model.md)
+-   [简单集群设置教程](../getting-started/tutorial.md)
+-   [在ClickHouse中应用CatBoost模型](apply-catboost-model.md)
 
 [原始文章](https://clickhouse.tech/docs/en/guides/) <!--hide-->

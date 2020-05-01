@@ -35,12 +35,13 @@ try
     std::string input = "SELECT number, number % 3 == 1";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};

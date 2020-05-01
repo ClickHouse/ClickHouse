@@ -25,10 +25,16 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
 static constexpr Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
+MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
+
+
+MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
+
 
 MemoryTracker::~MemoryTracker()
 {
-    if (static_cast<int>(level) < static_cast<int>(VariableContext::Process) && peak)
+    if ((level == VariableContext::Process || level == VariableContext::User) && peak)
     {
         try
         {
@@ -39,19 +45,6 @@ MemoryTracker::~MemoryTracker()
             /// Exception in Logger, intentionally swallow.
         }
     }
-
-    /** This is needed for next memory tracker to be consistent with sum of all referring memory trackers.
-      *
-      * Sometimes, memory tracker could be destroyed before memory was freed, and on destruction, amount > 0.
-      * For example, a query could allocate some data and leave it in cache.
-      *
-      * If memory will be freed outside of context of this memory tracker,
-      *  but in context of one of the 'next' memory trackers,
-      *  then memory usage of 'next' memory trackers will be underestimated,
-      *  because amount will be decreased twice (first - here, second - when real 'free' happens).
-      */
-    if (auto value = amount.load(std::memory_order_relaxed))
-        free(value);
 }
 
 
@@ -62,10 +55,11 @@ void MemoryTracker::logPeakMemoryUsage() const
         << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
 }
 
-static void logMemoryUsage(Int64 amount)
+void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     LOG_DEBUG(&Logger::get("MemoryTracker"),
-        "Current memory usage: " << formatReadableSizeWithBinarySuffix(amount) << ".");
+        "Current memory usage" << (description ? " " + std::string(description) : "")
+        << ": " << formatReadableSizeWithBinarySuffix(current) << ".");
 }
 
 
@@ -131,17 +125,24 @@ void MemoryTracker::alloc(Int64 size)
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
+    updatePeak(will_be);
+
+    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+        loaded_next->alloc(size);
+}
+
+
+void MemoryTracker::updatePeak(Int64 will_be)
+{
     auto peak_old = peak.load(std::memory_order_relaxed);
     if (will_be > peak_old)        /// Races doesn't matter. Could rewrite with CAS, but not worth.
     {
         peak.store(will_be, std::memory_order_relaxed);
 
-        if (level == VariableContext::Process && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
+        if ((level == VariableContext::Process || level == VariableContext::Global)
+            && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
             logMemoryUsage(will_be);
     }
-
-    if (auto loaded_next = parent.load(std::memory_order_relaxed))
-        loaded_next->alloc(size);
 }
 
 
@@ -172,7 +173,7 @@ void MemoryTracker::free(Int64 size)
         }
     }
 
-    if (auto loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
 
     if (metric != CurrentMetrics::end())
@@ -198,6 +199,13 @@ void MemoryTracker::reset()
 }
 
 
+void MemoryTracker::set(Int64 to)
+{
+    amount.store(to, std::memory_order_relaxed);
+    updatePeak(to);
+}
+
+
 void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 {
     /// This is just atomic set to maximum.
@@ -219,7 +227,7 @@ namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
             Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
             untracked += size;
@@ -242,7 +250,7 @@ namespace CurrentMemoryTracker
 
     void free(Int64 size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
             Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
             untracked -= size;
@@ -257,7 +265,7 @@ namespace CurrentMemoryTracker
 
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
 {
-    auto memory_tracker = DB::CurrentThread::getMemoryTracker();
+    auto * memory_tracker = DB::CurrentThread::getMemoryTracker();
     if (!memory_tracker)
         return {};
     return memory_tracker->blocker.cancel();

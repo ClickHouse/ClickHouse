@@ -41,7 +41,7 @@ class JavaConnectorTest {
             }
         }
 
-        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s", host, port, database);
+        String jdbcUrl = String.format("jdbc:mysql://%s:%s/%s?useSSL=false", host, port, database);
 
         Connection conn = null;
         Statement stmt = null;

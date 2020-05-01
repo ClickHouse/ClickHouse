@@ -19,9 +19,15 @@ class RWLockImpl;
 using RWLock = std::shared_ptr<RWLockImpl>;
 
 
-/// Implements shared lock with FIFO service
+/// Implements Readers-Writers locking algorithm that serves requests in "Phase Fair" order.
 /// (Phase Fair RWLock as suggested in https://www.cs.unc.edu/~anderson/papers/rtsj10-for-web.pdf)
-/// Can be acquired recursively (for the same query) in Read mode
+/// It is used for synchronizing access to various objects on query level (i.e. Storages).
+///
+/// In general, ClickHouse processes queries by multiple threads of execution in parallel.
+/// As opposed to the standard OS synchronization primitives (mutexes), this implementation allows
+/// unlock() to be called by a thread other than the one, that called lock().
+/// It is also possible to acquire RWLock in Read mode without waiting (FastPath) by multiple threads,
+/// that execute the same query (share the same query_id).
 ///
 /// NOTE: it is important to allow acquiring the same lock in Read mode without waiting if it is already
 /// acquired by another thread of the same query. Otherwise the following deadlock is possible:
@@ -82,6 +88,6 @@ private:
 private:
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
-    void eraseGroup(GroupsContainer::iterator group_it) noexcept;
+    void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept;
 };
 }

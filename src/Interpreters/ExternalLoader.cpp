@@ -94,15 +94,6 @@ namespace
     };
 }
 
-struct ExternalLoader::ObjectConfig
-{
-    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
-    String key_in_config;
-    String repository_name;
-    bool from_temp_repository = false;
-    String path;
-};
-
 
 /** Reads configurations from configuration repository and parses it.
   */
@@ -141,7 +132,7 @@ public:
         settings = settings_;
     }
 
-    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, ObjectConfig>>;
+    using ObjectConfigsPtr = std::shared_ptr<const std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>;
 
     /// Reads all repositories.
     ObjectConfigsPtr read()
@@ -176,8 +167,9 @@ private:
     struct FileInfo
     {
         Poco::Timestamp last_update_time = 0;
-        std::vector<std::pair<String, ObjectConfig>> objects; // Parsed contents of the file.
         bool in_use = true; // Whether the `FileInfo` should be destroyed because the correspondent file is deleted.
+        Poco::AutoPtr<Poco::Util::AbstractConfiguration> file_contents; // Parsed contents of the file.
+        std::unordered_map<String /* object name */, String /* key in file_contents */> objects;
     };
 
     struct RepositoryInfo
@@ -280,14 +272,15 @@ private:
             }
 
             LOG_TRACE(log, "Loading config file '" << path << "'.");
-            auto file_contents = repository.load(path);
+            file_info.file_contents = repository.load(path);
+            auto & file_contents = *file_info.file_contents;
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
-            file_contents->keys(keys);
+            file_contents.keys(keys);
 
             /// for each object defined in repositories
-            std::vector<std::pair<String, ObjectConfig>> object_configs_from_file;
+            std::unordered_map<String, String> objects;
             for (const auto & key : keys)
             {
                 if (!startsWith(key, settings.external_config))
@@ -297,7 +290,7 @@ private:
                     continue;
                 }
 
-                String object_name = file_contents->getString(key + "." + settings.external_name);
+                String object_name = file_contents.getString(key + "." + settings.external_name);
                 if (object_name.empty())
                 {
                     LOG_WARNING(log, path << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
@@ -306,14 +299,14 @@ private:
 
                 String database;
                 if (!settings.external_database.empty())
-                    database = file_contents->getString(key + "." + settings.external_database, "");
+                    database = file_contents.getString(key + "." + settings.external_database, "");
                 if (!database.empty())
                     object_name = database + "." + object_name;
 
-                object_configs_from_file.emplace_back(object_name, ObjectConfig{file_contents, key, {}, {}, {}});
+                objects.emplace(object_name, key);
             }
 
-            file_info.objects = std::move(object_configs_from_file);
+            file_info.objects = std::move(objects);
             file_info.last_update_time = update_time_from_repository;
             file_info.in_use = true;
             return true;
@@ -333,33 +326,36 @@ private:
         need_collect_object_configs = false;
 
         // Generate new result.
-        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, ObjectConfig>>();
+        auto new_configs = std::make_shared<std::unordered_map<String /* object's name */, std::shared_ptr<const ObjectConfig>>>();
 
         for (const auto & [repository, repository_info] : repositories)
         {
             for (const auto & [path, file_info] : repository_info.files)
             {
-                for (const auto & [object_name, object_config] : file_info.objects)
+                for (const auto & [object_name, key_in_config] : file_info.objects)
                 {
                     auto already_added_it = new_configs->find(object_name);
                     if (already_added_it == new_configs->end())
                     {
-                        auto & new_config = new_configs->emplace(object_name, object_config).first->second;
-                        new_config.from_temp_repository = repository->isTemporary();
-                        new_config.repository_name = repository->getName();
-                        new_config.path = path;
+                        auto new_config = std::make_shared<ObjectConfig>();
+                        new_config->config = file_info.file_contents;
+                        new_config->key_in_config = key_in_config;
+                        new_config->repository_name = repository->getName();
+                        new_config->from_temp_repository = repository->isTemporary();
+                        new_config->path = path;
+                        new_configs->emplace(object_name, std::move(new_config));
                     }
                     else
                     {
                         const auto & already_added = already_added_it->second;
-                        if (!already_added.from_temp_repository && !repository->isTemporary())
+                        if (!already_added->from_temp_repository && !repository->isTemporary())
                         {
                             LOG_WARNING(
                                 log,
                                 type_name << " '" << object_name << "' is found "
-                                          << (((path == already_added.path) && (repository->getName() == already_added.repository_name))
+                                          << (((path == already_added->path) && (repository->getName() == already_added->repository_name))
                                                   ? ("twice in the same file '" + path + "'")
-                                                  : ("both in file '" + already_added.path + "' and '" + path + "'")));
+                                                  : ("both in file '" + already_added->path + "' and '" + path + "'")));
                         }
                     }
                 }
@@ -440,13 +436,10 @@ public:
             else
             {
                 const auto & new_config = new_config_it->second;
-                bool config_is_same = isSameConfiguration(*info.object_config.config, info.object_config.key_in_config, *new_config.config, new_config.key_in_config);
-                info.object_config = new_config;
+                bool config_is_same = isSameConfiguration(*info.config->config, info.config->key_in_config, *new_config->config, new_config->key_in_config);
+                info.config = new_config;
                 if (!config_is_same)
                 {
-                    /// Configuration has been changed.
-                    info.object_config = new_config;
-
                     if (info.triedToLoad())
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
@@ -531,7 +524,7 @@ public:
 
     /// Returns the load result of the object.
     template <typename ReturnType>
-    ReturnType getCurrentLoadResult(const String & name) const
+    ReturnType getLoadResult(const String & name) const
     {
         std::lock_guard lock{mutex};
         const Info * info = getInfo(name);
@@ -543,13 +536,13 @@ public:
     /// Returns all the load results as a map.
     /// The function doesn't load anything, it just returns the current load results as is.
     template <typename ReturnType>
-    ReturnType getCurrentLoadResults(const FilterByNameFunction & filter) const
+    ReturnType getLoadResults(const FilterByNameFunction & filter) const
     {
         std::lock_guard lock{mutex};
         return collectLoadResults<ReturnType>(filter);
     }
 
-    size_t getNumberOfCurrentlyLoadedObjects() const
+    size_t getNumberOfLoadedObjects() const
     {
         std::lock_guard lock{mutex};
         size_t count = 0;
@@ -562,10 +555,10 @@ public:
         return count;
     }
 
-    bool hasCurrentlyLoadedObjects() const
+    bool hasLoadedObjects() const
     {
         std::lock_guard lock{mutex};
-        for (auto & name_info : infos)
+        for (const auto & name_info : infos)
             if (name_info.second.loaded())
                 return true;
         return false;
@@ -575,10 +568,16 @@ public:
     {
         std::lock_guard lock{mutex};
         Strings names;
-        for (auto & [name, info] : infos)
+        for (const auto & [name, info] : infos)
             if (info.triedToLoad())
                 names.push_back(name);
         return names;
+    }
+
+    size_t getNumberOfObjects() const
+    {
+        std::lock_guard lock{mutex};
+        return infos.size();
     }
 
     /// Tries to load a specified object during the timeout.
@@ -698,7 +697,7 @@ public:
 private:
     struct Info
     {
-        Info(const String & name_, const ObjectConfig & object_config_) : name(name_), object_config(object_config_) {}
+        Info(const String & name_, const std::shared_ptr<const ObjectConfig> & config_) : name(name_), config(config_) {}
 
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }
@@ -737,8 +736,7 @@ private:
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
                 result.loading_duration = loadingDuration();
-                result.origin = object_config.path;
-                result.repository_name = object_config.repository_name;
+                result.config = config;
                 return result;
             }
             else
@@ -750,7 +748,7 @@ private:
 
         String name;
         LoadablePtr object;
-        ObjectConfig object_config;
+        std::shared_ptr<const ObjectConfig> config;
         TimePoint loading_start_time;
         TimePoint loading_end_time;
         TimePoint last_successful_update_time;
@@ -784,7 +782,7 @@ private:
         results.reserve(infos.size());
         for (const auto & [name, info] : infos)
         {
-            if (filter(name))
+            if (!filter || filter(name))
             {
                 auto result = info.template getLoadResult<typename ReturnType::value_type>();
                 if constexpr (std::is_same_v<typename ReturnType::value_type, LoadablePtr>)
@@ -838,7 +836,7 @@ private:
             bool all_ready = true;
             for (auto & [name, info] : infos)
             {
-                if (!filter(name))
+                if (filter && !filter(name))
                     continue;
 
                 if (info.state_id >= min_id)
@@ -955,7 +953,7 @@ private:
                 previous_version_as_base_for_loading = nullptr; /// Need complete reloading, cannot use the previous version.
 
             /// Loading.
-            auto [new_object, new_exception] = loadSingleObject(name, info->object_config, previous_version_as_base_for_loading);
+            auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
                 throw Exception("No object created and no exception raised for " + type_name, ErrorCodes::LOGICAL_ERROR);
 
@@ -1251,7 +1249,7 @@ private:
 ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3),
+          [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
           type_name_,
           log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
@@ -1262,7 +1260,7 @@ ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
 
 ExternalLoader::~ExternalLoader() = default;
 
-ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository)
+ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
 {
     auto * ptr = repository.get();
     String name = ptr->getName();
@@ -1296,9 +1294,9 @@ void ExternalLoader::enablePeriodicUpdates(bool enable_)
     periodic_updater->enable(enable_);
 }
 
-bool ExternalLoader::hasCurrentlyLoadedObjects() const
+bool ExternalLoader::hasLoadedObjects() const
 {
-    return loading_dispatcher->hasCurrentlyLoadedObjects();
+    return loading_dispatcher->hasLoadedObjects();
 }
 
 ExternalLoader::Status ExternalLoader::getCurrentStatus(const String & name) const
@@ -1307,30 +1305,35 @@ ExternalLoader::Status ExternalLoader::getCurrentStatus(const String & name) con
 }
 
 template <typename ReturnType, typename>
-ReturnType ExternalLoader::getCurrentLoadResult(const String & name) const
+ReturnType ExternalLoader::getLoadResult(const String & name) const
 {
-    return loading_dispatcher->getCurrentLoadResult<ReturnType>(name);
+    return loading_dispatcher->getLoadResult<ReturnType>(name);
 }
 
 template <typename ReturnType, typename>
-ReturnType ExternalLoader::getCurrentLoadResults(const FilterByNameFunction & filter) const
+ReturnType ExternalLoader::getLoadResults(const FilterByNameFunction & filter) const
 {
-    return loading_dispatcher->getCurrentLoadResults<ReturnType>(filter);
+    return loading_dispatcher->getLoadResults<ReturnType>(filter);
 }
 
-ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects() const
+ExternalLoader::Loadables ExternalLoader::getLoadedObjects() const
 {
-    return getCurrentLoadResults<Loadables>();
+    return getLoadResults<Loadables>();
 }
 
-ExternalLoader::Loadables ExternalLoader::getCurrentlyLoadedObjects(const FilterByNameFunction & filter) const
+ExternalLoader::Loadables ExternalLoader::getLoadedObjects(const FilterByNameFunction & filter) const
 {
-    return getCurrentLoadResults<Loadables>(filter);
+    return getLoadResults<Loadables>(filter);
 }
 
-size_t ExternalLoader::getNumberOfCurrentlyLoadedObjects() const
+size_t ExternalLoader::getNumberOfLoadedObjects() const
 {
-    return loading_dispatcher->getNumberOfCurrentlyLoadedObjects();
+    return loading_dispatcher->getNumberOfLoadedObjects();
+}
+
+size_t ExternalLoader::getNumberOfObjects() const
+{
+    return loading_dispatcher->getNumberOfObjects();
 }
 
 template <typename ReturnType, typename>
@@ -1456,10 +1459,10 @@ ExternalLoader::LoadablePtr ExternalLoader::createObject(
     return create(name, *config.config, config.key_in_config, config.repository_name);
 }
 
-template ExternalLoader::LoadablePtr ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
-template ExternalLoader::LoadResult ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadResult>(const String &) const;
-template ExternalLoader::Loadables ExternalLoader::getCurrentLoadResults<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
-template ExternalLoader::LoadResults ExternalLoader::getCurrentLoadResults<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
+template ExternalLoader::LoadResult ExternalLoader::getLoadResult<ExternalLoader::LoadResult>(const String &) const;
+template ExternalLoader::Loadables ExternalLoader::getLoadResults<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadResults ExternalLoader::getLoadResults<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
 
 template ExternalLoader::LoadablePtr ExternalLoader::tryLoad<ExternalLoader::LoadablePtr>(const String &, Duration) const;
 template ExternalLoader::LoadResult ExternalLoader::tryLoad<ExternalLoader::LoadResult>(const String &, Duration) const;

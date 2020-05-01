@@ -335,7 +335,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     }
 
     // XXX: very fishy place with const casting.
-    auto new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
+    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
     BufferBase::set(new_position, current->get_payload().get_size(), 0);
     allowed = false;
 

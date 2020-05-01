@@ -101,7 +101,7 @@ static ElementIdentifier getElementIdentifier(Node * element)
     {
         const Node * node = attrs->item(i);
         std::string name = node->nodeName();
-        auto subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
+        const auto * subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
         if (name == "replace" || name == "remove" ||
             subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
             continue;
@@ -279,7 +279,7 @@ void ConfigProcessor::doIncludesRecursive(
     size_t substs_count = 0;
     for (const auto & attr_name : SUBSTITUTION_ATTRS)
     {
-        auto subst = attributes->getNamedItem(attr_name);
+        const auto * subst = attributes->getNamedItem(attr_name);
         attr_nodes[attr_name] = subst;
         substs_count += static_cast<size_t>(subst == nullptr);
     }
