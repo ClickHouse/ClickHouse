@@ -21,12 +21,18 @@ protected:
 
     bool progress = false;
     bool finished = false;
+    bool written = true;
 
     void nextImpl() override {
+        written = true;
         progress = true;
         QueryResponse response;
         String buffer(working_buffer.begin(), working_buffer.begin() + offset());
+        if (buffer.empty()) {
+            written = false;
+        }
         response.set_progress_tmp(buffer);
+
         responder->Write(response, tag);
     }
 
@@ -40,7 +46,14 @@ public:
     bool isFinished() {
         return finished;
     }
+    bool isWritten() {
+        return written;
+    }
+    void setFinish(bool fl) {
+        finished = fl;
+    }
     void finalize() override {
+        progress = false;
         finished = true;
         responder->Finish(grpc::Status(), tag);
     }
