@@ -124,6 +124,7 @@ namespace DB
              */
             result.data = ranges;
             std::cerr << "KEK: done inverting range\n";
+            std::cerr << "KEK: " << result.toString() << "\n";
             return true;
         }
 
