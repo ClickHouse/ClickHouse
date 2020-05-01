@@ -5,7 +5,7 @@ toc_priority: 24
 toc_title: "Biblioth\xE8que Client C++ "
 ---
 
-# Bibliothèque Client C++  {#c-client-library}
+# Bibliothèque Client C++ {#c-client-library}
 
 Voir le fichier README à [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp) référentiel.
 

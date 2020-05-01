@@ -99,7 +99,7 @@ Raporda bulabilirsiniz:
 
 -   Sorgu yürütme süresi yüzdelik.
 
-## Karşılaştırma modu {#clickhouse-benchmark-comparison-mode}
+## Karşılaştırma Modu {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` iki çalışan ClickHouse sunucuları için performansları karşılaştırabilirsiniz.
 

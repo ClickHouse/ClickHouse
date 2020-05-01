@@ -13,9 +13,9 @@ Les paramètres sont configurés en couches, de sorte que chaque couche suivante
 
 Façons de configurer les paramètres, par ordre de priorité:
 
--   Paramètres dans l' `users.xml` fichier de configuration du serveur.
+-   Paramètres dans l’ `users.xml` fichier de configuration du serveur.
 
-    Situé dans l'élément `<profiles>`.
+    Situé dans l’élément `<profiles>`.
 
 -   Les paramètres de la Session.
 
@@ -25,7 +25,7 @@ Façons de configurer les paramètres, par ordre de priorité:
 -   Les paramètres de requête.
 
     -   Lorsque vous démarrez le client clickhouse console en mode non interactif, définissez le paramètre startup `--setting=value`.
-    -   Lors de l'utilisation de L'API HTTP, passez les paramètres CGI (`URL?setting_1=value&setting_2=value...`).
+    -   Lors de l’utilisation de L’API HTTP, passez les paramètres CGI (`URL?setting_1=value&setting_2=value...`).
 
 Les paramètres qui ne peuvent être effectués que dans le fichier de configuration du serveur ne sont pas couverts dans cette section.
 
