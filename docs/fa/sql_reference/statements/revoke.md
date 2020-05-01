@@ -1,1 +1,0 @@
-../../../en/sql_reference/statements/revoke.md
