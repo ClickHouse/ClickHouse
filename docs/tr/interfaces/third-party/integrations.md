@@ -5,7 +5,7 @@ toc_priority: 27
 toc_title: Entegrasyonlar
 ---
 
-# Üçüncü taraf geliştiricilerin entegrasyon kütüphaneleri {#integration-libraries-from-third-party-developers}
+# Üçüncü Taraf geliştiricilerin Entegrasyon kütüphaneleri {#integration-libraries-from-third-party-developers}
 
 !!! warning "Uyarı"
     Yandex yapar **değil** Aşağıda listelenen araçları ve kütüphaneleri koruyun ve kalitelerini sağlamak için kapsamlı bir test yapmadınız.
@@ -42,7 +42,7 @@ toc_title: Entegrasyonlar
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [karbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [grafit-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [grafit-ch-doktoru](https://github.com/innogames/graphite-ch-optimizer) - staled bölümleri optimize eder [\* Graphıtemergetree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) eğer kurallar [toplaması yapılandırması](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) uygulanabilir
+        -   [grafit-ch-doktoru](https://github.com/innogames/graphite-ch-optimizer) - staled bölümleri optimize eder [\* Graphıtemergetree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) eğer kurallar [toplaması yapılandırması](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) uygulanabilir
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -74,7 +74,7 @@ toc_title: Entegrasyonlar
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (kullanma [ınfi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [Pandalar](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -82,7 +82,7 @@ toc_title: Entegrasyonlar
         -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (kullanma [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (kullanma [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (kullanma [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   SC scalaala
     -   [Akka](https://akka.io)
         -   [clickhouse-Scala-istemci](https://github.com/crobox/clickhouse-scala-client)
