@@ -305,7 +305,6 @@ std::optional<RangeSet> RangeSet::applyInvertibleFunction(
     for (const auto & range : data)
     {
         RangeSet tmp;
-        std::cerr << "KEK: " << tmp.toString() << "\n";
         bool inverted = func->invertRange(range, arg_index, func->getArgumentTypes(), tmp);
         std::cout << "KEK: " << tmp.toString() << "\n";
         if (inverted)

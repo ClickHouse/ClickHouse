@@ -77,6 +77,7 @@ namespace DB
         {
             Range copy = value_range;
             copy.shrinkToIncludedIfPossible(); // always possible if not unbounded, since the result type is UInt64
+            std::cerr << "KEK: inverting range " << copy.toString() << "\n";
             ResultType left, right;
             if (!copy.left_bounded)
             {
