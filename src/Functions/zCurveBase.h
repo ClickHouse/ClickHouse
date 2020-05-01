@@ -95,6 +95,7 @@ namespace DB
             {
                 right = copy.right.get<ResultType>();
             }
+            std::cerr << "KEK: " << left << " " << right << "\n";
             auto minmax = getMinMaxPossibleBitValueOfArgument(left, right, arg_index, arg_types.size());
             auto type = arg_types[arg_index];
             size_t significant_digits = (sizeof(ResultType) << 3) / arg_types.size();
@@ -107,6 +108,7 @@ namespace DB
             //auto type_size = type->getSizeOfValueInMemory();
             for (auto & [left_point, right_point] : plain_ranges)
             {
+                std::cerr << "KEK: range " << left_point << " " << right_point << "\n";
                 FieldRef left_field, right_field;
                 writeField(type, left_point, left_field);
                 writeField(type, right_point, right_field);
