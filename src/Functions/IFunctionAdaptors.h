@@ -78,6 +78,12 @@ public:
         return impl->getMonotonicityForRange(type, left, right);
     }
 
+    bool isInvertible() const final { return impl->isInvertible(); }
+    bool invertRange(const Range & value_range, size_t argument_index, const DataTypes & argument_types, RangeSet & result) const final
+    {
+        throw impl->invertRange(value_range, argument_index, argument_types, result);
+    }
+
     const IFunctionBaseImpl * getImpl() const { return impl.get(); }
 
 private:
@@ -208,6 +214,14 @@ public:
     {
         return function->getMonotonicityForRange(type, left, right);
     }
+
+    bool isInvertible() const override { return function->isInvertible(); }
+
+    bool invertRange(const Range & value_range, size_t argument_index, const DataTypes & argument_types, RangeSet & result) const override
+    {
+        return function->invertRange(value_range, argument_index, argument_types, result);
+    }
+
 private:
     std::shared_ptr<IFunction> function;
     DataTypes arguments;

@@ -117,6 +117,13 @@ public:
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    virtual bool isInvertible() const { return false; }
+
+    virtual bool invertRange(const Range & /*value range*/, size_t /*argument index*/, const DataTypes & /*argument types*/, RangeSet & /*result*/) const
+    {
+        throw Exception("Function " + getName() + " cannot be inverted.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 using FunctionBaseImplPtr = std::unique_ptr<IFunctionBaseImpl>;
