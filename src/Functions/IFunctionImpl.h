@@ -268,6 +268,17 @@ public:
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** This is used to work with the index in a sorted chunk of data and allows to efficiently
+      * use the index when the conditions are in the form `f(X) >= const`.
+      */
+    virtual bool isInvertible() const { return false; }
+
+    /// Computes the inverse image of given range of values in the form of a vector of parallelograms.
+    virtual bool invertRange(const Range & /*value range*/, size_t /*argument index*/, const DataTypes & /*argument types*/, RangeSet & /*result*/) const
+    {
+        throw Exception("Function " + getName() + " cannot be inverted.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     virtual size_t getNumberOfArguments() const = 0;
 
