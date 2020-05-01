@@ -9,6 +9,55 @@ toc_title: Other
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## getMacro {#getmacro}
+
+Gets the parameter value from the [macros](../../operations/server_configuration_parameters/settings.md#macros) section of the server configuration file `config.xml`.
+
+**Syntax** 
+
+```sql
+getMacro(name);
+```
+
+**Parameters**
+
+- `name` — Name of the parameter from the `macros` section. [String](../../sql_reference/data_types/string.md#string).
+
+**Returned value**
+
+- Value of the specified parameter.
+
+Type: [String](../../sql_reference/data_types/string.md).
+
+**Example**
+
+Input table:
+
+```sql
+SELECT * FROM system.macros;
+```
+
+```text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
+
+Query:
+
+```sql
+SELECT getMacro('test');
+```
+
+Result:
+
+```text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+
 ## FQDN {#fqdn}
 
 Returns the fully qualified domain name.
