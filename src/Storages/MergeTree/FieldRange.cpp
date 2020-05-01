@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <Core/iostream_debug_helpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -270,7 +271,7 @@ std::optional<RangeSet> RangeSet::applyMonotonicFunction(
         }
         if (!range.left.isNull())
         {
-            applyFunction(func, arg_type, range.left, new_type, range.left);
+            range.left = applyFunction(func, arg_type, range.left);
         }
         if (!new_type)
         {
@@ -278,7 +279,7 @@ std::optional<RangeSet> RangeSet::applyMonotonicFunction(
         }
         if (!range.right.isNull())
         {
-            applyFunction(func, arg_type, range.right, new_type, range.right);
+            range.right = applyFunction(func, arg_type, range.right);
         }
         if (!new_type)
         {
