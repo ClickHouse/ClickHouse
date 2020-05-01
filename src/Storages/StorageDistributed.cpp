@@ -692,7 +692,7 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
     directory_monitor->shutdownAndDropAllData();
 }
 
-IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result) const
+IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
 {
     const auto & slot_to_shard = cluster->getSlotToShard();
 
