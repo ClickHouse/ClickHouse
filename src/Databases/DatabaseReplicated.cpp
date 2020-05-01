@@ -71,22 +71,24 @@ DatabaseReplicated::DatabaseReplicated(
     const String & zookeeper_path_,
     const String & replica_name_,
     const Context & context_)
-    : DatabaseOrdinary(name_, metadata_path_, "data/", "DatabaseReplicated (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , replica_name(replica_name_)
 {
+    LOG_DEBUG(log, "METADATA PATH ARGUMENT " << metadata_path_);
+    LOG_DEBUG(log, "METADATA PATH ACTUAL " << getMetadataPath());
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    // If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
         zookeeper_path = "/" + zookeeper_path;
+
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
     if (context_.hasZooKeeper()) {
         current_zookeeper = context_.getZooKeeper();
     }
-
     if (!current_zookeeper)
     {
             throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
@@ -95,6 +97,7 @@ DatabaseReplicated::DatabaseReplicated(
     }
 
     // test without this fancy mess (prob wont work)
+    // it works
     current_zookeeper->createAncestors(replica_path);
     current_zookeeper->createOrUpdate(replica_path, String(), zkutil::CreateMode::Persistent);
 
@@ -172,12 +175,10 @@ void DatabaseReplicated::dropTable(
 
 void DatabaseReplicated::drop(const Context & context)
 {
-    DatabaseOnDisk::drop(context);
-    // replicated stuff
-    //String statement = getObjectDefinitionFromCreateQuery(query);
-    // should it be possible to recover after a drop. 
-    // if not, we can just delete all the zookeeper nodes starting from
-    // zookeeper path. does it work recursively? hope so...
+    current_zookeeper = getZooKeeper();
+    current_zookeeper->remove(replica_path);
+
+    DatabaseOnDisk::drop(context); // no throw
 }
 
 // sync replica's zookeeper metadata
