@@ -107,10 +107,10 @@ namespace DB
             //auto type_size = type->getSizeOfValueInMemory();
             for (auto & [left_point, right_point] : plain_ranges)
             {
-                Field left_field, right_field;
+                FieldRef left_field, right_field;
                 writeField(type, left_point, left_field);
                 writeField(type, right_point, right_field);
-                auto range = Range(left_field, true, Field(right_point), true);
+                auto range = Range(left_field, true, right_field, true);
                 if (!range.empty())
                 {
                     ranges.push_back(range);
@@ -126,48 +126,48 @@ namespace DB
 
     private:
         /// Write binary data of certain type to field.
-        void writeField(const DataTypePtr & type, ResultType src, Field & field) const
+        void writeField(const DataTypePtr & type, ResultType src, FieldRef & field) const
         {
             auto type_id = type->getTypeId();
             if (type->isValueRepresentedByUnsignedInteger())
             {
-                field = Field(src);
+                field = FieldRef(src);
             }
             else if (type_id == TypeIndex::Float32)
             {
                 Float32 val;
                 memcpy(&val, &src, sizeof(val));
-                field = Field(val);
+                field = FieldRef(val);
             }
             else if (type_id == TypeIndex::Float64)
             {
                 Float64 val;
                 memcpy(&val, &src, sizeof(val));
-                field = Field(val);
+                field = FieldRef(val);
             }
             else if (type_id == TypeIndex::Int8)
             {
                 Int8 val;
                 memcpy(&val, &src, sizeof(val));
-                field = Field(val);
+                field = FieldRef(val);
             }
             else if (type_id == TypeIndex::Int16)
             {
                 Int16 val;
                 memcpy(&val, &src, sizeof(val));
-                field = Field(val);
+                field = FieldRef(val);
             }
             else if (type_id == TypeIndex::Int32)
             {
                 Int32 val;
                 memcpy(&val, &src, sizeof(val));
-                field = Field(val);
+                field = FieldRef(val);
             }
             else if (type_id == TypeIndex::Int64)
             {
                 Int64 val;
                 memcpy(&val, &src, sizeof(val));
-                field = Field(val);
+                field = FieldRef(val);
             }
         }
         /// Extract the i-th argument from given z value,
