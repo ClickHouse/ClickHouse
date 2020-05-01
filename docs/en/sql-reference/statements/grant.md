@@ -237,7 +237,7 @@ This privilege allows `john` to perform any `SELECT` query that involves data fr
 
 ### INSERT {#grant-insert}
 
-Allows performing [INSERT](insert_into.md) queries.
+Allows performing [INSERT](insert-into.md) queries.
 
 Privilege level: `COLUMN`.
 
@@ -426,7 +426,7 @@ The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `S
 
 ### INTROSPECTION {#grant-introspection}
 
-Allows using [introspection](../../operations/optimizing_performance/sampling_query_profiler.md) functions.
+Allows using [introspection](../../operations/optimizing-performance/sampling-query-profiler.md) functions.
 
 - `INTROSPECTION`. Level: `GROUP`. Aliases: `INTROSPECTION FUNCTIONS`
     - `addressToLine`. Level: `GLOBAL`
@@ -436,7 +436,7 @@ Allows using [introspection](../../operations/optimizing_performance/sampling_qu
 
 ### SOURCES {#grant-sources}
 
-Allows using external data sources. Applies to [table engines](../../engines/table_engines/index.md) and [table functions](../table_functions/index.md).
+Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../table-functions/index.md).
 
 - `SOURCES`. Level: `GROUP`
     - `FILE`. Level: `GLOBAL`
@@ -452,14 +452,14 @@ The `SOURCES` privilege enables use of all the sources. Also you can grant a pri
 
 Examples:
 
-- To create a table with the [MySQL table engine](../../engines/table_engines/integrations/mysql.md), you need `CREATE TABLE (ON db.table_name)` and `MYSQL` privileges.
-- To use the [mysql table function](../table_functions/mysql.md), you need `CREATE TEMPORARY TABLE` and `MYSQL` privileges.
+- To create a table with the [MySQL table engine](../../engines/table-engines/integrations/mysql.md), you need `CREATE TABLE (ON db.table_name)` and `MYSQL` privileges.
+- To use the [mysql table function](../table-functions/mysql.md), you need `CREATE TEMPORARY TABLE` and `MYSQL` privileges.
 
 ### dictGet {#grant-dictget}
 
 - `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Allows a user to execute [dictGet](../functions/ext_dict_functions.md#dictget), [dictHas](../functions/ext_dict_functions.md#dicthas), [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy), [dictIsIn](../functions/ext_dict_functions.md#dictisin) functions.
+Allows a user to execute [dictGet](../functions/ext-dict-functions.md#dictget), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin) functions.
 
 Level of privilege: `DICTIONARY`.
 
