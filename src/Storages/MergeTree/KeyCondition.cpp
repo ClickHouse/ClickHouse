@@ -1235,7 +1235,7 @@ std::optional<RangeSet> KeyCondition::applyInvertibleFunctionsChainToRange(
         }
         else
         {
-            key_range_set = std::move(*new_result);
+            key_range_set = *new_result;
         }
     }
     return key_range_set;
