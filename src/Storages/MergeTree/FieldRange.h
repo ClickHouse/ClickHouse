@@ -36,8 +36,9 @@ struct FieldRef : public Field
 
 /** Range with open or closed ends; possibly unbounded.
 */
-struct Range
+class Range
 {
+public:
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
 
@@ -203,22 +204,23 @@ struct Range
 
 class RangeSet
 {
-    public:
-        std::vector<Range> data;
-        void normalize();
-        RangeSet();
-        RangeSet(const Range & range);
-        RangeSet(const std::vector<Range> & data);
+public:
+    std::vector<Range> data;
+    void normalize();
+    RangeSet();
+    RangeSet(const Range & range);
+    explicit RangeSet(const std::vector<Range> & data);
 
-        RangeSet & operator |= (const RangeSet & rhs);
-        RangeSet operator | (const RangeSet & rhs) const;
-        RangeSet & operator |= (const Range &rhs);
-        bool intersectsRange(const Range & rhs) const;
-        bool isContainedBy(const Range & rhs) const;
+    RangeSet & operator |= (const RangeSet & rhs);
+    RangeSet operator | (const RangeSet & rhs) const;
+    RangeSet & operator |= (const Range &rhs);
+    bool intersectsRange(const Range & rhs) const;
+    bool isContainedBy(const Range & rhs) const;
 
-        std::optional<RangeSet> applyMonotonicFunction(const FunctionBasePtr & func, DataTypePtr & arg_type, DataTypePtr & res_type);
-        std::optional<RangeSet> applyInvertibleFunction(const FunctionBasePtr & func, size_t arg_index);
+    std::optional<RangeSet> applyMonotonicFunction(const FunctionBasePtr & func, DataTypePtr & arg_type, DataTypePtr & res_type);
+    std::optional<RangeSet> applyInvertibleFunction(const FunctionBasePtr & func, size_t arg_index);
 
+    String toString() const;
 };
 
 

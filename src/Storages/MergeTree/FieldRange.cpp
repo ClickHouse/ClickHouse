@@ -317,4 +317,18 @@ std::optional<RangeSet> RangeSet::applyInvertibleFunction(
     return result;
 }
 
+String RangeSet::toString() const
+{
+    std::stringstream str;
+    str << "{";
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        if (i != 0)
+            str << ", ";
+        str << data[i].toString();
+    }
+    str << "}";
+    return str.str();
+}
+
 }
