@@ -95,7 +95,7 @@ void RangeSet::normalize()
         ));
     });
     std::vector<Range> normalized;
-    Field right_border;
+    FieldRef right_border;
     bool right_bounded = false;
     bool right_included = false;
     for (const auto & range : data)
