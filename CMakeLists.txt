@@ -226,7 +226,7 @@ if (COMPILER_CLANG)
     # We cannot afford to use LTO when compiling unitests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
-    if (NOT ENABLE_TESTS)
+    if (NOT ENABLE_TESTS AND NOT SANITIZE)
         # Link time optimization
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
