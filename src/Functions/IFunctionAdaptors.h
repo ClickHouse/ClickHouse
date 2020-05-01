@@ -81,7 +81,7 @@ public:
     bool isInvertible() const final { return impl->isInvertible(); }
     bool invertRange(const Range & value_range, size_t argument_index, const DataTypes & argument_types, RangeSet & result) const final
     {
-        throw impl->invertRange(value_range, argument_index, argument_types, result);
+        return impl->invertRange(value_range, argument_index, argument_types, result);
     }
 
     const IFunctionBaseImpl * getImpl() const { return impl.get(); }
