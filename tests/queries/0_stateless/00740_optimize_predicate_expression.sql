@@ -32,4 +32,8 @@ FROM (
             WHERE user_id = 999
 ) js2 USING site);
 
+-- check order is preserved
+SET enable_debug_queries = 1;
+ANALYZE SELECT * FROM system.one HAVING dummy > 0 AND dummy < 0;
+
 DROP TABLE perf;
