@@ -42,7 +42,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [نمودار](https://github.com/yandex/graphouse)
         -   [کربن کلیک](https://github.com/lomik/carbon-clickhouse) +
         -   [گرافیت-تاتر](https://github.com/lomik/graphite-clickhouse)
-        -   [گرافیت-چ بهینه ساز](https://github.com/innogames/graphite-ch-optimizer) - بهینه سازی پارتیشن های ریخته شده در [اطلاعات دقیق](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) اگر قوانین از [پیکربندی رولپ](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) می تواند اعمال شود
+        -   [گرافیت-چ بهینه ساز](https://github.com/innogames/graphite-ch-optimizer) - بهینه سازی پارتیشن های ریخته شده در [اطلاعات دقیق](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) اگر قوانین از [پیکربندی رولپ](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) می تواند اعمال شود
     -   [گرافانا](https://grafana.com/)
         -   [فاحشه خانه-گرافانا](https://github.com/Vertamedia/clickhouse-grafana)
     -   [پرومتیوس](https://prometheus.io/)
@@ -74,7 +74,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (استفاده [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [پانداها](https://pandas.pydata.org)
         -   [پانداهاوس](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -82,7 +82,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [خانه روستایی](https://github.com/IMSMWU/RClickhouse) (استفاده [صفحه اصلی](https://github.com/artpaul/clickhouse-cpp))
 -   جاوا
     -   [هادوپ](http://hadoop.apache.org)
-        -   [سرویس پرداخت درونبرنامهای پلی](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [سرویس پرداخت درونبرنامهای پلی](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   اسکالا
     -   [اککا](https://akka.io)
         -   [تاتر-اسکالا-کارفرما](https://github.com/crobox/clickhouse-scala-client)
