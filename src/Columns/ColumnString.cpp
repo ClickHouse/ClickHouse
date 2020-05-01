@@ -78,7 +78,7 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
     UInt32 * hash_data = hash.getData().data();
     Offset prev_offset = 0;
 
-    for (auto & offset : offsets)
+    for (const auto & offset : offsets)
     {
         auto str_size = offset - prev_offset;
         /// Skip last zero byte.

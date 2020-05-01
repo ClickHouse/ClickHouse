@@ -22,8 +22,9 @@ DROP TABLE clear_column;
 SELECT '===Replicated case===';
 
 SYSTEM STOP MERGES;
-DROP TABLE IF EXISTS clear_column1;
-DROP TABLE IF EXISTS clear_column2;
+DROP TABLE IF EXISTS clear_column1 NO DELAY;
+DROP TABLE IF EXISTS clear_column2 NO DELAY;
+SELECT sleep(1) FORMAT Null;
 CREATE TABLE clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192);
 CREATE TABLE clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192);
 

@@ -1,11 +1,11 @@
 ---
 toc_priority: 6
-toc_title: パフォーマンス
+toc_title: "\u30D1\u30D5\u30A9\u30FC\u30DE\u30F3\u30B9"
 ---
 
 # パフォーマンス {#pahuomansu}
 
-Yandexの内部テスト結果によると、ClickHouseは、テスト可能なクラスのシステム間で同等の動作シナリオで最高のパフォーマンス(長時間のクエリで最も高いスループットと、短時間のクエリで最小のレイテンシの両方)を示します。 [別のページで](https://clickhouse.yandex/benchmark.html)テスト結果を表示できます 。
+Yandexの内部テスト結果によると、ClickHouseは、テスト可能なクラスのシステム間で同等の動作シナリオで最高のパフォーマンス(長時間のクエリで最も高いスループットと、短時間のクエリで最小のレイテンシの両方)を示します。 [別のページで](https://clickhouse.yandex/benchmark/dbms/)テスト結果を表示できます 。
 
 これは、多数の独立したベンチマークでも確認されています。インターネット検索で見つけることは難しくありませんし、 [私達がまとめた関連リンク集](https://clickhouse.yandex/#independent-benchmarks) から見つけることもできます。
 

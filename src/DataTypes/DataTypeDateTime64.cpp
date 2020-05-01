@@ -183,7 +183,7 @@ void DataTypeDateTime64::deserializeProtobuf(IColumn & column, ProtobufReader & 
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
 {
-    if (auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
+    if (const auto * ptype = typeid_cast<const DataTypeDateTime64 *>(&rhs))
         return this->scale == ptype->getScale();
     return false;
 }

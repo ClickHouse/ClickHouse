@@ -52,17 +52,21 @@ struct JoinedElement
 
     void rewriteCommaToCross()
     {
-        if (join)
+        if (join && join->kind == ASTTableJoin::Kind::Comma)
             join->kind = ASTTableJoin::Kind::Cross;
     }
 
-    void rewriteCrossToInner(ASTPtr on_expression)
+    bool rewriteCrossToInner(ASTPtr on_expression)
     {
+        if (join->kind != ASTTableJoin::Kind::Cross)
+            return false;
+
         join->kind = ASTTableJoin::Kind::Inner;
         join->strictness = ASTTableJoin::Strictness::All;
 
         join->on_expression = on_expression;
         join->children.push_back(join->on_expression);
+        return true;
     }
 
     ASTPtr arrayJoin() const { return element.array_join; }
@@ -235,9 +239,9 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     size_t num_array_join = 0;
     size_t num_using = 0;
 
-    for (auto & child : tables->children)
+    for (const auto & child : tables->children)
     {
-        auto table_element = child->as<ASTTablesInSelectQueryElement>();
+        auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
             throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -256,7 +260,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
             continue;
         }
 
-        if (auto * join = t.tableJoin())
+        if (const auto * join = t.tableJoin())
         {
             if (join->kind == ASTTableJoin::Kind::Cross ||
                 join->kind == ASTTableJoin::Kind::Comma)
@@ -329,8 +333,8 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     {
         if (visitor_data.matchAny(i))
         {
-            joined_tables[i].rewriteCrossToInner(visitor_data.makeOnExpression(i));
-            data.done = true;
+            if (joined_tables[i].rewriteCrossToInner(visitor_data.makeOnExpression(i)))
+                data.done = true;
         }
     }
 }

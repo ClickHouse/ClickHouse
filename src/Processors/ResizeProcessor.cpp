@@ -173,7 +173,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
 
-    for (auto & output_number : updated_outputs)
+    for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
@@ -205,7 +205,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         return Status::Finished;
     }
 
-    for (auto & input_number : updated_inputs)
+    for (const auto & input_number : updated_inputs)
     {
         auto & input = input_ports[input_number];
         if (input.port->isFinished())
@@ -277,7 +277,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
 
-    for (auto & output_number : updated_outputs)
+    for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
@@ -311,7 +311,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
 
     std::queue<UInt64> inputs_with_data;
 
-    for (auto & input_number : updated_inputs)
+    for (const auto & input_number : updated_inputs)
     {
         auto & input = input_ports[input_number];
         if (input.port->isFinished())

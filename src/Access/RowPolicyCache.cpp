@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -65,7 +66,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
             continue;
 
         auto previous_range = std::pair(std::begin(policy->conditions), std::begin(policy->conditions) + type);
-        auto previous_it = std::find(previous_range.first, previous_range.second, condition);
+        const auto * previous_it = std::find(previous_range.first, previous_range.second, condition);
         if (previous_it != previous_range.second)
         {
             /// The condition is already parsed before.
@@ -77,7 +78,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
         try
         {
             ParserExpression parser;
-            parsed_conditions[type] = parseQuery(parser, condition, 0);
+            parsed_conditions[type] = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
         catch (...)
         {
@@ -178,16 +179,17 @@ void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 void RowPolicyCache::mixConditions()
 {
     /// `mutex` is already locked.
-    std::erase_if(
-        enabled_row_policies,
-        [&](const std::pair<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> & pr)
+    for (auto i = enabled_row_policies.begin(), e = enabled_row_policies.end(); i != e;)
+    {
+        auto elem = i->second.lock();
+        if (!elem)
+            i = enabled_row_policies.erase(i);
+        else
         {
-            auto elem = pr.second.lock();
-            if (!elem)
-                return true; // remove from the `enabled_row_policies` map.
             mixConditionsFor(*elem);
-            return false; // keep in the `enabled_row_policies` map.
-        });
+            ++i;
+        }
+    }
 }
 
 

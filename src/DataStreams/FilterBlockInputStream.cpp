@@ -180,7 +180,7 @@ Block FilterBlockInputStream::readImpl()
 }
 
 
-Block FilterBlockInputStream::removeFilterIfNeed(Block && block)
+Block FilterBlockInputStream::removeFilterIfNeed(Block && block) const
 {
     if (block && remove_filter)
         block.erase(static_cast<size_t>(filter_column));
