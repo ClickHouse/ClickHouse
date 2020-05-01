@@ -194,3 +194,7 @@ a.btn-outline-yellow {
 .w-15 {
     width: 15% !important;
 }
+
+#feedback_email {
+    white-space: nowrap;
+}

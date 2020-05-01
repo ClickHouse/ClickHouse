@@ -11,7 +11,7 @@ toc_title: "\u0631\u0627\u0628\u0637 \u0642\u0627\u0645"
 
 به طور پیش فرض, کلیک سرور گوش برای اچ تی پی در بندر 8123 (این را می توان در پیکربندی تغییر).
 
-اگر شما یک دریافت / درخواست بدون پارامتر, باز می گردد 200 کد پاسخ و رشته که در تعریف [نقلقولهای جدید از این نویسنده](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) مقدار پیشفرض “Ok.” (با خوراک خط در پایان)
+اگر شما یک دریافت / درخواست بدون پارامتر, باز می گردد 200 کد پاسخ و رشته که در تعریف [نقلقولهای جدید از این نویسنده](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) مقدار پیشفرض “Ok.” (با خوراک خط در پایان)
 
 ``` bash
 $ curl 'http://localhost:8123/'

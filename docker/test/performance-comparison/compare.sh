@@ -93,52 +93,51 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    # When testing commits from master, use the older test files. This allows the
-    # tests to pass even when we add new functions and tests for them, that are
-    # not supported in the old revision.
-    # When testing a PR, use the test files from the PR so that we can test their
-    # changes.
-    test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
+    # Find the directory with test files.
+    if [ -v CHPC_TEST_PATH ]
+    then
+        # Use the explicitly set path to directory with test files.
+        test_prefix="$CHPC_TEST_PATH"
+    elif [ "$PR_TO_TEST" = "0" ]
+    then
+        # When testing commits from master, use the older test files. This
+        # allows the tests to pass even when we add new functions and tests for
+        # them, that are not supported in the old revision.
+        test_prefix=left/performance
+    elif [ "$PR_TO_TEST" != "" ] && [ "$PR_TO_TEST" != "0" ]
+    then
+        # For PRs, use newer test files so we can test these changes.
+        test_prefix=right/performance
 
+        # If some tests were changed in the PR, we may want to run only these
+        # ones. The list of changed tests in changed-test.txt is prepared in
+        # entrypoint.sh from git diffs, because it has the cloned repo.  Used
+        # to use rsync for that but it was really ugly and not always correct
+        # (e.g. when the reference SHA is really old and has some other
+        # differences to the tested SHA, besides the one introduced by the PR).
+        changed_test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
+    fi
+
+    # Determine which tests to run.
+    if [ -v CHPC_TEST_GREP ]
+    then
+        # Run only explicitly specified tests, if any.
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
+    elif [ "$changed_test_files" != "" ]
+    then
+        # Use test files that changed in the PR.
+        test_files="$changed_test_files"
+    else
+        # The default -- run all tests found in the test dir.
+        test_files=$(ls "$test_prefix"/*.xml)
+    fi
+
+    # Delete old report files.
     for x in {test-times,skipped-tests,wall-clock-times,report-thresholds,client-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
     done
-
-
-    # FIXME a quick crutch to bring the run time down for the unstable tests --
-    # if some performance tests xmls were changed in a PR, run only these ones.
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        # changed-test.txt prepared in entrypoint.sh from git diffs, because it
-        # has the cloned repo. Used to use rsync for that but it was really ugly
-        # and not always correct (e.g. when the reference SHA is really old and
-        # has some other differences to the tested SHA, besides the one introduced
-        # by the PR).
-        test_files_override=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
-        if [ "$test_files_override" != "" ]
-        then
-            test_files=$test_files_override
-        fi
-    fi
-
-    # Run only explicitly specified tests, if any
-    if [ -v CHPC_TEST_GREP ]
-    then
-        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
-    fi
-
-    if [ "$test_files" == "" ]
-    then
-        # FIXME remove some broken long tests
-        for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
-        do
-            printf "%s\tMarked as broken (see compare.sh)\n" "$test_name">> skipped-tests.tsv
-            rm "$test_prefix/$test_name.xml" ||:
-        done
-        test_files=$(ls "$test_prefix"/*.xml)
-    fi
 
     # Run the tests.
     test_name="<none>"
@@ -554,11 +553,10 @@ case "$stage" in
     echo Servers stopped.
     ;&
 "analyze_queries")
-    # FIXME grep for set_index fails -- argument list too long.
     time analyze_queries ||:
     ;&
 "report")
-    time report
+    time report ||:
 
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html

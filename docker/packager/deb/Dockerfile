@@ -23,6 +23,7 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             gcc-9 \
             g++-9 \
+            llvm-10 \
             clang-10 \
             lld-10 \
             clang-tidy-10 \

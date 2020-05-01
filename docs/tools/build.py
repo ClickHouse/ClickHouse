@@ -127,11 +127,12 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
+        website_url = 'https://clickhouse.tech'
         site_name = site_names.get(lang, site_names['en']) % args.version_prefix
         site_name = site_name.replace('  ', ' ')
         raw_config = dict(
             site_name=site_name,
-            site_url=f'https://clickhouse.tech/docs/{lang}/',
+            site_url=f'{website_url}/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -150,6 +151,7 @@ def build_for_lang(lang, args):
                 'rev': args.rev,
                 'rev_short': args.rev_short,
                 'rev_url': args.rev_url,
+                'website_url': website_url,
                 'events': args.events,
                 'languages': languages,
                 'includes_dir':  os.path.join(os.path.dirname(__file__), '..', '_includes')

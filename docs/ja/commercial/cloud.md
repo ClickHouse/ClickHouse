@@ -12,7 +12,7 @@ machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 
 [Yandex管理サービスClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) 次の主な機能を提供します:
 
--   完全に管理されたzookeeperサービス [ClickHouse複製](../engines/table_engines/mergetree_family/replication.md)
+-   完全に管理されたzookeeperサービス [ClickHouse複製](../engines/table-engines/mergetree-family/replication.md)
 -   複数ストレージタイプの選択
 -   異なる可用性ゾーンのレプリカ
 -   暗号化と分離
