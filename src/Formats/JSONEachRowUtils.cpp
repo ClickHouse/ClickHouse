@@ -12,7 +12,7 @@ bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memor
     size_t balance = 0;
     bool quotes = false;
 
-    while (loadAtPosition(in, memory, pos)  && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size))
+    while (loadAtPosition(in, memory, pos) && (balance || memory.size() + static_cast<size_t>(pos - in.position()) < min_chunk_size))
     {
         if (quotes)
         {
