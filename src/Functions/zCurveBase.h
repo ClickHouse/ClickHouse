@@ -113,6 +113,7 @@ namespace DB
                 writeField(type, left_point, left_field);
                 writeField(type, right_point, right_field);
                 auto range = Range(left_field, true, right_field, true);
+                std::cerr << "KEK: converted to range " << range.toString() << "\n";
                 if (!range.empty())
                 {
                     ranges.push_back(range);
