@@ -6,7 +6,7 @@
 
 ## getMacro {#getmacro}
 
-Возвращает значение параметра из [macros](../../operations/server_configuration_parameters/settings.md#macros) секции конфигурационного файла сервера `config.xml`.
+Возвращает значение параметра из секции [macros](../../operations/server_configuration_parameters/settings.md#macros) конфигурационного файла сервера `config.xml`.
 
 **Синтаксис** 
 
