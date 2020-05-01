@@ -38,11 +38,9 @@ struct FieldRef : public Field
 */
 struct Range
 {
-private:
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
 
-public:
     FieldRef left;                       /// the left border, if any
     FieldRef right;                      /// the right border, if any
     bool left_bounded = false;        /// bounded at the left
@@ -225,7 +223,7 @@ class RangeSet
 
 
 Field applyFunctionForField(const FunctionBasePtr & func, const DataTypePtr & arg_type, const Field & arg_value);
-FieldRef applyFunction(FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field);
+FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field);
 
 }
 

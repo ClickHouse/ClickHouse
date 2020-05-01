@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/FieldRange.h>
+
 #include <sstream>
 #include <iostream>
 #include <Core/iostream_debug_helpers.h>
@@ -25,7 +26,7 @@ Field applyFunctionForField(
     return (*block.safeGetByPosition(1).column)[0];
 }
 
-FieldRef applyFunction(FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     /// Fallback for fields without block reference.
     if (field.isExplicit())
@@ -260,7 +261,7 @@ std::optional<RangeSet> RangeSet::applyMonotonicFunction(
     std::vector<Range> result;
     for (auto range : data)
     {
-        IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
+        auto monotonicity = func->getMonotonicityForRange(
                 *arg_type.get(), range.left, range.right);
 
         if (!monotonicity.is_monotonic)
