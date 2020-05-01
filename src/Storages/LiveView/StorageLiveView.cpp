@@ -22,6 +22,7 @@ limitations under the License. */
 #include <DataStreams/BlocksBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
@@ -326,6 +327,8 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
 void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
 {
     auto target_table_storage = tryGetTargetTable();
+    auto query_ptr = getInnerQuery();
+
     if (target_table_storage)
     {
         auto lock = target_table_storage->lockStructureForShare(
@@ -333,12 +336,17 @@ void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
 
         context.checkAccess(AccessType::INSERT, target_table_id, getHeader().getNames());
 
-        auto target_table_stream = target_table_storage->write(getInnerQuery(), context);
+        BlockOutputStreamPtr out;
+
+        if (target_table_storage->noPushingToViews())
+            out = target_table_storage->write(query_ptr, context);
+        else
+            out = std::make_shared<PushingToViewsBlockOutputStream>(target_table_storage, context, query_ptr);
 
         auto query_context = const_cast<Context &>(context);
         query_context.setSetting("output_format_enable_streaming", 1);
 
-        target_table_stream->writePrefix();
+        out->writePrefix();
 
         BlocksPtr blocks;
         if (*blocks_ptr)
@@ -347,9 +355,9 @@ void StorageLiveView::writeNewBlocksToTargetTable(const Context & context)
         if (blocks)
         {
             for (auto & block : *blocks)
-                target_table_stream->write(block);
+                out->write(block);
         }
-        target_table_stream->writeSuffix();
+        out->writeSuffix();
     }
 }
 
