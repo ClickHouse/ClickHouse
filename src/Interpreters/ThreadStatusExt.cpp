@@ -85,6 +85,8 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         initQueryProfiler();
 
         const Settings & settings = query_context->getSettingsRef();
+
+        untracked_memory_limit = settings.max_untracked_memory;
         if (settings.memory_profiler_step < UInt64(untracked_memory_limit))
             untracked_memory_limit = settings.memory_profiler_step;
 
