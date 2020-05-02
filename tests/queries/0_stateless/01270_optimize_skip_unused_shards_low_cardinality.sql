@@ -8,3 +8,6 @@ drop table if exists dist_01270;
 create table data_01270 (key LowCardinality(Int)) Engine=Null();
 create table dist_01270 as data_01270 Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01270, key);
 select * from dist_01270 where key = 1;
+
+drop table data_01270;
+drop table dist_01270;
