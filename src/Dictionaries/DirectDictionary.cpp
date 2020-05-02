@@ -310,7 +310,8 @@ void DirectDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attribute_name_by_index.emplace(attributes.size(), attribute.name);
+        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value, attribute.name));
 
         if (attribute.hierarchical)
         {
@@ -351,9 +352,9 @@ void DirectDictionary::createAttributeImpl<String>(Attribute & attribute, const 
 }
 
 
-DirectDictionary::Attribute DirectDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+DirectDictionary::Attribute DirectDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & attr_name)
 {
-    Attribute attr{type, {}, {}};
+    Attribute attr{type, {}, {}, attr_name};
 
     switch (type)
     {
@@ -411,7 +412,7 @@ DirectDictionary::Attribute DirectDictionary::createAttributeWithType(const Attr
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void DirectDictionary::getItemsImpl(
-    const Attribute &, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
 {
     const auto rows = ext::size(ids);
 
@@ -431,10 +432,9 @@ void DirectDictionary::getItemsImpl(
                 const auto key = id_column[row_idx].get<UInt64>();
 
                 for (const auto row : ext::range(0, rows)) {
-                    if (key == ids[row]) {
+                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx)) {
                         is_found[row] = true;
                         set_value(row, static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>()));
-                        // break;
                     }
                 }
             }
@@ -453,7 +453,7 @@ void DirectDictionary::getItemsImpl(
 
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
 void DirectDictionary::getItemsStringImpl(
-    const Attribute &, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
 {
     const auto rows = ext::size(ids);
 
@@ -472,14 +472,13 @@ void DirectDictionary::getItemsStringImpl(
             for (const auto row_idx : ext::range(0, id_column.size())) {
                 const auto key = id_column[row_idx].get<UInt64>();
                 for (const auto row : ext::range(0, rows)) {
-                    if (key == ids[row]) {
+                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx)) {
                         is_found[row] = true;
 
                         const String from_source = attribute_column[row_idx].get<String>();
                         const auto * string_in_arena = temp_arena->insert(from_source.data(), from_source.size());
                         const auto reference = StringRef{string_in_arena, from_source.size()};
                         set_value(row, reference);
-                        break;
                     }
                 }
             }
@@ -526,7 +525,6 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
             for (const auto row : ext::range(0, rows)) {
                 if (key == ids[row]) {
                     out[row] = 1;
-                    // break;
                 }
             }
         }
