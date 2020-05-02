@@ -179,7 +179,7 @@ std::shared_ptr<const EntityType> IAccessStorage::read(const UUID & id) const
     auto ptr = typeid_cast<std::shared_ptr<const EntityType>>(entity);
     if (ptr)
         return ptr;
-    throwBadCast(id, entity->getType(), entity->getFullName(), typeid(EntityType));
+    throwBadCast(id, entity->getType(), entity->getName(), typeid(EntityType));
 }
 
 

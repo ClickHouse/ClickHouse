@@ -525,7 +525,7 @@ bool DiskAccessStorage::rebuildLists()
 
         auto type = entity->getType();
         auto & name_to_id_map = name_to_id_maps.at(type);
-        auto it_by_name = name_to_id_map.emplace(entity->getFullName(), id).first;
+        auto it_by_name = name_to_id_map.emplace(entity->getName(), id).first;
         id_to_entry_map.emplace(id, Entry{it_by_name->first, type});
     }
 
@@ -609,7 +609,7 @@ UUID DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool repl
 
 void DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
 {
-    const String & name = new_entity->getFullName();
+    const String & name = new_entity->getName();
     std::type_index type = new_entity->getType();
     if (!initialized)
         throw Exception(
@@ -622,7 +622,7 @@ void DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     if (it_by_id != id_to_entry_map.end())
     {
         const auto & existing_entry = it_by_id->second;
-        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getFullName());
+        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
     }
 
     auto & name_to_id_map = name_to_id_maps.at(type);
@@ -703,7 +703,7 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (*new_entity == *old_entity)
         return;
 
-    String new_name = new_entity->getFullName();
+    String new_name = new_entity->getName();
     auto old_name = entry.name;
     const std::type_index type = entry.type;
     bool name_changed = (new_name != old_name);

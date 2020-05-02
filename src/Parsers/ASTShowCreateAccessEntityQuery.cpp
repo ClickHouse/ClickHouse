@@ -54,10 +54,10 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT" << (settings.hilite ? hilite_none : "");
     else if (kind == Kind::ROW_POLICY)
     {
-        const String & database = row_policy_name.database;
-        const String & table_name = row_policy_name.table_name;
-        const String & policy_name = row_policy_name.policy_name;
-        settings.ostr << ' ' << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+        const String & database = row_policy_name_parts.database;
+        const String & table_name = row_policy_name_parts.table_name;
+        const String & short_name = row_policy_name_parts.short_name;
+        settings.ostr << ' ' << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                       << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
                       << backQuoteIfNeed(table_name);
     }

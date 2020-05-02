@@ -54,7 +54,7 @@ namespace
     }
 
 
-    UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getFullName()); }
+    UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getName()); }
 
     UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
     {
@@ -344,7 +344,7 @@ namespace
                 String filter = (it != user_to_filters.end()) ? it->second : "1";
 
                 auto policy = std::make_shared<RowPolicy>();
-                policy->setFullName(database, table_name, user_name);
+                policy->setNameParts(user_name, database, table_name);
                 policy->conditions[RowPolicy::SELECT_FILTER] = filter;
                 policy->to_roles.add(generateID(typeid(User), user_name));
                 policies.push_back(policy);
@@ -494,21 +494,21 @@ String UsersConfigAccessStorage::readNameImpl(const UUID & id) const
 
 UUID UsersConfigAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
 {
-    throwReadonlyCannotInsert(entity->getType(), entity->getFullName());
+    throwReadonlyCannotInsert(entity->getType(), entity->getName());
 }
 
 
 void UsersConfigAccessStorage::removeImpl(const UUID & id)
 {
     auto entity = read(id);
-    throwReadonlyCannotRemove(entity->getType(), entity->getFullName());
+    throwReadonlyCannotRemove(entity->getType(), entity->getName());
 }
 
 
 void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 {
     auto entity = read(id);
-    throwReadonlyCannotUpdate(entity->getType(), entity->getFullName());
+    throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 }
 
 

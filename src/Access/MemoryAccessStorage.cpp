@@ -55,7 +55,7 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id) const
 
 String MemoryAccessStorage::readNameImpl(const UUID & id) const
 {
-    return readImpl(id)->getFullName();
+    return readImpl(id)->getName();
 }
 
 
@@ -73,7 +73,7 @@ UUID MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool re
 
 void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
 {
-    const String & name = new_entity->getFullName();
+    const String & name = new_entity->getName();
     std::type_index type = new_entity->getType();
 
     /// Check that we can insert.
@@ -81,7 +81,7 @@ void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (it != entries.end())
     {
         const auto & existing_entry = it->second;
-        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getFullName());
+        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
     }
 
     auto it2 = names.find({name, type});
@@ -120,7 +120,7 @@ void MemoryAccessStorage::removeNoLock(const UUID & id, Notifications & notifica
         throwNotFound(id);
 
     Entry & entry = it->second;
-    const String & name = entry.entity->getFullName();
+    const String & name = entry.entity->getName();
     std::type_index type = entry.entity->getType();
 
     prepareNotifications(entry, true, notifications);
@@ -156,14 +156,14 @@ void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
 
     entry.entity = new_entity;
 
-    if (new_entity->getFullName() != old_entity->getFullName())
+    if (new_entity->getName() != old_entity->getName())
     {
-        auto it2 = names.find({new_entity->getFullName(), new_entity->getType()});
+        auto it2 = names.find({new_entity->getName(), new_entity->getType()});
         if (it2 != names.end())
-            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getFullName(), new_entity->getFullName());
+            throwNameCollisionCannotRename(old_entity->getType(), old_entity->getName(), new_entity->getName());
 
-        names.erase({old_entity->getFullName(), old_entity->getType()});
-        names[std::pair{new_entity->getFullName(), new_entity->getType()}] = &entry;
+        names.erase({old_entity->getName(), old_entity->getType()});
+        names[std::pair{new_entity->getName(), new_entity->getType()}] = &entry;
     }
 
     prepareNotifications(entry, false, notifications);
@@ -211,7 +211,7 @@ void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessE
                 continue;
             }
         }
-        auto it2 = names.find({entity->getFullName(), entity->getType()});
+        auto it2 = names.find({entity->getName(), entity->getType()});
         if (it2 != names.end())
         {
             Entry & entry = *(it2->second);

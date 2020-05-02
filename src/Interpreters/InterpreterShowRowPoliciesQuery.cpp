@@ -49,7 +49,7 @@ String InterpreterShowRowPoliciesQuery::getRewrittenQuery() const
             filter = "database = " + quoteString(database) + " AND table = " + quoteString(table_name);
     }
 
-    String expr = table_name.empty() ? "full_name" : "name";
+    String expr = table_name.empty() ? "name" : "short_name";
 
     return "SELECT " + expr + " AS " + backQuote(getResultDescription()) + " from system.row_policies"
             + (filter.empty() ? "" : " WHERE " + filter) + " ORDER BY " + expr;

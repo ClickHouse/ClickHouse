@@ -21,14 +21,14 @@ namespace
 {
     using ConditionType = RowPolicy::ConditionType;
 
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_policy_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_short_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
-            return parseIdentifierOrStringLiteral(pos, expected, new_policy_name);
+            return parseIdentifierOrStringLiteral(pos, expected, new_short_name);
         });
     }
 
@@ -246,22 +246,22 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             or_replace = true;
     }
 
-    RowPolicy::FullNameParts name_parts;
+    RowPolicy::NameParts name_parts;
     String & database = name_parts.database;
     String & table_name = name_parts.table_name;
-    String & policy_name = name_parts.policy_name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, policy_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
+    String & short_name = name_parts.short_name;
+    if (!parseIdentifierOrStringLiteral(pos, expected, short_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
         || !parseDatabaseAndTableName(pos, expected, database, table_name))
         return false;
 
-    String new_policy_name;
+    String new_short_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<ConditionType, ASTPtr>> conditions;
     String cluster;
 
     while (true)
     {
-        if (alter && new_policy_name.empty() && parseRenameTo(pos, expected, new_policy_name))
+        if (alter && new_short_name.empty() && parseRenameTo(pos, expected, new_short_name))
             continue;
 
         if (!is_restrictive && parseAsRestrictiveOrPermissive(pos, expected, is_restrictive))
@@ -292,7 +292,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->or_replace = or_replace;
     query->cluster = std::move(cluster);
     query->name_parts = std::move(name_parts);
-    query->new_policy_name = std::move(new_policy_name);
+    query->new_short_name = std::move(new_short_name);
     query->is_restrictive = is_restrictive;
     query->conditions = std::move(conditions);
     query->roles = std::move(roles);
