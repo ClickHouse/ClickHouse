@@ -30,7 +30,7 @@ set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
-option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+option(ENABLE_IPO "Enable full link time optimization (it's usually impractical; see also ENABLE_THINLTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
     cmake_policy(SET CMP0069 NEW)
     include(CheckIPOSupported)
@@ -218,10 +218,12 @@ if (COMPILER_CLANG)
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
 
+    option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+
     # We cannot afford to use LTO when compiling unitests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
     # completely.
-    if (NOT ENABLE_TESTS AND NOT SANITIZE)
+    if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # Link time optimization
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
