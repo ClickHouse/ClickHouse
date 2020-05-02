@@ -36,8 +36,8 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    RowPolicy::FullNameParts name_parts;
-    String new_policy_name;
+    RowPolicy::NameParts name_parts;
+    String new_short_name;
 
     std::optional<bool> is_restrictive;
     using ConditionType = RowPolicy::ConditionType;

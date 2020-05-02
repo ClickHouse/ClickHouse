@@ -160,7 +160,7 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
-        query->name_parts = RowPolicy::FullNameParts{policy.getDatabase(), policy.getTableName(), policy.getName()};
+        query->name_parts = policy.getNameParts();
         query->attach = attach_mode;
 
         if (policy.isRestrictive())
@@ -233,7 +233,7 @@ BlockIO InterpreterShowCreateAccessEntityQuery::execute()
 
 BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 {
-    const auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
+    auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
 
     /// Build a create query.
     ASTPtr create_query = getCreateQuery(show_query);
@@ -257,7 +257,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const
+ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(ASTShowCreateAccessEntityQuery & show_query) const
 {
     const auto & access_control = context.getAccessControlManager();
     context.checkAccess(getRequiredAccess());
@@ -277,7 +277,9 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreat
     auto type = getType(show_query.kind);
     if (show_query.kind == Kind::ROW_POLICY)
     {
-        RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name.getFullName(context));
+        if (show_query.row_policy_name_parts.database.empty())
+            show_query.row_policy_name_parts.database = context.getCurrentDatabase();
+        RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name_parts.getName());
         return getCreateQueryImpl(*policy, &access_control, false);
     }
 

@@ -6,30 +6,33 @@
 
 namespace DB
 {
-class Context;
-
 
 /** Represents a row level security policy for a table.
   */
 struct RowPolicy : public IAccessEntity
 {
-    void setDatabase(const String & database_);
-    void setTableName(const String & table_name_);
-    void setName(const String & policy_name_) override;
-    void setFullName(const String & database_, const String & table_name_, const String & policy_name_);
-
-    String getDatabase() const { return database; }
-    String getTableName() const { return table_name; }
-    String getName() const override { return policy_name; }
-
-    struct FullNameParts
+    struct NameParts
     {
+        String short_name;
         String database;
         String table_name;
-        String policy_name;
-        String getFullName() const;
-        String getFullName(const Context & context) const;
+
+        String getName() const;
+        auto toTuple() const { return std::tie(short_name, database, table_name); }
+        friend bool operator ==(const NameParts & left, const NameParts & right) { return left.toTuple() == right.toTuple(); }
+        friend bool operator !=(const NameParts & left, const NameParts & right) { return left.toTuple() != right.toTuple(); }
     };
+
+    void setShortName(const String & short_name);
+    void setDatabase(const String & database);
+    void setTableName(const String & table_name);
+    void setNameParts(const String & short_name, const String & database, const String & table_name);
+    void setNameParts(const NameParts & name_parts);
+
+    const String & getDatabase() const { return name_parts.database; }
+    const String & getTableName() const { return name_parts.table_name; }
+    const String & getShortName() const { return name_parts.short_name; }
+    const NameParts & getNameParts() const { return name_parts; }
 
     /// Filter is a SQL conditional expression used to figure out which rows should be visible
     /// for user or available for modification. If the expression returns NULL or false for some rows
@@ -71,9 +74,9 @@ struct RowPolicy : public IAccessEntity
     ExtendedRoleSet to_roles;
 
 private:
-    String database;
-    String table_name;
-    String policy_name;
+    void setName(const String & name_) override;
+
+    NameParts name_parts;
     bool restrictive = false;
 };
 

@@ -32,7 +32,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     String name;
     bool current_quota = false;
     bool current_user = false;
-    RowPolicy::FullNameParts row_policy_name;
+    RowPolicy::NameParts row_policy_name_parts;
 
     if (kind == Kind::USER)
     {
@@ -46,10 +46,10 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     }
     else if (kind == Kind::ROW_POLICY)
     {
-        String & database = row_policy_name.database;
-        String & table_name = row_policy_name.table_name;
-        String & policy_name = row_policy_name.policy_name;
-        if (!parseIdentifierOrStringLiteral(pos, expected, policy_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
+        String & database = row_policy_name_parts.database;
+        String & table_name = row_policy_name_parts.table_name;
+        String & short_name = row_policy_name_parts.short_name;
+        if (!parseIdentifierOrStringLiteral(pos, expected, short_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
             || !parseDatabaseAndTableName(pos, expected, database, table_name))
             return false;
     }
@@ -82,7 +82,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     query->name = std::move(name);
     query->current_quota = current_quota;
     query->current_user = current_user;
-    query->row_policy_name = std::move(row_policy_name);
+    query->row_policy_name_parts = std::move(row_policy_name_parts);
 
     return true;
 }

@@ -28,7 +28,7 @@ public:
     String name;
     bool current_quota = false;
     bool current_user = false;
-    RowPolicy::FullNameParts row_policy_name;
+    RowPolicy::NameParts row_policy_name_parts;
 
     ASTShowCreateAccessEntityQuery(Kind kind_);
     String getID(char) const override;

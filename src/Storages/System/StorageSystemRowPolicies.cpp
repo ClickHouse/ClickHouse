@@ -18,8 +18,8 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"database", std::make_shared<DataTypeString>()},
         {"table", std::make_shared<DataTypeString>()},
+        {"short_name", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"full_name", std::make_shared<DataTypeString>()},
         {"id", std::make_shared<DataTypeUUID>()},
         {"source", std::make_shared<DataTypeString>()},
         {"restrictive", std::make_shared<DataTypeUInt8>()},
@@ -48,8 +48,8 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
         size_t i = 0;
         res_columns[i++]->insert(policy->getDatabase());
         res_columns[i++]->insert(policy->getTableName());
+        res_columns[i++]->insert(policy->getShortName());
         res_columns[i++]->insert(policy->getName());
-        res_columns[i++]->insert(policy->getFullName());
         res_columns[i++]->insert(id);
         res_columns[i++]->insert(storage ? storage->getStorageName() : "");
         res_columns[i++]->insert(policy->isRestrictive());

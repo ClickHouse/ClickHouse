@@ -27,15 +27,14 @@ struct IAccessEntity
     bool isTypeOf() const { return isTypeOf(typeid(EntityType)); }
     bool isTypeOf(std::type_index type) const { return type == getType(); }
 
-    virtual void setName(const String & name_) { full_name = name_; }
-    virtual String getName() const { return full_name; }
-    String getFullName() const { return full_name; }
+    virtual void setName(const String & name_) { name = name_; }
+    const String & getName() const { return name; }
 
     friend bool operator ==(const IAccessEntity & lhs, const IAccessEntity & rhs) { return lhs.equal(rhs); }
     friend bool operator !=(const IAccessEntity & lhs, const IAccessEntity & rhs) { return !(lhs == rhs); }
 
 protected:
-    String full_name;
+    String name;
 
     virtual bool equal(const IAccessEntity & other) const;
 

@@ -12,10 +12,10 @@ namespace
 {
     using ConditionType = RowPolicy::ConditionType;
 
-    void formatRenameTo(const String & new_policy_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_short_name, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << backQuote(new_policy_name);
+                      << backQuote(new_short_name);
     }
 
 
@@ -153,14 +153,14 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 
     const String & database = name_parts.database;
     const String & table_name = name_parts.table_name;
-    const String & policy_name = name_parts.policy_name;
-    settings.ostr << " " << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+    const String & short_name = name_parts.short_name;
+    settings.ostr << " " << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                   << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << table_name;
 
     formatOnCluster(settings);
 
-    if (!new_policy_name.empty())
-        formatRenameTo(new_policy_name, settings);
+    if (!new_short_name.empty())
+        formatRenameTo(new_short_name, settings);
 
     if (is_restrictive)
         formatAsRestrictiveOrPermissive(*is_restrictive, settings);

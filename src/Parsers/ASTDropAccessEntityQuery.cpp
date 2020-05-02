@@ -51,15 +51,15 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
     if (kind == Kind::ROW_POLICY)
     {
         bool need_comma = false;
-        for (const auto & row_policy_name : row_policies_names)
+        for (const auto & name_parts : row_policies_name_parts)
         {
             if (need_comma)
                 settings.ostr << ',';
             need_comma = true;
-            const String & database = row_policy_name.database;
-            const String & table_name = row_policy_name.table_name;
-            const String & policy_name = row_policy_name.policy_name;
-            settings.ostr << ' ' << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
+            const String & database = name_parts.database;
+            const String & table_name = name_parts.table_name;
+            const String & short_name = name_parts.short_name;
+            settings.ostr << ' ' << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                           << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
                           << backQuoteIfNeed(table_name);
         }

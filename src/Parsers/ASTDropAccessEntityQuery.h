@@ -29,7 +29,7 @@ public:
     const Kind kind;
     bool if_exists = false;
     Strings names;
-    std::vector<RowPolicy::FullNameParts> row_policies_names;
+    std::vector<RowPolicy::NameParts> row_policies_name_parts;
 
     ASTDropAccessEntityQuery(Kind kind_);
     String getID(char) const override;

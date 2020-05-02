@@ -74,7 +74,7 @@ public:
                     {
                         const String database = policy->getDatabase();
                         const String table_name = policy->getTableName();
-                        const String policy_name = policy->getName();
+                        const String policy_name = policy->getShortName();
                         database_column->insertData(database.data(), database.length());
                         table_name_column->insertData(table_name.data(), table_name.length());
                         policy_name_column->insertData(policy_name.data(), policy_name.length());
@@ -123,7 +123,7 @@ public:
                     const auto policy = context.getAccessControlManager().tryRead<RowPolicy>(policy_id);
                     if (policy)
                     {
-                        const String policy_name = policy->getName();
+                        const String policy_name = policy->getShortName();
                         policy_name_column->insertData(policy_name.data(), policy_name.length());
                     }
                 }

@@ -47,7 +47,7 @@ namespace
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTDropAccessEntityQuery &>();
+    auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
     auto & access_control = context.getAccessControlManager();
 
     std::type_index type = getType(query.kind);
@@ -58,14 +58,17 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     if (query.kind == Kind::ROW_POLICY)
     {
-        Strings full_names;
-        boost::range::transform(
-            query.row_policies_names, std::back_inserter(full_names),
-            [this](const RowPolicy::FullNameParts & row_policy_name) { return row_policy_name.getFullName(context); });
+        Strings names;
+        for (auto & name_parts : query.row_policies_name_parts)
+        {
+            if (name_parts.database.empty())
+                name_parts.database = context.getCurrentDatabase();
+            names.emplace_back(name_parts.getName());
+        }
         if (query.if_exists)
-            access_control.tryRemove(access_control.find<RowPolicy>(full_names));
+            access_control.tryRemove(access_control.find<RowPolicy>(names));
         else
-            access_control.remove(access_control.getIDs<RowPolicy>(full_names));
+            access_control.remove(access_control.getIDs<RowPolicy>(names));
         return {};
     }
 

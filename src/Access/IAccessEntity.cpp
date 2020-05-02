@@ -43,6 +43,6 @@ const char * IAccessEntity::getKeyword(std::type_index type)
 
 bool IAccessEntity::equal(const IAccessEntity & other) const
 {
-    return (full_name == other.full_name) && (getType() == other.getType());
+    return (name == other.name) && (getType() == other.getType());
 }
 }
