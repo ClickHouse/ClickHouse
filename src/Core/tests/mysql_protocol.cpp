@@ -161,5 +161,34 @@ int main(int, char **)
         ASSERT(client.schema == server.schema)
     }
 
+    {
+        UInt32 slave_id = 9004;
+        MySQLClient slave("127.0.0.1", 9001, "default", "123");
+        if (!slave.connect())
+        {
+            std::cerr << "Connect Error: " << slave.error() << std::endl;
+            return 1;
+        }
+
+        if (!slave.ping())
+        {
+            std::cerr << "Connect Error: " << slave.error() << std::endl;
+            return 1;
+        }
+
+        if (!slave.startBinlogDump(slave_id, "mysql-bin.000005", 4))
+        {
+            std::cerr << "Connect Error: " << slave.error() << std::endl;
+            assert(0);
+        }
+
+        while (true)
+        {
+            auto event = slave.readOneBinlogEvent();
+            event->dump();
+            ASSERT(event != nullptr)
+        }
+    }
+
     return 0;
 }

@@ -32,7 +32,7 @@ public:
     void disconnect();
     bool ping();
     String error();
-    bool requestBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
+    bool startBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
     BinlogEventPtr readOneBinlogEvent();
 
 private:
