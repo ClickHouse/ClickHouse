@@ -3,8 +3,8 @@ DROP DATABASE IF EXISTS database_for_dict;
 CREATE DATABASE database_for_dict Engine = Ordinary;
 
 DROP TABLE IF EXISTS database_for_dict.table_for_dict1;
-
 DROP TABLE IF EXISTS database_for_dict.table_for_dict2;
+DROP TABLE IF EXISTS database_for_dict.table_for_dict3;
 
 CREATE TABLE database_for_dict.table_for_dict1
 (
@@ -32,11 +32,28 @@ INSERT INTO database_for_dict.table_for_dict2 VALUES (3, 2, 'Center');
 INSERT INTO database_for_dict.table_for_dict2 VALUES (4, 0, 'Great Britain');
 INSERT INTO database_for_dict.table_for_dict2 VALUES (5, 4, 'London');
 
+CREATE TABLE database_for_dict.table_for_dict3
+(
+  region_id UInt64,
+  parent_region Float32,
+  region_name String
+)
+ENGINE = MergeTree()
+ORDER BY region_id;
+
+INSERT INTO database_for_dict.table_for_dict3 VALUES (1, 0.5, 'Russia');
+INSERT INTO database_for_dict.table_for_dict3 VALUES (2, 1.6, 'Moscow');
+INSERT INTO database_for_dict.table_for_dict3 VALUES (3, 2.3, 'Center');
+INSERT INTO database_for_dict.table_for_dict3 VALUES (4, 0.2, 'Great Britain');
+INSERT INTO database_for_dict.table_for_dict3 VALUES (5, 4.9, 'London');
+
 DROP DATABASE IF EXISTS ordinary_db;
 
 CREATE DATABASE ordinary_db ENGINE = Ordinary;
 
 DROP DICTIONARY IF EXISTS ordinary_db.dict1;
+DROP DICTIONARY IF EXISTS ordinary_db.dict2;
+DROP DICTIONARY IF EXISTS ordinary_db.dict3;
 
 CREATE DICTIONARY ordinary_db.dict1
 (
@@ -60,6 +77,17 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dic
 LIFETIME(MIN 600 MAX 600)
 LAYOUT(DIRECT());
 
+CREATE DICTIONARY ordinary_db.dict3
+(
+  region_id UInt64 DEFAULT 0,
+  parent_region Float32 DEFAULT 0,
+  region_name String DEFAULT ''
+)
+PRIMARY KEY region_id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict2' PASSWORD '' DB 'database_for_dict'))
+LIFETIME(MIN 600 MAX 600)
+LAYOUT(DIRECT());
+
 SELECT 'INITIALIZING DICTIONARY';
 
 SELECT dictGetHierarchy('ordinary_db.dict2', toUInt64(3));
@@ -69,11 +97,14 @@ SELECT dictIsIn('ordinary_db.dict2', toUInt64(3), toUInt64(1));
 SELECT dictIsIn('ordinary_db.dict2', toUInt64(1), toUInt64(3));
 SELECT dictGetUInt64('ordinary_db.dict2', 'parent_region', toUInt64(3));
 SELECT dictGetUInt64('ordinary_db.dict2', 'parent_region', toUInt64(99));
+SELECT dictGetFloat32('ordinary_db.dict3', 'parent_region', toUInt64(3));
+SELECT dictGetFloat32('ordinary_db.dict3', 'parent_region', toUInt64(2));
+SELECT dictGetFloat32('ordinary_db.dict3', 'parent_region', toUInt64(1));
 SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(5));
 SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(4));
-SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(100));
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(100), 'NONE');
 
-SELECT number, dictGetString('ordinary_db.dict2', 'region_name', number) chars FROM numbers(10);
+SELECT number, dictGetStringOrDefault('ordinary_db.dict2', 'region_name', number, 'NONE') chars FROM numbers(10);
 
 
 SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
@@ -82,10 +113,12 @@ SELECT 'END';
 
 DROP DICTIONARY IF EXISTS ordinary_db.dict1;
 DROP DICTIONARY IF EXISTS ordinary_db.dict2;
+DROP DICTIONARY IF EXISTS ordinary_db.dict3;
 
 DROP DATABASE IF EXISTS ordinary_db;
 
 DROP TABLE IF EXISTS database_for_dict.table_for_dict1;
 DROP TABLE IF EXISTS database_for_dict.table_for_dict2;
+DROP TABLE IF EXISTS database_for_dict.table_for_dict3;
 
 DROP DATABASE IF EXISTS database_for_dict;
