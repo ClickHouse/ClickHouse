@@ -112,6 +112,7 @@ public:
 
     ClusterPtr getCluster() const;
 
+    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
