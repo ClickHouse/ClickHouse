@@ -68,7 +68,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
         client1.send(client1.command)
         client1.expect(prompt)    
 
-    client2.expect(prompt)
     client2.send('DROP TABLE test.lv')
     client2.expect(prompt)
     client2.send('DROP TABLE test.lv_sums')
