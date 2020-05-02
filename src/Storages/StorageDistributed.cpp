@@ -459,10 +459,19 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
+    const auto & settings = context.getSettingsRef();
+
     if (canForceGroupByNoMerge(context, to_stage, query_ptr))
         return QueryProcessingStage::Complete;
 
-    auto cluster = getOptimizedCluster(context, query_ptr);
+    ClusterPtr cluster = getCluster();
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_ptr);
+        if (optimized_cluster)
+            cluster = optimized_cluster;
+    }
+
     return getQueryProcessingStageImpl(context, to_stage, cluster);
 }
 
@@ -474,7 +483,28 @@ Pipes StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    auto cluster = getOptimizedCluster(context, query_info.query);
+    const auto & settings = context.getSettingsRef();
+
+    ClusterPtr cluster = getCluster();
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
+        auto table_id = getStorageID();
+        if (optimized_cluster)
+        {
+            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
+                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
+                           " " << makeFormattedListOfShards(optimized_cluster));
+            cluster = optimized_cluster;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
+                           (has_sharding_key ? "" : " (no sharding key)") << ": "
+                           "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
+                           "the query will be sent to all shards of the cluster");
+        }
+    }
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
@@ -664,28 +694,13 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
-    auto table_id = getStorageID();
-
-    if (!settings.optimize_skip_unused_shards)
-        return cluster;
 
     if (has_sharding_key)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, context);
-
         if (optimized)
-        {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
-                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
-                           " " << makeFormattedListOfShards(cluster));
             return optimized;
-        }
     }
-
-    LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                   (has_sharding_key ? "" : " (no sharding key)") << ": "
-                   "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
-                   "the query will be sent to all shards of the cluster");
 
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (force)
