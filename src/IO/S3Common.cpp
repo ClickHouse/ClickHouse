@@ -83,7 +83,8 @@ namespace S3
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(
+    /// This method is not static because it requires ClientFactory to be initialized.
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
         const String & access_key_id,
         const String & secret_access_key)
@@ -95,7 +96,7 @@ namespace S3
         return create(cfg, access_key_id, secret_access_key);
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         Aws::Client::ClientConfiguration & cfg,
         const String & access_key_id,
         const String & secret_access_key)
