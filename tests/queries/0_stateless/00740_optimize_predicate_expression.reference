@@ -1,2 +1,1 @@
 nan
-SELECT dummy\nFROM system.one\nWHERE (dummy > 0) AND (dummy < 0)
