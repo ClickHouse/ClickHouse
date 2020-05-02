@@ -168,6 +168,7 @@ private:
             StringRef>
             null_values;
         std::unique_ptr<Arena> string_arena;
+        std::string name;
     };
 
     void createAttributes();
@@ -180,7 +181,7 @@ private:
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value, const std::string & name);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsStringImpl(
@@ -218,6 +219,7 @@ private:
     const DictionaryLifetime dict_lifetime;
 
     std::map<std::string, size_t> attribute_index_by_name;
+    std::map<size_t, std::string> attribute_name_by_index;
     std::vector<Attribute> attributes;
     const Attribute * hierarchical_attribute = nullptr;
 
