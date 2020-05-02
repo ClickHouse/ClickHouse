@@ -67,6 +67,15 @@ SELECT dictHas('ordinary_db.dict2', toUInt64(3));
 SELECT dictHas('ordinary_db.dict2', toUInt64(45));
 SELECT dictIsIn('ordinary_db.dict2', toUInt64(3), toUInt64(1));
 SELECT dictIsIn('ordinary_db.dict2', toUInt64(1), toUInt64(3));
+SELECT dictGetUInt64('ordinary_db.dict2', 'parent_region', toUInt64(3));
+SELECT dictGetUInt64('ordinary_db.dict2', 'parent_region', toUInt64(99));
+SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(5));
+SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(4));
+SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(100));
+
+SELECT number, dictGetString('ordinary_db.dict2', 'region_name', number) chars FROM numbers(10);
+
+
 SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
 
 SELECT 'END';
