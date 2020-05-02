@@ -243,6 +243,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
+        std::cerr << "KEK: minmax " << minmax_idx_condition->toString() << "\n";
 
         if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
         {
