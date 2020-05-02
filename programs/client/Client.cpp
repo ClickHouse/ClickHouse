@@ -620,11 +620,19 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
-                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
+            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+
+            if (client_version_tuple < server_version_tuple)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
+            else if (client_version_tuple > server_version_tuple)
+            {
+                std::cout << "ClickHouse server version is older than ClickHouse client. "
+                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
