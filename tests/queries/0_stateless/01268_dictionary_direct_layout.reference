@@ -6,17 +6,20 @@ INITIALIZING DICTIONARY
 0
 2
 0
+2
+1
+0
 London
 Great Britain
-
-0	Great Britain
-1	Moscow
-2	Russia
-3	London
+NONE
+0	Moscow
+1	Great Britain
+2	London
+3	Russia
 4	Center
-5
-6
-7
-8
-9
+5	NONE
+6	NONE
+7	NONE
+8	NONE
+9	NONE
 END

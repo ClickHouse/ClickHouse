@@ -40,7 +40,6 @@ DirectDictionary::DirectDictionary(
 void DirectDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    std::cerr << "HERE\n" << std::endl;
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
@@ -238,7 +237,7 @@ void DirectDictionary::getString(
     const auto & attribute = getAttribute(attribute_name);
     checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
-    DirectDictionary::getItemsImpl<StringRef, StringRef>(
+    DirectDictionary::getItemsStringImpl<StringRef, StringRef>(
         attribute,
         ids,
         [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -438,7 +437,16 @@ void DirectDictionary::getItemsImpl(
                     if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
                     {
                         is_found[row] = true;
-                        set_value(row, static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>()));
+                        // std::cerr << "FOUND: " << key << " " << static_cast<Float32>(attribute_column[row_idx].get<Float64>()) << "\n";
+                        if (attribute.type == AttributeUnderlyingType::utFloat32)
+                        {
+                            set_value(row, static_cast<Float32>(attribute_column[row_idx].get<Float64>()));
+                        }
+                        else
+                        {
+                            set_value(row, static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>()));
+                        }
+
                     }
                 }
             }
@@ -446,11 +454,9 @@ void DirectDictionary::getItemsImpl(
     }
 
     stream->readSuffix();
-
     for (const auto row : ext::range(0, rows))
         if (!is_found[row])
             set_value(row, get_default(row));
-
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
@@ -482,7 +488,6 @@ void DirectDictionary::getItemsStringImpl(
                     if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
                     {
                         is_found[row] = true;
-
                         const String from_source = attribute_column[row_idx].get<String>();
                         const auto * string_in_arena = temp_arena->insert(from_source.data(), from_source.size());
                         const auto reference = StringRef{string_in_arena, from_source.size()};
