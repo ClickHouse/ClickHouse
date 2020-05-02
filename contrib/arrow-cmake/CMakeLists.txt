@@ -146,7 +146,7 @@ add_custom_target(metadata_fbs DEPENDS ${FBS_OUTPUT_FILES})
 add_dependencies(metadata_fbs flatc)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
-# Apple Clang compiler failed to compile this code without specifying c++11 standard. 
+# Apple Clang compiler failed to compile this code without specifying c++11 standard.
 # As result these compiler features detected as absent. In result it failed to compile orc itself.
 # In orc makefile there is code that sets flags, but arrow-cmake ignores these flags.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
@@ -200,91 +200,83 @@ configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_SOURCE_DIR}
 
 # arrow/cpp/src/arrow/CMakeLists.txt
 set(ARROW_SRCS
-        ${LIBRARY_DIR}/array.cc
-        ${LIBRARY_DIR}/buffer.cc
-        ${LIBRARY_DIR}/builder.cc
-        ${LIBRARY_DIR}/compare.cc
-        ${LIBRARY_DIR}/extension_type.cc
-        ${LIBRARY_DIR}/memory_pool.cc
-        ${LIBRARY_DIR}/pretty_print.cc
-        ${LIBRARY_DIR}/record_batch.cc
-        ${LIBRARY_DIR}/result.cc
-        ${LIBRARY_DIR}/scalar.cc
-        ${LIBRARY_DIR}/sparse_tensor.cc
-        ${LIBRARY_DIR}/status.cc
-        ${LIBRARY_DIR}/table_builder.cc
-        ${LIBRARY_DIR}/table.cc
-        ${LIBRARY_DIR}/tensor.cc
-        ${LIBRARY_DIR}/type.cc
-        ${LIBRARY_DIR}/visitor.cc
+    ${LIBRARY_DIR}/array.cc
+    ${LIBRARY_DIR}/builder.cc
+    ${LIBRARY_DIR}/buffer.cc
+    ${LIBRARY_DIR}/compare.cc
+    ${LIBRARY_DIR}/device.cc
+    ${LIBRARY_DIR}/extension_type.cc
+    ${LIBRARY_DIR}/memory_pool.cc
+    ${LIBRARY_DIR}/pretty_print.cc
+    ${LIBRARY_DIR}/record_batch.cc
+    ${LIBRARY_DIR}/result.cc
+    ${LIBRARY_DIR}/scalar.cc
+    ${LIBRARY_DIR}/sparse_tensor.cc
+    ${LIBRARY_DIR}/status.cc
+    ${LIBRARY_DIR}/table.cc
+    ${LIBRARY_DIR}/table_builder.cc
+    ${LIBRARY_DIR}/type.cc
+    ${LIBRARY_DIR}/visitor.cc
+    ${LIBRARY_DIR}/c/bridge.cc
 
-        ${LIBRARY_DIR}/array/builder_adaptive.cc
-        ${LIBRARY_DIR}/array/builder_base.cc
-        ${LIBRARY_DIR}/array/builder_binary.cc
-        ${LIBRARY_DIR}/array/builder_decimal.cc
-        ${LIBRARY_DIR}/array/builder_dict.cc
-        ${LIBRARY_DIR}/array/builder_nested.cc
-        ${LIBRARY_DIR}/array/builder_primitive.cc
-        ${LIBRARY_DIR}/array/builder_union.cc
-        ${LIBRARY_DIR}/array/concatenate.cc
-        ${LIBRARY_DIR}/array/dict_internal.cc
-        ${LIBRARY_DIR}/array/diff.cc
+    ${LIBRARY_DIR}/array/builder_adaptive.cc
+    ${LIBRARY_DIR}/array/builder_base.cc
+    ${LIBRARY_DIR}/array/builder_binary.cc
+    ${LIBRARY_DIR}/array/builder_decimal.cc
+    ${LIBRARY_DIR}/array/builder_dict.cc
+    ${LIBRARY_DIR}/array/builder_nested.cc
+    ${LIBRARY_DIR}/array/builder_primitive.cc
+    ${LIBRARY_DIR}/array/builder_union.cc
+    ${LIBRARY_DIR}/array/concatenate.cc
+    ${LIBRARY_DIR}/array/dict_internal.cc
+    ${LIBRARY_DIR}/array/diff.cc
+    ${LIBRARY_DIR}/array/validate.cc
 
-        ${LIBRARY_DIR}/csv/converter.cc
-        ${LIBRARY_DIR}/csv/chunker.cc
-        ${LIBRARY_DIR}/csv/column_builder.cc
-        ${LIBRARY_DIR}/csv/options.cc
-        ${LIBRARY_DIR}/csv/parser.cc
-        ${LIBRARY_DIR}/csv/reader.cc
+    ${LIBRARY_DIR}/tensor.cc
+    ${LIBRARY_DIR}/tensor/coo_converter.cc
+    ${LIBRARY_DIR}/tensor/csc_converter.cc
+    ${LIBRARY_DIR}/tensor/csf_converter.cc
+    ${LIBRARY_DIR}/tensor/csr_converter.cc
 
-        ${LIBRARY_DIR}/ipc/dictionary.cc
-        ${LIBRARY_DIR}/ipc/feather.cc
-        ${LIBRARY_DIR}/ipc/message.cc
-        ${LIBRARY_DIR}/ipc/metadata_internal.cc
-        ${LIBRARY_DIR}/ipc/options.cc
-        ${LIBRARY_DIR}/ipc/reader.cc
-        ${LIBRARY_DIR}/ipc/writer.cc
+    ${LIBRARY_DIR}/io/buffered.cc
+    ${LIBRARY_DIR}/io/caching.cc
+    ${LIBRARY_DIR}/io/compressed.cc
+    ${LIBRARY_DIR}/io/file.cc
+#    ${LIBRARY_DIR}/io/hdfs.cc
+#    ${LIBRARY_DIR}/io/hdfs_internal.cc
+    ${LIBRARY_DIR}/io/interfaces.cc
+    ${LIBRARY_DIR}/io/memory.cc
+    ${LIBRARY_DIR}/io/slow.cc
 
-        ${LIBRARY_DIR}/io/buffered.cc
-        ${LIBRARY_DIR}/io/compressed.cc
-        ${LIBRARY_DIR}/io/file.cc
-        ${LIBRARY_DIR}/io/interfaces.cc
-        ${LIBRARY_DIR}/io/memory.cc
-        ${LIBRARY_DIR}/io/readahead.cc
-        ${LIBRARY_DIR}/io/slow.cc
+    ${LIBRARY_DIR}/testing/util.cc
 
-        ${LIBRARY_DIR}/util/basic_decimal.cc
-        ${LIBRARY_DIR}/util/bit_util.cc
-        ${LIBRARY_DIR}/util/compression.cc
-        ${LIBRARY_DIR}/util/compression_lz4.cc
-        ${LIBRARY_DIR}/util/compression_snappy.cc
-        ${LIBRARY_DIR}/util/compression_zlib.cc
-        ${LIBRARY_DIR}/util/compression_zstd.cc
-        ${LIBRARY_DIR}/util/cpu_info.cc
-        ${LIBRARY_DIR}/util/decimal.cc
-        ${LIBRARY_DIR}/util/int_util.cc
-        ${LIBRARY_DIR}/util/io_util.cc
-        ${LIBRARY_DIR}/util/key_value_metadata.cc
-        ${LIBRARY_DIR}/util/logging.cc
-        ${LIBRARY_DIR}/util/memory.cc
-        ${LIBRARY_DIR}/util/string_builder.cc
-        ${LIBRARY_DIR}/util/string.cc
-        ${LIBRARY_DIR}/util/task_group.cc
-        ${LIBRARY_DIR}/util/thread_pool.cc
-        ${LIBRARY_DIR}/util/trie.cc
-        ${LIBRARY_DIR}/util/utf8.cc
+    ${LIBRARY_DIR}/util/basic_decimal.cc
+    ${LIBRARY_DIR}/util/bit_util.cc
+    ${LIBRARY_DIR}/util/compression.cc
+    ${LIBRARY_DIR}/util/cpu_info.cc
+    ${LIBRARY_DIR}/util/decimal.cc
+    ${LIBRARY_DIR}/util/delimiting.cc
+    ${LIBRARY_DIR}/util/formatting.cc
+    ${LIBRARY_DIR}/util/future.cc
+    ${LIBRARY_DIR}/util/int_util.cc
+    ${LIBRARY_DIR}/util/io_util.cc
+    ${LIBRARY_DIR}/util/iterator.cc
+    ${LIBRARY_DIR}/util/logging.cc
+    ${LIBRARY_DIR}/util/key_value_metadata.cc
+    ${LIBRARY_DIR}/util/memory.cc
+    ${LIBRARY_DIR}/util/parsing.cc
+    ${LIBRARY_DIR}/util/string.cc
+    ${LIBRARY_DIR}/util/string_builder.cc
+    ${LIBRARY_DIR}/util/task_group.cc
+    ${LIBRARY_DIR}/util/thread_pool.cc
+    ${LIBRARY_DIR}/util/time.cc
+    ${LIBRARY_DIR}/util/trie.cc
+    ${LIBRARY_DIR}/util/uri.cc
+    ${LIBRARY_DIR}/util/utf8.cc
 
-        ${LIBRARY_DIR}/vendored/base64.cpp
-        ${ORC_SRCS}
-        )
-
-set(ARROW_SRCS ${ARROW_SRCS}
-        ${LIBRARY_DIR}/compute/context.cc
-        ${LIBRARY_DIR}/compute/kernels/boolean.cc
-        ${LIBRARY_DIR}/compute/kernels/cast.cc
-        ${LIBRARY_DIR}/compute/kernels/hash.cc
-        ${LIBRARY_DIR}/compute/kernels/util_internal.cc
-        )
+    ${LIBRARY_DIR}/vendored/base64.cpp
+    ${LIBRARY_DIR}/vendored/datetime/tz.cpp
+)
 
 if (LZ4_INCLUDE_DIR AND LZ4_LIBRARY)
     set(ARROW_WITH_LZ4 1)
