@@ -126,13 +126,16 @@ bool MySQLClient::ping()
     return writeCommand(Command::COM_PING, "");
 }
 
-bool MySQLClient::requestBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
+bool MySQLClient::startBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
 {
+    if (!writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = 'NONE'"))
+    {
+        return false;
+    }
     if (!registerSlaveOnMaster(slave_id))
     {
         return false;
     }
-
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
     packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
     return true;

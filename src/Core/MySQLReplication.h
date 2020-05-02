@@ -11,8 +11,20 @@ namespace DB
 {
 namespace MySQLReplication
 {
+    static const int EVENT_VERSION = 4;
+    static const int EVENT_HEADER_LENGTH = 19;
+
     class IBinlogEvent;
     using BinlogEventPtr = std::shared_ptr<IBinlogEvent>;
+
+    enum BinlogChecksumAlg
+    {
+        BINLOG_CHECKSUM_ALG_OFF = 0,
+        BINLOG_CHECKSUM_ALG_CRC32 = 1,
+        BINLOG_CHECKSUM_ALG_ENUM_END,
+        BINLOG_CHECKSUM_ALG_UNDEF = 255
+    };
+    String ToString(BinlogChecksumAlg type);
 
     /// http://dev.mysql.com/doc/internals/en/binlog-event-type.html
     enum EventType
@@ -64,6 +76,7 @@ namespace MySQLReplication
         MARIA_GTID_LIST_EVENT = 163,
         MARIA_START_ENCRYPTION_EVENT = 164,
     };
+    String ToString(EventType type);
 
     class ReplicationError : public DB::Exception
     {
@@ -88,16 +101,13 @@ namespace MySQLReplication
     class IBinlogEvent
     {
     public:
-        virtual ~IBinlogEvent() = default;
+        EventHeader header;
 
+        virtual ~IBinlogEvent() = default;
         virtual void dump() = 0;
         virtual void parse(ReadBuffer & payload) = 0;
 
         EventType type() { return header.type; }
-        void setHeader(EventHeader header_) { header = header_; }
-
-    protected:
-        EventHeader header;
     };
 
     class FormatDescriptionEvent : public IBinlogEvent
@@ -108,6 +118,7 @@ namespace MySQLReplication
         UInt32 create_timestamp;
         UInt8 event_header_length;
         String event_type_header_length;
+        BinlogChecksumAlg checksum_alg;
 
         void dump() override;
         void parse(ReadBuffer & payload) override;
@@ -123,6 +134,12 @@ namespace MySQLReplication
         void parse(ReadBuffer & payload) override;
     };
 
+    class DryRunEvent : public IBinlogEvent
+    {
+        void dump() override;
+        void parse(ReadBuffer & payload) override;
+    };
+
     class IFlavor
     {
     public:
@@ -134,7 +151,8 @@ namespace MySQLReplication
     class MySQLFlavor : public IFlavor, public MySQLProtocol::ReadPacket
     {
     public:
-        BinlogEventPtr event;
+        BinlogEventPtr  event;
+        BinlogChecksumAlg binlogChecksumAlg = BINLOG_CHECKSUM_ALG_UNDEF;
 
         String getName() override { return "MySQL"; }
         void readPayloadImpl(ReadBuffer & payload) override;
