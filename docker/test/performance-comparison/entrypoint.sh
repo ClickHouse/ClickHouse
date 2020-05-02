@@ -87,9 +87,6 @@ git -C ch diff --name-only "$SHA_TO_TEST" "$(git -C ch merge-base "$SHA_TO_TEST"
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
-# Use a default number of runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-7}
-
 # By default, use the main comparison script from the tested package, so that we
 # can change it in PRs.
 script_path="right/scripts"
@@ -101,14 +98,15 @@ fi
 # Even if we have some errors, try our best to save the logs.
 set +e
 
-# Older version use 'kill 0', so put the script into a separate process group
-# FIXME remove set +m in April 2020
-set +m
+# Use clickhouse-client and clickhouse-local from the right server.
+PATH="$(readlink -f right/)":"$PATH"
+export PATH
+
+# Start the main comparison script.
 { \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
 } 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
-set -m
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script
@@ -121,5 +119,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs}
+7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs,scripts} ./report
 cp compare.log /output

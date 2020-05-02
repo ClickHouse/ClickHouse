@@ -155,7 +155,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         if (id->name.empty())
             throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto range_default_type = "Date";
+        const char * range_default_type = "Date";
         if (config.has(config_prefix + ".range_min"))
             range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
 

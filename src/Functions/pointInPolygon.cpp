@@ -120,11 +120,11 @@ public:
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (array == nullptr && i != 1)
                 throw Exception(get_message_prefix(i) + " must be array of tuples.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            auto * tuple = checkAndGetDataType<DataTypeTuple>(array ? array->getNestedType().get() : arguments[i].get());
+            const auto * tuple = checkAndGetDataType<DataTypeTuple>(array ? array->getNestedType().get() : arguments[i].get());
             if (tuple == nullptr)
                 throw Exception(get_message_prefix(i) + " must contains tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -149,10 +149,10 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
-        auto const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
+        const auto * const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
         if (const_tuple_col)
             point_col = &const_tuple_col->getDataColumn();
-        auto tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
+        const auto * tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
 
         if (!tuple_col)
             throw Exception("First argument for function " + getName() + " must be constant array of tuples.",
@@ -178,9 +178,9 @@ private:
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            auto const_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
-            auto array_col = const_col ? checkAndGetColumn<ColumnArray>(&const_col->getDataColumn()) : nullptr;
-            auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
+            const auto * const_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+            const auto * array_col = const_col ? checkAndGetColumn<ColumnArray>(&const_col->getDataColumn()) : nullptr;
+            const auto * tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
             if (!tuple_col)
                 throw Exception(get_message_prefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);

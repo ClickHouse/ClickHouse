@@ -80,7 +80,7 @@ static String prepareQueryForLogging(const String & query, Context & context)
 
     // wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
         if (matches > 0)
@@ -157,7 +157,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     /// Log the start of query execution into the table if necessary.
     QueryLogElement elem;
 
-    elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
+    elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
 
     elem.event_time = current_time;
     elem.query_start_time = current_time;
@@ -175,11 +175,19 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (settings.log_queries)
+    if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
 }
 
+static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
+{
+    if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
+    {
+        if (ast_insert_into->watch)
+            context.setSetting("output_format_enable_streaming", 1);
+    }
+}
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
@@ -245,6 +253,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         throw;
     }
+
+    setQuerySpecificSettings(ast, context);
 
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
@@ -332,7 +342,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else
             res = interpreter->execute();
 
-        if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+        if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
             auto table_id = insert_interpreter->getDatabaseTable();
@@ -389,7 +399,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (res.out)
             {
-                if (auto stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+                if (auto * stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
                 {
                     stream->setProcessListElement(context.getProcessListElement());
                 }
@@ -400,7 +410,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             QueryLogElement elem;
 
-            elem.type = QueryLogElement::QUERY_START;
+            elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = current_time;
             elem.query_start_time = current_time;
@@ -412,7 +422,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             bool log_queries = settings.log_queries && !internal;
 
             /// Log into system table start of query execution, if need.
-            if (log_queries)
+            if (log_queries && elem.type >= settings.log_queries_min_type)
             {
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
@@ -422,7 +432,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
+            auto finish_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
                 QueryStatus * process_list_elem = context.getProcessListElement();
 
@@ -436,7 +446,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 double elapsed_seconds = info.elapsed_seconds;
 
-                elem.type = QueryLogElement::QUERY_FINISH;
+                elem.type = QueryLogElementType::QUERY_FINISH;
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = elapsed_seconds * 1000;
@@ -464,7 +474,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
-                    if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
+                    if (const auto * counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().read_rows;
@@ -484,19 +494,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
-                if (log_queries)
+                if (log_queries && elem.type >= log_queries_min_type)
                 {
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
-                elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
+                elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
@@ -529,7 +539,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logException(context, elem);
 
                 /// In case of exception we log internal queries also
-                if (log_queries)
+                if (log_queries && elem.type >= log_queries_min_type)
                 {
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
@@ -689,19 +699,7 @@ void executeQuery(
             if (set_result_details)
                 set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
-            if (ast->as<ASTWatchQuery>())
-            {
-                /// For Watch query, flush data if block is empty (to send data to client).
-                auto flush_callback = [&out](const Block & block)
-                {
-                    if (block.rows() == 0)
-                        out->flush();
-                };
-
-                copyData(*streams.in, *out, [](){ return false; }, std::move(flush_callback));
-            }
-            else
-                copyData(*streams.in, *out);
+            copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
 
         if (pipeline.initialized())
@@ -733,6 +731,7 @@ void executeQuery(
             });
 
             auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+            out->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();

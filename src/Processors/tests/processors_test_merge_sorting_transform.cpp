@@ -87,7 +87,7 @@ private:
         size_t rows = chunk.getNumRows();
 
         UInt64 prev = current_number;
-        auto & col = chunk.getColumns().at(0);
+        const auto & col = chunk.getColumns().at(0);
         for (size_t row_num = 0; row_num < rows; ++row_num)
         {
             UInt64 val = col->getUInt(row_num);

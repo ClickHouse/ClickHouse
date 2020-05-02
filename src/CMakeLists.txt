@@ -268,6 +268,11 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+# Exception unwinding doesn't work in clang release build without this option
+# TODO investigate that
+set_source_files_properties(Interpreters/InterpreterSelectQuery.cpp PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer")
+set_source_files_properties(Interpreters/executeQuery.cpp PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer")
+
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
@@ -311,6 +316,8 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
+add_object_library(clickhouse_processors_merges Processors/Merges)
+add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -398,6 +405,7 @@ endif()
 target_link_libraries(clickhouse_common_io
         PUBLIC
     ${CITYHASH_LIBRARIES}
+    pcg_random
         PRIVATE
     ${Poco_XML_LIBRARY}
     ${ZLIB_LIBRARIES}
@@ -452,9 +460,6 @@ dbms_target_link_libraries (
 
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include) # uses some includes from core
 dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include)
-
-target_include_directories(clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-dbms_target_include_directories(SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
@@ -573,6 +578,8 @@ dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
+
+target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

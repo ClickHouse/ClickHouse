@@ -5,9 +5,9 @@ toc_priority: 68
 toc_title: "C\xF3mo escribir c\xF3digo C ++"
 ---
 
-# Cómo escribir código C ++ {#how-to-write-c-code}
+# Cómo Escribir código C ++ {#how-to-write-c-code}
 
-## Recomendaciones generales {#general-recommendations}
+## Recomendaciones Generales {#general-recommendations}
 
 **1.** Las siguientes son recomendaciones, no requisitos.
 
@@ -422,7 +422,7 @@ También puede usar una abreviatura si el nombre completo se incluye junto a él
 
 **17.** Los nombres de archivo con código fuente de C++ deben tener `.cpp` ampliación. Los archivos de encabezado deben tener `.h` ampliación.
 
-## Cómo escribir código {#how-to-write-code}
+## Cómo Escribir código {#how-to-write-code}
 
 **1.** Gestión de la memoria.
 
@@ -689,7 +689,7 @@ auto s = std::string{"Hello"};
 
 **26.** Para funciones virtuales, escriba `virtual` en la clase base, pero escribe `override` en lugar de `virtual` en las clases descendientes.
 
-## Características no utilizadas de C ++ {#unused-features-of-c}
+## Características No Utilizadas De C ++ {#unused-features-of-c}
 
 **1.** La herencia virtual no se utiliza.
 
@@ -763,7 +763,7 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 **5.** Siempre se da preferencia a las bibliotecas que ya están en uso.
 
-## Recomendaciones generales {#general-recommendations-1}
+## Recomendaciones Generales {#general-recommendations-1}
 
 **1.** Escribe el menor código posible.
 
@@ -777,7 +777,7 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 **6.** Se fomenta la simplificación del código. Reduzca el tamaño de su código siempre que sea posible.
 
-## Recomendaciones adicionales {#additional-recommendations}
+## Recomendaciones Adicionales {#additional-recommendations}
 
 **1.** Especificar explícitamente `std::` para tipos de `stddef.h`
 

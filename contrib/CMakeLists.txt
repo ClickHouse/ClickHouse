@@ -321,10 +321,6 @@ if (USE_SIMDJSON)
     add_subdirectory (simdjson-cmake)
 endif()
 
-if (USE_MIMALLOC)
-    add_subdirectory (mimalloc)
-endif()
-
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
@@ -333,6 +329,5 @@ add_subdirectory(grpc-cmake)
 
 add_subdirectory(replxx-cmake)
 add_subdirectory(FastMemcpy)
-add_subdirectory(widecharwidth)
 add_subdirectory(consistent-hashing)
 add_subdirectory(consistent-hashing-sumbur)

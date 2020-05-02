@@ -30,7 +30,7 @@ set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
-option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+option(ENABLE_IPO "Enable full link time optimization (it's usually impractical; see also ENABLE_THINLTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
     cmake_policy(SET CMP0069 NEW)
     include(CheckIPOSupported)
@@ -84,9 +84,10 @@ option (ENABLE_FUZZING "Enables fuzzing instrumentation" OFF)
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (WITH_COVERAGE ON)
-    set (SANITIZE "libfuzzer")
+    set (FUZZER "libfuzzer")
 endif()
 
+include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
 if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
@@ -209,14 +210,43 @@ set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
 if (COMPILER_CLANG)
-    # Exception unwinding doesn't work in clang release build without this option
-    # TODO investigate that
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -Wl,-U,_inside_main")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
     endif()
+
+    # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
+
+    option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+
+    # We cannot afford to use LTO when compiling unitests, and it's not enough
+    # to only supply -fno-lto at the final linking stage. So we disable it
+    # completely.
+    if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
+        # Link time optimization
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+    endif ()
+
+    # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
+
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    if (LLVM_AR_PATH)
+        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
+        set (CMAKE_AR ${LLVM_AR_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
+    endif ()
+
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    if (LLVM_RANLIB_PATH)
+        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
+        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
+    endif ()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
@@ -343,6 +373,7 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
+include (cmake/find/msgpack.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

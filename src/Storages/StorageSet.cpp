@@ -112,7 +112,7 @@ StorageSet::StorageSet(
     const ConstraintsDescription & constraints_,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
-    set(std::make_shared<Set>(SizeLimits(), false))
+    set(std::make_shared<Set>(SizeLimits(), false, true))
 {
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -137,7 +137,7 @@ void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
     header = header.sortColumns();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false);
+    set = std::make_shared<Set>(SizeLimits(), false, true);
     set->setHeader(header);
 }
 
@@ -151,7 +151,7 @@ void StorageSetOrJoinBase::restore()
         return;
     }
 
-    static const auto file_suffix = ".bin";
+    static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
 
     Poco::DirectoryIterator dir_end;
@@ -197,15 +197,14 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 }
 
 
-void StorageSetOrJoinBase::rename(
-    const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     /// Rename directory with data.
     String new_path = base_path + new_path_to_table_data;
     Poco::File(path).renameTo(new_path);
 
     path = new_path;
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 

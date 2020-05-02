@@ -10,6 +10,7 @@ namespace DB
 
 class ASTSelectQuery;
 class Context;
+class TableJoin;
 struct SelectQueryOptions;
 
 /// Joined tables' columns resolver.
@@ -27,7 +28,10 @@ public:
 
     StoragePtr getLeftTableStorage();
     bool resolveTables();
+
+    /// Make fake tables_with_columns[0] in case we have predefined input in InterpreterSelectQuery
     void makeFakeTable(StoragePtr storage, const Block & source_header);
+    std::shared_ptr<TableJoin> makeTableJoin(const ASTSelectQuery & select_query);
 
     const std::vector<TableWithColumnNamesAndTypes> & tablesWithColumns() const { return tables_with_columns; }
 

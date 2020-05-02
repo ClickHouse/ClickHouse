@@ -17,7 +17,7 @@ private:
     Context & context;
 
 public:
-    explicit ReplicasStatusHandler(IServer & server);
+    explicit ReplicasStatusHandler(IServer & server_);
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 };

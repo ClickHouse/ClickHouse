@@ -177,7 +177,7 @@ void RemoteBlockInputStream::sendExternalTables()
 /** If we receive a block with slightly different column types, or with excessive columns,
   *  we will adapt it to expected structure.
   */
-static Block adaptBlockStructure(const Block & block, const Block & header, const Context & context)
+static Block adaptBlockStructure(const Block & block, const Block & header)
 {
     /// Special case when reader doesn't care about result structure. Deprecated and used only in Benchmark, PerformanceTest.
     if (!header)
@@ -204,7 +204,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
                 auto col = block.getByName(elem.name);
                 col.column = block.getByName(elem.name).column->cut(0, 1);
 
-                column = castColumn(col, elem.type, context);
+                column = castColumn(col, elem.type);
 
                 if (!isColumnConst(*column))
                     column = ColumnConst::create(column, block.rows());
@@ -216,7 +216,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header, cons
                 column = elem.column->cloneResized(block.rows());
         }
         else
-            column = castColumn(block.getByName(elem.name), elem.type, context);
+            column = castColumn(block.getByName(elem.name), elem.type);
 
         res.insert({column, elem.type, elem.name});
     }
@@ -246,7 +246,7 @@ Block RemoteBlockInputStream::readImpl()
             case Protocol::Server::Data:
                 /// If the block is not empty and is not a header block
                 if (packet.block && (packet.block.rows() > 0))
-                    return adaptBlockStructure(packet.block, header, context);
+                    return adaptBlockStructure(packet.block, header);
                 break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
             case Protocol::Server::Exception:
@@ -359,12 +359,17 @@ void RemoteBlockInputStream::sendQuery()
 
 void RemoteBlockInputStream::tryCancel(const char * reason)
 {
-    bool old_val = false;
-    if (!was_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
-        return;
+    {
+        std::lock_guard guard(was_cancelled_mutex);
+
+        if (was_cancelled)
+            return;
+
+        was_cancelled = true;
+        multiplexed_connections->sendCancel();
+    }
 
     LOG_TRACE(log, "(" << multiplexed_connections->dumpAddresses() << ") " << reason);
-    multiplexed_connections->sendCancel();
 }
 
 bool RemoteBlockInputStream::isQueryPending() const

@@ -913,7 +913,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
+    bool isInjective(const Block &) const override { return std::is_same_v<Name, NameToString>; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1268,7 +1268,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block &) override { return true; }
+    bool isInjective(const Block &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -2394,10 +2394,17 @@ protected:
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
+        const auto & column = arguments.back().column;
+        if (!column)
+            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
+                " Instead there is non-constant column of type " + arguments.back().type->getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const auto type_col = checkAndGetColumnConst<ColumnString>(column.get());
         if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
+                " Instead there is a column with the following structure: " + column->dumpStructure(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return DataTypeFactory::instance().get(type_col->getValue<String>());
     }

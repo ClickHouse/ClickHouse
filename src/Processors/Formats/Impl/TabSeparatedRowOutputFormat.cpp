@@ -20,7 +20,7 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
 
 void TabSeparatedRowOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     size_t columns = header.columns();
 
     if (with_names)
@@ -75,7 +75,7 @@ void TabSeparatedRowOutputFormat::writeBeforeExtremes()
 
 void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
 {
-    for (auto name : {"TabSeparated", "TSV"})
+    for (const auto * name : {"TabSeparated", "TSV"})
     {
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
@@ -87,7 +87,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (auto name : {"TabSeparatedRaw", "TSVRaw"})
+    for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
     {
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
@@ -99,7 +99,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (auto name : {"TabSeparatedWithNames", "TSVWithNames"})
+    for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
     {
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
@@ -111,7 +111,7 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         });
     }
 
-    for (auto name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
+    for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
     {
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,

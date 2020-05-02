@@ -49,9 +49,8 @@ struct FutureMergedMutatedPart
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
 
-public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
@@ -160,6 +159,11 @@ private:
         NamesAndTypesList all_columns,
         const MutationCommands & commands_for_removes);
 
+    /// Get skip indcies, that should exists in the resulting data part.
+    static MergeTreeIndices getIndicesForNewDataPart(
+        const MergeTreeIndices & all_indices,
+        const MutationCommands & commands_for_removes);
+
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
     /// Return set of indices which should be recalculated during mutation also
@@ -173,6 +177,7 @@ private:
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
+        const MergeTreeIndices & skip_indices,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,

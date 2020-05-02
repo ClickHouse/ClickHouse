@@ -129,7 +129,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
     try
     {
-        BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, *context);
+        BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
         auto pool = getPool(connection_string);
         ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
         copyData(inp, *writer);

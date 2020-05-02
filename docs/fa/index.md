@@ -1,4 +1,4 @@
-<div markdown="1" markdown="1" dir="rtl">
+<div markdown="1" markdown="1" markdown="1" dir="rtl">
 
 # ClickHouse چیست؟ {#clickhouse-chyst}
 
@@ -63,11 +63,11 @@ ClickHouse یک مدیریت دیتابیس (DBMS) ستون گرا برای پر
 
 **ردیف گرا**
 
-![Row oriented](images/row_oriented.gif#)
+![Row oriented](images/row-oriented.gif#)
 
 **ستون گرا**
 
-![Column oriented](images/column_oriented.gif#)
+![Column oriented](images/column-oriented.gif#)
 
 تفاوت را دیدید؟ بیشتر بخوانید تا یاد بگیرید چرا این اتفاق رخ میدهد.
 
@@ -78,54 +78,6 @@ ClickHouse یک مدیریت دیتابیس (DBMS) ستون گرا برای پر
 3.  با توجه به کاهش I/O، داده های بیشتری در system cache قرار می گیرند.
 
 برای مثال، query «تعداد رکوردها به ازای هر بستر نیازمندی» نیازمند خواندن ستون «آیدی بستر آگهی»، که 1 بایت بدون فشرده طول می کشد، خواهد بود. اگر بیشتر ترافیک مربوط به بستر های نیازمندی نبود، شما می توانید انتظار حداقل 10 برابر فشرده سازی این ستون را داشته باشید. زمانی که از الگوریتم فشرده سازی quick استفاده می کنید، عملیات decompression داده ها با سرعت حداقل چندین گیگابایت در ثانیه انجام می شود. به عبارت دیگر، این query توانایی پردازش تقریبا چندین میلیارد رکورد در ثانیه به ازای یک سرور را دارد. این سرعت در عمل واقعی و دست یافتنی است.
-
-<details markdown="1">
-
-<summary>مثال</summary>
-
-    $ clickhouse-client
-    ClickHouse client version 0.0.52053.
-    Connecting to localhost:9000.
-    Connected to ClickHouse server version 0.0.52053.
-
-    :) SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-
-    SELECT
-        CounterID,
-        count()
-    FROM hits
-    GROUP BY CounterID
-    ORDER BY count() DESC
-    LIMIT 20
-
-    ┌─CounterID─┬──count()─┐
-    │    114208 │ 56057344 │
-    │    115080 │ 51619590 │
-    │      3228 │ 44658301 │
-    │     38230 │ 42045932 │
-    │    145263 │ 42042158 │
-    │     91244 │ 38297270 │
-    │    154139 │ 26647572 │
-    │    150748 │ 24112755 │
-    │    242232 │ 21302571 │
-    │    338158 │ 13507087 │
-    │     62180 │ 12229491 │
-    │     82264 │ 12187441 │
-    │    232261 │ 12148031 │
-    │    146272 │ 11438516 │
-    │    168777 │ 11403636 │
-    │   4120072 │ 11227824 │
-    │  10938808 │ 10519739 │
-    │     74088 │  9047015 │
-    │    115079 │  8837972 │
-    │    337234 │  8205961 │
-    └───────────┴──────────┘
-
-    20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
-
-    :)
-
-</details>
 
 ### CPU {#cpu}
 

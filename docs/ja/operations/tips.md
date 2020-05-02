@@ -97,7 +97,7 @@ IPv6を使用している場合は、ルートキャッシュのサイズを大�
 
 おそらく既にzookeeperを他の目的で使用しているでしょう。 それがまだ過負荷になっていない場合は、zookeeperと同じインストールを使用できます。
 
-It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 異なるzookeeperクラスタ間でデータを転送するために手動で記述されたスクリプトを使用することはありません。 決して使用 “zkcopy” 同じ理由でユーティリティ：https://github.com/ksprojects/zkcopy/issues/15
 

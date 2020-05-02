@@ -237,8 +237,8 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
 {
     if (key_columns.size() != 2)
         throw Exception{"Expected two columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
-    const auto column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
-    const auto column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
+    const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
+    const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
     if (!column_x || !column_y)
         throw Exception{"Expected columns of Float64", ErrorCodes::TYPE_MISMATCH};
     const auto rows = key_columns.front()->size();
@@ -534,17 +534,17 @@ void addNewPoint(Float64 x, Float64 y, Data & data, Offset & offset)
 
 const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
 {
-    const auto ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
+    const auto * ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
         throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
     offset.multi_polygon_offsets.assign(ptr_multi_polygons->getOffsets());
 
-    const auto ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
+    const auto * ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
     offset.polygon_offsets.assign(ptr_polygons->getOffsets());
 
-    const auto ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
+    const auto * ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
         throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
     offset.ring_offsets.assign(ptr_rings->getOffsets());
@@ -554,7 +554,7 @@ const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
 
 const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
 {
-    const auto ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
+    const auto * ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_polygons)
         throw Exception{"Expected a column containing arrays of points", ErrorCodes::TYPE_MISMATCH};
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
@@ -566,8 +566,8 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
 
 void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offset)
 {
-    const auto ptr_points = typeid_cast<const ColumnArray*>(column);
-    const auto ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
+    const auto * ptr_points = typeid_cast<const ColumnArray*>(column);
+    const auto * ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
         throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
     const auto & offsets = ptr_points->getOffsets();
@@ -583,13 +583,13 @@ void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offs
 
 void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offset)
 {
-    const auto ptr_points = typeid_cast<const ColumnTuple*>(column);
+    const auto * ptr_points = typeid_cast<const ColumnTuple*>(column);
     if (!ptr_points)
         throw Exception{"Expected a column of tuples representing points", ErrorCodes::TYPE_MISMATCH};
     if (ptr_points->tupleSize() != 2)
         throw Exception{"Points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
-    const auto column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
-    const auto column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
+    const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
+    const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
     if (!column_x || !column_y)
         throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
     for (size_t i = 0; i < column_x->size(); ++i)
