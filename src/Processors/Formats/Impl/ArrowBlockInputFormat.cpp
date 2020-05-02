@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer &in_, Block header_) : IInputFormat(std::move(header_), in_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
 {
 }
 
@@ -55,8 +55,8 @@ Chunk ArrowBlockInputFormat::generate()
 
         row_group_total = file_reader->num_record_batches();
         row_group_current = 0;
-
-    } else
+    }
+    else
         return res;
 
     if (row_group_current >= row_group_total)
@@ -67,7 +67,9 @@ Chunk ArrowBlockInputFormat::generate()
 
     std::shared_ptr<arrow::Table> table;
     arrow::Status make_status = arrow::Table::FromRecordBatches(singleBatch, &table);
-    if (!make_status.ok()) {
+
+    if (!make_status.ok())
+    {
         throw Exception{"Cannot make table from record batch", ErrorCodes::CANNOT_READ_ALL_DATA};
     }
 
@@ -90,8 +92,8 @@ void registerInputFormatProcessorArrow(FormatFactory &factory)
 {
     factory.registerInputFormatProcessor(
             "Arrow",
-            [](ReadBuffer &buf,
-               const Block &sample,
+            [](ReadBuffer & buf,
+               const Block & sample,
                const RowInputFormatParams & /* params */,
                const FormatSettings & /* settings */)
             {
