@@ -1,5 +1,11 @@
 #pragma once
 
+#include <string>
+#include <memory>
+#include <common/types.h>
+#include <Core/Block.h>
+#include <Processors/Chunk.h>
+
 #include "config_formats.h"
 #if USE_ARROW
 
@@ -9,6 +15,8 @@ namespace arrow::ipc { class RecordBatchFileReader; }
 
 namespace DB
 {
+
+class ReadBuffer;
 
 class ArrowBlockInputFormat : public IInputFormat
 {
