@@ -4,7 +4,7 @@ a	2	1	0
 a	3	1	0
 b	13	2	0
 b	15	2	0
-SELECT \n    co, \n    co2, \n    co3, \n    num\nFROM \n(\n    SELECT \n        co, \n        co2, \n        co3, \n        count() AS num\n    FROM \n    (\n        SELECT \n            1 AS co, \n            2 AS co2, \n            3 AS co3\n    )\n    GROUP BY \n        co, \n        co2, \n        co3\n        WITH CUBE\n    HAVING (co != 0) AND (co2 != 2)\n)\nWHERE (co != 0) AND (co2 != 2)
+SELECT \n    co, \n    co2, \n    co3, \n    num\nFROM \n(\n    SELECT \n        co, \n        co2, \n        co3, \n        count() AS num\n    FROM \n    (\n        SELECT \n            1 AS co, \n            2 AS co2, \n            3 AS co3\n    )\n    GROUP BY \n        co, \n        co2, \n        co3\n        WITH CUBE\n    HAVING (co2 != 2) AND (co != 0)\n)\nWHERE (co != 0) AND (co2 != 2)
 1	0	3	1
 1	0	0	1
 SELECT alias AS name\nFROM \n(\n    SELECT name AS alias\n    FROM system.settings\n    WHERE alias = \'enable_optimize_predicate_expression\'\n)\nANY INNER JOIN \n(\n    SELECT name\n    FROM system.settings\n) USING (name)\nWHERE name = \'enable_optimize_predicate_expression\'
