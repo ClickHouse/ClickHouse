@@ -31,7 +31,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
-Input table:
+An alternative way to get the same value:
 
 ```sql
 SELECT * FROM system.macros;
