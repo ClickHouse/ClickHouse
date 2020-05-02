@@ -912,7 +912,7 @@ protected:
     std::mutex clear_old_temporary_directories_mutex;
     /// Mutex for settings usage
 
-    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
+    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
     void initPartitionKey();
 
