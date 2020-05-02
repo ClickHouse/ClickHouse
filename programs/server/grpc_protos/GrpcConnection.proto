@@ -2,14 +2,6 @@ syntax = "proto3";
 
 package GRPCConnection;
 
-message Progress {
-   uint64 read_rows = 1;
-   uint64 read_bytes = 2;
-   uint64 total_rows_to_read = 3;
-   uint64 written_rows = 4;
-   uint64 written_bytes = 5;
-}
-
 message User {
    string user = 1;
    string key = 2;
@@ -22,16 +14,22 @@ message QuerySettings {
 message QueryRequest {
    User user_info = 1;
    QuerySettings query_info = 2;
-   Progress progress = 3;
-   string session_id = 4;
-   string session_timeout = 5;
+   uint64 interactive_delay = 3;
+}
+
+message Progress {
+   uint64 read_rows = 1;
+   uint64 read_bytes = 2;
+   uint64 total_rows_to_read = 3;
+   uint64 written_rows = 4;
+   uint64 written_bytes = 5;
 }
 
 message QueryResponse {
    string query = 1;
    string exception_occured = 2;
    Progress progress = 3;
-   string progress_tmp = 4;
+   string  progress_tmp = 4;
 }
 
 service GRPC {

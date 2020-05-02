@@ -48,16 +48,19 @@ class CallDataQuery : public CommonCallData {
      public:
           CallDataQuery(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* notification_cq_, grpc::ServerCompletionQueue* new_call_cq_, IServer* server_, Poco::Logger * log_)
           : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context()), pool(1) {
-               out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this);
+               out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this, nullptr);
                Service->RequestQuery(&gRPCcontext, &request, &responder, new_call_cq, notification_cq, this);
           }
           void ParseQuery();
           void ExecuteQuery();
           void ProgressQuery();
           void FinishQuery();
+
+          bool senData(const Block & block);
+          bool sendProgress();
+
           virtual void respond() override
           {
-               LOG_TRACE(log, "respond: " << out->onProgress() << out->isFinished());
                try {
                     if (!out->onProgress() && !out->isFinished())
                     {
@@ -103,6 +106,9 @@ class CallDataQuery : public CommonCallData {
           grpc::ServerAsyncWriter<QueryResponse> responder;
 
           Stopwatch progress_watch;
+          Stopwatch query_watch;
+          Progress progress;
+
           std::shared_ptr<LazyOutputFormat> lazy_format;
           BlockIO io;
           PipelineExecutorPtr executor;
@@ -152,10 +158,10 @@ class GRPCServer final : public Poco::Runnable {
                     
                     GPR_ASSERT(new_call_cq->Next(&tag, &ok));
                     if (!ok) {
+                         LOG_WARNING(log, "Client has gone away.");
                          delete static_cast<CallDataQuery*>(tag);
                          continue;
                     }
-                    LOG_TRACE(log, "LABEL:       " << *static_cast<int*>(tag));
                     auto thread = ThreadFromGlobalPool{&CallDataQuery::respond, static_cast<CallDataQuery*>(tag)};
                     thread.detach();
                }
@@ -169,6 +175,7 @@ class GRPCServer final : public Poco::Runnable {
                {
                     GPR_ASSERT(notification_cq->Next(&tag, &ok));
                     if (!ok) {
+                         LOG_WARNING(log, "Client has gone away.");
                          delete static_cast<CallDataQuery*>(tag);
                          continue;
                     }

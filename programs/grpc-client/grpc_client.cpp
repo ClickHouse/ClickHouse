@@ -23,11 +23,13 @@ class GRPCClient {
             userInfo.set_quota("default");
 
             request.set_allocated_user_info(&userInfo);
-            
+            // interactive_delay in miliseconds
+            request.set_interactive_delay(1000);
             GRPCConnection::QuerySettings querySettigs;
             querySettigs.set_query(query);
 
             int id = rand();
+
             querySettigs.set_query_id(std::to_string(id));
             
             request.set_allocated_query_info(&querySettigs);
@@ -38,14 +40,26 @@ class GRPCClient {
             bool ok = false;
             
             std::unique_ptr<grpc::ClientReader<GRPCConnection::QueryResponse> > reader(stub_->Query(&context, request));
-            // if (id % 1 == 0) {
+            // if (id % 3 == 0) {
             //     request.release_query_info();
             //     request.release_user_info();
             //     return "Fail check";
             // }
             while (reader->Read(&reply)) {
-                if (!reply.progress_tmp().empty()) {
-                std::cout << "Progress " << id<< ": " << reply.progress_tmp() << std::endl;
+                // if (!reply.progress().read_rows()) {
+                //     std::cout << "Progress " << id<< ":{\n" << "read_rows: "            << reply.progress().read_rows() << '\n'
+                //                                             << "read_bytes: "           << reply.progress().read_bytes() << '\n'
+                //                                             << "total_rows_to_read: "   << reply.progress().total_rows_to_read() << '\n'
+                //                                             << "written_rows: "         << reply.progress().written_rows() << '\n'
+                //                                             << "written_bytes: "        << reply.progress().written_bytes() << '\n';
+
+
+                // }
+
+                if (!reply.query().empty()) {
+                    std::cout << "Query Part:\n " << id<< reply.query()<<'\n';
+                } else if (!reply.progress_tmp().empty()) {
+                    std::cout << "Progress:\n " << id<< reply.progress_tmp() <<'\n';
                 }
             }
 
@@ -53,7 +67,7 @@ class GRPCClient {
             request.release_user_info();
 
             if (status.ok() && reply.exception_occured().empty()) {
-                return reply.query();
+                return "";
             } else if (status.ok() && !reply.exception_occured().empty()) {
                 return reply.exception_occured();
             } else {
@@ -88,6 +102,7 @@ int main(int argc, char** argv) {
     std::cout << client.Query("CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory;") << std::endl;
     std::cout << client.Query("INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);") << std::endl;
     std::cout << client.Query("SELECT s FROM arrays_test") << std::endl;
+    std::cout << client.Query("") << std::endl;
 
     return 0;
 }

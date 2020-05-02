@@ -38,10 +38,21 @@ void CallDataQuery::ParseQuery() {
         std::string user = request.user_info().user();
         std::string password = request.user_info().key();
         std::string quota_key = request.user_info().quota();
+        
+        context.setProgressCallback([this] (const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
+
         query_context = context;
         query_scope.emplace(*query_context);
         query_context->setUser(user, password, user_adress, quota_key);
         query_context->setCurrentQueryId(request.query_info().query_id());
+
+        ClientInfo & client_info = context.getClientInfo();
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.interface = ClientInfo::Interface::GRPC;
+
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
 }       
 
 void CallDataQuery::ExecuteQuery() {
@@ -59,11 +70,11 @@ void CallDataQuery::ExecuteQuery() {
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
-            LOG_TRACE(log, "Insertion" << insert_query->data);
         }
         String query(begin, query_end);
         io = executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
         if (io.out) {
+
             if (!insert_query || !insert_query->data)
                 throw Exception("Logical error: query requires data to insert, but it is not INSERT query", 0);
 
@@ -74,11 +85,7 @@ void CallDataQuery::ExecuteQuery() {
             }
             ReadBufferFromMemory data_in(insert_query->data, insert_query->end - insert_query->data);
             auto res_stream = query_context->getInputFormat(format, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
-            // BlockInputStreamPtr block_input = context.getInputFormat(
-            // current_format, buf, sample, insert_format_max_block_size);
-            // // auto in_str = std::make_unique<ReadBufferFromString>(query_tail);
-            // InputStreamFromASTInsertQuery in(ast, nullptr, io.out->getHeader(), context, nullptr);
-            
+
             auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
             if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
             {
@@ -86,14 +93,12 @@ void CallDataQuery::ExecuteQuery() {
                 StoragePtr storage = DatabaseCatalog::instance().getTable(table_id);
                 auto column_defaults = storage->getColumns().getDefaults();
                 if (!column_defaults.empty())
-                    LOG_TRACE(log, "Insertion IF" << table_id);
                     res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, *query_context);
             }
             copyData(*res_stream, *io.out);
         }
         if (io.pipeline.initialized()) {
             auto & header = io.pipeline.getHeader();
-            size_t num_threads = 1;
             auto thread_group = CurrentThread::getGroup();
 
             lazy_format = std::make_shared<LazyOutputFormat>(io.pipeline.getHeader());
@@ -112,46 +117,67 @@ void CallDataQuery::ExecuteQuery() {
                     throw;
                 }
             });
+            query_watch.start();
             progress_watch.start();
             ProgressQuery();
         } else {
             FinishQuery();
         }
 }
+
+bool CallDataQuery::senData(const Block & block) {
+    out->setResponse([](const String& buffer) {
+                         QueryResponse tmp_response;
+                         tmp_response.set_query(buffer);
+                         return tmp_response;
+                    });
+    auto my_block_out_stream = context.getOutputFormat("Pretty", *out, block);
+    my_block_out_stream->write(block);
+    my_block_out_stream->flush();
+    out->next();
+    return out->isWritten();
+}
+bool CallDataQuery::sendProgress() {
+    //TODO fetch_and for total rows?
+    out->setResponse([](const String& buffer) {
+                         QueryResponse tmp_response;
+                         tmp_response.set_progress_tmp(buffer);
+                         return tmp_response;
+                    });
+    auto increment = progress.fetchAndResetPiecewiseAtomically();
+    increment.writeJSON(*out);
+    out->next();
+    return out->isWritten();
+}
 void CallDataQuery::ProgressQuery() {
     LOG_TRACE(log, "Proccess");
     bool sent = false;
     while (!lazy_format->isFinished() && !exception)
     {
-        if (auto block = lazy_format->getBlock(progress_watch.elapsedMilliseconds()))
+        
+        if (auto block = lazy_format->getBlock(query_watch.elapsedMilliseconds()))
         {
-            progress_watch.restart();
+            query_watch.restart();
             if (!io.null_format)
             {
-                String out1;
-                auto used_output = std::make_unique<WriteBufferFromString>(out1);
-                auto my_block_out_stream = context.getOutputFormat("Pretty", *out, block);
-                my_block_out_stream->write(block);
-                my_block_out_stream->flush();
-                LOG_TRACE(log, "LOG:" << out1);
-
-                out->next();
-                sent = out->isWritten();
-                
-                LOG_TRACE(log, "Wrote");
+                sent = senData(block); 
                 break;
             }
+        } 
+        // interactive_delay in miliseconds
+        if (progress_watch.elapsedMilliseconds() >= request.interactive_delay())
+        {
+            progress_watch.restart();
+            sent = sendProgress(); 
+            break;
         }
     }
     if ((lazy_format->isFinished() || exception) && !sent) {
-
         FinishQuery();
     }
-    LOG_TRACE(log, "Wrote");
 }
 
 void CallDataQuery::FinishQuery() {
-    LOG_TRACE(log, "Finish");
     if (lazy_format) {
         lazy_format->finish();
         pool.wait();
@@ -160,4 +186,5 @@ void CallDataQuery::FinishQuery() {
     query_scope->logPeakMemoryUsage();
     out->finalize();
 }
+
 }
