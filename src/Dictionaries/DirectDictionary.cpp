@@ -483,22 +483,17 @@ void DirectDictionary::getItemsStringImpl(
                 for (const auto row_idx : ext::range(0, id_column.size()))
                 {
                     const auto key = id_column[row_idx].get<UInt64>();
-                    // for (const auto row : ext::range(0, rows))
-                    // {
-                        if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
-                        {
-                            is_found[row] = true;
-                            const String from_source = attribute_column[row_idx].get<String>();
-                            set_value(row, from_source);
-                        }
-                    // }
+                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
+                    {
+                        is_found[row] = true;
+                        const String from_source = attribute_column[row_idx].get<String>();
+                        set_value(row, from_source);
+                    }
                 }
             }
         }
         stream->readSuffix();
     }
-
-
 
     for (const auto row : ext::range(0, rows))
         if (!is_found[row])
@@ -587,7 +582,6 @@ void registerDictionaryDirect(DictionaryFactory & factory)
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
-        /// idk should my?
         if (dict_struct.key)
             throw Exception{"'key' is not supported for dictionary of layout 'direct'", ErrorCodes::UNSUPPORTED_METHOD};
 
