@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset='UTF-8' />
+        <title>Performance comparison of analytical DBMS</title>
+
+<style type='text/css'>
+
+@font-face {
+    font-family:'Yandex Sans Display Web';
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
+    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
+            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
+            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
+            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
+            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
+    font-weight:400;
+    font-style:normal;
+    font-stretch:normal
+}
+
+body {
+    background-color: #EEE;
+
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+}
+
+h1, h2 {
+    margin: 3px;
+    font-family: 'Yandex Sans Display Web', Arial, sans-serif;
+}
+
+p {
+    line-height: 20px;
+    white-space: pre-wrap;
+}
+
+a {
+    text-decoration: none;
+    color: #06F;
+}
+
+a:hover {
+    text-decoration: underline;
+    color: #F40;
+}
+
+.island {
+    background-color: #FFF;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+/*    border-radius: 5px;*/
+    padding: 10px;
+    width: 90%;
+    margin: 10px auto 10px auto;
+}
+
+.title {
+    font-size: 40px;
+    font-weight: normal;
+    text-align: center;
+    margin: 0;
+}
+
+.subtitle {
+    font-size: 50px;
+    font-weight: normal;
+    text-align: center;
+    margin: 0;
+}
+
+.signature {
+    text-align: right;
+    margin: 0;
+}
+
+.terminal {
+    font-family: Monospace;
+    font-size: 9pt;
+    color: #B2B2B2;
+    background-color: #000;
+    padding: 3px;
+    border: 1px solid #AAA;
+    white-space: pre-wrap;
+}
+
+.text-example {
+    font-family: Monospace;
+    font-size: 9pt;
+    background-color: #FEC;
+    padding: 3px;
+    border: 1px solid #DDD;
+    white-space: pre-wrap;
+}
+
+.inline-example {
+    font-family: Monospace;
+    font-size: 9pt;
+    background-color: #FEC;
+}
+
+.informer {
+    width: 1000px;
+    margin: 20px auto 10px auto;
+    text-align: right;
+}
+
+.show-example {
+    display: none;
+}
+
+.show-hide-link {
+    color: #06C;
+    border-bottom: 1px dotted #06C;
+}
+
+.show-hide-link:hover {
+    color: #F40;
+    border-bottom: 1px dotted #F40;
+    cursor: pointer;
+}
+
+.head-anchor {
+    float: right;
+    color: #AAA;
+}
+
+.head-anchor:hover {
+    text-decoration: none;
+}
+
+.comparison_table {
+    background-color: #EEE;
+}
+
+td {
+    padding: 2px 5px 1px 5px;
+}
+
+th {
+    padding: 5px 5px 5px 5px;
+}
+
+.query_cell {
+    width: 300px;
+    white-space: pre;
+    overflow-x: hidden;
+}
+
+.query_cell:hover {
+    width: auto;
+    background-color: #FEC;
+    position: absolute;
+    padding: 3px;
+    margin: -11px 0 0 -3px;
+    overflow-x: auto;
+    white-space: normal;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 8px 25px -5px rgba(0, 0, 0, 0.25);
+}
+
+.number_cell {
+    text-align: right;
+    width: 25%;
+}
+
+.comparison_table td {
+    background-color: #FFF;
+}
+
+.comparison_table th {
+    background-color: #F8F8F8;
+}
+
+.bar {
+    background-color: #6AF;
+    margin-top: 1px;
+}
+
+#diagram table tr td {
+    border-left: 1px solid #EEE;
+    border-top: 1px solid #EEE;
+    background-color: #F8F8F8;
+}
+
+#diagram table tr td:last-child {
+    border-right: 1px solid #EEE;
+}
+
+#diagram table tr:last-child td {
+    border-bottom: 1px solid #EEE;
+}
+
+
+</style>
+
+    </head>
+    <body>
+
+<script type="text/javascript">
+function getParams() {
+    var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
+    return (matches && matches.length == 2) ? { "login": matches[1] } : {};
+}
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function (d, w, c) {
+        (w[c] = w[c] || []).push(function() {
+            try {
+                w.yaCounter18343495 = new Ya.Metrika2({
+                    id:18343495,
+                    clickmap:true,
+                    trackLinks:true,
+                    accurateTrackBounce:true,
+                    webvisor:true
+                });
+            } catch(e) { }
+        });
+
+        var n = d.getElementsByTagName("script")[0],
+            s = d.createElement("script"),
+            f = function () { n.parentNode.insertBefore(s, n); };
+        s.type = "text/javascript";
+        s.async = true;
+        s.src = "https://mc.yandex.ru/metrika/tag.js";
+
+        if (w.opera == "[object Opera]") {
+            d.addEventListener("DOMContentLoaded", f, false);
+        } else { f(); }
+    })(document, window, "yandex_metrika_callbacks2");
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+<script type="text/javascript">
+
+var queries =
+[
+    {
+        "query": "SELECT count() FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT count() FROM hits WHERE AdvEngineID != 0",
+        "comment": "",
+    },
+    {
+        "query": "SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT sum(UserID) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT uniq(UserID) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT uniq(SearchPhrase) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT min(EventDate), max(EventDate) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT AdvEngineID, count() FROM hits WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC",
+        "comment": "",
+    },
+    {
+        "query": "SELECT RegionID, uniq(UserID) AS u FROM hits GROUP BY RegionID ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM hits GROUP BY RegionID ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT MobilePhone, MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, uniq(UserID) AS u FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchEngineID, SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, count() FROM hits GROUP BY UserID ORDER BY count() DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT UserID FROM hits WHERE UserID = 12345678901234567890",
+        "comment": "",
+    },
+    {
+        "query": "SELECT count() FROM hits WHERE URL LIKE '%metrika%'",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, any(URL), count() AS c FROM hits WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM hits WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT * FROM hits WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT CounterID, avg(length(URL)) AS l, count() AS c FROM hits WHERE URL != '' GROUP BY CounterID HAVING c > 100000 ORDER BY l DESC LIMIT 25",
+        "comment": "",
+    },
+    {
+        "query": "SELECT domainWithoutWWW(Referer) AS key, avg(length(Referer)) AS l, count() AS c, any(Referer) FROM hits WHERE Referer != '' GROUP BY key HAVING c > 100000 ORDER BY l DESC LIMIT 25",
+        "comment": "",
+    },
+    {
+        "query": "SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits",
+        "comment": "",
+    },
+    {
+        "query": "SELECT SearchEngineID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT URL, count() AS c FROM hits GROUP BY URL ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT 1, URL, count() AS c FROM hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    Title,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT DontCountHits    AND NOT Refresh    AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    URL,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND IsLink    AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    TraficSourceID,    SearchEngineID,    AdvEngineID,    ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src,    URL AS Dst,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh GROUP BY    TraficSourceID,    SearchEngineID,    AdvEngineID,    Src,    Dst ORDER BY PageViews DESC LIMIT 1000",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    URLHash,    EventDate,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND TraficSourceID IN (-1, 6)    AND RefererHash = halfMD5('http://yandex.ru/') GROUP BY    URLHash,    EventDate ORDER BY PageViews DESC LIMIT 100",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    WindowClientWidth,    WindowClientHeight,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-31')    AND NOT Refresh    AND NOT DontCountHits    AND URLHash = halfMD5('http://yandex.ru/') GROUP BY    WindowClientWidth,    WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;",
+        "comment": "",
+    },
+    {
+        "query": "SELECT    toStartOfMinute(EventTime) AS Minute,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-02')    AND NOT Refresh    AND NOT DontCountHits GROUP BY    Minute ORDER BY Minute;",
+        "comment": "",
+    }
+]
+
+var results =
+[
+    {
+        "system":       "gcc-9",
+        "result":
+        [
+[0.003, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002],
+[0.060, 0.015, 0.014, 0.014, 0.014, 0.014, 0.014, 0.013, 0.013, 0.014],
+[0.109, 0.029, 0.029, 0.028, 0.027, 0.026, 0.026, 0.027, 0.028, 0.028],
+[0.345, 0.041, 0.044, 0.042, 0.038, 0.039, 0.037, 0.038, 0.040, 0.040],
+[0.108, 0.114, 0.107, 0.105, 0.104, 0.092, 0.101, 0.094, 0.099, 0.098],
+[0.555, 0.215, 0.234, 0.242, 0.237, 0.231, 0.222, 0.228, 0.226, 0.226],
+[0.072, 0.022, 0.019, 0.019, 0.020, 0.019, 0.020, 0.020, 0.019, 0.021],
+[0.014, 0.014, 0.014, 0.014, 0.014, 0.014, 0.014, 0.014, 0.014, 0.013],
+[0.429, 0.363, 0.395, 0.385, 0.365, 0.363, 0.363, 0.373, 0.364, 0.352],
+[0.415, 0.425, 0.423, 0.409, 0.415, 0.432, 0.417, 0.421, 0.418, 0.415],
+[0.192, 0.147, 0.140, 0.140, 0.140, 0.144, 0.144, 0.147, 0.141, 0.145],
+[0.224, 0.153, 0.156, 0.179, 0.165, 0.153, 0.161, 0.169, 0.188, 0.177],
+[0.563, 0.565, 0.565, 0.553, 0.581, 0.594, 0.567, 0.553, 0.560, 0.598],
+[0.708, 0.702, 0.730, 0.715, 0.709, 0.776, 0.737, 0.699, 0.790, 0.725],
+[0.752, 0.724, 0.678, 0.676, 0.653, 0.690, 0.673, 0.696, 0.681, 0.657],
+[0.691, 0.694, 0.705, 0.706, 0.698, 0.761, 0.757, 0.743, 0.684, 0.733],
+[1.758, 1.750, 1.773, 1.758, 1.743, 1.771, 1.746, 1.803, 1.756, 1.746],
+[0.938, 0.959, 0.981, 0.962, 0.962, 0.949, 0.956, 0.928, 0.966, 0.957],
+[4.119, 3.943, 3.867, 3.968, 3.879, 3.883, 3.842, 3.930, 3.871, 3.801],
+[0.110, 0.042, 0.036, 0.036, 0.035, 0.036, 0.038, 0.035, 0.036, 0.037],
+[2.895, 0.604, 0.577, 0.597, 0.588, 0.588, 0.601, 0.588, 0.588, 0.597],
+[0.674, 0.860, 0.721, 0.664, 0.686, 0.674, 0.677, 0.648, 0.669, 0.659],
+[3.116, 1.579, 1.623, 1.690, 1.595, 1.698, 1.619, 1.572, 1.601, 1.606],
+[6.556, 1.177, 1.018, 0.923, 0.918, 0.926, 0.988, 0.810, 0.915, 0.877],
+[0.208, 0.199, 0.219, 0.226, 0.238, 0.207, 0.192, 0.211, 0.198, 0.197],
+[0.164, 0.158, 0.165, 0.167, 0.164, 0.169, 0.168, 0.167, 0.160, 0.159],
+[0.220, 0.209, 0.201, 0.211, 0.201, 0.209, 0.201, 0.200, 0.259, 0.237],
+[0.636, 0.666, 0.640, 0.649, 0.639, 0.637, 0.615, 0.609, 0.621, 0.608],
+[2.580, 1.149, 1.049, 1.073, 1.258, 1.123, 1.080, 1.058, 1.217, 1.114],
+[1.645, 1.637, 1.663, 1.660, 1.643, 1.629, 1.661, 1.660, 1.649, 1.646],
+[0.600, 0.559, 0.588, 0.639, 0.601, 0.581, 0.560, 0.554, 0.555, 0.597],
+[1.275, 0.871, 0.858, 0.869, 0.846, 0.861, 0.876, 0.873, 0.871, 0.951],
+[5.116, 5.426, 5.258, 5.249, 5.376, 5.178, 5.241, 5.235, 5.247, 5.464],
+[2.750, 2.814, 2.799, 2.814, 2.809, 2.837, 2.782, 2.986, 2.847, 2.770],
+[3.032, 2.860, 2.836, 2.788, 2.842, 2.996, 2.799, 2.810, 2.839, 2.903],
+[1.257, 1.082, 1.069, 1.092, 1.100, 1.088, 1.192, 1.105, 1.093, 1.099],
+[0.239, 0.204, 0.209, 0.209, 0.212, 0.216, 0.201, 0.207, 0.205, 0.200],
+[0.078, 0.084, 0.076, 0.077, 0.075, 0.077, 0.081, 0.087, 0.073, 0.077],
+[0.088, 0.065, 0.070, 0.066, 0.066, 0.070, 0.062, 0.067, 0.061, 0.064],
+[0.408, 0.418, 0.422, 0.430, 0.429, 0.415, 0.416, 0.430, 0.429, 0.426],
+[0.152, 0.032, 0.025, 0.027, 0.028, 0.026, 0.023, 0.022, 0.024, 0.022],
+[0.072, 0.021, 0.018, 0.020, 0.018, 0.017, 0.021, 0.020, 0.017, 0.024],
+[0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.008, 0.007]
+        ]
+    },
+
+    {
+        "system":       "clang-9",
+        "result":
+        [
+[0.003, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002],
+[0.017, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013],
+[0.029, 0.027, 0.025, 0.025, 0.024, 0.025, 0.026, 0.026, 0.026, 0.026],
+[0.042, 0.039, 0.037, 0.037, 0.039, 0.036, 0.038, 0.039, 0.039, 0.038],
+[0.109, 0.111, 0.102, 0.102, 0.107, 0.100, 0.094, 0.098, 0.096, 0.111],
+[0.316, 0.335, 0.255, 0.261, 0.263, 0.268, 0.262, 0.257, 0.303, 0.285],
+[0.025, 0.024, 0.023, 0.024, 0.025, 0.027, 0.024, 0.026, 0.025, 0.027],
+[0.014, 0.014, 0.014, 0.014, 0.013, 0.014, 0.013, 0.014, 0.014, 0.014],
+[0.406, 0.395, 0.399, 0.380, 0.369, 0.366, 0.354, 0.358, 0.349, 0.355],
+[0.415, 0.407, 0.403, 0.402, 0.409, 0.425, 0.420, 0.415, 0.406, 0.413],
+[0.211, 0.185, 0.191, 0.188, 0.170, 0.174, 0.175, 0.196, 0.180, 0.194],
+[0.212, 0.207, 0.210, 0.208, 0.196, 0.210, 0.294, 0.288, 0.245, 0.233],
+[0.647, 0.566, 0.584, 0.574, 0.563, 0.584, 0.595, 0.573, 0.578, 0.553],
+[0.719, 0.699, 0.803, 0.754, 0.740, 0.798, 0.767, 0.772, 0.760, 0.814],
+[0.718, 0.834, 0.809, 0.704, 0.714, 0.701, 0.709, 0.698, 0.697, 0.715],
+[0.728, 0.721, 0.733, 0.730, 0.712, 0.748, 0.718, 0.734, 0.731, 0.706],
+[1.795, 1.795, 1.800, 1.797, 1.750, 1.804, 1.792, 1.837, 1.817, 1.796],
+[0.991, 0.994, 1.141, 1.039, 0.974, 0.963, 0.980, 1.008, 0.963, 1.004],
+[4.052, 4.009, 3.925, 4.009, 4.218, 4.067, 3.984, 4.022, 4.269, 4.002],
+[0.114, 0.037, 0.036, 0.034, 0.037, 0.034, 0.036, 0.036, 0.038, 0.036],
+[0.601, 0.603, 0.684, 0.685, 0.631, 0.585, 0.608, 0.610, 0.598, 0.603],
+[0.741, 0.702, 0.688, 0.817, 0.753, 0.712, 0.734, 0.723, 0.877, 0.711],
+[1.922, 1.662, 1.665, 1.688, 1.666, 1.689, 1.686, 1.682, 1.688, 1.716],
+[1.066, 0.898, 0.961, 1.122, 0.920, 0.962, 1.013, 0.986, 0.950, 0.929],
+[0.236, 0.225, 0.228, 0.226, 0.229, 0.239, 0.240, 0.237, 0.235, 0.228],
+[0.193, 0.220, 0.212, 0.212, 0.213, 0.222, 0.196, 0.201, 0.202, 0.204],
+[0.234, 0.230, 0.232, 0.231, 0.238, 0.239, 0.237, 0.240, 0.240, 0.247],
+[0.650, 0.648, 0.711, 0.658, 0.664, 0.678, 0.657, 0.664, 0.786, 0.696],
+[1.048, 1.024, 1.026, 1.039, 1.011, 1.008, 1.042, 1.128, 1.074, 1.193],
+[1.688, 1.709, 1.690, 1.730, 1.712, 1.708, 1.724, 1.742, 1.750, 1.733],
+[0.595, 0.604, 0.611, 0.620, 0.590, 0.589, 0.602, 0.588, 0.603, 0.600],
+[0.955, 0.962, 0.914, 0.889, 0.893, 0.883, 0.884, 0.886, 0.881, 0.910],
+[5.121, 5.445, 5.198, 5.122, 5.289, 5.287, 5.178, 5.234, 5.333, 5.362],
+[2.725, 2.779, 2.783, 2.968, 2.801, 2.826, 2.881, 3.360, 3.066, 2.915],
+[2.783, 2.764, 2.802, 2.746, 2.806, 2.770, 2.801, 2.762, 2.873, 2.741],
+[1.166, 1.035, 1.025, 1.024, 1.020, 1.026, 1.045, 1.022, 1.018, 1.023],
+[0.184, 0.198, 0.191, 0.197, 0.194, 0.206, 0.209, 0.192, 0.212, 0.191],
+[0.080, 0.079, 0.075, 0.083, 0.080, 0.078, 0.077, 0.074, 0.078, 0.082],
+[0.070, 0.068, 0.072, 0.069, 0.067, 0.071, 0.068, 0.072, 0.067, 0.067],
+[0.418, 0.416, 0.417, 0.446, 0.410, 0.433, 0.441, 0.428, 0.421, 0.439],
+[0.033, 0.022, 0.027, 0.022, 0.025, 0.023, 0.023, 0.022, 0.022, 0.025],
+[0.018, 0.018, 0.017, 0.018, 0.018, 0.023, 0.020, 0.017, 0.020, 0.019],
+[0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007]
+        ]
+    },
+
+    {
+        "system":       "clang-9, -flto=thin",
+        "result":
+        [
+[0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002],
+[0.017, 0.013, 0.013, 0.013, 0.013, 0.012, 0.012, 0.012, 0.014, 0.013],
+[0.027, 0.025, 0.024, 0.024, 0.026, 0.025, 0.025, 0.026, 0.026, 0.024],
+[0.041, 0.036, 0.037, 0.037, 0.049, 0.048, 0.044, 0.044, 0.038, 0.038],
+[0.107, 0.102, 0.103, 0.104, 0.103, 0.101, 0.108, 0.106, 0.101, 0.097],
+[0.278, 0.274, 0.280, 0.257, 0.290, 0.295, 0.259, 0.255, 0.259, 0.253],
+[0.019, 0.020, 0.019, 0.020, 0.019, 0.019, 0.019, 0.019, 0.019, 0.019],
+[0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.012, 0.012],
+[0.347, 0.339, 0.337, 0.334, 0.345, 0.355, 0.352, 0.420, 0.387, 0.364],
+[0.456, 0.400, 0.407, 0.410, 0.401, 0.421, 0.404, 0.405, 0.405, 0.435],
+[0.176, 0.177, 0.176, 0.176, 0.169, 0.171, 0.164, 0.162, 0.167, 0.166],
+[0.203, 0.199, 0.228, 0.216, 0.202, 0.202, 0.199, 0.210, 0.198, 0.199],
+[0.573, 0.535, 0.526, 0.611, 0.569, 0.593, 0.559, 0.553, 0.594, 0.569],
+[0.748, 0.742, 0.749, 0.732, 0.719, 0.741, 0.725, 0.729, 0.720, 0.815],
+[0.675, 0.722, 0.695, 0.699, 0.718, 0.703, 0.732, 0.688, 0.775, 0.780],
+[0.715, 0.750, 0.712, 0.723, 0.695, 0.700, 0.706, 0.727, 0.749, 0.723],
+[1.784, 1.830, 1.815, 1.735, 1.774, 1.780, 1.806, 1.847, 1.865, 1.859],
+[0.967, 0.956, 0.963, 0.986, 1.030, 0.984, 0.995, 0.981, 0.987, 0.981],
+[4.146, 3.932, 3.989, 3.990, 4.056, 3.896, 3.998, 3.955, 4.060, 4.081],
+[0.114, 0.046, 0.037, 0.037, 0.036, 0.040, 0.041, 0.040, 0.038, 0.037],
+[0.674, 0.679, 0.630, 0.667, 0.591, 0.630, 0.605, 0.602, 0.624, 0.602],
+[0.721, 0.721, 0.739, 0.853, 0.672, 0.695, 0.724, 0.714, 0.671, 0.717],
+[1.672, 1.627, 1.644, 1.684, 1.659, 1.681, 1.712, 1.655, 1.693, 1.770],
+[1.029, 1.049, 0.979, 0.912, 0.798, 0.861, 0.892, 0.940, 0.819, 0.901],
+[0.241, 0.223, 0.221, 0.223, 0.228, 0.223, 0.222, 0.222, 0.222, 0.221],
+[0.190, 0.197, 0.201, 0.190, 0.182, 0.187, 0.195, 0.209, 0.207, 0.197],
+[0.230, 0.219, 0.224, 0.224, 0.226, 0.222, 0.222, 0.221, 0.237, 0.237],
+[0.653, 0.667, 0.658, 0.746, 0.700, 0.857, 0.846, 0.741, 0.676, 0.689],
+[0.992, 1.043, 1.021, 0.987, 0.987, 0.976, 0.992, 1.008, 0.988, 0.990],
+[1.638, 1.610, 1.618, 1.611, 1.623, 1.608, 1.614, 1.625, 1.653, 1.639],
+[0.601, 0.674, 0.592, 0.604, 0.585, 0.599, 0.609, 0.651, 0.612, 0.579],
+[0.874, 0.875, 0.901, 0.893, 0.892, 0.879, 0.903, 0.864, 0.902, 0.892],
+[5.109, 5.285, 5.867, 5.318, 5.323, 5.245, 5.308, 5.332, 5.314, 5.220],
+[2.819, 2.822, 2.794, 2.751, 2.765, 2.795, 2.860, 2.816, 3.072, 2.750],
+[2.875, 3.073, 2.879, 3.052, 2.848, 2.781, 2.755, 2.755, 2.728, 2.740],
+[1.173, 1.009, 1.012, 1.014, 1.054, 1.061, 1.031, 1.030, 1.057, 1.045],
+[0.197, 0.193, 0.193, 0.205, 0.199, 0.179, 0.213, 0.205, 0.196, 0.199],
+[0.079, 0.081, 0.086, 0.081, 0.079, 0.080, 0.081, 0.076, 0.077, 0.079],
+[0.069, 0.069, 0.071, 0.068, 0.067, 0.070, 0.068, 0.072, 0.073, 0.068],
+[0.434, 0.398, 0.444, 0.443, 0.449, 0.437, 0.440, 0.432, 0.418, 0.430],
+[0.026, 0.023, 0.026, 0.021, 0.021, 0.020, 0.020, 0.021, 0.022, 0.022],
+[0.017, 0.017, 0.017, 0.028, 0.019, 0.017, 0.030, 0.019, 0.017, 0.017],
+[0.007, 0.007, 0.010, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007]
+        ]
+    },
+    
+    {
+        "system":       "clang-9, -fomit-frame-pointer",
+        "result":
+        [
+[0.003, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002],
+[0.018, 0.013, 0.012, 0.012, 0.013, 0.013, 0.014, 0.014, 0.014, 0.014],
+[0.028, 0.026, 0.026, 0.026, 0.024, 0.025, 0.026, 0.026, 0.026, 0.026],
+[0.041, 0.040, 0.040, 0.041, 0.038, 0.039, 0.039, 0.039, 0.039, 0.039],
+[0.117, 0.125, 0.120, 0.110, 0.110, 0.108, 0.100, 0.118, 0.110, 0.108],
+[0.315, 0.266, 0.261, 0.250, 0.251, 0.257, 0.263, 0.255, 0.287, 0.269],
+[0.027, 0.029, 0.028, 0.027, 0.025, 0.025, 0.025, 0.025, 0.025, 0.025],
+[0.013, 0.015, 0.015, 0.015, 0.014, 0.013, 0.014, 0.014, 0.014, 0.015],
+[0.427, 0.408, 0.363, 0.361, 0.365, 0.359, 0.386, 0.391, 0.368, 0.389],
+[0.421, 0.406, 0.440, 0.414, 0.417, 0.417, 0.433, 0.428, 0.438, 0.431],
+[0.158, 0.167, 0.171, 0.168, 0.161, 0.157, 0.157, 0.159, 0.164, 0.156],
+[0.196, 0.191, 0.185, 0.176, 0.187, 0.189, 0.179, 0.225, 0.187, 0.211],
+[0.617, 0.585, 0.525, 0.544, 0.543, 0.587, 0.611, 0.555, 0.568, 0.540],
+[0.747, 0.748, 0.736, 0.732, 0.740, 0.740, 0.712, 0.772, 0.718, 0.739],
+[0.691, 0.729, 0.730, 0.684, 0.712, 0.718, 0.747, 0.734, 0.806, 0.693],
+[0.711, 0.711, 0.727, 0.720, 0.726, 0.749, 0.733, 0.722, 0.717, 0.707],
+[1.831, 1.877, 1.757, 1.796, 1.847, 1.812, 1.861, 1.842, 1.831, 1.895],
+[0.991, 0.970, 0.988, 1.099, 0.995, 1.026, 1.049, 0.986, 0.986, 0.951],
+[3.932, 4.231, 4.208, 4.095, 4.147, 3.972, 4.038, 3.945, 3.958, 4.235],
+[0.133, 0.056, 0.055, 0.052, 0.050, 0.045, 0.039, 0.037, 0.038, 0.041],
+[0.588, 0.587, 0.594, 0.586, 0.587, 0.610, 0.579, 0.592, 0.616, 0.593],
+[0.676, 0.689, 0.659, 0.669, 0.696, 0.696, 0.708, 0.708, 0.677, 0.708],
+[1.665, 1.734, 1.662, 1.610, 1.730, 1.676, 1.726, 1.617, 1.702, 1.629],
+[1.030, 0.948, 0.977, 0.873, 0.981, 0.972, 0.829, 0.915, 0.937, 0.823],
+[0.226, 0.227, 0.230, 0.219, 0.230, 0.215, 0.223, 0.236, 0.277, 0.226],
+[0.189, 0.185, 0.195, 0.216, 0.216, 0.190, 0.189, 0.184, 0.242, 0.212],
+[0.241, 0.238, 0.226, 0.226, 0.225, 0.232, 0.245, 0.229, 0.224, 0.223],
+[0.651, 0.649, 0.665, 0.661, 0.635, 0.661, 0.669, 0.671, 0.653, 0.642],
+[0.968, 0.967, 0.970, 0.975, 1.001, 0.984, 0.970, 0.948, 0.961, 0.969],
+[1.790, 1.769, 1.826, 1.730, 1.787, 1.753, 1.759, 1.726, 1.755, 1.742],
+[0.577, 0.586, 0.586, 0.618, 0.623, 0.576, 0.599, 0.602, 0.583, 0.590],
+[0.907, 0.844, 0.892, 0.900, 0.921, 0.895, 0.887, 0.878, 0.897, 0.887],
+[5.194, 5.394, 5.280, 5.244, 5.410, 5.453, 5.456, 5.348, 5.395, 5.454],
+[2.777, 2.853, 2.789, 3.019, 2.759, 2.741, 2.796, 2.887, 2.830, 2.813],
+[2.905, 2.773, 2.812, 2.727, 2.825, 2.799, 2.802, 2.814, 2.765, 2.824],
+[1.223, 1.012, 1.044, 1.024, 1.016, 1.008, 1.001, 1.012, 1.016, 1.036],
+[0.209, 0.189, 0.191, 0.189, 0.190, 0.215, 0.187, 0.198, 0.209, 0.189],
+[0.084, 0.076, 0.088, 0.079, 0.079, 0.078, 0.079, 0.074, 0.074, 0.076],
+[0.073, 0.068, 0.071, 0.084, 0.064, 0.073, 0.070, 0.071, 0.073, 0.066],
+[0.442, 0.443, 0.407, 0.423, 0.423, 0.414, 0.431, 0.436, 0.425, 0.429],
+[0.026, 0.030, 0.022, 0.026, 0.022, 0.024, 0.024, 0.022, 0.022, 0.021],
+[0.018, 0.017, 0.018, 0.018, 0.018, 0.019, 0.025, 0.019, 0.018, 0.022],
+[0.009, 0.007, 0.007, 0.008, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007]
+        ]
+    },
+    
+    {
+        "system":       "clang-9, both",
+        "result":
+        [
+[0.003, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002],
+[0.018, 0.014, 0.014, 0.013, 0.013, 0.013, 0.013, 0.013, 0.013, 0.012],
+[0.028, 0.025, 0.025, 0.025, 0.024, 0.024, 0.026, 0.025, 0.024, 0.023],
+[0.037, 0.036, 0.036, 0.035, 0.035, 0.035, 0.036, 0.036, 0.037, 0.037],
+[0.107, 0.098, 0.101, 0.101, 0.099, 0.109, 0.108, 0.112, 0.113, 0.112],
+[0.320, 0.324, 0.309, 0.296, 0.277, 0.256, 0.280, 0.275, 0.286, 0.258],
+[0.021, 0.021, 0.023, 0.021, 0.022, 0.021, 0.020, 0.021, 0.019, 0.019],
+[0.013, 0.013, 0.012, 0.013, 0.013, 0.013, 0.013, 0.014, 0.014, 0.013],
+[0.366, 0.348, 0.356, 0.367, 0.352, 0.369, 0.369, 0.370, 0.346, 0.364],
+[0.434, 0.413, 0.420, 0.411, 0.403, 0.405, 0.407, 0.401, 0.399, 0.421],
+[0.166, 0.168, 0.165, 0.162, 0.156, 0.157, 0.177, 0.183, 0.203, 0.204],
+[0.195, 0.192, 0.183, 0.190, 0.188, 0.188, 0.209, 0.189, 0.211, 0.188],
+[0.557, 0.542, 0.568, 0.591, 0.560, 0.581, 0.510, 0.528, 0.568, 0.553],
+[0.706, 0.744, 0.718, 0.723, 0.748, 0.736, 0.786, 0.712, 0.762, 0.750],
+[0.720, 0.708, 0.692, 0.756, 0.740, 0.690, 0.680, 0.670, 0.681, 0.669],
+[0.691, 0.707, 0.722, 0.727, 0.707, 0.699, 0.694, 0.707, 0.715, 0.680],
+[1.817, 1.754, 1.931, 1.842, 1.808, 1.793, 1.788, 1.736, 1.786, 1.800],
+[0.982, 0.937, 0.939, 0.958, 0.967, 0.960, 1.016, 0.983, 0.958, 1.006],
+[4.014, 3.831, 3.936, 3.954, 3.919, 3.959, 3.971, 3.900, 3.974, 4.295],
+[0.154, 0.036, 0.036, 0.036, 0.037, 0.033, 0.034, 0.035, 0.036, 0.035],
+[0.617, 0.568, 0.583, 0.623, 0.603, 0.627, 0.581, 0.597, 0.582, 0.616],
+[0.694, 0.673, 0.709, 0.722, 0.674, 0.685, 0.700, 0.868, 0.710, 0.847],
+[1.685, 1.780, 1.703, 1.615, 1.650, 1.633, 1.679, 1.793, 1.642, 1.676],
+[1.156, 1.000, 0.852, 0.963, 0.870, 0.952, 0.834, 0.818, 0.989, 0.870],
+[0.231, 0.218, 0.251, 0.220, 0.215, 0.219, 0.234, 0.222, 0.217, 0.216],
+[0.179, 0.179, 0.182, 0.251, 0.206, 0.174, 0.179, 0.183, 0.178, 0.210],
+[0.228, 0.214, 0.224, 0.221, 0.221, 0.212, 0.213, 0.221, 0.215, 0.211],
+[0.649, 0.663, 0.645, 0.700, 0.659, 0.696, 0.668, 0.638, 0.680, 0.650],
+[0.931, 0.961, 0.942, 0.981, 0.950, 0.950, 0.955, 0.957, 0.998, 1.128],
+[1.932, 1.739, 1.690, 1.761, 1.840, 1.787, 1.687, 1.723, 1.968, 1.845],
+[0.578, 0.574, 0.571, 0.563, 0.578, 0.583, 0.580, 0.566, 0.557, 0.591],
+[0.915, 0.878, 0.877, 0.861, 0.859, 0.866, 0.871, 0.875, 0.894, 0.921],
+[5.068, 5.298, 5.207, 5.209, 5.233, 5.334, 5.260, 5.309, 5.389, 5.466],
+[2.897, 3.092, 2.815, 2.811, 2.830, 2.899, 2.731, 3.045, 2.798, 2.771],
+[2.823, 3.140, 2.804, 2.735, 2.846, 2.820, 2.929, 2.816, 2.787, 2.771],
+[1.251, 1.042, 1.067, 1.046, 1.030, 1.037, 1.015, 1.011, 1.027, 1.069],
+[0.188, 0.201, 0.199, 0.205, 0.210, 0.191, 0.195, 0.189, 0.202, 0.218],
+[0.080, 0.082, 0.081, 0.077, 0.073, 0.076, 0.075, 0.078, 0.078, 0.081],
+[0.071, 0.067, 0.064, 0.073, 0.076, 0.074, 0.071, 0.066, 0.072, 0.065],
+[0.440, 0.436, 0.419, 0.419, 0.422, 0.417, 0.420, 0.414, 0.438, 0.405],
+[0.026, 0.020, 0.022, 0.022, 0.022, 0.025, 0.020, 0.020, 0.023, 0.021],
+[0.018, 0.019, 0.018, 0.017, 0.017, 0.020, 0.017, 0.017, 0.024, 0.017],
+[0.006, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007, 0.007]
+        ]
+    },
+];
+
+</script>
+
+<script type="text/javascript">
+
+
+/// For all runs, throw off three slowest and average the rest.
+for (var result_idx = 0; result_idx < results.length; ++result_idx) {
+    for (var query_idx = 0; query_idx < results[result_idx].result.length; ++query_idx) {
+
+        var all_runs = results[result_idx].result[query_idx];
+        var num_runs = all_runs.length;
+
+        results[result_idx].result[query_idx] = all_runs.sort().slice(0, -3).reduce((acc, x) => acc + x, 0) / (num_runs - 3);
+    }
+}
+
+
+function format_number_cell(value, ratio) {
+    var html = "";
+
+    var redness = (ratio - 1) / ratio;
+    var blackness = ratio < 10 ? 0 : ((ratio - 10) / ratio / 2);
+
+    var color = !value ? "#FFF" :
+        ratio == 1 ?
+            ("rgba(0, 255, 0, 1)") :
+            ("rgba(" + ~~(255 * (1 - blackness)) + ", 0, 0, " + redness + ")");
+
+    html += "<td class='number_cell' style='background-color: " + color + "'>";
+    html += value ?
+        (ratio == 1 ? "" : ("x" + ratio.toFixed(2))) + "&nbsp;<span style='color: #888;'>(" + value.toFixed(3) + "&nbsp;s.)</span>" :
+        "—";
+    html += "</td>";
+
+    return html;
+}
+
+
+/* Отношения времени выполнения запроса к лучшему времени по системам:
+ *  номер системы -> номер запроса -> отношение.
+ */
+var ratios;
+
+
+function generate_comparison_table() {
+    ratios = [];
+    for (var j = 0; j < results.length; j++) {
+        ratios[j] = [];
+    }
+
+    var html = "";
+
+    html += "<table class='comparison_table'>";
+
+    html += "<tr>";
+    html += "<th><input id='query_checkbox_toggler' type='checkbox' checked /></th>";
+    html += "<th style='text-align: left;'>Query</th>";
+    for (var j = 0; j < results.length; j++) {
+        html += "<th>" + results[j].system + "</th>";
+    }
+    html += "</tr>";
+
+    for (var i = 0; i < queries.length; i++) {
+        html += "<tr>";
+        html += "<td><input id='query_checkbox" + i + "' type='checkbox' " +
+            ($('#query_checkbox' + i).length == 0 || $('#query_checkbox' + i).is(':checked') ? "checked" : "") + " /></td>";
+
+        html += "<td><div class='query_cell'>" + queries[i].query + "</div></td>";
+
+        // Вычислим максимальное и минимальное время выполнения по системам, для каждого из прогонов.
+        var minimum = 0;
+        var maximum = 0;
+
+        for (var j = 0; j < results.length; j++) {
+            var value = results[j].result[i];
+
+            if (value && (!minimum || value < minimum)) {
+                minimum = value;
+
+                // Меньше 10 мс. не различаем.
+                if (minimum < 0.01) {
+                    minimum = 0.01;
+                }
+            }
+
+            if (value > maximum) {
+                maximum = value;
+            }
+        }
+
+        for (var j = 0; j < results.length; j++) {
+            var value = results[j].result[i];
+            
+            var ratio = value / minimum;
+
+            if (ratio && ratio <= 1) {
+                ratio = 1;
+            }
+
+            ratios[j][i] = ratio;
+
+            html += format_number_cell(value, ratio);
+        }
+        html += "</tr>";
+    }
+
+    html += "<tr>";
+    html += "<td></td>";
+    html += "<td><div class='query_cell'>Geometric mean of ratios</div></td>";
+
+    for (var j = 0; j < results.length; j++) {
+        html += "<th id='absolute_totals" + j + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
+    }
+
+    html += "</tr>";
+    html += "</table>";
+
+    $('#comparison_table').html(html);
+
+    for (var i = 0; i < queries.length; i++) {
+        $('#query_checkbox' + i).click(function() { calculate_totals(); generate_diagram(); } );
+    }
+    $('#query_checkbox_toggler').click(function() {
+        for (var i = 0; i < queries.length; i++) {
+            var item = $('#query_checkbox' + i);
+            item.prop("checked", !item.prop("checked"));
+        }
+    });
+
+    calculate_totals();
+}
+
+
+function calculate_totals() {
+    var total_ratios = [];
+    
+    for (var j = 0; j < results.length; j++) {
+        var current_ratios = ratios[j].filter(
+            function(x, i) {
+                return x && $("#query_checkbox" + i).is(':checked');
+            }
+        );
+
+        var ratio = Math.pow(
+            current_ratios.reduce(
+                function(acc, cur) { return acc * cur; },
+                1),
+            1 / current_ratios.length);
+
+        total_ratios[j] = total_ratios[j] || 1;
+        total_ratios[j] *= ratio;
+
+        $("#totals" + j).attr("data-ratio", ratio).html("x" + ratio.toFixed(2));
+    }
+
+    for (var j = 0; j < results.length; j++) {
+        $("#absolute_totals" + j).attr("data-ratio", total_ratios[j]).html("x" + total_ratios[j].toFixed(2));
+    }
+}
+
+
+function generate_diagram() {
+    var html = "";
+
+    var max_ratio = 1;
+    var min_ratio = 0;
+
+    var max_total_ratio = 1;
+    var min_total_ratio = 0;
+
+    for (var j = 0; j < results.length; j++) {
+        var ratio = +$("#totals" + j).attr("data-ratio");
+
+        if (ratio > max_ratio) {
+            max_ratio = ratio;
+        }
+
+        if (!min_ratio || ratio < min_ratio) {
+            min_ratio = ratio;
+        }
+
+        var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
+
+        if (total_ratio > max_total_ratio) {
+            max_total_ratio = total_ratio;
+        }
+
+        if (!min_total_ratio || total_ratio < min_total_ratio) {
+            min_total_ratio = total_ratio;
+        }
+    }
+
+    html += "<table style='width: 100%'>";
+
+    for (var j = 0; j < results.length; j++) {
+        var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
+
+        html += "<tr>";
+        html += "<td style='text-align: right; white-space: nowrap;'><b>" + results[j].system + "</b></td>";
+
+        html += "<td style='width: 80%; padding-right: 20px;'>";
+
+        var ratio = +$("#totals" + j).attr("data-ratio");
+        var percents = (ratio * 100 / max_ratio).toFixed(2);
+
+        if (!ratio) {
+            ratio = +$("#absolute_totals" + j).attr("data-ratio");
+            percents = (ratio * 100 / max_total_ratio).toFixed(2);
+        }
+
+        html += "<div class='bar' style='width: " + percents + "%;'>&nbsp;</div>";
+        html += "</td>";
+
+        html += "<td style='text-align: right; font-weight: bold;'>" + (total_ratio / min_total_ratio).toFixed(2) + "</td>";
+        html += "</tr>";
+    }
+
+    html += "</table>";
+
+    $('#diagram').html(html);
+}
+
+
+</script>
+
+<!-- Yandex.Metrika counter -->
+<script src="https://mc.yandex.ru/metrika/watch.js" type="text/javascript"></script>
+<script type="text/javascript">
+try { var yaCounter18343495 = new Ya.Metrika({id:18343495,
+          webvisor:true,
+          clickmap:true,
+          trackLinks:true,
+          accurateTrackBounce:true,
+          trackHash:true});
+} catch(e) { }
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+
+<script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+
+<div class='island'>
+
+<div style="float: left; margin-right: -100%; margin-top: -1px;">
+    <a href="/" title="Main page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="45" height="40" viewBox="0 0 9 8">
+            <style>
+                .o{fill:#fc0}
+                .r{fill:#f00}
+            </style>
+            <path class="r" d="M0,7 h1 v1 h-1 z"/>
+            <path class="o" d="M0,0 h1 v7 h-1 z"/>
+            <path class="o" d="M2,0 h1 v8 h-1 z"/>
+            <path class="o" d="M4,0 h1 v8 h-1 z"/>
+            <path class="o" d="M6,0 h1 v8 h-1 z"/>
+            <path class="o" d="M8,3.25 h1 v1.5 h-1 z"/>
+        </svg>
+    </a>
+</div>
+
+<h1 class='title'>Performance comparison of analytical DBMS</h1>
+</div>
+
+<div class='island'>
+
+<div id='selectors'></div>
+
+<h2>Relative query processing time (lower is better):</h2>
+<div id='diagram' style='width: 100%;'></div>
+
+<br />
+<h2>Full results:</h2>
+
+<div id='comparison_table'></div>
+
+</div>
+
+<script type="text/javascript">
+generate_comparison_table();
+generate_diagram();
+</script>
+
+    </body>
+</html>
