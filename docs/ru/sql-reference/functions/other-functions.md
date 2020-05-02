@@ -6,7 +6,7 @@
 
 ## getMacro {#getmacro}
 
-Возвращает значение параметра из секции [macros](../../operations/server-configuration-parameters/settings.md#macros) конфигурационного файла сервера `config.xml`.
+Возвращает именованное значение из секции [macros](../../operations/server-configuration-parameters/settings.md#macros) конфигурации сервера.
 
 **Синтаксис** 
 
@@ -16,26 +16,22 @@ getMacro(name);
 
 **Параметры**
 
-- `name` — Имя параметра из `macros` секции. [String](../../sql-reference/data-types/string.md#string).
+- `name` — Имя, которое необходимо получить из секции `macros`. [String](../../sql-reference/data-types/string.md#string).
 
 **Возвращаемое значение**
 
-- Значение заданного параметра.
+- Значение по указанному имени.
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
 **Пример**
 
-Входная таблица:
+Пример секции `macros` в конфигурационном файле сервера:
 
-```sql
-SELECT * FROM system.macros;
-```
-
-```text
-┌─macro─┬─substitution─┐
-│ test  │ Value        │
-└───────┴──────────────┘
+```xml
+<macros>
+    <test>Value</test>
+</macros>
 ```
 
 Запрос:
@@ -50,6 +46,19 @@ SELECT getMacro('test');
 ┌─getMacro('test')─┐
 │ Value            │
 └──────────────────┘
+```
+
+Альтернативный способ получения значения:
+
+```sql
+SELECT * FROM system.macros
+WHERE macro = 'test'
+```
+
+```text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
 ```
 
 

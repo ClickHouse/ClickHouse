@@ -31,17 +31,12 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
-An alternative way to get the same value:
+The example `macros` section in the server configuration file:
 
-```sql
-SELECT * FROM system.macros
-WHERE macro = 'test';
-```
-
-```text
-┌─macro─┬─substitution─┐
-│ test  │ Value        │
-└───────┴──────────────┘
+```xml
+<macros>
+    <test>Value</test>
+</macros>
 ```
 
 Query:
@@ -58,6 +53,18 @@ Result:
 └──────────────────┘
 ```
 
+An alternative way to get the same value:
+
+```sql
+SELECT * FROM system.macros
+WHERE macro = 'test';
+```
+
+```text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
 
 ## FQDN {#fqdn}
 
