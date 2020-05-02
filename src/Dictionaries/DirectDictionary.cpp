@@ -159,8 +159,8 @@ void DirectDictionary::getString(const std::string & attribute_name, const Padde
     getItemsStringImpl<StringRef, StringRef>(
         attribute,
         ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return null_value; });
+        [&](const size_t, const String value) { const auto ref = StringRef{value}; out->insertData(ref.data, ref.size); },
+        [&](const size_t) { return String(null_value.data, null_value.size); });
 }
 
 #define DECLARE(TYPE) \
@@ -201,8 +201,8 @@ void DirectDictionary::getString(
     getItemsStringImpl<StringRef, StringRef>(
         attribute,
         ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t row) { return def->getDataAt(row); });
+        [&](const size_t, const String value) { const auto ref = StringRef{value}; out->insertData(ref.data, ref.size); },
+        [&](const size_t row) { const auto ref = def->getDataAt(row); return String(ref.data, ref.size); });
 }
 
 #define DECLARE(TYPE) \
@@ -240,8 +240,8 @@ void DirectDictionary::getString(
     DirectDictionary::getItemsStringImpl<StringRef, StringRef>(
         attribute,
         ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return StringRef{def}; });
+        [&](const size_t, const String value) { const auto ref = StringRef{value}; out->insertData(ref.data, ref.size); },
+        [&](const size_t) { return def; });
 }
 
 
@@ -437,7 +437,6 @@ void DirectDictionary::getItemsImpl(
                     if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
                     {
                         is_found[row] = true;
-                        // std::cerr << "FOUND: " << key << " " << static_cast<Float32>(attribute_column[row_idx].get<Float64>()) << "\n";
                         if (attribute.type == AttributeUnderlyingType::utFloat32)
                         {
                             set_value(row, static_cast<Float32>(attribute_column[row_idx].get<Float64>()));
@@ -469,36 +468,37 @@ void DirectDictionary::getItemsStringImpl(
 
     std::vector<bool> is_found(rows, false);
 
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
-
-    while (const auto block = stream->read())
+    for (const auto row : ext::range(0, rows))
     {
-        const IColumn & id_column = *block.safeGetByPosition(0).column;
-
-        for (const size_t attribute_idx : ext::range(0, attributes.size()))
+        auto stream = source_ptr->loadAll();
+        stream->readPrefix();
+        while (const auto block = stream->read())
         {
-            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+            const IColumn & id_column = *block.safeGetByPosition(0).column;
 
-            for (const auto row_idx : ext::range(0, id_column.size()))
+            for (const size_t attribute_idx : ext::range(0, attributes.size()))
             {
-                const auto key = id_column[row_idx].get<UInt64>();
-                for (const auto row : ext::range(0, rows))
+                const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+
+                for (const auto row_idx : ext::range(0, id_column.size()))
                 {
-                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
-                    {
-                        is_found[row] = true;
-                        const String from_source = attribute_column[row_idx].get<String>();
-                        const auto * string_in_arena = temp_arena->insert(from_source.data(), from_source.size());
-                        const auto reference = StringRef{string_in_arena, from_source.size()};
-                        set_value(row, reference);
-                    }
+                    const auto key = id_column[row_idx].get<UInt64>();
+                    // for (const auto row : ext::range(0, rows))
+                    // {
+                        if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
+                        {
+                            is_found[row] = true;
+                            const String from_source = attribute_column[row_idx].get<String>();
+                            set_value(row, from_source);
+                        }
+                    // }
                 }
             }
         }
+        stream->readSuffix();
     }
 
-    stream->readSuffix();
+
 
     for (const auto row : ext::range(0, rows))
         if (!is_found[row])

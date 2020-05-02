@@ -63,7 +63,7 @@ CREATE DICTIONARY ordinary_db.dict1
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict1' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 600 MAX 600)
+LIFETIME(MIN 1 MAX 600)
 LAYOUT(DIRECT()) SETTINGS(max_result_bytes=1);
 
 CREATE DICTIONARY ordinary_db.dict2
@@ -74,7 +74,7 @@ CREATE DICTIONARY ordinary_db.dict2
 )
 PRIMARY KEY region_id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict2' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 600 MAX 600)
+LIFETIME(MIN 1 MAX 600)
 LAYOUT(DIRECT());
 
 CREATE DICTIONARY ordinary_db.dict3
@@ -84,8 +84,8 @@ CREATE DICTIONARY ordinary_db.dict3
   region_name String DEFAULT ''
 )
 PRIMARY KEY region_id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict2' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 600 MAX 600)
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict3' PASSWORD '' DB 'database_for_dict'))
+LIFETIME(MIN 1 MAX 600)
 LAYOUT(DIRECT());
 
 SELECT 'INITIALIZING DICTIONARY';
@@ -104,8 +104,18 @@ SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(5));
 SELECT dictGetString('ordinary_db.dict2', 'region_name', toUInt64(4));
 SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(100), 'NONE');
 
-SELECT number, dictGetStringOrDefault('ordinary_db.dict2', 'region_name', number, 'NONE') chars FROM numbers(10);
-
+SELECT number + 1, dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(number + 1), 'NONE') chars FROM numbers(10);
+SELECT number + 1, dictGetFloat32OrDefault('ordinary_db.dict3', 'parent_region', toUInt64(number + 1), toFloat32(0)) chars FROM numbers(10);
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(1), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(2), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(3), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(4), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(5), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(6), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(7), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(8), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(9), 'NONE');
+SELECT dictGetStringOrDefault('ordinary_db.dict2', 'region_name', toUInt64(10), 'NONE');
 
 SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
 
