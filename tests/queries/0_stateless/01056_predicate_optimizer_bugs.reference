@@ -26,3 +26,4 @@ SELECT dummy\nFROM \n(\n    SELECT dummy\n    FROM system.one\n    WHERE arrayMa
 0
 SELECT \n    id, \n    value, \n    value_1\nFROM \n(\n    SELECT \n        1 AS id, \n        2 AS value\n)\nALL INNER JOIN \n(\n    SELECT \n        1 AS id, \n        3 AS value_1\n) USING (id)\nWHERE arrayMap(x -> ((x + value) + value_1), [1]) = [6]
 1	2	3
+SELECT dummy\nFROM system.one\nWHERE (dummy > 0) AND (dummy < 0)

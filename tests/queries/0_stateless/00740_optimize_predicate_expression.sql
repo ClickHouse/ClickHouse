@@ -32,15 +32,4 @@ FROM (
             WHERE user_id = 999
 ) js2 USING site);
 
--- check order is preserved
-SET enable_debug_queries = 1;
-ANALYZE SELECT * FROM system.one HAVING dummy > 0 AND dummy < 0;
-
--- from #10613
-SELECT name, count() AS cnt
-FROM remote('127.{1,2}', system.settings)
-GROUP BY name
-HAVING (max(value) > '9') AND (min(changed) = 0)
-FORMAT Null;
-
 DROP TABLE perf;
