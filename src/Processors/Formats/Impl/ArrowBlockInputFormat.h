@@ -9,9 +9,8 @@ namespace arrow::ipc { class RecordBatchFileReader; }
 
 namespace DB
 {
-class Context;
 
-class ArrowBlockInputFormat: public IInputFormat
+class ArrowBlockInputFormat : public IInputFormat
 {
 public:
     ArrowBlockInputFormat(ReadBuffer & in_, Block header_);
