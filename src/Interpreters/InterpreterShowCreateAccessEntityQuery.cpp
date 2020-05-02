@@ -166,7 +166,7 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto index : ext::range_with_static_cast<RowPolicy::ConditionType>(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto index : ext::range(RowPolicy::MAX_CONDITION_TYPE))
         {
             const auto & condition = policy.conditions[index];
             if (!condition.empty())

@@ -20,7 +20,7 @@ namespace
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+        for (auto key_type : ext::range(Quota::KeyType::MAX))
             enum_values.push_back({Quota::getNameOfKeyType(key_type), static_cast<UInt8>(key_type)});
         return enum_values;
     }
@@ -38,7 +38,7 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
         {"intervals.duration", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"intervals.randomize_interval", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())}};
 
-    for (auto resource_type : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
+    for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
     {
         DataTypePtr data_type;
         if (resource_type == Quota::EXECUTION_TIME)

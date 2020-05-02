@@ -58,8 +58,7 @@ private:
     {
         size_t operator()(const DatabaseAndTableNameRef & database_and_table_name) const;
     };
-    static constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
-    using ParsedConditions = std::array<ASTPtr, MAX_CONDITION_TYPE>;
+    using ParsedConditions = std::array<ASTPtr, RowPolicy::MAX_CONDITION_TYPE>;
     struct MixedConditions
     {
         std::unique_ptr<DatabaseAndTableName> database_and_table_name_keeper;

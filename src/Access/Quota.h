@@ -7,6 +7,12 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /** Quota for resources consumption for specific interval.
   * Used to limit resource usage by user.
   * Quota is applied "softly" - could be slightly exceed, because it is checked usually only on each block of processed data.
@@ -26,8 +32,9 @@ struct Quota : public IAccessEntity
         READ_ROWS,      /// Number of rows read from tables.
         READ_BYTES,     /// Number of bytes read from tables.
         EXECUTION_TIME, /// Total amount of query execution time in nanoseconds.
+
+        MAX_RESOURCE_TYPE
     };
-    static constexpr size_t MAX_RESOURCE_TYPE = 7;
 
     using ResourceAmount = UInt64;
     static constexpr ResourceAmount UNLIMITED = 0; /// 0 means unlimited.
@@ -58,8 +65,9 @@ struct Quota : public IAccessEntity
         CLIENT_KEY, /// Client should explicitly supply a key to use.
         CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
         CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
+
+        MAX
     };
-    static constexpr size_t MAX_KEY_TYPE = 6;
     KeyType key_type = KeyType::NONE;
 
     /// Which roles or users should use this quota.
@@ -88,8 +96,9 @@ inline const char * Quota::getNameOfResourceType(ResourceType resource_type)
         case Quota::READ_ROWS: return "read rows";
         case Quota::READ_BYTES: return "read bytes";
         case Quota::EXECUTION_TIME: return "execution time";
+        case Quota::MAX_RESOURCE_TYPE: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected resource type: " + std::to_string(static_cast<int>(resource_type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -104,8 +113,9 @@ inline const char * Quota::resourceTypeToKeyword(ResourceType resource_type)
         case Quota::READ_ROWS: return "READ ROWS";
         case Quota::READ_BYTES: return "READ BYTES";
         case Quota::EXECUTION_TIME: return "EXECUTION TIME";
+        case Quota::MAX_RESOURCE_TYPE: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected resource type: " + std::to_string(static_cast<int>(resource_type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -119,8 +129,9 @@ inline const char * Quota::getNameOfKeyType(KeyType key_type)
         case KeyType::CLIENT_KEY: return "client key";
         case KeyType::CLIENT_KEY_OR_USER_NAME: return "client key or user name";
         case KeyType::CLIENT_KEY_OR_IP_ADDRESS: return "client key or ip address";
+        case KeyType::MAX: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(key_type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 

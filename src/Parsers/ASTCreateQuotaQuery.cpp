@@ -67,7 +67,7 @@ namespace
         else
         {
             bool limit_found = false;
-            for (auto resource_type : ext::range_with_static_cast<ResourceType>(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (limits.max[resource_type])
                 {

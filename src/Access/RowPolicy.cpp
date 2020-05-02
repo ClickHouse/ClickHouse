@@ -6,6 +6,12 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 namespace
 {
     void generateFullNameImpl(const String & database_, const String & table_name_, const String & policy_name_, String & full_name_)
@@ -90,8 +96,9 @@ const char * RowPolicy::conditionTypeToString(ConditionType index)
         case UPDATE_FILTER: return "UPDATE_FILTER";
         case UPDATE_CHECK: return "UPDATE_CHECK";
         case DELETE_FILTER: return "DELETE_FILTER";
+        case MAX_CONDITION_TYPE: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected condition type: " + std::to_string(static_cast<int>(index)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -104,8 +111,9 @@ const char * RowPolicy::conditionTypeToColumnName(ConditionType index)
         case UPDATE_FILTER: return "update_filter";
         case UPDATE_CHECK: return "update_check";
         case DELETE_FILTER: return "delete_filter";
+        case MAX_CONDITION_TYPE: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected condition type: " + std::to_string(static_cast<int>(index)), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

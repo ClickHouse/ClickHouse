@@ -48,7 +48,7 @@ namespace
                 return false;
 
             const String & key_type_str = key_type_ast->as<ASTLiteral &>().value.safeGet<const String &>();
-            for (auto kt : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+            for (auto kt : ext::range(Quota::KeyType::MAX))
                 if (boost::iequals(Quota::getNameOfKeyType(kt), key_type_str))
                 {
                     key_type = kt;
@@ -56,7 +56,7 @@ namespace
                 }
 
             String all_key_types_str;
-            for (auto kt : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+            for (auto kt : ext::range(Quota::KeyType::MAX))
                 all_key_types_str += String(all_key_types_str.empty() ? "" : ", ") + "'" + Quota::getNameOfKeyType(kt) + "'";
             String msg = "Quota cannot be keyed by '" + key_type_str + "'. Expected one of these literals: " + all_key_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
@@ -81,7 +81,7 @@ namespace
             }
 
             bool resource_type_set = false;
-            for (auto rt : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
+            for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (ParserKeyword{Quota::resourceTypeToKeyword(rt)}.ignore(pos, expected))
                 {

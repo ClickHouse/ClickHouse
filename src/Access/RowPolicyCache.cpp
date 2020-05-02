@@ -16,7 +16,7 @@ namespace DB
 namespace
 {
     using ConditionType = RowPolicy::ConditionType;
-    constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
+    constexpr auto MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
 
 
     /// Accumulates conditions from multiple row policies and joins them using the AND logical operation.
@@ -58,7 +58,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
     policy = policy_;
     roles = &policy->to_roles;
 
-    for (auto type : ext::range_with_static_cast<ConditionType>(0, MAX_CONDITION_TYPE))
+    for (auto type : ext::range(0, MAX_CONDITION_TYPE))
     {
         parsed_conditions[type] = nullptr;
         const String & condition = policy->conditions[type];

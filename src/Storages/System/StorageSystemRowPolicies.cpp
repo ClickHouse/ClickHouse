@@ -25,7 +25,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"restrictive", std::make_shared<DataTypeUInt8>()},
     };
 
-    for (auto index : ext::range_with_static_cast<RowPolicy::ConditionType>(RowPolicy::MAX_CONDITION_TYPE))
+    for (auto index : ext::range(RowPolicy::MAX_CONDITION_TYPE))
         names_and_types.push_back({RowPolicy::conditionTypeToColumnName(index), std::make_shared<DataTypeString>()});
 
     return names_and_types;
