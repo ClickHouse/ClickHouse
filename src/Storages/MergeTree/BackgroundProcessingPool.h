@@ -9,6 +9,7 @@
 #include <shared_mutex>
 #include <atomic>
 #include <functional>
+#include <pthread.h>
 #include <Poco/Event.h>
 #include <Poco/Timestamp.h>
 #include <Core/Types.h>
@@ -26,6 +27,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_SET_THREAD_PRIORITY;
+}
 
 class BackgroundProcessingPool;
 class BackgroundProcessingPoolTaskInfo;
@@ -56,6 +62,8 @@ public:
 
     struct PoolSettings
     {
+        bool low_cpu_priority = false;
+
         double thread_sleep_seconds = 10;
         double thread_sleep_seconds_random_part = 1.0;
         double thread_sleep_seconds_if_nothing_to_do = 0.1;
@@ -75,7 +83,8 @@ public:
     BackgroundProcessingPool(int size_,
         const PoolSettings & pool_settings = {},
         const char * log_name = "BackgroundProcessingPool",
-        const char * thread_name_ = "BackgrProcPool");
+        const char * thread_name_ = "BackgrProcPool",
+        const sched_param & sched_param_ = {});
 
     size_t getNumberOfThreads() const
     {
@@ -114,6 +123,8 @@ protected:
 
     /// Thread group used for profiling purposes
     ThreadGroupStatusPtr thread_group;
+
+    const sched_param param;
 
     void threadFunction();
 

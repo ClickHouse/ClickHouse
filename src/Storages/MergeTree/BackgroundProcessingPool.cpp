@@ -46,9 +46,11 @@ void BackgroundProcessingPoolTaskInfo::wake()
 BackgroundProcessingPool::BackgroundProcessingPool(int size_,
         const PoolSettings & pool_settings,
         const char * log_name,
-        const char * thread_name_)
+        const char * thread_name_,
+        const struct sched_param & sched_param_)
     : size(size_)
     , thread_name(thread_name_)
+    , param(sched_param_)
     , settings(pool_settings)
 {
     logger = &Logger::get(log_name);
@@ -119,6 +121,11 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
 
 void BackgroundProcessingPool::threadFunction()
 {
+    if (settings.low_cpu_priority) {
+        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param)) {
+            throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+        }
+    }
     setThreadName(thread_name);
 
     {

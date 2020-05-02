@@ -109,6 +109,7 @@ private:
     /// Task handler for merges, mutations and moves.
     BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
+    BackgroundProcessingPool::TaskHandle recompressing_task_handle;
 
     void loadMutations();
 
