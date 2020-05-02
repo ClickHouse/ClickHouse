@@ -258,7 +258,9 @@ std::optional<RangeSet> RangeSet::applyMonotonicFunction(
         DataTypePtr & arg_type,
         DataTypePtr & res_type)
 {
-    DataTypePtr new_type;
+    auto new_type = func->getReturnType();
+    if (!new_type)
+        return {};
     std::vector<Range> result;
     for (auto range : data)
     {
@@ -273,17 +275,9 @@ std::optional<RangeSet> RangeSet::applyMonotonicFunction(
         {
             range.left = applyFunction(func, arg_type, range.left);
         }
-        if (!new_type)
-        {
-            return {};
-        }
         if (!range.right.isNull())
         {
             range.right = applyFunction(func, arg_type, range.right);
-        }
-        if (!new_type)
-        {
-            return {};
         }
         if (!monotonicity.is_positive)
         {
