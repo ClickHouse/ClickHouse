@@ -25,7 +25,7 @@ getMacro(name);
 
 **Returned value**
 
-- Value of the specified parameter.
+- Value of the specified macro.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
