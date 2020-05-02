@@ -129,12 +129,17 @@ namespace
         return false;
     }
 
+    auto & getIsAddressOfHostCache()
+    {
+        static SimpleCache<decltype(isAddressOfHostImpl), isAddressOfHostImpl> cache;
+        return cache;
+    }
+
     /// Whether a specified address is one of the addresses of a specified host.
     bool isAddressOfHost(const IPAddress & address, const String & host)
     {
         /// We need to cache DNS requests.
-        static SimpleCache<decltype(isAddressOfHostImpl), isAddressOfHostImpl> cache;
-        return cache(address, host);
+        return getIsAddressOfHostCache()(address, host);
     }
 
     /// Helper function for isAddressOfLocalhost().
@@ -196,12 +201,17 @@ namespace
         return host;
     }
 
+    auto & getHostByAddressCache()
+    {
+        static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
+        return cache;
+    }
+
     /// Returns the host name by its address.
     String getHostByAddress(const IPAddress & address)
     {
         /// We need to cache DNS requests.
-        static SimpleCache<decltype(getHostByAddressImpl), &getHostByAddressImpl> cache;
-        return cache(address);
+        return getHostByAddressCache()(address);
     }
 }
 
@@ -439,7 +449,6 @@ bool AllowedClientHosts::contains(const IPAddress & address) const
     return false;
 }
 
-
 void AllowedClientHosts::compileRegexps() const
 {
     if (compiled_host_regexps.size() == host_regexps.size())
@@ -456,4 +465,11 @@ bool operator ==(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs)
     return (lhs.addresses == rhs.addresses) && (lhs.subnets == rhs.subnets) && (lhs.host_names == rhs.host_names)
         && (lhs.host_regexps == rhs.host_regexps);
 }
+
+void AllowedClientHosts::dropDNSCaches()
+{
+    getIsAddressOfHostCache().drop();
+    getHostByAddressCache().drop();
+}
+
 }

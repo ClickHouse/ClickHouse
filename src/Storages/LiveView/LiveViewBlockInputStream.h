@@ -145,6 +145,7 @@ protected:
                     if (!end_of_blocks)
                     {
                         end_of_blocks = true;
+
                         return { getHeader(), true };
                     }
                     while (true)

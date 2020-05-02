@@ -90,6 +90,8 @@ public:
     friend bool operator ==(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs);
     friend bool operator !=(const AllowedClientHosts & lhs, const AllowedClientHosts & rhs) { return !(lhs == rhs); }
 
+    static void dropDNSCaches();
+
 private:
     void compileRegexps() const;
 

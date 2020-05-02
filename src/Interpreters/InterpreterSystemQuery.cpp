@@ -19,6 +19,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -160,6 +161,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::DROP_DNS_CACHE:
             DNSResolver::instance().dropCache();
+            AllowedClientHosts::dropDNSCaches();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
