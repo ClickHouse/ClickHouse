@@ -4,6 +4,64 @@
 
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
 
+## getMacro {#getmacro}
+
+Возвращает именованное значение из секции [macros](../../operations/server-configuration-parameters/settings.md#macros) конфигурации сервера.
+
+**Синтаксис** 
+
+```sql
+getMacro(name);
+```
+
+**Параметры**
+
+- `name` — Имя, которое необходимо получить из секции `macros`. [String](../../sql-reference/data-types/string.md#string).
+
+**Возвращаемое значение**
+
+- Значение по указанному имени.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Пример секции `macros` в конфигурационном файле сервера:
+
+```xml
+<macros>
+    <test>Value</test>
+</macros>
+```
+
+Запрос:
+
+```sql
+SELECT getMacro('test');
+```
+
+Результат:
+
+```text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+Альтернативный способ получения значения:
+
+```sql
+SELECT * FROM system.macros
+WHERE macro = 'test'
+```
+
+```text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
+
+
 ## FQDN {#fqdn}
 
 Возвращает полное имя домена.
