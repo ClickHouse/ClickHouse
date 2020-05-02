@@ -223,6 +223,16 @@ if (COMPILER_CLANG)
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
 
+    # We cannot afford to use LTO when compiling unitests, and it's not enough
+    # to only supply -fno-lto at the final linking stage. So we disable it
+    # completely.
+    if (NOT ENABLE_TESTS AND NOT SANITIZE)
+        # Link time optimization
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+    endif ()
+
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
 
     find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
