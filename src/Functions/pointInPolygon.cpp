@@ -116,7 +116,8 @@ public:
             throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
 
-        auto validateTuple = [this](size_t i, const DataTypeTuple * tuple) {
+        auto validate_tuple = [this](size_t i, const DataTypeTuple * tuple)
+        {
             if (tuple == nullptr)
                 throw Exception(getMessagePrefix(i) + " must contain a tuple", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -135,28 +136,33 @@ public:
             }
         };
 
-        validateTuple(0, checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+        validate_tuple(0, checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
 
-        if (arguments.size() == 2) {
+        if (arguments.size() == 2)
+        {
             auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
             if (array == nullptr)
                 throw Exception(getMessagePrefix(1) + " must contain an array of tuples or an array of arrays of tuples.",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
-            if (nested_array != nullptr) {
+            if (nested_array != nullptr)
+            {
                 array = nested_array;
             }
 
-            validateTuple(1, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
-        } else {
-            for (size_t i = 1; i < arguments.size(); i++) {
-                auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            validate_tuple(1, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
+        }
+        else
+        {
+            for (size_t i = 1; i < arguments.size(); i++)
+            {
+                auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
                 if (array == nullptr)
                     throw Exception(getMessagePrefix(i) + " must contain an array of tuples",
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-                validateTuple(i, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
+                validate_tuple(i, checkAndGetDataType<DataTypeTuple>(array->getNestedType().get()));
             }
         }
 
@@ -192,8 +198,10 @@ public:
         auto & data = execution_result->getData();
 
         Polygon polygon;
-        for (auto i : ext::range(0, size)) {
-            if (!poly_is_const || i == 0) {
+        for (auto i : ext::range(0, size))
+        {
+            if (!poly_is_const || i == 0)
+            {
                 polygon = parsePolygon(block, arguments, i);
             }
 
@@ -238,7 +246,8 @@ private:
         const auto & x_column = tuple_columns[0];
         const auto & y_column = tuple_columns[1];
 
-        auto parse_polygon_part = [&x_column, &y_column](auto & container, size_t l, size_t r) {
+        auto parse_polygon_part = [&x_column, &y_column](auto & container, size_t l, size_t r)
+        {
             for (auto j : ext::range(l, r))
             {
                 CoordinateType x_coord = x_column->getFloat64(j);
@@ -249,18 +258,25 @@ private:
         };
 
         Polygon polygon;
-        if (nested_array_col) {
-            for (auto j : ext::range(array_col->getOffsets()[i - 1], array_col->getOffsets()[i])) {
+        if (nested_array_col)
+        {
+            for (auto j : ext::range(array_col->getOffsets()[i - 1], array_col->getOffsets()[i]))
+            {
                 size_t l = nested_array_col->getOffsets()[j - 1];
                 size_t r = nested_array_col->getOffsets()[j];
-                if (polygon.outer().empty()) {
+                if (polygon.outer().empty())
+                {
                     parse_polygon_part(polygon.outer(), l, r);
-                } else {
+                }
+                else
+                {
                     polygon.inners().emplace_back();
                     parse_polygon_part(polygon.inners().back(), l, r);
                 }
             }
-        } else {
+        }
+        else
+        {
             size_t l = array_col->getOffsets()[i - 1];
             size_t r = array_col->getOffsets()[i];
 
@@ -315,9 +331,12 @@ private:
     Polygon parsePolygon(Block & block, const ColumnNumbers & arguments, size_t i) const
     {
         Polygon polygon;
-        if (arguments.size() == 2) {
+        if (arguments.size() == 2)
+        {
             polygon = parsePolygonFromSingleColumn(block, arguments, i);
-        } else {
+        }
+        else
+        {
             polygon = parsePolygonFromMultipleColumns(block, arguments, i);
         }
 
