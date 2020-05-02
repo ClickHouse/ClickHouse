@@ -21,7 +21,7 @@ getMacro(name);
 
 **Parameters**
 
-- `name` — Name of the parameter from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
+- `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 
