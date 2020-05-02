@@ -163,29 +163,6 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     return res;
 }
 
-/// the same as DistributedBlockOutputStream::createSelector, should it be static?
-IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
-{
-    const auto & slot_to_shard = cluster->getSlotToShard();
-
-#define CREATE_FOR_TYPE(TYPE)                                   \
-    if (typeid_cast<const DataType##TYPE *>(result.type.get())) \
-        return createBlockSelector<TYPE>(*result.column, slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
-}
-
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 {
     std::ostringstream os;
@@ -728,6 +705,32 @@ void StorageDistributed::ClusterNodeData::flushAllData() const
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
 {
     directory_monitor->shutdownAndDropAllData();
+}
+
+IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+{
+    const auto & slot_to_shard = cluster->getSlotToShard();
+
+// If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
+#define CREATE_FOR_TYPE(TYPE)                                                                                       \
+    if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
+        return createBlockSelector<TYPE>(*result.column, slot_to_shard);                                            \
+    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
+        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
+            return createBlockSelector<TYPE>(*result.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+
+    CREATE_FOR_TYPE(UInt8)
+    CREATE_FOR_TYPE(UInt16)
+    CREATE_FOR_TYPE(UInt32)
+    CREATE_FOR_TYPE(UInt64)
+    CREATE_FOR_TYPE(Int8)
+    CREATE_FOR_TYPE(Int16)
+    CREATE_FOR_TYPE(Int32)
+    CREATE_FOR_TYPE(Int64)
+
+#undef CREATE_FOR_TYPE
+
+    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
