@@ -34,7 +34,8 @@ Type: [String](../../sql-reference/data-types/string.md).
 An alternative way to get the same value:
 
 ```sql
-SELECT * FROM system.macros;
+SELECT * FROM system.macros
+WHERE macro = 'test';
 ```
 
 ```text
