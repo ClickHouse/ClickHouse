@@ -11,7 +11,7 @@ Returns a string with the name of the host that this function was performed on. 
 
 ## getMacro {#getmacro}
 
-Gets the parameter value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file `config.xml`.
+Gets a named value from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration.
 
 **Syntax** 
 
