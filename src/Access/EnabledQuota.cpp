@@ -128,7 +128,7 @@ struct EnabledQuota::Impl
         const Intervals & intervals,
         std::chrono::system_clock::time_point current_time)
     {
-        for (auto resource_type : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
+        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
             checkExceeded(user_name, intervals, resource_type, current_time);
     }
 };

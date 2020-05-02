@@ -23,7 +23,7 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypes()
         {"duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"end_of_interval", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}};
 
-    for (auto resource_type : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
+    for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
     {
         DataTypePtr data_type;
         if (resource_type == Quota::EXECUTION_TIME)

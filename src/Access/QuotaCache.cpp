@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUOTA_REQUIRES_CLIENT_KEY;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -72,8 +73,9 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
                 return params.client_key;
             return params.client_address.toString();
         }
+        case KeyType::MAX: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -101,7 +103,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     new_intervals->quota_key = key;
     auto & intervals = new_intervals->intervals;
     intervals.reserve(quota->all_limits.size());
-    static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
     for (const auto & limits : quota->all_limits)
     {
         intervals.emplace_back();

@@ -5,6 +5,12 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 Quota::Limits::Limits()
 {
     boost::range::fill(max, 0);
@@ -38,8 +44,9 @@ const char * Quota::resourceTypeToColumnName(ResourceType resource_type)
         case Quota::READ_ROWS: return "read_rows";
         case Quota::READ_BYTES: return "read_bytes";
         case Quota::EXECUTION_TIME: return "execution_time";
+        case Quota::MAX_RESOURCE_TYPE: break;
     }
-    __builtin_unreachable();
+    throw Exception("Unexpected resource type: " + std::to_string(static_cast<int>(resource_type)), ErrorCodes::LOGICAL_ERROR);
 }
 }
 

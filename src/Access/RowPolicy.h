@@ -44,8 +44,9 @@ struct RowPolicy : public IAccessEntity
         UPDATE_FILTER,
         UPDATE_CHECK,
         DELETE_FILTER,
+
+        MAX_CONDITION_TYPE
     };
-    static constexpr size_t MAX_CONDITION_TYPE = 5;
     static const char * conditionTypeToString(ConditionType index);
     static const char * conditionTypeToColumnName(ConditionType index);
 

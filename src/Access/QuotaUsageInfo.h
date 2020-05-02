@@ -11,7 +11,7 @@ struct QuotaUsageInfo
 {
     using ResourceType = Quota::ResourceType;
     using ResourceAmount = Quota::ResourceAmount;
-    static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
 
     struct Interval
     {

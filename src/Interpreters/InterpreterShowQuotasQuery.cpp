@@ -30,7 +30,7 @@ String InterpreterShowQuotasQuery::getRewrittenQuery()
         expr = "name || ' key=\\'' || key || '\\'' || if(isNull(end_of_interval), '', ' interval=[' || "
                "toString(end_of_interval - duration) || ' .. ' || "
                "toString(end_of_interval) || ']'";
-        for (auto resource_type : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
+        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
         {
             String column_name = Quota::resourceTypeToColumnName(resource_type);
             expr += String{" || ' "} + column_name + "=' || toString(" + column_name + ")";
