@@ -468,6 +468,9 @@ void StorageBuffer::startup()
 
 void StorageBuffer::shutdown()
 {
+    if (!flush_handle)
+        return;
+
     flush_handle->deactivate();
 
     try
