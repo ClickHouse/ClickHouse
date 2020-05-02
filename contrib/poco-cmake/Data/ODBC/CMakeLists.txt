@@ -20,9 +20,9 @@ if (ENABLE_ODBC)
         add_library (_poco_data_odbc ${SRCS})
         add_library (Poco::Data::ODBC ALIAS _poco_data_odbc)
 
-        target_compile_options (Poco::Data::ODBC PUBLIC -Wno-unused-variable)
-        target_include_directories (Poco::Data::ODBC PUBLIC ${LIBRARY_DIR}/Data/ODBC/include)
-        target_link_libraries (Poco::Data::ODBC PUBLIC Poco::Data unixodbc)
+        target_compile_options (_poco_data_odbc PUBLIC -Wno-unused-variable)
+        target_include_directories (_poco_data_odbc PUBLIC ${LIBRARY_DIR}/Data/ODBC/include)
+        target_link_libraries (_poco_data_odbc PUBLIC Poco::Data unixodbc)
     else ()
         add_library (Poco::Data::ODBC UNKNOWN IMPORTED)
 

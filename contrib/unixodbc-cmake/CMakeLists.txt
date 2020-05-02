@@ -289,7 +289,16 @@ if (ENABLE_ODBC)
                 ${LIBRARY_DIR}/include
         )
         target_compile_definitions (unixodbc PRIVATE -DHAVE_CONFIG_H)
-        target_compile_options (unixodbc PRIVATE -Wno-dangling-else -Wno-parentheses -Wno-misleading-indentation -Wno-unknown-warning-option -O2)
+        target_compile_options (unixodbc
+            PRIVATE
+                -Wno-dangling-else
+                -Wno-parentheses
+                -Wno-misleading-indentation
+                -Wno-unknown-warning-option
+                -O2
+            PUBLIC
+                -Wno-reserved-id-macro
+        )
     else ()
         add_library (unixodbc UNKNOWN IMPORTED)
 
@@ -299,7 +308,7 @@ if (ENABLE_ODBC)
         set_target_properties (unixodbc PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_ODBC})
     endif ()
 
-    target_compile_definitions (unixodbc INTERFACE USE_ODBC=1)
+    target_compile_definitions (unixodbc PUBLIC USE_ODBC=1)
 
     message (STATUS "Using unixodbc")
 else ()

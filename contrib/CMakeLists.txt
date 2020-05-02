@@ -13,10 +13,11 @@ add_subdirectory (grpc-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
 add_subdirectory (murmurhash)
-add_subdirectory (poco-cmake)
 add_subdirectory (replxx-cmake)
 add_subdirectory (ryu-cmake)
 add_subdirectory (unixodbc-cmake)
+
+add_subdirectory (poco-cmake)
 
 
 # TODO: refactor the contrib libraries below this comment.

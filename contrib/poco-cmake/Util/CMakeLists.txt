@@ -33,7 +33,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     add_library (Poco::Util ALIAS _poco_util)
 
     target_include_directories (_poco_util PUBLIC ${LIBRARY_DIR}/Util/include)
-    target_link_libraries (_poco_util PUBLIC Poco::Util Poco::XML)
+    target_link_libraries (_poco_util PUBLIC Poco::JSON Poco::XML)
 else ()
     add_library (Poco::Util UNKNOWN IMPORTED GLOBAL)
 

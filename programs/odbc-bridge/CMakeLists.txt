@@ -16,6 +16,7 @@ set (CLICKHOUSE_ODBC_BRIDGE_LINK
         daemon
         dbms
         Poco::Data
+    PUBLIC
         Poco::Data::ODBC
 )
 

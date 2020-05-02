@@ -1,9 +1,12 @@
 #include "getIdentifierQuote.h"
 
-#include <Poco/Data/ODBC/ODBCException.h>
-#include <Poco/Data/ODBC/SessionImpl.h>
-#include <Poco/Data/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#if USE_ODBC
+
+#    include <Poco/Data/ODBC/ODBCException.h>
+#    include <Poco/Data/ODBC/SessionImpl.h>
+#    include <Poco/Data/ODBC/Utility.h>
+
+#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 
 namespace DB
@@ -34,3 +37,5 @@ std::string getIdentifierQuote(SQLHDBC hdbc)
 }
 
 }
+
+#endif
