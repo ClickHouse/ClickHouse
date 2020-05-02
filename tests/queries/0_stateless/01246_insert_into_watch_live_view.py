@@ -38,7 +38,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client3.send('CREATE LIVE VIEW test.lv_sums AS SELECT * FROM test.sums ORDER BY version')
     client3.expect(prompt)
 
-    client3.send("WATCH test.lv_sums LIMIT 3 FORMAT CSV")
+    client3.send("WATCH test.lv_sums FORMAT CSV")
     client3.expect(r'0.*1' + end_of_block)
 
     client1.send('INSERT INTO test.sums WATCH test.lv')
@@ -53,7 +53,13 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.send('INSERT INTO test.mt VALUES (4),(5),(6)')
     client2.expect(prompt)
     client3.expect('21,3.*\r\n')
-    client3.expect(prompt)
+
+    # send Ctrl-C
+    client3.send('\x03', eol='')
+    match = client3.expect('(%s)|([#\$] )' % prompt)
+    if match.groups()[1]:
+        client3.send(client3.command)
+        client3.expect(prompt)
 
     # send Ctrl-C
     client1.send('\x03', eol='')
@@ -61,7 +67,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)    
-    
+
     client1.send('DROP TABLE test.lv_sums')
     client1.expect(prompt)
     client1.send('DROP TABLE test.sums')
