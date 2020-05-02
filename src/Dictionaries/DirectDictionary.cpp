@@ -10,9 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -65,14 +63,16 @@ DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find)
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    while (const auto block = stream->read()) {
+    while (const auto block = stream->read())
+    {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
             const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 
-            for (const auto row_idx : ext::range(0, id_column.size())) {
+            for (const auto row_idx : ext::range(0, id_column.size()))
+            {
                 const auto key = id_column[row_idx].get<UInt64>();
 
                 if (key == to_find)
@@ -421,18 +421,22 @@ void DirectDictionary::getItemsImpl(
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    while (const auto block = stream->read()) {
+    while (const auto block = stream->read())
+    {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
             const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 
-            for (const auto row_idx : ext::range(0, id_column.size())) {
+            for (const auto row_idx : ext::range(0, id_column.size()))
+            {
                 const auto key = id_column[row_idx].get<UInt64>();
 
-                for (const auto row : ext::range(0, rows)) {
-                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx)) {
+                for (const auto row : ext::range(0, rows))
+                {
+                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
+                    {
                         is_found[row] = true;
                         set_value(row, static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>()));
                     }
@@ -462,17 +466,21 @@ void DirectDictionary::getItemsStringImpl(
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    while (const auto block = stream->read()) {
+    while (const auto block = stream->read())
+    {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
             const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 
-            for (const auto row_idx : ext::range(0, id_column.size())) {
+            for (const auto row_idx : ext::range(0, id_column.size()))
+            {
                 const auto key = id_column[row_idx].get<UInt64>();
-                for (const auto row : ext::range(0, rows)) {
-                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx)) {
+                for (const auto row : ext::range(0, rows))
+                {
+                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
+                    {
                         is_found[row] = true;
 
                         const String from_source = attribute_column[row_idx].get<String>();
@@ -516,17 +524,17 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    while (const auto block = stream->read()) {
+    while (const auto block = stream->read())
+    {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
-        for (const auto row_idx : ext::range(0, id_column.size())) {
+        for (const auto row_idx : ext::range(0, id_column.size()))
+        {
             const auto key = id_column[row_idx].get<UInt64>();
 
-            for (const auto row : ext::range(0, rows)) {
-                if (key == ids[row]) {
+            for (const auto row : ext::range(0, rows))
+                if (key == ids[row])
                     out[row] = 1;
-                }
-            }
         }
     }
 
@@ -544,10 +552,12 @@ PaddedPODArray<DirectDictionary::Key> DirectDictionary::getIds() const
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
-    while (const auto block = stream->read()) {
+    while (const auto block = stream->read())
+    {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
-        for (const auto row_idx : ext::range(0, id_column.size())) {
+        for (const auto row_idx : ext::range(0, id_column.size()))
+        {
             const auto key = id_column[row_idx].get<UInt64>();
             ids.push_back(key);
         }
