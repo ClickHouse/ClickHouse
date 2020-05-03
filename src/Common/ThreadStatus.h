@@ -95,8 +95,11 @@ public:
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
     MemoryTracker memory_tracker{VariableContext::Thread};
+
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
+    /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
+    Int64 untracked_memory_limit = 4 * 1024 * 1024;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
