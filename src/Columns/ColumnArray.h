@@ -80,8 +80,7 @@ public:
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max) const override;
-
-    bool hasEqualOffsetsCount(const ColumnArray & other) const;
+    
     bool hasEqualOffsets(const ColumnArray & other) const;
 
     /** More efficient methods of manipulation */
