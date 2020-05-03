@@ -36,7 +36,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    CHColumnToArrowColumn::CHChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
+    CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
 
     if (!file_writer)
     {

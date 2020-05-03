@@ -234,7 +234,7 @@ namespace DB
     */
     }
 
-    void CHColumnToArrowColumn::CHChunkToArrowTable(
+    void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
         const Block & header,
         const Chunk & chunk,

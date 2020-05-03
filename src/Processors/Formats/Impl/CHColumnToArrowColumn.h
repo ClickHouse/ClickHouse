@@ -28,7 +28,7 @@ private:
 
 
 public:
-    static void CHChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const Block & header, const Chunk & chunk,
+    static void chChunkToArrowTable(std::shared_ptr<arrow::Table> & res, const Block & header, const Chunk & chunk,
                                     size_t columns_num, String format_name);
 };
 }
