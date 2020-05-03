@@ -5,7 +5,7 @@
 #include <Core/Types.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include "ArrowBufferedOutputStream.h"
+#include "ArrowBufferedStreams.h"
 
 namespace arrow::ipc { class RecordBatchWriter; }
 
@@ -25,7 +25,7 @@ public:
 
 private:
     const FormatSettings format_settings;
-    ArrowBufferedOutputStream arrow_ostream;
+    std::shared_ptr<ArrowBufferedOutputStream> arrow_ostream;
     std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
 };
 

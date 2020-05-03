@@ -144,7 +144,13 @@ Chunk ParquetBlockInputFormat::generate()
 
     std::shared_ptr<arrow::Table> table;
     arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, "Parquet");
+    if (!read_status.ok())
+        throw Exception{"Error while reading Parquet data: " + read_status.ToString(),
+                        ErrorCodes::CANNOT_READ_ALL_DATA};
+
+    ++row_group_current;
+
+    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "Parquet");
     return res;
 }
 
