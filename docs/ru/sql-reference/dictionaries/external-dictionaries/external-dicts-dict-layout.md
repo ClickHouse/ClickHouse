@@ -49,6 +49,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [hashed](#hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [direct](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
@@ -291,6 +292,28 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ### complex\_key\_cache {#complex-key-cache}
 
 Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `cache`.
+
+### direct {#direct}
+
+Словарь не хранит данные локально и взаимодействует с источником непосредственно в момент запроса.
+
+Ключ словаря имеет тип `UInt64`.
+
+Поддерживаются все виды источников.
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(DIRECT())
+```
 
 ### ip\_trie {#ip-trie}
 
