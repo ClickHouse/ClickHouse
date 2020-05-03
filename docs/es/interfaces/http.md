@@ -11,7 +11,7 @@ La interfaz HTTP le permite usar ClickHouse en cualquier plataforma desde cualqu
 
 De forma predeterminada, clickhouse-server escucha HTTP en el puerto 8123 (esto se puede cambiar en la configuración).
 
-Si realiza una solicitud GET / sin parámetros, devuelve 200 códigos de respuesta y la cadena que definió en [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) valor predeterminado “Ok.” (con un avance de línea al final)
+Si realiza una solicitud GET / sin parámetros, devuelve 200 códigos de respuesta y la cadena que definió en [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) valor predeterminado “Ok.” (con un avance de línea al final)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -259,7 +259,7 @@ Opcional ‘quota\_key’ parámetro se puede pasar como la clave de cuota (cual
 
 La interfaz HTTP permite pasar datos externos (tablas temporales externas) para consultar. Para obtener más información, consulte la sección “External data for query processing”.
 
-## Almacenamiento en búfer de respuesta {#response-buffering}
+## Almacenamiento En búfer De Respuesta {#response-buffering}
 
 Puede habilitar el almacenamiento en búfer de respuestas en el lado del servidor. El `buffer_size` y `wait_end_of_query` Los parámetros URL se proporcionan para este propósito.
 
@@ -275,7 +275,7 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 
 Utilice el almacenamiento en búfer para evitar situaciones en las que se produjo un error de procesamiento de consultas después de enviar al cliente el código de respuesta y los encabezados HTTP. En esta situación, se escribe un mensaje de error al final del cuerpo de la respuesta y, en el lado del cliente, el error solo se puede detectar en la etapa de análisis.
 
-### Consultas con parámetros {#cli-queries-with-parameters}
+### Consultas Con parámetros {#cli-queries-with-parameters}
 
 Puede crear una consulta con parámetros y pasar valores para ellos desde los parámetros de solicitud HTTP correspondientes. Para obtener más información, consulte [Consultas con parámetros para CLI](cli.md#cli-queries-with-parameters).
 
@@ -285,7 +285,7 @@ Puede crear una consulta con parámetros y pasar valores para ellos desde los pa
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-## Interfaz HTTP predefinida {#predefined_http_interface}
+## Interfaz HTTP Predefinida {#predefined_http_interface}
 
 ClickHouse admite consultas específicas a través de la interfaz HTTP. Por ejemplo, puede escribir datos en una tabla de la siguiente manera:
 
@@ -391,7 +391,7 @@ Ahora `<http_handlers>` puede configurar `<root_handler>`, `<ping_handler>`, `<r
     $ curl 'http://localhost:8123'
     <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
 
-## Método de codificación de datos: {#ping_handler}
+## Método De codificación De Datos: {#ping_handler}
 
 `<ping_handler>` se puede utilizar para sondear el estado del servidor ClickHouse actual. Cuando el servidor HTTP ClickHouse es normal, acceder a ClickHouse a través de `<ping_handler>` volverá **Ok.**.
 
@@ -408,7 +408,7 @@ $ curl 'http://localhost:8123/ping'
 Ok.
 ```
 
-## Sistema abierto. {#replicas_status_handler}
+## Sistema Abierto {#replicas_status_handler}
 
 `<replicas_status_handler>` se utiliza para detectar el estado de la réplica y el nodo de retorno **Ok.** si el nodo de réplica no tiene retraso. Si hay un retraso, devuelva el retraso específico. El valor de `<replicas_status_handler>` admite personalización. Si no especifica `<replicas_status_handler>`, Configuración predeterminada de ClickHouse `<replicas_status_handler>` ser **/replicas\_status**.
 
@@ -434,7 +434,7 @@ $ curl 'http://localhost:8123/replicas_status'
 db.stats:  Absolute delay: 22. Relative delay: 22.
 ```
 
-## DirecciÃ³n de correo electrÃ³nico {#predefined_query_handler}
+## DirecciÃ³n De Correo electrÃ³nico {#predefined_query_handler}
 
 Puede configurar `<method>`, `<headers>`, `<url>` y `<queries>` en `<predefined_query_handler>`.
 
@@ -478,7 +478,7 @@ max_alter_threads   2
 !!! note "Nota"
     En uno `<predefined_query_handler>`, una `<queries>` sólo es compatible con uno `<query>` de un tipo de plaquita.
 
-## Nombre de la red inalámbrica (SSID): {#dynamic_query_handler}
+## Nombre De La Red inalámbrica (SSID): {#dynamic_query_handler}
 
 `<dynamic_query_handler>` que `<predefined_query_handler>` aumentar `<query_param_name>` .
 

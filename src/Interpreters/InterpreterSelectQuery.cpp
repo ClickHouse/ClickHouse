@@ -552,10 +552,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         Block res;
 
-        for (auto & key : query_analyzer->aggregationKeys())
+        for (const auto & key : query_analyzer->aggregationKeys())
             res.insert({nullptr, header.getByName(key.name).type, key.name});
 
-        for (auto & aggregate : query_analyzer->aggregates())
+        for (const auto & aggregate : query_analyzer->aggregates())
         {
             size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
@@ -716,7 +716,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     bool intermediate_stage = false;
 
     if (options.only_analyze)
@@ -2033,7 +2033,9 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
                 sorting_stream, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort / pipeline.streams.size(),
-                context->getTemporaryVolume(), settings.min_free_disk_space_for_temporary_data);
+                context->getTemporaryVolume(),
+                settings.temporary_files_codec,
+                settings.min_free_disk_space_for_temporary_data);
 
             stream = merging_stream;
         });

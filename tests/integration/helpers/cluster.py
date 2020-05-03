@@ -11,6 +11,7 @@ import subprocess
 import time
 import urllib
 import httplib
+import requests
 import xml.dom.minidom
 import logging
 import docker
@@ -298,6 +299,15 @@ class ClickHouseCluster:
         docker_id = self.get_instance_docker_id(instance_name)
         handle = self.docker_client.containers.get(docker_id)
         return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+
+    def get_container_id(self, instance_name):
+        docker_id = self.get_instance_docker_id(instance_name)
+        handle = self.docker_client.containers.get(docker_id)
+        return handle.attrs['Id']
+
+    def get_container_logs(self, instance_name):
+        container_id = self.get_container_id(instance_name)
+        return self.docker_client.api.logs(container_id)
 
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
@@ -689,7 +699,7 @@ class ClickHouseInstance:
 
         def http_code_and_message():
             return str(open_result.getcode()) + " " + httplib.responses[open_result.getcode()] + ": " + open_result.read()
-            
+
         if expect_fail_and_get_error:
             if open_result.getcode() == 200:
                 raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read())
@@ -698,6 +708,11 @@ class ClickHouseInstance:
             if open_result.getcode() != 200:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
             return open_result.read()
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_request(self, url, method='GET', params=None, data=None, headers=None):
+        url = "http://" + self.ip_address + ":8123/"+url
+        return requests.request(method=method, url=url, params=params, data=data, headers=headers)
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):

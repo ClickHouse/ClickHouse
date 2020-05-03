@@ -53,7 +53,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
         + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
         + ". Size of compressed block: " + toString(size);
 
-    auto message_hardware_failure = "This is most likely due to hardware failure. If you receive broken data over network and the error does not repeat every time, this can be caused by bad RAM on network interface controller or bad controller itself or bad RAM on network switches or bad CPU on network switches (look at the logs on related network switches; note that TCP checksums don't help) or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail if the number of errors is huge) or bad CPU on host. If you read data from disk, this can be caused by disk bit rott. This exception protects ClickHouse from data corruption due to hardware failures.";
+    const char * message_hardware_failure = "This is most likely due to hardware failure. If you receive broken data over network and the error does not repeat every time, this can be caused by bad RAM on network interface controller or bad controller itself or bad RAM on network switches or bad CPU on network switches (look at the logs on related network switches; note that TCP checksums don't help) or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail if the number of errors is huge) or bad CPU on host. If you read data from disk, this can be caused by disk bit rott. This exception protects ClickHouse from data corruption due to hardware failures.";
 
     auto flip_bit = [](char * buf, size_t pos)
     {
@@ -110,9 +110,9 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
     else if (method != codec->getMethodByte())
-        throw Exception("Data compressed with different methods, given method byte "
+        throw Exception("Data compressed with different methods, given method byte 0x"
                         + getHexUIntLowercase(method)
-                        + ", previous method byte "
+                        + ", previous method byte 0x"
                         + getHexUIntLowercase(codec->getMethodByte()),
                         ErrorCodes::CANNOT_DECOMPRESS);
 

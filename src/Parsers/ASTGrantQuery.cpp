@@ -155,7 +155,7 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
 }
 
 
-void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (to_roles)
         to_roles->replaceCurrentUserTagWithName(current_user_name);

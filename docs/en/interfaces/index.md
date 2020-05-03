@@ -20,7 +20,7 @@ In most cases it is recommended to use appropriate tool or library instead of in
 
 There are also a wide range of third-party libraries for working with ClickHouse:
 
--   [Client libraries](third-party/client_libraries.md)
+-   [Client libraries](third-party/client-libraries.md)
 -   [Integrations](third-party/integrations.md)
 -   [Visual interfaces](third-party/gui.md)
 

@@ -881,7 +881,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 {
     std::vector<std::pair<String, LogEntryPtr>> conflicts;
 
-    for (auto & future_part_elem : future_parts)
+    for (const auto & future_part_elem : future_parts)
     {
         /// Do not check itself log entry
         if (future_part_elem.second->znode_name == entry.znode_name)
@@ -1648,8 +1648,21 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(
-        const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
-        String * out_reason) const
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
+{
+    if (left)
+        return canMergeTwoParts(left, right, out_reason);
+    else
+        return canMergeSinglePart(right, out_reason);
+}
+
+
+bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -1778,6 +1791,39 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
         if (out_reason)
             *out_reason = "Current mutation versions of parts " + left->name + " and " + right->name + " differ: "
                 + toString(left_mutation_ver) + " and " + toString(right_mutation_ver) + " respectively";
+        return false;
+    }
+
+    return true;
+}
+
+bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
+    const MergeTreeData::DataPartPtr & part,
+    String * out_reason) const
+{
+    if (part->name == inprogress_quorum_part)
+    {
+        if (out_reason)
+            *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+        return false;
+    }
+
+    if (prev_virtual_parts.getContainingPart(part->info).empty())
+    {
+        if (out_reason)
+            *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+
+    /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+    /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+    String containing_part = queue.virtual_parts.getContainingPart(part->info);
+    if (containing_part != part->name)
+    {
+        if (out_reason)
+            *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
         return false;
     }
 

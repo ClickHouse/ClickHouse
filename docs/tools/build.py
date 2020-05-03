@@ -127,9 +127,12 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
+        website_url = 'https://clickhouse.tech'
+        site_name = site_names.get(lang, site_names['en']) % args.version_prefix
+        site_name = site_name.replace('  ', ' ')
         raw_config = dict(
-            site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
-            site_url=f'https://clickhouse.tech/docs/{lang}/',
+            site_name=site_name,
+            site_url=f'{website_url}/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -139,18 +142,19 @@ def build_for_lang(lang, args):
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
-            extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
             markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
                 'single_page': False,
-                'rev':       args.rev,
+                'rev': args.rev,
                 'rev_short': args.rev_short,
-                'rev_url':   args.rev_url,
-                'events':    args.events,
-                'languages': languages
+                'rev_url': args.rev_url,
+                'website_url': website_url,
+                'events': args.events,
+                'languages': languages,
+                'includes_dir':  os.path.join(os.path.dirname(__file__), '..', '_includes')
             }
         )
 
@@ -323,9 +327,12 @@ def write_redirect_html(out_path, to_url):
 
 def build_redirect_html(args, from_path, to_path):
     for lang in args.lang.split(','):
-        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_path = os.path.join(
+            args.docs_output_dir, lang,
+            from_path.replace('/index.md', '/index.html').replace('.md', '/index.html')
+        )
         version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
-        target_path = to_path.replace('.md', '/')
+        target_path = to_path.replace('/index.md', '/').replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
         to_url = to_url.strip()
         write_redirect_html(out_path, to_url)
@@ -360,9 +367,12 @@ def build(args):
     build_releases(args, build_docs)
 
     if not args.skip_website:
+        website.process_benchmark_results(args)
         website.minify_website(args)
 
     for static_redirect in [
+        ('benchmark.html', '/benchmark/dbms/'),
+        ('benchmark_hardware.html', '/benchmark/hardware/'),
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
         ('reference_en.html', '/docs/en/single/', ),
         ('reference_ru.html', '/docs/ru/single/',),

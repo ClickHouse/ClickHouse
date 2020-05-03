@@ -1,7 +1,4 @@
-<test>
-
-
-
+<test max_ignored_relative_change="0.2">
     <substitutions>
         <substitution>
            <name>hash_func</name>
@@ -43,7 +40,7 @@
            <name>table_slow</name>
            <values>
                <value>numbers(1000000)</value>
-               <value>numbers_mt(10000000)</value>
+               <value>numbers_mt(100000000)</value>
            </values>
         </substitution>
     </substitutions>

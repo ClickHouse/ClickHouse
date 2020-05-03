@@ -57,7 +57,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int TYPE_MISMATCH;
     extern const int CANNOT_LINK;
 }
 
@@ -264,7 +263,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             for (size_t j = 0; j < current_block.columns(); ++j)
             {
-                auto & src_column = current_block.getByPosition(j).column;
+                const auto & src_column = current_block.getByPosition(j).column;
                 auto & dst_column = job.current_shard_block.getByPosition(j).column;
 
                 /// Zero permutation size has special meaning in IColumn::permute
@@ -457,34 +456,14 @@ void DistributedBlockOutputStream::writeSuffix()
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block)
+IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block) const
 {
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
-    const auto & slot_to_shard = cluster->getSlotToShard();
 
-// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
-#define CREATE_FOR_TYPE(TYPE) \
-    if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
-    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
-        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
-            return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
+    return storage.createSelector(cluster, key_column);
 }
 
 

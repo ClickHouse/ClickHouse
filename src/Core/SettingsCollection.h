@@ -298,6 +298,13 @@ enum class LogsLevel
 };
 using SettingLogsLevel = SettingEnum<LogsLevel>;
 
+enum class DefaultDatabaseEngine
+{
+    Ordinary,
+    Atomic,
+};
+using SettingDefaultDatabaseEngine = SettingEnum<DefaultDatabaseEngine>;
+
 // Make it signed for compatibility with DataTypeEnum8
 enum QueryLogElementType : int8_t
 {

@@ -338,17 +338,17 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
-        if (auto identifier = pair->second->as<const ASTIdentifier>(); identifier)
+        if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
         {
             AutoPtr<Text> value(doc->createTextNode(identifier->name));
             current_xml_element->appendChild(value);
         }
-        else if (auto literal = pair->second->as<const ASTLiteral>(); literal)
+        else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)
         {
             AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
-        else if (auto list = pair->second->as<const ASTExpressionList>(); list)
+        else if (const auto * list = pair->second->as<const ASTExpressionList>(); list)
         {
             buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list);
         }
@@ -375,13 +375,26 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
   *       </mysql>
   *   </source>
   */
-void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source)
+void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source, const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
+
+    if (settings != nullptr)
+    {
+        AutoPtr<Element> settings_element(doc->createElement("settings"));
+        outer_element->appendChild(settings_element);
+        for (const auto & [name, value] : settings->changes)
+        {
+            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            settings_element->appendChild(setting_change_element);
+            AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
+            setting_change_element->appendChild(setting_value);
+        }
+    }
 }
 
 /** Check all AST fields are filled, throws exception
@@ -444,7 +457,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));
     current_dictionary->appendChild(structure_element);
     Names pk_attrs = getPrimaryKeyColumns(query.dictionary->primary_key);
-    auto dictionary_layout = query.dictionary->layout;
+    auto * dictionary_layout = query.dictionary->layout;
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 
@@ -454,7 +467,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

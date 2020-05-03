@@ -146,7 +146,7 @@ MergeTreeData::MergeTreeData(
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     const auto settings = getSettings();
-    setProperties(metadata);
+    setProperties(metadata, /*only_check*/ false, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -305,7 +305,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check, bool attach)
 {
     if (!metadata.order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -432,8 +432,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             new_indices.push_back(
                  MergeTreeIndexFactory::instance().get(
                         all_columns,
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                        global_context));
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl),
+                        global_context,
+                        attach));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
@@ -709,7 +710,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
 }
 
 
-void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy)
+void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const
 {
     const auto old_storage_policy = getStoragePolicy();
     old_storage_policy->checkCompatibleWith(new_storage_policy);
@@ -864,7 +865,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
-        for (auto & [disk_name, disk] : global_context.getDiskSelector()->getDisksMap())
+        for (const auto & [disk_name, disk] : global_context.getDiskSelector()->getDisksMap())
         {
             if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
             {
@@ -1202,7 +1203,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector & parts)
 {
     auto lock = lockParts();
-    for (auto & part : parts)
+    for (const auto & part : parts)
     {
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
@@ -1216,7 +1217,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         auto lock = lockParts();
 
         /// TODO: use data_parts iterators instead of pointers
-        for (auto & part : parts)
+        for (const auto & part : parts)
         {
             auto it = data_parts_by_info.find(part->info);
             if (it == data_parts_by_info.end())
@@ -1243,7 +1244,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         part_log_elem.database_name = table_id.database_name;
         part_log_elem.table_name = table_id.table_name;
 
-        for (auto & part : parts)
+        for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.partition_id;
             part_log_elem.part_name = part->name;
@@ -1294,9 +1295,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     }
 }
 
-void MergeTreeData::rename(
-    const String & new_table_path, const String & new_database_name,
-    const String & new_table_name, TableStructureWriteLockHolder &)
+void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();
 
@@ -1309,14 +1308,14 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = parentPath(new_table_path);
-        disk->createDirectory(new_table_path_parent);
+        disk->createDirectories(new_table_path_parent);
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();
 
     relative_data_path = new_table_path;
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 void MergeTreeData::dropAllData()
@@ -1912,7 +1911,7 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
 {
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
 
-    for (auto & part : remove)
+    for (const auto & part : remove)
     {
         if (!data_parts_by_info.count(part->info))
             throw Exception("Part " + part->getNameWithState() + " not found in data_parts", ErrorCodes::LOGICAL_ERROR);
@@ -2137,7 +2136,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
     {
         auto lock = lockParts();
 
-        for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+        for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
             res += part->getBytesOnDisk();
     }
 
@@ -2151,7 +2150,7 @@ size_t MergeTreeData::getTotalActiveSizeInRows() const
     {
         auto lock = lockParts();
 
-        for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+        for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
             res += part->rows_count;
     }
 
@@ -2403,7 +2402,7 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
     }
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path)
+MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const
 {
     MutableDataPartPtr part = createPart(Poco::Path(relative_path).getFileName(), disk, relative_path);
     loadPartAndFixMetadataImpl(part);
@@ -2803,7 +2802,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         ActiveDataPartSet active_parts(format_version);
 
         const auto disks = getStoragePolicy()->getDisks();
-        for (auto & disk : disks)
+        for (const auto & disk : disks)
         {
             for (auto it = disk->iterateDirectory(relative_data_path + source_dir); it->isValid(); it->next())
             {
@@ -3055,7 +3054,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
     if (!isEmpty())
     {
         auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
-        auto owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
+        auto * owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
         auto current_time = time(nullptr);
         for (const DataPartPtr & part : precommitted_parts)
@@ -3576,7 +3575,7 @@ ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_
     return res;
 }
 
-bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason)
+bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const
 {
     if (!canUseAdaptiveGranularity())
     {
@@ -3608,5 +3607,15 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
             result.rename_map[command.rename_to] = command.column_name;
 
     return result;
+}
+
+NamesAndTypesList MergeTreeData::getVirtuals() const
+{
+    return NamesAndTypesList{
+        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+    };
 }
 }

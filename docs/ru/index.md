@@ -1,6 +1,6 @@
 ---
 toc_priority: 0
-toc_title: Обзор
+toc_title: "\u041E\u0431\u0437\u043E\u0440"
 ---
 
 # Что такое ClickHouse {#chto-takoe-clickhouse}
@@ -66,11 +66,11 @@ ClickHouse - столбцовая система управления базам
 
 **Строковые СУБД**
 
-![Строковые](images/row_oriented.gif#)
+![Строковые](images/row-oriented.gif#)
 
 **Столбцовые СУБД**
 
-![Столбцовые](images/column_oriented.gif#)
+![Столбцовые](images/column-oriented.gif#)
 
 Видите разницу?
 
