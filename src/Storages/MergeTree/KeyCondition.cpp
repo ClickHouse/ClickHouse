@@ -448,6 +448,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                     auto to_modify = rpn.size() - 3;
                     auto rhs = rpn[to_modify + 1];
                     auto lhs = rpn[to_modify];
+                    std::cerr << "MINMAX: trying to merge " << lhs.toString() << " " << rhs.toString() << " " << rpn.back().toString() << "\n";
                     if (
                             lhs.function == RPNElement::FUNCTION_IN_RANGE &&
                             rhs.function == RPNElement::FUNCTION_IN_RANGE &&
