@@ -25,8 +25,7 @@ class FunctionArrayResize : public IFunction
 {
 public:
     static constexpr auto name = "arrayResize";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayResize>(context); }
-    explicit FunctionArrayResize(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayResize>(); }
 
     String getName() const override { return name; }
 
@@ -45,7 +44,7 @@ public:
         if (arguments[0]->onlyNull())
             return arguments[0];
 
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
             throw Exception("First argument for function " + getName() + " must be an array but it has type "
                             + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -80,7 +79,7 @@ public:
         auto size_column = block.getByPosition(arguments[1]).column;
 
         if (!block.getByPosition(arguments[0]).type->equals(*return_type))
-            array_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
+            array_column = castColumn(block.getByPosition(arguments[0]), return_type);
 
         const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
         size_t size = array_column->size();
@@ -90,7 +89,7 @@ public:
         {
             appended_column = block.getByPosition(arguments[2]).column;
             if (!block.getByPosition(arguments[2]).type->equals(*return_nested_type))
-                appended_column = castColumn(block.getByPosition(arguments[2]), return_nested_type, context);
+                appended_column = castColumn(block.getByPosition(arguments[2]), return_nested_type);
         }
         else
             appended_column = return_nested_type->createColumnConstWithDefaultValue(size);
@@ -100,20 +99,20 @@ public:
 
         bool is_const = false;
 
-        if (auto const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
+        if (const auto * const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
         {
             is_const = true;
             array_column = const_array_column->getDataColumnPtr();
         }
 
-        if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
+        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
             throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
 
         bool is_appended_const = false;
-        if (auto const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
+        if (const auto * const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
         {
             is_appended_const = true;
             appended_column = const_appended_column->getDataColumnPtr();
@@ -133,9 +132,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
-
-private:
-    const Context & context;
 };
 
 

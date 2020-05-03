@@ -104,16 +104,17 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
-    std::erase_if(
-        enabled_settings,
-        [&](const std::pair<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> & pr)
+    for (auto i = enabled_settings.begin(), e = enabled_settings.end(); i != e;)
+    {
+        auto enabled = i->second.lock();
+        if (!enabled)
+            i = enabled_settings.erase(i);
+        else
         {
-            auto enabled = pr.second.lock();
-            if (!enabled)
-                return true; // remove from the `enabled_settings` list.
             mergeSettingsAndConstraintsFor(*enabled);
-            return false; // keep in the `enabled_settings` list.
-        });
+            ++i;
+        }
+    }
 }
 
 
@@ -161,7 +162,7 @@ void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & element
 
             auto parent_profile_id = *element.parent_profile;
             element.parent_profile.reset();
-            if (already_substituted.contains(parent_profile_id))
+            if (already_substituted.count(parent_profile_id))
                 continue;
 
             already_substituted.insert(parent_profile_id);

@@ -41,12 +41,13 @@ int main(int argc, char ** argv)
             "s1 < s2 AND x % 3 < x % 5";
 
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
 
-        Context context = Context::createGlobal();
+        SharedContextHolder shared_context = Context::createShared();
+        Context context = Context::createGlobal(shared_context.get());
         context.makeGlobalContext();
         NamesAndTypesList columns
         {

@@ -12,7 +12,7 @@ Usted puede monitorear:
 -   Utilización de recursos de hardware.
 -   Métricas del servidor ClickHouse.
 
-## Utilización de recursos {#resource-utilization}
+## Utilización De Recursos {#resource-utilization}
 
 ClickHouse no supervisa el estado de los recursos de hardware por sí mismo.
 
@@ -24,20 +24,20 @@ Se recomienda encarecidamente configurar la supervisión para:
 
 -   Utilización del sistema de almacenamiento, RAM y red.
 
-## Métricas del servidor de Clickhouse {#clickhouse-server-metrics}
+## Métricas Del Servidor De Clickhouse {#clickhouse-server-metrics}
 
 El servidor ClickHouse tiene instrumentos integrados para el monitoreo de estado propio.
 
-Para realizar un seguimiento de los eventos del servidor, use los registros del servidor. Ver el [registrador](server_configuration_parameters/settings.md#server_configuration_parameters-logger) sección del archivo de configuración.
+Para realizar un seguimiento de los eventos del servidor, use los registros del servidor. Ver el [registrador](server-configuration-parameters/settings.md#server_configuration_parameters-logger) sección del archivo de configuración.
 
 ClickHouse recoge:
 
 -   Diferentes métricas de cómo el servidor utiliza recursos computacionales.
 -   Común de la estadística en el procesamiento de la consulta.
 
-Puede encontrar métricas en el [sistema.métricas](../operations/system_tables.md#system_tables-metrics), [sistema.evento](../operations/system_tables.md#system_tables-events), y [sistema.asynchronous\_metrics](../operations/system_tables.md#system_tables-asynchronous_metrics) tabla.
+Puede encontrar métricas en el [sistema.métricas](../operations/system-tables.md#system_tables-metrics), [sistema.evento](../operations/system-tables.md#system_tables-events), y [sistema.asynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) tabla.
 
-Puede configurar ClickHouse para exportar métricas a [Grafito](https://github.com/graphite-project). Ver el [Sección de grafito](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) en el archivo de configuración del servidor ClickHouse. Antes de configurar la exportación de métricas, debe configurar Graphite siguiendo sus [guiar](https://graphite.readthedocs.io/en/latest/install.html).
+Puede configurar ClickHouse para exportar métricas a [Grafito](https://github.com/graphite-project). Ver el [Sección de grafito](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) en el archivo de configuración del servidor ClickHouse. Antes de configurar la exportación de métricas, debe configurar Graphite siguiendo sus [guiar](https://graphite.readthedocs.io/en/latest/install.html).
 
 Además, puede supervisar la disponibilidad del servidor a través de la API HTTP. Enviar el `HTTP GET` solicitud de `/ping`. Si el servidor está disponible, responde con `200 OK`.
 

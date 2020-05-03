@@ -39,6 +39,10 @@ else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
 
+if (USE_INTERNAL_CCTZ)
+    set_source_files_properties(DateLUTImpl.cpp PROPERTIES COMPILE_DEFINITIONS USE_INTERNAL_CCTZ)
+endif()
+
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)

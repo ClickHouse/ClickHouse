@@ -82,6 +82,7 @@ def build_for_lang(lang, args):
             'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語',
+            'tr': 'Türkçe',
             'fa': 'فارسی'
         }
 
@@ -92,6 +93,7 @@ def build_for_lang(lang, args):
             'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'ja': 'ClickHouseドキュメント %s',
+            'tr': 'ClickHouse Belgeleri %s',
             'fa': 'مستندات %sClickHouse'
         }
 
@@ -109,6 +111,7 @@ def build_for_lang(lang, args):
             'codehilite',
             'nl2br',
             'sane_lists',
+            'pymdownx.details',
             'pymdownx.magiclink',
             'pymdownx.superfences',
             'extra',
@@ -124,9 +127,12 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
+        website_url = 'https://clickhouse.tech'
+        site_name = site_names.get(lang, site_names['en']) % args.version_prefix
+        site_name = site_name.replace('  ', ' ')
         raw_config = dict(
-            site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
-            site_url=f'https://clickhouse.tech/docs/{lang}/',
+            site_name=site_name,
+            site_url=f'{website_url}/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -136,18 +142,19 @@ def build_for_lang(lang, args):
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
-            extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
             markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
                 'single_page': False,
-                'rev':       args.rev,
+                'rev': args.rev,
                 'rev_short': args.rev_short,
-                'rev_url':   args.rev_url,
-                'events':    args.events,
-                'languages': languages
+                'rev_url': args.rev_url,
+                'website_url': website_url,
+                'events': args.events,
+                'languages': languages,
+                'includes_dir':  os.path.join(os.path.dirname(__file__), '..', '_includes')
             }
         )
 
@@ -301,7 +308,7 @@ def write_redirect_html(out_path, to_url):
     except OSError:
         pass
     with open(out_path, 'w') as f:
-        f.write(f'''<!-- Redirect: {to_url} -->
+        f.write(f'''<!--[if IE 6]> Redirect: {to_url} <![endif]-->
 <!DOCTYPE HTML>
 <html lang="en-US">
     <head>
@@ -320,9 +327,12 @@ def write_redirect_html(out_path, to_url):
 
 def build_redirect_html(args, from_path, to_path):
     for lang in args.lang.split(','):
-        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_path = os.path.join(
+            args.docs_output_dir, lang,
+            from_path.replace('/index.md', '/index.html').replace('.md', '/index.html')
+        )
         version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
-        target_path = to_path.replace('.md', '/')
+        target_path = to_path.replace('/index.md', '/').replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
         to_url = to_url.strip()
         write_redirect_html(out_path, to_url)
@@ -357,9 +367,12 @@ def build(args):
     build_releases(args, build_docs)
 
     if not args.skip_website:
+        website.process_benchmark_results(args)
         website.minify_website(args)
 
     for static_redirect in [
+        ('benchmark.html', '/benchmark/dbms/'),
+        ('benchmark_hardware.html', '/benchmark/hardware/'),
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
         ('reference_en.html', '/docs/en/single/', ),
         ('reference_ru.html', '/docs/ru/single/',),
@@ -375,13 +388,14 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,fa')
+    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
-    arg_parser.add_argument('--stable-releases-limit', type=int, default='10')
+    arg_parser.add_argument('--stable-releases-limit', type=int, default='4')
+    arg_parser.add_argument('--lts-releases-limit', type=int, default='2')
     arg_parser.add_argument('--version-prefix', type=str, default='')
     arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')

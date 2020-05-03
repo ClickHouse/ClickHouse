@@ -4,11 +4,43 @@
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
 #include <msgpack.hpp>
+#include <stack>
 
 namespace DB
 {
 
 class ReadBuffer;
+
+class MsgPackVisitor : public msgpack::null_visitor
+{
+public:
+    struct Info
+    {
+        IColumn & column;
+        DataTypePtr type;
+    };
+
+    /// These functions are called when parser meets corresponding object in parsed data
+    bool visit_positive_integer(UInt64 value);
+    bool visit_negative_integer(Int64 value);
+    bool visit_float32(Float32 value);
+    bool visit_float64(Float64 value);
+    bool visit_str(const char* value, size_t size);
+    bool start_array(size_t size);
+    bool end_array();
+
+    /// This function will be called if error occurs in parsing
+    [[noreturn]] void parse_error(size_t parsed_offset, size_t error_offset);
+
+    /// Update info_stack
+    void set_info(IColumn & column, DataTypePtr type);
+
+    void insert_integer(UInt64 value);
+
+private:
+    /// Stack is needed to process nested arrays
+    std::stack<Info> info_stack;
+};
 
 class MsgPackRowInputFormat : public IRowInputFormat
 {
@@ -19,11 +51,11 @@ public:
     String getName() const override { return "MagPackRowInputFormat"; }
 private:
     bool readObject();
-    void insertObject(IColumn & column, DataTypePtr type, const msgpack::object & object);
 
     PeekableReadBuffer buf;
+    MsgPackVisitor visitor;
+    msgpack::detail::parse_helper<MsgPackVisitor> parser;
     DataTypes data_types;
-    msgpack::object_handle object_handle;
 };
 
 }

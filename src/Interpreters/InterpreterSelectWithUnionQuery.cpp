@@ -193,7 +193,7 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams(Qu
     if (nested_interpreters.size() > 1)
     {
         for (auto & stream : nested_streams)
-            stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, result_header,ConvertingBlockInputStream::MatchColumnsMode::Position);
+            stream = std::make_shared<ConvertingBlockInputStream>(stream, result_header,ConvertingBlockInputStream::MatchColumnsMode::Position);
         parent_pipeline.addInterpreterContext(context);
     }
 
@@ -269,7 +269,7 @@ QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
     if (!pipelines.empty())
     {
         auto common_header = getCommonHeaderForUnion(headers);
-        main_pipeline.unitePipelines(std::move(pipelines), common_header, *context);
+        main_pipeline.unitePipelines(std::move(pipelines), common_header);
     }
 
     main_pipeline.addInterpreterContext(context);
