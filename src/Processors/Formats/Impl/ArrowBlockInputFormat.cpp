@@ -41,6 +41,10 @@ Chunk ArrowBlockInputFormat::generate()
         throw Exception{"Error while reading batch of Arrow data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
+    // nullptr means `no data left in stream`
+    if (!single_batch[0])
+        return res;
+
     std::shared_ptr<arrow::Table> table;
     arrow::Status make_status = arrow::Table::FromRecordBatches(single_batch, &table);
     if (!make_status.ok())
