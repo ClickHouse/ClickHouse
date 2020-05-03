@@ -35,34 +35,25 @@ public:
     void initQueueBindings(const String & exchange_name, const Names & routing_keys);
     void subscribe();
     void unsubscribe();
+    void flush();
 
     void startEventLoop();
     void startNonBlockEventLoop();
     void stopEventLoop();
 
-    String getCurrentExchange() const { return current[-1].exchange; }
-    String getCurrentRoutingKey() const { return current[-1].routingKey; }
-    UInt64 getCurrentDeliveryTag() const { return current[-1].deliveryTag; }
+    bool getStalled() { return stalled; }
+    bool getCnt() { return cnt; }
 
 private:
     struct RabbitMQMessage
     {
         String message;
         size_t size;
-        String exchange;
-        String routingKey;
-        UInt64 deliveryTag;
-        bool redelivered;
 
-        RabbitMQMessage(
-                String message_, size_t size_, String exchange_, String routingKey_,
-                UInt64 deliveryTag_, bool redelivered_) :
-                message(message_), size(size_), exchange(exchange_), routingKey(routingKey_),
-                deliveryTag(deliveryTag_), redelivered(redelivered_) {}
-
+        RabbitMQMessage(String message_, size_t size_) : message(message_), size(size_) {}
     };
 
-   // using Messages = std::vector<RabbitMQMessage>;
+    using Messages = std::vector<RabbitMQMessage>;
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & eventHandler;
@@ -73,10 +64,14 @@ private:
     const std::atomic<bool> & stopped;
 
     String consumerTag; // ID for the consumer
-    String queue_name = "RabbitMQQueue";
+    const String queue_name = "ClickHouseRabbitMQQueue";
 
-    std::vector<RabbitMQMessage>  messages;
-    std::vector<RabbitMQMessage>::const_iterator current;
+    size_t cnt = 0;
+
+    size_t cnt_2 = 0;
+
+    Messages messages;
+    Messages::iterator current;
 
     bool nextImpl() override;
 };

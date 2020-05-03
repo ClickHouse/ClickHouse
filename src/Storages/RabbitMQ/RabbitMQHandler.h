@@ -29,8 +29,6 @@ public:
     const String & get_password() { return password; }
     const String & get_user_name() { return user_name; }
 
-    event_base * get_evbase() { return evbase; }
-
 private:
     event_base * evbase;
 

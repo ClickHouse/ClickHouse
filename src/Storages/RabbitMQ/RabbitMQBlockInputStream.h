@@ -21,7 +21,7 @@ public:
 
     void readPrefixImpl() override;
     Block readImpl() override;
-    void readSuffixImpl() override;
+    //void readSuffixImpl() override;
 
     void commit();
     void commitNotSubscribed();
@@ -33,7 +33,7 @@ private:
     Names column_names;
     UInt64 max_block_size;
     Poco::Logger * log;
-    bool commit_in_suffix, claimed = false;
+    bool commit_in_suffix, finished = false, claimed = false;
 
     const Block non_virtual_header, virtual_header;
 

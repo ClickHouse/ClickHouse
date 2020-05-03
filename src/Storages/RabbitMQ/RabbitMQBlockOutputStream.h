@@ -11,7 +11,7 @@ namespace DB
 class RabbitMQBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const Context & context_, Poco::Logger * log_);
+    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const Context & context_);
 
     Block getHeader() const override;
 
@@ -22,7 +22,6 @@ public:
 private:
     StorageRabbitMQ & storage;
     Context context;
-    Poco::Logger * log;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
 };

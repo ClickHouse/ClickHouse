@@ -67,9 +67,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         size_t skip_broken_)
         : IStorage(table_id_,
                    ColumnsDescription({
-                                              {"_exchange", std::make_shared<DataTypeString>()},
-                                              {"_routingKey", std::make_shared<DataTypeString>()},
-                                              {"_deliveryTag", std::make_shared<DataTypeString>()}
+                          {"_exchange", std::make_shared<DataTypeString>()},
+                          {"_routingKey", std::make_shared<DataTypeString>()}
                                       }, true))
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -98,10 +97,6 @@ StorageRabbitMQ::StorageRabbitMQ(
     {
         event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
     }
-
-    LOG_DEBUG(log, "Is connection ready? - " + std::to_string(connection.ready()));
-    LOG_DEBUG(log, "Is connection usable? - " + std::to_string(connection.usable()));
-
 }
 
 
@@ -132,7 +127,7 @@ Pipes StorageRabbitMQ::read(
 
 BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
 {
-    return std::make_shared<RabbitMQBlockOutputStream>(*this, context, log);
+    return std::make_shared<RabbitMQBlockOutputStream>(*this, context);
 }
 
 
@@ -142,7 +137,7 @@ void StorageRabbitMQ::startup()
     {
         try
         {
-            pushReadBuffer(createReadBuffer());
+            pushReadBuffer(createReadBuffer(), 1);
             ++num_created_consumers;
         }
         catch (const AMQP::Exception &)
@@ -170,10 +165,13 @@ void StorageRabbitMQ::shutdown()
 }
 
 
-void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
+void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer, bool make_init)
 {
     // The messages will be lost if no queue is bound to the exchange, so init queue bindings 
-    buffer->initQueueBindings(exchange_name, routing_keys);
+    if (make_init)
+    {
+        buffer->initQueueBindings(exchange_name, routing_keys);
+    }
 
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
@@ -209,29 +207,7 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    /// Sharing one channel between publishers
-    if (!publishing_channel)
-    {
-        publishing_channel = std::make_shared<AMQP::TcpChannel>(&connection);
-
-        publishing_channel->confirmSelect()
-            .onSuccess([&]()
-            {
-                LOG_DEBUG(log, "Publishing channel is successfully open");
-            })
-            .onError([&](const char * message)
-            {
-                LOG_ERROR(log, "Error with the publishing channel - " << message);
-
-                ///TODO: Open a new one here if needed
-            })
-            .onFinalize([&]()
-            {
-                LOG_DEBUG(log, "Publishing channel is closed");
-            });
-    }
-
-    return std::make_shared<WriteBufferToRabbitMQProducer>(publishing_channel, eventHandler, routing_keys[0], exchange_name, log,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, routing_keys[0], exchange_name, log,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
@@ -289,6 +265,8 @@ void StorageRabbitMQ::threadFunc()
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!stream_cancelled && num_created_consumers > 0)
             {
+                //while (!eventHandler.hasStopped()) {}
+
                 if (!checkDependencies(table_id))
                     break;
 
@@ -361,7 +339,6 @@ bool StorageRabbitMQ::streamToViews()
     const BlockStreamProfileInfo & info = in->getProfileInfo();
     limits_applied = info.hasAppliedLimit();
 
-    LOG_TRACE(log, "7");
     return limits_applied;
 }
 

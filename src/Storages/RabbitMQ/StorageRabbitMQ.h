@@ -40,13 +40,12 @@ public:
             const ASTPtr & query,
             const Context & context) override;
 
-    void pushReadBuffer(ConsumerBufferPtr buf);
+    void pushReadBuffer(ConsumerBufferPtr buf, bool make_init);
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
     ProducerBufferPtr createWriteBuffer();
 
-    AMQP::TcpConnection & get_connection() { return connection; }
     RabbitMQHandler & getHandler() { return eventHandler; }
     const String & getExchangeName() const { return exchange_name; }
     const Names & getRoutingKeys() const { return routing_keys; }
@@ -88,9 +87,6 @@ private:
     RabbitMQHandler eventHandler;
     AMQP::TcpConnection connection;
 
-    ChannelPtr publishing_channel; /// Shared between all publishers
-    ChannelPtr consumer_channel; /// Unique to consumer
-
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
@@ -99,7 +95,6 @@ private:
     void threadFunc();
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
-    void initQueues(ChannelPtr consumer_channel, String key);
-    void debugConnection();
 };
+
 }

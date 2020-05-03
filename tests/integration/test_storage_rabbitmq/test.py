@@ -415,11 +415,11 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     rabbitmq_check_result(result2, True)
 
 
-@pytest.mark.timeout(300)
+@pytest.mark.timeout(240)
 def test_rabbitmq_highload_message(rabbitmq_cluster):
     # Create batchs of messages of size ~100Kb
-    rabbitmq_messages = 1000
-    batch_messages = 1000
+    rabbitmq_messages = 100
+    batch_messages = 1
     messages = [json.dumps({'key': i, 'value': 'x' * 100}) * batch_messages for i in range(rabbitmq_messages)]
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -511,25 +511,18 @@ def test_rabbitmq_insert(rabbitmq_cluster):
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(500)
-def test_rabbitmq_insert_select_via_materialized_view(rabbitmq_cluster):
+@pytest.mark.timeout(240)
+def test_rabbitmq_multiple_inserts(rabbitmq_cluster):
     instance.query('''
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_routing_key_list = 'insert2',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
-        CREATE TABLE test.view (key UInt64, value UInt64)
-            ENGINE = MergeTree
-            ORDER BY key;
-        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.rabbitmq;
     ''')
 
-    messages_num = 2
+    messages_num = 50
     def insert():
         values = []
         for i in range(messages_num):
@@ -547,13 +540,22 @@ def test_rabbitmq_insert_select_via_materialized_view(rabbitmq_cluster):
                     raise
 
     threads = []
-    threads_num = 4
+    threads_num = 20
     for _ in range(threads_num):
         threads.append(threading.Thread(target=insert))
     for thread in threads:
-        #time.sleep(random.uniform(0, 1))
-        time.sleep(2)
+        time.sleep(random.uniform(0, 1))
         thread.start()
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    ''')
 
     while True:
         result = instance.query('SELECT count() FROM test.view')
@@ -570,50 +572,6 @@ def test_rabbitmq_insert_select_via_materialized_view(rabbitmq_cluster):
         thread.join()
 
     assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
-
-
-#@pytest.mark.timeout(180)
-#def test_rabbitmq_virtual_columns(rabbitmq_cluster):
-#    instance.query('''
-#        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
-#            ENGINE = RabbitMQ
-#            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-#                     rabbitmq_routing_key_list = 'virt1',
-#                     rabbitmq_format = 'JSONEachRow',
-#                     rabbitmq_row_delimiter = '\\n';
-#        ''')
-#
-#    credentials = pika.PlainCredentials('root', 'clickhouse')
-#    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
-#    connection = pika.BlockingConnection(parameters)
-#    channel = connection.channel()
-#
-#    messages = ''
-#    for i in range(25):
-#        messages += json.dumps({'key': i, 'value': i}) + '\n'
-#    all_messages = [messages]
-#    for message in all_messages:
-#        channel.basic_publish(exchange='direct_exchange', routing_key='virt1', body=message)
-#
-#    messages = ''
-#    for i in range(25, 50):
-#        messages += json.dumps({'key': i, 'value': i}) + '\n'
-#    all_messages = [messages]
-#    for message in all_messages:
-#        channel.basic_publish(exchange='direct_exchange', routing_key='virt1', body=message)
-#
-#    result = ''
-#    while True:
-#        result += instance.query(
-#                 'SELECT _key, key,
-#                _topic, value, _offset, _partition, _timestamp FROM test.kafka', 
-#                ignore_error=True)
-#        if rabbitmq_check_result(result, False, 'test_rabbitmq_virtual1.reference'):
-#            break
-#
-#    rabbitmq_check_result(result, True, 'test_rabbitmq_virtual1.reference')
-
-
 
 
 if __name__ == '__main__':

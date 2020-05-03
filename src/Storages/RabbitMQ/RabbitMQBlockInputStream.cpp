@@ -20,7 +20,7 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
         , commit_in_suffix(commit_in_suffix_)
         , non_virtual_header(storage.getSampleBlockNonMaterialized())
         , virtual_header(storage.getSampleBlockForColumns(
-                {"_exchange", "_routingKey", "_deliveryTag"}) 
+            {"_exchange", "_routingKey"}) 
         )
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); 
@@ -34,7 +34,7 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
     if (!claimed)
         return;
 
-    storage.pushReadBuffer(buffer);
+    storage.pushReadBuffer(buffer, 0);
 }
 
 
@@ -46,14 +46,12 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
-    LOG_DEBUG(log, "read prefix" );
-
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
 
     buffer = storage.popReadBuffer(timeout);
     claimed = !!buffer;
 
-    if (!buffer)
+    if (!buffer || finished)
         return;
 
     buffer->subscribe();
@@ -62,10 +60,10 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 
 Block RabbitMQBlockInputStream::readImpl()
 {
-    LOG_DEBUG(log, "read impl" );
-
-    if (!buffer)
+    if (!buffer || finished || buffer->getStalled())
         return Block();
+
+    finished = true;
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
@@ -103,6 +101,7 @@ Block RabbitMQBlockInputStream::readImpl()
                     new_rows += chunk_rows;
 
                     auto columns = chunk.detachColumns();
+
                     for (size_t i = 0, s = columns.size(); i < s; ++i)
                     {
                         result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
@@ -127,15 +126,13 @@ Block RabbitMQBlockInputStream::readImpl()
 
         auto new_rows = read_rabbitmq_message();
 
-        auto _exchange = buffer->getCurrentExchange();
-        auto _routingKey = buffer->getCurrentRoutingKey();
-        auto _deliveryTag = buffer->getCurrentDeliveryTag();
+        auto _exchange = storage.getExchangeName();
+        auto _routingKey = storage.getRoutingKeys()[0];
 
         for (size_t i = 0; i < new_rows; ++i)
         {
             virtual_columns[0]->insert(_exchange);
             virtual_columns[1]->insert(_routingKey);
-            virtual_columns[2]->insert(_deliveryTag);
         }
 
         total_rows = total_rows + new_rows;
@@ -152,8 +149,14 @@ Block RabbitMQBlockInputStream::readImpl()
     auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
     auto virtual_block = virtual_header.cloneWithColumns(std::move(virtual_columns));
 
+    LOG_DEBUG(log, "Total amount of rows is " + std::to_string(result_block.rows()));
+
+    int i = 0;
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+    {
+        ++i;
         result_block.insert(column);
+    }
 
     return ConvertingBlockInputStream(
             std::make_shared<OneBlockInputStream>(result_block),
@@ -162,14 +165,5 @@ Block RabbitMQBlockInputStream::readImpl()
             .read();
 }
 
-
-void RabbitMQBlockInputStream::readSuffixImpl()
-{
-    LOG_DEBUG(log, "read suffix impl");
-
-    if (commit_in_suffix)
-    {
-    }
-}
 
 }

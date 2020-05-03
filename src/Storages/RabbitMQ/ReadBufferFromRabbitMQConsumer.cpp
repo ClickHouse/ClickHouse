@@ -25,25 +25,14 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , consumerTag("")
         , current(messages.begin())
 {
-    messages.reserve(batch_size);
-
     consumer_channel->confirmSelect()
-        .onSuccess([&]()
-        {
-            LOG_DEBUG(log, "Channel is successfully open");
-        })
         .onError([&](const char * message)
         {
             LOG_ERROR(log, "Error with the consumer channel - " << message);
-
-            /// TODO: if a consumer needs to be restored, make a new channel here
-        })
-        .onFinalize([&]()
-        {
-            LOG_DEBUG(log, "Channel is closed");
         });
 
     messages.clear();
+    messages.reserve(batch_size);
     current = messages.begin();
     BufferBase::set(nullptr, 0, 0);
 }
@@ -51,7 +40,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
-    //unsubscribe();
+    unsubscribe(); /// actually there is no need to unsubscribe because closing a channel will do the same
 
     messages.clear();
     current = messages.begin();
@@ -63,11 +52,11 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const String & exchange_n
 {
     consumer_channel->declareExchange(exchange_name, AMQP::direct).onError([&](const char * message)
     {
-        LOG_ERROR(log, "Exchange error - " << message);
+        LOG_ERROR(log, "Failed to declare exchange: " << message);
         eventHandler.stop();
     });
 
-    consumer_channel->declareQueue("RabbitMQQueue", AMQP::exclusive)
+    consumer_channel->declareQueue(queue_name, AMQP::exclusive)
         .onSuccess([&](const std::string & /* queue_name */, int /* msgcount */, int /* consumercount */)
         {
             for (auto & key : routing_keys)
@@ -75,7 +64,6 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const String & exchange_n
                 consumer_channel->bindQueue(exchange_name, "", key)
                 .onSuccess([&]
                 {
-                    LOG_TRACE(log, "Queue declared and bound to key.");
                     stopEventLoop();
                 })
                 .onError([&](const char * message)
@@ -87,7 +75,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const String & exchange_n
     })
     .onError([&](const char * message)
     {
-        LOG_ERROR(log, "Failed to declare queue on the channel - " << message);
+        LOG_ERROR(log, "Failed to declare queue on the channel: " << message);
         stopEventLoop();
     });
 
@@ -100,17 +88,13 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
     consumer_channel->consume(queue_name, AMQP::noack)
     .onSuccess([&](const std::string &consumer)
     {
-        LOG_TRACE(log, "Consumer is open");
         if (consumerTag == "")
             consumerTag = consumer;
 
-            stopEventLoop();
+        stopEventLoop();
     })
-    .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
+    .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
     {
-        char * mes = const_cast<char *>(message.body());
-        mes[message.bodySize()] = '\0';
-
         String message_received = std::string(message.body(), message.body() + message.bodySize());
         size_t message_size = message.bodySize();
 
@@ -120,15 +104,14 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
             message_size += 1;
         }
 
-        messages.emplace_back(RabbitMQMessage(message_received, message_size,
-        message.exchange(), message.routingkey(), deliveryTag, redelivered));
-
+        messages.emplace_back(RabbitMQMessage(message_received, message_size));
         this->stalled = false; 
+
         stopEventLoop();
     })
     .onError([&](const char * message)
     {
-        LOG_ERROR(log, "Failed to create consumer - " << message);
+        LOG_ERROR(log, "Failed to create consumer: " << message);
         stopEventLoop();
     });
 
@@ -138,8 +121,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe()
 
 void ReadBufferFromRabbitMQConsumer::unsubscribe()
 {
-    LOG_DEBUG(log, "Unsubscribing consumer");
-
     if (consumer_channel->usable() && consumerTag != "")
     {
         consumer_channel->cancel(consumerTag);
@@ -171,7 +152,15 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
 
     if (current == messages.end())
     {
-        size_t prev_size = messages.size();
+        size_t prev_size = std::distance(messages.begin(), current);
+        if (prev_size >= batch_size)
+        {
+            /// clear so that there is no container overflow
+            messages.clear();
+            current = messages.begin();
+        }
+
+        prev_size = messages.size();
         startNonBlockEventLoop();
 
         if (messages.size() == prev_size)
@@ -183,6 +172,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     }
 
     auto new_position = const_cast<char *>(current->message.c_str());
+
     BufferBase::set(new_position, current->size, 0);
     allowed = false;
 

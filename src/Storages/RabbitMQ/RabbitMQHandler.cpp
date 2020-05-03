@@ -6,7 +6,6 @@
 namespace DB
 {
 
-
 RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
     LibEventHandler(evbase_),
     evbase(evbase_),
@@ -19,27 +18,24 @@ RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
 void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char * message) 
 {
     LOG_ERROR(log, "Library error report: " << message);
-    event_base_loopbreak(evbase);
+    stop();
 }
 
 
 void RabbitMQHandler::start()
 {
-    LOG_DEBUG(log, "Event loop started.");
     event_base_dispatch(evbase);
 }
 
 
 void RabbitMQHandler::startNonBlock()
 {
-    LOG_DEBUG(log, "Event nonblock loop started.");
     event_base_loop(evbase, EVLOOP_NONBLOCK);
 }
 
 
 void RabbitMQHandler::stop()
 {
-    LOG_DEBUG(log, "Event loop stopped.");
     event_base_loopbreak(evbase);
 }
 
