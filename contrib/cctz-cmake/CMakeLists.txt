@@ -609,7 +609,7 @@ if (USE_INTERNAL_CCTZ)
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
             add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cd ${TZDIR} && ${CMAKE_LINKER} -m elf_x86_64 -r -b binary -o ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${TIMEZONE}
+                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary -O elf64-x86-64 -B i386 ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
                 COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
                     ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ})
 
