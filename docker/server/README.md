@@ -47,10 +47,10 @@ $ docker run --rm -e CLICKHOUSE_UID=0 -e CLICKHOUSE_GID=0 --name clickhouse-serv
 
 ### How to create default database and user on starting
 
-Sometimes you may want to create default user and database on image starting. You can do it using environment variables `CLICKHOUSE_DEFAULT_DB`, `CLICKHOUSE_DEFAULT_USER` and `CLICKHOUSE_DEFAULT_PASSWORD`:
+Sometimes you may want to create user (user named `default` is used by default) and database on image starting. You can do it using environment variables `CLICKHOUSE_DB`, `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`:
 
 ```
-$ docker run --rm -e CLICKHOUSE_DEFAULT_DB=my_database -e CLICKHOUSE_DEFAULT_USER=username -e CLICKHOUSE_DEFAULT_PASSWORD=password -p 9000:9000/tcp yandex/clickhouse-server
+$ docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp yandex/clickhouse-server
 ```
 
 ## How to extend this image
