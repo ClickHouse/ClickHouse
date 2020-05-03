@@ -1,6 +1,5 @@
 #pragma once
 
-#include <dlfcn.h>
 #include <memory>
 #include <string>
 #include <boost/noncopyable.hpp>
@@ -14,7 +13,7 @@ namespace DB
 class SharedLibrary : private boost::noncopyable
 {
 public:
-    explicit SharedLibrary(const std::string & path, int flags = RTLD_LAZY);
+    SharedLibrary(const std::string & path, int flags = -1);    /// -1 means default flags.
 
     ~SharedLibrary();
 

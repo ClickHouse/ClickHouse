@@ -11,6 +11,8 @@
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
 #include "registerDictionaries.h"
+#include <dlfcn.h>
+
 
 namespace DB
 {
