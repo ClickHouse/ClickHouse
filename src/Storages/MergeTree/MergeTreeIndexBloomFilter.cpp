@@ -109,7 +109,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
         if (!attach)    /// This is for backward compatibility.
             throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        arguments->children.erase(++arguments->children.begin(), arguments->children.end());
+        arguments->children = { arguments->children[0] };
     }
 
 
