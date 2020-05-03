@@ -739,7 +739,6 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
 }
 
 
-
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
     const ASTPtr & node,
     const Context & context,
@@ -1273,6 +1272,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 }
                 transformed_range_set = std::move(*new_range_set);
             }
+
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {

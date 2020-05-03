@@ -49,9 +49,9 @@ namespace DB
             /* Deals with the fact that when
              * the number is too big or too small it is transformed to "nan" and not +inf or -inf.
              */
-            const int EXP = 9, SZ = (sizeof(UInt32) << 3);
-            UInt32 INF = ((static_cast<UInt32>(1) << EXP) - 1) << (SZ - EXP);
-            UInt32 NEG_INF = (static_cast<UInt32>(1) << (SZ - EXP)) - 1;
+            constexpr int EXP = 9, SZ = (sizeof(UInt32) << 3);
+            constexpr UInt32 INF = ((static_cast<UInt32>(1) << EXP) - 1) << (SZ - EXP);
+            constexpr UInt32 NEG_INF = (static_cast<UInt32>(1) << (SZ - EXP)) - 1;
             if (num > INF)
             {
                 num = INF;
@@ -67,9 +67,9 @@ namespace DB
             /* Deals with the fact that when
              * the number is too big or too small it is transformed to "nan" and not +inf or -inf.
              */
-            const int EXP = 11, SZ = (sizeof(UInt64) << 3);
-            UInt64 INF = ((static_cast<UInt64>(1) << EXP) - 1) << (SZ - EXP);
-            UInt64 NEG_INF = (static_cast<UInt64>(1) << (SZ - EXP)) - 1;
+            constexpr int EXP = 11, SZ = (sizeof(UInt64) << 3);
+            constexpr UInt64 INF = ((static_cast<UInt64>(1) << EXP) - 1) << (SZ - EXP);
+            constexpr UInt64 NEG_INF = (static_cast<UInt64>(1) << (SZ - EXP)) - 1;
             if (num > INF)
             {
                 num = INF;
