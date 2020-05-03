@@ -51,7 +51,7 @@ namespace DB
         return &null_bytemap;
     }
 
-    static void checkStatus(arrow::Status & status, const String & column_name, const String & format_name)
+    static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
             throw Exception{"Error with a " + format_name + " column \"" + column_name + "\": " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};

@@ -11,10 +11,10 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <arrow/api.h>
-#include <arrow/util/decimal.h>
 #include <arrow/util/memory.h>
 #include <parquet/arrow/writer.h>
 #include <parquet/deprecated_io.h>
+#include "ArrowBufferedOutputStream.h"
 #include "CHColumnToArrowColumn.h"
 
 
@@ -30,44 +30,6 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
 {
 }
 
-class OstreamOutputStream : public arrow::io::OutputStream
-{
-public:
-    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { is_open = true; }
-    ~OstreamOutputStream() override = default;
-
-    // FileInterface
-    ::arrow::Status Close() override
-    {
-        is_open = false;
-        return ::arrow::Status::OK();
-    }
-
-    ::arrow::Status Tell(int64_t* position) const override
-    {
-        *position = total_length;
-        return ::arrow::Status::OK();
-    }
-
-    bool closed() const override { return !is_open; }
-
-    // Writable
-    ::arrow::Status Write(const void* data, int64_t length) override
-    {
-        ostr.write(reinterpret_cast<const char *>(data), length);
-        total_length += length;
-        return ::arrow::Status::OK();
-    }
-
-private:
-    WriteBuffer & ostr;
-    int64_t total_length = 0;
-    bool is_open = false;
-
-    PARQUET_DISALLOW_COPY_AND_ASSIGN(OstreamOutputStream);
-};
-
-
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
     const Block & header = getPort(PortKind::Main).getHeader();
@@ -76,10 +38,10 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
     CHColumnToArrowColumn::CHChunkToArrowTable(arrow_table, header, chunk, columns_num, "Parquet");
 
-    auto sink = std::make_shared<OstreamOutputStream>(out);
-
     if (!file_writer)
     {
+        auto sink = std::make_shared<ArrowBufferedOutputStream>(out);
+
         parquet::WriterProperties::Builder builder;
 #if USE_SNAPPY
         builder.compression(parquet::Compression::SNAPPY);
@@ -112,7 +74,6 @@ void ParquetBlockOutputFormat::finalize()
     }
 }
 
-
 void registerOutputFormatProcessorParquet(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor(
@@ -132,7 +93,6 @@ void registerOutputFormatProcessorParquet(FormatFactory & factory)
 
 }
 
-
 #else
 
 namespace DB
@@ -142,6 +102,5 @@ void registerOutputFormatProcessorParquet(FormatFactory &)
 {
 }
 }
-
 
 #endif
