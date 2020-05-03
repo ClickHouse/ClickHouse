@@ -51,7 +51,7 @@ namespace DB
         return &null_bytemap;
     }
 
-    static void checkStatus(arrow::Status & status, const std::string & column_name, const std::string & format_name)
+    static void checkStatus(arrow::Status & status, const String & column_name, const String & format_name)
     {
         if (!status.ok())
             throw Exception{"Error with a " + format_name + " column \"" + column_name + "\": " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
@@ -62,7 +62,7 @@ namespace DB
         ColumnPtr write_column,
         std::shared_ptr<arrow::Array> & arrow_array,
         const PaddedPODArray<UInt8> * null_bytemap,
-        const std::string & format_name)
+        const String & format_name)
     {
         const PaddedPODArray<NumericType> & internal_data = assert_cast<const ColumnVector<NumericType> &>(*write_column).getData();
         ArrowBuilderType builder;
@@ -98,7 +98,7 @@ namespace DB
         ColumnPtr write_column,
         std::shared_ptr<arrow::Array> & arrow_array,
         const PaddedPODArray<UInt8> * null_bytemap,
-        const std::string & format_name)
+        const String & format_name)
     {
         const auto & internal_column = assert_cast<const ColumnType &>(*write_column);
         arrow::StringBuilder builder;
@@ -127,7 +127,7 @@ namespace DB
         ColumnPtr write_column,
         std::shared_ptr<arrow::Array> & arrow_array,
         const PaddedPODArray<UInt8> * null_bytemap,
-        const std::string & format_name)
+        const String & format_name)
     {
         const PaddedPODArray<UInt16> & internal_data = assert_cast<const ColumnVector<UInt16> &>(*write_column).getData();
         //arrow::Date32Builder date_builder;
@@ -152,7 +152,7 @@ namespace DB
         ColumnPtr write_column,
         std::shared_ptr<arrow::Array> & arrow_array,
         const PaddedPODArray<UInt8> * null_bytemap,
-        const std::string & format_name)
+        const String & format_name)
     {
         const auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
         //arrow::Date64Builder builder;
@@ -181,7 +181,7 @@ namespace DB
         std::shared_ptr<arrow::Array> & arrow_array,
         const PaddedPODArray<UInt8> * null_bytemap,
         const DataType * decimal_type,
-        const std::string & format_name)
+        const String & format_name)
     {
         const auto & column = static_cast<const typename DataType::ColumnType &>(*write_column);
         arrow::DecimalBuilder builder(arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()));
@@ -237,7 +237,7 @@ namespace DB
         const Block & header,
         const Chunk & chunk,
         size_t columns_num,
-        std::string format_name)
+        String format_name)
     {
         /// For arrow::Schema and arrow::Table creation
         std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
@@ -254,7 +254,7 @@ namespace DB
             const bool is_column_nullable = column.type->isNullable();
             const auto & column_nested_type
                 = is_column_nullable ? static_cast<const DataTypeNullable *>(column.type.get())->getNestedType() : column.type;
-            const std::string column_nested_type_name = column_nested_type->getFamilyName();
+            const String column_nested_type_name = column_nested_type->getFamilyName();
 
             if (isDecimal(column_nested_type))
             {
