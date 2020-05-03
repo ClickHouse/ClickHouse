@@ -37,9 +37,8 @@ ArrowBufferedInputStream::ArrowBufferedInputStream(ReadBuffer & istr_) : istr{is
 
     int64_t bytes_read = 0;
     ARROW_RETURN_NOT_OK(Read(nbytes, &bytes_read, buffer->mutable_data()));
-    if (bytes_read < nbytes) {
+    if (bytes_read < nbytes)
         ARROW_RETURN_NOT_OK(buffer->Resize(bytes_read));
-    }
 
     *out = buffer;
     return ::arrow::Status::OK();

@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
 }
 
@@ -35,7 +36,8 @@ Chunk ArrowBlockInputFormat::generate()
         return res;
 
     std::vector<std::shared_ptr<arrow::RecordBatch>> batches;
-    for (UInt64 batch_i = 0; batch_i < format_settings.arrow.record_batch_size; ++batch_i) {
+    for (UInt64 batch_i = 0; batch_i < format_settings.arrow.record_batch_size; ++batch_i)
+    {
         std::shared_ptr<arrow::RecordBatch> batch;
         arrow::Status read_status = reader->ReadNext(&batch);
         if (!read_status.ok())

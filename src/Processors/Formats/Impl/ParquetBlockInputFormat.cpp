@@ -107,6 +107,7 @@ static std::shared_ptr<arrow::io::RandomAccessFile>  as_arrow_file(ReadBuffer & 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 #define THROW_ARROW_NOT_OK(status)                                     \
