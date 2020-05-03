@@ -1,3 +1,4 @@
+#pragma once
 #include "config_formats.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
