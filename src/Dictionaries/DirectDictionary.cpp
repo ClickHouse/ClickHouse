@@ -32,8 +32,6 @@ DirectDictionary::DirectDictionary(
 {
     createAttributes();
     calculateBytesAllocated();
-
-    temp_arena = std::make_unique<Arena>();
 }
 
 
