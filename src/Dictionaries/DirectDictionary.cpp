@@ -464,18 +464,20 @@ void DirectDictionary::getItemsStringImpl(
 {
     const auto rows = ext::size(ids);
 
-    std::vector<bool> is_found(rows, false);
-
     for (const auto row : ext::range(0, rows))
     {
         auto stream = source_ptr->loadAll();
         stream->readPrefix();
+        bool is_found = false;
         while (const auto block = stream->read())
         {
             const IColumn & id_column = *block.safeGetByPosition(0).column;
 
             for (const size_t attribute_idx : ext::range(0, attributes.size()))
             {
+                if (is_found)
+                    break;
+
                 const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 
                 for (const auto row_idx : ext::range(0, id_column.size()))
@@ -483,19 +485,19 @@ void DirectDictionary::getItemsStringImpl(
                     const auto key = id_column[row_idx].get<UInt64>();
                     if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
                     {
-                        is_found[row] = true;
+                        is_found = true;
                         const String from_source = attribute_column[row_idx].get<String>();
                         set_value(row, from_source);
+                        break;
                     }
                 }
             }
         }
         stream->readSuffix();
-    }
 
-    for (const auto row : ext::range(0, rows))
-        if (!is_found[row])
+        if (!is_found)
             set_value(row, get_default(row));
+    }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
