@@ -6,8 +6,6 @@
 namespace DB
 {
 
-extern bool fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size);
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
