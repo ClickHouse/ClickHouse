@@ -198,7 +198,7 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
-    if (commit_in_suffix) 
+    if (commit_in_suffix)
         commit();
 }
 

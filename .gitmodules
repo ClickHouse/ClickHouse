@@ -160,6 +160,3 @@
 [submodule "contrib/libevent"]
 	path = contrib/libevent
 	url = https://github.com/libevent/libevent.git
-[submodule "contrib/amqpcpp"]
-	path = contrib/amqpcpp
-	url = https://github.com/akalend/amqpcpp.git

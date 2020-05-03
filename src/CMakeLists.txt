@@ -427,6 +427,11 @@ if (USE_AMQPCPP)
     dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${AMQPCPP_INCLUDE_DIR})
 endif()
 
+if (USE_LIBEVENT)
+    dbms_target_link_libraries(PRIVATE ${LIBEVENT_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${LIBEVENT_INCLUDE_DIR})
+endif()
+
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
