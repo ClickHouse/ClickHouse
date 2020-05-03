@@ -5,7 +5,7 @@ toc_priority: 28
 toc_title: "G\xF6rsel Aray\xFCzler"
 ---
 
-# Üçüncü taraf geliştiricilerin görsel arayüzleri {#visual-interfaces-from-third-party-developers}
+# Üçüncü Taraf geliştiricilerin görsel arayüzleri {#visual-interfaces-from-third-party-developers}
 
 ## Açık Kaynak {#open-source}
 
@@ -103,7 +103,7 @@ ClickHouse dahil olmak üzere birden fazla veri kaynağı için destekler, Redas
 
 -   Çok hızlı kod tamamlama.
 -   ClickHouse sözdizimi vurgulama.
--   Clickhouse'a özgü özellikler için destek, örneğin iç içe geçmiş sütunlar, tablo motorları.
+-   Clickhouse’a özgü özellikler için destek, örneğin iç içe geçmiş sütunlar, tablo motorları.
 -   Veri Editörü.
 -   Refactorings.
 -   Arama ve navigasyon.
