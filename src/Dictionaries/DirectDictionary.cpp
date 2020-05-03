@@ -413,7 +413,9 @@ void DirectDictionary::getItemsImpl(
 {
     const auto rows = ext::size(ids);
 
-    std::vector<bool> is_found(rows, false);
+    std::unordered_map<Key, OutputType> value_by_key;
+    for (const auto row : ext::range(0, rows))
+        value_by_key[ids[row]] = get_default(row);
 
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
@@ -430,30 +432,26 @@ void DirectDictionary::getItemsImpl(
             {
                 const auto key = id_column[row_idx].get<UInt64>();
 
-                for (const auto row : ext::range(0, rows))
+                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
                 {
-                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
+                    if (attribute.type == AttributeUnderlyingType::utFloat32)
                     {
-                        is_found[row] = true;
-                        if (attribute.type == AttributeUnderlyingType::utFloat32)
-                        {
-                            set_value(row, static_cast<Float32>(attribute_column[row_idx].get<Float64>()));
-                        }
-                        else
-                        {
-                            set_value(row, static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>()));
-                        }
-
+                        value_by_key[key] = static_cast<Float32>(attribute_column[row_idx].get<Float64>());
                     }
+                    else
+                    {
+                        value_by_key[key] = static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>());
+                    }
+
                 }
             }
         }
     }
 
     stream->readSuffix();
+
     for (const auto row : ext::range(0, rows))
-        if (!is_found[row])
-            set_value(row, get_default(row));
+        set_value(row, value_by_key[ids[row]]);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
@@ -464,40 +462,36 @@ void DirectDictionary::getItemsStringImpl(
 {
     const auto rows = ext::size(ids);
 
+    std::unordered_map<Key, String> value_by_key;
     for (const auto row : ext::range(0, rows))
+        value_by_key[ids[row]] = get_default(row);
+
+    auto stream = source_ptr->loadAll();
+    stream->readPrefix();
+    while (const auto block = stream->read())
     {
-        auto stream = source_ptr->loadAll();
-        stream->readPrefix();
-        bool is_found = false;
-        while (const auto block = stream->read())
+        const IColumn & id_column = *block.safeGetByPosition(0).column;
+
+        for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
-            const IColumn & id_column = *block.safeGetByPosition(0).column;
 
-            for (const size_t attribute_idx : ext::range(0, attributes.size()))
+            const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+
+            for (const auto row_idx : ext::range(0, id_column.size()))
             {
-                if (is_found)
-                    break;
-
-                const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-
-                for (const auto row_idx : ext::range(0, id_column.size()))
+                const auto key = id_column[row_idx].get<UInt64>();
+                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
                 {
-                    const auto key = id_column[row_idx].get<UInt64>();
-                    if (key == ids[row] && attribute.name == attribute_name_by_index.at(attribute_idx))
-                    {
-                        is_found = true;
-                        const String from_source = attribute_column[row_idx].get<String>();
-                        set_value(row, from_source);
-                        break;
-                    }
+                    const String from_source = attribute_column[row_idx].get<String>();
+                    value_by_key[key] = from_source;
                 }
             }
         }
-        stream->readSuffix();
-
-        if (!is_found)
-            set_value(row, get_default(row));
     }
+    stream->readSuffix();
+
+    for (const auto row : ext::range(0, rows))
+        set_value(row, value_by_key[ids[row]]);
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
@@ -518,8 +512,7 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
 {
     const auto rows = ext::size(ids);
 
-    for (const auto row : ext::range(0, rows))
-        out[row] = 0;
+    std::unordered_map<Key, UInt8> has_key;
 
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
@@ -531,14 +524,14 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
         for (const auto row_idx : ext::range(0, id_column.size()))
         {
             const auto key = id_column[row_idx].get<UInt64>();
-
-            for (const auto row : ext::range(0, rows))
-                if (key == ids[row])
-                    out[row] = 1;
+            has_key[key] = 1;
         }
     }
 
     stream->readSuffix();
+
+    for (const auto row : ext::range(0, rows))
+        out[row] = has_key[ids[row]];
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
