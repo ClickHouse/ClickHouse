@@ -880,7 +880,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 is_constant_transformed = true;
             }
             else if (getConstant(args[0], block_with_constants, const_value, const_type)
-                     && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
+                     && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[1], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
             {
                 key_arg_pos = 1;
             }
@@ -1214,7 +1214,7 @@ std::optional<RangeSet> KeyCondition::applyMonotonicFunctionsChainToRangeSet(
             return {};
         }
         current_type.swap(new_type);
-        key_range_set = std::move(*new_range_set);
+        key_range_set = *new_range_set;
     }
     return key_range_set;
 }
@@ -1236,7 +1236,7 @@ std::optional<RangeSet> KeyCondition::applyInvertibleFunctionsChainToRange(
         }
         else
         {
-            key_range_set = *new_result;
+            key_range_set = std::move(*new_result);
         }
     }
     return key_range_set;
