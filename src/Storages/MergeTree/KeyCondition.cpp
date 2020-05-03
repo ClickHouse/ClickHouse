@@ -448,7 +448,6 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                     auto to_modify = rpn.size() - 3;
                     auto rhs = rpn[to_modify + 1];
                     auto lhs = rpn[to_modify];
-                    std::cerr << "MINMAX: trying to merge " << lhs.toString() << " " << rhs.toString() << " " << rpn.back().toString() << "\n";
                     if (
                             lhs.function == RPNElement::FUNCTION_IN_RANGE &&
                             rhs.function == RPNElement::FUNCTION_IN_RANGE &&
@@ -1236,7 +1235,7 @@ std::optional<RangeSet> KeyCondition::applyInvertibleFunctionsChainToRange(
         }
         else
         {
-            key_range_set = std::move(*new_result);
+            key_range_set = *new_result;
         }
     }
     return key_range_set;
@@ -1258,11 +1257,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
             const Range * key_range = &hyperrectangle[element.key_column];
-            std::cerr << "KEK: " << key_range->toString() << "\n";
 
             /// The case when the expression is obtainable from key columns via invertible functions.
             RangeSet transformed_range_set = *key_range;
-            std::cerr << "KEK: " << transformed_range_set.toString() << "\n";
             if (!element.invertible_functions_chain.empty())
             {
                 auto new_range_set = applyInvertibleFunctionsChainToRange(
@@ -1276,7 +1273,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 }
                 transformed_range_set = std::move(*new_range_set);
             }
-            std::cerr << "KEK: " << transformed_range_set.toString() << "\n";
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
@@ -1294,12 +1290,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
                 transformed_range_set = std::move(*new_range_set);
             }
-            std::cerr << "KEK: " << transformed_range_set.toString() << "\n";
-            std::cerr << "KEK: " << element.range.toString() << "\n";
 
             bool intersects = transformed_range_set.intersectsRange(element.range);
             bool contains = transformed_range_set.isContainedBy(element.range);
-            std::cerr << "KEK: " << intersects << " " << contains << "\n";
 
             rpn_stack.emplace_back(intersects, !contains);
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)

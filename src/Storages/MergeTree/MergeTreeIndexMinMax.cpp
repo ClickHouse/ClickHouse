@@ -126,10 +126,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeIndexMinMax &index_)
-    : index(index_), condition(query, context, index.columns, index.expr)
-{
-    std::cerr << "MINMAX: " << condition.toString() << "\n";
-}
+    : index(index_), condition(query, context, index.columns, index.expr) {}
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {
