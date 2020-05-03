@@ -223,8 +223,6 @@ private:
     std::vector<Attribute> attributes;
     const Attribute * hierarchical_attribute = nullptr;
 
-    std::unique_ptr<Arena> temp_arena;
-
     size_t bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
