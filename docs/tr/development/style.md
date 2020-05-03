@@ -5,7 +5,7 @@ toc_priority: 68
 toc_title: "C++ kodu nas\u0131l yaz\u0131l\u0131r"
 ---
 
-# C++ kodu nasıl yazılır {#how-to-write-c-code}
+# C++ Kodu nasıl yazılır {#how-to-write-c-code}
 
 ## Genel Öneriler {#general-recommendations}
 
@@ -270,7 +270,7 @@ void executeQuery(
 
 **8.** Tek satırlı yorumlar üç eğik çizgi ile başlar: `///` ve çok satırlı yorumlar ile başlar `/**`. Bu yorumlar dikkate alınır “documentation”.
 
-Not: bu yorumlardan belgeler oluşturmak için Doxygen kullanabilirsiniz. Ancak DOXYGEN genellikle kullanılmaz, çünkü IDE'DEKİ kodda gezinmek daha uygundur.
+Not: bu yorumlardan belgeler oluşturmak için Doxygen kullanabilirsiniz. Ancak DOXYGEN genellikle kullanılmaz, çünkü IDE’DEKİ kodda gezinmek daha uygundur.
 
 **9.** Çok satırlı açıklamaların başında ve sonunda (çok satırlı bir açıklamayı kapatan satır hariç) boş satırları olmamalıdır.
 
@@ -396,7 +396,7 @@ Bağımsız değişken yapıcı gövdesinde kullanılmazsa, alt çizgi soneki at
 timer (not m_timer)
 ```
 
-**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL\_CAPS da kabul edilebilir. Eğer... `enum` yerel olmayan, bir `enum class`.
+**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL\_CAPS da kabul edilebilir. Eğer… `enum` yerel olmayan, bir `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -410,7 +410,7 @@ enum class CompressionMethod
 
     not Stroka
 
-**16.** Kısaltmalar iyi biliniyorsa kabul edilebilir (kısaltmanın anlamını Wikipedia'da veya bir arama motorunda kolayca bulabilirsiniz).
+**16.** Kısaltmalar iyi biliniyorsa kabul edilebilir (kısaltmanın anlamını Wikipedia’da veya bir arama motorunda kolayca bulabilirsiniz).
 
     `AST`, `SQL`.
 
@@ -656,7 +656,7 @@ Günlüğünde UTF-8 kodlamasını kullanın. Nadir durumlarda, günlüğünde A
 
 Kullanmayın `iostreams` uygulama performansı için kritik olan iç döngülerde (ve asla kullanmayın `stringstream`).
 
-Kullan... `DB/IO` kütüphane yerine.
+Kullan… `DB/IO` kütüphane yerine.
 
 **21.** Tarih ve zaman.
 
@@ -689,7 +689,7 @@ auto s = std::string{"Hello"};
 
 **26.** Sanal işlevler için yaz `virtual` temel sınıfta, ama yaz `override` yerine `virtual` soyundan gelen sınıflarda.
 
-## C++ ' ın kullanılmayan özellikleri {#unused-features-of-c}
+## C++ ’ ın kullanılmayan özellikleri {#unused-features-of-c}
 
 **1.** Sanal devralma kullanılmaz.
 
@@ -727,7 +727,7 @@ CPU komut seti, sunucularımız arasında desteklenen minimum kümedir. Şu anda
 
 **3.** Profilleme için kullanın `Linux Perf`, `valgrind` (`callgrind`), veya `strace -cf`.
 
-**4.** Kaynaklar Git'te.
+**4.** Kaynaklar Git’te.
 
 **5.** Montaj kullanımları `CMake`.
 
@@ -795,7 +795,7 @@ Yazar yousan `std::memcpy` yerine `memcpy` her yerde, o zaman `memmem` olarak `s
 
 Yine de, hala kullanabilirsiniz `std::` eğer tercih ederseniz edin.
 
-**3.** Aynı olanlar standart C++ kütüphanesinde mevcut olduğunda C'den işlevleri kullanma.
+**3.** Aynı olanlar standart C++ kütüphanesinde mevcut olduğunda C’den işlevleri kullanma.
 
 Daha verimli ise bu kabul edilebilir.
 

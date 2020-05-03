@@ -1,5 +1,16 @@
 # Third-party libraries may have substandard code.
 
+# Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
+# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
+# appear not in "contrib/" as originally planned here.
+get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
+if (CMAKE_FOLDER)
+    set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
+else ()
+    set (CMAKE_FOLDER "${_current_dir_name}")
+endif ()
+unset (_current_dir_name)
+
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
@@ -174,24 +185,27 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
-    else()
+    else ()
         set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
-    endif()
+    endif ()
 
-    if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
-        set(_save_build_type ${CMAKE_BUILD_TYPE})
-        set(CMAKE_BUILD_TYPE RELEASE)
-    endif()
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+        set (_save_build_type ${CMAKE_BUILD_TYPE})
+        set (CMAKE_BUILD_TYPE Release)
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+    endif ()
 
     # Because Arrow uses CMAKE_SOURCE_DIR as a project path
     # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
     set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
     add_subdirectory (arrow/cpp)
 
-    if(_save_build_type)
-        set(CMAKE_BUILD_TYPE ${_save_build_type})
-    endif()
+    if (_save_build_type)
+        set (CMAKE_BUILD_TYPE ${_save_build_type})
+        unset (_save_build_type)
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+    endif ()
 
 else()
     add_subdirectory(arrow-cmake)
@@ -319,10 +333,6 @@ endif()
 
 if (USE_SIMDJSON)
     add_subdirectory (simdjson-cmake)
-endif()
-
-if (USE_MIMALLOC)
-    add_subdirectory (mimalloc)
 endif()
 
 if (USE_FASTOPS)

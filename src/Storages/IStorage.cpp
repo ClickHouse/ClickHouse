@@ -31,10 +31,6 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), columns(std::move(virtuals_))
-{
-}
-
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
@@ -48,18 +44,6 @@ const IndicesDescription & IStorage::getIndices() const
 const ConstraintsDescription & IStorage::getConstraints() const
 {
     return constraints;
-}
-
-NameAndTypePair IStorage::getColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().getPhysical(column_name);
-}
-
-bool IStorage::hasColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().hasPhysical(column_name);
 }
 
 Block IStorage::getSampleBlock() const
@@ -76,7 +60,9 @@ Block IStorage::getSampleBlockWithVirtuals() const
 {
     auto res = getSampleBlock();
 
-    for (const auto & column : getColumns().getVirtuals())
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -96,10 +82,16 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
-    NamesAndTypesList all_columns = getColumns().getAll();
     std::unordered_map<String, DataTypePtr> columns_map;
+
+    NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
+
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : getVirtuals())
+        columns_map.emplace(column.name, column.type);
 
     for (const auto & name : column_names)
     {
@@ -110,9 +102,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
         }
         else
         {
-            /// Virtual columns.
-            NameAndTypePair elem = getColumn(name);
-            res.insert({elem.type->createColumn(), elem.type, elem.name});
+            throw Exception(
+                "Column " + backQuote(name) + " not found in table " + getStorageID().getNameForLogs(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 
@@ -164,7 +155,10 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     if (include_virtuals)
-        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+    {
+        auto virtuals = getVirtuals();
+        available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
+    }
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -291,15 +285,7 @@ void IStorage::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
-
     columns = std::move(columns_);
-
-    for (const auto & column : old_virtuals)
-    {
-        if (!columns.has(column.name))
-            columns.add(column);
-    }
 }
 
 void IStorage::setIndices(IndicesDescription indices_)
@@ -314,7 +300,8 @@ void IStorage::setConstraints(ConstraintsDescription constraints_)
 
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
-    return getColumns().get(column_name).is_virtual;
+    /// Virtual column maybe overriden by real column
+    return !getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -439,6 +426,11 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
+}
+
+NamesAndTypesList IStorage::getVirtuals() const
+{
+    return {};
 }
 
 }
