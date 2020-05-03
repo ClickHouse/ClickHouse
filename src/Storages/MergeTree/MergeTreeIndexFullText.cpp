@@ -748,7 +748,8 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context)
+    const Context & context,
+    bool /*attach*/)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);

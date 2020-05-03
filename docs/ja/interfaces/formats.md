@@ -110,9 +110,9 @@ TabSeparated形式でデータを渡すときにエスケープする必要が�
 
 配列は、角かっこで囲まれたコンマ区切りの値のリストとして記述されます。 配列内の数値項目は通常どおりに書式設定されます。 `Date` と `DateTime` 型は一重引quotesで書き込まれます。 文字列は、上記と同じエスケープ規則で一重引quotesで書き込まれます。
 
-[NULL](../sql_reference/syntax.md) フォーマットとして `\N`.
+[NULL](../sql-reference/syntax.md) フォーマットとして `\N`.
 
-の各要素 [ネスト](../sql_reference/data_types/nested_data_structures/nested.md) 構造体は配列として表されます。
+の各要素 [ネスト](../sql-reference/data-types/nested-data-structures/nested.md) 構造体は配列として表されます。
 
 例えば:
 
@@ -332,7 +332,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../sql_reference/syntax.md) フォーマットとして `\N`.
+[NULL](../sql-reference/syntax.md) フォーマットとして `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -366,7 +366,7 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
 は有効です。
 
-`NULL` フォーマットとして `\N` または `NULL` または、引用符で囲まれていない空の文字列("設定"を参照 [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) と [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` フォーマットとして `\N` または `NULL` または、引用符で囲まれていない空の文字列(“設定”を参照 [input\_format\_csv\_unquoted\_null\_literal\_as\_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) と [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 CSV形式は、totalsとextremesの出力を次のようにサポートします `TabSeparated`.
 
@@ -464,7 +464,7 @@ JSONはJavaScriptと互換性があります。 これを確実にするため�
 
 この形式は、クエリ結果を出力する場合にのみ適切ですが、解析(テーブルに挿入するデータの取得)には適していません。
 
-ClickHouse支援 [NULL](../sql_reference/syntax.md) として表示されます `null` JSON出力で。
+ClickHouse支援 [NULL](../sql-reference/syntax.md) として表示されます `null` JSON出力で。
 
 また、 [JSONEachRow](#jsoneachrow) フォーマット。
 
@@ -541,7 +541,7 @@ ClickHouseを無視した空間要素には、カンマの後にオブジェク�
 
 **省略された値の処理**
 
-ClickHouseは、省略された値を対応するデフォルト値に置き換えます [データ型](../sql_reference/data_types/index.md).
+ClickHouseは、省略された値を対応するデフォルト値に置き換えます [データ型](../sql-reference/data-types/index.md).
 
 もし `DEFAULT expr` は、ClickHouseはに応じて異なる置換規則を使用して、指定されています [input\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) 設定。
 
@@ -586,7 +586,7 @@ CREATE TABLE IF NOT EXISTS example_table
 
 ### 入れ子構造の使用法 {#jsoneachrow-nested}
 
-あなたがテーブルを持っている場合 [ネスト](../sql_reference/data_types/nested_data_structures/nested.md) データ型の列には、同じ構造でJSONデータを挿入することができます。 この機能を有効にするには [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 設定。
+あなたがテーブルを持っている場合 [ネスト](../sql-reference/data-types/nested-data-structures/nested.md) データ型の列には、同じ構造でJSONデータを挿入することができます。 この機能を有効にするには [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 設定。
 
 たとえば、次の表を考えてみます:
 
@@ -645,7 +645,7 @@ SELECT * FROM json_each_row_nested
 
 ## ネイティブ {#native}
 
-最も効率的な形式。 データ書き込みおよび読み込みをブロックのバイナリ形式です。 各ブロックについて、行数、列数、列名と型、およびこのブロック内の列の一部が次々に記録されます。 つまり、この形式は次のとおりです “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+最も効率的な形式。 データ書き込みおよび読み込みをブロックのバイナリ形式です。 各ブロックについて、行数、列数、列名と型、およびこのブロック内の列の一部が次々に記録されます。 つまり、この形式は次のとおりです “columnar” – it doesn’t convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
 この形式を使用すると、clickhouse dbmsでのみ読み取ることができるダンプをすばやく生成できます。 この形式を自分で操作するのは意味がありません。
 
@@ -660,7 +660,7 @@ SELECT * FROM json_each_row_nested
 テーブルの完全なグリッドが描画され、各行は端末内の二行を占めています。
 各結果ブロックは、別のテーブルとして出力されます。 これは、結果をバッファリングせずにブロックを出力できるようにするために必要です（すべての値の可視幅を事前に計算するためにバッファリ
 
-[NULL](../sql_reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
 
 例(以下に示す [PrettyCompact](#prettycompact) 書式):
 
@@ -764,7 +764,7 @@ FixedStringは、単純にバイトのシーケンスとして表されます。
 
 配列は、varintの長さ(符号なし)として表されます [LEB128](https://en.wikipedia.org/wiki/LEB128)）、配列の連続した要素が続きます。
 
-のために [NULL](../sql_reference/syntax.md#null-literal) 支援、追加のバイトを含む1または0が追加される前に各 [Nullable](../sql_reference/data_types/nullable.md) 値。 1の場合、値は次のようになります `NULL` このバイトは別の値として解釈されます。 0の場合、バイトの後の値はそうではありません `NULL`.
+のために [NULL](../sql-reference/syntax.md#null-literal) 支援、追加のバイトを含む1または0が追加される前に各 [Nullable](../sql-reference/data-types/nullable.md) 値。 1の場合、値は次のようになります `NULL` このバイトは別の値として解釈されます。 0の場合、バイトの後の値はそうではありません `NULL`.
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
@@ -776,7 +776,7 @@ FixedStringは、単純にバイトのシーケンスとして表されます。
 
 ## 値 {#data-format-values}
 
-版画毎に行ットに固定して使用します。 行はコンマで区切られます。 最後の行の後にコンマはありません。 角かっこ内の値もコンマで区切られます。 数字は引用符なしの小数点形式で出力されます。 配列は角かっこで囲まれて出力されます。 文字列、日付、および時刻を含む日付が引用符で囲まれて出力されます。 ルールのエスケープと解析は、 [タブ区切り](#tabseparated) フォーマット。 書式設定時には、余分なスペースは挿入されませんが、解析時には、それらは許可され、スキップされます（配列値内のスペースは許可されません）。 [NULL](../sql_reference/syntax.md) として表されます `NULL`.
+版画毎に行ットに固定して使用します。 行はコンマで区切られます。 最後の行の後にコンマはありません。 角かっこ内の値もコンマで区切られます。 数字は引用符なしの小数点形式で出力されます。 配列は角かっこで囲まれて出力されます。 文字列、日付、および時刻を含む日付が引用符で囲まれて出力されます。 ルールのエスケープと解析は、 [タブ区切り](#tabseparated) フォーマット。 書式設定時には、余分なスペースは挿入されませんが、解析時には、それらは許可され、スキップされます（配列値内のスペースは許可されません）。 [NULL](../sql-reference/syntax.md) として表されます `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
@@ -788,7 +788,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 各値を、指定された列名とは別の行に出力します。 このフォーマットは、各行が多数の列で構成されている場合に、単一または少数の行だけを印刷する場合に便利です。
 
-[NULL](../sql_reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
+[NULL](../sql-reference/syntax.md) として出力されます `ᴺᵁᴸᴸ`.
 
 例えば:
 
@@ -897,9 +897,9 @@ Just as for JSON, invalid UTF-8 sequences are changed to the replacement charact
 
 ## CapnProto {#capnproto}
 
-Cap'n Protoは、プロトコルバッファやThriftに似たバイナリメッセージ形式ですが、JSONやMessagePackには似ていません。
+Cap’n Protoは、プロトコルバッファやThriftに似たバイナリメッセージ形式ですが、JSONやMessagePackには似ていません。
 
-Cap'n Protoメッセージは厳密に型付けされており、自己記述型ではありません。 スキーマはその場で適用され、クエリごとにキャッシュされます。
+Cap’n Protoメッセージは厳密に型付けされており、自己記述型ではありません。 スキーマはその場で適用され、クエリごとにキャッシュされます。
 
 ``` bash
 $ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
@@ -967,7 +967,7 @@ message MessageType {
 ```
 
 ClickHouseは、名前の付いた列を検索しようとします `x.y.z` （または `x_y_z` または `X.y_Z` など）。
-ネストしたメッセージを入力と出力 [入れ子のデータ構造](../sql_reference/data_types/nested_data_structures/nested.md).
+ネストしたメッセージを入力と出力 [入れ子のデータ構造](../sql-reference/data-types/nested-data-structures/nested.md).
 
 このようなprotobufスキーマで定義されたデフォルト値
 
@@ -979,7 +979,7 @@ message MessageType {
 }
 ```
 
-適用されない。 [表のデフォルト](../sql_reference/statements/create.md#create-default-values) それらの代わりに使用されます。
+適用されない。 [表のデフォルト](../sql-reference/statements/create.md#create-default-values) それらの代わりに使用されます。
 
 クリックハウスの入力および出力のprotobufメッセージ `length-delimited` フォーマット。
 これは、すべてのメッセージがその長さを [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
@@ -993,23 +993,23 @@ ClickHouseアブロ形式の読み書きの支援 [Avroデータファイル](ht
 
 ### 一致するデータ型 {#data_types-matching}
 
-下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql_reference/data_types/index.md) で `INSERT` と `SELECT` クエリ。
+下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql-reference/data-types/index.md) で `INSERT` と `SELECT` クエリ。
 
 | Avroデータ型 `INSERT`                       | ClickHouseデータタイプ                                                                                            | Avroデータ型 `SELECT`        |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql_reference/data_types/int_uint.md), [UInt(8/16/32)](../sql_reference/data_types/int_uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)               | `long`                       |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                   | `float`                      |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql_reference/data_types/float.md)                                                                   | `double`                     |
-| `bytes`, `string`, `fixed`, `enum`          | [文字列](../sql_reference/data_types/string.md)                                                                   | `bytes`                      |
-| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql_reference/data_types/fixedstring.md)                                                      | `fixed(N)`                   |
-| `enum`                                      | [Enum(8/16)](../sql_reference/data_types/enum.md)                                                                 | `enum`                       |
-| `array(T)`                                  | [配列(t)](../sql_reference/data_types/array.md)                                                                   | `array(T)`                   |
-| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql_reference/data_types/date.md)                                                                | `union(null, T)`             |
-| `null`                                      | [Nullable(何もなし)](../sql_reference/data_types/special_data_types/nothing.md)                                   | `null`                       |
-| `int (date)` \*                             | [日付](../sql_reference/data_types/date.md)                                                                       | `int (date)` \*              |
-| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql_reference/data_types/datetime.md)                                                          | `long (timestamp-millis)` \* |
-| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql_reference/data_types/datetime.md)                                                          | `long (timestamp-micros)` \* |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql-reference/data-types/int-uint.md), [UInt(8/16/32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)               | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                   | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                   | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [文字列](../sql-reference/data-types/string.md)                                                                   | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](../sql-reference/data-types/fixedstring.md)                                                      | `fixed(N)`                   |
+| `enum`                                      | [Enum(8/16)](../sql-reference/data-types/enum.md)                                                                 | `enum`                       |
+| `array(T)`                                  | [配列(t)](../sql-reference/data-types/array.md)                                                                   | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](../sql-reference/data-types/date.md)                                                                | `union(null, T)`             |
+| `null`                                      | [Nullable(何もなし)](../sql-reference/data-types/special-data-types/nothing.md)                                   | `null`                       |
+| `int (date)` \*                             | [日付](../sql-reference/data-types/date.md)                                                                       | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-micros)` \* |
 
 \* [Avro論理型](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
@@ -1072,7 +1072,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-使用するには `AvroConfluent` と [カフカname](../engines/table_engines/integrations/kafka.md):
+使用するには `AvroConfluent` と [カフカname](../engines/table-engines/integrations/kafka.md):
 
 ``` sql
 CREATE TABLE topic1_stream
@@ -1101,25 +1101,25 @@ SELECT * FROM topic1_stream;
 
 ### 一致するデータ型 {#data_types-matching-2}
 
-下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql_reference/data_types/index.md) で `INSERT` と `SELECT` クエリ。
+下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql-reference/data-types/index.md) で `INSERT` と `SELECT` クエリ。
 
 | Parquetデータ型 (`INSERT`) | ClickHouseデータタイプ                                    | Parquetデータ型 (`SELECT`) |
 |----------------------------|-----------------------------------------------------------|----------------------------|
-| `UINT8`, `BOOL`            | [UInt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                    |
-| `INT8`                     | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                     |
-| `UINT16`                   | [UInt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                   |
-| `INT16`                    | [Int16](../sql_reference/data_types/int_uint.md)          | `INT16`                    |
-| `UINT32`                   | [UInt32](../sql_reference/data_types/int_uint.md)         | `UINT32`                   |
-| `INT32`                    | [Int32](../sql_reference/data_types/int_uint.md)          | `INT32`                    |
-| `UINT64`                   | [UInt64](../sql_reference/data_types/int_uint.md)         | `UINT64`                   |
-| `INT64`                    | [Int64](../sql_reference/data_types/int_uint.md)          | `INT64`                    |
-| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql_reference/data_types/float.md)           | `FLOAT`                    |
-| `DOUBLE`                   | [Float64](../sql_reference/data_types/float.md)           | `DOUBLE`                   |
-| `DATE32`                   | [日付](../sql_reference/data_types/date.md)               | `UINT16`                   |
-| `DATE64`, `TIMESTAMP`      | [DateTime](../sql_reference/data_types/datetime.md)       | `UINT32`                   |
-| `STRING`, `BINARY`         | [文字列](../sql_reference/data_types/string.md)           | `STRING`                   |
-| —                          | [FixedString](../sql_reference/data_types/fixedstring.md) | `STRING`                   |
-| `DECIMAL`                  | [小数](../sql_reference/data_types/decimal.md)            | `DECIMAL`                  |
+| `UINT8`, `BOOL`            | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                     |
+| `UINT16`                   | [UInt16](../sql-reference/data-types/int-uint.md)         | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                    |
+| `UINT32`                   | [UInt32](../sql-reference/data-types/int-uint.md)         | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                    |
+| `UINT64`                   | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)          | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT`                    |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                   |
+| `DATE32`                   | [日付](../sql-reference/data-types/date.md)               | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                   |
+| `STRING`, `BINARY`         | [文字列](../sql-reference/data-types/string.md)           | `STRING`                   |
+| —                          | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
+| `DECIMAL`                  | [小数](../sql-reference/data-types/decimal.md)            | `DECIMAL`                  |
 
 ClickHouseは構成可能の精密をの支えます `Decimal` タイプ。 その `INSERT` クエリは寄木細工を扱います `DECIMAL` クリックハウスとして入力 `Decimal128` タイプ。
 
@@ -1141,7 +1141,7 @@ $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Pa
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-Hadoopとデータを交換するには、次のようにします [HDFSテーブルエンジン](../engines/table_engines/integrations/hdfs.md).
+Hadoopとデータを交換するには、次のようにします [HDFSテーブルエンジン](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
@@ -1149,24 +1149,24 @@ Hadoopとデータを交換するには、次のようにします [HDFSテー�
 
 ### 一致するデータ型 {#data_types-matching-3}
 
-下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql_reference/data_types/index.md) で `INSERT` クエリ。
+下の表に、サポートされているデータの種類とどのように試合clickhouse [データ型](../sql-reference/data-types/index.md) で `INSERT` クエリ。
 
 | ORCデータ型 (`INSERT`) | ClickHouseデータタイプ                              |
 |------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`        | [UInt8](../sql_reference/data_types/int_uint.md)    |
-| `INT8`                 | [Int8](../sql_reference/data_types/int_uint.md)     |
-| `UINT16`               | [UInt16](../sql_reference/data_types/int_uint.md)   |
-| `INT16`                | [Int16](../sql_reference/data_types/int_uint.md)    |
-| `UINT32`               | [UInt32](../sql_reference/data_types/int_uint.md)   |
-| `INT32`                | [Int32](../sql_reference/data_types/int_uint.md)    |
-| `UINT64`               | [UInt64](../sql_reference/data_types/int_uint.md)   |
-| `INT64`                | [Int64](../sql_reference/data_types/int_uint.md)    |
-| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql_reference/data_types/float.md)     |
-| `DOUBLE`               | [Float64](../sql_reference/data_types/float.md)     |
-| `DATE32`               | [日付](../sql_reference/data_types/date.md)         |
-| `DATE64`, `TIMESTAMP`  | [DateTime](../sql_reference/data_types/datetime.md) |
-| `STRING`, `BINARY`     | [文字列](../sql_reference/data_types/string.md)     |
-| `DECIMAL`              | [小数](../sql_reference/data_types/decimal.md)      |
+| `UINT8`, `BOOL`        | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                 | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`               | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`               | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`               | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`               | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`               | [日付](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`  | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`     | [文字列](../sql-reference/data-types/string.md)     |
+| `DECIMAL`              | [小数](../sql-reference/data-types/decimal.md)      |
 
 ClickHouseはの構成可能の精密を支えます `Decimal` タイプ。 その `INSERT` クエリはORCを処理します `DECIMAL` クリックハウスとして入力 `Decimal128` タイプ。
 
@@ -1182,7 +1182,7 @@ ClickHouseテーブル列のデータ型は、対応するORCデータフィー�
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Hadoopとデータを交換するには、次のようにします [HDFSテーブルエンジン](../engines/table_engines/integrations/hdfs.md).
+Hadoopとデータを交換するには、次のようにします [HDFSテーブルエンジン](../engines/table-engines/integrations/hdfs.md).
 
 ## 書式スキーマ {#formatschema}
 
@@ -1195,10 +1195,10 @@ e.g. `schemafile.proto:MessageType`.
 
 データを入力するか、または出力すれば [お客様](../interfaces/cli.md) で [対話モード](../interfaces/cli.md#cli_usage)、フォーマットスキーマで指定されたファイル名
 クライアン
-でクライアントを使用する場合 [バッチモード](../interfaces/cli.md#cli_usage) は、パスのスキーマ"相対的"に指定する必要があります。
+でクライアントを使用する場合 [バッチモード](../interfaces/cli.md#cli_usage) は、パスのスキーマ“相対的”に指定する必要があります。
 
 データを入力するか、または出力すれば [HTTPインター](../interfaces/http.md) フォーマットスキーマで指定したファイル名
-に指定されたディレクトリにあるはずです。 [format\_schema\_path](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-format_schema_path)
+に指定されたディレクトリにあるはずです。 [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
 サーバー構成で。
 
 ## エラーのスキップ {#skippingerrors}
