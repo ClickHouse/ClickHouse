@@ -35,7 +35,10 @@ LOG_DIR="$(dirname $LOG_PATH || true)"
 ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.errorlog || true)"
 ERROR_LOG_DIR="$(dirname $ERROR_LOG_PATH || true)"
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=format_schema_path || true)"
+
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
+CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
+CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
@@ -61,7 +64,40 @@ do
     fi
 done
 
+# if clickhouse user is defined - create it (user "default" already exists out of box)
+if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ]; then
+  echo "Create user '$CLICKHOUSE_USER' instead default"
+  cat <<EOT >> /etc/clickhouse-server/users.d/default-user.xml
+  <yandex>
+    <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
+    <users>
+      <!-- Remove default user -->
+      <default remove="remove">
+      </default>
 
+      <${CLICKHOUSE_USER}>
+        <profile>default</profile>
+        <networks>
+          <ip>::/0</ip>
+        </networks>
+        <password>${CLICKHOUSE_PASSWORD}</password>
+        <quota>default</quota>
+      </${CLICKHOUSE_USER}>
+    </users>
+  </yandex>
+EOT
+fi
+
+# define password argument for clickhouse client
+if [ -n "$CLICKHOUSE_PASSWORD" ]; then
+    printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
+fi
+
+# create default database, if defined
+if [ -n "$CLICKHOUSE_DB" ]; then
+  echo "Create database '$CLICKHOUSE_DB'"
+  clickhouse-client --query -u "$CLICKHOUSE_USER" $WITH_PASSWORD "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
+fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
     $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
@@ -72,10 +108,6 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
     if ! wget --spider --quiet --tries=12 --waitretry=1 --retry-connrefused "http://localhost:$HTTP_PORT/ping" ; then
         echo >&2 'ClickHouse init process failed.'
         exit 1
-    fi
-
-    if [ ! -z "$CLICKHOUSE_PASSWORD" ]; then
-        printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
     fi
 
     clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
