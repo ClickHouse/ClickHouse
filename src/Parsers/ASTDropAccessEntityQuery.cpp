@@ -4,34 +4,12 @@
 
 namespace DB
 {
-namespace
-{
-    using Kind = ASTDropAccessEntityQuery::Kind;
-
-    const char * getKeyword(Kind kind)
-    {
-        switch (kind)
-        {
-            case Kind::USER: return "USER";
-            case Kind::ROLE: return "ROLE";
-            case Kind::QUOTA: return "QUOTA";
-            case Kind::ROW_POLICY: return "ROW POLICY";
-            case Kind::SETTINGS_PROFILE: return "SETTINGS PROFILE";
-        }
-        __builtin_unreachable();
-    }
-}
-
-
-ASTDropAccessEntityQuery::ASTDropAccessEntityQuery(Kind kind_)
-    : kind(kind_)
-{
-}
+using EntityTypeInfo = IAccessEntity::TypeInfo;
 
 
 String ASTDropAccessEntityQuery::getID(char) const
 {
-    return String("DROP ") + getKeyword(kind) + " query";
+    return String("DROP ") + toString(type) + " query";
 }
 
 
@@ -44,11 +22,11 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << getKeyword(kind)
+                  << "DROP " << EntityTypeInfo::get(type).name
                   << (if_exists ? " IF EXISTS" : "")
                   << (settings.hilite ? hilite_none : "");
 
-    if (kind == Kind::ROW_POLICY)
+    if (type == EntityType::ROW_POLICY)
     {
         bool need_comma = false;
         for (const auto & name_parts : row_policies_name_parts)

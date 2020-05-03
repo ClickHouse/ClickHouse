@@ -11,4 +11,5 @@ bool Role::equal(const IAccessEntity & other) const
     const auto & other_role = typeid_cast<const Role &>(other);
     return (access == other_role.access) && (granted_roles == other_role.granted_roles) && (settings == other_role.settings);
 }
+
 }

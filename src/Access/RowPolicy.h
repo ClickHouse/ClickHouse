@@ -69,6 +69,8 @@ struct RowPolicy : public IAccessEntity
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
+    static constexpr const Type TYPE = Type::ROW_POLICY;
+    Type getType() const override { return TYPE; }
 
     /// Which roles or users should use this row policy.
     ExtendedRoleSet to_roles;
