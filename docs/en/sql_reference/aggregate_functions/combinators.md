@@ -51,36 +51,11 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
-Changes behaviour of an aggregate function.
-
-If an aggregate function doesn't have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
-`-OrDefault` can be combined with other combinators.
-
-**Syntax** 
-
-``` sql
-<aggFunction>OrDefault(x)
-```
-
-**Parameters**
-
-- `x` — Aggregate function parameters.
-
-**Returned values** 
- 
-Returns the default value of an aggregate function’s return type if there is nothing to aggregate.
-
-Type depends on the aggregate function used.
-
-**Example**
-
-Query:
+Fills the default value of the aggregate function’s return type if there is nothing to aggregate.
 
 ``` sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
-
-Result:
 
 ``` text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
@@ -88,71 +63,21 @@ Result:
 └─────────────┴──────────────────────┘
 ```
 
-Also `-OrDefault` can be used with a few combinators. It is useful when the aggregate function does not accept the empty input.
-
-Query:
-
-``` sql
-SELECT avgOrDefaultIf(x, x > 10)
-FROM
-(
-    SELECT toDecimal32(1.23, 2) AS x
-)
-```
-
-Result:
-
-``` text
-┌─avgOrDefaultIf(x, greater(x, 10))─┐
-│                              0.00 │
-└───────────────────────────────────┘
-```
-
-
 ## -OrNull {#agg-functions-combinator-ornull}
 
-Changes behaviour of an aggregate function.
-
-This combinator replaces returned value with nullable one, if the aggregate function does not have values to calculate. Works with different aggregate functions. 
-`-OrNull` can be combined with other combinators.
-
-**Syntax** 
+Fills `null` if there is nothing to aggregate. The return column will be nullable.
 
 ``` sql
-<aggFunction>OrNull(x)
+SELECT avg(number), avgOrNull(number) FROM numbers(0)
 ```
-
-**Parameters**
-
-- `x` — Aggregate function parameters.
- 
-**Returned values** 
-
-Returns the `Null` value of an aggregate function’s return type if there is nothing to aggregate.
-
-Type: [Nullable](../data_types/nullable.md).
-
-**Example**
-
-Add `-orNull` to the end of aggregate function.
-
-Query:
-
-``` sql
-SELECT sumOrNull(number) FROM numbers(10) WHERE number > 10
-```
-
-Result:
 
 ``` text
-┌─sumOrNull(number)─┐
-│              ᴺᵁᴸᴸ │
-└───────────────────┘
+┌─avg(number)─┬─avgOrNull(number)─┐
+│         nan │              ᴺᵁᴸᴸ │
+└─────────────┴───────────────────┘
 ```
 
-Also `-OrNull` can be used with a few combinators. It is useful when the aggregate function does not accept the empty input.
-
-Query:
+-OrDefault and -OrNull can be combined with other combinators. It is useful when the aggregate function does not accept the empty input.
 
 ``` sql
 SELECT avgOrNullIf(x, x > 10)
@@ -161,8 +86,6 @@ FROM
     SELECT toDecimal32(1.23, 2) AS x
 )
 ```
-
-Result:
 
 ``` text
 ┌─avgOrNullIf(x, greater(x, 10))─┐
