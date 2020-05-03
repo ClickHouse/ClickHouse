@@ -78,7 +78,6 @@ RangeSet::RangeSet(const DB::Range & range)
 {
     data = {range};
 }
-RangeSet::RangeSet() {}
 
 /// Sort and merge intersecting ranges
 void RangeSet::normalize()

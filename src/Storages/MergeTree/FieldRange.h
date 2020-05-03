@@ -207,7 +207,7 @@ class RangeSet
 public:
     std::vector<Range> data;
     void normalize();
-    RangeSet();
+    RangeSet() = default;
     RangeSet(const Range & range);
     explicit RangeSet(const std::vector<Range> & data);
 

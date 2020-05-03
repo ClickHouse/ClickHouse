@@ -688,7 +688,7 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
     const String & name,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
-    FunctionsChain & out_functions_chain,
+    FunctionsChain & out_invertible_functions_chain,
     FunctionArgumentStack & out_function_argument_stack)
 {
     String expr_name = name;
@@ -722,7 +722,7 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
             {
                 size_t ind = static_cast<size_t>(arg_it - args.begin());
                 out_function_argument_stack.push_back(ind);
-                out_functions_chain.push_back(a.function_base);
+                out_invertible_functions_chain.push_back(a.function_base);
                 expr_name = a.result_name;
                 auto key_it = key_columns.find(expr_name);
                 if (key_it != key_columns.end())
