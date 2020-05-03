@@ -48,6 +48,10 @@ infinite_sign = root.find('.//average_speed_not_changing_for_ms')
 if infinite_sign is not None:
     raise Exception('Looks like the test is infinite (sign 1)')
 
+# Print report threshold for the test if it is set.
+if 'max_ignored_relative_change' in root.attrib:
+    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
+
 # Open connections
 servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
 connections = [clickhouse_driver.Client(**server) for server in servers]
@@ -137,17 +141,25 @@ test_queries = substitute_parameters(test_query_templates)
 
 report_stage_end('substitute2')
 
-for q in test_queries:
+for i, q in enumerate(test_queries):
+    # We have some crazy long queries (about 100kB), so trim them to a sane
+    # length.
+    query_display_name = q
+    if len(query_display_name) > 1000:
+        query_display_name = f'{query_display_name[:1000]}...({i})'
+
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     try:
         for conn_index, c in enumerate(connections):
-            res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
-            print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            res = c.execute(q, query_id = f'prewarm {0} {query_display_name}')
+            print(f'prewarm\t{tsv_escape(query_display_name)}\t{conn_index}\t{c.last_query.elapsed}')
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the
         # old server doesn't support. Still, report it as an error.
+        # FIXME the driver reconnects on error and we lose settings, so this might
+        # lead to further errors or unexpected behavior.
         print(traceback.format_exc(), file=sys.stderr)
         continue
 
@@ -160,11 +172,11 @@ for q in test_queries:
     for run in range(0, args.runs):
         for conn_index, c in enumerate(connections):
             res = c.execute(q)
-            print('query\t' + tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            print(f'query\t{tsv_escape(query_display_name)}\t{run}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
 
     client_seconds = time.perf_counter() - start_seconds
-    print('client-time\t{}\t{}\t{}'.format(tsv_escape(q), client_seconds, server_seconds))
+    print(f'client-time\t{tsv_escape(query_display_name)}\t{client_seconds}\t{server_seconds}')
 
 report_stage_end('benchmark')
 

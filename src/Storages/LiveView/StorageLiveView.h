@@ -55,9 +55,6 @@ public:
     }
     StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
     {
@@ -70,6 +67,8 @@ public:
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
+
+    NamesAndTypesList getVirtuals() const override;
 
     bool isTemporary() { return is_temporary; }
 
