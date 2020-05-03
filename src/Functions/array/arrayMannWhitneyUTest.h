@@ -1,4 +1,3 @@
-//#include <algorithm>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
@@ -18,6 +17,21 @@ enum class Alternative {
     Greater,
     Less
 };
+
+
+/** Calculates Mann-Whitney U nonparametric statistical test of the null hypothesis that it is
+  * equally likely that a randomly selected value from one population will be less than or greater
+  * than a randomly selected value from a second population. This test can be used to investigate
+  * whether two independent samples were selected from populations having the same distribution
+  *
+  * The function takes two arrays of samples
+  * These values are considered as the control and test samples of some observation
+  *
+  * https://en.wikipedia.org/wiki/Mann–Whitney_U_test
+  *
+  * Function returns p-value assuming an asymptotic normal distribution.
+  */
+
 
 template <typename Name, Alternative alternative>
 class ArrayMannWhitneyUTestImpl
@@ -165,11 +179,6 @@ public:
             p_value = 2. - erfc(-abs(z));
         else
             p_value = 1 - erfc(z) / 2.;
-
-//        LOG_INFO(
-//            &Log  ger::get("executeQuery"),
-//            "temp_str: " << temp_str << " s1: " << s1 << " n1: " << n1 << " n2: " << n2 << " u1: " << u1 << " u2: " << u2 << " u_big: " << u_big << " mu: " << mu << " std: " << std << " z: " << z << " p_value: " << p_value;
-//        );
 
         return ResultType(p_value);
     }

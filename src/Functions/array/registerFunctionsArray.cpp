@@ -33,6 +33,7 @@ void registerFunctionArrayFlatten(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
 void registerFunctionArrayZip(FunctionFactory &);
 void registerFunctionArrayAUC(FunctionFactory &);
+void registerFunctionsArrayMannWhitneyUTest(FunctionFactory &);
 void registerFunctionArrayReduceInRanges(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
@@ -69,6 +70,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayWithConstant(factory);
     registerFunctionArrayZip(factory);
     registerFunctionArrayAUC(factory);
+    registerFunctionsArrayMannWhitneyUTest(factory);
 }
 
 }

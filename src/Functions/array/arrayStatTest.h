@@ -6,9 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <Poco/Logger.h>
-#include <common/logger_useful.h>
-
 namespace DB
 {
 
@@ -22,12 +19,13 @@ extern const int BAD_ARGUMENTS;
 }
 
 
-template <typename Method, typename Name>
-class FunctionArrayScalarProductV2 : public IFunction
+template <typename Method>
+class FunctionArrayStatTest : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayScalarProductV2>(); }
+    static constexpr auto name = Method::name;
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayStatTest>(); }
 
 private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;
@@ -60,9 +58,6 @@ private:
         const ColumnArray * col_array2 = checkAndGetColumn<ColumnArray>(col2.get());
         if (!col_array1 || !col_array2)
             return false;
-
-        if (col_array1->getOffsets().size() != col_array2->getOffsets().size())
-            throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::BAD_ARGUMENTS);
 
         const ColumnVector<T> * col_nested1 = checkAndGetColumn<ColumnVector<T>>(col_array1->getData());
         const ColumnVector<U> * col_nested2 = checkAndGetColumn<ColumnVector<U>>(col_array2->getData());
