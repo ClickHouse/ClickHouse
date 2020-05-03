@@ -35,27 +35,10 @@ Chunk ArrowBlockInputFormat::generate()
     if (in.eof())
         return res;
 
-    std::vector<std::shared_ptr<arrow::RecordBatch>> batches;
-    for (UInt64 batch_i = 0; batch_i < format_settings.arrow.record_batch_size; ++batch_i)
-    {
-        std::shared_ptr<arrow::RecordBatch> batch;
-        arrow::Status read_status = reader->ReadNext(&batch);
-        if (!read_status.ok())
-            throw Exception{"Error while reading Arrow data: " + read_status.ToString(),
-                            ErrorCodes::CANNOT_READ_ALL_DATA};
-        // nullptr means `no data left in stream`
-        if (!batch)
-            break;
-        batches.emplace_back(std::move(batch));
-    }
-
-    if (batches.empty())
-        return res;
-
     std::shared_ptr<arrow::Table> table;
-    arrow::Status make_status = arrow::Table::FromRecordBatches(batches, &table);
-    if (!make_status.ok())
-        throw Exception{"Error while reading Arrow data: " + make_status.ToString(),
+    arrow::Status read_status = reader->ReadAll(&table);
+    if (!read_status.ok())
+        throw Exception{"Error while reading Arrow data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
     const Block & header = getPort().getHeader();
