@@ -94,6 +94,7 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    recompressing_task_handle = global_context.getBackgroundLowPriorityPool().addTask([this] { return recompressMutateTask(); });
     if (areBackgroundMovesNeeded())
         moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
 }
@@ -780,6 +781,15 @@ bool StorageMergeTree::tryMutatePart()
     return true;
 }
 
+BackgroundProcessingPoolTaskResult StorageMergeTree::recompressMutateTask()
+{
+    if (shutdown_called) {
+        return BackgroundProcessingPoolTaskResult::ERROR;
+    }
+
+    recompressOldParts();
+    return BackgroundProcessingPoolTaskResult::SUCCESS;
+}
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
 {

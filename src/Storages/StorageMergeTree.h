@@ -131,6 +131,7 @@ private:
     bool tryMutatePart();
 
     BackgroundProcessingPoolTaskResult mergeMutateTask();
+    BackgroundProcessingPoolTaskResult recompressMutateTask();
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,

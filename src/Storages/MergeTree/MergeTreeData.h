@@ -472,6 +472,13 @@ public:
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
 
+    const time_t interval = 3600;
+    /// Returns old commited parts that can be recompressed.
+    DataPartsVector grabOldModifiedParts();
+
+    /// Recompress old commited parts that have been chosen by modification_time
+    void recompressOldParts();
+
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
     /// If 'force' - don't wait for old_parts_lifetime.
     DataPartsVector grabOldParts(bool force = false);

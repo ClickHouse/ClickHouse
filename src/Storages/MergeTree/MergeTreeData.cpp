@@ -1153,6 +1153,29 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     }
 }
 
+MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
+{
+    DataPartsVector parts;
+
+    time_t now = time(nullptr);
+
+    auto parts_range = getDataPartsStateRange(DataPartState::Committed);
+    for (auto it = parts_range.begin(); it != parts_range.end(); ++it) 
+    {
+        const DataPartPtr & part = *it;
+
+        if (part->modification_time < now - interval) {
+            parts.emplace_back(*it);
+        }
+    }
+    return parts;
+}
+
+void MergeTreeData::recompressOldParts() {
+    auto parts = grabOldModifiedParts();
+
+    /// TODO recompress
+}
 
 MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
