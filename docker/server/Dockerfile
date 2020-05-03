@@ -39,9 +39,11 @@ RUN mkdir /docker-entrypoint-initdb.d
 
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
+COPY init-defaults.sh /docker-entrypoint-initdb.d/init-defaults.sh
 
 RUN chmod +x \
     /entrypoint.sh \
+    /docker-entrypoint-initdb.d/init-defaults.sh \
     /bin/gosu
 
 EXPOSE 9000 8123 9009
