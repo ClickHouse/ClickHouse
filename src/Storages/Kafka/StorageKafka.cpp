@@ -380,8 +380,7 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub = {false};
-    copyData(*in, *block_io.out, &stub);
+    copyData(*in, *block_io.out, &stream_cancelled);
     for (auto & stream : streams)
         stream->as<KafkaBlockInputStream>()->commit();
 
