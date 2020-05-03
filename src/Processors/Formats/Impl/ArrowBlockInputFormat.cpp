@@ -47,7 +47,7 @@ Chunk ArrowBlockInputFormat::generate()
 
         std::unique_ptr<arrow::Buffer> local_buffer = std::make_unique<arrow::Buffer>(file_data);
 
-        std::shared_ptr<arrow::io::RandomAccessFile> in_stream(new arrow::io::BufferReader(*local_buffer));
+        std::shared_ptr<arrow::io::RandomAccessFile> in_stream(std::make_shared<arrow::io::BufferReader>(*local_buffer));
 
         arrow::Status open_status = arrow::ipc::RecordBatchFileReader::Open(in_stream, &file_reader);
         if (!open_status.ok())
@@ -62,11 +62,11 @@ Chunk ArrowBlockInputFormat::generate()
     if (row_group_current >= row_group_total)
         return res;
 
-    std::vector<std::shared_ptr<arrow::RecordBatch>> singleBatch(1);
-    arrow::Status read_status = file_reader->ReadRecordBatch(row_group_current, &singleBatch[0]);
+    std::vector<std::shared_ptr<arrow::RecordBatch>> single_batch(1);
+    arrow::Status read_status = file_reader->ReadRecordBatch(row_group_current, &single_batch[0]);
 
     std::shared_ptr<arrow::Table> table;
-    arrow::Status make_status = arrow::Table::FromRecordBatches(singleBatch, &table);
+    arrow::Status make_status = arrow::Table::FromRecordBatches(single_batch, &table);
 
     if (!make_status.ok())
     {

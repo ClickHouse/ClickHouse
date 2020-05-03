@@ -1,14 +1,12 @@
 #pragma once
+#include "config_formats.h"
+#if USE_ARROW
 
 #include <string>
 #include <memory>
 #include <common/types.h>
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
-
-#include "config_formats.h"
-#if USE_ARROW
-
 #include <Processors/Formats/IInputFormat.h>
 
 namespace arrow::ipc { class RecordBatchFileReader; }
