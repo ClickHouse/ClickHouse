@@ -20,8 +20,8 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, in_), format_settings{format_settings_}, arrow_istream{std::make_shared<ArrowBufferedInputStream>(in)}
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_)
+    : IInputFormat(header_, in_), arrow_istream{std::make_shared<ArrowBufferedInputStream>(in)}
 {
     arrow::Status open_status = arrow::ipc::RecordBatchStreamReader::Open(arrow_istream, &reader);
     if (!open_status.ok())
@@ -35,10 +35,16 @@ Chunk ArrowBlockInputFormat::generate()
     if (in.eof())
         return res;
 
-    std::shared_ptr<arrow::Table> table;
-    arrow::Status read_status = reader->ReadAll(&table);
+    std::vector<std::shared_ptr<arrow::RecordBatch>> single_batch(1);
+    arrow::Status read_status = reader->ReadNext(&single_batch[0]);
     if (!read_status.ok())
-        throw Exception{"Error while reading Arrow data: " + read_status.ToString(),
+        throw Exception{"Error while reading batch of Arrow data: " + read_status.ToString(),
+                        ErrorCodes::CANNOT_READ_ALL_DATA};
+
+    std::shared_ptr<arrow::Table> table;
+    arrow::Status make_status = arrow::Table::FromRecordBatches(single_batch, &table);
+    if (!make_status.ok())
+        throw Exception{"Error while reading table of Arrow data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
     const Block & header = getPort().getHeader();
@@ -61,9 +67,9 @@ void registerInputFormatProcessorArrow(FormatFactory &factory)
             [](ReadBuffer & buf,
                const Block & sample,
                const RowInputFormatParams & /* params */,
-               const FormatSettings & format_settings)
+               const FormatSettings & /* format_settings */)
             {
-                return std::make_shared<ArrowBlockInputFormat>(buf, sample, format_settings);
+                return std::make_shared<ArrowBlockInputFormat>(buf, sample);
             });
 }
 

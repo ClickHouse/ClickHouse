@@ -6,7 +6,6 @@
 #include <memory>
 #include <common/types.h>
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "ArrowBufferedStreams.h"
@@ -21,7 +20,7 @@ class ReadBuffer;
 class ArrowBlockInputFormat : public IInputFormat
 {
 public:
-    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_);
+    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_);
 
     void resetParser() override;
 
@@ -31,7 +30,6 @@ protected:
     Chunk generate() override;
 
 private:
-    const FormatSettings format_settings;
     std::shared_ptr<ArrowBufferedInputStream> arrow_istream;
     std::shared_ptr<arrow::RecordBatchReader> reader;
 };
