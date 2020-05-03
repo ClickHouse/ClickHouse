@@ -82,8 +82,8 @@ static bool isConditionGood(const ASTPtr & condition)
     if (function->name != "equals")
         return false;
 
-    auto left_arg = function->arguments->children.front().get();
-    auto right_arg = function->arguments->children.back().get();
+    auto * left_arg = function->arguments->children.front().get();
+    auto * right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
     if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())

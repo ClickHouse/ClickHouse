@@ -38,7 +38,7 @@ private:
 
     bool are_prepared_sets_initialized = false;
 
-    void removeFilterIfNeed(Chunk & chunk);
+    void removeFilterIfNeed(Chunk & chunk) const;
 };
 
 }

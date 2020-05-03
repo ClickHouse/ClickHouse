@@ -62,9 +62,6 @@ public:
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     bool isRemote() const override { return true; }
 
     /// Return true if distributed_group_by_no_merge may be applied.
@@ -81,12 +78,10 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop(TableStructureWriteLockHolder &) override {}
-
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
@@ -117,6 +112,7 @@ public:
 
     ClusterPtr getCluster() const;
 
+    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
@@ -124,6 +120,8 @@ public:
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+
+    NamesAndTypesList getVirtuals() const override;
 
     String remote_database;
     String remote_table;
@@ -185,8 +183,8 @@ protected:
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
         ConnectionPoolPtr conneciton_pool;
 
-        void flushAllData();
-        void shutdownAndDropAllData();
+        void flushAllData() const;
+        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     std::mutex cluster_nodes_mutex;

@@ -5,7 +5,7 @@ toc_priority: 28
 toc_title: Les Interfaces Visuelles
 ---
 
-# Interfaces visuelles de développeurs tiers {#visual-interfaces-from-third-party-developers}
+# Interfaces Visuelles De développeurs Tiers {#visual-interfaces-from-third-party-developers}
 
 ## Open-Source {#open-source}
 
@@ -15,10 +15,10 @@ Interface Web pour ClickHouse dans le [Tabix](https://github.com/tabixio/tabix) 
 
 Caractéristique:
 
--   Fonctionne avec ClickHouse directement à partir du navigateur, sans avoir besoin d'installer un logiciel supplémentaire.
+-   Fonctionne avec ClickHouse directement à partir du navigateur, sans avoir besoin d’installer un logiciel supplémentaire.
 -   Éditeur de requête avec coloration syntaxique.
--   L'Auto-complétion des commandes.
--   Outils d'analyse graphique de l'exécution des requêtes.
+-   L’Auto-complétion des commandes.
+-   Outils d’analyse graphique de l’exécution des requêtes.
 -   Options de jeu de couleurs.
 
 [Documentation Tabix](https://tabix.io/doc/).
@@ -31,7 +31,7 @@ Caractéristique:
 
 -   Générateur de requêtes avec coloration syntaxique. Affichez la réponse dans une table ou une vue JSON.
 -   Exporter les résultats de la requête au format CSV ou JSON.
--   Liste des processus avec des descriptions. Le mode d'écriture. Capacité à arrêter (`KILL`) processus.
+-   Liste des processus avec des descriptions. Le mode d’écriture. Capacité à arrêter (`KILL`) processus.
 -   Base de données du graphique. Affiche toutes les tables et leurs colonnes avec des informations supplémentaires.
 -   Une vue rapide de la taille de la colonne.
 -   La configuration du serveur.
@@ -40,7 +40,7 @@ Les fonctionnalités suivantes sont prévues pour le développement:
 
 -   Gestion de base de données.
 -   La gestion des utilisateurs.
--   En temps réel l'analyse des données.
+-   En temps réel l’analyse des données.
 -   Surveillance de Cluster.
 -   La gestion de Cluster.
 -   Suivi des tables répliquées et Kafka.
@@ -97,7 +97,7 @@ Caractéristique:
 
 ### DataGrip {#datagrip}
 
-[DataGrip](https://www.jetbrains.com/datagrip/) est un IDE de base de données de JetBrains avec un support dédié pour ClickHouse. Il est également intégré dans D'autres outils basés sur IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm et autres.
+[DataGrip](https://www.jetbrains.com/datagrip/) est un IDE de base de données de JetBrains avec un support dédié pour ClickHouse. Il est également intégré dans D’autres outils basés sur IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm et autres.
 
 Caractéristique:
 
@@ -110,7 +110,7 @@ Caractéristique:
 
 ### Yandex DataLens {#yandex-datalens}
 
-[Yandex DataLens](https://cloud.yandex.ru/services/datalens) est un service de visualisation et d'analyse de données.
+[Yandex DataLens](https://cloud.yandex.ru/services/datalens) est un service de visualisation et d’analyse de données.
 
 Caractéristique:
 
@@ -122,7 +122,7 @@ Caractéristique:
 DataLens est [disponible gratuitement](https://cloud.yandex.com/docs/datalens/pricing) pour les projets à faible charge, même pour un usage commercial.
 
 -   [Documentation DataLens](https://cloud.yandex.com/docs/datalens/).
--   [Tutoriel](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) sur la visualisation des données à partir d'une base de données ClickHouse.
+-   [Tutoriel](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) sur la visualisation des données à partir d’une base de données ClickHouse.
 
 ### Logiciel Holistics {#holistics-software}
 
@@ -138,8 +138,8 @@ Caractéristique:
 
 ### Looker {#looker}
 
-[Looker](https://looker.com) est une plate-forme de données et un outil de business intelligence avec prise en charge de plus de 50 dialectes de base de données, y compris ClickHouse. Looker est disponible en tant que plate-forme SaaS et auto-hébergé. Les utilisateurs peuvent utiliser Looker via le navigateur pour explorer les données, créer des visualisations et des tableaux de bord, planifier des rapports et partager leurs idées avec des collègues. Looker fournit un riche ensemble d'outils pour intégrer ces fonctionnalités dans d'autres applications, et une API
-pour intégrer les données avec d'autres applications.
+[Looker](https://looker.com) est une plate-forme de données et un outil de business intelligence avec prise en charge de plus de 50 dialectes de base de données, y compris ClickHouse. Looker est disponible en tant que plate-forme SaaS et auto-hébergé. Les utilisateurs peuvent utiliser Looker via le navigateur pour explorer les données, créer des visualisations et des tableaux de bord, planifier des rapports et partager leurs idées avec des collègues. Looker fournit un riche ensemble d’outils pour intégrer ces fonctionnalités dans d’autres applications, et une API
+pour intégrer les données avec d’autres applications.
 
 Caractéristique:
 

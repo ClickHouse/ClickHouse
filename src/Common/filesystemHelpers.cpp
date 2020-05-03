@@ -74,7 +74,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 String getFilesystemName([[maybe_unused]] const String & mount_point)
 {
 #if defined(__linux__)
-    auto mounted_filesystems = setmntent("/etc/mtab", "r");
+    FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception("Cannot open /etc/mtab to get name of filesystem", ErrorCodes::SYSTEM_ERROR);
     mntent fs_info;

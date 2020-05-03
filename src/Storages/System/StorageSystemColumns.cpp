@@ -132,9 +132,6 @@ protected:
 
             for (const auto & column : columns)
             {
-                if (column.is_virtual)
-                    continue;
-
                 if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
@@ -303,7 +300,7 @@ Pipes StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 const String & table_name = iterator->name();
                 storages.emplace(std::piecewise_construct,

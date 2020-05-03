@@ -83,12 +83,7 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage(table_id_,
-        ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
-                            {"_key", std::make_shared<DataTypeString>()},
-                            {"_offset", std::make_shared<DataTypeUInt64>()},
-                            {"_partition", std::make_shared<DataTypeUInt64>()},
-                            {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
+    : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
     , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
@@ -633,5 +628,15 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
+NamesAndTypesList StorageKafka::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_topic", std::make_shared<DataTypeString>()},
+        {"_key", std::make_shared<DataTypeString>()},
+        {"_offset", std::make_shared<DataTypeUInt64>()},
+        {"_partition", std::make_shared<DataTypeUInt64>()},
+        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
+    };
+}
 
 }

@@ -224,16 +224,28 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     IMergeSelector::Partitions partitions;
 
     const String * prev_partition_id = nullptr;
+    /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
     bool has_part_with_expired_ttl = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
+        /// Check predicate only for first part in each partition.
+        if (!prev_part)
+            /* Parts can be merged with themselves for TTL needs for example.
+            * So we have to check if this part is currently being inserted with quorum and so on and so forth.
+            * Obviously we have to check it manually only for the first part
+            * of each partition because it will be automatically checked for a pair of parts. */
+            if (!can_merge_callback(nullptr, part, nullptr))
+                continue;
+
         const String & partition_id = part->info.partition_id;
         if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))
         {
             if (partitions.empty() || !partitions.back().empty())
                 partitions.emplace_back();
+            /// New partition frame.
             prev_partition_id = &partition_id;
+            prev_part = nullptr;
         }
 
         IMergeSelector::Part part_info;

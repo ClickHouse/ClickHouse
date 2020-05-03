@@ -1,9 +1,3 @@
----
-toc_folder_title: Changelog
-toc_priority: 74
-toc_title: '2020'
----
-
 ## ClickHouse release v20.3
 
 ### ClickHouse release v20.3.7.46, 2020-04-17

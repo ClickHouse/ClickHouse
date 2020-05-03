@@ -5,13 +5,13 @@ toc_priority: 64
 toc_title: Comment Construire ClickHouse sur Linux
 ---
 
-# Comment Construire ClickHouse pour le développement {#how-to-build-clickhouse-for-development}
+# Comment Construire ClickHouse Pour Le développement {#how-to-build-clickhouse-for-development}
 
 Le tutoriel suivant est basé sur le système Linux Ubuntu.
 Avec les modifications appropriées, il devrait également fonctionner sur toute autre distribution Linux.
 Plates-formes prises en charge: x86\_64 et AArch64. La prise en charge de Power9 est expérimentale.
 
-## Installez Git, CMake, Python et Ninja {#install-git-cmake-python-and-ninja}
+## Installez Git, CMake, Python Et Ninja {#install-git-cmake-python-and-ninja}
 
 ``` bash
 $ sudo apt-get install git cmake python ninja-build
@@ -23,7 +23,7 @@ Ou cmake3 au lieu de cmake sur les systèmes plus anciens.
 
 Il y a plusieurs façons de le faire.
 
-### Installer à partir d'un paquet PPA {#install-from-a-ppa-package}
+### Installer à Partir d’un Paquet PPA {#install-from-a-ppa-package}
 
 ``` bash
 $ sudo apt-get install software-properties-common
@@ -32,11 +32,11 @@ $ sudo apt-get update
 $ sudo apt-get install gcc-9 g++-9
 ```
 
-### Installer à partir de Sources {#install-from-sources}
+### Installer à Partir De Sources {#install-from-sources}
 
 Regarder [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Utilisez GCC 9 pour les Builds {#use-gcc-9-for-builds}
+## Utilisez GCC 9 Pour Les Builds {#use-gcc-9-for-builds}
 
 ``` bash
 $ export CC=gcc-9
@@ -67,13 +67,13 @@ $ cd ..
 ```
 
 Pour créer un exécutable, exécutez `ninja clickhouse`.
-Cela va créer de l' `programs/clickhouse` exécutable, qui peut être utilisé avec `client` ou `server` argument.
+Cela va créer de l’ `programs/clickhouse` exécutable, qui peut être utilisé avec `client` ou `server` argument.
 
-# Comment Construire ClickHouse sur N'importe quel Linux {#how-to-build-clickhouse-on-any-linux}
+# Comment Construire ClickHouse Sur N’importe Quel Linux {#how-to-build-clickhouse-on-any-linux}
 
 La construction nécessite les composants suivants:
 
--   Git (est utilisé uniquement pour extraire les sources, ce n'est pas nécessaire pour la construction)
+-   Git (est utilisé uniquement pour extraire les sources, ce n’est pas nécessaire pour la construction)
 -   CMake 3.10 ou plus récent
 -   Ninja (recommandé) ou faire
 -   Compilateur C++: gcc 9 ou clang 8 ou plus récent
@@ -108,17 +108,17 @@ Exemple Pour Fedora Rawhide:
     cmake ../ClickHouse
     make -j $(nproc)
 
-# Vous N'avez pas à construire ClickHouse {#you-dont-have-to-build-clickhouse}
+# Vous N’avez Pas à Construire ClickHouse {#you-dont-have-to-build-clickhouse}
 
-ClickHouse est disponible dans des binaires et des paquets pré-construits. Les binaires sont portables et peuvent être exécutés sur N'importe quelle saveur Linux.
+ClickHouse est disponible dans des binaires et des paquets pré-construits. Les binaires sont portables et peuvent être exécutés sur N’importe quelle saveur Linux.
 
-Ils sont conçus pour les versions stables, préconfigurables et de test aussi longtemps que pour chaque commit à master et pour chaque requête d'extraction.
+Ils sont conçus pour les versions stables, préconfigurables et de test aussi longtemps que pour chaque commit à master et pour chaque requête d’extraction.
 
 Pour trouver la construction la plus fraîche de `master`, aller à [page commits](https://github.com/ClickHouse/ClickHouse/commits/master), cliquez sur la première coche verte ou Croix Rouge près de commit, et cliquez sur le “Details” lien à droite après “ClickHouse Build Check”.
 
-# Comment construire le paquet ClickHouse Debian {#how-to-build-clickhouse-debian-package}
+# Comment Construire Le Paquet ClickHouse Debian {#how-to-build-clickhouse-debian-package}
 
-## Installer Git et Pbuilder {#install-git-and-pbuilder}
+## Installer Git Et Pbuilder {#install-git-and-pbuilder}
 
 ``` bash
 $ sudo apt-get update

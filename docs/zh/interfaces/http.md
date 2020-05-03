@@ -1,4 +1,3 @@
-
 # HTTP 客户端 {#http-ke-hu-duan}
 
 HTTP 接口可以让你通过任何平台和编程语言来使用 ClickHouse。我们用 Java 和 Perl 以及 shell 脚本来访问它。在其他的部门中，HTTP 接口会用在 Perl，Python 以及 Go 中。HTTP 接口比 TCP 原生接口更为局限，但是却有更好的兼容性。
@@ -201,7 +200,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 可选的 `quota_key` 参数可能当做 quota key 传入（或者任何字符串）。更多信息，参见 «[配额](../operations/quotas.md#quotas)» 部分。
 
-HTTP 接口允许传入额外的数据（外部临时表）来查询。更多信息，参见 «[外部数据查询处理](../engines/table_engines/special/external_data.md)» 部分。
+HTTP 接口允许传入额外的数据（外部临时表）来查询。更多信息，参见 «[外部数据查询处理](../engines/table-engines/special/external-data.md)» 部分。
 
 ## 响应缓冲 {#xiang-ying-huan-chong}
 

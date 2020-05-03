@@ -14,10 +14,10 @@ toc_title: "Ar\u0131za"
 
 ## Kurulum {#troubleshooting-installation-errors}
 
-### Apt-get ile ClickHouse deposundan Deb paketleri alınamıyor {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### Apt-get Ile ClickHouse Deposundan Deb Paketleri alınamıyor {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Güvenlik Duvarı ayarlarını kontrol edin.
--   Depoya herhangi bir nedenle erişemiyorsanız, paketleri aşağıda açıklandığı gibi indirin [Başlarken](../getting_started/index.md) makale ve bunları kullanarak manuel olarak yükleyin `sudo dpkg -i <packages>` komut. Ayrıca ihtiyacınız olacak `tzdata` paket.
+-   Depoya herhangi bir nedenle erişemiyorsanız, paketleri aşağıda açıklandığı gibi indirin [Başlarken](../getting-started/index.md) makale ve bunları kullanarak manuel olarak yükleyin `sudo dpkg -i <packages>` komut. Ayrıca ihtiyacınız olacak `tzdata` paket.
 
 ## Sunucuya bağlanma {#troubleshooting-accepts-no-connections}
 
@@ -87,7 +87,7 @@ Eğer herhangi bir yararlı bilgi bulamazsanız `clickhouse-server` günlükler 
 $ sudo journalctl -u clickhouse-server
 ```
 
-**Clickhouse-Server'ı etkileşimli modda Başlat**
+**Clickhouse-Server’ı etkileşimli modda Başlat**
 
 ``` bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
@@ -101,11 +101,11 @@ Kontrol:
 
 -   Docker ayarları.
 
-    Bir IPv6 ağında Docker'da ClickHouse çalıştırırsanız, `network=host` ayar .lanmıştır.
+    Bir IPv6 ağında Docker’da ClickHouse çalıştırırsanız, `network=host` ayar .lanmıştır.
 
 -   Bitiş noktası ayarları.
 
-    Kontrol [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) ve [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) ayarlar.
+    Kontrol [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) ve [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) ayarlar.
 
     ClickHouse server, yalnızca varsayılan olarak localhost bağlantılarını kabul eder.
 
@@ -117,8 +117,8 @@ Kontrol:
 
     Kontrol:
 
-    -   Bu [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) ayar.
-    -   İçin ayarlar [SSL sertifikaları](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   Bu [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) ayar.
+    -   İçin ayarlar [SSL sertifikaları](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Bağlanırken uygun parametreleri kullanın. Örneğin, kullanın `port_secure` parametre ile `clickhouse_client`.
 
@@ -135,12 +135,12 @@ $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-Eğer başlarsanız `clickhouse-client` ile... `stack-trace` parametre, ClickHouse bir hata açıklaması ile sunucu yığın izleme döndürür.
+Eğer başlarsanız `clickhouse-client` ile… `stack-trace` parametre, ClickHouse bir hata açıklaması ile sunucu yığın izleme döndürür.
 
 Bozuk bir bağlantı hakkında bir mesaj görebilirsiniz. Bu durumda, sorguyu tekrarlayabilirsiniz. Sorguyu her gerçekleştirdiğinizde bağlantı kesilirse, sunucu günlüklerini hatalar için denetleyin.
 
 ## Sorgu işleme verimliliği {#troubleshooting-too-slow}
 
-Clickhouse'un çok yavaş çalıştığını görürseniz, sorgularınız için sunucu kaynakları ve ağdaki yükü profillemeniz gerekir.
+Clickhouse’un çok yavaş çalıştığını görürseniz, sorgularınız için sunucu kaynakları ve ağdaki yükü profillemeniz gerekir.
 
 Profil sorguları için clickhouse-benchmark yardımcı programını kullanabilirsiniz. Saniyede işlenen sorgu sayısını, saniyede işlenen satır sayısını ve sorgu işleme sürelerinin yüzdelerini gösterir.

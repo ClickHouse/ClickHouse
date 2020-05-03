@@ -71,3 +71,6 @@ target_link_libraries (chaos_sanitizer PRIVATE clickhouse_common_io)
 
 add_executable (memory_statistics_os_perf memory_statistics_os_perf.cpp)
 target_link_libraries (memory_statistics_os_perf PRIVATE clickhouse_common_io)
+
+add_executable (procfs_metrics_provider_perf procfs_metrics_provider_perf.cpp)
+target_link_libraries (procfs_metrics_provider_perf PRIVATE clickhouse_common_io)

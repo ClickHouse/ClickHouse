@@ -145,7 +145,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
                 continue;
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
-            auto & current_interval = *lower_bound;
+            const auto & current_interval = *lower_bound;
             for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
             {
                 new_interval.used[resource_type].store(current_interval.used[resource_type].load());
