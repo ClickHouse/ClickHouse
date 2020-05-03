@@ -88,6 +88,7 @@ struct FormatSettings
 
     struct Arrow
     {
+        UInt64 record_batch_size = 10000;
         UInt64 row_group_size = 1000000;
     } arrow;
 

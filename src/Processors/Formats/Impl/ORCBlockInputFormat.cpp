@@ -63,8 +63,13 @@ Chunk ORCBlockInputFormat::generate()
     std::shared_ptr<arrow::Table> table;
 
     arrow::Status read_status = file_reader->Read(&table);
+    if (!read_status.ok())
+        throw Exception{"Error while reading ORC data: " + read_status.ToString(),
+                        ErrorCodes::CANNOT_READ_ALL_DATA};
 
-    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, read_status, header, row_group_current, "ORC");
+    ++row_group_current;
+
+    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "ORC");
 
     return res;
 }

@@ -3,9 +3,9 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
-#include <arrow/table.h>
 #include <arrow/ipc/writer.h>
-#include "ArrowBufferedOutputStream.h"
+#include <arrow/table.h>
+#include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
 
 namespace DB
@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, arrow_ostream{out_}
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
@@ -31,7 +31,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     if (!writer)
     {
         // TODO: should we use arrow::ipc::IpcOptions::alignment?
-        auto status = arrow::ipc::RecordBatchFileWriter::Open(&arrow_ostream, arrow_table->schema(), &writer);
+        auto status = arrow::ipc::RecordBatchFileWriter::Open(arrow_ostream.get(), arrow_table->schema(), &writer);
         if (!status.ok())
             throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }

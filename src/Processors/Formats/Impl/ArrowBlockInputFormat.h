@@ -6,10 +6,12 @@
 #include <memory>
 #include <common/types.h>
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>
+#include "ArrowBufferedStreams.h"
 
-namespace arrow::ipc { class RecordBatchFileReader; }
+namespace arrow { class RecordBatchReader; }
 
 namespace DB
 {
@@ -19,7 +21,7 @@ class ReadBuffer;
 class ArrowBlockInputFormat : public IInputFormat
 {
 public:
-    ArrowBlockInputFormat(ReadBuffer & in_, Block header_);
+    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_);
 
     void resetParser() override;
 
@@ -29,10 +31,9 @@ protected:
     Chunk generate() override;
 
 private:
-    std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
-    std::string file_data;
-    int row_group_total = 0;
-    int row_group_current = 0;
+    const FormatSettings format_settings;
+    std::shared_ptr<ArrowBufferedInputStream> arrow_istream;
+    std::shared_ptr<arrow::RecordBatchReader> reader;
 };
 
 }
