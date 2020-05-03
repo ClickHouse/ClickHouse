@@ -206,7 +206,7 @@ Upon successful build you get an executable file `ClickHouse/<build_dir>/program
 
 To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
 
-    ../../../build/programs/clickhouse server
+    ../../build/programs/clickhouse server
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
