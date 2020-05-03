@@ -47,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### ファイルエンジンテーブルの使用 {#using-a-file-engine-table}
 
-見る [ファイル](../engines/table_engines/special/file.md).
+見る [ファイル](../engines/table-engines/special/file.md).
 
 ### コマンドラインのリダイ {#using-command-line-redirection}
 

@@ -1125,12 +1125,10 @@ public:
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
             || (left.isStringOrFixedString() && right.isStringOrFixedString())
-            || (left.isDate() && right.isDate())
-            || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.
-            || (left.isString() && right.isDate())
-            || (left.isDateTime() && right.isDateTime())
-            || (left.isDateTime() && right.isString())
-            || (left.isString() && right.isDateTime())
+            /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
+            || (left.isString() && right.isDateOrDateTime())
+            || (left.isDateOrDateTime() && right.isString())
+            || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || (left.isUUID() && right.isString())
             || (left.isString() && right.isUUID())
@@ -1227,6 +1225,65 @@ public:
         else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
+        else if (which_left.idx != which_right.idx
+                 && (which_left.isDateTime64() || which_right.isDateTime64())
+                 && (which_left.isStringOrFixedString() || which_right.isStringOrFixedString()))
+        {
+            /** Special case of comparing DateTime64 against a string.
+             *
+             * Can't be moved to executeDateOrDateTimeOrEnumOrUUIDWithConstString()
+             * since DateTime64 is basically a Decimal, but we do similar things, except type inference.
+             * Outline:
+             * - Extract string content
+             * - Parse it as a ColumnDateTime64 value (same type as DateTime64, means same precision)
+             * - Fabricate a column with type and name
+             * - Compare left and right comlumns as DateTime64 columns.
+             */
+
+            const size_t datetime64_col_index = which_left.isDateTime64() ? 0 : 1;
+            const size_t string_col_index = which_left.isStringOrFixedString() ? 0 : 1;
+
+            const auto & datetime64_col_with_type_and_name = block.getByPosition(arguments[datetime64_col_index]);
+            const auto & string_col_with_type_and_name = block.getByPosition(arguments[string_col_index]);
+
+            if (!isColumnConst(*string_col_with_type_and_name.column))
+                throw Exception(getName() + ", illegal column type of argument #" + std::to_string(string_col_index)
+                        + " '" + string_col_with_type_and_name.name + "'"
+                        " expected const String or const FixedString,"
+                        " got " + string_col_with_type_and_name.type->getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+
+            if (datetime64_col_with_type_and_name.column->size() == 0 || string_col_with_type_and_name.column->size() == 0)
+            {
+                // For some reason, when both left and right columns are empty (dry run while building a header block)
+                // executeDecimal() fills result column with bogus value.
+                block.getByPosition(result).column = ColumnUInt8::create();
+                return;
+            }
+
+            auto parsed_tmp_column_holder = datetime64_col_with_type_and_name.type->createColumn();
+
+            {
+                const StringRef string_value = string_col_with_type_and_name.column->getDataAt(0);
+                ReadBufferFromMemory in(string_value.data, string_value.size);
+                datetime64_col_with_type_and_name.type->deserializeAsWholeText(*parsed_tmp_column_holder, in, FormatSettings{});
+
+                if (!in.eof())
+                    throw Exception(getName() + ": String is too long for " + datetime64_col_with_type_and_name.type->getName() + " : " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+            }
+
+            // It is necessary to wrap tmp column in ColumnConst to avoid overflow when comparing.
+            // (non-const columns are expected to have same number of rows as every other column in block).
+            const ColumnWithTypeAndName parsed_tmp_col_with_type_and_name{
+                    ColumnConst::create(std::move(parsed_tmp_column_holder), 1),
+                    datetime64_col_with_type_and_name.type,
+                    string_col_with_type_and_name.name};
+
+            executeDecimal(block, result,
+                which_left.isDateTime64() ? datetime64_col_with_type_and_name : parsed_tmp_col_with_type_and_name,
+                which_right.isDateTime64() ? datetime64_col_with_type_and_name : parsed_tmp_col_with_type_and_name);
+
         }
         else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {

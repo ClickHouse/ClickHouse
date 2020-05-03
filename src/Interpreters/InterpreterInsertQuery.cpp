@@ -16,6 +16,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 #include <Access/AccessFlags.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTFunction.h>
@@ -185,7 +186,7 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
 
-    if (!is_distributed_insert_select)
+    if (!is_distributed_insert_select || query.watch)
     {
         size_t out_streams_size = 1;
         if (query.select)
@@ -206,6 +207,14 @@ BlockIO InterpreterInsertQuery::execute()
                 res.out = nullptr;
             }
         }
+        else if (query.watch)
+        {
+            InterpreterWatchQuery interpreter_watch{ query.watch, context };
+            res = interpreter_watch.execute();
+            in_streams.emplace_back(res.in);
+            res.in = nullptr;
+            res.out = nullptr;
+        }
 
         for (size_t i = 0; i < out_streams_size; i++)
         {
@@ -221,7 +230,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-            if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
+            if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
             {
                 out = std::make_shared<SquashingBlockOutputStream>(
                     out,
@@ -246,8 +255,8 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
 
-    /// What type of query: INSERT or INSERT SELECT?
-    if (query.select)
+    /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
+    if (query.select || query.watch)
     {
         for (auto & in_stream : in_streams)
         {
@@ -259,7 +268,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (in_streams.size() > 1)
         {
             for (size_t i = 1; i < in_streams.size(); ++i)
-                assertBlocksHaveEqualStructure(in_streams[i]->getHeader(), in_header, "INSERT SELECT");
+                assertBlocksHaveEqualStructure(in_streams[i]->getHeader(), in_header, query.select ? "INSERT SELECT" : "INSERT WATCH");
         }
 
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(in_streams, out_streams);

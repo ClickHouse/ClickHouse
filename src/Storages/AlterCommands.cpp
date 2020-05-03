@@ -257,7 +257,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 {
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type, false);
+        ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
             column.default_desc.kind = default_kind;
@@ -751,7 +751,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            all_columns.add(ColumnDescription(column_name, command.data_type, false));
+            all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {

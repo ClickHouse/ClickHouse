@@ -50,6 +50,8 @@ class TableJoin
     JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
     const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
+    const size_t max_files_to_merge = 0;
+    const String temporary_files_codec = "LZ4";
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
@@ -106,6 +108,8 @@ public:
     size_t defaultMaxBytes() const { return default_max_bytes; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
+    size_t maxFilesToMerge() const { return max_files_to_merge; }
+    const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
     void addUsingKey(const ASTPtr & ast);
