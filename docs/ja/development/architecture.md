@@ -120,9 +120,9 @@ Read/WriteBuffersはバイトのみを処理します。 からの機能があ�
 
 通常の関数と集約関数があります。 集計関数は、次のセクションを参照してください。
 
-Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`ベクトル化されたクエリ実行を実装するためのデータです。
+Ordinary functions don’t change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`ベクトル化されたクエリ実行を実装するためのデータです。
 
-いくつかの雑多な機能があります [ブロックサイズ](../sql_reference/functions/other_functions.md#function-blocksize), [rowNumberInBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock)、と [runningAccumulate](../sql_reference/functions/other_functions.md#function-runningaccumulate)、それはブロック処理を悪用し、行の独立性に違反します。
+いくつかの雑多な機能があります [ブロックサイズ](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock)、と [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate)、それはブロック処理を悪用し、行の独立性に違反します。
 
 ClickHouseには厳密な型指定があるため、暗黙の型変換はありません。 関数が型の特定の組み合わせをサポートしていない場合は、例外がスローされます。 ものの機能で作業する過負荷のもとに多くの異なる組み合わせます。 たとえば、 `plus` 機能(実装するには `+` 演算子）数値型の任意の組み合わせに対して機能します: `UInt8` + `Float32`, `UInt16` + `Int8`、というように。 また、いくつかの可変個引数関数は、任意の数の引数を受け入れることができます。 `concat` 機能。
 
@@ -177,7 +177,7 @@ INまたはJOIN節にサブクエリがあり、それぞれがaを使用する�
 
 ときあなた `INSERT` データの束に `MergeTree` その束は主キーの順序でソートされ、新しい部分を形成します。 が背景のスレッドを定期的に、選択部分と統合して単一のソート部の部品点数が比較的低い。 それが呼び出される理由です `MergeTree`. もちろん、マージにつながる “write amplification”. すべての部分は不変です：作成され、削除されますが、変更されません。 SELECTが実行されると、テーブル（部品のセット）のスナップショットが保持されます。 マージした後、我々はまた、我々はいくつかのマージされた部分は、おそらく壊れていることを確認した場合、我々は、そのソース部分とそれを置き換えることがで
 
-`MergeTree` LSMツリーが含まれていないためではありません “memtable” と “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity's sake, and because we are already inserting data in batches in our applications.
+`MergeTree` LSMツリーが含まれていないためではありません “memtable” と “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications.
 
 > MergeTreeテーブルには、一つの(プライマリ)インデックスしか持たせることができません。 たとえば、データを複数の物理的順序で格納したり、元のデータとともに事前に集計されたデータを使用して表現することもできます。
 

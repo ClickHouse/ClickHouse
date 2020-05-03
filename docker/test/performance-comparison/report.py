@@ -22,6 +22,9 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 
+# max seconds to run one query by itself, not counting preparation
+allowed_single_run_time = 2
+
 header_template = """
 <!DOCTYPE html>
 <html>
@@ -140,13 +143,42 @@ def printSimpleTable(caption, columns, rows):
         print(tableRow(row))
     print(tableEnd())
 
+def print_tested_commits():
+    global report_errors
+    try:
+        printSimpleTable('Tested commits', ['Old', 'New'],
+            [['<pre>{}</pre>'.format(x) for x in
+                [open('left-commit.txt').read(),
+                 open('right-commit.txt').read()]]])
+    except:
+        # Don't fail if no commit info -- maybe it's a manual run.
+        report_errors.append(
+            traceback.format_exception_only(
+                *sys.exc_info()[:2])[-1])
+        pass
+
+def print_report_errors():
+    global report_errors
+    # Add the errors reported by various steps of comparison script
+    try:
+        report_errors += [l.strip() for l in open('report/errors.log')]
+    except:
+        report_errors.append(
+            traceback.format_exception_only(
+                *sys.exc_info()[:2])[-1])
+        pass
+
+    if len(report_errors):
+        print(tableStart('Errors while building the report'))
+        print(tableHeader(['Error']))
+        for x in report_errors:
+            print(tableRow([x]))
+        print(tableEnd())
+
 if args.report == 'main':
     print(header_template.format())
 
-    printSimpleTable('Tested commits', ['Old', 'New'],
-        [['<pre>{}</pre>'.format(x) for x in
-            [open('left-commit.txt').read(),
-             open('right-commit.txt').read()]]])
+    print_tested_commits()
 
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
@@ -262,17 +294,18 @@ if args.report == 'main':
         print(tableStart('Test times'))
         print(tableHeader(columns))
         
-        runs = 13  # FIXME pass this as an argument
+        nominal_runs = 13  # FIXME pass this as an argument
+        total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[6]) > 3 * runs:
+            if float(r[6]) > 1.5 * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = 'style="background: #ffb0a0"'
             else:
                 attrs[6] = ''
 
-            if float(r[5]) > 4 * runs:
+            if float(r[5]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
                 attrs[5] = 'style="background: #ffb0a0"'
             else:
@@ -284,15 +317,7 @@ if args.report == 'main':
 
     print_test_times()
 
-    # Add the errors reported by various steps of comparison script
-    report_errors += [l.strip() for l in open('report/errors.log')]
-    if len(report_errors):
-        print(tableStart('Errors while building the report'))
-        print(tableHeader(['Error']))
-        for x in report_errors:
-            print(tableRow([x]))
-        print(tableEnd())
-
+    print_report_errors()
 
     print("""
     <p class="links">
@@ -346,10 +371,7 @@ elif args.report == 'all-queries':
 
     print(header_template.format())
 
-    printSimpleTable('Tested commits', ['Old', 'New'],
-        [['<pre>{}</pre>'.format(x) for x in
-            [open('left-commit.txt').read(),
-             open('right-commit.txt').read()]]])
+    print_tested_commits()
 
     def print_all_queries():
         rows = tsvRows('report/all-queries.tsv')
@@ -388,11 +410,20 @@ elif args.report == 'all-queries':
             else:
                 attrs[4] = ''
 
+            if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
+                attrs[2] = 'style="background: #ffb0a0"'
+                attrs[3] = 'style="background: #ffb0a0"'
+            else:
+                attrs[2] = ''
+                attrs[3] = ''
+
             print(tableRow(r, attrs))
 
         print(tableEnd())
 
     print_all_queries()
+
+    print_report_errors()
 
     print("""
     <p class="links">

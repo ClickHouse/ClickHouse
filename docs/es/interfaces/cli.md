@@ -5,11 +5,11 @@ toc_priority: 17
 toc_title: "Cliente de l\xEDnea de comandos"
 ---
 
-# Cliente de línea de comandos {#command-line-client}
+# Cliente De línea De Comandos {#command-line-client}
 
 ClickHouse proporciona un cliente de línea de comandos nativo: `clickhouse-client`. El cliente admite opciones de línea de comandos y archivos de configuración. Para obtener más información, consulte [Configuración](#interfaces_cli_configuration).
 
-[Instalar](../getting_started/index.md) desde el `clickhouse-client` paquete y ejecútelo con el comando `clickhouse-client`.
+[Instalar](../getting-started/index.md) desde el `clickhouse-client` paquete y ejecútelo con el comando `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -72,7 +72,7 @@ Puede cancelar una consulta larga presionando Ctrl + C. Sin embargo, aún tendr�
 
 El cliente de línea de comandos permite pasar datos externos (tablas temporales externas) para consultar. Para obtener más información, consulte la sección “External data for query processing”.
 
-### Consultas con parámetros {#cli-queries-with-parameters}
+### Consultas Con parámetros {#cli-queries-with-parameters}
 
 Puede crear una consulta con parámetros y pasarles valores desde la aplicación cliente. Esto permite evitar formatear consultas con valores dinámicos específicos en el lado del cliente. Por ejemplo:
 
@@ -80,7 +80,7 @@ Puede crear una consulta con parámetros y pasarles valores desde la aplicación
 $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-#### Sintaxis de consulta {#cli-queries-with-parameters-syntax}
+#### Sintaxis De Consulta {#cli-queries-with-parameters-syntax}
 
 Formatee una consulta como de costumbre, luego coloque los valores que desea pasar de los parámetros de la aplicación a la consulta entre llaves en el siguiente formato:
 
@@ -89,7 +89,7 @@ Formatee una consulta como de costumbre, luego coloque los valores que desea pas
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Tipo de datos](../sql_reference/data_types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [entero](../sql_reference/data_types/int_uint.md) tipo).
+-   `data type` — [Tipo de datos](../sql-reference/data-types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [entero](../sql-reference/data-types/int-uint.md) tipo).
 
 #### Ejemplo {#example}
 
@@ -109,7 +109,7 @@ Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un v
 
     Los valores de los archivos de configuración anulan los valores predeterminados.
 
-### Opciones de línea de comandos {#command-line-options}
+### Opciones De línea De Comandos {#command-line-options}
 
 -   `--host, -h` -– The server name, ‘localhost’ predeterminada. Puede utilizar el nombre o la dirección IPv4 o IPv6.
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
@@ -127,7 +127,7 @@ Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un v
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--param_<name>` — Value for a [consulta con parámetros](#cli-queries-with-parameters).
 
-### Archivos de configuración {#configuration_files}
+### Archivos De configuración {#configuration_files}
 
 `clickhouse-client` utiliza el primer archivo existente de los siguientes:
 

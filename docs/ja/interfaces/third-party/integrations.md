@@ -42,7 +42,7 @@ toc_title: "\u7D71\u5408"
         -   [グラファウス](https://github.com/yandex/graphouse)
         -   [カーボンクリックハウス](https://github.com/lomik/carbon-clickhouse) +
         -   [黒鉛-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) -staledパーティションを最適化します。 [\*グラフィットマージツリー](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) からのルールの場合 [ロールアップ構成](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) 適用できます
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) -staledパーティションを最適化します。 [\*グラフィットマージツリー](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) からのルールの場合 [ロールアップ構成](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) 適用できます
     -   [グラファナ](https://grafana.com/)
         -   [クリックハウス-グラファナ](https://github.com/Vertamedia/clickhouse-grafana)
     -   [プロメテウス](https://prometheus.io/)
@@ -74,7 +74,7 @@ toc_title: "\u7D71\u5408"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (用途 [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [パンダ](https://pandas.pydata.org)
         -   [パンダハウス](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -82,7 +82,7 @@ toc_title: "\u7D71\u5408"
         -   [Rクリックハウス](https://github.com/IMSMWU/RClickhouse) (用途 [クリックハウス-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [クリックハウス-hdfs-ローダー](https://github.com/jaykelin/clickhouse-hdfs-loader) (用途 [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [クリックハウス-hdfs-ローダー](https://github.com/jaykelin/clickhouse-hdfs-loader) (用途 [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-scala-クライアント](https://github.com/crobox/clickhouse-scala-client)

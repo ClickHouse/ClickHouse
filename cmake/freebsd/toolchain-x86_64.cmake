@@ -7,6 +7,9 @@ set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/freebsd-x86_64")
 
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake
 
+set (CMAKE_AR "/usr/bin/ar" CACHE FILEPATH "" FORCE)
+set (CMAKE_RANLIB "/usr/bin/ranlib" CACHE FILEPATH "" FORCE)
+
 set (LINKER_NAME "lld" CACHE STRING "" FORCE)
 
 set (CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
