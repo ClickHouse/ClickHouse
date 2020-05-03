@@ -327,7 +327,10 @@ def write_redirect_html(out_path, to_url):
 
 def build_redirect_html(args, from_path, to_path):
     for lang in args.lang.split(','):
-        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_path = os.path.join(
+            args.docs_output_dir, lang,
+            from_path.replace('/index.md', '/index.html').replace('.md', '/index.html')
+        )
         version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
