@@ -27,6 +27,7 @@ ArrowBufferedInputStream::ArrowBufferedInputStream(ReadBuffer & istr_) : istr{is
 ::arrow::Status ArrowBufferedInputStream::Read(int64_t nbytes, int64_t * bytes_read, void * out)
 {
     *bytes_read = istr.read(reinterpret_cast<char *>(out), nbytes);
+    total_length += *bytes_read;
     return ::arrow::Status::OK();
 }
 
