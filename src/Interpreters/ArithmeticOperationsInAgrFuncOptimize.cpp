@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
