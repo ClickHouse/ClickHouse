@@ -1,14 +1,12 @@
 #pragma once
-
 #include "config_formats.h"
+#if USE_ORC
+
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>
 
-#if USE_ORC
-
-#include "arrow/adapters/orc/adapter.h"
-#include "arrow/io/interfaces.h"
+namespace arrow::adapters::orc { class ORCFileReader; }
 
 namespace DB
 {
@@ -32,8 +30,6 @@ private:
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
     std::string file_data;
-    int row_group_total = 0;
-    int row_group_current = 0;
 };
 
 }
