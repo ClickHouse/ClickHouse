@@ -4,12 +4,16 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseUserName.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
 namespace
 {
+    using EntityType = IAccessEntity::Type;
+    using EntityTypeInfo = IAccessEntity::TypeInfo;
+
     bool parseNames(IParserBase::Pos & pos, Expected & expected, Strings & names)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -79,19 +83,17 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!ParserKeyword{"DROP"}.ignore(pos, expected))
         return false;
 
-    using Kind = ASTDropAccessEntityQuery::Kind;
-    Kind kind;
-    if (ParserKeyword{"USER"}.ignore(pos, expected))
-        kind = Kind::USER;
-    else if (ParserKeyword{"ROLE"}.ignore(pos, expected))
-        kind = Kind::ROLE;
-    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
-        kind = Kind::QUOTA;
-    else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
-        kind = Kind::ROW_POLICY;
-    else if (ParserKeyword{"SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
-        kind = Kind::SETTINGS_PROFILE;
-    else
+    std::optional<EntityType> type;
+    for (auto type_i : ext::range(EntityType::MAX))
+    {
+        const auto & type_info = EntityTypeInfo::get(type_i);
+        if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
+            || (!type_info.alias.empty() && ParserKeyword{type_info.alias.c_str()}.ignore(pos, expected)))
+        {
+            type = type_i;
+        }
+    }
+    if (!type)
         return false;
 
     bool if_exists = false;
@@ -101,12 +103,12 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     Strings names;
     std::vector<RowPolicy::NameParts> row_policies_name_parts;
 
-    if ((kind == Kind::USER) || (kind == Kind::ROLE))
+    if ((type == EntityType::USER) || (type == EntityType::ROLE))
     {
         if (!parseUserNames(pos, expected, names))
             return false;
     }
-    else if (kind == Kind::ROW_POLICY)
+    else if (type == EntityType::ROW_POLICY)
     {
         if (!parseRowPolicyNames(pos, expected, row_policies_name_parts))
             return false;
@@ -124,9 +126,10 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    auto query = std::make_shared<ASTDropAccessEntityQuery>(kind);
+    auto query = std::make_shared<ASTDropAccessEntityQuery>();
     node = query;
 
+    query->type = *type;
     query->if_exists = if_exists;
     query->cluster = std::move(cluster);
     query->names = std::move(names);

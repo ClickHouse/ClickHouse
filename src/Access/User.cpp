@@ -13,4 +13,5 @@ bool User::equal(const IAccessEntity & other) const
         && (access == other_user.access) && (granted_roles == other_user.granted_roles) && (default_roles == other_user.default_roles)
         && (settings == other_user.settings);
 }
+
 }

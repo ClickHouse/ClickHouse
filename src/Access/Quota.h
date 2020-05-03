@@ -75,6 +75,8 @@ struct Quota : public IAccessEntity
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Quota>(); }
+    static constexpr const Type TYPE = Type::QUOTA;
+    Type getType() const override { return TYPE; }
 
     static const char * getNameOfResourceType(ResourceType resource_type);
     static const char * resourceTypeToKeyword(ResourceType resource_type);

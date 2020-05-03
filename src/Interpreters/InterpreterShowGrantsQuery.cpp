@@ -105,7 +105,7 @@ namespace
             return getGrantQueriesImpl(*user, manager, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, manager, attach_mode);
-        throw Exception("Unexpected type of access entity: " + entity.getTypeName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(entity.outputTypeAndName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
     }
 
 }
