@@ -30,7 +30,7 @@ Principales caractéristiques:
     Si nécessaire, vous pouvez définir la méthode d’échantillonnage des données dans le tableau.
 
 !!! info "Info"
-    Le [Fusionner](../special/merge.md) le moteur n’appartient pas à la `*MergeTree` famille.
+    Le [Fusionner](../special/merge.md#merge) le moteur n’appartient pas à la `*MergeTree` famille.
 
 ## Création d’une Table {#table_engine-mergetree-creating-a-table}
 

@@ -30,7 +30,7 @@ toc_title: "\u0627\u062F\u063A\u0627\u0645"
     در صورت لزوم می توانید روش نمونه گیری داده ها را در جدول تنظیم کنید.
 
 !!! info "اطلاعات"
-    این [ادغام](../special/merge.md) موتور به تعلق ندارد `*MergeTree` خانواده
+    این [ادغام](../special/merge.md#merge) موتور به تعلق ندارد `*MergeTree` خانواده
 
 ## ایجاد یک جدول {#table_engine-mergetree-creating-a-table}
 

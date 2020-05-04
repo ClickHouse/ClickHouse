@@ -30,7 +30,7 @@ toc_title: MergeTree
     必要に応じて、テーブル内のデータサンプリング方法を設定できます。
 
 !!! info "情報"
-    その [マージ](../special/merge.md) エンジンはに属しません `*MergeTree` 家族
+    その [マージ](../special/merge.md#merge) エンジンはに属しません `*MergeTree` 家族
 
 ## テーブルの作成 {#table_engine-mergetree-creating-a-table}
 

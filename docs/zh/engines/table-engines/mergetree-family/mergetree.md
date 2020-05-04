@@ -23,7 +23,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
         需要的话，你可以给表设置一个采样方法。
 
 !!! 注意 "注意"
-    [合并](../special/merge.md) 引擎并不属于 `*MergeTree` 系列。
+    [合并](../special/merge.md#merge) 引擎并不属于 `*MergeTree` 系列。
 
 ## 建表 {#table_engine-mergetree-creating-a-table}
 

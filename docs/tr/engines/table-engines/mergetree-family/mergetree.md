@@ -30,7 +30,7 @@ Ana özellikler:
     Gerekirse, tabloda veri örnekleme yöntemini ayarlayabilirsiniz.
 
 !!! info "Bilgin"
-    Bu [Birleştirmek](../special/merge.md) motor ait değil `*MergeTree` aile.
+    Bu [Birleştirmek](../special/merge.md#merge) motor ait değil `*MergeTree` aile.
 
 ## Tablo oluşturma {#table_engine-mergetree-creating-a-table}
 

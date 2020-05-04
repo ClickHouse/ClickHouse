@@ -28,8 +28,8 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 -   [ادغام](mergetree-family/mergetree.md#mergetree)
 -   [جایگزینی](mergetree-family/replacingmergetree.md#replacingmergetree)
 -   [سامینگمرگتری](mergetree-family/summingmergetree.md#summingmergetree)
--   [ریزدانه](mergetree-family/aggregatingmergetree.md#aggregatingmergetree.)
--   [سقوط غذای اصلی](mergetree-family/collapsingmergetree.md#collapsingmergetree)
+-   [ریزدانه](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [سقوط غذای اصلی](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [در حال بارگذاری](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [نمودار](mergetree-family/graphitemergetree.md#graphitemergetree)
 
@@ -51,8 +51,8 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 -   [کافکا](integrations/kafka.md#kafka)
 -   [MySQL](integrations/mysql.md#mysql)
--   [ODBC](integrations/odbc.md#odbc)
--   [JDBC](integrations/jdbc.md#jdbc)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](integrations/hdfs.md#hdfs)
 
 ### موتورهای ویژه {#special-engines}
@@ -62,13 +62,13 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 -   [توزیع شده](special/distributed.md#distributed)
 -   [ماده بینی](special/materializedview.md#materializedview)
 -   [واژهنامه](special/dictionary.md#dictionary)
--   [ادغام](special/merge.md#merge)
+-   [ادغام](special/merge.md#merge
 -   [پرونده](special/file.md#file)
 -   [خالی](special/null.md#null)
 -   [تنظیم](special/set.md#set)
 -   [پیوستن](special/join.md#join)
--   [URL](special/url.md#url)
--   [نما](special/view.md#view)
+-   [URL](special/url.md#table_engines-url)
+-   [نما](special/view.md#table_engines-view)
 -   [حافظه](special/memory.md#memory)
 -   [بافر](special/buffer.md#buffer)
 

@@ -28,8 +28,8 @@ Ailede motorlar:
 -   [MergeTree](mergetree-family/mergetree.md#mergetree)
 -   [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
 -   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
--   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree.)
--   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#collapsingmergetree)
+-   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [Graphıtemergetree](mergetree-family/graphitemergetree.md#graphitemergetree)
 
@@ -51,8 +51,8 @@ Ailede motorlar:
 
 -   [Kafka](integrations/kafka.md#kafka)
 -   [MySQL](integrations/mysql.md#mysql)
--   [ODBC](integrations/odbc.md#odbc)
--   [JDBC](integrations/jdbc.md#jdbc)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](integrations/hdfs.md#hdfs)
 
 ### Özel Motorlar {#special-engines}
@@ -62,13 +62,13 @@ Ailede motorlar:
 -   [Dağılı](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Sözlük](special/dictionary.md#dictionary)
--   [Birleştirmek](special/merge.md#merge)
+-   [Birleştirmek](special/merge.md#merge
 -   [Dosya](special/file.md#file)
 -   [Boş](special/null.md#null)
 -   [Koymak](special/set.md#set)
 -   [Katmak](special/join.md#join)
--   [URL](special/url.md#url)
--   [Görünüm](special/view.md#view)
+-   [URL](special/url.md#table_engines-url)
+-   [Görünüm](special/view.md#table_engines-view)
 -   [Bellek](special/memory.md#memory)
 -   [Arabellek](special/buffer.md#buffer)
 

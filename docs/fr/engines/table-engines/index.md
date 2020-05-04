@@ -28,8 +28,8 @@ Moteurs dans la famille:
 -   [MergeTree](mergetree-family/mergetree.md#mergetree)
 -   [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
 -   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
--   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree.)
--   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#collapsingmergetree)
+-   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [GraphiteMergeTree](mergetree-family/graphitemergetree.md#graphitemergetree)
 
@@ -51,8 +51,8 @@ Moteurs dans la famille:
 
 -   [Kafka](integrations/kafka.md#kafka)
 -   [MySQL](integrations/mysql.md#mysql)
--   [ODBC](integrations/odbc.md#odbc)
--   [JDBC](integrations/jdbc.md#jdbc)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](integrations/hdfs.md#hdfs)
 
 ### Moteurs Spéciaux {#special-engines}
@@ -62,13 +62,13 @@ Moteurs dans la famille:
 -   [Distribué](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Dictionnaire](special/dictionary.md#dictionary)
--   [Fusionner](special/merge.md#merge)
+-   [Fusionner](special/merge.md#merge
 -   [Fichier](special/file.md#file)
 -   [NULL](special/null.md#null)
 -   [Définir](special/set.md#set)
 -   [Rejoindre](special/join.md#join)
--   [URL](special/url.md#url)
--   [Vue](special/view.md#view)
+-   [URL](special/url.md#table_engines-url)
+-   [Vue](special/view.md#table_engines-view)
 -   [Mémoire](special/memory.md#memory)
 -   [Tampon](special/buffer.md#buffer)
 

@@ -17,6 +17,6 @@ ClickHouse, sorgularda kullanılabilecek sözlüklerle çalışmak için özel i
 ClickHouse destekler:
 
 -   [Dahili sözlükler](internal-dicts.md#internal_dicts) bir özel ile [fonksiyonlar kümesi](../../sql-reference/functions/ym-dict-functions.md).
--   [Eklenti (harici) söz dictionarieslükler](external-dictionaries/external-dicts.md#external-dicts) ile bir [fonksiyonlar net](../../sql-reference/functions/ext-dict-functions.md).
+-   [Eklenti (harici) söz dictionarieslükler](external-dictionaries/external-dicts.md#dicts-external-dicts) ile bir [fonksiyonlar net](../../sql-reference/functions/ext-dict-functions.md).
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

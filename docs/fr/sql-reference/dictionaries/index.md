@@ -17,6 +17,6 @@ ClickHouse prend en charge des fonctions spéciales pour travailler avec des dic
 Supports ClickHouse:
 
 -   [Construit-dans les dictionnaires](internal-dicts.md#internal_dicts) avec un [ensemble de fonctions](../../sql-reference/functions/ym-dict-functions.md).
--   [Plug-in (externe) dictionnaires](external-dictionaries/external-dicts.md#external-dicts) avec un [net de fonctions](../../sql-reference/functions/ext-dict-functions.md).
+-   [Plug-in (externe) dictionnaires](external-dictionaries/external-dicts.md#dicts-external-dicts) avec un [net de fonctions](../../sql-reference/functions/ext-dict-functions.md).
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

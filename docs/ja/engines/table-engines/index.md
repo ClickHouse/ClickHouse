@@ -28,8 +28,8 @@ toc_title: "\u5C0E\u5165"
 -   [MergeTree](mergetree-family/mergetree.md#mergetree)
 -   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂつｹ](mergetree-family/replacingmergetree.md#replacingmergetree)
 -   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
--   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ](mergetree-family/aggregatingmergetree.md#aggregatingmergetree.)
--   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#collapsingmergetree)
+-   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [グラフィットメールグツリー](mergetree-family/graphitemergetree.md#graphitemergetree)
 
@@ -51,8 +51,8 @@ toc_title: "\u5C0E\u5165"
 
 -   [カフカname](integrations/kafka.md#kafka)
 -   [MySQL](integrations/mysql.md#mysql)
--   [ODBC](integrations/odbc.md#odbc)
--   [JDBC](integrations/jdbc.md#jdbc)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](integrations/hdfs.md#hdfs)
 
 ### 特殊エンジン {#special-engines}
@@ -62,13 +62,13 @@ toc_title: "\u5C0E\u5165"
 -   [分散](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [辞書](special/dictionary.md#dictionary)
--   [マージ](special/merge.md#merge)
+-   [マージ](special/merge.md#merge
 -   [ファイル](special/file.md#file)
 -   [ヌル](special/null.md#null)
 -   [セット](special/set.md#set)
 -   [参加](special/join.md#join)
--   [URL](special/url.md#url)
--   [ビュー](special/view.md#view)
+-   [URL](special/url.md#table_engines-url)
+-   [ビュー](special/view.md#table_engines-view)
 -   [メモリ](special/memory.md#memory)
 -   [バッファ](special/buffer.md#buffer)
 

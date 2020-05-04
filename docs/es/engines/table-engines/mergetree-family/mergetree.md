@@ -30,7 +30,7 @@ Principales características:
     Si es necesario, puede establecer el método de muestreo de datos en la tabla.
 
 !!! info "INFO"
-    El [Fusionar](../special/merge.md) el motor no pertenece al `*MergeTree` familia.
+    El [Fusionar](../special/merge.md#merge) el motor no pertenece al `*MergeTree` familia.
 
 ## Creación De Una Tabla {#table_engine-mergetree-creating-a-table}
 

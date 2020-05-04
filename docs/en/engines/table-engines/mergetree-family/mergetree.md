@@ -28,7 +28,7 @@ Main features:
     If necessary, you can set the data sampling method in the table.
 
 !!! info "Info"
-    The [Merge](../special/merge.md) engine does not belong to the `*MergeTree` family.
+    The [Merge](../special/merge.md#merge) engine does not belong to the `*MergeTree` family.
 
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 

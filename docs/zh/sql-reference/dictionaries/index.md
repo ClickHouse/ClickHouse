@@ -17,6 +17,6 @@ ClickHouse支持使用可用于查询的字典的特殊功能。 这是更容易
 ClickHouse支持:
 
 -   [内置字典](internal-dicts.md#internal_dicts) 具有特定的 [功能集](../../sql-reference/functions/ym-dict-functions.md).
--   [插件（外部）字典](external-dictionaries/external-dicts.md#external-dicts) 用一个 [职能净额](../../sql-reference/functions/ext-dict-functions.md).
+-   [插件（外部）字典](external-dictionaries/external-dicts.md#dicts-external-dicts) 用一个 [职能净额](../../sql-reference/functions/ext-dict-functions.md).
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

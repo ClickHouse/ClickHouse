@@ -28,8 +28,8 @@ Motores en la familia:
 -   [Método de codificación de datos:](mergetree-family/mergetree.md#mergetree)
 -   [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
 -   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
--   [AgregaciónMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree.)
--   [ColapsarMergeTree](mergetree-family/collapsingmergetree.md#collapsingmergetree)
+-   [AgregaciónMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [ColapsarMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
 -   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
 -   [GraphiteMergeTree](mergetree-family/graphitemergetree.md#graphitemergetree)
 
@@ -51,8 +51,8 @@ Motores en la familia:
 
 -   [Kafka](integrations/kafka.md#kafka)
 -   [MySQL](integrations/mysql.md#mysql)
--   [ODBC](integrations/odbc.md#odbc)
--   [JDBC](integrations/jdbc.md#jdbc)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](integrations/hdfs.md#hdfs)
 
 ### Motores Especiales {#special-engines}
@@ -62,13 +62,13 @@ Motores en la familia:
 -   [Distribuido](special/distributed.md#distributed)
 -   [Método de codificación de datos:](special/materializedview.md#materializedview)
 -   [Diccionario](special/dictionary.md#dictionary)
--   [Fusionar](special/merge.md#merge)
+-   [Fusionar](special/merge.md#merge
 -   [File](special/file.md#file)
 -   [Nulo](special/null.md#null)
 -   [Establecer](special/set.md#set)
 -   [Unir](special/join.md#join)
--   [URL](special/url.md#url)
--   [Vista](special/view.md#view)
+-   [URL](special/url.md#table_engines-url)
+-   [Vista](special/view.md#table_engines-view)
 -   [Memoria](special/memory.md#memory)
 -   [Búfer](special/buffer.md#buffer)
 

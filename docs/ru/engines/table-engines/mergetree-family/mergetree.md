@@ -23,7 +23,7 @@
         При необходимости можно задать способ сэмплирования данных в таблице.
 
 !!! info "Info"
-    Движок [Merge](../special/merge.md) не относится к семейству `*MergeTree`.
+    Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
 
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
