@@ -66,8 +66,8 @@ done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
 if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
-    echo "Create user '$CLICKHOUSE_USER' instead default"
-    cat <<EOT >> /etc/clickhouse-server/users.d/default-user.xml
+    echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
+    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
     <yandex>
       <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
       <users>
