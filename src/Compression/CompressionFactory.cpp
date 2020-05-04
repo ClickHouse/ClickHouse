@@ -68,8 +68,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr
         else if (codecs.size() > 1)
             res = std::make_shared<CompressionCodecMultiple>(codecs, sanity_check);
 
-        if (sanity_check && !res->isCompression())
-            throw Exception("The combination of compression codecs " + res->getCodecDesc() + " does not compress anything."
+        /// Allow to explicitly specify single NONE codec if user don't want any compression.
+        /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
+        if (sanity_check && !res->isCompression() && !res->isNone())
+            throw Exception("Compression codec " + res->getCodecDesc() + " does not compress anything."
+                " You may want to add generic compression algorithm after other transformations, like: " + res->getCodecDesc() + ", LZ4."
                 " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
                 ErrorCodes::BAD_ARGUMENTS);
 
