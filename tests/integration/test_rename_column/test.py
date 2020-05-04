@@ -43,6 +43,7 @@ def create_table(nodes, table_name):
         """.format(table_name=table_name, replica=node.name)
         node.query(sql)
 
+<<<<<<< HEAD
 def insert(node, table_name, chunk=1000, col_name="num", iterations=1, ignore_exception=False):
     for i in range(iterations):
         try:
@@ -53,6 +54,13 @@ def insert(node, table_name, chunk=1000, col_name="num", iterations=1, ignore_ex
         except QueryRuntimeException as ex:
             if not ignore_exception:
                 raise
+=======
+def insert(node, table_name, num_inserts):
+    node1.query((
+        "SET max_partitions_per_insert_block = 10000000;\n"
+        "INSERT INTO {table_name} (num) SELECT number AS num FROM numbers_mt({num_inserts})"
+    ).format(table_name=table_name, num_inserts=num_inserts))
+>>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
 
 def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False):
     for i in range(iterations):
@@ -63,6 +71,10 @@ def select(node, table_name, col_name="num", expected_result=None, iterations=1,
         except QueryRuntimeException as ex:
             if not ignore_exception:
                 raise
+<<<<<<< HEAD
+=======
+            print(ex)
+>>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
 
 def rename_column(node, table_name, name, new_name, iterations=1, ignore_exception=False):
     for i in range(iterations):
@@ -73,6 +85,7 @@ def rename_column(node, table_name, name, new_name, iterations=1, ignore_excepti
         except QueryRuntimeException as ex:
             if not ignore_exception:
                 raise
+<<<<<<< HEAD
 
 def test_rename_parallel_same_node(started_cluster):
     table_name = "test_rename_parallel_same_node"
@@ -123,6 +136,9 @@ def test_rename_parallel(started_cluster):
         select(node1, table_name, "num2", "999\n")
     finally:
         drop_table(nodes, table_name)
+=======
+            print(ex)
+>>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
 
 def test_rename_with_parallel_select(started_cluster):
     table_name = "test_rename_with_parallel_select"
@@ -143,15 +159,23 @@ def test_rename_with_parallel_select(started_cluster):
         for task in tasks:
             task.get(timeout=240)
 
+<<<<<<< HEAD
         # rename column back to original name
         rename_column(node1, table_name, "foo3", "num2", 1, True)
         rename_column(node1, table_name, "foo2", "num2", 1, True)
 
         # check that select still works
+=======
+        rename_column(node1, table_name, "foo3", "num2", 1, True)
+        rename_column(node1, table_name, "foo2", "num2", 1, True)
+
+        # check that select works
+>>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
         select(node1, table_name, "num2", "999\n")
     finally:
         drop_table(nodes, table_name)
 
+<<<<<<< HEAD
 def test_rename_with_parallel_insert(started_cluster):
     table_name = "test_rename_with_parallel_insert"
     drop_table(nodes, table_name)
@@ -179,3 +203,6 @@ def test_rename_with_parallel_insert(started_cluster):
         select(node1, table_name, "num2")
     finally:
         drop_table(nodes, table_name)
+=======
+
+>>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
