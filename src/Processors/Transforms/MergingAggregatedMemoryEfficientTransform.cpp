@@ -276,6 +276,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 
 void GroupingAggregatedTransform::work()
 {
+    /// Convert single level data to two level.
     if (!single_level_chunks.empty())
     {
         const auto & header = getInputs().front().getHeader();  /// Take header from input port. Output header is empty.
