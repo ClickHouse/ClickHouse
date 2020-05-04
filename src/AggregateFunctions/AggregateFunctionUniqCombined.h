@@ -31,7 +31,7 @@ namespace detail
     {
         static Ret hash(T x)
         {
-            return static_cast<Ret>(intHash64(x));
+            return static_cast<Ret>(intHash64(static_cast<UInt64>(x)));
         }
     };
 

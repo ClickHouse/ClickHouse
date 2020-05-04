@@ -321,6 +321,6 @@ struct IntHash32
 {
     size_t operator() (const T & key) const
     {
-        return intHash32<salt>(key);
+        return intHash32<salt>(static_cast<DB::UInt64>(key));
     }
 };

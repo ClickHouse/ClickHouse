@@ -116,10 +116,10 @@ public:
 
         if constexpr (has_second_arg)
             this->data(place).add(
-                value,
+                static_cast<UInt64>(value),
                 columns[1]->getUInt(row_num));
         else
-            this->data(place).add(value);
+            this->data(place).add(static_cast<UInt64>(value));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
