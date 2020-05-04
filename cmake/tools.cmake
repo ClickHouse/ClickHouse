@@ -1,6 +1,10 @@
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (COMPILER_GCC 1)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+    # It's very difficult to check what is the correspondence between clang and AppleClang versions.
+    # There are many complaints that some version of AppleClang does not work, but we are not able to dig into it.
+    message(FATAL_ERROR "AppleClang compiler is not supported. You have to use the latest clang version.")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set (COMPILER_CLANG 1)
 endif ()
 
