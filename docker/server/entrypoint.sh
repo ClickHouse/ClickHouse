@@ -65,41 +65,30 @@ do
 done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
-if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ]; then
-  echo "Create user '$CLICKHOUSE_USER' instead default"
-  cat <<EOT >> /etc/clickhouse-server/users.d/default-user.xml
-  <yandex>
-    <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
-    <users>
-      <!-- Remove default user -->
-      <default remove="remove">
-      </default>
+if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
+    echo "Create user '$CLICKHOUSE_USER' instead default"
+    cat <<EOT >> /etc/clickhouse-server/users.d/default-user.xml
+    <yandex>
+      <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
+      <users>
+        <!-- Remove default user -->
+        <default remove="remove">
+        </default>
 
-      <${CLICKHOUSE_USER}>
-        <profile>default</profile>
-        <networks>
-          <ip>::/0</ip>
-        </networks>
-        <password>${CLICKHOUSE_PASSWORD}</password>
-        <quota>default</quota>
-      </${CLICKHOUSE_USER}>
-    </users>
-  </yandex>
+        <${CLICKHOUSE_USER}>
+          <profile>default</profile>
+          <networks>
+            <ip>::/0</ip>
+          </networks>
+          <password>${CLICKHOUSE_PASSWORD}</password>
+          <quota>default</quota>
+        </${CLICKHOUSE_USER}>
+      </users>
+    </yandex>
 EOT
 fi
 
-# define password argument for clickhouse client
-if [ -n "$CLICKHOUSE_PASSWORD" ]; then
-    printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
-fi
-
-# create default database, if defined
-if [ -n "$CLICKHOUSE_DB" ]; then
-  echo "Create database '$CLICKHOUSE_DB'"
-  clickhouse-client --query -u "$CLICKHOUSE_USER" $WITH_PASSWORD "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
-fi
-
-if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
+if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
     pid="$!"
 
@@ -110,7 +99,19 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
         exit 1
     fi
 
-    clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
+    # define password argument for clickhouse client
+    if [ -n "$CLICKHOUSE_PASSWORD" ]; then
+        printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
+    fi
+
+    # define clickhouse client execution command (with params)
+    clickhouseclient=( clickhouse-client --multiquery -u "$CLICKHOUSE_USER" $WITH_PASSWORD )
+
+    # create default database, if defined
+    if [ -n "$CLICKHOUSE_DB" ]; then
+        echo "Create database '$CLICKHOUSE_DB'"
+        "${clickhouseclient[@]}" "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
+    fi
 
     echo
     for f in /docker-entrypoint-initdb.d/*; do
