@@ -77,7 +77,7 @@ DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find)
             {
                 const auto key = id_column[row_idx].get<UInt64>();
 
-                if (key == to_find)
+                if (key == to_find && hierarchical_attribute->name == attribute_name_by_index.at(attribute_idx))
                 {
                     result = attribute_column[row_idx].get<Key>();
                     is_found = true;
