@@ -14,39 +14,6 @@
 namespace DB
 {
 
-ArrowBufferedInputStream::ArrowBufferedInputStream(ReadBuffer & in_) : in{in_}, is_open{true}
-{
-}
-
-arrow::Status ArrowBufferedInputStream::Close()
-{
-    is_open = false;
-    return arrow::Status::OK();
-}
-
-arrow::Status ArrowBufferedInputStream::Tell(int64_t * position) const
-{
-    *position = total_length;
-    return arrow::Status::OK();
-}
-
-arrow::Status ArrowBufferedInputStream::Read(int64_t nbytes, int64_t * bytes_read, void * out)
-{
-    size_t n = in.readBig(reinterpret_cast<char *>(out), nbytes);
-    *bytes_read = n;
-    total_length += n;
-    return arrow::Status::OK();
-}
-
-arrow::Status ArrowBufferedInputStream::Read(int64_t nbytes, std::shared_ptr<::arrow::Buffer> * out)
-{
-    std::shared_ptr<arrow::Buffer> buf;
-    ARROW_RETURN_NOT_OK(arrow::AllocateBuffer(nbytes, &buf));
-    size_t n = in.readBig(reinterpret_cast<char *>(buf->mutable_data()), nbytes);
-    *out = arrow::SliceBuffer(buf, 0, n);
-    return arrow::Status::OK();
-}
-
 ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
 {
 }
