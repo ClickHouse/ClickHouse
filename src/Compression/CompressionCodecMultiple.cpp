@@ -33,7 +33,7 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_, bool sanity_c
         {
             if (codec->isNone())
                 throw Exception("It does not make sense to have codec NONE along with other compression codecs: " + getCodecDescImpl()
-                    + " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
+                    + ". (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
                     ErrorCodes::BAD_ARGUMENTS);
 
             if (has_generic_compression)
