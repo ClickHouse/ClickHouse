@@ -497,7 +497,7 @@ ALTER TABLE example_table
 
 の名称を記載することから、システムテーブル, [システム。ストレージ\_policies](../../../operations/system-tables.md#system_tables-storage_policies) と [システム。ディスク](../../../operations/system-tables.md#system_tables-disks). テーブ `storage_policy` の設定 `MergeTree`-エンジン家族のテーブル。
 
-### 設定 {#table_engine-mergetree-multiple-volumes-configure}
+### 設定 {#table_engine-mergetree-multiple-volumes_configure}
 
 ディスク、ボリューム、およびストレージポリシーは、 `<storage_configuration>` メインファイルのいずれかのタグ `config.xml` または、 `config.d` ディレクトリ。
 

@@ -389,6 +389,6 @@ ALTER TABLE example_table
 
 ## 使用多个块设备进行数据存储 {#table_engine-mergetree-multiple-volumes}
 
-### 配置 {#table_engine-mergetree-multiple-volumes-configure}
+### 配置 {#table_engine-mergetree-multiple-volumes_configure}
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

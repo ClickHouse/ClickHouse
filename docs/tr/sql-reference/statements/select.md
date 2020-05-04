@@ -114,7 +114,7 @@ Bu `FROM` yan tümcesi veri okumak için kaynak belirtir:
 
 -   Tablo
 -   Alt sorgu
--   [Tablo fonksiyonu](../table-functions/index.md)
+-   [Tablo fonksiyonu](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` ve düzenli `JOIN` ayrıca dahil edilebilir (aşağıya bakınız).
 

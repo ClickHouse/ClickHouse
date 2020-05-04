@@ -206,7 +206,7 @@ The following operations with [partitions](../../engines/table-engines/mergetree
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - Move the data partition from one table to another.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition) - Move the data partition from one table to another.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -215,7 +215,7 @@ The following operations with [partitions](../../engines/table-engines/mergetree
 
 <!-- -->
 
-#### DETACH PARTITION {\#alter\_detach-partition} {#detach-partition-alter-detach-partition}
+#### DETACH PARTITION {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr

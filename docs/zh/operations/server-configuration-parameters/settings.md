@@ -681,7 +681,7 @@ SSL客户端/服务器配置。
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#server_configuration_parameters-openssl) 设置。
 

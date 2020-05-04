@@ -662,7 +662,7 @@ The default server configuration file `config.xml` contains the following settin
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_configuration_parameters-openssl).
 

@@ -684,7 +684,7 @@ SSL client/server configuration.
 <tcp_port>9000</tcp_port>
 ```
 
-## \_شروع مجدد {#server_configuration_parameters-tcp_port-secure}
+## \_شروع مجدد {#server_configuration_parameters-tcp_port_secure}
 
 پورت تی سی پی برای برقراری ارتباط امن با مشتریان. با استفاده از [OpenSSL](#server_configuration_parameters-openssl) تنظیمات.
 

@@ -484,7 +484,7 @@ ALTER TABLE example_table
 
 У всех описанных сущностей при создании указываются имена, можно найти в системных таблицах [system.storage\_policies](../../../engines/table-engines/mergetree-family/mergetree.md#system_tables-storage_policies) и [system.disks](../../../engines/table-engines/mergetree-family/mergetree.md#system_tables-disks). Имя политики хранения можно указать в настройке `storage_policy` движков таблиц семейства `MergeTree`.
 
-### Конфигурация {#table_engine-mergetree-multiple-volumes-configure}
+### Конфигурация {#table_engine-mergetree-multiple-volumes_configure}
 
 Диски, тома и политики хранения задаются внутри тега `<storage_configuration>` в основном файле `config.xml` или в отдельном файле в директории `config.d`.
 

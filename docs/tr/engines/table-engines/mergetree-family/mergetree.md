@@ -497,7 +497,7 @@ Veri kısmı için minimum hareketli birimdir `MergeTree`- motor masaları. Bir 
 
 Açıklanan varlıklara verilen isimler sistem tablolarında bulunabilir, [sistem.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) ve [sistem.diskler](../../../operations/system-tables.md#system_tables-disks). Bir tablo için yapılandırılmış depolama ilkelerinden birini uygulamak için `storage_policy` ayarı `MergeTree`- motor aile tabloları.
 
-### Yapılandırma {#table_engine-mergetree-multiple-volumes-configure}
+### Yapılandırma {#table_engine-mergetree-multiple-volumes_configure}
 
 Diskler, birimler ve depolama politikaları içinde bildirilmelidir `<storage_configuration>` ana dosyada ya etiket `config.xml` veya farklı bir dosyada `config.d` dizin.
 

@@ -873,7 +873,7 @@ ClickHouse генерирует исключение
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 Время ожидания кворумной записи в секундах. Если время прошло, а запись так не состоялась, то ClickHouse сгенерирует исключение и клиент должен повторить запрос на запись того же блока на эту же или любую другую реплику.
 
