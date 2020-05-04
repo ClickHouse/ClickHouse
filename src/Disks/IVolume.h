@@ -19,7 +19,8 @@ namespace DB
  * VolumeJBOD reserves space on the next disk after the last used, other future implementations
  * will reserve, for example, equal spaces on all disks.
  */
-class IVolume : public Space {
+class IVolume : public Space
+{
 public:
     IVolume(String name_, Disks disks_): disks(std::move(disks_)), name(std::move(name_))
     {
