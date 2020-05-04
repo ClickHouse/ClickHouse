@@ -51,10 +51,11 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
-Changes behaviour of an aggregate function.
+Changes behavior of an aggregate function.
 
 If an aggregate function doesn't have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
-`-OrDefault` can be combined with other combinators.
+
+`-OrDefault` can be used with other combinators.
 
 **Syntax** 
 
@@ -88,7 +89,7 @@ Result:
 └─────────────┴──────────────────────┘
 ```
 
-Also `-OrDefault` can be used with a few combinators. It is useful when the aggregate function does not accept the empty input.
+Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
 Query:
 
@@ -111,10 +112,11 @@ Result:
 
 ## -OrNull {#agg-functions-combinator-ornull}
 
-Changes behaviour of an aggregate function.
+Changes behavior of an aggregate function.
 
-This combinator replaces returned value with nullable one, if the aggregate function does not have values to calculate. Works with different aggregate functions. 
-`-OrNull` can be combined with other combinators.
+This combinator converts a result of an aggregate function to the [Nullable](../data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../syntax.md#null-literal).
+
+`-OrNull` can be used with other combinators.
 
 **Syntax** 
 
@@ -128,9 +130,10 @@ This combinator replaces returned value with nullable one, if the aggregate func
  
 **Returned values** 
 
-Returns the `Null` value of an aggregate function’s return type if there is nothing to aggregate.
+- The result of the aggregate function, converted to the `Nullable` data type.
+- `NULL`, if there is nothing to aggregate.
 
-Type: [Nullable](../data_types/nullable.md).
+Type: `Nullable(aggregate function return type)`.
 
 **Example**
 
@@ -139,18 +142,18 @@ Add `-orNull` to the end of aggregate function.
 Query:
 
 ``` sql
-SELECT sumOrNull(number) FROM numbers(10) WHERE number > 10
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
 Result:
 
 ``` text
-┌─sumOrNull(number)─┐
-│              ᴺᵁᴸᴸ │
-└───────────────────┘
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
 ```
 
-Also `-OrNull` can be used with a few combinators. It is useful when the aggregate function does not accept the empty input.
+Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
 Query:
 
