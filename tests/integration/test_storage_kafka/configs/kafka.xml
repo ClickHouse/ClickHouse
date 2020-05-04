@@ -1,5 +1,12 @@
 <yandex>
     <kafka>
         <auto_offset_reset>earliest</auto_offset_reset>
+        <!-- Debugging of possible issues, like:
+             - https://github.com/edenhill/librdkafka/issues/2077
+             - https://github.com/edenhill/librdkafka/issues/1778
+
+             XXX: for now this messages will appears in stderr.
+        -->
+        <debug>cgrp,consumer,topic,protocol</debug>
     </kafka>
 </yandex>
