@@ -120,7 +120,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
-            codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
+            codec = CompressionCodecFactory::instance().get(col_ast->codec, type, false);
 
         if (col_ast->ttl)
             ttl = col_ast->ttl;
