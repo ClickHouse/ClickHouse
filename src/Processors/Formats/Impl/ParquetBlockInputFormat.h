@@ -20,11 +20,13 @@ public:
 
     void resetParser() override;
 
-
     String getName() const override { return "ParquetBlockInputFormat"; }
 
 protected:
     Chunk generate() override;
+
+private:
+    void prepareReader();
 
 private:
     std::unique_ptr<parquet::arrow::FileReader> file_reader;

@@ -2,10 +2,10 @@
 #include "config_formats.h"
 #if USE_ARROW
 
-#include <string>
 #include <memory>
-#include <common/types.h>
+#include <string>
 #include <Core/Block.h>
+#include <Core/Types.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "ArrowBufferedStreams.h"
@@ -30,7 +30,9 @@ protected:
     Chunk generate() override;
 
 private:
-    std::shared_ptr<ArrowBufferedInputStream> arrow_istream;
+    void prepareReader();
+
+private:
     std::shared_ptr<arrow::RecordBatchReader> reader;
 };
 
