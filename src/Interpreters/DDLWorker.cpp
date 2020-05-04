@@ -638,7 +638,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    auto table_id = context.resolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 }
 

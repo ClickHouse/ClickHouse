@@ -5,13 +5,13 @@ toc_priority: 64
 toc_title: "Linux \xFCzerinde ClickHouse nas\u0131l olu\u015Fturulur"
 ---
 
-# Geliştirme için ClickHouse nasıl inşa edilir {#how-to-build-clickhouse-for-development}
+# Geliştirme için ClickHouse nasıl inşa Edilir {#how-to-build-clickhouse-for-development}
 
 Aşağıdaki öğretici Ubuntu Linux sistemine dayanmaktadır.
 Uygun değişikliklerle, başka herhangi bir Linux dağıtımı üzerinde de çalışması gerekir.
 Desteklenen platformlar: x86\_64 ve AArch64. Power9 için destek deneyseldir.
 
-## Git, Cmake, Python ve Ninja'yı yükleyin {#install-git-cmake-python-and-ninja}
+## Git, Cmake, Python Ve Ninja’yı yükleyin {#install-git-cmake-python-and-ninja}
 
 ``` bash
 $ sudo apt-get install git cmake python ninja-build
@@ -19,11 +19,11 @@ $ sudo apt-get install git cmake python ninja-build
 
 Veya eski sistemlerde cmake yerine cmake3.
 
-## Gcc 9'u yükle {#install-gcc-9}
+## Gcc 9’u yükle {#install-gcc-9}
 
 Bunu yapmak için çeşitli yollar vardır.
 
-### Bir PPA paketinden yükleme {#install-from-a-ppa-package}
+### Bir PPA Paketinden yükleme {#install-from-a-ppa-package}
 
 ``` bash
 $ sudo apt-get install software-properties-common
@@ -69,7 +69,7 @@ $ cd ..
 Bir yürütülebilir dosya oluşturmak için çalıştırın `ninja clickhouse`.
 Bu yaratacak `programs/clickhouse` ile kullanılabilecek çalıştırılabilir `client` veya `server` değişkenler.
 
-# Herhangi bir Linux üzerinde ClickHouse nasıl oluşturulur {#how-to-build-clickhouse-on-any-linux}
+# Herhangi Bir Linux üzerinde ClickHouse nasıl oluşturulur {#how-to-build-clickhouse-on-any-linux}
 
 Yapı aşağıdaki bileşenleri gerektirir:
 
@@ -108,7 +108,7 @@ Fedora Rawhide için örnek:
     cmake ../ClickHouse
     make -j $(nproc)
 
-# ClickHouse inşa etmek zorunda değilsiniz {#you-dont-have-to-build-clickhouse}
+# ClickHouse inşa Etmek Zorunda değilsiniz {#you-dont-have-to-build-clickhouse}
 
 ClickHouse önceden oluşturulmuş ikili ve paketlerde mevcuttur. İkili dosyalar taşınabilir ve herhangi bir Linux lezzet üzerinde çalıştırılabilir.
 
@@ -116,9 +116,9 @@ Onlar sürece her Master taahhüt ve her çekme isteği için kararlı, prestabl
 
 En taze yapıyı bulmak için `master`, go to [taahhüt sayfası](https://github.com/ClickHouse/ClickHouse/commits/master), commit yakınındaki ilk yeşil onay işaretini veya kırmızı çarpı işaretini tıklayın ve “Details” hemen sonra bağlantı “ClickHouse Build Check”.
 
-# ClickHouse Debian paketi nasıl oluşturulur {#how-to-build-clickhouse-debian-package}
+# ClickHouse Debian Paketi nasıl oluşturulur {#how-to-build-clickhouse-debian-package}
 
-## Git ve Pbuilder'ı yükleyin {#install-git-and-pbuilder}
+## Git Ve Pbuilder’ı yükleyin {#install-git-and-pbuilder}
 
 ``` bash
 $ sudo apt-get update

@@ -181,6 +181,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
 void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
+void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -203,5 +204,6 @@ void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
+void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
 
 }

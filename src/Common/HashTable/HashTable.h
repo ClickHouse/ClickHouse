@@ -710,9 +710,21 @@ public:
         return iterator(this, ptr);
     }
 
-    const_iterator end() const         { return const_iterator(this, buf + grower.bufSize()); }
-    const_iterator cend() const        { return end(); }
-    iterator end()                     { return iterator(this, buf + grower.bufSize()); }
+    const_iterator end() const
+    {
+        /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
+        return const_iterator(this, buf ? buf + grower.bufSize() : buf);
+    }
+
+    const_iterator cend() const
+    {
+        return end();
+    }
+
+    iterator end()
+    {
+        return iterator(this, buf ? buf + grower.bufSize() : buf);
+    }
 
 
 protected:
@@ -935,6 +947,9 @@ public:
         if (this->hasZero())
             this->zeroValue()->write(wb);
 
+        if (!buf)
+            return;
+
         for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
             if (!ptr->isZero(*this))
                 ptr->write(wb);
@@ -950,6 +965,9 @@ public:
             DB::writeChar(',', wb);
             this->zeroValue()->writeText(wb);
         }
+
+        if (!buf)
+            return;
 
         for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
         {

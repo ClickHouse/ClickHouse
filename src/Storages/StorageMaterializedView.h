@@ -21,9 +21,7 @@ public:
 
     ASTPtr getSelectQuery() const { return select->clone(); }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
-
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
+    bool hasInnerTable() const { return has_inner_table; }
 
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
@@ -39,7 +37,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
@@ -53,7 +51,7 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void renameInMemory(const StorageID & new_table_id) override;
 
     void shutdown() override;
 

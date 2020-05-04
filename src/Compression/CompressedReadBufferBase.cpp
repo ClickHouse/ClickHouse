@@ -110,9 +110,9 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
     else if (method != codec->getMethodByte())
-        throw Exception("Data compressed with different methods, given method byte "
+        throw Exception("Data compressed with different methods, given method byte 0x"
                         + getHexUIntLowercase(method)
-                        + ", previous method byte "
+                        + ", previous method byte 0x"
                         + getHexUIntLowercase(codec->getMethodByte()),
                         ErrorCodes::CANNOT_DECOMPRESS);
 
