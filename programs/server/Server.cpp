@@ -60,6 +60,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
+#include "GRPCHandler.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <common/config_common.h>
@@ -675,6 +676,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             listen_try = true;
         }
 
+        std::vector<std::unique_ptr<GRPCServer>> gRPCServers;
         auto make_socket_address = [&](const std::string & host, UInt16 port)
         {
             Poco::Net::SocketAddress socket_address;
@@ -891,6 +893,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
             });
 
+            create_server("grpc_port", [&](UInt16 port)
+            {   
+                Poco::Net::SocketAddress server_address(listen_host, port);
+                gRPCServers.emplace_back(new GRPCServer(server_address.toString(), *this));
+                LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
+            });
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
             {
@@ -917,6 +925,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+        for (auto & server : gRPCServers) {
+            if (server) {
+                server_pool.start(*server);
+            }
+        }
+
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -952,6 +966,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 server->stop();
                 current_connections += server->currentConnections();
+            }
+
+            for (auto & server : gRPCServers) {
+                if (server) {
+                    server->stop();
+                }
             }
 
             LOG_INFO(log,
