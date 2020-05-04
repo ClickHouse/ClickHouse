@@ -1,7 +1,7 @@
 <yandex>
     <profiles>
         <default>
-            <use_uncompressed_cache>1</use_uncompressed_cache>
+            <allow_suspicious_codecs>1</allow_suspicious_codecs>
         </default>
     </profiles>
 </yandex>
