@@ -99,13 +99,11 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
         exit 1
     fi
 
-    # define password argument for clickhouse client
-    if [ -n "$CLICKHOUSE_PASSWORD" ]; then
+    if [ ! -z "$CLICKHOUSE_PASSWORD" ]; then
         printf -v WITH_PASSWORD '%s %q' "--password" "$CLICKHOUSE_PASSWORD"
     fi
 
-    # define clickhouse client execution command (with params)
-    clickhouseclient=( clickhouse-client --multiquery -u "$CLICKHOUSE_USER" $WITH_PASSWORD )
+    clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
 
     # create default database, if defined
     if [ -n "$CLICKHOUSE_DB" ]; then
