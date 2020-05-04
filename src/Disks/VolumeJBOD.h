@@ -10,7 +10,8 @@ namespace DB
  * When MergeTree engine wants to write part — it requests VolumeJBOD to reserve space on the next available
  * disk and then writes new part to that disk.
  */
-class VolumeJBOD : public IVolume {
+class VolumeJBOD : public IVolume
+{
 public:
     VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_)
         : IVolume(name_, disks_), max_data_part_size(max_data_part_size_)
