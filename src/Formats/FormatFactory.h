@@ -164,7 +164,6 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
 void registerInputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory);
 void registerInputFormatProcessorParquet(FormatFactory & factory);
-void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorArrow(FormatFactory & factory);
 void registerOutputFormatProcessorArrow(FormatFactory & factory);
@@ -207,5 +206,6 @@ void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 void registerInputFormatProcessorRegexp(FormatFactory & factory);
 void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
+void registerInputFormatProcessorORC(FormatFactory & factory);
 
 }
