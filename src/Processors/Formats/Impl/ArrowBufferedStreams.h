@@ -1,6 +1,6 @@
 #pragma once
 #include "config_formats.h"
-#if USE_PARQUET || USE_ARROW || USE_ORC
+#if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>

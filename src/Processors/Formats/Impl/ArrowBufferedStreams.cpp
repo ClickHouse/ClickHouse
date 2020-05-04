@@ -1,6 +1,6 @@
 #include "ArrowBufferedStreams.h"
 
-#if USE_PARQUET || USE_ARROW || USE_ORC
+#if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
