@@ -13,7 +13,7 @@ namespace DB
 class ArrowBufferedInputStream : public arrow::io::InputStream
 {
 public:
-    explicit ArrowBufferedInputStream(ReadBuffer & istr_);
+    explicit ArrowBufferedInputStream(ReadBuffer & in_);
 
     // FileInterface
     ::arrow::Status Close() override;
