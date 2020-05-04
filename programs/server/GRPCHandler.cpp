@@ -131,7 +131,11 @@ bool CallDataQuery::senData(const Block & block) {
                          tmp_response.set_query(buffer);
                          return tmp_response;
                     });
-    auto my_block_out_stream = context.getOutputFormat("Pretty", *out, block);
+    String format = request.query_info().format();
+    if (format.empty()) {
+        format = "Pretty";
+    }
+    auto my_block_out_stream = context.getOutputFormat(format, *out, block);
     my_block_out_stream->write(block);
     my_block_out_stream->flush();
     out->next();

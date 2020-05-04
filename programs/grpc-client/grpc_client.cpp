@@ -31,6 +31,7 @@ class GRPCClient {
             int id = rand();
 
             querySettigs.set_query_id(std::to_string(id));
+            querySettigs.set_format("Values");
             
             request.set_allocated_query_info(&querySettigs);
 

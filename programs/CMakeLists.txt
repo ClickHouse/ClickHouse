@@ -81,6 +81,8 @@ add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (obfuscator)
 
+add_subdirectory (grpc-client)
+
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
 endif ()
