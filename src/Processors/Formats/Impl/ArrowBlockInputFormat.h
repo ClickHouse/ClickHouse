@@ -10,7 +10,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include "ArrowBufferedStreams.h"
 
-namespace arrow { class RecordBatchReader; }
+namespace arrow::ipc { class RecordBatchFileReader; }
 
 namespace DB
 {
@@ -33,7 +33,9 @@ private:
     void prepareReader();
 
 private:
-    std::shared_ptr<arrow::RecordBatchReader> reader;
+    std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
+    int record_batch_total = 0;
+    int record_batch_current = 0;
 };
 
 }
