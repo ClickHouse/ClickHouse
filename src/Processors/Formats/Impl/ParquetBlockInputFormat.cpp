@@ -39,6 +39,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
+    const Block & header = getPort().getHeader();
 
     if (in.eof() || row_group_current >= row_group_total)
         return res;
@@ -50,8 +51,6 @@ Chunk ParquetBlockInputFormat::generate()
                         ErrorCodes::CANNOT_READ_ALL_DATA};
 
     ++row_group_current;
-
-    const Block & header = getPort().getHeader();
 
     ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "Parquet");
     return res;

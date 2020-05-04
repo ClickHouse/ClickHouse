@@ -26,6 +26,7 @@ ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInp
 Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
+    const Block & header = getPort().getHeader();
 
     if (in.eof())
         return res;
@@ -39,8 +40,6 @@ Chunk ORCBlockInputFormat::generate()
     if (!read_status.ok())
         throw Exception{"Error while reading ORC data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
-
-    const Block & header = getPort().getHeader();
 
     ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "ORC");
 
