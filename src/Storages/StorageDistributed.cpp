@@ -3,7 +3,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 
 #include <Databases/IDatabase.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -330,7 +330,7 @@ void StorageDistributed::createStorage()
         if (!path.ends_with('/'))
             path += '/';
         auto disk = std::make_shared<DiskLocal>("default", path, 0);
-        volume = std::make_shared<Volume>("default", std::vector<DiskPtr>{disk}, 0);
+        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
     }
     else
     {
