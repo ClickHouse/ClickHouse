@@ -12,16 +12,12 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/StaticRequestHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
-<<<<<<< HEAD
-)
-=======
     ${PROTO_SRCS}
     ${PROTO_HDRS}
     ${GRPC_SRCS}
     ${GRPC_HDRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/GRPCHandler.cpp
    )
->>>>>>> HelloWorld
 
 set(CLICKHOUSE_SERVER_SOURCES
     ${CLICKHOUSE_SERVER_SOURCES}

@@ -97,55 +97,13 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-<<<<<<< HEAD
-<<<<<<< HEAD
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
-=======
 set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
->>>>>>> zlib
 include_directories("${ZLIB_ROOT_DIR}")
-<<<<<<< HEAD
-# add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
-<<<<<<< HEAD
-set(_gRPC_ZLIB_LIBRARIES zlibstatic)
-set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
-<<<<<<< HEAD
-
-=======
-#set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
-#include_directories("${ZLIB_ROOT_DIR}")
 ## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
-#set(_gRPC_ZLIB_LIBRARIES zlibstatic)
-#set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
-#include(${GRPC_SOURCE_DIR}/cmake/zlib.cmake)
-
-if(NOT ZLIB_ROOT_DIR)
-  set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
-endif()
-
-if(EXISTS "${ZLIB_ROOT_DIR}/CMakeLists.txt")
-  include_directories("${ZLIB_ROOT_DIR}")
-  add_subdirectory(${ZLIB_ROOT_DIR} third_party/zlib)
-
-  if(TARGET zlibstatic)
-    set(_gRPC_ZLIB_LIBRARIES zlibstatic)
-    set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/third_party/zlib")
-  endif()
-endif()
->>>>>>> zlib
-=======
-=======
-=======
-## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
->>>>>>> build problems
 if(TARGET zlibstatic)
   set(_gRPC_ZLIB_LIBRARIES zlibstatic)
   set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${GRPC_SOURCE_DIR}/third_party/zlib")
 endif()
->>>>>>> zlib
-#include(${GRPC_SOURCE_DIR}/cmake/zlib.cmake)
-
->>>>>>> zlib
 
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -std=c99")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
