@@ -24,6 +24,7 @@ using GRPCConnection::QueryResponse;
 using GRPCConnection::GRPC;
 namespace DB
 {
+
 class CommonCallData
 {
      public:
