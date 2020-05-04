@@ -11,7 +11,7 @@ ClickHouse:
 
 Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries\_lazy\_load](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
-Системная таблица [system.dictionaries](../../../operations/system-tables.md#system_tables-dictionaries) содержит информацию о словарях, сконфигурированных на сервере. Для каждого словаря там можно найти:
+Таблица [system.dictionaries](../../../operations/system-tables.md#system_tables-dictionaries) содержит информацию о словарях, сконфигурированных на сервере. Для каждого словаря там можно найти:
 
 - Статус словаря.
 - Конфигурационные параметры.
