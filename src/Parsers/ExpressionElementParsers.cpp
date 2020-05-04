@@ -1105,6 +1105,7 @@ const char * ParserAlias::restricted_keywords[] =
     "HAVING",
     "ORDER",
     "LIMIT",
+    "OFFSET",
     "SETTINGS",
     "FORMAT",
     "UNION",
