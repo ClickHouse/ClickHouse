@@ -44,7 +44,10 @@ void GroupingAggregatedTransform::readFromAllInputs()
         in->setNeeded();
 
         if (!in->hasData())
+        {
             read_from_all_inputs = false;
+            continue;
+        }
 
         auto chunk = in->pull();
         read_from_input[i] = true;
