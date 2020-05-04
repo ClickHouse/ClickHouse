@@ -41,7 +41,7 @@ Chunk ParquetBlockInputFormat::generate()
     Chunk res;
     const Block & header = getPort().getHeader();
 
-    if (in.eof() || row_group_current >= row_group_total)
+    if (row_group_current >= row_group_total)
         return res;
 
     std::shared_ptr<arrow::Table> table;
