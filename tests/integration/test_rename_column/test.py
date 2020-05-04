@@ -44,6 +44,9 @@ def create_table(nodes, table_name):
         node.query(sql)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Adding more tests.
 def insert(node, table_name, chunk=1000, col_name="num", iterations=1, ignore_exception=False):
     for i in range(iterations):
         try:
@@ -54,6 +57,7 @@ def insert(node, table_name, chunk=1000, col_name="num", iterations=1, ignore_ex
         except QueryRuntimeException as ex:
             if not ignore_exception:
                 raise
+<<<<<<< HEAD
 =======
 def insert(node, table_name, num_inserts):
     node1.query((
@@ -61,6 +65,8 @@ def insert(node, table_name, num_inserts):
         "INSERT INTO {table_name} (num) SELECT number AS num FROM numbers_mt({num_inserts})"
     ).format(table_name=table_name, num_inserts=num_inserts))
 >>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
+=======
+>>>>>>> Adding more tests.
 
 def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False):
     for i in range(iterations):
@@ -72,9 +78,12 @@ def select(node, table_name, col_name="num", expected_result=None, iterations=1,
             if not ignore_exception:
                 raise
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
             print(ex)
 >>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
+=======
+>>>>>>> Adding more tests.
 
 def rename_column(node, table_name, name, new_name, iterations=1, ignore_exception=False):
     for i in range(iterations):
@@ -86,6 +95,9 @@ def rename_column(node, table_name, name, new_name, iterations=1, ignore_excepti
             if not ignore_exception:
                 raise
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Adding more tests.
 
 def test_rename_parallel_same_node(started_cluster):
     table_name = "test_rename_parallel_same_node"
@@ -136,9 +148,12 @@ def test_rename_parallel(started_cluster):
         select(node1, table_name, "num2", "999\n")
     finally:
         drop_table(nodes, table_name)
+<<<<<<< HEAD
 =======
             print(ex)
 >>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
+=======
+>>>>>>> Adding more tests.
 
 def test_rename_with_parallel_select(started_cluster):
     table_name = "test_rename_with_parallel_select"
@@ -160,6 +175,7 @@ def test_rename_with_parallel_select(started_cluster):
             task.get(timeout=240)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         # rename column back to original name
         rename_column(node1, table_name, "foo3", "num2", 1, True)
         rename_column(node1, table_name, "foo2", "num2", 1, True)
@@ -171,17 +187,28 @@ def test_rename_with_parallel_select(started_cluster):
 
         # check that select works
 >>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
+=======
+        # rename column back to original
+        rename_column(node1, table_name, "foo3", "num2", 1, True)
+        rename_column(node1, table_name, "foo2", "num2", 1, True)
+
+        # check that select still works
+>>>>>>> Adding more tests.
         select(node1, table_name, "num2", "999\n")
     finally:
         drop_table(nodes, table_name)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Adding more tests.
 def test_rename_with_parallel_insert(started_cluster):
     table_name = "test_rename_with_parallel_insert"
     drop_table(nodes, table_name)
     try:
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
+<<<<<<< HEAD
 
         p = Pool(15)
         tasks = []
@@ -206,3 +233,26 @@ def test_rename_with_parallel_insert(started_cluster):
 =======
 
 >>>>>>> Starting to add ALTER RENAME COLUMN integration tests.
+=======
+
+        p = Pool(15)
+        tasks = []
+        for i in range(1):
+            tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
+            tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
+            tasks.append(p.apply_async(rename_column, (node3, table_name, "foo3", "num2", 5, True)))
+            tasks.append(p.apply_async(insert, (node1, table_name, 100, "foo3", 5, True)))
+            tasks.append(p.apply_async(insert, (node2, table_name, 100, "num2", 5, True)))
+            tasks.append(p.apply_async(insert, (node3, table_name, 100, "foo2", 5, True)))
+        for task in tasks:
+            task.get(timeout=240)
+
+        # rename column back to original
+        rename_column(node1, table_name, "foo3", "num2", 1, True)
+        rename_column(node1, table_name, "foo2", "num2", 1, True)
+
+        # check that select still works
+        select(node1, table_name, "num2")
+    finally:
+        drop_table(nodes, table_name)
+>>>>>>> Adding more tests.
