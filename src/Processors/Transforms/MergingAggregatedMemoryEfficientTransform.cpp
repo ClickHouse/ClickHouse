@@ -31,6 +31,8 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(
 void GroupingAggregatedTransform::readFromAllInputs()
 {
     auto in = inputs.begin();
+    read_from_all_inputs = true;
+
     for (size_t i = 0; i < num_inputs; ++i, ++in)
     {
         if (in->isFinished())
@@ -42,14 +44,12 @@ void GroupingAggregatedTransform::readFromAllInputs()
         in->setNeeded();
 
         if (!in->hasData())
-            return;
+            read_from_all_inputs = false;
 
         auto chunk = in->pull();
         read_from_input[i] = true;
         addChunk(std::move(chunk), i);
     }
-
-    read_from_all_inputs = true;
 }
 
 void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_overflows)
