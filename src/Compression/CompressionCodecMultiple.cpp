@@ -37,7 +37,7 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_, bool sanity_c
                     ErrorCodes::BAD_ARGUMENTS);
 
             if (has_generic_compression)
-                throw Exception("The combination of compression codecs " + getCodecDescImpl() + " is meaningless, "
+                throw Exception("The combination of compression codecs " + getCodecDescImpl() + " is meaningless,"
                     " because it does not make sense to apply any transformations after generic compression algorithm."
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);
 
