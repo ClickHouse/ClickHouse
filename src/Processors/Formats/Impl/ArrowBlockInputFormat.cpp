@@ -21,11 +21,9 @@ namespace ErrorCodes
 }
 
 ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_)
-    : IInputFormat(header_, in_), arrow_istream{std::make_shared<ArrowBufferedInputStream>(in)}
+    : IInputFormat(header_, in_)
 {
-    arrow::Status open_status = arrow::ipc::RecordBatchStreamReader::Open(arrow_istream, &reader);
-    if (!open_status.ok())
-        throw Exception(open_status.ToString(), ErrorCodes::BAD_ARGUMENTS);
+    prepareReader();
 }
 
 Chunk ArrowBlockInputFormat::generate()
@@ -61,7 +59,17 @@ Chunk ArrowBlockInputFormat::generate()
 void ArrowBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
+
     reader.reset();
+    prepareReader();
+}
+
+void ArrowBlockInputFormat::prepareReader()
+{
+    auto arrow_istream = std::make_shared<ArrowBufferedInputStream>(in);
+    arrow::Status open_status = arrow::ipc::RecordBatchStreamReader::Open(arrow_istream, &reader);
+    if (!open_status.ok())
+        throw Exception(open_status.ToString(), ErrorCodes::BAD_ARGUMENTS);
 }
 
 void registerInputFormatProcessorArrow(FormatFactory &factory)

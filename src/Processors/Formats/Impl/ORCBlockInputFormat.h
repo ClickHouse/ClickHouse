@@ -29,7 +29,6 @@ private:
     // TODO: check that this class implements every part of its parent
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-    std::string file_data;
 };
 
 }

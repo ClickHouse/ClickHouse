@@ -3,11 +3,11 @@
 
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <arrow/adapters/orc/adapter.h>
 #include <arrow/io/memory.h>
+#include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 
 namespace DB
@@ -30,17 +30,7 @@ Chunk ORCBlockInputFormat::generate()
     if (in.eof())
         return res;
 
-    file_data.clear();
-    {
-        WriteBufferFromString file_buffer(file_data);
-        copyData(in, file_buffer);
-    }
-
-    std::unique_ptr<arrow::Buffer> local_buffer = std::make_unique<arrow::Buffer>(file_data);
-
-    std::shared_ptr<arrow::io::RandomAccessFile> in_stream = std::make_shared<arrow::io::BufferReader>(*local_buffer);
-
-    arrow::Status open_status = arrow::adapters::orc::ORCFileReader::Open(in_stream, arrow::default_memory_pool(), &file_reader);
+    arrow::Status open_status = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader);
     if (!open_status.ok())
         throw Exception(open_status.ToString(), ErrorCodes::BAD_ARGUMENTS);
 
@@ -62,7 +52,6 @@ void ORCBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
-    file_data.clear();
 }
 
 void registerInputFormatProcessorORC(FormatFactory &factory)
