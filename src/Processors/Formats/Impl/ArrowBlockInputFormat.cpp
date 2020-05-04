@@ -29,6 +29,7 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
+    const Block & header = getPort().getHeader();
 
     if (in.eof())
         return res;
@@ -48,8 +49,6 @@ Chunk ArrowBlockInputFormat::generate()
     if (!make_status.ok())
         throw Exception{"Error while reading table of Arrow data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
-
-    const Block & header = getPort().getHeader();
 
     ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "Arrow");
 
