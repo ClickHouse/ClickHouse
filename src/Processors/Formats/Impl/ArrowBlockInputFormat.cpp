@@ -31,9 +31,6 @@ Chunk ArrowBlockInputFormat::generate()
     Chunk res;
     const Block & header = getPort().getHeader();
 
-    if (in.eof())
-        return res;
-
     std::vector<std::shared_ptr<arrow::RecordBatch>> single_batch(1);
     arrow::Status read_status = reader->ReadNext(&single_batch[0]);
     if (!read_status.ok())
