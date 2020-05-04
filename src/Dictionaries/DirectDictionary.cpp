@@ -60,12 +60,17 @@ DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find)
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
 
+    bool is_found = false;
+    Key result = std::get<Key>(hierarchical_attribute->null_values);
     while (const auto block = stream->read())
     {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
 
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
+            if (is_found)
+                break;
+
             const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
 
             for (const auto row_idx : ext::range(0, id_column.size()))
@@ -73,14 +78,18 @@ DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find)
                 const auto key = id_column[row_idx].get<UInt64>();
 
                 if (key == to_find)
-                    return attribute_column[row_idx].get<Key>();
+                {
+                    result = attribute_column[row_idx].get<Key>();
+                    is_found = true;
+                    break;
+                }
             }
         }
     }
 
     stream->readSuffix();
 
-    return std::get<Key>(hierarchical_attribute->null_values);
+    return result;
 }
 
 template <typename ChildType, typename AncestorType>
