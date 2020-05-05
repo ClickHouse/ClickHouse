@@ -26,6 +26,8 @@ public:
 
 private:
     void generate();
+//    size_t x = 1;
+//    size_t sz = 0;
 
     size_t res_block_size{};
     MutableColumns res_key_columns;

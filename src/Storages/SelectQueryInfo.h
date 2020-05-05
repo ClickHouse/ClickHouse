@@ -80,7 +80,7 @@ struct SelectQueryInfo
 
     /// We can modify it while reading from storage
     mutable InputSortingInfoPtr input_sorting_info;
-    mutable InputSortingInfoPtr group_by_info;
+    InputSortingInfoPtr group_by_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
