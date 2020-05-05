@@ -11,25 +11,30 @@ RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
     evbase(evbase_),
     log(log_)
 {
-    user_name = "root";
-    password = "clickhouse";
 }
 
 void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char * message) 
 {
     LOG_ERROR(log, "Library error report: " << message);
+    connection_error = true;
     stop();
 }
 
 
 void RabbitMQHandler::start()
 {
+    if (connection_error)
+        return;
+
     event_base_dispatch(evbase);
 }
 
 
 void RabbitMQHandler::startNonBlock()
 {
+    if (connection_error)
+        return;
+
     event_base_loop(evbase, EVLOOP_NONBLOCK);
 }
 

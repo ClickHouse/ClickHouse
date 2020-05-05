@@ -60,7 +60,7 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 
 Block RabbitMQBlockInputStream::readImpl()
 {
-    if (!buffer || finished || buffer->getStalled())
+    if (!buffer || finished)
         return Block();
 
     finished = true;
@@ -137,8 +137,6 @@ Block RabbitMQBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
 
-        buffer->allowNext();
-
         if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
             break;
     }
@@ -151,10 +149,8 @@ Block RabbitMQBlockInputStream::readImpl()
 
     LOG_DEBUG(log, "Total amount of rows is " + std::to_string(result_block.rows()));
 
-    int i = 0;
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
     {
-        ++i;
         result_block.insert(column);
     }
 

@@ -82,10 +82,14 @@ StorageRabbitMQ::StorageRabbitMQ(
         , skip_broken(skip_broken_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
-        , evbase(event_base_new())
-        , eventHandler(evbase, log)
-        , connection(&eventHandler,
-          AMQP::Address("rabbitmq1", 5672, AMQP::Login(eventHandler.get_user_name(), eventHandler.get_password()), "/"))
+        , consumersEvbase(event_base_new())
+        , producersEvbase(event_base_new())
+        , consumersEventHandler(consumersEvbase, log)
+        , producersEventHandler(producersEvbase, log)
+        , consumersConnection(&consumersEventHandler,
+          AMQP::Address("rabbitmq1", 5672, AMQP::Login("root", "clickhouse"), "/"))
+        , producersConnection(&producersEventHandler,
+          AMQP::Address("rabbitmq1", 5672, AMQP::Login("root", "clickhouse"), "/"))
 {
     rabbitmq_context.makeQueryContext();
 
@@ -93,9 +97,14 @@ StorageRabbitMQ::StorageRabbitMQ(
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
-    while(!connection.ready())
+    while(!consumersConnection.ready())
     {
-        event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        event_base_loop(consumersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+    }
+
+    while(!producersConnection.ready())
+    {
+        event_base_loop(producersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
     }
 }
 
@@ -160,7 +169,9 @@ void StorageRabbitMQ::shutdown()
         auto buffer = popReadBuffer();
     }
 
-    connection.close();
+    consumersConnection.close();
+    producersConnection.close();
+
     task->deactivate();
 }
 
@@ -207,7 +218,7 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    return std::make_shared<WriteBufferToRabbitMQProducer>(std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, routing_keys[0], exchange_name, log,
+    return std::make_shared<WriteBufferToRabbitMQProducer>(std::make_shared<AMQP::TcpChannel>(&producersConnection), producersEventHandler, routing_keys[0], exchange_name, log,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
@@ -219,8 +230,8 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     if (!batch_size)
         batch_size = settings.max_block_size.value;
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, 
-            log, row_delimiter, batch_size, stream_cancelled);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&consumersConnection), consumersEventHandler, 
+            log, row_delimiter, stream_cancelled);
 }
 
 
@@ -265,8 +276,6 @@ void StorageRabbitMQ::threadFunc()
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!stream_cancelled && num_created_consumers > 0)
             {
-                //while (!eventHandler.hasStopped()) {}
-
                 if (!checkDependencies(table_id))
                     break;
 

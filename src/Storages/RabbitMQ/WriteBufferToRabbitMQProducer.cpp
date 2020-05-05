@@ -4,6 +4,8 @@
 #include "Columns/ColumnsNumber.h"
 #include <common/logger_useful.h>
 #include <amqpcpp.h>
+#include <chrono>
+#include <thread>
 
 namespace DB
 {
@@ -16,8 +18,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         Poco::Logger * log_,
         std::optional<char> delimiter,
         size_t rows_per_message,
-        size_t chunk_size_
-)
+        size_t chunk_size_)
         : WriteBuffer(nullptr, 0)
         , producer_channel(std::move(producer_channel_))
         , eventHandler(eventHandler_)
@@ -28,20 +29,40 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
 {
-    producer_channel->confirmSelect()
-        .onError([&](const char * message)
-        {
-            LOG_ERROR(log, "Error with the producer channel: " << message);
-        });
+
+    initExchange();
 }
+
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     assert(rows == 0 && chunks.empty());
 }
 
+
+void WriteBufferToRabbitMQProducer::initExchange()
+{
+    producer_channel->declareExchange(exchange_name, AMQP::direct)
+        .onSuccess([&]()
+        {
+            exchange_declared = true;
+        })
+        .onError([&](const char * /* message */)
+        {
+            exchange_error = true;
+            LOG_ERROR(log, "Echange was not declared - messages might be lost.");
+        });
+}
+
+
 void WriteBufferToRabbitMQProducer::count_row()
 {
+    /// it is important to make sure exchange is declared before we proceed
+    while (!exchange_declared && !exchange_error)
+    {
+        startNonBlockEventLoop();
+    }
+
     if (++rows % max_rows == 0)
     {
         const std::string & last_chunk = chunks.back();
@@ -58,38 +79,7 @@ void WriteBufferToRabbitMQProducer::count_row()
 
         payload.append(last_chunk, 0, last_chunk_size);
 
-        bool exchange_declared = false, exchange_error = false;
-        producer_channel->declareExchange(exchange_name, AMQP::direct)
-            .onSuccess([&]() 
-            {
-                exchange_declared = true;
-                stopEventLoop();
-            })
-            .onError([&](const char * /* message */)
-            {
-                exchange_error = true;
-                stopEventLoop();
-            });
-
-        /* This is important here to start making event loops in a loop because when INSERT query is called in a
-         * complex context of other queries, then it is not guaranteed that exactly declareExchange.callback will stop
-         * current event loop, because this can be done by other pending events. As a result, this callback
-         * will remain pending and might be invoked after the call to this class destructor,
-         * which will lead to heap use after free.  */
-
-        while (!exchange_declared && !exchange_error)
-        {
-            startNonBlockEventLoop();
-        }
-
-        if (!exchange_error)
-        {
-            producer_channel->publish(exchange_name, routing_key, payload);
-        }
-        else
-        {
-            LOG_ERROR(log, "Echange was not declared so no publishing happened.");
-        }
+        producer_channel->publish(exchange_name, routing_key, payload);
 
         rows = 0;
         chunks.clear();
@@ -106,26 +96,10 @@ void WriteBufferToRabbitMQProducer::nextImpl()
 }
 
 
-void WriteBufferToRabbitMQProducer::startEventLoop()
-{
-    eventHandler.start();
-}
-
-
 void WriteBufferToRabbitMQProducer::startNonBlockEventLoop()
 {
     eventHandler.startNonBlock();
 }
 
-
-void WriteBufferToRabbitMQProducer::stopEventLoop()
-{
-    eventHandler.stop();
-}
-
-void WriteBufferToRabbitMQProducer::free()
-{
-    eventHandler.free();
-}
 
 }

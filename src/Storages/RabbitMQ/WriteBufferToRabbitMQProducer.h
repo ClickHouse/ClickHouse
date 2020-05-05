@@ -26,15 +26,14 @@ public:
 
     ~WriteBufferToRabbitMQProducer() override;
 
-    void startEventLoop();
     void startNonBlockEventLoop();
-    void stopEventLoop();
-    void free();
-
     void count_row();
+
+    bool exchange_declared = false, exchange_error = false;
 
 private:
     void nextImpl() override;
+    void initExchange();
 
     ChannelPtr producer_channel;
     RabbitMQHandler & eventHandler;

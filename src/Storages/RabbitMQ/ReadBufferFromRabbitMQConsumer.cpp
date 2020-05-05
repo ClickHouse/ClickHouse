@@ -13,17 +13,13 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         RabbitMQHandler & eventHandler_,
         Poco::Logger * log_,
         char row_delimiter_,
-        size_t max_batch_size,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
         , consumer_channel(std::move(channel_))
         , eventHandler(eventHandler_)
         , log(log_)
         , row_delimiter(row_delimiter_)
-        , batch_size(max_batch_size)
         , stopped(stopped_)
-        , consumerTag("")
-        , current(messages.begin())
 {
     consumer_channel->confirmSelect()
         .onError([&](const char * message)
@@ -32,7 +28,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         });
 
     messages.clear();
-    messages.reserve(batch_size);
     current = messages.begin();
     BufferBase::set(nullptr, 0, 0);
 }
@@ -50,10 +45,12 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const String & exchange_name, const Names & routing_keys)
 {
+    bool bindings_ok = false, bindings_error = false;
+
     consumer_channel->declareExchange(exchange_name, AMQP::direct).onError([&](const char * message)
     {
+        bindings_error = true;
         LOG_ERROR(log, "Failed to declare exchange: " << message);
-        eventHandler.stop();
     });
 
     consumer_channel->declareQueue(queue_name, AMQP::exclusive)
@@ -64,58 +61,69 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const String & exchange_n
                 consumer_channel->bindQueue(exchange_name, "", key)
                 .onSuccess([&]
                 {
-                    stopEventLoop();
+                    bindings_ok = true;
                 })
                 .onError([&](const char * message)
                 {
+                    bindings_error = true;
                     LOG_ERROR(log, "Failed to create queue binding: " << message);
-                    stopEventLoop();
                 });
             }
     })
     .onError([&](const char * message)
     {
+        bindings_error = true;
         LOG_ERROR(log, "Failed to declare queue on the channel: " << message);
-        stopEventLoop();
     });
 
-    startEventLoop();
+    while (!bindings_ok && !bindings_error)
+    {
+        startNonBlockEventLoop();
+    }
 }
 
 
 void ReadBufferFromRabbitMQConsumer::subscribe()
 {
+    bool consumer_ok = false, consumer_error = false;
+
     consumer_channel->consume(queue_name, AMQP::noack)
-    .onSuccess([&](const std::string &consumer)
-    {
-        if (consumerTag == "")
-            consumerTag = consumer;
-
-        stopEventLoop();
-    })
-    .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
-    {
-        String message_received = std::string(message.body(), message.body() + message.bodySize());
-        size_t message_size = message.bodySize();
-
-        if (row_delimiter != '\0')
+        .onSuccess([&](const std::string &consumer)
         {
-            message_received += row_delimiter;
-            message_size += 1;
-        }
+            if (consumerTag == "")
+                consumerTag = consumer;
 
-        messages.emplace_back(RabbitMQMessage(message_received, message_size));
-        this->stalled = false; 
+            consumer_ok = true;
+        })
+        .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
+        {
+            size_t message_size = message.bodySize();
 
-        stopEventLoop();
-    })
-    .onError([&](const char * message)
+            if (message_size && message.body() != nullptr)
+            {
+                String message_received = std::string(message.body(), message.body() + message_size);
+
+                if (row_delimiter != '\0')
+                {
+                    message_received += row_delimiter;
+                }
+
+                received.emplace_back(message_received);
+                this->stalled = false; 
+            }
+
+            //stopEventLoop();
+        })
+        .onError([&](const char * message)
+        {
+            consumer_error = true;
+            LOG_ERROR(log, "Failed to create consumer: " << message);
+        });
+
+    while (!consumer_ok && !consumer_error)
     {
-        LOG_ERROR(log, "Failed to create consumer: " << message);
-        stopEventLoop();
-    });
-
-    startEventLoop();
+        startNonBlockEventLoop();
+    }
 }
 
 
@@ -127,11 +135,6 @@ void ReadBufferFromRabbitMQConsumer::unsubscribe()
     }
 }
 
-
-void ReadBufferFromRabbitMQConsumer::startEventLoop()
-{
-    eventHandler.start();
-}
 
 void ReadBufferFromRabbitMQConsumer::startNonBlockEventLoop()
 {
@@ -152,29 +155,22 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
 
     if (current == messages.end())
     {
-        size_t prev_size = std::distance(messages.begin(), current);
-        if (prev_size >= batch_size)
-        {
-            /// clear so that there is no container overflow
-            messages.clear();
-            current = messages.begin();
-        }
-
-        prev_size = messages.size();
         startNonBlockEventLoop();
 
-        if (messages.size() == prev_size)
+        messages = std::move(received);
+        current = messages.begin();
+
+        if (messages.empty())
         {
             LOG_TRACE(log, "Stalled");
             stalled = true;
+
             return false;
         }
     }
 
-    auto new_position = const_cast<char *>(current->message.c_str());
-
-    BufferBase::set(new_position, current->size, 0);
-    allowed = false;
+    auto new_position = const_cast<char *>(current->data());
+    BufferBase::set(new_position, current->size(), 0);
 
     ++current;
 

@@ -26,11 +26,10 @@ public:
     void stop();
     void free();
 
-    const String & get_password() { return password; }
-    const String & get_user_name() { return user_name; }
-
 private:
     event_base * evbase;
+
+    bool connection_error = false;
 
     Poco::Logger * log;
     String user_name;

@@ -34,7 +34,6 @@ private:
     UInt64 max_block_size;
     Poco::Logger * log;
     bool commit_in_suffix, finished = false, claimed = false;
-
     const Block non_virtual_header, virtual_header;
 
     ConsumerBufferPtr buffer;
