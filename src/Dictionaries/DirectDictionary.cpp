@@ -422,7 +422,7 @@ void DirectDictionary::getItemsImpl(
 {
     const auto rows = ext::size(ids);
 
-    std::unordered_map<Key, OutputType> value_by_key;
+    HashMap<Key, OutputType> value_by_key;
     for (const auto row : ext::range(0, rows))
         value_by_key[ids[row]] = get_default(row);
 
@@ -471,7 +471,7 @@ void DirectDictionary::getItemsStringImpl(
 {
     const auto rows = ext::size(ids);
 
-    std::unordered_map<Key, String> value_by_key;
+    HashMap<Key, String> value_by_key;
     for (const auto row : ext::range(0, rows))
         value_by_key[ids[row]] = get_default(row);
 
@@ -521,7 +521,7 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
 {
     const auto rows = ext::size(ids);
 
-    std::unordered_map<Key, UInt8> has_key;
+    HashMap<Key, UInt8> has_key;
 
     auto stream = source_ptr->loadAll();
     stream->readPrefix();
