@@ -1744,19 +1744,11 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     /// TODO better case determination
     if (group_by_info && settings.optimize_aggregation_in_order)
     {
-//        std::cerr << "\n\n";
-//        for (const auto & elem : group_by_info->order_key_prefix_descr)
-//            std::cerr << elem.column_name << " ";
-//        std::cerr << "\n\n";
-
         auto & query = getSelectQuery();
         SortDescription group_by_descr = getSortDescriptionFromGroupBy(query, *context);
+        UInt64 limit = getLimitForSorting(query, *context);
 
-        ///TODO Finish sorting first
-//        UInt64 limit = getLimitForSorting(query, *context);
-//        executeOrderOptimized(pipeline, group_by_info, limit, group_by_descr);
-
-        pipeline.resize(1);
+        executeOrderOptimized(pipeline, group_by_info, limit, group_by_descr);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -2153,7 +2145,6 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
          *  and then merge them into one sorted stream.
          * At this stage we merge per-thread streams into one.
          */
-        std::cerr << "\nHello optimized order here!\n";
         executeOrderOptimized(pipeline, input_sorting_info, limit, output_order_descr);
         return;
     }

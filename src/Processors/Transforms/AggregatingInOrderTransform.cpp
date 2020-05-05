@@ -32,7 +32,6 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
             column_description.column_name.clear();
         }
     }
-
     res_key_columns.resize(params->params.keys_size);
     res_aggregate_columns.resize(params->params.aggregates_size);
 
@@ -63,11 +62,14 @@ static bool less(const MutableColumns & lhs, const ColumnRawPtrs & rhs, size_t i
     }
     return false;
 }
-/// TODO something broken when there are 10'000'000 rows od data need to investigate
+
 /// TODO maybe move all things inside the Aggregator?
 
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
+//    std::cerr << "\nchunk " << x++ << " of size " << chunk.getNumRows() << "\n";
+//    sz += chunk.getNumRows();
+
     /// Find the position of last already read key in current chunk.
     size_t rows = chunk.getNumRows();
 
@@ -92,7 +94,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     if (!res_block_size)
     {
-//        std::cerr << "\nCreating first state with key " << key_begin << "\n";
+//        std::cerr << "Creating first state with key " << key_begin << "\n";
         params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
         ++res_block_size;
     }
@@ -129,11 +131,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         if (key_begin != rows)
         {
-//            std::cerr << "\nFinalizing the last state.\n";
+//            std::cerr << "Finalizing the last state.\n";
             /// We finalize last key aggregation states if a new key found (Not found if high == rows)
             params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
 
-//            std::cerr << "\nCreating state with key " << key_begin << "\n";
+//            std::cerr << "Creating state with key " << key_begin << "\n";
             /// We create a new state for the new key and update res_key_columns
             params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
             ++res_block_size;
@@ -218,14 +220,16 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 
 void AggregatingInOrderTransform::generate()
 {
+//    std::cerr << sz << "\n";
 //    std::cerr << "\nFinalizing the last state in generate().\n";
     params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
 
     Block res = params->getHeader().cloneEmpty();
 
     for (size_t i = 0; i < res_key_columns.size(); ++i)
+    {
         res.getByPosition(i).column = std::move(res_key_columns[i]);
-
+    }
     for (size_t i = 0; i < res_aggregate_columns.size(); ++i)
     {
         res.getByPosition(i + res_key_columns.size()).column = std::move(res_aggregate_columns[i]);
