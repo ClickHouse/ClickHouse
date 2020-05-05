@@ -66,7 +66,7 @@ void registerDataTypeDomainGeo(DataTypeFactory & factory) {
 
     factory.registerSimpleDataTypeCustom("Polygon", []
     {
-        return std::make_pair(DataTypeFactory::instance().get("Array(Array(Tuple(Float64, Float64)))"),
+        return std::make_pair(DataTypeFactory::instance().get("Array(Array(Point))"),
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("Polygon"), std::make_unique<DataTypeCustomPolygonSerialization>()));
     });
 }
