@@ -90,7 +90,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     LOG_TRACE(log, "Sending part " << part_name);
 
     try
-    {   
+    {
         auto storage_lock = data.lockStructureForShare(
             false, RWLockImpl::NO_QUERY, data.getSettings()->lock_acquire_timeout_for_background_operations);
 
@@ -292,19 +292,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.minmax_idx_columns);
-
-    auto partition_block = block;
-    data.partition_key_expr->execute(partition_block);
-    auto & partition = new_data_part->partition.value;
-    size_t partition_columns_num = data.partition_key_sample.columns();
-    partition.resize(partition_columns_num);
-
-    for (size_t i = 0; i < partition_columns_num; ++i)
-    {
-        const auto & column_name = data.partition_key_sample.getByPosition(i).name;
-        const auto & partition_column = partition_block.getByName(column_name).column;
-        partition[i] = (*partition_column)[0];
-    }
+    new_data_part->partition.create(data, block, 0);
 
     MergedBlockOutputStream part_out(new_data_part, block.getNamesAndTypesList(), {}, nullptr);
     part_out.writePrefix();

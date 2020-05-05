@@ -36,6 +36,8 @@ public:
     void store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
 
     void assign(const MergeTreePartition & other) { value.assign(other.value); }
+
+    void create(const MergeTreeData & storage, Block block, size_t row);
 };
 
 }

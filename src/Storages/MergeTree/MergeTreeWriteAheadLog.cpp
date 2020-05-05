@@ -12,15 +12,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 }
 
-// WALBlockOutputStream::WALBlockOutputStream(WriteBuffer & out_, const Block & header_)
-//     : NativeBlockOutputStream(out_, 0, header_), out(out_) {}
-
-// void WALBlockOutputStream::write(const Block & block, const String & part_name)
-// {
-//     writeIntBinary(0, out);
-//     writeString(part_name, out);
-//     NativeBlockOutputStream::write(block);
-// }
 
 MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     const MergeTreeData & storage_,
@@ -28,7 +19,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     const String  & name)
     : storage(storage_)
     , disk(disk_)
-    , path(storage.getFullPathOnDisk(disk) + name)
+    , path(storage.getRelativeDataPath() + name)
 {
     init();
 }
@@ -93,8 +84,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
             part_name);
 
         auto block = block_in.read();
-
         part->minmax_idx.update(block, storage.minmax_idx_columns);
+        part->partition.create(storage, block, 0);
+
         MergedBlockOutputStream part_out(part, block.getNamesAndTypesList(), {}, nullptr);
         part_out.writePrefix();
         part_out.write(block);

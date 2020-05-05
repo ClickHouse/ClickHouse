@@ -370,7 +370,6 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
-    void loadDataPartsFromWAL(const DiskPtr & disk, const String & file_name);
 
     String getLogName() const { return log_name; }
 
