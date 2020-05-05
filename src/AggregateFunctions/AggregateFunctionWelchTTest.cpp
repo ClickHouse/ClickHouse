@@ -9,11 +9,11 @@ namespace DB
 namespace
 {
 
+template <typename X, typename Y, typename Ret>
 AggregateFunctionPtr createAggregateFunctionWelchTTest(const DataTypes & argument_types, const Array & parameters)
 {
-
-
-    return std::make_shared<AggregateFunctionWelchTTest>(argument_types, parameters);
+    Float64 significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+    return std::make_shared<AggregateFunctionWelchTTest<X, Y, Ret>>(argument_types, parameters);
 
 }
 
