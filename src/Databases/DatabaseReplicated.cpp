@@ -2,6 +2,7 @@
 
 #include <Core/Settings.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <IO/ReadBufferFromFile.h>
@@ -70,8 +71,11 @@ DatabaseReplicated::DatabaseReplicated(
     const String & metadata_path_,
     const String & zookeeper_path_,
     const String & replica_name_,
-    const Context & context_)
-    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseReplicated (" + name_ + ")", context_)
+    Context & context_)
+//    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseReplicated (" + name_ + ")", context_)
+    // TODO add constructor to Atomic and call it here with path and logger name specification
+    // TODO ask why const and & are ommited in Atomic
+    : DatabaseAtomic(name_, metadata_path_, context_)
     , zookeeper_path(zookeeper_path_)
     , replica_name(replica_name_)
 {
@@ -96,115 +100,97 @@ DatabaseReplicated::DatabaseReplicated(
 
     }
 
-    // test without this fancy mess (prob wont work)
-    // it works
-    current_zookeeper->createAncestors(replica_path);
-    current_zookeeper->createOrUpdate(replica_path, String(), zkutil::CreateMode::Persistent);
+    current_zookeeper->createAncestors(zookeeper_path);
+    current_zookeeper->createOrUpdate(zookeeper_path, String(), zkutil::CreateMode::Persistent);
 
-//    if (!current_zookeeper->exists(zookeeper_path)) {
-//
-//        LOG_DEBUG(log, "Creating database " << zookeeper_path);
-//        current_zookeeper->createAncestors(zookeeper_path);
-
-        // Coordination::Requests ops;
-        // ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
-        //     zkutil::CreateMode::Persistent));
-        // ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
-        //     zkutil::CreateMode::Persistent));
-
-        // Coordination::Responses responses;
-        // auto code = current_zookeeper->tryMulti(ops, responses);
-        // if (code && code != Coordination::ZNODEEXISTS)
-        //     throw Coordination::Exception(code);
-        // }
-}
-
-void DatabaseReplicated::createTable(
-    const Context & context,
-    const String & table_name,
-    const StoragePtr & table,
-    const ASTPtr & query)
-{
-    // try?
-    DatabaseOnDisk::createTable(context, table_name, table, query);
-
-    // suppose it worked
-    String statement = getObjectDefinitionFromCreateQuery(query);
-    LOG_DEBUG(log, "CREATE TABLE STATEMENT " << statement);
-
-    // let's do dumb write to zk at the first iteration
-    current_zookeeper = getZooKeeper();
-    current_zookeeper->createOrUpdate(replica_path + "/" + table_name, statement, zkutil::CreateMode::Persistent);
+    // TODO launch a worker here
 }
 
 
-void DatabaseReplicated::renameTable(
-        const Context & context,
-        const String & table_name,
-        IDatabase & to_database,
-        const String & to_table_name,
-        bool exchange)
-{
-    // try
-    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange);
-    // replicated stuff; what to put to a znode
-    // String statement = getObjectDefinitionFromCreateQuery(query);
-    // this one is fairly more complex
-    current_zookeeper = getZooKeeper();
-
-    // no need for now to have stat
-    Coordination::Stat metadata_stat;
-    auto statement = current_zookeeper->get(replica_path + "/" + table_name, &metadata_stat);
-    current_zookeeper->createOrUpdate(replica_path + "/" + to_table_name, statement, zkutil::CreateMode::Persistent);
-    current_zookeeper->remove(replica_path + "/" + table_name);
-    // TODO add rename statement to the log
+void DatabaseReplicated::propose(const ASTPtr & query) {
+    LOG_DEBUG(log, "PROPOSING\n" << queryToString(query));
 }
 
-void DatabaseReplicated::dropTable(
-        const Context & context,
-        const String & table_name,
-        bool no_delay)
-{
-    // try
-    DatabaseOnDisk::dropTable(context, table_name, no_delay);
-
-    // let's do dumb remove from zk at the first iteration
-    current_zookeeper = getZooKeeper();
-    current_zookeeper->remove(replica_path + "/" + table_name);
-}
-
-void DatabaseReplicated::drop(const Context & context)
-{
-    current_zookeeper = getZooKeeper();
-    current_zookeeper->remove(replica_path);
-
-    DatabaseOnDisk::drop(context); // no throw
-}
-
-// sync replica's zookeeper metadata
-void DatabaseReplicated::syncReplicaState(Context & context) {
-    auto c = context; // fixes unuser parameter error
-    return;
-}
-
-// get the up to date metadata from zookeeper to local metadata dir
-// for replicated (only?) tables
-void DatabaseReplicated::updateMetadata(Context & context) {
-    auto c = context; // fixes unuser parameter error
-    return;
-}
-
-void DatabaseReplicated::loadStoredObjects(
-    Context & context,
-    bool has_force_restore_data_flag)
-{
-    syncReplicaState(context);
-    updateMetadata(context);
-
-    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
-
-}
-
-
+// void DatabaseReplicated::createTable(
+//     const Context & context,
+//     const String & table_name,
+//     const StoragePtr & table,
+//     const ASTPtr & query)
+// {
+//     LOG_DEBUG(log, "CREATE TABLE");
+// 
+// 
+//     DatabaseOnDisk::createTable(context, table_name, table, query);
+// 
+//     // String statement = getObjectDefinitionFromCreateQuery(query);
+// 
+//     // current_zookeeper = getZooKeeper();
+//     // current_zookeeper->createOrUpdate(replica_path + "/" + table_name + ".sql", statement, zkutil::CreateMode::Persistent);
+//     return;
+// }
+// 
+// 
+// void DatabaseReplicated::renameTable(
+//         const Context & context,
+//         const String & table_name,
+//         IDatabase & to_database,
+//         const String & to_table_name,
+//         bool exchange)
+// {
+//     LOG_DEBUG(log, "RENAME TABLE");
+//     DatabaseAtomic::renameTable(context, table_name, to_database, to_table_name, exchange);
+//     // try
+//     // DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange);
+//     // replicated stuff; what to put to a znode
+//     // String statement = getObjectDefinitionFromCreateQuery(query);
+//     // this one is fairly more complex
+//     // current_zookeeper = getZooKeeper();
+// 
+//     // no need for now to have stat
+//     // Coordination::Stat metadata_stat;
+//     // auto statement = current_zookeeper->get(replica_path + "/" + table_name, &metadata_stat);
+//     // current_zookeeper->createOrUpdate(replica_path + "/" + to_table_name, statement, zkutil::CreateMode::Persistent);
+//     // current_zookeeper->remove(replica_path + "/" + table_name);
+//     // TODO add rename statement to the log
+//     return;
+// }
+// 
+// void DatabaseReplicated::dropTable(
+//         const Context & context,
+//         const String & table_name,
+//         bool no_delay)
+// {
+//     LOG_DEBUG(log, "DROP TABLE");
+//     DatabaseAtomic::dropTable(context, table_name, no_delay);
+//     // try
+//     // DatabaseOnDisk::dropTable(context, table_name, no_delay);
+// 
+//     // let's do dumb remove from zk at the first iteration
+//     // current_zookeeper = getZooKeeper();
+//     // current_zookeeper->remove(replica_path + "/" + table_name);
+//     return;
+// }
+// 
+// void DatabaseReplicated::drop(const Context & context)
+// {
+//     LOG_DEBUG(log, "DROP");
+//     DatabaseAtomic::drop(context);
+//     // current_zookeeper = getZooKeeper();
+//     // current_zookeeper->remove(replica_path);
+// 
+//     // DatabaseOnDisk::drop(context); // no throw
+//     return;
+// }
+// 
+// void DatabaseReplicated::loadStoredObjects(
+//     Context & context,
+//     bool has_force_restore_data_flag)
+// {
+//     DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
+//     // launch a worker maybe. i don't know
+//     // DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag);
+// 
+//     return;
+// }
 
 }

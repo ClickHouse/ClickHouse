@@ -161,6 +161,10 @@ public:
     /// Is the database empty.
     virtual bool empty() const = 0;
 
+    virtual void propose(const ASTPtr & /*query*/) {
+        throw Exception("There is no propose query method for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
         const Context & /*context*/,
