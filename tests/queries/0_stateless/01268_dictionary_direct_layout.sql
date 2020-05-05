@@ -63,7 +63,6 @@ CREATE DICTIONARY ordinary_db.dict1
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict1' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 600)
 LAYOUT(DIRECT()) SETTINGS(max_result_bytes=1);
 
 CREATE DICTIONARY ordinary_db.dict2
@@ -74,7 +73,6 @@ CREATE DICTIONARY ordinary_db.dict2
 )
 PRIMARY KEY region_id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict2' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 600)
 LAYOUT(DIRECT());
 
 CREATE DICTIONARY ordinary_db.dict3
@@ -85,7 +83,6 @@ CREATE DICTIONARY ordinary_db.dict3
 )
 PRIMARY KEY region_id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict3' PASSWORD '' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 600)
 LAYOUT(DIRECT());
 
 SELECT 'INITIALIZING DICTIONARY';
