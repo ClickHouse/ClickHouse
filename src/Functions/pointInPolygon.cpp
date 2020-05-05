@@ -75,7 +75,7 @@ UInt8 callPointInPolygonImpl(Float64 x, Float64 y, Polygon & polygon)
 
 }
 
-template <typename PointInPolygonImpl, bool use_object_pool>
+template <typename PointInConstPolygonImpl, typename PointInNonConstPolygonImpl>
 class FunctionPointInPolygon : public IFunction
 {
 public:
@@ -91,7 +91,8 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>(context.getSettingsRef().validate_polygons);
+        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl, PointInNonConstPolygonImpl>>(
+            context.getSettingsRef().validate_polygons);
     }
 
     String getName() const override
@@ -189,9 +190,9 @@ public:
         bool point_is_const = const_tuple_col != nullptr;
         bool poly_is_const = const_poly_col != nullptr;
 
-        auto call_impl = use_object_pool
-            ? callPointInPolygonImplWithPool<Polygon, PointInPolygonImpl>
-            : callPointInPolygonImpl<Polygon, PointInPolygonImpl>;
+        auto call_impl = poly_is_const
+            ? callPointInPolygonImplWithPool<Polygon, PointInConstPolygonImpl>
+            : callPointInPolygonImpl<Polygon, PointInNonConstPolygonImpl>;
 
         size_t size = point_is_const && poly_is_const ? 1 : input_rows_count;
         auto execution_result = ColumnVector<UInt8>::create(size);
@@ -358,7 +359,7 @@ private:
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, true>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, PointInPolygonTrivial<Float64>>>();
 }
 
 }
