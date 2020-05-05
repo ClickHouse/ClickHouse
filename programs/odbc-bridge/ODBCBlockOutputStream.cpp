@@ -3,17 +3,20 @@
 #include <common/logger_useful.h>
 #include <Core/Field.h>
 #include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 
 namespace DB
 {
 
-namespace {
+namespace
+{
     using ValueType = ExternalResultDescription::ValueType;
 
     std::string commaSeparateColumnNames(const ColumnsWithTypeAndName & columns)
     {
         std::string result = "(";
-        for (size_t i = 0; i < columns.size(); ++i) {
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
             if (i > 0)
                 result += ",";
             result += columns[i].name;
@@ -24,7 +27,8 @@ namespace {
     std::string getQuestionMarks(size_t n)
     {
         std::string result = "(";
-        for (size_t i = 0; i < n; ++i) {
+        for (size_t i = 0; i < n; ++i)
+        {
             if (i > 0)
                 result += ",";
             result += "?";
@@ -34,21 +38,22 @@ namespace {
 
     Poco::Dynamic::Var getVarFromField(const Field & field, const ValueType type)
     {
-        switch (type) {
+        switch (type)
+        {
             case ValueType::vtUInt8:
-                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt8>())).convert<UInt64>();
+                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt64>())).convert<UInt64>();
             case ValueType::vtUInt16:
-                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt16>())).convert<UInt64>();
+                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt64>())).convert<UInt64>();
             case ValueType::vtUInt32:
-                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt32>())).convert<UInt64>();
+                return Poco::Dynamic::Var(static_cast<UInt64>(field.get<UInt64>())).convert<UInt64>();
             case ValueType::vtUInt64:
                 return Poco::Dynamic::Var(field.get<UInt64>()).convert<UInt64>();
             case ValueType::vtInt8:
-                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int8>())).convert<Int64>();
+                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int64>())).convert<Int64>();
             case ValueType::vtInt16:
-                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int16>())).convert<Int64>();
+                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int64>())).convert<Int64>();
             case ValueType::vtInt32:
-                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int32>())).convert<Int64>();
+                return Poco::Dynamic::Var(static_cast<Int64>(field.get<Int64>())).convert<Int64>();
             case ValueType::vtInt64:
                 return Poco::Dynamic::Var(field.get<Int64>()).convert<Int64>();
             case ValueType::vtFloat32:
@@ -58,9 +63,9 @@ namespace {
             case ValueType::vtString:
                 return Poco::Dynamic::Var(field.get<String>()).convert<String>();
             case ValueType::vtDate:
-                return Poco::Dynamic::Var(LocalDate(DayNum(field.get<UInt16>())).toString()).convert<String>();
+                return Poco::Dynamic::Var(LocalDate(DayNum(field.get<UInt64>())).toString()).convert<String>();
             case ValueType::vtDateTime:
-                return Poco::Dynamic::Var(LocalDate(time_t(field.get<UInt32>())).toString()).convert<String>();
+                return Poco::Dynamic::Var(std::to_string(LocalDateTime(time_t(field.get<UInt64>())))).convert<String>();
             case ValueType::vtUUID:
                 return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
         }

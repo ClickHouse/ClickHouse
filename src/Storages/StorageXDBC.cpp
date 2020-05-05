@@ -95,10 +95,10 @@ Pipes StorageXDBC::read(const Names & column_names,
     return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context & context) {
+BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context & context)
+{
     bridge_helper->startBridgeSync();
 
-    // some copypaste
     NamesAndTypesList cols;
     Poco::URI request_uri = uri;
     request_uri.setPath("/write");
@@ -112,6 +112,7 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context 
         request_uri.addQueryParameter(param, value);
     request_uri.addQueryParameter("db_name", remote_database_name);
     request_uri.addQueryParameter("table_name", remote_table_name);
+    request_uri.addQueryParameter("format_name", format_name);
 
     return std::make_shared<StorageURLBlockOutputStream>(
             request_uri, format_name, getSampleBlock(), context,
