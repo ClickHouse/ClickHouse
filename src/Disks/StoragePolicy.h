@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
+#include <Disks/VolumeJBOD.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -17,82 +20,6 @@
 namespace DB
 {
 
-class DiskSelector;
-using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-
-/// Parse .xml configuration and store information about disks
-/// Mostly used for introspection.
-class DiskSelector
-{
-public:
-    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context);
-    DiskSelector(const DiskSelector & from): disks(from.disks) {}
-
-    DiskSelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const;
-
-    /// Get disk by name
-    DiskPtr get(const String & name) const;
-
-    /// Get all disks with names
-    const auto & getDisksMap() const { return disks; }
-
-private:
-    std::map<String, DiskPtr> disks;
-};
-
-/**
- * Disks group by some (user) criteria. For example,
- * - Volume("slow_disks", [d1, d2], 100)
- * - Volume("fast_disks", [d3, d4], 200)
- * Cannot store parts larger than max_data_part_size.
- */
-class Volume : public Space
-{
-    friend class StoragePolicy;
-
-public:
-    Volume(String name_, std::vector<DiskPtr> disks_, UInt64 max_data_part_size_)
-        : max_data_part_size(max_data_part_size_), disks(std::move(disks_)), name(std::move(name_))
-    {
-    }
-
-    Volume(
-        String name_,
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        DiskSelectorPtr disk_selector);
-
-    /// Next disk (round-robin)
-    ///
-    /// - Used with policy for temporary data
-    /// - Ignores all limitations
-    /// - Shares last access with reserve()
-    DiskPtr getNextDisk();
-
-    /// Uses Round-robin to choose disk for reservation.
-    /// Returns valid reservation or nullptr if there is no space left on any disk.
-    ReservationPtr reserve(UInt64 bytes) override;
-
-    /// Return biggest unreserved space across all disks
-    UInt64 getMaxUnreservedFreeSpace() const;
-
-    /// Volume name from config
-    const String & getName() const override { return name; }
-
-    /// Max size of reservation
-    UInt64 max_data_part_size = 0;
-
-    /// Disks in volume
-    Disks disks;
-
-private:
-    mutable std::atomic<size_t> last_used = 0;
-    const String name;
-};
-
-using VolumePtr = std::shared_ptr<Volume>;
-using Volumes = std::vector<VolumePtr>;
-
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
@@ -105,7 +32,7 @@ class StoragePolicy
 public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
-    StoragePolicy(String name_, Volumes volumes_, double move_factor_);
+    StoragePolicy(String name_, VolumesJBOD volumes_, double move_factor_);
 
     bool isDefaultPolicy() const;
 
@@ -137,16 +64,16 @@ public:
     /// Do not use this function when it is possible to predict size.
     ReservationPtr makeEmptyReservationOnLargestDisk() const;
 
-    const Volumes & getVolumes() const { return volumes; }
+    const VolumesJBOD & getVolumes() const { return volumes; }
 
     /// Returns number [0., 1.] -- fraction of free space on disk
     /// which should be kept with help of background moves
     double getMoveFactor() const { return move_factor; }
 
     /// Get volume by index from storage_policy
-    VolumePtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumePtr()); }
+    VolumeJBODPtr getVolume(size_t i) const { return (i < volumes_names.size() ? volumes[i] : VolumeJBODPtr()); }
 
-    VolumePtr getVolumeByName(const String & volume_name) const
+    VolumeJBODPtr getVolumeByName(const String & volume_name) const
     {
         auto it = volumes_names.find(volume_name);
         if (it == volumes_names.end())
@@ -158,7 +85,7 @@ public:
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
 
 private:
-    Volumes volumes;
+    VolumesJBOD volumes;
     const String name;
     std::map<String, size_t> volumes_names;
 
