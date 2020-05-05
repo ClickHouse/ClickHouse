@@ -4119,11 +4119,11 @@ void StorageReplicatedMergeTree::drop()
     dropAllData();
 }
 
-void StorageReplicatedMergeTree::dropReplica(TableStructureWriteLockHolder & holder, const String & replica)
+void StorageReplicatedMergeTree::dropReplica(const String & replica)
 {
     if (replica_name == replica)
     {
-        drop(holder);
+        drop();
         return;
     }
     removeReplica(replica);

@@ -58,7 +58,7 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
-        
+
         DROP_REPLICA,
     };
 
