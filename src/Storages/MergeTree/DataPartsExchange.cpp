@@ -29,6 +29,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int INSECURE_PATH;
+    extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DataPartsExchange
@@ -133,12 +135,11 @@ void Service::sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteB
 {
     auto part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get());
     if (!part_in_memory)
-        throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::NO_SUCH_DATA_PART); // TODO error code
-    
-    NativeBlockOutputStream block_out(out, 0, data.getSampleBlock());
-    block_out.write(part_in_memory->block);
+        throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
 
-    // TODO send checksums
+    NativeBlockOutputStream block_out(out, 0, data.getSampleBlock());
+    part->checksums.write(out);
+    block_out.write(part_in_memory->block);
 }
 
 void Service::sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, TableStructureReadLockHolder &)
@@ -279,6 +280,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & /* replica_path */,
     PooledReadWriteBufferFromHTTP & in)
 {
+    MergeTreeData::DataPart::Checksums checksums;
+    if (!checksums.read(in))
+        throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
+
     NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
     MergeTreeData::MutableDataPartPtr new_data_part =
@@ -305,8 +310,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
-
-    // TODO validate checksums
+    new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
 
     return new_data_part;
 }
