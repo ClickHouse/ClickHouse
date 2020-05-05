@@ -1,7 +1,7 @@
 [submodule "contrib/poco"]
 	path = contrib/poco
-	url = https://github.com/tavplubix/poco
-	branch = respect_msg_dontwait
+	url = https://github.com/ClickHouse-Extras/poco
+	branch = clickhouse
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd.git
