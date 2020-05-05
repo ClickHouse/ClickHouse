@@ -622,7 +622,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (need_add_to_database)
     {
         database = DatabaseCatalog::instance().getDatabase(create.database);
-        if (database->getEngineName() == "Atomic")
+        if (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")
         {
             /// TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
             if (create.attach && create.uuid == UUIDHelpers::Nil)
@@ -696,7 +696,18 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             false);
     }
 
-    database->createTable(context, table_name, res, query_ptr);
+    
+    if (database->getEngineName() == "Replicated") {
+        // propose
+        // try to 
+        database->propose(query_ptr);
+        database->createTable(context, table_name, res, query_ptr);
+        // catch
+        // throw and remove proposal
+        // otherwise 
+        // proceed (commit to zk)
+    } else
+        database->createTable(context, table_name, res, query_ptr);
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup
