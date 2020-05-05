@@ -298,6 +298,209 @@ External dictionary structure consists of attributes. Dictionary attributes are 
 
 Depending on dictionary [layout](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) one or more attributes can be specified as dictionary keys.
 
-For more information, see [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) section.
+For more information, see [External Dictionaries](../dictionaries/external-dictionaries/external-dicts.md) section.
+
+## CREATE USER {#create-user-statement}
+
+Creates a [user account](../../operations/access-rights.md#user-account-management).
+
+### Syntax {#create-user-syntax}
+
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+#### Identification
+
+There are multiple ways of user identification:
+
+- `IDENTIFIED WITH no_password`
+- `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+- `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
+- `IDENTIFIED WITH sha256_hash BY 'hash'`
+- `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+- `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+
+#### User Host
+
+User host is a host from which a connection to ClickHouse server could be established. Host can be specified in the `HOST` section of query by the following ways:
+
+- `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. For use in production, only specify `HOST IP` elements (IP addresses and their masks), since using `host` and `host_regexp` might cause extra latency.
+- `HOST ANY` — User can connect from any location. This is default option.
+- `HOST LOCAL` — User can connect only locally.
+- `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+- `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
+- `HOST LIKE 'template'` — Allows you use the [LIKE](../functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
+
+Another way of specifying host is to use `@` syntax with the user name. Examples:
+
+- `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` syntax.
+- `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
+- `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
+
+!!! info "Warning"
+    ClickHouse treats `user_name@'address'` as a user name as a whole. Thus, technically you can create multiple users with `user_name` and different constructions after `@`. We don't recommend to do so.
+
+
+### Examples {#create-user-examples}
+
+
+Create the user account `mira` protected by the password `qwerty`:
+
+```sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
+```
+
+`mira` should start client app at the host where the ClickHouse server runs.
+
+Create the user account `john`, assign roles to it and make this roles default:
+
+``` sql
+CREATE USER john DEFAULT ROLE role1, role2
+```
+
+Create the user account `john` and make all his future roles default:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+When some role will be assigned to `john` in the future it will become default automatically.
+
+Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
+
+``` sql
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+
+## CREATE ROLE {#create-role-statement}
+
+Creates a [role](../../operations/access-rights.md#role-management).
+
+### Syntax {#create-role-syntax}
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### Description {#create-role-description}
+
+Role is a set of [privileges](grant.md#grant-privileges). A user granted with a role gets all the privileges of this role. 
+
+A user can be assigned with multiple roles. Users can apply their granted roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
+
+User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
+
+To revoke a role, use the [REVOKE](revoke.md) statement.
+
+To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was granted.
+
+### Examples {#create-role-examples}
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+This sequence of queries creates the role `accountant` that has the privilege of reading data from the `accounting` database.
+
+Granting the role to the user `mira`:
+
+```sql
+GRANT accountant TO mira;
+```
+
+After the role is granted, the user can use it and perform the allowed queries. For example:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```
+
+## CREATE ROW POLICY {#create-row-policy-statement}
+
+Creates a [filter for rows](../../operations/access-rights.md#row-policy-management), which a user can read from a table.
+
+### Syntax {#create-row-policy-syntax}
+
+``` sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING condition]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+#### Section AS {#create-row-policy-as}
+
+Using this section you can create permissive or restrictive policies.
+
+Permissive policy grants access to rows. Permissive policies which apply to the same table are combined together using the boolean `OR` operator. Policies are permissive by default.
+
+Restrictive policy restricts access to row. Restrictive policies which apply to the same table are combined together using the boolean `AND` operator.
+
+Restrictive policies apply to rows that passed the permissive filters. If you set restrictive policies but no permissive policies, the user can't get any row from the table.
+
+#### Section TO {#create-row-policy-to}
+
+In the section `TO` you can give a mixed list of roles and users, for example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to to exclude some users from the all users list, for example `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+### Examples
+
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
+
+
+## CREATE QUOTA {#create-quota-statement}
+
+Creates a [quota](../../operations/access-rights.md#quota-management) that can be assigned to a user or a role.
+
+### Syntax {#create-quota-syntax}
+
+``` sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+### Example {#create-quota-example}
+
+Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
+
+``` sql
+CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
+```
+
+
+## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
+
+Creates a [settings profile](../../operations/access-rights.md#settings-profile-management) that can be assigned to a user or a role.
+
+### Syntax {#create-settings-profile-syntax}
+
+``` sql
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
+
+# Example {#create-settings-profile-syntax}
+
+Create the `max_memory_usage_profile` settings profile with value and constraints for the `max_memory_usage` setting. Assign it to `robin`:
+
+``` sql
+CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
+```
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
