@@ -154,14 +154,14 @@ struct AggregateFunctionWelchTTestData final {
         }
 
         //round or make infinity dof
-        dof = static_cast<int>(dof);
-        if (dof > 100)
+        i_dof = static_cast<int>(dof);
+        if (i_dof > 100)
         {
-            dof = 101;
+            i_dof = 101;
         }
         //check if abs of t is greater than table[dof]
         t = abs(t);
-        if(t > CriticalValuesTable[table][dof]) {
+        if(t > CriticalValuesTable[table][i_dof]) {
             return static_cast<UInt8>(1);
             //in this case we reject the null hypothesis
         }
