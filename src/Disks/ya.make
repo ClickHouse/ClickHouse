@@ -8,9 +8,12 @@ SRCS(
     DiskFactory.cpp
     DiskLocal.cpp
     DiskMemory.cpp
-    DiskSpaceMonitor.cpp
+    DiskSelector.cpp
     IDisk.cpp
+    IVolume.cpp
     registerDisks.cpp
+    StoragePolicy.cpp
+    VolumeJBOD.cpp
 )
 
 END()

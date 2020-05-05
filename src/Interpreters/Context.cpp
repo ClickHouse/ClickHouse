@@ -311,7 +311,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumeJBODPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -538,7 +538,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumePtr Context::getTemporaryVolume() const
+VolumeJBODPtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -563,7 +563,7 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     auto lock = getLock();
 
@@ -574,7 +574,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<Volume>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+        shared->tmp_volume = std::make_shared<VolumeJBOD>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
     }
     else
     {
