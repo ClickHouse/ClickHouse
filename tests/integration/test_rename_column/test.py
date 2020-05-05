@@ -9,11 +9,14 @@ from helpers.client import QueryRuntimeException
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
+main_configs=['configs/remote_servers.xml']
+
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_zookeeper=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True)
-nodes = [node1, node2, node3]
+node1 = cluster.add_instance('node1', with_zookeeper=True, macros={"shard": 0, "replica": 1}, main_configs=main_configs )
+node2 = cluster.add_instance('node2', with_zookeeper=True, macros={"shard": 0, "replica": 2}, main_configs=main_configs )
+node3 = cluster.add_instance('node3', with_zookeeper=True, macros={"shard": 1, "replica": 1}, main_configs=main_configs )
+node4 = cluster.add_instance('node4', with_zookeeper=True, macros={"shard": 1, "replica": 2}, main_configs=main_configs )
+nodes = [node1, node2, node3, node4]
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -35,7 +38,7 @@ def create_table(nodes, table_name):
         sql = """
             CREATE TABLE {table_name}
             (
-                num UInt32, 
+                num UInt32,
                 num2 UInt32 DEFAULT num + 1
             )
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table_name}', '{replica}')
@@ -45,8 +48,33 @@ def create_table(nodes, table_name):
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> Adding more tests.
+=======
+def create_distributed_table(node, table_name):
+        sql = """
+            CREATE TABLE %(table_name)s_replicated ON CLUSTER test_cluster
+            (
+                num UInt32,
+                num2 UInt32 DEFAULT num + 1
+            )
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/%(table_name)s_replicated', '{replica}')
+            ORDER BY num PARTITION BY num %% 100;
+        """ % dict(table_name=table_name)
+        node.query(sql)
+        sql = """
+            CREATE TABLE %(table_name)s ON CLUSTER test_cluster AS %(table_name)s_replicated
+            ENGINE = Distributed(test_cluster, default, %(table_name)s_replicated, rand())
+        """ % dict(table_name=table_name)
+        node.query(sql)
+
+def drop_distributed_table(node, table_name):
+    node.query("DROP TABLE IF EXISTS {} ON CLUSTER test_cluster".format(table_name))
+    node.query("DROP TABLE IF EXISTS {}_replicated ON CLUSTER test_cluster".format(table_name))
+    time.sleep(1)
+
+>>>>>>> Adding test to check rename column when a replicated table has distributed table over it.
 def insert(node, table_name, chunk=1000, col_name="num", iterations=1, ignore_exception=False):
     for i in range(iterations):
         try:
@@ -98,6 +126,16 @@ def rename_column(node, table_name, name, new_name, iterations=1, ignore_excepti
 <<<<<<< HEAD
 =======
 >>>>>>> Adding more tests.
+
+def rename_column_on_cluster(node, table_name, name, new_name, iterations=1, ignore_exception=False):
+    for i in range(iterations):
+        try:
+            node.query("ALTER TABLE {table_name} ON CLUSTER test_cluster RENAME COLUMN {name} to {new_name}".format(
+                table_name=table_name, name=name, new_name=new_name
+            ))
+        except QueryRuntimeException as ex:
+            if not ignore_exception:
+                raise
 
 def test_rename_parallel_same_node(started_cluster):
     table_name = "test_rename_parallel_same_node"
@@ -255,4 +293,22 @@ def test_rename_with_parallel_insert(started_cluster):
         select(node1, table_name, "num2")
     finally:
         drop_table(nodes, table_name)
+<<<<<<< HEAD
 >>>>>>> Adding more tests.
+=======
+
+def test_rename_distributed(started_cluster):
+    table_name = 'test_rename_distributed'
+    try:
+        create_distributed_table(node1, table_name)
+        insert(node1, table_name, 1000)
+
+        rename_column_on_cluster(node1, table_name, 'num2', 'foo2')
+        rename_column_on_cluster(node1, '%s_replicated' % table_name, 'num2', 'foo2')
+
+        insert(node1, table_name, 1000)
+
+        select(node1, table_name, "foo2", '1998\n')
+    finally:
+        drop_distributed_table(node1, table_name)
+>>>>>>> Adding test to check rename column when a replicated table has distributed table over it.
