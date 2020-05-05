@@ -154,7 +154,7 @@ struct AggregateFunctionWelchTTestData final {
         }
 
         //round or make infinity dof
-        i_dof = static_cast<int>(dof);
+        int i_dof = static_cast<int>(dof);
         if (i_dof > 100)
         {
             i_dof = 101;
