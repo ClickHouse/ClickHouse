@@ -2,7 +2,6 @@
 #include "config_formats.h"
 #if USE_ARROW
 
-#include <Core/Types.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include "ArrowBufferedStreams.h"

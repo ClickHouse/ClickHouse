@@ -2,13 +2,14 @@
 #include "config_formats.h"
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
-#include <IO/ReadBuffer.h>
-#include <IO/SeekableReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <arrow/io/interfaces.h>
 
 namespace DB
 {
+
+class ReadBuffer;
+class SeekableReadBuffer;
+class WriteBuffer;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
 {
@@ -16,14 +17,14 @@ public:
     explicit ArrowBufferedOutputStream(WriteBuffer & out_);
 
     // FileInterface
-    ::arrow::Status Close() override;
+    arrow::Status Close() override;
 
-    ::arrow::Status Tell(int64_t * position) const override;
+    arrow::Status Tell(int64_t * position) const override;
 
     bool closed() const override { return !is_open; }
 
     // Writable
-    ::arrow::Status Write(const void * data, int64_t length) override;
+    arrow::Status Write(const void * data, int64_t length) override;
 
 private:
     WriteBuffer & out;

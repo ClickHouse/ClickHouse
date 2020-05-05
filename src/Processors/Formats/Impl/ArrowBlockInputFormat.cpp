@@ -8,6 +8,7 @@
 #include <arrow/api.h>
 #include <arrow/ipc/reader.h>
 #include <arrow/status.h>
+#include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 
 namespace DB

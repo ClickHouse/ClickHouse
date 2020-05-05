@@ -5,15 +5,14 @@
 
 #include <Processors/Formats/IInputFormat.h>
 
+namespace parquet::arrow { class FileReader; }
 
-namespace parquet { namespace arrow { class FileReader; } }
 namespace arrow { class Buffer; }
 
 namespace DB
 {
-class Context;
 
-class ParquetBlockInputFormat: public IInputFormat
+class ParquetBlockInputFormat : public IInputFormat
 {
 public:
     ParquetBlockInputFormat(ReadBuffer & in_, Block header_);

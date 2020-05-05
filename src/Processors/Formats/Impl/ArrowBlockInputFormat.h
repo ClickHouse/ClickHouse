@@ -2,13 +2,7 @@
 #include "config_formats.h"
 #if USE_ARROW
 
-#include <memory>
-#include <string>
-#include <Core/Block.h>
-#include <Core/Types.h>
-#include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>
-#include "ArrowBufferedStreams.h"
 
 namespace arrow::ipc { class RecordBatchFileReader; }
 
