@@ -354,6 +354,7 @@ private:
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);

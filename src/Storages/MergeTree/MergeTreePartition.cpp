@@ -152,4 +152,18 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
 }
 
+void MergeTreePartition::create(const MergeTreeData & storage, Block block, size_t row)
+{
+    storage.partition_key_expr->execute(block);
+    size_t partition_columns_num = storage.partition_key_sample.columns();
+    value.resize(partition_columns_num);
+
+    for (size_t i = 0; i < partition_columns_num; ++i)
+    {
+        const auto & column_name = storage.partition_key_sample.getByPosition(i).name;
+        const auto & partition_column = block.getByName(column_name).column;
+        partition_column->get(row, value[i]);
+    }
+}
+
 }

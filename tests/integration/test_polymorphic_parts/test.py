@@ -39,7 +39,8 @@ def create_tables(name, nodes, node_settings, shard):
         PARTITION BY toYYYYMM(date)
         ORDER BY id
         SETTINGS index_granularity = 64, index_granularity_bytes = {index_granularity_bytes}, 
-        min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part}
+        min_rows_for_wide_part = {min_rows_for_wide_part}, min_rows_for_compact_part = {min_rows_for_compact_part},
+        in_memory_parts_enable_wal = 1
         '''.format(name=name, shard=shard, repl=i, **settings))
 
 def create_tables_old_format(name, nodes, shard):
@@ -68,8 +69,8 @@ node6 = cluster.add_instance('node6', config_dir='configs', main_configs=['confi
 
 settings_in_memory = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 256}
 
-node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True)
-node10 = cluster.add_instance('node10', config_dir="configs", with_zookeeper=True)
+node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True, stay_alive=True)
+node10 = cluster.add_instance('node10', config_dir="configs", with_zookeeper=True, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -83,6 +84,7 @@ def start_cluster():
         create_tables('polymorphic_table_wide', [node3, node4], [settings_wide, settings_compact], "shard2")
         create_tables_old_format('polymorphic_table', [node5, node6], "shard3")
         create_tables('in_memory_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard4")
+        create_tables('wal_table', [node9, node10], [settings_in_memory, settings_in_memory], "shard4")
 
         yield cluster
 
@@ -313,6 +315,39 @@ def test_in_memory(start_cluster):
         "WHERE table = 'in_memory_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
     assert TSV(node10.query("SELECT part_type, count() FROM system.parts " \
         "WHERE table = 'in_memory_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
+
+def test_in_memory_wal(start_cluster):
+    node9.query("SYSTEM STOP MERGES")
+    node10.query("SYSTEM STOP MERGES")
+
+    for i in range(5):
+        insert_random_data('wal_table', node9, 50)
+    node10.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
+
+    assert node9.query("SELECT count() FROM wal_table") == "250\n"
+    assert node10.query("SELECT count() FROM wal_table") == "250\n"
+
+    assert node9.query("SELECT count() FROM system.parts WHERE table = 'wal_table' AND part_type = 'InMemory'") == '5\n'
+    assert node10.query("SELECT count() FROM system.parts WHERE table = 'wal_table' AND part_type = 'InMemory'") == '5\n'
+
+    # WAL works at inserts
+    node9.restart_clickhouse(kill=True)
+    time.sleep(5)
+    assert node9.query("SELECT count() FROM wal_table") == "250\n"
+
+    # WAL works at fetches
+    node10.restart_clickhouse(kill=True)
+    time.sleep(5)
+    assert node10.query("SELECT count() FROM wal_table") == "250\n"
+
+    node9.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
+    insert_random_data('wal_table', node9, 50)
+    assert node9.query("SELECT count() FROM wal_table") == "300\n"
+
+    # Data is lost without WAL
+    node9.restart_clickhouse(kill=True)
+    time.sleep(5)
+    assert node9.query("SELECT count() FROM wal_table") == "250\n"
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query('''

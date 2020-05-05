@@ -248,8 +248,8 @@ MergeTreeData::MergeTreeData(
 
     if (settings->in_memory_parts_enable_wal)
     {
-        auto disk = reserveSpace(0)->getDisk();
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk);
+        auto disk = makeEmptyReservationOnLargestDisk()->getDisk();
+        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, std::move(disk));
     }
 }
 
@@ -859,6 +859,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     const auto settings = getSettings();
     std::vector<std::pair<String, DiskPtr>> part_names_with_disks;
+    MutableDataPartsVector parts_from_wal;
     Strings part_file_names;
 
     auto disks = getStoragePolicy()->getDisks();
@@ -899,19 +900,23 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             part_names_with_disks.emplace_back(it->name(), disk_ptr);
 
             if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
-                loadDataPartsFromWAL(disk_ptr, it->name());
+            {
+                MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
+                auto current_parts = wal.restore();
+                for (auto & part : current_parts)
+                    parts_from_wal.push_back(std::move(part));
+            }
         }
     }
 
     auto part_lock = lockParts();
-    // TODO: fix.
-    // data_parts_indexes.clear();
+    data_parts_indexes.clear();
 
-    // if (part_names_with_disks.empty())
-    // {
-    //     LOG_DEBUG(log, "There is no data parts");
-    //     return;
-    // }
+    if (part_names_with_disks.empty() && parts_from_wal.empty())
+    {
+        LOG_DEBUG(log, "There is no data parts");
+        return;
+    }
 
     /// Parallel loading of data parts.
     size_t num_threads = std::min(size_t(settings->max_part_loading_threads), part_names_with_disks.size());
@@ -1043,6 +1048,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     pool.wait();
 
+    for (auto & part : parts_from_wal)
+    {
+        part->modification_time = time(nullptr);
+        /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
+        part->state = DataPartState::Committed;
+
+        if (!data_parts_indexes.insert(part).second)
+            throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+    }
+
     if (has_non_adaptive_parts && has_adaptive_parts && !settings->enable_mixed_granularity_parts)
         throw Exception("Table contains parts with adaptive and non adaptive marks, but `setting enable_mixed_granularity_parts` is disabled", ErrorCodes::LOGICAL_ERROR);
 
@@ -1108,21 +1123,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     calculateColumnSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts (" << data_parts_indexes.size() << " items)");
-}
-
-void MergeTreeData::loadDataPartsFromWAL(const DiskPtr & disk, const String & file_name)
-{
-    MergeTreeWriteAheadLog wal(*this, disk, file_name);
-    auto parts = wal.restore();
-    for (auto & part : parts)
-    {
-        part->modification_time = time(nullptr);
-        /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
-        part->state = DataPartState::Committed;
-
-        if (!data_parts_indexes.insert(part).second)
-            throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-    }
 }
 
 

@@ -8,20 +8,6 @@
 namespace DB
 {
 
-// class WALBlockOutputStream : public NativeBlockOutputStream
-// {
-// public:
-//     WALBlockOutputStream(WriteBuffer & out_, const Block & header_);
-//     void write(const Block & block, const String & part_name);
-
-// private:
-//     WriteBuffer & out;
-// };
-
-// class WALBlockInputStream : public NativeBlockInputStream
-// {
-// };
-
 class MergeTreeData;
 
 class MergeTreeWriteAheadLog
@@ -29,13 +15,13 @@ class MergeTreeWriteAheadLog
 public:
     constexpr static auto WAL_FILE_NAME = "wal";
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
-    constexpr static size_t MAX_WAL_BYTES = 1024;
+    constexpr static size_t MAX_WAL_BYTES = 1024 * 1024 * 1024;
 
     MergeTreeWriteAheadLog(const MergeTreeData & storage_, const DiskPtr & disk_,
         const String & name = String(WAL_FILE_NAME) + WAL_FILE_EXTENSION);
 
     void write(const Block & block, const String & part_name);
-    std::vector<std::shared_ptr<IMergeTreeDataPart>> restore();
+    std::vector<MergeTreeMutableDataPartPtr> restore();
 
 private:
     void init();
