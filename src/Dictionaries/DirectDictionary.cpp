@@ -426,7 +426,11 @@ void DirectDictionary::getItemsImpl(
     for (const auto row : ext::range(0, rows))
         value_by_key[ids[row]] = get_default(row);
 
-    auto stream = source_ptr->loadAll();
+    std::vector<Key> to_load;
+    for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
+        to_load.push_back(static_cast<Key>(it->getKey()));
+
+    auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
@@ -475,7 +479,11 @@ void DirectDictionary::getItemsStringImpl(
     for (const auto row : ext::range(0, rows))
         value_by_key[ids[row]] = get_default(row);
 
-    auto stream = source_ptr->loadAll();
+    std::vector<Key> to_load;
+    for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
+        to_load.push_back(static_cast<Key>(it->getKey()));
+
+    auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
     while (const auto block = stream->read())
     {
