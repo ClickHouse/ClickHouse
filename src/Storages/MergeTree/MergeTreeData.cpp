@@ -2740,8 +2740,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
         }
     }
 
-    LOG_DEBUG(log, "MergeTreeData::getDataPartsVector: " << res.size());
-
     return res;
 }
 
