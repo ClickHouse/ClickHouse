@@ -1,111 +1,147 @@
 ---
 toc_priority: 48
-toc_title: Access Rights
+toc_title: Access Control and Account Management
 ---
 
-# Access Rights {#access-rights}
+# Access Control and Account Management {#access-control}
 
-Users and access rights are set up in the user config. This is usually `users.xml`.
+ClickHouse supports access control management based on [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) approach.
 
-Users are recorded in the `users` section. Here is a fragment of the `users.xml` file:
+ClickHouse access entities:
+- [User account](#user-account-management)
+- [Role](#role-management)
+- [Row Policy](#row-policy-management)
+- [Settings Profile](#settings-profiles-management)
+- [Quota](#quotas-management)
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+You can configure access entities using:
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+- SQL-driven workflow.
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+    You need to [enable](#enabling-access-control) this functionality.
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+- Server [configuration files](configuration-files.md) `users.xml` and `config.xml`.
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.host\.ru$.
+We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can softly move to SQL-driven workflow. 
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+!!! note "Warning"
+    You can't manage the same access entity by both configuration methods simultaneously.
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+## Usage {#access-control-usage}
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-        <allow_dictionaries>
-           <dictionary>test</dictionary>
-        </allow_dictionaries>
-    </web>
-</users>
-```
+By default, the ClickHouse server provides the user account `default` which is not allowed using SQL-driven access control and account management but have all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table-engines/special/distributed.md) properties.
 
-You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
+If you just start using ClickHouse, you can use the following scenario:
 
-The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn’t specify the `user` and `password` (see the section on the [Distributed](../engines/table-engines/special/distributed.md) engine).
+1. [Enable](#enabling-access-control) SQL-driven access control and account management for the `default` user.
+2. Login under the `default` user account and create all the required users. Don't forget to create an administrator account (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+3. [Restrict permissions](settings/permissions-for-queries.md#permissions_for_queries) for the `default` user and disable SQL-driven access control and account management for it.
 
-The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+### Properties of Current Solution {#access-control-properties}
 
-The password is specified in clear text (not recommended) or in SHA-256. The hash isn’t salted. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from employees.
+- You can grant permissions for databases and tables even if they are not exist.
+- If a table was deleted, all the privileges that correspond to this table are not revoked. So, if a new table is created later with the same name all the privileges become again actual. To revoke privileges corresponding to the deleted table, you need to perform, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
+- There is no lifetime settings for privileges.
 
-A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (`/etc/metrika.xml`) containing the `networks` substitution. Here is a fragment of it:
+## User account {#user-account-management}
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+A user account is an access entity that allows to authorize someone in ClickHouse. A user account contains:
 
-You could define this list of networks directly in `users.xml`, or in a file in the `users.d` directory (for more information, see the section “[Configuration files](configuration-files.md#configuration_files)”).
+- Identification information.
+- [Privileges](../sql-reference/statements/grant.md#grant-privileges) that define a scope of queries the user can perform.
+- Hosts from which connection to the ClickHouse server is allowed.
+- Granted and default roles.
+- Settings with their constraints that apply by default at the user's login.
+- Assigned settings profiles.
 
-The config includes comments explaining how to open access from everywhere.
+Privileges to a user account can be granted by the [GRANT](../sql-reference/statements/grant.md) query or by assigning [roles](#role-management). To revoke privileges from a user, ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query. To list privileges for a user, use the - [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) statement.
 
-For use in production, only specify `ip` elements (IP addresses and their masks), since using `host` and `hoost_regexp` might cause extra latency.
+Management queries:
 
-Next the user settings profile is specified (see the section “[Settings profiles](settings/settings-profiles.md)”. You can specify the default profile, `default'`. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access. Then specify the quota to be used (see the section “[Quotas](quotas.md#quotas)”). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+- [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+- [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+- [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+- [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-In the optional `<allow_databases>` section, you can also specify a list of databases that the user can access. By default, all databases are available to the user. You can specify the `default` database. In this case, the user will receive access to the database by default.
+### Settings Applying {#access-control-settings-applying}
 
-In the optional `<allow_dictionaries>` section, you can also specify a list of dictionaries that the user can access. By default, all dictionaries are available to the user.
+Settings can be set by different ways: for a user account, in its granted roles and settings profiles. At a user login, if a setting is set in different access entities, the value and constrains of this setting are applied by the following priorities (from higher to lower):
 
-Access to the `system` database is always allowed (since this database is used for processing queries).
+1. User account setting.
+2. The settings of default roles of the user account. If a setting is set in some roles, then order of the setting applying is undefined.
+3. The settings in settings profiles assigned to a user or to its default roles. If a setting is set in some profiles, then order of setting applying is undefined.
+4. Settings applied to all the server by default or from the [default profile](server-configuration-parameters/settings.md#default-profile).
 
-The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn’t allowed.
 
-Database access is not related to the [readonly](settings/permissions-for-queries.md#settings_readonly) setting. You can’t grant full access to one database and `readonly` access to another one.
+## Role {#role-management}
+
+Role is a container for access entities that can be granted to a user account.
+
+Role contains:
+
+- [Privileges](../sql-reference/statements/grant.md#grant-privileges)
+- Settings and constraints
+- List of granted roles
+
+Management queries:
+
+- [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+- [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+- [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+- [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+- [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+- [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+Privileges to a role can be granted by the [GRANT](../sql-reference/statements/grant.md) query. To revoke privileges from a role ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query.
+
+## Row Policy {#row-policy-management}
+
+Row policy is a filter that defines which or rows is available for a user or for a role. Row policy contains filters for one specific table and list of roles and/or users which should use this row policy.
+
+Management queries:
+
+- [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+- [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+- [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+- [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+
+## Settings Profile {#settings-profiles-management}
+
+Settings profile is a collection of [settings](settings/index.md). Settings profile contains settings and constraints, and list of roles and/or users to which this quota is applied.
+
+Management queries:
+
+- [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+- [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+- [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+- [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+
+## Quota {#quotas-management}
+
+Quota limits resource usage. See [Quotas](quotas.md).
+
+Quota contains a set of limits for some durations, and list of roles and/or users which should use this quota.
+
+Management queries:
+
+- [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+- [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+- [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+- [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+
+## Enabling SQL-driven Access Control and Account Management {#enabling-access-control}
+
+- Setup a directory for configurations storage.
+
+    ClickHouse stores access entity configurations in the folder set in the [access_control_path](server-configuration-parameters/settings.md#access_control_path) server configuration parameter.
+
+- Enable SQL-driven access control and account management for at least one user account.
+
+    By default SQL-driven access control and account management is turned of for all users. You need to configure at least one user in the `users.xml` configuration file and assign 1 to the [access_management](settings/settings-users.md#access_management-user-setting) setting.
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
