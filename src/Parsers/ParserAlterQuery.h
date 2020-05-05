@@ -17,6 +17,7 @@ namespace DB
   *     [MODIFY SETTING setting_name=setting_value, ...]
   *     [COMMENT COLUMN [IF EXISTS] col_name string]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
+  *     [DROP REPLICA replica, ...]
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE [PARTITION] [WITH NAME name]]
   *     [DELETE WHERE ...]

@@ -60,6 +60,10 @@ ASTPtr ASTAlterCommand::clone() const
     {
         res->rename_to = rename_to->clone();
         res->children.push_back(res->rename_to);
+    if (replica)
+    {
+        res->replica = replica->clone();
+        res->children.push_back(res->replica);
     }
 
     return res;
@@ -290,6 +294,7 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
     }
+<<<<<<< HEAD
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RENAME COLUMN " << (if_exists ? "IF EXISTS " : "")
@@ -298,6 +303,11 @@ void ASTAlterCommand::formatImpl(
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+=======
+    else if (type == ASTAlterCommand::DROP_REPLICA)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP " << (settings.hilite ? hilite_none : "") << " " << std::quoted(replica_name, '\'');
+>>>>>>> b3fa746... Add drop replica alter support
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
