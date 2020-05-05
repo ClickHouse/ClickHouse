@@ -33,7 +33,7 @@ namespace ErrorCodes
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
     : IInputFormat(std::move(header_), in_)
 {
-   prepareReader();
+    prepareReader();
 }
 
 Chunk ParquetBlockInputFormat::generate()

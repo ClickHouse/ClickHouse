@@ -2,17 +2,13 @@
 #include "config_formats.h"
 #if USE_ORC
 
-#include <DataStreams/IBlockInputStream.h>
-#include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>
 
 namespace arrow::adapters::orc { class ORCFileReader; }
 
 namespace DB
 {
-class Context;
-
-class ORCBlockInputFormat: public IInputFormat
+class ORCBlockInputFormat : public IInputFormat
 {
 public:
     ORCBlockInputFormat(ReadBuffer & in_, Block header_);
