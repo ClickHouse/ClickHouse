@@ -140,7 +140,7 @@ def test_rename_parallel(started_cluster):
         for task in tasks:
             task.get(timeout=240)
 
-        # rename column back to original
+        # rename column back to original name
         rename_column(node1, table_name, "foo3", "num2", 1, True)
         rename_column(node1, table_name, "foo2", "num2", 1, True)
 
