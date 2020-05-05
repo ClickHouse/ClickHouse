@@ -10,6 +10,7 @@ SRCS(
     DataTypeAggregateFunction.cpp
     DataTypeArray.cpp
     DataTypeCustomIPv4AndIPv6.cpp
+    DataTypeCustomPoint.cpp
     DataTypeCustomSimpleAggregateFunction.cpp
     DataTypeCustomSimpleTextSerialization.cpp
     DataTypeDate.cpp
