@@ -5,8 +5,10 @@
 #include <Poco/Data/Session.h>
 #include <Core/ExternalResultDescription.h>
 
-namespace DB{
-class ODBCBlockOutputStream : public IBlockOutputStream {
+namespace DB
+{
+class ODBCBlockOutputStream : public IBlockOutputStream
+{
 public:
     ODBCBlockOutputStream(Poco::Data::Session && session_, const std::string & remote_database_name_,
                           const std::string & remote_table_name_, const Block & sample_block_);
