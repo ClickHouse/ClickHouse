@@ -27,7 +27,6 @@ public:
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
         BlockPtr saved_block_ = nullptr);
 
     const std::string & getDatabase() const override { return database; }
@@ -36,19 +35,19 @@ public:
 
     std::string getTypeName() const override { return "Direct"; }
 
-    size_t getBytesAllocated() const override { return bytes_allocated; }
+    size_t getBytesAllocated() const override { return 0; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override { return 1.0; }
 
-    size_t getElementCount() const override { return element_count; }
+    size_t getElementCount() const override { return 0; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return 0; }
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<DirectDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, saved_block);
+        return std::make_shared<DirectDictionary>(database, name, dict_struct, source_ptr->clone(), saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -145,9 +144,6 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value>
-    using ContainerType = PaddedPODArray<Value>;
-
     struct Attribute final
     {
         AttributeUnderlyingType type;
@@ -224,9 +220,6 @@ private:
     std::vector<Attribute> attributes;
     const Attribute * hierarchical_attribute = nullptr;
 
-    size_t bytes_allocated = 0;
-    size_t element_count = 0;
-    size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
     BlockPtr saved_block;

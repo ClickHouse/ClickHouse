@@ -20,18 +20,15 @@ DirectDictionary::DirectDictionary(
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
     BlockPtr saved_block_)
     : database(database_)
     , name(name_)
     , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
     , saved_block{std::move(saved_block_)}
 {
     createAttributes();
-    calculateBytesAllocated();
 }
 
 
@@ -57,7 +54,8 @@ static inline DirectDictionary::Key getAt(const DirectDictionary::Key & value, c
 
 DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find) const
 {
-    auto stream = source_ptr->loadAll();
+    std::vector<Key> required_key = {to_find};
+    auto stream = source_ptr->loadIds(required_key);
     stream->readPrefix();
 
     bool is_found = false;
@@ -330,18 +328,6 @@ void DirectDictionary::createAttributes()
 }
 
 
-void DirectDictionary::calculateBytesAllocated()
-{
-    bytes_allocated += attributes.size() * sizeof(attributes.front());
-
-    for (const auto & attribute : attributes)
-    {
-        if (attribute.type == AttributeUnderlyingType::utString)
-            bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-    }
-}
-
-
 template <typename T>
 void DirectDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
@@ -427,8 +413,9 @@ void DirectDictionary::getItemsImpl(
         value_by_key[ids[row]] = get_default(row);
 
     std::vector<Key> to_load;
+    to_load.reserve(value_by_key.size());
     for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
-        to_load.push_back(static_cast<Key>(it->getKey()));
+        to_load.emplace_back(static_cast<Key>(it->getKey()));
 
     auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
@@ -480,8 +467,9 @@ void DirectDictionary::getItemsStringImpl(
         value_by_key[ids[row]] = get_default(row);
 
     std::vector<Key> to_load;
+    to_load.reserve(value_by_key.size());
     for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
-        to_load.push_back(static_cast<Key>(it->getKey()));
+        to_load.emplace_back(static_cast<Key>(it->getKey()));
 
     auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
@@ -530,8 +518,15 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
     const auto rows = ext::size(ids);
 
     HashMap<Key, UInt8> has_key;
+    for (const auto row : ext::range(0, rows))
+        has_key[ids[row]] = 0;
 
-    auto stream = source_ptr->loadAll();
+    std::vector<Key> to_load;
+    to_load.reserve(has_key.size());
+    for (auto it = has_key.begin(); it != has_key.end(); ++it)
+        to_load.emplace_back(static_cast<Key>(it->getKey()));
+
+    auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
@@ -603,8 +598,12 @@ void registerDictionaryDirect(DictionaryFactory & factory)
 
         const String database = config.getString(config_prefix + ".database", "");
         const String name = config.getString(config_prefix + ".name");
-        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-        return std::make_unique<DirectDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime);
+
+        if (config.has(config_prefix + ".lifetime.min") || config.has(config_prefix + ".lifetime.max"))
+            throw Exception{"'lifetime' parameter is redundant for the dictionary' of layout 'direct'", ErrorCodes::BAD_ARGUMENTS};
+
+
+        return std::make_unique<DirectDictionary>(database, name, dict_struct, std::move(source_ptr));
     };
     factory.registerLayout("direct", create_layout, false);
 }
