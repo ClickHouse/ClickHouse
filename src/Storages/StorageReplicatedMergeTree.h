@@ -115,6 +115,10 @@ public:
       */
     void drop() override;
 
+    /** Removes a specific replica from Zookeeper. If replica is local, it works same as `drop` method.
+     */
+    void dropReplica(TableStructureWriteLockHolder &, const String & replica_name);
+
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
@@ -302,6 +306,11 @@ private:
     /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
       */
     void createReplica();
+
+    /** Remove replica by replica_name
+     */
+    void removeReplica(const String & replica);
+
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
