@@ -117,7 +117,7 @@ public:
 
     /** Removes a specific replica from Zookeeper. If replica is local, it works same as `drop` method.
      */
-    void dropReplica(TableStructureWriteLockHolder &, const String & replica_name);
+    void dropReplica(const String & replica_name);
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 

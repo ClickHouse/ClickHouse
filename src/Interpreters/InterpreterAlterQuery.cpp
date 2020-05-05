@@ -106,10 +106,10 @@ BlockIO InterpreterAlterQuery::execute()
         replica_commands.validate(*table);
         auto replicate_table = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(table);
 
-        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
+        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         for (auto & command : replica_commands)
-        {   
-            replicate_table->dropReplica(table_lock_holder, command.replica_name);
+        {
+            replicate_table->dropReplica(command.replica_name);
         }
     }
 
@@ -294,7 +294,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::DROP_REPLICA:
         {
-            required_access.emplace_back(AccessType::ALTER_DELETE, alter.database, alter.table);
+            required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_QUERY:
