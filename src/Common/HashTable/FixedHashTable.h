@@ -274,9 +274,21 @@ public:
         return iterator(this, ptr);
     }
 
-    const_iterator end() const { return const_iterator(this, buf + NUM_CELLS); }
-    const_iterator cend() const { return end(); }
-    iterator end() { return iterator(this, buf + NUM_CELLS); }
+    const_iterator end() const
+    {
+        /// Avoid UBSan warning about adding zero to nullptr. It is valid in C++20 (and earlier) but not valid in C.
+        return const_iterator(this, buf ? buf + NUM_CELLS : buf);
+    }
+
+    const_iterator cend() const
+    {
+        return end();
+    }
+
+    iterator end()
+    {
+        return iterator(this, buf ? buf + NUM_CELLS : buf);
+    }
 
 
 public:
@@ -325,18 +337,26 @@ public:
         Cell::State::write(wb);
         DB::writeVarUInt(m_size, wb);
 
+        if (!buf)
+            return;
+
         for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
+        {
             if (!ptr->isZero(*this))
             {
                 DB::writeVarUInt(ptr - buf);
                 ptr->write(wb);
             }
+        }
     }
 
     void writeText(DB::WriteBuffer & wb) const
     {
         Cell::State::writeText(wb);
         DB::writeText(m_size, wb);
+
+        if (!buf)
+            return;
 
         for (auto ptr = buf, buf_end = buf + NUM_CELLS; ptr < buf_end; ++ptr)
         {
