@@ -926,7 +926,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **See also**
 
--   [Settings](settings/index.md#settings)
+-   [Settings](settings/index.md#session-settings-intro)
 -   [Permissions for Queries](settings/permissions-for-queries.md#settings_readonly)
 -   [Constraints on Settings](settings/constraints-on-settings.md)
 

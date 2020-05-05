@@ -476,7 +476,7 @@ ALTER TABLE example_table
 
 Les données avec un TTL expiré sont supprimées lorsque ClickHouse fusionne des parties de données.
 
-Lorsque ClickHouse voit que les données sont expirées, il effectue une fusion hors calendrier. Pour contrôler la fréquence de ces fusions, vous pouvez définir [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). Si la valeur est trop faible, il effectuera de nombreuses fusions hors calendrier qui peuvent consommer beaucoup de ressources.
+Lorsque ClickHouse voit que les données sont expirées, il effectue une fusion hors calendrier. Pour contrôler la fréquence de ces fusions, vous pouvez définir `merge_with_ttl_timeout`. Si la valeur est trop faible, il effectuera de nombreuses fusions hors calendrier qui peuvent consommer beaucoup de ressources.
 
 Si vous effectuez la `SELECT` requête entre les fusionne, vous pouvez obtenir des données expirées. Pour éviter cela, utilisez la [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) requête avant de l’ `SELECT`.
 

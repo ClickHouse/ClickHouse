@@ -476,7 +476,7 @@ ALTER TABLE example_table
 
 ClickHouse veri parçalarını birleştirdiğinde süresi dolmuş bir TTL ile veri kaldırılır.
 
-ClickHouse, verilerin süresi dolduğunu gördüğünde, zamanlama dışı bir birleştirme gerçekleştirir. Bu tür birleştirmelerin sıklığını kontrol etmek için şunları ayarlayabilirsiniz [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). Değer çok düşükse, çok fazla kaynak tüketebilecek birçok zamanlama dışı birleştirme gerçekleştirir.
+ClickHouse, verilerin süresi dolduğunu gördüğünde, zamanlama dışı bir birleştirme gerçekleştirir. Bu tür birleştirmelerin sıklığını kontrol etmek için şunları ayarlayabilirsiniz `merge_with_ttl_timeout`. Değer çok düşükse, çok fazla kaynak tüketebilecek birçok zamanlama dışı birleştirme gerçekleştirir.
 
 Gerçekleştir theirseniz `SELECT` birleştirme arasında sorgu, süresi dolmuş veri alabilirsiniz. Bunu önlemek için, [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) önce sorgu `SELECT`.
 

@@ -3,7 +3,7 @@ toc_priority: 36
 toc_title: Reference
 ---
 
-# Function Reference {#function-reference}
+# Function Reference {#aggregate-functions-reference}
 
 ## count {#agg_function-count}
 

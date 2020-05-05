@@ -383,7 +383,7 @@ ALTER TABLE example_table
 
 当ClickHouse合并数据分区时, 会删除TTL过期的数据。
 
-当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 你可以设置 [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout)。如果该值被设置的太低, 它将导致执行许多的计划外合并，这可能会消耗大量资源。
+当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 你可以设置 `merge_with_ttl_timeout`。如果该值被设置的太低, 它将导致执行许多的计划外合并，这可能会消耗大量资源。
 
 如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../../engines/table-engines/mergetree-family/mergetree.md#misc_operations-optimize) 查询。
 

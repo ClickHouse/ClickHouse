@@ -1,9 +1,4 @@
----
-toc_priority: 60
-toc_title: Settings
----
-
-# Settings {#settings}
+# Настройки {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 

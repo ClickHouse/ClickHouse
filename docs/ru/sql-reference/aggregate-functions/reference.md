@@ -1,4 +1,4 @@
-# Справочник функций {#spravochnik-funktsii}
+# Справочник функций {#aggregate-functions-reference}
 
 ## count {#agg_function-count}
 
@@ -104,7 +104,7 @@ FROM ontime
 └───────┘
 ```
 
-## anyLast(x) {#agg_function-anylast}
+## anyLast(x) {#anylastx}
 
 Выбирает последнее попавшееся значение.
 Результат так же недетерминирован, как и для функции `any`.
