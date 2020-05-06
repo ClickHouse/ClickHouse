@@ -28,7 +28,6 @@ import kafka_pb2
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
-# TODO: modify tests to respect `skip_broken_messages` setting.
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -197,6 +196,51 @@ def test_kafka_settings_new_syntax(kafka_cluster):
             break
 
     kafka_check_result(result, True)
+
+
+@pytest.mark.skip(reason="https://github.com/edenhill/librdkafka/issues/2077")
+@pytest.mark.timeout(180)
+def test_kafka_consumer_hang(kafka_cluster):
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang',
+                     kafka_group_name = 'consumer_hang',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 8,
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = Memory();
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+        ''')
+
+    time.sleep(12)
+    instance.query('SELECT * FROM test.view')
+
+    # This should trigger heartbeat fail,
+    # which will trigger REBALANCE_IN_PROGRESS,
+    # and which can lead to consumer hang.
+    kafka_cluster.pause_container('kafka1')
+    time.sleep(0.5)
+    kafka_cluster.unpause_container('kafka1')
+
+    instance.query('DROP TABLE test.kafka')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    log = '/var/log/clickhouse-server/stderr.log'
+    instance.exec_in_container(['grep', '-q', 'BROKERFAIL', log])
+    instance.exec_in_container(['grep', '-q', '|ASSIGN|', log])
+    instance.exec_in_container(['grep', '-q', 'Heartbeat failed: REBALANCE_IN_PROGRESS: group is rebalancing', log])
+    instance.exec_in_container(['grep', '-q', 'Group "consumer_hang": waiting for rebalance_cb', log])
 
 
 @pytest.mark.timeout(180)
