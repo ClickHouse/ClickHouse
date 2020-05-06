@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 0f7ef7704d018700049223525bad4a63911b6e70
 toc_priority: 33
 toc_title: SELECT
 ---
 
-# SELECCIONAR Consultas Sintaxis {#select-queries-syntax}
+# SELECCIONAR consultas Sintaxis {#select-queries-syntax}
 
 `SELECT` realiza la recuperación de datos.
 
@@ -250,7 +250,7 @@ Aquí, se toma una muestra del 10% de la segunda mitad de los datos.
 
 ### ARRAY JOIN Cláusula {#select-array-join-clause}
 
-Permite ejecutar `JOIN` con una matriz o estructura de datos anidada. La intención es similar a la [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin) función, pero su funcionalidad es más amplia.
+Permite ejecutar `JOIN` con una matriz o estructura de datos anidada. La intención es similar a la [arrayJoin](../functions/array-join.md#functions_arrayjoin) función, pero su funcionalidad es más amplia.
 
 ``` sql
 SELECT <expr_list>
@@ -327,7 +327,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-#### Uso De Alias {#using-aliases}
+#### Uso de alias {#using-aliases}
 
 Se puede especificar un alias para una matriz en el `ARRAY JOIN` clausula. En este caso, este alias puede acceder a un elemento de matriz, pero el nombre original tiene acceso a la matriz en sí. Ejemplo:
 
@@ -405,7 +405,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 └───────┴─────────┴───┴─────┴─────────────────────┘
 ```
 
-#### ARRAY JOIN Con Estructura De Datos Anidada {#array-join-with-nested-data-structure}
+#### ARRAY JOIN con estructura de datos anidada {#array-join-with-nested-data-structure}
 
 `ARRAY`JOIN\`\` también funciona con [estructuras de datos anidados](../../sql-reference/data-types/nested-data-structures/nested.md). Ejemplo:
 
@@ -534,7 +534,7 @@ FROM <left_subquery>
 
 Los nombres de tabla se pueden especificar en lugar de `<left_subquery>` y `<right_subquery>`. Esto es equivalente a la `SELECT * FROM table` subconsulta, excepto en un caso especial cuando la tabla tiene [Unir](../../engines/table-engines/special/join.md) engine – an array prepared for joining.
 
-#### Tipos Compatibles De `JOIN` {#select-join-types}
+#### Tipos admitidos de `JOIN` {#select-join-types}
 
 -   `INNER JOIN` (o `JOIN`)
 -   `LEFT JOIN` (o `LEFT OUTER JOIN`)
@@ -604,7 +604,776 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 Por ejemplo, considere las siguientes tablas:
 
-\`\`\` texto
-table\_1 table\_2
+         table_1                           table_2
+      event   | ev_time | user_id       event   | ev_time | user_id
+    ----------|---------|----------   ----------|---------|----------
+                  ...                               ...
+    event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
+                  ...                 event_2_2 |  12:30  |   42
+    event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
+                  ...                               ...
 
-evento \| ev\_time \| user\_id evento \| ev\_time \| user\_id
+`ASOF JOIN` puede tomar la marca de tiempo de un evento de usuario de `table_1` y encontrar un evento en `table_2` donde la marca de tiempo es la más cercana a la marca de tiempo del evento `table_1` correspondiente a la condición de coincidencia más cercana. Los valores de marca de tiempo iguales son los más cercanos si están disponibles. Aquí, el `user_id` se puede utilizar para unirse a la igualdad y el `ev_time` columna se puede utilizar para unirse en el partido más cercano. En nuestro ejemplo, `event_1_1` se puede unir con `event_2_1` y `event_1_2` se puede unir con `event_2_3`, pero `event_2_2` no se puede unir.
+
+!!! note "Nota"
+    `ASOF` unirse es **ni** apoyado en el [Unir](../../engines/table-engines/special/join.md) motor de mesa.
+
+Para establecer el valor de rigor predeterminado, utilice el parámetro de configuración de sesión [Por favor, introduzca su dirección de correo electrónico](../../operations/settings/settings.md#settings-join_default_strictness).
+
+#### GLOBAL JOIN {#global-join}
+
+Cuando se utiliza una normal `JOIN`, la consulta se envía a servidores remotos. Las subconsultas se ejecutan en cada una de ellas para crear la tabla correcta, y la unión se realiza con esta tabla. En otras palabras, la tabla correcta se forma en cada servidor por separado.
+
+Cuando se utiliza `GLOBAL ... JOIN`, primero el servidor requestor ejecuta una subconsulta para calcular la tabla correcta. Esta tabla temporal se pasa a cada servidor remoto y las consultas se ejecutan en ellos utilizando los datos temporales que se transmitieron.
+
+Tenga cuidado al usar `GLOBAL`. Para obtener más información, consulte la sección [Subconsultas distribuidas](#select-distributed-subqueries).
+
+#### Recomendaciones de uso {#usage-recommendations}
+
+Cuando se ejecuta un `JOIN`, no hay optimización del orden de ejecución en relación con otras etapas de la consulta. La combinación (una búsqueda en la tabla de la derecha) se ejecuta antes de filtrar `WHERE` y antes de la agregación. Para establecer explícitamente el orden de procesamiento, recomendamos ejecutar un `JOIN` subconsulta con una subconsulta.
+
+Ejemplo:
+
+``` sql
+SELECT
+    CounterID,
+    hits,
+    visits
+FROM
+(
+    SELECT
+        CounterID,
+        count() AS hits
+    FROM test.hits
+    GROUP BY CounterID
+) ANY LEFT JOIN
+(
+    SELECT
+        CounterID,
+        sum(Sign) AS visits
+    FROM test.visits
+    GROUP BY CounterID
+) USING CounterID
+ORDER BY hits DESC
+LIMIT 10
+```
+
+``` text
+┌─CounterID─┬───hits─┬─visits─┐
+│   1143050 │ 523264 │  13665 │
+│    731962 │ 475698 │ 102716 │
+│    722545 │ 337212 │ 108187 │
+│    722889 │ 252197 │  10547 │
+│   2237260 │ 196036 │   9522 │
+│  23057320 │ 147211 │   7689 │
+│    722818 │  90109 │  17847 │
+│     48221 │  85379 │   4652 │
+│  19762435 │  77807 │   7026 │
+│    722884 │  77492 │  11056 │
+└───────────┴────────┴────────┘
+```
+
+Las subconsultas no permiten establecer nombres ni usarlos para hacer referencia a una columna de una subconsulta específica.
+Las columnas especificadas en `USING` debe tener los mismos nombres en ambas subconsultas, y las otras columnas deben tener un nombre diferente. Puede usar alias para cambiar los nombres de las columnas en subconsultas (el ejemplo usa los alias `hits` y `visits`).
+
+El `USING` clause especifica una o más columnas a unir, lo que establece la igualdad de estas columnas. La lista de columnas se establece sin corchetes. No se admiten condiciones de unión más complejas.
+
+La tabla correcta (el resultado de la subconsulta) reside en la RAM. Si no hay suficiente memoria, no puede ejecutar una `JOIN`.
+
+Cada vez que se ejecuta una consulta `JOIN`, la subconsulta se ejecuta de nuevo porque el resultado no se almacena en caché. Para evitar esto, use el especial [Unir](../../engines/table-engines/special/join.md) motor de tabla, que es una matriz preparada para unirse que siempre está en RAM.
+
+En algunos casos, es más eficiente de usar `IN` en lugar de `JOIN`.
+Entre los diversos tipos de `JOIN` el más eficiente es `ANY LEFT JOIN`, entonces `ANY INNER JOIN`. Los menos eficientes son `ALL LEFT JOIN` y `ALL INNER JOIN`.
+
+Si necesita un `JOIN` para unirse a tablas de dimensión (son tablas relativamente pequeñas que contienen propiedades de dimensión, como nombres para campañas publicitarias), un `JOIN` podría no ser muy conveniente debido al hecho de que se vuelve a acceder a la tabla correcta para cada consulta. Para tales casos, hay un “external dictionaries” característica que debe utilizar en lugar de `JOIN`. Para obtener más información, consulte la sección [Diccionarios externos](../dictionaries/external-dictionaries/external-dicts.md).
+
+**Limitaciones de memoria**
+
+ClickHouse utiliza el [hash unirse](https://en.wikipedia.org/wiki/Hash_join) algoritmo. ClickHouse toma el `<right_subquery>` y crea una tabla hash para ello en RAM. Si necesita restringir el consumo de memoria de la operación de unión, use la siguiente configuración:
+
+-   [Método de codificación de datos:](../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [Método de codificación de datos:](../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+
+Cuando se alcanza cualquiera de estos límites, ClickHouse actúa como el [join\_overflow\_mode](../../operations/settings/query-complexity.md#settings-join_overflow_mode) configuración instruye.
+
+#### Procesamiento de celdas vacías o NULL {#processing-of-empty-or-null-cells}
+
+Al unir tablas, pueden aparecer las celdas vacías. Configuración [Sistema abierto.](../../operations/settings/settings.md#join_use_nulls) definir cómo ClickHouse llena estas celdas.
+
+Si el `JOIN` las llaves son [NULL](../data-types/nullable.md) campos, las filas donde al menos una de las claves tiene el valor [NULL](../syntax.md#null-literal) no se unen.
+
+#### Limitaciones de sintaxis {#syntax-limitations}
+
+Para múltiples `JOIN` cláusulas en una sola `SELECT` consulta:
+
+-   Tomando todas las columnas a través de `*` está disponible solo si se unen tablas, no subconsultas.
+-   El `PREWHERE` cláusula no está disponible.
+
+Para `ON`, `WHERE`, y `GROUP BY` clausula:
+
+-   Las expresiones arbitrarias no se pueden utilizar en `ON`, `WHERE`, y `GROUP BY` cláusulas, pero puede definir una expresión en un `SELECT` cláusula y luego usarla en estas cláusulas a través de un alias.
+
+### DONDE Cláusula {#select-where}
+
+Si hay una cláusula where, debe contener una expresión con el tipo UInt8. Esta suele ser una expresión con comparación y operadores lógicos.
+Esta expresión se usará para filtrar datos antes de todas las demás transformaciones.
+
+Si los índices son compatibles con el motor de tablas de base de datos, la expresión se evalúa en función de la capacidad de usar índices.
+
+### PREWHERE Cláusula {#prewhere-clause}
+
+Esta cláusula tiene el mismo significado que la cláusula where. La diferencia radica en qué datos se leen de la tabla.
+Al usar PREWHERE, primero solo se leen las columnas necesarias para ejecutar PREWHERE. Luego se leen las otras columnas que son necesarias para ejecutar la consulta, pero solo aquellos bloques donde la expresión PREWHERE es verdadera.
+
+Tiene sentido usar PREWHERE si hay condiciones de filtración utilizadas por una minoría de las columnas de la consulta, pero que proporcionan una filtración de datos fuerte. Esto reduce el volumen de datos a leer.
+
+Por ejemplo, es útil escribir PREWHERE para consultas que extraen un gran número de columnas, pero que solo tienen filtración para unas pocas columnas.
+
+PREWHERE solo es compatible con tablas de la `*MergeTree` familia.
+
+Una consulta puede especificar simultáneamente PREWHERE y WHERE. En este caso, PREWHERE precede WHERE.
+
+Si el ‘optimize\_move\_to\_prewhere’ La configuración se establece en 1 y PREWHERE se omite, el sistema utiliza la heurística para mover automáticamente partes de expresiones de WHERE a PREWHERE.
+
+### GRUPO POR Cláusula {#select-group-by-clause}
+
+Esta es una de las partes más importantes de un DBMS orientado a columnas.
+
+Si hay una cláusula GROUP BY, debe contener una lista de expresiones. Cada expresión se mencionará aquí como una “key”.
+Todas las expresiones de las cláusulas SELECT, HAVING y ORDER BY deben calcularse a partir de claves o de funciones agregadas. En otras palabras, cada columna seleccionada de la tabla debe usarse en claves o dentro de funciones agregadas.
+
+Si una consulta solo contiene columnas de tabla dentro de funciones agregadas, se puede omitir la cláusula GROUP BY y se asume la agregación mediante un conjunto vacío de claves.
+
+Ejemplo:
+
+``` sql
+SELECT
+    count(),
+    median(FetchTiming > 60 ? 60 : FetchTiming),
+    count() - sum(Refresh)
+FROM hits
+```
+
+Sin embargo, a diferencia del SQL estándar, si la tabla no tiene ninguna fila (o no hay ninguna, o no hay ninguna después de usar WHERE para filtrar), se devuelve un resultado vacío, y no el resultado de una de las filas que contienen los valores iniciales de las funciones agregadas.
+
+A diferencia de MySQL (y conforme a SQL estándar), no puede obtener algún valor de alguna columna que no esté en una función clave o agregada (excepto expresiones constantes). Para evitar esto, puede usar el ‘any’ función de agregado (obtener el primer valor encontrado) o ‘min/max’.
+
+Ejemplo:
+
+``` sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    count(),
+    any(Title) AS title -- getting the first occurred page header for each domain.
+FROM hits
+GROUP BY domain
+```
+
+Para cada valor de clave diferente encontrado, GROUP BY calcula un conjunto de valores de función agregados.
+
+GROUP BY no se admite para columnas de matriz.
+
+No se puede especificar una constante como argumentos para funciones agregadas. Ejemplo: sum(1). En lugar de esto, puedes deshacerte de la constante. Ejemplo: `count()`.
+
+#### Procesamiento NULL {#null-processing}
+
+Para agrupar, ClickHouse interpreta [NULL](../syntax.md) como valor, y `NULL=NULL`.
+
+Aquí hay un ejemplo para mostrar lo que esto significa.
+
+Supongamos que tienes esta tabla:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+Consulta `SELECT sum(x), y FROM t_null_big GROUP BY y` resultados en:
+
+``` text
+┌─sum(x)─┬────y─┐
+│      4 │    2 │
+│      3 │    3 │
+│      5 │ ᴺᵁᴸᴸ │
+└────────┴──────┘
+```
+
+Se puede ver que `GROUP BY` para `y = NULL` resumir `x` como si `NULL` es este valor.
+
+Si pasa varias teclas a `GROUP BY` el resultado le dará todas las combinaciones de la selección, como si `NULL` fueron un valor específico.
+
+#### CON TOTALS Modificador {#with-totals-modifier}
+
+Si se especifica el modificador WITH TOTALS, se calculará otra fila. Esta fila tendrá columnas clave que contienen valores predeterminados (zeros o líneas vacías) y columnas de funciones agregadas con los valores calculados en todas las filas (el “total” valor).
+
+Esta fila adicional se genera en formatos JSON \*, TabSeparated \* y Pretty \*, por separado de las otras filas. En los otros formatos, esta fila no se genera.
+
+En los formatos JSON\*, esta fila se muestra como una ‘totals’ campo. En los formatos TabSeparated\*, la fila viene después del resultado principal, precedida por una fila vacía (después de los otros datos). En los formatos Pretty\*, la fila se muestra como una tabla separada después del resultado principal.
+
+`WITH TOTALS` se puede ejecutar de diferentes maneras cuando HAVING está presente. El comportamiento depende de la ‘totals\_mode’ configuración.
+Predeterminada, `totals_mode = 'before_having'`. En este caso, ‘totals’ se calcula en todas las filas, incluidas las que no pasan por HAVING y ‘max\_rows\_to\_group\_by’.
+
+Las otras alternativas incluyen solo las filas que pasan por HAVING en ‘totals’, y comportarse de manera diferente con el ajuste `max_rows_to_group_by` y `group_by_overflow_mode = 'any'`.
+
+`after_having_exclusive` – Don't include rows that didn't pass through `max_rows_to_group_by`. En otras palabras, ‘totals’ tendrá menos o el mismo número de filas que si `max_rows_to_group_by` se omitieron.
+
+`after_having_inclusive` – Include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ en ‘totals’. En otras palabras, ‘totals’ tendrá más o el mismo número de filas como lo haría si `max_rows_to_group_by` se omitieron.
+
+`after_having_auto` – Count the number of rows that passed through HAVING. If it is more than a certain amount (by default, 50%), include all the rows that didn't pass through ‘max\_rows\_to\_group\_by’ en ‘totals’. De lo contrario, no los incluya.
+
+`totals_auto_threshold` – By default, 0.5. The coefficient for `after_having_auto`.
+
+Si `max_rows_to_group_by` y `group_by_overflow_mode = 'any'` no se utilizan, todas las variaciones de `after_having` son los mismos, y se puede utilizar cualquiera de ellos (por ejemplo, `after_having_auto`).
+
+Puede usar WITH TOTALS en subconsultas, incluidas las subconsultas en la cláusula JOIN (en este caso, se combinan los valores totales respectivos).
+
+#### GROUP BY en memoria externa {#select-group-by-in-external-memory}
+
+Puede habilitar el volcado de datos temporales en el disco para restringir el uso de memoria durante `GROUP BY`.
+El [max\_bytes\_before\_external\_group\_by](../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) determina el umbral de consumo de RAM para el dumping `GROUP BY` datos temporales al sistema de archivos. Si se establece en 0 (el valor predeterminado), está deshabilitado.
+
+Cuando se utiliza `max_bytes_before_external_group_by`, le recomendamos que establezca `max_memory_usage` aproximadamente el doble de alto. Esto es necesario porque hay dos etapas para la agregación: leer la fecha y formar datos intermedios (1) y fusionar los datos intermedios (2). El volcado de datos al sistema de archivos solo puede ocurrir durante la etapa 1. Si los datos temporales no se volcaron, entonces la etapa 2 puede requerir hasta la misma cantidad de memoria que en la etapa 1.
+
+Por ejemplo, si [Método de codificación de datos:](../../operations/settings/settings.md#settings_max_memory_usage) se estableció en 10000000000 y desea usar agregación externa, tiene sentido establecer `max_bytes_before_external_group_by` a 10000000000, y max\_memory\_usage a 20000000000. Cuando se activa la agregación externa (si hubo al menos un volcado de datos temporales), el consumo máximo de RAM es solo un poco más que `max_bytes_before_external_group_by`.
+
+Con el procesamiento de consultas distribuidas, la agregación externa se realiza en servidores remotos. Para que el servidor solicitante use solo una pequeña cantidad de RAM, establezca `distributed_aggregation_memory_efficient` a 1.
+
+Al fusionar datos en el disco, así como al fusionar resultados de servidores remotos cuando `distributed_aggregation_memory_efficient` la configuración está habilitada, consume hasta `1/256 * the_number_of_threads` de la cantidad total de RAM.
+
+Cuando la agregación externa está habilitada, si `max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
+
+Si usted tiene un `ORDER BY` con un `LIMIT` despues `GROUP BY`, entonces la cantidad de RAM usada depende de la cantidad de datos en `LIMIT`, no en toda la tabla. Pero si el `ORDER BY` no tiene `LIMIT`, no se olvide de habilitar la clasificación externa (`max_bytes_before_external_sort`).
+
+### LIMITAR POR Cláusula {#limit-by-clause}
+
+Una consulta con el `LIMIT n BY expressions` cláusula selecciona la primera `n` para cada valor distinto de `expressions`. La clave para `LIMIT BY` puede contener cualquier número de [expresiones](../syntax.md#syntax-expressions).
+
+ClickHouse admite la siguiente sintaxis:
+
+-   `LIMIT [offset_value, ]n BY expressions`
+-   `LIMIT n OFFSET offset_value BY expressions`
+
+Durante el procesamiento de consultas, ClickHouse selecciona los datos ordenados por clave de ordenación. La clave de ordenación se establece explícitamente utilizando un [ORDER BY](#select-order-by) cláusula o implícitamente como una propiedad del motor de tablas. Entonces se aplica ClickHouse `LIMIT n BY expressions` y devuelve la primera `n` filas para cada combinación distinta de `expressions`. Si `OFFSET` se especifica, a continuación, para cada bloque de datos que pertenece a una combinación distinta de `expressions`, ClickHouse salta `offset_value` número de filas desde el principio del bloque y devuelve un máximo de `n` filas como resultado. Si `offset_value` es mayor que el número de filas en el bloque de datos, ClickHouse devuelve cero filas del bloque.
+
+`LIMIT BY` no está relacionado con `LIMIT`. Ambos se pueden usar en la misma consulta.
+
+**Ejemplos**
+
+Tabla de muestra:
+
+``` sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by values(1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+Consulta:
+
+``` sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
+```
+
+``` text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+``` sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
+```
+
+``` text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+El `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query devuelve el mismo resultado.
+
+La siguiente consulta devuelve las 5 referencias principales para cada `domain, device_type` par con un máximo de 100 filas en total (`LIMIT n BY + LIMIT`).
+
+``` sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    domainWithoutWWW(REFERRER_URL) AS referrer,
+    device_type,
+    count() cnt
+FROM hits
+GROUP BY domain, referrer, device_type
+ORDER BY cnt DESC
+LIMIT 5 BY domain, device_type
+LIMIT 100
+```
+
+### Cláusula HAVING {#having-clause}
+
+Permite filtrar el resultado recibido después de GROUP BY, similar a la cláusula WHERE.
+WHERE y HAVING difieren en que WHERE se realiza antes de la agregación (GROUP BY), mientras que HAVING se realiza después de ella.
+Si no se realiza la agregación, no se puede usar HAVING.
+
+### ORDEN POR CLÁUSULA {#select-order-by}
+
+La cláusula ORDER BY contiene una lista de expresiones, a las que se puede asignar DESC o ASC (la dirección de clasificación). Si no se especifica la dirección, se supone ASC. ASC se ordena en orden ascendente y DESC en orden descendente. La dirección de ordenación se aplica a una sola expresión, no a toda la lista. Ejemplo: `ORDER BY Visits DESC, SearchPhrase`
+
+Para ordenar por valores de cadena, puede especificar la intercalación (comparación). Ejemplo: `ORDER BY SearchPhrase COLLATE 'tr'` - para ordenar por palabra clave en orden ascendente, utilizando el alfabeto turco, insensible a mayúsculas y minúsculas, suponiendo que las cadenas están codificadas en UTF-8. COLLATE se puede especificar o no para cada expresión en ORDER BY de forma independiente. Si se especifica ASC o DESC, se especifica COLLATE después de él. Cuando se usa COLLATE, la clasificación siempre distingue entre mayúsculas y minúsculas.
+
+Solo recomendamos usar COLLATE para la clasificación final de un pequeño número de filas, ya que la clasificación con COLLATE es menos eficiente que la clasificación normal por bytes.
+
+Las filas que tienen valores idénticos para la lista de expresiones de clasificación se generan en un orden arbitrario, que también puede ser no determinista (diferente cada vez).
+Si se omite la cláusula ORDER BY, el orden de las filas tampoco está definido y también puede ser no determinista.
+
+`NaN` y `NULL` orden de clasificación:
+
+-   Con el modificador `NULLS FIRST` — First `NULL`, entonces `NaN`, luego otros valores.
+-   Con el modificador `NULLS LAST` — First the values, then `NaN`, entonces `NULL`.
+-   Default — The same as with the `NULLS LAST` modificador.
+
+Ejemplo:
+
+Para la mesa
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    2 │
+│ 1 │  nan │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │  nan │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+Ejecute la consulta `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` conseguir:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 1 │  nan │
+│ 6 │  nan │
+│ 2 │    2 │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+Cuando se ordenan los números de coma flotante, los NaN están separados de los otros valores. Independientemente del orden de clasificación, los NaN vienen al final. En otras palabras, para la clasificación ascendente se colocan como si fueran más grandes que todos los demás números, mientras que para la clasificación descendente se colocan como si fueran más pequeños que el resto.
+
+Se usa menos RAM si se especifica un LIMIT lo suficientemente pequeño además de ORDER BY. De lo contrario, la cantidad de memoria gastada es proporcional al volumen de datos para clasificar. Para el procesamiento de consultas distribuidas, si se omite GROUP BY, la ordenación se realiza parcialmente en servidores remotos y los resultados se combinan en el servidor solicitante. Esto significa que para la ordenación distribuida, el volumen de datos a ordenar puede ser mayor que la cantidad de memoria en un único servidor.
+
+Si no hay suficiente RAM, es posible realizar la clasificación en la memoria externa (creando archivos temporales en un disco). Utilice el ajuste `max_bytes_before_external_sort` para este propósito. Si se establece en 0 (el valor predeterminado), la ordenación externa está deshabilitada. Si está habilitada, cuando el volumen de datos a ordenar alcanza el número especificado de bytes, los datos recopilados se ordenan y se vuelcan en un archivo temporal. Después de leer todos los datos, todos los archivos ordenados se fusionan y se generan los resultados. Los archivos se escriben en el directorio /var/lib/clickhouse/tmp/ en la configuración (de forma predeterminada, pero puede ‘tmp\_path’ parámetro para cambiar esta configuración).
+
+La ejecución de una consulta puede usar más memoria que ‘max\_bytes\_before\_external\_sort’. Por este motivo, esta configuración debe tener un valor significativamente menor que ‘max\_memory\_usage’. Como ejemplo, si su servidor tiene 128 GB de RAM y necesita ejecutar una sola consulta, establezca ‘max\_memory\_usage’ de hasta 100 GB, y ‘max\_bytes\_before\_external\_sort’ para 80 GB.
+
+La clasificación externa funciona con mucha menos eficacia que la clasificación en RAM.
+
+### SELECT Cláusula {#select-select}
+
+[Expresiones](../syntax.md#syntax-expressions) especificado en el `SELECT` cláusula se calculan después de que todas las operaciones en las cláusulas descritas anteriormente hayan finalizado. Estas expresiones funcionan como si se aplicaran a filas separadas en el resultado. Si las expresiones en el `SELECT` cláusula contiene funciones agregadas, a continuación, ClickHouse procesa funciones agregadas y expresiones utilizadas como sus argumentos durante el [GROUP BY](#select-group-by-clause) agregación.
+
+Si desea incluir todas las columnas en el resultado, use el asterisco (`*`) simbolo. Por ejemplo, `SELECT * FROM ...`.
+
+Para hacer coincidir algunas columnas en el resultado con un [Re2](https://en.wikipedia.org/wiki/RE2_(software)) expresión regular, puede utilizar el `COLUMNS` expresion.
+
+``` sql
+COLUMNS('regexp')
+```
+
+Por ejemplo, considere la tabla:
+
+``` sql
+CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
+```
+
+La siguiente consulta selecciona datos de todas las columnas que contienen `a` símbolo en su nombre.
+
+``` sql
+SELECT COLUMNS('a') FROM col_names
+```
+
+``` text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+Las columnas seleccionadas no se devuelven en orden alfabético.
+
+Puede utilizar múltiples `COLUMNS` expresiones en una consulta y aplicarles funciones.
+
+Por ejemplo:
+
+``` sql
+SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
+```
+
+``` text
+┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
+│  1 │  1 │  1 │ Int8           │
+└────┴────┴────┴────────────────┘
+```
+
+Cada columna devuelta por el `COLUMNS` expresión se pasa a la función como un argumento separado. También puede pasar otros argumentos a la función si los admite. Tenga cuidado al usar funciones. Si una función no admite la cantidad de argumentos que le ha pasado, ClickHouse lanza una excepción.
+
+Por ejemplo:
+
+``` sql
+SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
+```
+
+``` text
+Received exception from server (version 19.14.1):
+Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus doesn't match: passed 3, should be 2.
+```
+
+En este ejemplo, `COLUMNS('a')` devuelve dos columnas: `aa` y `ab`. `COLUMNS('c')` devuelve el `bc` columna. El `+` el operador no puede aplicar a 3 argumentos, por lo que ClickHouse lanza una excepción con el mensaje relevante.
+
+Columnas que coinciden con el `COLUMNS` expresión puede tener diferentes tipos de datos. Si `COLUMNS` no coincide con ninguna columna y es la única expresión en `SELECT`, ClickHouse lanza una excepción.
+
+### Cláusula DISTINCT {#select-distinct}
+
+Si se especifica DISTINCT, sólo quedará una sola fila de todos los conjuntos de filas totalmente coincidentes en el resultado.
+El resultado será el mismo que si GROUP BY se especificara en todos los campos especificados en SELECT sin funciones agregadas. Pero hay varias diferencias con GROUP BY:
+
+-   DISTINCT se puede aplicar junto con GROUP BY.
+-   Cuando ORDER BY se omite y se define LIMIT, la consulta deja de ejecutarse inmediatamente después de leer el número necesario de filas diferentes.
+-   Los bloques de datos se generan a medida que se procesan, sin esperar a que finalice la ejecución de toda la consulta.
+
+DISTINCT no se admite si SELECT tiene al menos una columna de matriz.
+
+`DISTINCT` trabaja con [NULL](../syntax.md) como si `NULL` Era un valor específico, y `NULL=NULL`. En otras palabras, en el `DISTINCT` resultados, diferentes combinaciones con `NULL` sólo ocurren una vez.
+
+ClickHouse admite el uso de `DISTINCT` y `ORDER BY` para diferentes columnas en una consulta. El `DISTINCT` cláusula se ejecuta antes de `ORDER BY` clausula.
+
+Tabla de ejemplo:
+
+``` text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+Al seleccionar datos con el `SELECT DISTINCT a FROM t1 ORDER BY b ASC` consulta, obtenemos el siguiente resultado:
+
+``` text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+Si cambiamos la dirección de clasificación `SELECT DISTINCT a FROM t1 ORDER BY b DESC`, obtenemos el siguiente resultado:
+
+``` text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Fila `2, 4` se cortó antes de clasificar.
+
+Tenga en cuenta esta especificidad de implementación al programar consultas.
+
+### Cláusula LIMIT {#limit-clause}
+
+`LIMIT m` permite seleccionar la primera `m` filas del resultado.
+
+`LIMIT n, m` permite seleccionar la primera `m` el resultado después de omitir la primera `n` filas. El `LIMIT m OFFSET n` sintaxis también es compatible.
+
+`n` y `m` deben ser enteros no negativos.
+
+Si no hay una `ORDER BY` cláusula que ordena explícitamente los resultados, el resultado puede ser arbitrario y no determinista.
+
+### UNION ALL Cláusula {#union-all-clause}
+
+Puede utilizar UNION ALL para combinar cualquier número de consultas. Ejemplo:
+
+``` sql
+SELECT CounterID, 1 AS table, toInt64(count()) AS c
+    FROM test.hits
+    GROUP BY CounterID
+
+UNION ALL
+
+SELECT CounterID, 2 AS table, sum(Sign) AS c
+    FROM test.visits
+    GROUP BY CounterID
+    HAVING c > 0
+```
+
+Solo se admite UNION ALL. La UNIÓN regular (UNION DISTINCT) no es compatible. Si necesita UNION DISTINCT, puede escribir SELECT DISTINCT desde una subconsulta que contenga UNION ALL.
+
+Las consultas que forman parte de UNION ALL se pueden ejecutar simultáneamente y sus resultados se pueden mezclar.
+
+La estructura de los resultados (el número y el tipo de columnas) debe coincidir con las consultas. Pero los nombres de columna pueden diferir. En este caso, los nombres de columna para el resultado final se tomarán de la primera consulta. La fundición de tipo se realiza para uniones. Por ejemplo, si dos consultas que se combinan tienen el mismo campo-`Nullable` y `Nullable` tipos de un tipo compatible, el resultado `UNION ALL` tiene una `Nullable` campo de tipo.
+
+Las consultas que forman parte de UNION ALL no se pueden encerrar entre paréntesis. ORDER BY y LIMIT se aplican a consultas separadas, no al resultado final. Si necesita aplicar una conversión al resultado final, puede colocar todas las consultas con UNION ALL en una subconsulta en la cláusula FROM.
+
+### INTO OUTFILE Cláusula {#into-outfile-clause}
+
+Añadir el `INTO OUTFILE filename` cláusula (donde filename es un literal de cadena) para redirigir la salida de la consulta al archivo especificado.
+A diferencia de MySQL, el archivo se crea en el lado del cliente. La consulta fallará si ya existe un archivo con el mismo nombre de archivo.
+Esta funcionalidad está disponible en el cliente de línea de comandos y clickhouse-local (una consulta enviada a través de la interfaz HTTP fallará).
+
+El formato de salida predeterminado es TabSeparated (el mismo que en el modo de lote de cliente de línea de comandos).
+
+### FORMAT Cláusula {#format-clause}
+
+Especificar ‘FORMAT format’ para obtener datos en cualquier formato especificado.
+Puede usar esto por conveniencia o para crear volcados.
+Para obtener más información, consulte la sección “Formats”.
+Si se omite la cláusula FORMAT, se utiliza el formato predeterminado, que depende tanto de la configuración como de la interfaz utilizada para acceder a la base de datos. Para la interfaz HTTP y el cliente de línea de comandos en modo por lotes, el formato predeterminado es TabSeparated. Para el cliente de línea de comandos en modo interactivo, el formato predeterminado es PrettyCompact (tiene tablas atractivas y compactas).
+
+Cuando se utiliza el cliente de línea de comandos, los datos se pasan al cliente en un formato interno eficiente. El cliente interpreta independientemente la cláusula FORMAT de la consulta y da formato a los datos en sí (aliviando así la red y el servidor de la carga).
+
+### IN Operadores {#select-in-operators}
+
+El `IN`, `NOT IN`, `GLOBAL IN`, y `GLOBAL NOT IN` están cubiertos por separado, ya que su funcionalidad es bastante rica.
+
+El lado izquierdo del operador es una sola columna o una tupla.
+
+Ejemplos:
+
+``` sql
+SELECT UserID IN (123, 456) FROM ...
+SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
+```
+
+Si el lado izquierdo es una sola columna que está en el índice, y el lado derecho es un conjunto de constantes, el sistema usa el índice para procesar la consulta.
+
+Don't list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section “External data for query processing”), luego use una subconsulta.
+
+El lado derecho del operador puede ser un conjunto de expresiones constantes, un conjunto de tuplas con expresiones constantes (mostradas en los ejemplos anteriores) o el nombre de una tabla de base de datos o subconsulta SELECT entre paréntesis.
+
+Si el lado derecho del operador es el nombre de una tabla (por ejemplo, `UserID IN users`), esto es equivalente a la subconsulta `UserID IN (SELECT * FROM users)`. Úselo cuando trabaje con datos externos que se envían junto con la consulta. Por ejemplo, la consulta se puede enviar junto con un conjunto de ID de usuario ‘users’ tabla temporal, que debe ser filtrada.
+
+Si el lado derecho del operador es un nombre de tabla que tiene el motor Set (un conjunto de datos preparado que siempre está en RAM), el conjunto de datos no se volverá a crear para cada consulta.
+
+La subconsulta puede especificar más de una columna para filtrar tuplas.
+Ejemplo:
+
+``` sql
+SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
+```
+
+Las columnas a la izquierda y a la derecha del operador IN deben tener el mismo tipo.
+
+El operador IN y la subconsulta pueden aparecer en cualquier parte de la consulta, incluidas las funciones agregadas y las funciones lambda.
+Ejemplo:
+
+``` sql
+SELECT
+    EventDate,
+    avg(UserID IN
+    (
+        SELECT UserID
+        FROM test.hits
+        WHERE EventDate = toDate('2014-03-17')
+    )) AS ratio
+FROM test.hits
+GROUP BY EventDate
+ORDER BY EventDate ASC
+```
+
+``` text
+┌──EventDate─┬────ratio─┐
+│ 2014-03-17 │        1 │
+│ 2014-03-18 │ 0.807696 │
+│ 2014-03-19 │ 0.755406 │
+│ 2014-03-20 │ 0.723218 │
+│ 2014-03-21 │ 0.697021 │
+│ 2014-03-22 │ 0.647851 │
+│ 2014-03-23 │ 0.648416 │
+└────────────┴──────────┘
+```
+
+Para cada día después del 17 de marzo, cuente el porcentaje de páginas vistas realizadas por los usuarios que visitaron el sitio el 17 de marzo.
+Una subconsulta en la cláusula IN siempre se ejecuta una sola vez en un único servidor. No hay subconsultas dependientes.
+
+#### Procesamiento NULL {#null-processing-1}
+
+Durante el procesamiento de la solicitud, el operador IN asume que el resultado de una operación [NULL](../syntax.md) siempre es igual a `0`, independientemente de si `NULL` está en el lado derecho o izquierdo del operador. `NULL` Los valores no se incluyen en ningún conjunto de datos, no se corresponden entre sí y no se pueden comparar.
+
+Aquí hay un ejemplo con el `t_null` tabla:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    3 │
+└───┴──────┘
+```
+
+Ejecución de la consulta `SELECT x FROM t_null WHERE y IN (NULL,3)` da el siguiente resultado:
+
+``` text
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+Se puede ver que la fila en la que `y = NULL` se expulsa de los resultados de la consulta. Esto se debe a que ClickHouse no puede decidir si `NULL` está incluido en el `(NULL,3)` conjunto, devuelve `0` como resultado de la operación, y `SELECT` excluye esta fila de la salida final.
+
+``` sql
+SELECT y IN (NULL, 3)
+FROM t_null
+```
+
+``` text
+┌─in(y, tuple(NULL, 3))─┐
+│                     0 │
+│                     1 │
+└───────────────────────┘
+```
+
+#### Subconsultas distribuidas {#select-distributed-subqueries}
+
+Hay dos opciones para IN-s con subconsultas (similar a JOINs): normal `IN` / `JOIN` y `GLOBAL IN` / `GLOBAL JOIN`. Se diferencian en cómo se ejecutan para el procesamiento de consultas distribuidas.
+
+!!! attention "Atención"
+    Recuerde que los algoritmos descritos a continuación pueden funcionar de manera diferente dependiendo de la [configuración](../../operations/settings/settings.md) `distributed_product_mode` configuración.
+
+Cuando se utiliza el IN normal, la consulta se envía a servidores remotos, y cada uno de ellos ejecuta las subconsultas en el `IN` o `JOIN` clausula.
+
+Cuando se utiliza `GLOBAL IN` / `GLOBAL JOINs`, primero todas las subconsultas se ejecutan para `GLOBAL IN` / `GLOBAL JOINs`, y los resultados se recopilan en tablas temporales. A continuación, las tablas temporales se envían a cada servidor remoto, donde las consultas se ejecutan utilizando estos datos temporales.
+
+Para una consulta no distribuida, utilice el `IN` / `JOIN`.
+
+Tenga cuidado al usar subconsultas en el `IN` / `JOIN` para el procesamiento de consultas distribuidas.
+
+Veamos algunos ejemplos. Supongamos que cada servidor del clúster tiene un **local\_table**. Cada servidor también tiene un **distributed\_table** mesa con el **Distribuido** tipo, que mira todos los servidores del clúster.
+
+Para una consulta al **distributed\_table**, la consulta se enviará a todos los servidores remotos y se ejecutará en ellos usando el **local\_table**.
+
+Por ejemplo, la consulta
+
+``` sql
+SELECT uniq(UserID) FROM distributed_table
+```
+
+se enviará a todos los servidores remotos como
+
+``` sql
+SELECT uniq(UserID) FROM local_table
+```
+
+y ejecutar en cada uno de ellos en paralelo, hasta que llegue a la etapa donde se pueden combinar resultados intermedios. Luego, los resultados intermedios se devolverán al servidor solicitante y se fusionarán en él, y el resultado final se enviará al cliente.
+
+Ahora examinemos una consulta con IN:
+
+``` sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+-   Cálculo de la intersección de audiencias de dos sitios.
+
+Esta consulta se enviará a todos los servidores remotos como
+
+``` sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
+```
+
+En otras palabras, los datos establecidos en la cláusula IN se recopilarán en cada servidor de forma independiente, solo a través de los datos que se almacenan localmente en cada uno de los servidores.
+
+Esto funcionará correctamente y de manera óptima si está preparado para este caso y ha distribuido datos en los servidores de clúster de modo que los datos de un único ID de usuario residen completamente en un único servidor. En este caso, todos los datos necesarios estarán disponibles localmente en cada servidor. De lo contrario, el resultado será inexacto. Nos referimos a esta variación de la consulta como “local IN”.
+
+Para corregir cómo funciona la consulta cuando los datos se distribuyen aleatoriamente entre los servidores de clúster, puede especificar **distributed\_table** dentro de una subconsulta. La consulta se vería así:
+
+``` sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+Esta consulta se enviará a todos los servidores remotos como
+
+``` sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+La subconsulta comenzará a ejecutarse en cada servidor remoto. Dado que la subconsulta utiliza una tabla distribuida, la subconsulta que se encuentra en cada servidor remoto se reenviará a cada servidor remoto como
+
+``` sql
+SELECT UserID FROM local_table WHERE CounterID = 34
+```
+
+Por ejemplo, si tiene un clúster de 100 servidores, la ejecución de toda la consulta requerirá 10.000 solicitudes elementales, lo que generalmente se considera inaceptable.
+
+En tales casos, siempre debe usar GLOBAL IN en lugar de IN. Veamos cómo funciona para la consulta
+
+``` sql
+SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
+```
+
+El servidor del solicitante ejecutará la subconsulta
+
+``` sql
+SELECT UserID FROM distributed_table WHERE CounterID = 34
+```
+
+y el resultado se colocará en una tabla temporal en la RAM. A continuación, la solicitud se enviará a cada servidor remoto como
+
+``` sql
+SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
+```
+
+y la tabla temporal `_data1` se enviará a cada servidor remoto con la consulta (el nombre de la tabla temporal está definido por la implementación).
+
+Esto es más óptimo que usar el IN normal. Sin embargo, tenga en cuenta los siguientes puntos:
+
+1.  Al crear una tabla temporal, los datos no se hacen únicos. Para reducir el volumen de datos transmitidos a través de la red, especifique DISTINCT en la subconsulta. (No necesita hacer esto para un IN normal.)
+2.  La tabla temporal se enviará a todos los servidores remotos. La transmisión no tiene en cuenta la topología de red. Por ejemplo, si 10 servidores remotos residen en un centro de datos que es muy remoto en relación con el servidor solicitante, los datos se enviarán 10 veces a través del canal al centro de datos remoto. Intente evitar grandes conjuntos de datos cuando use GLOBAL IN.
+3.  Al transmitir datos a servidores remotos, las restricciones en el ancho de banda de la red no son configurables. Puede sobrecargar la red.
+4.  Intente distribuir datos entre servidores para que no necesite usar GLOBAL IN de forma regular.
+5.  Si necesita utilizar GLOBAL IN con frecuencia, planifique la ubicación del clúster ClickHouse para que un único grupo de réplicas resida en no más de un centro de datos con una red rápida entre ellos, de modo que una consulta se pueda procesar completamente dentro de un único centro de datos.
+
+También tiene sentido especificar una tabla local en el `GLOBAL IN` cláusula, en caso de que esta tabla local solo esté disponible en el servidor solicitante y desee usar datos de ella en servidores remotos.
+
+### Valores extremos {#extreme-values}
+
+Además de los resultados, también puede obtener valores mínimos y máximos para las columnas de resultados. Para hacer esto, establezca el **extremo** a 1. Los mínimos y máximos se calculan para tipos numéricos, fechas y fechas con horas. Para otras columnas, se generan los valores predeterminados.
+
+An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in `JSON*`, `TabSeparated*`, y `Pretty*` [formato](../../interfaces/formats.md), separado de las otras filas. No se emiten para otros formatos.
+
+En `JSON*` los valores extremos se emiten en un formato separado. ‘extremes’ campo. En `TabSeparated*` , la fila viene después del resultado principal, y después de ‘totals’ si está presente. Está precedido por una fila vacía (después de los otros datos). En `Pretty*` formatea, la fila se muestra como una tabla separada después del resultado principal, y después de `totals` si está presente.
+
+Los valores extremos se calculan para las filas anteriores `LIMIT`, pero después `LIMIT BY`. Sin embargo, cuando se usa `LIMIT offset, size`, las filas antes `offset` están incluidos en `extremes`. En las solicitudes de secuencia, el resultado también puede incluir un pequeño número de filas que pasaron por `LIMIT`.
+
+### Nota {#notes}
+
+El `GROUP BY` y `ORDER BY` las cláusulas no admiten argumentos posicionales. Esto contradice MySQL, pero se ajusta al SQL estándar.
+Por ejemplo, `GROUP BY 1, 2` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).
+
+Puedes usar sinónimos (`AS` aliases) en cualquier parte de una consulta.
+
+Puede poner un asterisco en cualquier parte de una consulta en lugar de una expresión. Cuando se analiza la consulta, el asterisco se expande a una lista de todas las columnas de la tabla `MATERIALIZED` y `ALIAS` columna). Solo hay unos pocos casos en los que se justifica el uso de un asterisco:
+
+-   Al crear un volcado de tabla.
+-   Para tablas que contienen solo unas pocas columnas, como las tablas del sistema.
+-   Para obtener información sobre qué columnas están en una tabla. En este caso, establezca `LIMIT 1`. Pero es mejor usar el `DESC TABLE` consulta.
+-   Cuando hay una filtración fuerte en un pequeño número de columnas usando `PREWHERE`.
+-   En subconsultas (ya que las columnas que no son necesarias para la consulta externa están excluidas de las subconsultas).
+
+En todos los demás casos, no recomendamos usar el asterisco, ya que solo le da los inconvenientes de un DBMS columnar en lugar de las ventajas. En otras palabras, no se recomienda usar el asterisco.
+
+[Artículo Original](https://clickhouse.tech/docs/en/query_language/select/) <!--hide-->
