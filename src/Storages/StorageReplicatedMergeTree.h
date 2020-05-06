@@ -307,7 +307,7 @@ private:
       */
     void createReplica();
 
-    /** Remove replica by replica_name
+    /** Remove replica by name
      */
     void removeReplica(const String & replica);
 
