@@ -87,12 +87,15 @@ def insert(node, table_name, chunk=1000, col_names=None, iterations=1, ignore_ex
             if not ignore_exception:
                 raise
 
-def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False, poll=None):
+def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False, slow=False, poll=None):
     for i in range(iterations):
         start_time = time.time()
         while True:
             try:
-                r = node.query("SELECT count() FROM {} WHERE {} % 1000 > 0".format(table_name, col_name))
+                if slow:
+                    r = node.query("SELECT count() FROM (SELECT num2, sleepEachRow(0.5) FROM {} WHERE {} % 1000 > 0)".format(table_name, col_name))
+                else:
+                    r = node.query("SELECT count() FROM {} WHERE {} % 1000 > 0".format(table_name, col_name))
                 if expected_result:
                     if r != expected_result and poll and time.time() - start_time < poll:
                         continue
@@ -254,6 +257,35 @@ def test_rename_with_parallel_slow_insert(started_cluster):
         select(node1, table_name, "num2", "11089\n")
         select(node2, table_name, "num2", "11089\n", poll=30)
         select(node3, table_name, "num2", "11089\n", poll=30)
+    finally:
+        drop_table(nodes, table_name)
+
+def test_rename_with_parallel_slow_select(started_cluster):
+    table_name = "test_rename_with_parallel_slow_select"
+    drop_table(nodes, table_name)
+    try:
+        create_table(nodes, table_name)
+        insert(node1, table_name, 1000)
+
+        p = Pool(15)
+        tasks = []
+
+        tasks.append(p.apply_async(select, (node1, table_name, "num2", "999\n", 1, True, True)))
+        time.sleep(0.25)
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2")))
+
+        for task in tasks:
+            task.get(timeout=240)
+
+        insert(node1, table_name, 100, ["num", "foo2"])
+
+        # rename column back to original
+        rename_column(node1, table_name, "foo2", "num2")
+
+        # check that select still works
+        select(node1, table_name, "num2", "1099\n")
+        select(node2, table_name, "num2", "1099\n", poll=30)
+        select(node3, table_name, "num2", "1099\n", poll=30)
     finally:
         drop_table(nodes, table_name)
 
