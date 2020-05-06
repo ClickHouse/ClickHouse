@@ -577,12 +577,7 @@ bool BucketsSinglePolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
     {
         return a.r.x() < b.r.x();
     }
-    if (a.r.y() != b.r.y())
-    {
-        return a.r.y() < b.r.y();
-    }
-
-    return true;
+    return a.r.y() < b.r.y();
 }
 
 bool BucketsSinglePolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
@@ -602,12 +597,7 @@ bool BucketsSinglePolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
     {
         return a.l.x() < b.l.x();
     }
-    if (a.l.y() != b.l.y())
-    {
-        return a.l.y() < b.l.y();
-    }
-
-    return true;
+    return a.l.y() < b.l.y();
 }
 
 bool BucketsSinglePolygonIndex::find(const Point & point) const
@@ -625,10 +615,6 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
     {
         return false;
     }
-
-    /** point is considired inside when ray down from point crosses odd number of edges */
-    std::vector<size_t> intersections;
-    intersections.reserve(10);
 
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
