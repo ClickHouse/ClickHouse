@@ -9,11 +9,16 @@ SELECT * FROM pk_func ORDER BY toDate(d), ui LIMIT 5;
 
 DROP TABLE pk_func;
 
-CREATE TABLE pk_func(i UInt32) ENGINE = MergeTree ORDER BY -i;
-INSERT INTO pk_func SELECT number FROM numbers(1000000);
-INSERT INTO pk_func SELECT number FROM numbers(1000000);
-INSERT INTO pk_func SELECT number FROM numbers(1000000);
+CREATE TABLE nORX (`A` Int64, `B` Int64, `V` Int64) ENGINE = MergeTree ORDER BY (A, negate(B));
+INSERT INTO nORX SELECT 111, number, number FROM numbers(10000000);
 
-SELECT * FROM pk_func ORDER BY -i LIMIT 5;
+SELECT *
+FROM nORX
+WHERE B >= 1000
+ORDER BY
+    A ASC,
+    -B ASC
+LIMIT 3
+SETTINGS max_threads = 1;
 
-DROP TABLE pk_func;
+DROP TABLE nORX;
