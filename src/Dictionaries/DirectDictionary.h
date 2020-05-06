@@ -206,8 +206,6 @@ private:
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
-    PaddedPODArray<Key> getIds() const;
-
     const std::string database;
     const std::string name;
     const std::string full_name;
