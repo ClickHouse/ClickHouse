@@ -215,7 +215,7 @@ SELECT * FROM system.events LIMIT 5
 
 ## سیستم.بازداشت گرافیت {#system-graphite-retentions}
 
-حاوی اطلاعات در مورد پارامترها [لغزش \_ نمودار](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) که در جداول با استفاده [اطلاعات دقیق](../engines/table-engines/mergetree-family/graphitemergetree.md) موتورها.
+حاوی اطلاعات در مورد پارامترها [لغزش \_ نمودار](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) که در جداول با استفاده [اطلاعات دقیق](../engines/table-engines/mergetree-family/graphitemergetree.md) موتورها.
 
 ستونها:
 

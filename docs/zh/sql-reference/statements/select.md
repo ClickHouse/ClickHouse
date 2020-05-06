@@ -420,7 +420,7 @@ LIMIT 10
 
 JOIN的行为受 [join\_use\_nulls](../../operations/settings/settings.md) 的影响。当`join_use_nulls=1`时，`JOIN`的工作与SQL标准相同。
 
-如果JOIN的key是 [可为空](../../sql-reference/statements/select.md) 类型的字段，则其中至少一个存在 [NULL](../syntax.md) 值的key不会被关联。
+如果JOIN的key是 [可为空](../../sql-reference/statements/select.md) 类型的字段，则其中至少一个存在 [NULL](../syntax.md#null-literal) 值的key不会被关联。
 
 ### WHERE 子句 {#select-where}
 
@@ -488,7 +488,7 @@ GROUP BY子句会为遇到的每一个不同的key计算一组聚合函数的值
 
 #### NULL 处理 {#null-chu-li}
 
-对于GROUP BY子句，ClickHouse将 [NULL](../syntax.md) 解释为一个值，并且支持`NULL=NULL`。
+对于GROUP BY子句，ClickHouse将 [NULL](../syntax.md#null-literal) 解释为一个值，并且支持`NULL=NULL`。
 
 下面这个例子将说明这将意味着什么。
 
@@ -661,7 +661,7 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 
 在SELECT表达式中存在Array类型的列时，不能使用DISTINCT。
 
-`DISTINCT`可以与 [NULL](../syntax.md)一起工作，就好像`NULL`仅是一个特殊的值一样，并且`NULL=NULL`。换而言之，在`DISTINCT`的结果中，与`NULL`不同的组合仅能出现一次。
+`DISTINCT`可以与 [NULL](../syntax.md#null-literal)一起工作，就好像`NULL`仅是一个特殊的值一样，并且`NULL=NULL`。换而言之，在`DISTINCT`的结果中，与`NULL`不同的组合仅能出现一次。
 
 ### LIMIT 子句 {#limit-zi-ju}
 
@@ -779,7 +779,7 @@ IN子句中的子查询仅在单个服务器上运行一次。不能够是相关
 
 #### NULL 处理 {#null-chu-li-1}
 
-在处理中，IN操作符总是假定 [NULL](../syntax.md) 值的操作结果总是等于`0`，而不管`NULL`位于左侧还是右侧。`NULL`值不应该包含在任何数据集中，它们彼此不能够对应，并且不能够比较。
+在处理中，IN操作符总是假定 [NULL](../syntax.md#null-literal) 值的操作结果总是等于`0`，而不管`NULL`位于左侧还是右侧。`NULL`值不应该包含在任何数据集中，它们彼此不能够对应，并且不能够比较。
 
 下面的示例中有一个`t_null`表：
 

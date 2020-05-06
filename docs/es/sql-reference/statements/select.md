@@ -114,7 +114,7 @@ El `FROM` cláusula especifica la fuente de la que se leen los datos:
 
 -   Tabla
 -   Subconsultas
--   [Función de la tabla](../table-functions/index.md)
+-   [Función de la tabla](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` y el regular `JOIN` también se pueden incluir (ver más abajo).
 

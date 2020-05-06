@@ -79,7 +79,7 @@ Dışındaki tüm parametreler `sign` ve `version` içinde olduğu gibi aynı an
 
 </details>
 
-## Çökme {#table_engines-versionedcollapsingmergetree}
+## Çökme {#table_engines_versionedcollapsingmergetree}
 
 ### Veriler {#data}
 

@@ -7,7 +7,7 @@ toc_title: "\u30AB\u30B9\u30BF\u30E0\u5206\u5272\u30AD\u30FC"
 
 # カスタム分割キー {#custom-partitioning-key}
 
-パーティション分割は [MergeTree](mergetree.md) ファミリーテーブル [複製された](replication.md) テーブル）。 [マテリアライズ表示](../special/materializedview.md) に基づくMergeTreeテーブル支援を分割します。
+パーティション分割は [MergeTree](mergetree.md) ファミリーテーブル [複製された](replication.md) テーブル）。 [マテリアライズ表示](../special/materializedview.md#materializedview) に基づくMergeTreeテーブル支援を分割します。
 
 パーティションが論理的に組み合わせの記録テーブルに指定された評価のポイントになります。 パーティションは、月別、日別、またはイベントタイプ別など、任意の基準によって設定できます。 各パーティションは別に保存される簡単操作のデータです。 アクセス時のデータclickhouseの最小サブセットのパーティションは可能です。
 

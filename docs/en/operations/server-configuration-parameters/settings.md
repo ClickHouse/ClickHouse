@@ -705,7 +705,7 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
 

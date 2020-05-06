@@ -112,7 +112,7 @@ The `FROM` clause specifies the source to read data from:
 
 -   Table
 -   Subquery
--   [Table function](../table-functions/index.md)
+-   [Table function](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
@@ -698,7 +698,7 @@ When any of these limits is reached, ClickHouse acts as the [join\_overflow\_mod
 
 While joining tables, the empty cells may appear. The setting [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
-If the `JOIN` keys are [Nullable](../data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../syntax.md#null-literal) are not joined.
+If the `JOIN` keys are [Nullable](../data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../../sql-reference/syntax.md#null-literal) are not joined.
 
 #### Syntax Limitations {#syntax-limitations}
 
@@ -775,7 +775,7 @@ A constant can’t be specified as arguments for aggregate functions. Example: s
 
 #### NULL Processing {#null-processing}
 
-For grouping, ClickHouse interprets [NULL](../syntax.md) as a value, and `NULL=NULL`.
+For grouping, ClickHouse interprets [NULL](../syntax.md#null-literal) as a value, and `NULL=NULL`.
 
 Here’s an example to show what this means.
 
@@ -1056,7 +1056,7 @@ The result will be the same as if GROUP BY were specified across all the fields 
 
 DISTINCT is not supported if SELECT has at least one array column.
 
-`DISTINCT` works with [NULL](../syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
+`DISTINCT` works with [NULL](../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
 
@@ -1213,7 +1213,7 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 #### NULL Processing {#null-processing-1}
 
-During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 
 Here is an example with the `t_null` table:
 
