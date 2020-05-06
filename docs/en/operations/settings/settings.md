@@ -917,7 +917,8 @@ Possible values:
 
 Default value: 1.
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see \[Data Replication\] (../engines/table\_engines/mergetree\_family/replication.md).
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
