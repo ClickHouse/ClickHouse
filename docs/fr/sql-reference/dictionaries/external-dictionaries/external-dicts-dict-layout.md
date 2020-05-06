@@ -56,6 +56,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [haché](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [direct](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
@@ -295,6 +296,28 @@ Définissez une taille de cache suffisamment grande. Vous devez expérimenter po
 ### complex\_key\_cache {#complex-key-cache}
 
 Ce type de stockage est pour une utilisation avec composite [touches](external-dicts-dict-structure.md). Semblable à `cache`.
+
+### direct {#direct}
+
+Le dictionnaire n'est pas stocké en mémoire et interagit directement avec la source lors du traitement de la requête.
+
+La clé du dictionnaire a le `UInt64` type.
+
+Tous les types de sources sont pris en charge.
+
+L'exemple de configuration:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+ou
+
+``` sql
+LAYOUT(DIRECT())
+```
 
 ### ip\_trie {#ip-trie}
 
