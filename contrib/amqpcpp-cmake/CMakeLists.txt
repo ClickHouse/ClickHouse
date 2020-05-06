@@ -1,133 +1,44 @@
-set(AMQPCPP_DIR ${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP)
+set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP)
 
-set(SRCS
-        ${AMQPCPP_DIR}/src/array.cpp
-        ${AMQPCPP_DIR}/src/channel.cpp
-        ${AMQPCPP_DIR}/src/channelimpl.cpp
-        ${AMQPCPP_DIR}/src/connectionimpl.cpp
-        ${AMQPCPP_DIR}/src/deferredcancel.cpp
-        ${AMQPCPP_DIR}/src/deferredconfirm.cpp
-        ${AMQPCPP_DIR}/src/deferredconsumer.cpp
-        ${AMQPCPP_DIR}/src/deferredextreceiver.cpp
-        ${AMQPCPP_DIR}/src/deferredget.cpp
-        ${AMQPCPP_DIR}/src/deferredpublisher.cpp
-        ${AMQPCPP_DIR}/src/deferredreceiver.cpp
-        ${AMQPCPP_DIR}/src/field.cpp
-        ${AMQPCPP_DIR}/src/flags.cpp
-        ${AMQPCPP_DIR}/src/receivedframe.cpp
-        ${AMQPCPP_DIR}/src/table.cpp
-        ${AMQPCPP_DIR}/src/watchable.cpp
-        ${AMQPCPP_DIR}/src/basicackframe.h
-        ${AMQPCPP_DIR}/src/basiccancelframe.h
-        ${AMQPCPP_DIR}/src/basiccancelokframe.h
-        ${AMQPCPP_DIR}/src/basicconsumeframe.h
-        ${AMQPCPP_DIR}/src/basicconsumeokframe.h
-        ${AMQPCPP_DIR}/src/basicdeliverframe.h
-        ${AMQPCPP_DIR}/src/basicframe.h
-        ${AMQPCPP_DIR}/src/basicgetemptyframe.h
-        ${AMQPCPP_DIR}/src/basicgetframe.h
-        ${AMQPCPP_DIR}/src/basicgetokframe.h
-        ${AMQPCPP_DIR}/src/basicheaderframe.h
-        ${AMQPCPP_DIR}/src/basicnackframe.h
-        ${AMQPCPP_DIR}/src/basicpublishframe.h
-        ${AMQPCPP_DIR}/src/basicqosframe.h
-        ${AMQPCPP_DIR}/src/basicqosokframe.h
-        ${AMQPCPP_DIR}/src/basicrecoverasyncframe.h
-        ${AMQPCPP_DIR}/src/basicrecoverframe.h
-        ${AMQPCPP_DIR}/src/basicrecoverokframe.h
-        ${AMQPCPP_DIR}/src/basicrejectframe.h
-        ${AMQPCPP_DIR}/src/basicreturnframe.h
-        ${AMQPCPP_DIR}/src/bodyframe.h
-        ${AMQPCPP_DIR}/src/channelcloseframe.h
-        ${AMQPCPP_DIR}/src/channelcloseokframe.h
-        ${AMQPCPP_DIR}/src/channelflowframe.h
-        ${AMQPCPP_DIR}/src/channelflowokframe.h
-        ${AMQPCPP_DIR}/src/channelframe.h
-        ${AMQPCPP_DIR}/src/channelopenframe.h
-        ${AMQPCPP_DIR}/src/channelopenokframe.h
-        ${AMQPCPP_DIR}/src/confirmframe.h
-        ${AMQPCPP_DIR}/src/confirmselectframe.h
-        ${AMQPCPP_DIR}/src/confirmselectokframe.h
-        ${AMQPCPP_DIR}/src/connectioncloseframe.h
-        ${AMQPCPP_DIR}/src/connectioncloseokframe.h
-        ${AMQPCPP_DIR}/src/connectionframe.h
-        ${AMQPCPP_DIR}/src/connectionopenframe.h
-        ${AMQPCPP_DIR}/src/connectionopenokframe.h
-        ${AMQPCPP_DIR}/src/connectionsecureframe.h
-        ${AMQPCPP_DIR}/src/connectionsecureokframe.h
-        ${AMQPCPP_DIR}/src/connectionstartframe.h
-        ${AMQPCPP_DIR}/src/connectionstartokframe.h
-        ${AMQPCPP_DIR}/src/connectiontuneframe.h
-        ${AMQPCPP_DIR}/src/connectiontuneokframe.h
-        ${AMQPCPP_DIR}/src/consumedmessage.h
-        ${AMQPCPP_DIR}/src/exchangebindframe.h
-        ${AMQPCPP_DIR}/src/exchangebindokframe.h
-        ${AMQPCPP_DIR}/src/exchangedeclareframe.h
-        ${AMQPCPP_DIR}/src/exchangedeclareokframe.h
-        ${AMQPCPP_DIR}/src/exchangedeleteframe.h
-        ${AMQPCPP_DIR}/src/exchangedeleteokframe.h
-        ${AMQPCPP_DIR}/src/exchangeframe.h
-        ${AMQPCPP_DIR}/src/exchangeunbindframe.h
-        ${AMQPCPP_DIR}/src/exchangeunbindokframe.h
-        ${AMQPCPP_DIR}/src/extframe.h
-        ${AMQPCPP_DIR}/src/framecheck.h
-        ${AMQPCPP_DIR}/src/headerframe.h
-        ${AMQPCPP_DIR}/src/heartbeatframe.h
-        ${AMQPCPP_DIR}/src/includes.h
-        ${AMQPCPP_DIR}/src/methodframe.h
-        ${AMQPCPP_DIR}/src/passthroughbuffer.h
-        ${AMQPCPP_DIR}/src/protocolheaderframe.h
-        ${AMQPCPP_DIR}/src/queuebindframe.h
-        ${AMQPCPP_DIR}/src/queuebindokframe.h
-        ${AMQPCPP_DIR}/src/queuedeclareframe.h
-        ${AMQPCPP_DIR}/src/queuedeclareokframe.h
-        ${AMQPCPP_DIR}/src/queuedeleteframe.h
-        ${AMQPCPP_DIR}/src/queuedeleteokframe.h
-        ${AMQPCPP_DIR}/src/queueframe.h
-        ${AMQPCPP_DIR}/src/queuepurgeframe.h
-        ${AMQPCPP_DIR}/src/queuepurgeokframe.h
-        ${AMQPCPP_DIR}/src/queueunbindframe.h
-        ${AMQPCPP_DIR}/src/queueunbindokframe.h
-        ${AMQPCPP_DIR}/src/reducedbuffer.h
-        ${AMQPCPP_DIR}/src/returnedmessage.h
-        ${AMQPCPP_DIR}/src/returnedmessage.h
-        ${AMQPCPP_DIR}/src/transactioncommitframe.h
-        ${AMQPCPP_DIR}/src/transactioncommitokframe.h
-        ${AMQPCPP_DIR}/src/transactionframe.h
-        ${AMQPCPP_DIR}/src/transactionrollbackframe.h
-        ${AMQPCPP_DIR}/src/transactionrollbackokframe.h
-        ${AMQPCPP_DIR}/src/transactionselectframe.h
-        ${AMQPCPP_DIR}/src/transactionselectokframe.h
+set (SRCS
+    ${LIBRARY_DIR}/src/array.cpp
+    ${LIBRARY_DIR}/src/channel.cpp
+    ${LIBRARY_DIR}/src/channelimpl.cpp
+    ${LIBRARY_DIR}/src/connectionimpl.cpp
+    ${LIBRARY_DIR}/src/deferredcancel.cpp
+    ${LIBRARY_DIR}/src/deferredconfirm.cpp
+    ${LIBRARY_DIR}/src/deferredconsumer.cpp
+    ${LIBRARY_DIR}/src/deferredextreceiver.cpp
+    ${LIBRARY_DIR}/src/deferredget.cpp
+    ${LIBRARY_DIR}/src/deferredpublisher.cpp
+    ${LIBRARY_DIR}/src/deferredreceiver.cpp
+    ${LIBRARY_DIR}/src/field.cpp
+    ${LIBRARY_DIR}/src/flags.cpp
+    ${LIBRARY_DIR}/src/linux_tcp/openssl.cpp
+    ${LIBRARY_DIR}/src/linux_tcp/tcpconnection.cpp
+    ${LIBRARY_DIR}/src/receivedframe.cpp
+    ${LIBRARY_DIR}/src/table.cpp
+    ${LIBRARY_DIR}/src/watchable.cpp
+)
 
-        ${AMQPCPP_DIR}/src/linux_tcp/addressinfo.h
-        ${AMQPCPP_DIR}/src/linux_tcp/function.h
-        ${AMQPCPP_DIR}/src/linux_tcp/includes.h
-        ${AMQPCPP_DIR}/src/linux_tcp/openssl.cpp
-        ${AMQPCPP_DIR}/src/linux_tcp/openssl.h
-        ${AMQPCPP_DIR}/src/linux_tcp/pipe.h
-        ${AMQPCPP_DIR}/src/linux_tcp/poll.h
-        ${AMQPCPP_DIR}/src/linux_tcp/sslconnected.h
-        ${AMQPCPP_DIR}/src/linux_tcp/sslcontext.h
-        ${AMQPCPP_DIR}/src/linux_tcp/sslhandshake.h
-        ${AMQPCPP_DIR}/src/linux_tcp/sslshutdown.h
-        ${AMQPCPP_DIR}/src/linux_tcp/sslwrapper.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpclosed.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpconnected.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpconnection.cpp
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpextstate.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpinbuffer.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpoutbuffer.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpresolver.h
-        ${AMQPCPP_DIR}/src/linux_tcp/tcpstate.h
-        )
+add_library(amqp-cpp ${SRCS})
 
-add_library(AMQP-CPP ${SRCS})
+target_compile_options (amqp-cpp
+    PUBLIC
+        -Wno-old-style-cast
+        -Wno-inconsistent-missing-destructor-override
+        -Wno-deprecated
+        -Wno-unused-parameter
+        -Wno-shadow
+        -Wno-tautological-type-limit-compare
+        -Wno-extra-semi
+# NOTE: disable all warnings at last because the warning:
+        #       "conversion function converting 'XXX' to itself will never be used"
+        #       doesn't have it's own diagnostic flag yet.
+        -w
+)
 
-target_link_libraries (AMQP-CPP PRIVATE ${LIBEVENT_LIBRARY})
+target_include_directories (amqp-cpp PUBLIC ${LIBRARY_DIR}/include)
 
-target_include_directories(AMQP-CPP PRIVATE ${AMQPCPP_DIR}/include/amqpcpp)
-target_include_directories(AMQP-CPP PRIVATE ${AMQPCPP_DIR}/include/amqpcpp/linux_tcp)
-target_include_directories(AMQP-CPP SYSTEM PUBLIC ${AMQPCPP_DIR}/include)
-
-target_link_libraries (AMQP-CPP PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries (amqp-cpp PUBLIC libevent ssl)
 

@@ -20,6 +20,7 @@ RUN apt-get update \
     tzdata \
     libreadline-dev \
     libicu-dev \
+    pika \
     bsdutils \
     curl \
     liblua5.1-dev \
