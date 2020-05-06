@@ -114,7 +114,7 @@ FROM
 
 -   表
 -   子查询
--   [表函数](../table-functions/index.md)
+-   [表函数](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` 和常规 `JOIN` 也可以包括在内（见下文）。
 
