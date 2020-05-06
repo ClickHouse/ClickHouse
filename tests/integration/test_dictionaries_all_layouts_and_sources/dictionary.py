@@ -110,7 +110,7 @@ class DictionaryStructure(object):
                 self.range_fields.append(field)
             else:
                 self.ordinary_fields.append(field)
-            
+
             if field.hierarchical:
                 self.has_hierarchy = True
 
@@ -307,27 +307,46 @@ class Dictionary(object):
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:
-            result.write('''
-            <yandex>
-               <dictionary>
-                   <lifetime>
-                       <min>{min_lifetime}</min>
-                       <max>{max_lifetime}</max>
-                   </lifetime>
-                   <name>{name}</name>
-                   {structure}
-                   <source>
-                   {source}
-                   </source>
-               </dictionary>
-            </yandex>
-            '''.format(
-                min_lifetime=self.min_lifetime,
-                max_lifetime=self.max_lifetime,
-                name=self.name,
-                structure=self.structure.get_structure_str(),
-                source=self.source.get_source_str(self.table_name),
-            ))
+            if self.structure.layout.get_str() != '<direct/>':
+                result.write('''
+                <yandex>
+                <dictionary>
+                    <lifetime>
+                        <min>{min_lifetime}</min>
+                        <max>{max_lifetime}</max>
+                    </lifetime>
+                    <name>{name}</name>
+                    {structure}
+                    <source>
+                    {source}
+                    </source>
+                </dictionary>
+                </yandex>
+                '''.format(
+                    min_lifetime=self.min_lifetime,
+                    max_lifetime=self.max_lifetime,
+                    name=self.name,
+                    structure=self.structure.get_structure_str(),
+                    source=self.source.get_source_str(self.table_name),
+                ))
+            else:
+                result.write('''
+                <yandex>
+                <dictionary>
+                    <name>{name}</name>
+                    {structure}
+                    <source>
+                    {source}
+                    </source>
+                </dictionary>
+                </yandex>
+                '''.format(
+                    min_lifetime=self.min_lifetime,
+                    max_lifetime=self.max_lifetime,
+                    name=self.name,
+                    structure=self.structure.get_structure_str(),
+                    source=self.source.get_source_str(self.table_name),
+                ))
 
     def prepare_source(self, cluster):
         self.source.prepare(self.structure, self.table_name, cluster)
@@ -355,6 +374,6 @@ class Dictionary(object):
 
     def is_complex(self):
         return self.structure.layout.is_complex
-    
+
     def get_fields(self):
         return self.fields
