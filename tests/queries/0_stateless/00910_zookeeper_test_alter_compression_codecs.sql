@@ -46,6 +46,7 @@ SYSTEM SYNC REPLICA alter_compression_codec1;
 SELECT * FROM alter_compression_codec1 ORDER BY id;
 SELECT * FROM alter_compression_codec2 ORDER BY id;
 
+SET allow_suspicious_codecs = 1;
 ALTER TABLE alter_compression_codec1 MODIFY COLUMN alter_column CODEC(ZSTD, LZ4HC, LZ4, LZ4, NONE);
 SYSTEM SYNC REPLICA alter_compression_codec1;
 SYSTEM SYNC REPLICA alter_compression_codec2;

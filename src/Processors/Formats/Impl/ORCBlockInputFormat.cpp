@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer &in_, Block header_) : IInputFormat(std::move(header_), in_)
+ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
 {
 }
 
@@ -44,8 +44,7 @@ Chunk ORCBlockInputFormat::generate()
 
         std::unique_ptr<arrow::Buffer> local_buffer = std::make_unique<arrow::Buffer>(file_data);
 
-
-        std::shared_ptr<arrow::io::RandomAccessFile> in_stream(new arrow::io::BufferReader(*local_buffer));
+        std::shared_ptr<arrow::io::RandomAccessFile> in_stream = std::make_shared<arrow::io::BufferReader>(*local_buffer);
 
         bool ok = arrow::adapters::orc::ORCFileReader::Open(in_stream, arrow::default_memory_pool(),
                                                             &file_reader).ok();
@@ -55,11 +54,13 @@ Chunk ORCBlockInputFormat::generate()
         row_group_total = file_reader->NumberOfRows();
         row_group_current = 0;
 
-    } else
+    }
+    else
         return res;
 
     if (row_group_current >= row_group_total)
         return res;
+
     std::shared_ptr<arrow::Table> table;
 
     arrow::Status read_status = file_reader->Read(&table);

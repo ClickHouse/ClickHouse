@@ -7,16 +7,16 @@ toc_title: clickhouse-local
 
 # clickhouse-local {#clickhouse-local}
 
-Le `clickhouse-local` programme vous permet d'effectuer un traitement rapide sur les fichiers locaux, sans avoir à déployer et configurer le serveur ClickHouse.
+Le `clickhouse-local` programme vous permet d’effectuer un traitement rapide sur les fichiers locaux, sans avoir à déployer et configurer le serveur ClickHouse.
 
-Accepte les données qui représentent des tables et les interroge en utilisant [Clickhouse dialecte SQL](../../sql_reference/index.md).
+Accepte les données qui représentent des tables et les interroge en utilisant [Clickhouse dialecte SQL](../../sql-reference/index.md).
 
-`clickhouse-local` utilise le même noyau que clickhouse server, de sorte qu'il prend en charge la plupart des fonctionnalités et le même ensemble de formats et de moteurs de table.
+`clickhouse-local` utilise le même noyau que clickhouse server, de sorte qu’il prend en charge la plupart des fonctionnalités et le même ensemble de formats et de moteurs de table.
 
-Par défaut `clickhouse-local` n'a pas accès aux données sur le même hôte, mais il prend en charge le chargement de la configuration du serveur à l'aide `--config-file` argument.
+Par défaut `clickhouse-local` n’a pas accès aux données sur le même hôte, mais il prend en charge le chargement de la configuration du serveur à l’aide `--config-file` argument.
 
 !!! warning "Avertissement"
-    Il n'est pas recommandé de charger la configuration du serveur de production dans `clickhouse-local` parce que les données peuvent être endommagées en cas d'erreur humaine.
+    Il n’est pas recommandé de charger la configuration du serveur de production dans `clickhouse-local` parce que les données peuvent être endommagées en cas d’erreur humaine.
 
 ## Utilisation {#usage}
 

@@ -22,7 +22,14 @@
 
 <meta name="description" content="{{ description }}"/>
 <meta name="keywords"
-      content="ClickHouse, DBMS, OLAP, SQL, open-source, relational, analytics, analytical, Big Data, web-analytics" />
+      content="ClickHouse, DBMS, OLAP, SQL, {{ _('open-source') }}, {{ _('relational') }}, {{ _('analytics') }}, {{ _('analytical') }}, {{ _('Big Data') }}, {{ _('web-analytics') }}" />
+
+{% if config and page %}
+    {% for code, name in config.extra.languages.items() %}
+    <link rel="alternate" hreflang="{{ code }}" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}" />
+    {% endfor %}
+    <link rel="alternate" hreflang="x-default" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}en/{{ page.url }}" />
+{% endif %}
 
 {% for prefetch_item in prefetch_items %}
 <link rel="prefetch" href="{{ prefetch_item.0 }}" as="{{ prefetch_item.1 }}" />

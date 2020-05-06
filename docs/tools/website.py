@@ -17,7 +17,10 @@ import mdx_clickhouse
 def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(args.website_dir),
+        loader=jinja2.FileSystemLoader([
+            args.website_dir,
+            os.path.join(args.docs_dir, '_includes')
+        ]),
         extensions=[
             'jinja2.ext.i18n',
             'jinja2_highlight.HighlightExtension'
@@ -79,7 +82,7 @@ def get_css_in(args):
 
 def get_js_in(args):
     return [
-        f"'{args.website_dir}/js/jquery-3.4.1.js'",
+        f"'{args.website_dir}/js/jquery.js'",
         f"'{args.website_dir}/js/popper.js'",
         f"'{args.website_dir}/js/bootstrap.js'",
         f"'{args.website_dir}/js/base.js'",

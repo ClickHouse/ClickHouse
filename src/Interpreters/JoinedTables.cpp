@@ -216,7 +216,7 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(storage_columns.getVirtuals());
+        table.addHiddenColumns(storage->getVirtuals());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());

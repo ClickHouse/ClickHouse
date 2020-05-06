@@ -29,7 +29,7 @@ ENV OUTPUT_DIR=/output
 ENV IGNORE='.*contrib.*'
 
 
-CMD mkdir -p /build/obj-x86_64-linux-gnu && cd /build/obj-x86_64-linux-gnu && CC=clang-8 CXX=clang++-8 cmake .. && cd /; \
+CMD mkdir -p /build/obj-x86_64-linux-gnu && cd /build/obj-x86_64-linux-gnu && CC=clang-9 CXX=clang++-9 cmake .. && cd /; \
     dpkg -i /package_folder/clickhouse-common-static_*.deb; \
     llvm-profdata-9 merge -sparse ${COVERAGE_DIR}/* -o clickhouse.profdata && \
     llvm-cov-9 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex $IGNORE > output.lcov && \
