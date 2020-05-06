@@ -85,7 +85,7 @@ $(document).ready(function () {
     });
     $('.admonition').each(function () {
         var current = $(this);
-        current.addClass('alert').addClass('lead');
+        current.addClass('alert').addClass('lead').addClass('pb-0').addClass('mb-4');
         current.attr('role', 'alert');
         current.find('a').addClass('alert-link');
         if (current.hasClass('info') || current.hasClass('note')) {
