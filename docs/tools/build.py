@@ -363,6 +363,8 @@ def build(args):
     if not args.skip_website:
         website.build_website(args)
 
+    test.test_templates(args.website_dir)
+
     build_docs(args)
 
     from github import build_releases
