@@ -1081,14 +1081,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 {
                     pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
                     {
-                        if (stream_type == QueryPipeline::StreamType::Totals)
-                            return nullptr;
+                        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
 
                         return std::make_shared<FilterTransform>(
                             block,
                             expressions.filter_info->actions,
                             expressions.filter_info->column_name,
-                            expressions.filter_info->do_remove_column);
+                            expressions.filter_info->do_remove_column,
+                            on_totals);
                     });
                 }
                 else
@@ -1856,11 +1856,12 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
     });
 }
 
-void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
+void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
-    pipeline.addSimpleTransform([&](const Block & block)
+    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type)
     {
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter, on_totals);
     });
 }
 
@@ -2129,11 +2130,10 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
 
         /// TODO: do we need to save filter there?
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false);
+        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false, on_totals);
     });
 }
 
