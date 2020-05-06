@@ -307,7 +307,7 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
     UInt64 total_merged_rows_after_insertion = merged_data.mergedRows() + num_rows;
     if (limit && total_merged_rows_after_insertion > limit)
     {
-        num_rows = total_merged_rows_after_insertion - limit;
+        num_rows -= total_merged_rows_after_insertion - limit;
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
         is_finished = true;
     }
