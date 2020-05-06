@@ -29,7 +29,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
-#include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
@@ -630,6 +630,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
+
+        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
+        if (total_memory_tracker_sample_probability)
+        {
+            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
+        }
     }
 #endif
 
@@ -674,11 +680,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
 #if defined(OS_LINUX)
-    if (!TaskStatsInfoGetter::checkPermissions())
+    if (!TasksStatsCounters::checkIfAvailable())
     {
-        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
+            " neither clickhouse-server process has CAP_NET_ADMIN capability."
+            " 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
+            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -806,15 +814,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
-                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handler_factory,
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://" + address.toString());
             });
@@ -828,10 +830,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://" + address.toString());
 #else
@@ -886,10 +885,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
@@ -902,10 +898,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
@@ -937,13 +930,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handler_factory,
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });

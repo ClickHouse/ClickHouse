@@ -63,13 +63,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & format_name_,
         char row_delimiter_,
         size_t num_consumers_,
-        UInt64 max_block_size_,
         size_t skip_broken_)
-        : IStorage(table_id_,
-                   ColumnsDescription({
-                          {"_exchange", std::make_shared<DataTypeString>()},
-                          {"_routingKey", std::make_shared<DataTypeString>()}
-                                      }, true))
+        : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
         , host_port(global_context.getMacros()->expand(host_port_))
@@ -78,7 +73,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
-        , max_block_size(max_block_size_)
         , skip_broken(skip_broken_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
@@ -462,24 +456,10 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        UInt64 max_block_size = static_cast<size_t>(rabbitmq_settings.rabbitmq_max_block_size);
+        size_t skip_broken = static_cast<size_t>(rabbitmq_settings.rabbitmq_skip_broken_messages);
         if (args_count >= 6)
         {
             const auto * ast = engine_args[5]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
-            {
-                max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
-            }
-            else
-            {
-                throw Exception("Maximum block size must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
-        size_t skip_broken = static_cast<size_t>(rabbitmq_settings.rabbitmq_skip_broken_messages);
-        if (args_count >= 7)
-        {
-            const auto * ast = engine_args[6]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -491,9 +471,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
-        if (args_count >= 8)
+        if (args_count >= 7)
         {
-            const auto * ast = engine_args[7]->as<ASTLiteral>();
+            const auto * ast = engine_args[6]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -504,13 +484,19 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        return StorageRabbitMQ::create(
-                args.table_id, args.context, args.columns,
-                host_port, routing_keys, exchange, 
-                format, row_delimiter, num_consumers, max_block_size, skip_broken);
+        return StorageRabbitMQ::create(args.table_id, args.context, args.columns, host_port, routing_keys, exchange, 
+                format, row_delimiter, num_consumers, skip_broken);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 
 }
+
+    NamesAndTypesList StorageRabbitMQ::getVirtuals() const
+    {
+        return NamesAndTypesList{
+                {"_exchange", std::make_shared<DataTypeString>()},
+                {"_routingKey", std::make_shared<DataTypeString>()}
+        };
+    }
 }

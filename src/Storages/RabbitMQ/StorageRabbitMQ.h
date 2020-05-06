@@ -52,6 +52,7 @@ public:
     const String & getFormatName() const { return format_name; }
     const auto & skipBroken() const { return skip_broken; }
 
+    NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageRabbitMQ(
@@ -60,7 +61,7 @@ protected:
             const ColumnsDescription & columns_,
             const String & host_port_, const Names & routing_keys_, const String & exchange_name, 
             const String & format_name_, char row_delimiter_,
-            size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
+            size_t num_consumers_, size_t skip_broken);
 
 
 private:
@@ -84,7 +85,7 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    /// Different connections in order to make event loops more deterministic but will probably be combined into one
+    /// Different connections in order to make event loops more deterministic and to avoid library being overloaded with callbacks
     event_base * consumersEvbase;
     event_base * producersEvbase;
 

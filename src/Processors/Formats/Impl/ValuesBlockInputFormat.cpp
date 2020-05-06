@@ -20,10 +20,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int SYNTAX_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -167,7 +167,9 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     }
     catch (const Exception & e)
     {
-        if (!isParseError(e.code()) && e.code() != ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+        /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
+        bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
+        if (!isParseError(e.code()) || decimal_overflow)
             throw;
         if (rollback_on_exception)
             column.popBack(1);
@@ -226,7 +228,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         }
         catch (const Exception & e)
         {
-            if (!isParseError(e.code()))
+            bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
+            if (!isParseError(e.code()) || decimal_overflow)
                 throw;
         }
         if (ok)

@@ -7,6 +7,7 @@ INSERT INTO sum_map VALUES ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10,
 
 SELECT * FROM sum_map ORDER BY timeslot;
 SELECT sumMap(statusMap.status, statusMap.requests) FROM sum_map;
+SELECT sumMap((statusMap.status, statusMap.requests)) FROM sum_map;
 SELECT sumMapMerge(s) FROM (SELECT sumMapState(statusMap.status, statusMap.requests) AS s FROM sum_map);
 SELECT timeslot, sumMap(statusMap.status, statusMap.requests) FROM sum_map GROUP BY timeslot ORDER BY timeslot;
 SELECT timeslot, sumMap(statusMap.status, statusMap.requests).1, sumMap(statusMap.status, statusMap.requests).2 FROM sum_map GROUP BY timeslot ORDER BY timeslot;

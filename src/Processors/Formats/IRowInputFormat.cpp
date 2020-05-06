@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -30,7 +32,9 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
-        || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
+        || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+        || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
+        || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
 }
 
 
@@ -49,13 +53,14 @@ Chunk IRowInputFormat::generate()
 
     try
     {
+        RowReadExtension info;
         for (size_t rows = 0; rows < params.max_block_size; ++rows)
         {
             try
             {
                 ++total_rows;
 
-                RowReadExtension info;
+                info.read_columns.clear();
                 if (!readRow(columns, info))
                     break;
                 if (params.callback)
@@ -126,6 +131,10 @@ Chunk IRowInputFormat::generate()
         try
         {
             verbose_diagnostic = getDiagnosticInfo();
+        }
+        catch (const Exception & exception)
+        {
+            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
         catch (...)
         {

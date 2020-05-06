@@ -30,14 +30,14 @@ using StoragePtr = std::shared_ptr<IStorage>;
 class InterpreterWatchQuery : public IInterpreter
 {
 public:
-    InterpreterWatchQuery(const ASTPtr & query_ptr_, Context & context_)
+    InterpreterWatchQuery(const ASTPtr & query_ptr_, const Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context & context;
+    const Context & context;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
