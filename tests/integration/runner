@@ -31,10 +31,7 @@ def check_args_and_update_paths(args):
     if not os.path.isabs(args.clickhouse_root):
         args.clickhouse_root = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.clickhouse_root))
 
-    if not os.path.isabs(args.grpc_proto):
-        args.grpc_proto = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.grpc_proto))
-
-    for path in [args.binary, args.configs_dir, args.clickhouse_root, args.grpc_proto]:
+    for path in [args.binary, args.configs_dir, args.clickhouse_root]:
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exists".format(path))
 
@@ -79,18 +76,11 @@ if __name__ == "__main__":
         default=False,
         help="Don't use net host in parent docker container")
     
-    parser.add_argument(
-        "--grpc-proto",
-        default=os.path.join(DEFAULT_CLICKHOUSE_ROOT, "programs/server/grpc_protos/GrpcConnection.proto"),
-        help="Path to proto of grpc server")
-
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
 
     check_args_and_update_paths(args)
-
-    subprocess.check_call('yes | cp {proto_path} ./test_grpc_protocol/protos'.format(proto_path=args.grpc_proto), shell=True)
 
     net = ""
     if not args.disable_net_host:
