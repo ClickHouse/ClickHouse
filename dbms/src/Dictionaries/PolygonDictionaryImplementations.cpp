@@ -105,12 +105,10 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
           grid(kMinIntersections, kMaxDepth, polygons)
 {
-    auto log = &Logger::get("BucketsPolygonIndex");
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < polygons.size(); ++i)
     {
-        buckets.emplace_back(std::vector<Polygon>{polygons[i]});
-        LOG_TRACE(log, "Finished polygon" << i);
+        buckets.emplace_back(polygons[i]);
     }
 }
 
@@ -154,8 +152,7 @@ bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
         for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
         {
             const auto & candidate = (cell->polygon_ids)[i];
-            size_t unused = 0;
-            if ((cell->is_covered_by)[i] || buckets[candidate].find(point, unused))
+            if ((cell->is_covered_by)[i] || buckets[candidate].find(point))
             {
                 found = true;
                 id = candidate;
