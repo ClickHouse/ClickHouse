@@ -65,11 +65,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         size_t num_consumers_,
         UInt64 max_block_size_,
         size_t skip_broken_)
-        : IStorage(table_id_,
-                   ColumnsDescription({
-                          {"_exchange", std::make_shared<DataTypeString>()},
-                          {"_routingKey", std::make_shared<DataTypeString>()}
-                                      }, true))
+        : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
         , host_port(global_context.getMacros()->expand(host_port_))
@@ -504,4 +500,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 
 }
+
+    NamesAndTypesList StorageRabbitMQ::getVirtuals() const
+    {
+        return NamesAndTypesList{
+                {"_exchange", std::make_shared<DataTypeString>()},
+                {"_routingKey", std::make_shared<DataTypeString>()}
+        };
+    }
 }

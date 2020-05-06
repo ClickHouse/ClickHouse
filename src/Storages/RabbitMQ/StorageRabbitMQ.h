@@ -53,6 +53,8 @@ public:
     const String & getFormatName() const { return format_name; }
     const auto & skipBroken() const { return skip_broken; }
 
+    NamesAndTypesList getVirtuals() const override;
+
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
