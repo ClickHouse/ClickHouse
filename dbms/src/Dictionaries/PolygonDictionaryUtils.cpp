@@ -358,6 +358,7 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
 
     /** point is considired inside when ray down from point crosses odd number of edges */
     std::vector<size_t> intersections;
+    intersections.reserve(10);
 
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
