@@ -3,7 +3,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 
 #include <Databases/IDatabase.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -161,29 +161,6 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     }
 
     return res;
-}
-
-/// the same as DistributedBlockOutputStream::createSelector, should it be static?
-IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
-{
-    const auto & slot_to_shard = cluster->getSlotToShard();
-
-#define CREATE_FOR_TYPE(TYPE)                                   \
-    if (typeid_cast<const DataType##TYPE *>(result.type.get())) \
-        return createBlockSelector<TYPE>(*result.column, slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
@@ -353,7 +330,7 @@ void StorageDistributed::createStorage()
         if (!path.ends_with('/'))
             path += '/';
         auto disk = std::make_shared<DiskLocal>("default", path, 0);
-        volume = std::make_shared<Volume>("default", std::vector<DiskPtr>{disk}, 0);
+        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
     }
     else
     {
@@ -459,10 +436,19 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
+    const auto & settings = context.getSettingsRef();
+
     if (canForceGroupByNoMerge(context, to_stage, query_ptr))
         return QueryProcessingStage::Complete;
 
-    auto cluster = getOptimizedCluster(context, query_ptr);
+    ClusterPtr cluster = getCluster();
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_ptr);
+        if (optimized_cluster)
+            cluster = optimized_cluster;
+    }
+
     return getQueryProcessingStageImpl(context, to_stage, cluster);
 }
 
@@ -474,7 +460,28 @@ Pipes StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    auto cluster = getOptimizedCluster(context, query_info.query);
+    const auto & settings = context.getSettingsRef();
+
+    ClusterPtr cluster = getCluster();
+    if (settings.optimize_skip_unused_shards)
+    {
+        ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
+        auto table_id = getStorageID();
+        if (optimized_cluster)
+        {
+            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
+                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
+                           " " << makeFormattedListOfShards(optimized_cluster));
+            cluster = optimized_cluster;
+        }
+        else
+        {
+            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
+                           (has_sharding_key ? "" : " (no sharding key)") << ": "
+                           "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
+                           "the query will be sent to all shards of the cluster");
+        }
+    }
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
@@ -664,28 +671,13 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
-    auto table_id = getStorageID();
-
-    if (!settings.optimize_skip_unused_shards)
-        return cluster;
 
     if (has_sharding_key)
     {
         ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, context);
-
         if (optimized)
-        {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
-                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
-                           " " << makeFormattedListOfShards(cluster));
             return optimized;
-        }
     }
-
-    LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                   (has_sharding_key ? "" : " (no sharding key)") << ": "
-                   "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
-                   "the query will be sent to all shards of the cluster");
 
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (force)
@@ -713,6 +705,32 @@ void StorageDistributed::ClusterNodeData::flushAllData() const
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
 {
     directory_monitor->shutdownAndDropAllData();
+}
+
+IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+{
+    const auto & slot_to_shard = cluster->getSlotToShard();
+
+// If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
+#define CREATE_FOR_TYPE(TYPE)                                                                                       \
+    if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
+        return createBlockSelector<TYPE>(*result.column, slot_to_shard);                                            \
+    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
+        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
+            return createBlockSelector<TYPE>(*result.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+
+    CREATE_FOR_TYPE(UInt8)
+    CREATE_FOR_TYPE(UInt16)
+    CREATE_FOR_TYPE(UInt32)
+    CREATE_FOR_TYPE(UInt64)
+    CREATE_FOR_TYPE(Int8)
+    CREATE_FOR_TYPE(Int16)
+    CREATE_FOR_TYPE(Int32)
+    CREATE_FOR_TYPE(Int64)
+
+#undef CREATE_FOR_TYPE
+
+    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible

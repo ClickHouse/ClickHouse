@@ -28,18 +28,18 @@ ClickHouse, donanım kaynaklarının durumunu tek başına izlemez.
 
 ClickHouse sunucu kendini devlet izleme için araçlar gömülü vardır.
 
-Sunucu olaylarını izlemek için sunucu günlüklerini kullanın. Görmek [kaydedici](server_configuration_parameters/settings.md#server_configuration_parameters-logger) yapılandırma dosyasının bölümü.
+Sunucu olaylarını izlemek için sunucu günlüklerini kullanın. Görmek [kaydedici](server-configuration-parameters/settings.md#server_configuration_parameters-logger) yapılandırma dosyasının bölümü.
 
 ClickHouse toplar:
 
 -   Sunucunun hesaplama kaynaklarını nasıl kullandığına dair farklı metrikler.
 -   Sorgu işleme ile ilgili ortak istatistikler.
 
-Metrikleri şu adreste bulabilirsiniz: [sistem.metrik](../operations/system_tables.md#system_tables-metrics), [sistem.etkinlik](../operations/system_tables.md#system_tables-events), ve [sistem.asynchronous\_metrics](../operations/system_tables.md#system_tables-asynchronous_metrics) Tablolar.
+Metrikleri şu adreste bulabilirsiniz: [sistem.metrik](../operations/system-tables.md#system_tables-metrics), [sistem.etkinlik](../operations/system-tables.md#system_tables-events), ve [sistem.asynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) Tablolar.
 
-Clickhouse'u metrikleri dışa aktaracak şekilde yapılandırabilirsiniz [Grafit](https://github.com/graphite-project). Görmek [Graf sectionit bölümü](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) ClickHouse sunucu yapılandırma dosyasında. Metriklerin dışa aktarımını yapılandırmadan önce, grafit'i resmi olarak takip ederek ayarlamanız gerekir [kılavuz](https://graphite.readthedocs.io/en/latest/install.html).
+Clickhouse’u metrikleri dışa aktaracak şekilde yapılandırabilirsiniz [Grafit](https://github.com/graphite-project). Görmek [Graf sectionit bölümü](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) ClickHouse sunucu yapılandırma dosyasında. Metriklerin dışa aktarımını yapılandırmadan önce, grafit’i resmi olarak takip ederek ayarlamanız gerekir [kılavuz](https://graphite.readthedocs.io/en/latest/install.html).
 
-Clickhouse'u metrikleri dışa aktaracak şekilde yapılandırabilirsiniz [Prometheus](https://prometheus.io). Görmek [Prometheus bölümü](server_configuration_parameters/settings.md#server_configuration_parameters-prometheus) ClickHouse sunucu yapılandırma dosyasında. Metriklerin dışa aktarılmasını yapılandırmadan önce, prometheus'u yetkililerini takip ederek ayarlamanız gerekir [kılavuz](https://prometheus.io/docs/prometheus/latest/installation/).
+Clickhouse’u metrikleri dışa aktaracak şekilde yapılandırabilirsiniz [Prometheus](https://prometheus.io). Görmek [Prometheus bölümü](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) ClickHouse sunucu yapılandırma dosyasında. Metriklerin dışa aktarılmasını yapılandırmadan önce, prometheus’u yetkililerini takip ederek ayarlamanız gerekir [kılavuz](https://prometheus.io/docs/prometheus/latest/installation/).
 
 Ayrıca, http API aracılığıyla sunucu kullanılabilirliğini izleyebilirsiniz. Sen sendd the `HTTP GET` istek için `/ping`. Sunucu mevcutsa, yanıt verir `200 OK`.
 

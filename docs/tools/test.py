@@ -2,9 +2,34 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 import logging
+import os
 import sys
 
 import bs4
+
+
+def test_template(template_path):
+    logging.debug(f'Running tests for {template_path} template')
+    with open(template_path, 'r') as f:
+        soup = bs4.BeautifulSoup(
+            f,
+            features='html.parser'
+        )
+        for tag in soup.find_all():
+            style_attr = tag.attrs.get('style')
+            assert not style_attr, f'Inline CSS is prohibited, found {style_attr} in {template_path}'
+
+            if tag.name == 'script':
+                for content in tag.contents:
+                    assert not content, f'Inline JavaScript is prohibited, found "{content}" in {template_path}'
+
+
+def test_templates(base_dir):
+    logging.info('Running tests for templates')
+    for root, _, filenames in os.walk(base_dir):
+        for filename in filenames:
+            if filename.endswith('.html'):
+                test_template(os.path.join(root, filename))
 
 
 def test_single_page(input_path, lang):

@@ -127,11 +127,12 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
+        website_url = 'https://clickhouse.tech'
         site_name = site_names.get(lang, site_names['en']) % args.version_prefix
         site_name = site_name.replace('  ', ' ')
         raw_config = dict(
             site_name=site_name,
-            site_url=f'https://clickhouse.tech/docs/{lang}/',
+            site_url=f'{website_url}/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -150,6 +151,7 @@ def build_for_lang(lang, args):
                 'rev': args.rev,
                 'rev_short': args.rev_short,
                 'rev_url': args.rev_url,
+                'website_url': website_url,
                 'events': args.events,
                 'languages': languages,
                 'includes_dir':  os.path.join(os.path.dirname(__file__), '..', '_includes')
@@ -163,13 +165,14 @@ def build_for_lang(lang, args):
 
         cfg = config.load_config(**raw_config)
 
-        try:
-            mkdocs_build.build(cfg)
-        except jinja2.exceptions.TemplateError:
-            if not args.version_prefix:
-                raise
-            mdx_clickhouse.PatchedMacrosPlugin.disabled = True
-            mkdocs_build.build(cfg)
+        if not args.skip_multi_page:
+            try:
+                mkdocs_build.build(cfg)
+            except jinja2.exceptions.TemplateError:
+                if not args.version_prefix:
+                    raise
+                mdx_clickhouse.PatchedMacrosPlugin.disabled = True
+                mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
             build_single_page_version(lang, args, raw_config.get('nav'), cfg)
@@ -210,33 +213,34 @@ def build_single_page_version(lang, args, nav, cfg):
                     ]
                 })
 
-                mkdocs_build.build(cfg)
+                if not args.test_only:
+                    mkdocs_build.build(cfg)
 
-                if args.version_prefix:
-                    single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, args.version_prefix, lang, 'single')
-                else:
-                    single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, lang, 'single')
+                    if args.version_prefix:
+                        single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, args.version_prefix, lang, 'single')
+                    else:
+                        single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, lang, 'single')
 
-                if os.path.exists(single_page_output_path):
-                    shutil.rmtree(single_page_output_path)
+                    if os.path.exists(single_page_output_path):
+                        shutil.rmtree(single_page_output_path)
 
-                shutil.copytree(
-                    os.path.join(site_temp, 'single'),
-                    single_page_output_path
-                )
+                    shutil.copytree(
+                        os.path.join(site_temp, 'single'),
+                        single_page_output_path
+                    )
 
-                single_page_index_html = os.path.join(single_page_output_path, 'index.html')
-                single_page_content_js = os.path.join(single_page_output_path, 'content.js')
-                with open(single_page_index_html, 'r') as f:
-                    sp_prefix, sp_js, sp_suffix = f.read().split('<!-- BREAK -->')
-                with open(single_page_index_html, 'w') as f:
-                    f.write(sp_prefix)
-                    f.write(sp_suffix)
-                with open(single_page_content_js, 'w') as f:
-                    if args.minify:
-                        import jsmin
-                        sp_js = jsmin.jsmin(sp_js)
-                    f.write(sp_js)
+                    single_page_index_html = os.path.join(single_page_output_path, 'index.html')
+                    single_page_content_js = os.path.join(single_page_output_path, 'content.js')
+                    with open(single_page_index_html, 'r') as f:
+                        sp_prefix, sp_js, sp_suffix = f.read().split('<!-- BREAK -->')
+                    with open(single_page_index_html, 'w') as f:
+                        f.write(sp_prefix)
+                        f.write(sp_suffix)
+                    with open(single_page_content_js, 'w') as f:
+                        if args.minify:
+                            import jsmin
+                            sp_js = jsmin.jsmin(sp_js)
+                        f.write(sp_js)
 
                 logging.info(f'Re-building single page for {lang} pdf/test')
                 with util.temp_dir() as test_dir:
@@ -325,9 +329,12 @@ def write_redirect_html(out_path, to_url):
 
 def build_redirect_html(args, from_path, to_path):
     for lang in args.lang.split(','):
-        out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
+        out_path = os.path.join(
+            args.docs_output_dir, lang,
+            from_path.replace('/index.md', '/index.html').replace('.md', '/index.html')
+        )
         version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
-        target_path = to_path.replace('.md', '/')
+        target_path = to_path.replace('/index.md', '/').replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
         to_url = to_url.strip()
         write_redirect_html(out_path, to_url)
@@ -355,6 +362,8 @@ def build(args):
 
     if not args.skip_website:
         website.build_website(args)
+
+    test.test_templates(args.website_dir)
 
     build_docs(args)
 
@@ -393,9 +402,11 @@ if __name__ == '__main__':
     arg_parser.add_argument('--lts-releases-limit', type=int, default='2')
     arg_parser.add_argument('--version-prefix', type=str, default='')
     arg_parser.add_argument('--is-stable-release', action='store_true')
+    arg_parser.add_argument('--skip-multi-page', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
+    arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')
     arg_parser.add_argument('--no-docs-macros', action='store_true')
@@ -420,6 +431,11 @@ if __name__ == '__main__':
     args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
     args.rev_url = f'https://github.com/ClickHouse/ClickHouse/commit/{args.rev}'
     args.events = get_events(args)
+
+    if args.test_only:
+        args.skip_multi_page = True
+        args.skip_website = True
+        args.skip_pdf = True
 
     from build import build
     build(args)

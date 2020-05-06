@@ -195,7 +195,7 @@ protected: /// still thread-unsafe part.
 private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
-    ColumnsDescription columns; /// combined real and virtual columns
+    ColumnsDescription columns;
     IndicesDescription indices;
     ConstraintsDescription constraints;
 

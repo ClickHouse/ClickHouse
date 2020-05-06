@@ -54,6 +54,26 @@
         }
     });
 
+    function copy_to_clipboard(element) {
+        var temp = $('<textarea></textarea>');
+        $('body').append(temp);
+        temp.val($(element).text());
+        temp.select();
+        document.execCommand('copy');
+        temp.remove();
+    }
+
+    $('pre').each(function(_, element) {
+       $(element).prepend('<img src="/images/mkdocs/copy.svg" class="code-copy btn float-right m-0 p-0" />');
+    });
+
+    $('.code-copy').each(function(_, element) {
+       element = $(element);
+       element.click(function() {
+           copy_to_clipboard(element.parent());
+       })
+    });
+
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
             var is_single_page = $('html').attr('data-single-page') === 'true';

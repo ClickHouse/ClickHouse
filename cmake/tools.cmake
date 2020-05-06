@@ -1,6 +1,15 @@
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (COMPILER_GCC 1)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10.0.1) # AppleClang 10.0.1 (Xcode 10.2) is the lowest version that corresponds to LLVM/Clang upstream version not older than 7.0.0.
+        message(FATAL_ERROR "AppleClang ${CMAKE_CXX_COMPILER_VERSION} compiler is not supported. Compiler version must be at least 10.0.1 (Xcode 10.2).")
+    elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11.0.0) # AppleClang 11.0.0 (Xcode 11.0) is the lowest version that corresponds to LLVM/Clang upstream version not older than 8.0.0.
+        # char8_t is available staring (upstream vanilla) Clang 7, but prior to Clang 8, it is not enabled by -std=c++20 and can be enabled with -fchar8_t.
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fchar8_t")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
+    endif()
+    set (COMPILER_CLANG 1)
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set (COMPILER_CLANG 1)
 endif ()
 
