@@ -19,34 +19,21 @@ using Point = IPolygonDictionary::Point;
 using Polygon = IPolygonDictionary::Polygon;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
-class FinalCell;
-
-class ICell
+class Cell
 {
 public:
-    virtual ~ICell() = default;
-    [[nodiscard]] virtual const FinalCell * find(Float64 x, Float64 y) const = 0;
-};
-
-class DividedCell : public ICell
-{
-public:
-    explicit DividedCell(std::vector<std::unique_ptr<ICell>> children_);
-    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
-
-private:
-    std::vector<std::unique_ptr<ICell>> children;
-};
-
-class FinalCell : public ICell
-{
-public:
-    explicit FinalCell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_);
+    explicit Cell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_);
     std::vector<size_t> polygon_ids;
     std::vector<uint8_t> is_covered_by;
 
+    explicit Cell(std::vector<std::unique_ptr<Cell>> children_);
+
+    [[nodiscard]] const Cell * find(Float64 x, Float64 y) const override;
+
 private:
-    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
+    std::vector<std::unique_ptr<Cell>> children;
+
+    bool is_final = false;
 };
 
 /** A recursively built grid containing information about polygons intersecting each cell.
@@ -56,21 +43,21 @@ private:
  *  intersects a small enough number of polygons or the maximum allowed depth is exceeded.
  *  Both of these parameters are set in the constructor.
  */
-class GridRoot : public ICell
+class GridRoot
 {
 public:
     GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_);
     /** Retrieves the cell containing a given point.
      *  A null pointer is returned when the point falls outside the grid.
      */
-    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
+    [[nodiscard]] const Cell * find(Float64 x, Float64 y) const override;
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kSplit = 4;
     static constexpr size_t kMultiProcessingDepth = 2;
 
 private:
-    std::unique_ptr<ICell> root = nullptr;
+    std::unique_ptr<Cell> root = nullptr;
     Float64 min_x = 0, min_y = 0;
     Float64 max_x = 0, max_y = 0;
     const size_t kMinIntersections;
@@ -78,7 +65,7 @@ private:
 
     const std::vector<Polygon> & polygons;
 
-    std::unique_ptr<ICell> makeCell(Float64 min_x, Float64 min_y, Float64 max_x, Float64 max_y, std::vector<size_t> intersecting_ids, size_t depth = 0);
+    std::unique_ptr<Cell> makeCell(Float64 min_x, Float64 min_y, Float64 max_x, Float64 max_y, std::vector<size_t> intersecting_ids, size_t depth = 0);
 
     void setBoundingBox();
 };
