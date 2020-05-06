@@ -193,7 +193,6 @@ protected:
     virtual bool find(const Point & point, size_t & id) const = 0;
 
     std::vector<Polygon> polygons;
-    std::vector<double> areas;
     /** Since the original data may have been in the form of multi-polygons, an id is stored for each single polygon
      *  corresponding to the row in which any other attributes for this entry are located.
      */

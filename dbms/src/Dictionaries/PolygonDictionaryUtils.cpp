@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <thread>
+#include <numeric>
 
 namespace DB
 {
@@ -38,12 +39,11 @@ const FinalCell * DividedCell::find(Float64 x, Float64 y) const
 }
 
 GridRoot::GridRoot(const size_t min_intersections_, const size_t max_depth_, const std::vector<Polygon> & polygons_):
-kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_) {}
-
-void GridRoot::init(const std::vector<size_t> & order_)
-{
+kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_) {
     setBoundingBox();
-    root = makeCell(min_x, min_y, max_x, max_y, order_);
+    std::vector<size_t> order(polygons.size());
+    std::iota(order.begin(), order.end(), 0);
+    root = makeCell(min_x, min_y, max_x, max_y, order);
 }
 
 const FinalCell * GridRoot::find(Float64 x, Float64 y) const
