@@ -152,7 +152,7 @@ private:
      *  Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
      *  placing it into O(log n) vertexes of this tree.
      */
-    std::vector<std::vector<size_t>> edges_index_tree;
+    std::vector<std::vector<Edge>> edges_index_tree;
 };
 
 }
