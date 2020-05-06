@@ -29,8 +29,10 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_parsers
         clickhouse_storages_system
         clickhouse_table_functions
-        daemon
         string_utils
+
+    PUBLIC
+        daemon
 )
 
 clickhouse_program_add(server)

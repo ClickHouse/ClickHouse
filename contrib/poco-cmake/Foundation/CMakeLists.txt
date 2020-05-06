@@ -203,6 +203,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
                 -Wno-deprecated
                 -Wno-extra-semi-stmt
                 -Wno-zero-as-null-pointer-constant
+                -Wno-implicit-int-float-conversion
         )
     endif ()
     target_compile_options (_poco_foundation

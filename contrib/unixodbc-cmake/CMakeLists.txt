@@ -1,7 +1,7 @@
 option (ENABLE_ODBC "Enable ODBC library" ${ENABLE_LIBRARIES})
 
 if (NOT OS_LINUX)
-    set (ENABLE_ODBC OFF)
+    set (ENABLE_ODBC OFF CACHE INTERNAL "")
 endif ()
 
 if (ENABLE_ODBC)
