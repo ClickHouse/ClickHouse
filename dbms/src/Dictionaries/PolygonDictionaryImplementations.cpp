@@ -39,18 +39,13 @@ std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
 bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
 {
     bool found = false;
-    double area = 0;
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         if (bg::covered_by(point, polygons[i]))
         {
-            double new_area = areas[i];
-            if (!found || new_area < area)
-            {
-                found = true;
-                id = i;
-                area = new_area;
-            }
+            id = i;
+            found = true;
+            break;
         }
     }
     return found;
@@ -65,16 +60,7 @@ GridPolygonDictionary::GridPolygonDictionary(
         InputType input_type_,
         PointType point_type_):
         IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-        grid(kMinIntersections, kMaxDepth, polygons)
-{
-    std::vector<size_t> order(polygons.size());
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](auto lhs, auto rhs)
-    {
-        return areas[lhs] < areas[rhs];
-    });
-    grid.init(order);
-}
+        grid(kMinIntersections, kMaxDepth, polygons) {}
 
 std::shared_ptr<const IExternalLoadable> GridPolygonDictionary::clone() const
 {
@@ -119,13 +105,6 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
           grid(kMinIntersections, kMaxDepth, polygons)
 {
-    std::vector<size_t> order(polygons.size());
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](auto lhs, auto rhs)
-    {
-        return areas[lhs] < areas[rhs];
-    });
-    grid.init(order);
     auto log = &Logger::get("BucketsPolygonIndex");
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < polygons.size(); ++i)

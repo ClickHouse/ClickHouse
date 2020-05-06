@@ -60,10 +60,6 @@ class GridRoot : public ICell
 {
 public:
     GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_);
-    /** Initializes and builds the grid, saving the intersecting polygons for each cell accordingly.
-     *  The order of indexes is always a subsequence of the order specified in this function call.
-     */
-    void init(const std::vector<size_t> & order_);
     /** Retrieves the cell containing a given point.
      *  A null pointer is returned when the point falls outside the grid.
      */
