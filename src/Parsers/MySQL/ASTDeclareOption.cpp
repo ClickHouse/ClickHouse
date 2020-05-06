@@ -58,7 +58,7 @@ bool ParserDeclareOption::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         if (!found)
             break;
 
-        ParserToken{TokenType::Comma}.ignore(pos, expected);
+//        ParserToken{TokenType::Comma}.ignore(pos, expected);
     }
 
     if (!changes.empty())

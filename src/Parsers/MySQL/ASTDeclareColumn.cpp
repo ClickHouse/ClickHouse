@@ -1,5 +1,6 @@
 #include <Parsers/MySQL/ASTDeclareColumn.h>
 
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -38,6 +39,7 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr column_name;
     ASTPtr column_data_type;
     ASTPtr column_options;
+    bool is_national = false;
 
     ParserExpression p_expression;
     ParserIdentifier p_identifier;
@@ -45,11 +47,24 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!p_identifier.parse(pos, column_name, expected))
         return false;
 
+    if (ParserKeyword("NATIONAL").checkWithoutMoving(pos, expected))
+        is_national = true;
+    else if (ParserKeyword("DOUBLE PRECISION").checkWithoutMoving(pos, expected))
+        ParserKeyword("DOUBLE").ignore(pos, expected); /// hack skip DOUBLE
+
     if (!p_expression.parse(pos, column_data_type, expected))
         return false;
 
     if (!parseColumnDeclareOptions(pos, column_options, expected))
             return false;
+
+    if (is_national)
+    {
+        if (!column_options)
+            column_options = std::make_shared<ASTDeclareOptions>();
+        column_options->as<ASTDeclareOptions>()->changes.insert(
+            std::make_pair("is_national", std::make_shared<ASTLiteral>(Field(UInt64(1)))));
+    }
 
     auto declare_column = std::make_shared<ASTDeclareColumn>();
     declare_column->name = column_name->as<ASTIdentifier>()->name;
@@ -69,6 +84,8 @@ bool ParserDeclareColumn::parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr &
 {
     ParserDeclareOption p_non_generate_options{
         {
+            OptionDescribe("ZEROFILL", "zero_fill", std::make_unique<ParserAlwaysTrue>()),
+            OptionDescribe("UNSIGNED", "is_unsigned", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("NULL", "is_null", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("NOT NULL", "is_null", std::make_unique<ParserAlwaysFalse>()),
             OptionDescribe("DEFAULT", "default", std::make_unique<ParserExpression>()),
@@ -78,6 +95,7 @@ bool ParserDeclareColumn::parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr &
             OptionDescribe("KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("PRIMARY KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
+            OptionDescribe("CHARACTER SET", "charset_name", std::make_unique<ParserCharsetName>()),
             OptionDescribe("COLLATE", "collate", std::make_unique<ParserCharsetName>()),
             OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserIdentifier>()),
             OptionDescribe("STORAGE", "storage", std::make_unique<ParserIdentifier>()),
