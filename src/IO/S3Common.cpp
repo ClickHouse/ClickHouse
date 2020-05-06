@@ -66,7 +66,7 @@ namespace S3
 {
     ClientFactory::ClientFactory()
     {
-        aws_options = Aws::SDKOptions {};
+        aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
     }
@@ -83,6 +83,7 @@ namespace S3
         return ret;
     }
 
+    /// This method is not static because it requires ClientFactory to be initialized.
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
         const String & access_key_id,
@@ -92,16 +93,23 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
+        return create(cfg, access_key_id, secret_access_key);
+    }
+
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+        Aws::Client::ClientConfiguration & cfg,
+        const String & access_key_id,
+        const String & secret_access_key)
+    {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
         return std::make_shared<Aws::S3::S3Client>(
-                credentials, // Aws credentials.
-                std::move(cfg), // Client configuration.
-                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-                endpoint.empty() // Use virtual addressing only if endpoint is not specified.
+            credentials, // Aws credentials.
+            std::move(cfg), // Client configuration.
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+            cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
-
 
     URI::URI(const Poco::URI & uri_)
     {

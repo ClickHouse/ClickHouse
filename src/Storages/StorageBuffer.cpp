@@ -81,11 +81,6 @@ StorageBuffer::StorageBuffer(
     setConstraints(constraints_);
 }
 
-StorageBuffer::~StorageBuffer()
-{
-    flush_handle->deactivate();
-}
-
 
 /// Reads from one buffer (from one block) under its mutex.
 class BufferSource : public SourceWithProgress
@@ -468,6 +463,9 @@ void StorageBuffer::startup()
 
 void StorageBuffer::shutdown()
 {
+    if (!flush_handle)
+        return;
+
     flush_handle->deactivate();
 
     try

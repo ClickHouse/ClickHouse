@@ -24,9 +24,9 @@ toc_title: "\u0627\u0644\u0632\u0627\u0645\u0627\u062A"
 -   پیچیدگی نمایش داده شد.
 -   مقدار داده هایی که در نمایش داده شد پردازش شده است.
 
-برای محاسبه حجم مورد نیاز رم, شما باید اندازه داده های موقت برای تخمین [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) و عملیات دیگر استفاده می کنید.
+برای محاسبه حجم مورد نیاز رم, شما باید اندازه داده های موقت برای تخمین [GROUP BY](../sql-reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select.md#select-distinct), [JOIN](../sql-reference/statements/select.md#select-join) و عملیات دیگر استفاده می کنید.
 
-تاتر می توانید حافظه خارجی برای داده های موقت استفاده. ببینید [گروه در حافظه خارجی](../sql_reference/statements/select.md#select-group-by-in-external-memory) برای اطلاعات بیشتر.
+تاتر می توانید حافظه خارجی برای داده های موقت استفاده. ببینید [گروه در حافظه خارجی](../sql-reference/statements/select.md#select-group-by-in-external-memory) برای اطلاعات بیشتر.
 
 ## تعویض پرونده {#swap-file}
 
@@ -58,4 +58,4 @@ toc_title: "\u0627\u0644\u0632\u0627\u0645\u0627\u062A"
 
 کلیک هاوس برای خانواده لینوکس سیستم عامل توسعه یافته است. توزیع لینوکس توصیه شده اوبونتو است. این `tzdata` بسته باید در سیستم نصب شود.
 
-تاتر همچنین می توانید در دیگر خانواده سیستم عامل کار. مشاهده اطلاعات در [شروع کار](../getting_started/index.md) بخش از اسناد و مدارک.
+تاتر همچنین می توانید در دیگر خانواده سیستم عامل کار. مشاهده اطلاعات در [شروع کار](../getting-started/index.md) بخش از اسناد و مدارک.

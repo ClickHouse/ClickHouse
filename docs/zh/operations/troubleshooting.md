@@ -17,7 +17,7 @@ toc_title: "\u7591\u96BE\u89E3\u7B54"
 ### 您无法使用Apt-get从ClickHouse存储库获取Deb软件包 {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   检查防火墙设置。
--   如果出于任何原因无法访问存储库，请按照以下文件中的描述下载软件包 [开始](../getting_started/index.md) 文章并使用手动安装它们 `sudo dpkg -i <packages>` 指挥部 您还需要 `tzdata` 包。
+-   如果出于任何原因无法访问存储库，请按照以下文件中的描述下载软件包 [开始](../getting-started/index.md) 文章并使用手动安装它们 `sudo dpkg -i <packages>` 指挥部 您还需要 `tzdata` 包。
 
 ## 连接到服务器 {#troubleshooting-accepts-no-connections}
 
@@ -105,7 +105,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   端点设置。
 
-    检查 [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) 和 [tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) 设置。
+    检查 [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) 和 [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 设置。
 
     ClickHouse服务器默认情况下仅接受本地主机连接。
 
@@ -117,8 +117,8 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     检查:
 
-    -   该 [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) 设置。
-    -   设置 [SSL序列](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
+    -   该 [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 设置。
+    -   设置 [SSL序列](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     连接时使用正确的参数。 例如，使用 `port_secure` 参数 `clickhouse_client`.
 

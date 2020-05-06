@@ -245,6 +245,7 @@ void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
     memcpy(memory.data() + peeked_size, sub_buf.position(), bytes_to_append);
     sub_buf.position() = pos;
     peeked_size += bytes_to_append;
+    BufferBase::set(memory.data(), peeked_size, peeked_size);
 }
 
 PeekableReadBuffer::~PeekableReadBuffer()

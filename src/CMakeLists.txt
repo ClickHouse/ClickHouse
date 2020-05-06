@@ -234,6 +234,9 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (USE_AWS_S3)
+    add_headers_and_sources(dbms Disks/S3)
+endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})

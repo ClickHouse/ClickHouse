@@ -369,11 +369,13 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
+    registerInputFormatProcessorJSONAsString(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
     registerFileSegmentationEngineCSV(*this);
     registerFileSegmentationEngineJSONEachRow(*this);
     registerFileSegmentationEngineRegexp(*this);
+    registerFileSegmentationEngineJSONAsString(*this);
 
     registerOutputFormatNull(*this);
 

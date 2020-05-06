@@ -5,7 +5,7 @@ toc_priority: 62
 toc_title: "Descripci\xF3n general de la arquitectura ClickHouse"
 ---
 
-# Descripción general de la arquitectura ClickHouse {#overview-of-clickhouse-architecture}
+# Descripción General De La Arquitectura ClickHouse {#overview-of-clickhouse-architecture}
 
 ClickHouse es un verdadero DBMS orientado a columnas. Los datos se almacenan por columnas y durante la ejecución de matrices (vectores o fragmentos de columnas). Siempre que sea posible, las operaciones se envían en matrices, en lugar de en valores individuales. Se llama “vectorized query execution,” y ayuda a reducir el costo del procesamiento de datos real.
 
@@ -25,13 +25,13 @@ Sin embargo, también es posible trabajar con valores individuales. Para represe
 
 `Field` no tiene suficiente información sobre un tipo de datos específico para una tabla. Por ejemplo, `UInt8`, `UInt16`, `UInt32`, y `UInt64` todos están representados como `UInt64` en una `Field`.
 
-## Abstracciones con fugas {#leaky-abstractions}
+## Abstracciones Con Fugas {#leaky-abstractions}
 
 `IColumn` tiene métodos para transformaciones relacionales comunes de datos, pero no satisfacen todas las necesidades. Por ejemplo, `ColumnUInt64` no tiene un método para calcular la suma de dos columnas, y `ColumnString` no tiene un método para ejecutar una búsqueda de subcadena. Estas innumerables rutinas se implementan fuera de `IColumn`.
 
 Varias funciones en columnas se pueden implementar de una manera genérica, no eficiente utilizando `IColumn` para extraer `Field` valores, o de una manera especializada utilizando el conocimiento del diseño de la memoria interna de los datos en un `IColumn` aplicación. Se implementa mediante la conversión de funciones a un `IColumn` escriba y trate con la representación interna directamente. Por ejemplo, `ColumnUInt64` tiene el `getData` método que devuelve una referencia a una matriz interna, luego una rutina separada lee o llena esa matriz directamente. Tenemos “leaky abstractions” para permitir especializaciones eficientes de varias rutinas.
 
-## Tipos de datos {#data_types}
+## Tipos De Datos {#data_types}
 
 `IDataType` es responsable de la serialización y deserialización: para leer y escribir fragmentos de columnas o valores individuales en formato binario o de texto. `IDataType` corresponde directamente a los tipos de datos en las tablas. Por ejemplo, hay `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` y así sucesivamente.
 
@@ -49,7 +49,7 @@ Cuando calculamos alguna función sobre columnas en un bloque, agregamos otra co
 
 Se crean bloques para cada fragmento de datos procesado. Tenga en cuenta que para el mismo tipo de cálculo, los nombres y tipos de columna siguen siendo los mismos para diferentes bloques y solo cambian los datos de columna. Es mejor dividir los datos del bloque desde el encabezado del bloque porque los tamaños de bloque pequeños tienen una gran sobrecarga de cadenas temporales para copiar shared\_ptrs y nombres de columna.
 
-## Bloquear flujos {#block-streams}
+## Bloquear Flujos {#block-streams}
 
 Los flujos de bloques son para procesar datos. Usamos flujos de bloques para leer datos de algún lugar, realizar transformaciones de datos o escribir datos en algún lugar. `IBlockInputStream` tiene el `read` método para buscar el siguiente bloque mientras esté disponible. `IBlockOutputStream` tiene el `write` método para empujar el bloque en alguna parte.
 
@@ -120,9 +120,9 @@ Los intérpretes son responsables de crear la canalización de ejecución de con
 
 Hay funciones ordinarias y funciones agregadas. Para las funciones agregadas, consulte la siguiente sección.
 
-Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`de datos para implementar la ejecución de consultas vectorizadas.
+Ordinary functions don’t change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`de datos para implementar la ejecución de consultas vectorizadas.
 
-Hay algunas funciones diversas, como [BlockSize](../sql_reference/functions/other_functions.md#function-blocksize), [rowNumberInBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock), y [runningAccumulate](../sql_reference/functions/other_functions.md#function-runningaccumulate), que explotan el procesamiento de bloques y violan la independencia de las filas.
+Hay algunas funciones diversas, como [BlockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), y [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), que explotan el procesamiento de bloques y violan la independencia de las filas.
 
 ClickHouse tiene una tipificación fuerte, por lo que no hay conversión de tipo implícita. Si una función no admite una combinación específica de tipos, produce una excepción. Pero las funciones pueden funcionar (estar sobrecargadas) para muchas combinaciones diferentes de tipos. Por ejemplo, el `plus` función (para implementar el `+` operador) funciona para cualquier combinación de tipos numéricos: `UInt8` + `Float32`, `UInt16` + `Int8` y así sucesivamente. Además, algunas funciones variadas pueden aceptar cualquier número de argumentos, como el `concat` función.
 
@@ -132,7 +132,7 @@ Es un excelente lugar para implementar la generación de código en tiempo de ej
 
 Debido a la ejecución de consultas vectorizadas, las funciones no se cortocircuitan. Por ejemplo, si escribe `WHERE f(x) AND g(y)`, ambos lados se calculan, incluso para las filas, cuando `f(x)` es cero (excepto cuando `f(x)` es una expresión constante cero). Pero si la selectividad del `f(x)` la condición es alta, y el cálculo de `f(x)` es mucho más barato que `g(y)`, es mejor implementar el cálculo de paso múltiple. Primero calcularía `f(x)`, a continuación, filtrar columnas por el resultado, y luego calcular `g(y)` solo para trozos de datos más pequeños y filtrados.
 
-## Funciones agregadas {#aggregate-functions}
+## Funciones Agregadas {#aggregate-functions}
 
 Las funciones agregadas son funciones con estado. Acumulan valores pasados en algún estado y le permiten obtener resultados de ese estado. Se gestionan con el `IAggregateFunction` interfaz. Los estados pueden ser bastante simples (el estado para `AggregateFunctionCount` es sólo una sola `UInt64` valor) o bastante complejo (el estado de `AggregateFunctionUniqCombined` es una combinación de una matriz lineal, una tabla hash, y un `HyperLogLog` estructura de datos probabilística).
 
@@ -159,7 +159,7 @@ Mantenemos una compatibilidad total con versiones anteriores y posteriores para 
 !!! note "Nota"
     Para la mayoría de las aplicaciones externas, recomendamos usar la interfaz HTTP porque es simple y fácil de usar. El protocolo TCP está más estrechamente vinculado a las estructuras de datos internas: utiliza un formato interno para pasar bloques de datos y utiliza marcos personalizados para datos comprimidos. No hemos lanzado una biblioteca C para ese protocolo porque requiere vincular la mayor parte de la base de código ClickHouse, lo cual no es práctico.
 
-## Ejecución de consultas distribuidas {#distributed-query-execution}
+## Ejecución De Consultas Distribuidas {#distributed-query-execution}
 
 Los servidores de una configuración de clúster son en su mayoría independientes. Puede crear un `Distributed` en uno o todos los servidores de un clúster. El `Distributed` table does not store data itself – it only provides a “view” a todas las tablas locales en varios nodos de un clúster. Cuando se SELECCIONA desde un `Distributed` tabla, reescribe esa consulta, elige nodos remotos de acuerdo con la configuración de equilibrio de carga y les envía la consulta. El `Distributed` table solicita a los servidores remotos que procesen una consulta hasta una etapa en la que se pueden fusionar resultados intermedios de diferentes servidores. Luego recibe los resultados intermedios y los fusiona. La tabla distribuida intenta distribuir tanto trabajo como sea posible a servidores remotos y no envía muchos datos intermedios a través de la red.
 
@@ -167,7 +167,7 @@ Las cosas se vuelven más complicadas cuando tiene subconsultas en cláusulas IN
 
 No existe un plan de consulta global para la ejecución de consultas distribuidas. Cada nodo tiene su plan de consulta local para su parte del trabajo. Solo tenemos una ejecución simple de consultas distribuidas de un solo paso: enviamos consultas para nodos remotos y luego fusionamos los resultados. Pero esto no es factible para consultas complicadas con alta cardinalidad GROUP BY o con una gran cantidad de datos temporales para JOIN. En tales casos, necesitamos “reshuffle” datos entre servidores, lo que requiere una coordinación adicional. ClickHouse no admite ese tipo de ejecución de consultas, y tenemos que trabajar en ello.
 
-## Árbol de fusión {#merge-tree}
+## Árbol De fusión {#merge-tree}
 
 `MergeTree` es una familia de motores de almacenamiento que admite la indexación por clave principal. La clave principal puede ser una tupla arbitraria de columnas o expresiones. Datos en un `MergeTree` se almacena en “parts”. Cada parte almacena los datos en el orden de la clave principal, por lo que la tupla de la clave principal ordena los datos lexicográficamente. Todas las columnas de la tabla se almacenan en `column.bin` archivos en estas partes. Los archivos consisten en bloques comprimidos. Cada bloque suele ser de 64 KB a 1 MB de datos sin comprimir, dependiendo del tamaño del valor promedio. Los bloques constan de valores de columna colocados contiguamente uno tras otro. Los valores de columna están en el mismo orden para cada columna (la clave principal define el orden), por lo que cuando itera por muchas columnas, obtiene valores para las filas correspondientes.
 
@@ -177,7 +177,7 @@ Cuando vamos a leer algo de una parte en `MergeTree` miramos `primary.idx` datos
 
 Cuando `INSERT` un montón de datos en `MergeTree`, ese grupo está ordenado por orden de clave primaria y forma una nueva parte. Hay subprocesos de fondo que seleccionan periódicamente algunas partes y las fusionan en una sola parte ordenada para mantener el número de partes relativamente bajo. Es por eso que se llama `MergeTree`. Por supuesto, la fusión conduce a “write amplification”. Todas las partes son inmutables: solo se crean y eliminan, pero no se modifican. Cuando se ejecuta SELECT, contiene una instantánea de la tabla (un conjunto de partes). Después de la fusión, también mantenemos las piezas viejas durante algún tiempo para facilitar la recuperación después de la falla, por lo que si vemos que alguna parte fusionada probablemente esté rota, podemos reemplazarla con sus partes de origen.
 
-`MergeTree` no es un árbol de LSM porque no contiene “memtable” y “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity's sake, and because we are already inserting data in batches in our applications.
+`MergeTree` no es un árbol de LSM porque no contiene “memtable” y “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications.
 
 > Las tablas MergeTree solo pueden tener un índice (primario): no hay índices secundarios. Sería bueno permitir múltiples representaciones físicas bajo una tabla lógica, por ejemplo, para almacenar datos en más de un orden físico o incluso para permitir representaciones con datos preagregados junto con datos originales.
 

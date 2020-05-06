@@ -5,7 +5,7 @@ toc_priority: 61
 toc_title: Sistema abierto.
 ---
 
-# Sistema abierto. {#clickhouse-benchmark}
+# Sistema Abierto {#clickhouse-benchmark}
 
 Se conecta a un servidor ClickHouse y envía repetidamente las consultas especificadas.
 
@@ -99,7 +99,7 @@ En el informe puedes encontrar:
 
 -   Percentiles de tiempo de ejecución de consultas.
 
-## Modo de comparación {#clickhouse-benchmark-comparison-mode}
+## Modo De comparación {#clickhouse-benchmark-comparison-mode}
 
 `clickhouse-benchmark` puede comparar el rendimiento de dos servidores ClickHouse en ejecución.
 

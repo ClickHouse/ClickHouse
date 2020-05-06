@@ -10,6 +10,7 @@ SRCS(
     FormatSchemaInfo.cpp
     IRowInputStream.cpp
     IRowOutputStream.cpp
+    JSONEachRowUtils.cpp
     MySQLBlockInputStream.cpp
     NativeFormat.cpp
     NullFormat.cpp

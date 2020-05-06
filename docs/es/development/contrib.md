@@ -5,7 +5,7 @@ toc_priority: 70
 toc_title: Bibliotecas de terceros utilizadas
 ---
 
-# Bibliotecas de terceros utilizadas {#third-party-libraries-used}
+# Bibliotecas De Terceros Utilizadas {#third-party-libraries-used}
 
 | Biblioteca         | Licencia                                                                                                                                         |
 |--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
