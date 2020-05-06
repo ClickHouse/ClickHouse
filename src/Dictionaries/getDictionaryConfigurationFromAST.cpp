@@ -56,7 +56,8 @@ void buildLifetimeConfiguration(
     const ASTDictionaryLifetime * lifetime)
 {
 
-    if (lifetime) {
+    if (lifetime)
+    {
         AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
         AutoPtr<Element> min_element(doc->createElement("min"));
         AutoPtr<Element> max_element(doc->createElement("max"));
