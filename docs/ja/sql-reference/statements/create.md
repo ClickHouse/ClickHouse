@@ -65,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-テーブルを作成しますの構造やデータによって返される [テーブル機能](../table-functions/index.md).
+テーブルを作成しますの構造やデータによって返される [テーブル機能](../table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...

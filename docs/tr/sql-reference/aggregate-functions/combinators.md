@@ -36,8 +36,8 @@ Bu durumlarla çalışmak için şunları kullanın:
 -   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) masa motoru.
 -   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) işlev.
 -   [runningAccumulate](../../sql-reference/functions/other-functions.md#function-runningaccumulate) işlev.
--   [-Birleştirmek](#aggregate_functions_combinators_merge) birleştirici.
--   [- MergeState](#aggregate_functions_combinators_mergestate) birleştirici.
+-   [-Birleştirmek](#aggregate_functions_combinators-merge) birleştirici.
+-   [- MergeState](#aggregate_functions_combinators-mergestate) birleştirici.
 
 ## -Birleştirmek {#aggregate_functions_combinators-merge}
 

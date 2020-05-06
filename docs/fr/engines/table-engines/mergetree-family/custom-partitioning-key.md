@@ -7,7 +7,7 @@ toc_title: "Cl\xE9 De Partitionnement Personnalis\xE9e"
 
 # Clé De Partitionnement Personnalisée {#custom-partitioning-key}
 
-Le partitionnement est disponible pour [MergeTree](mergetree.md) table de famille (y compris les [répliqué](replication.md) table). [Les vues matérialisées](../special/materializedview.md) basé sur les tables MergeTree prennent également en charge le partitionnement.
+Le partitionnement est disponible pour [MergeTree](mergetree.md) table de famille (y compris les [répliqué](replication.md) table). [Les vues matérialisées](../special/materializedview.md#materializedview) basé sur les tables MergeTree prennent également en charge le partitionnement.
 
 Une partition est une combinaison logique d’enregistrements dans une table selon un critère spécifié. Vous pouvez définir une partition par un critère arbitraire, comme, par mois, par jour, ou par type d’événement. Chaque partition est stockée séparément pour simplifier les manipulations de ces données. Lors de l’accès aux données, ClickHouse utilise le plus petit sous-ensemble de partitions possible.
 

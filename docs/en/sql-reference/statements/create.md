@@ -59,7 +59,7 @@ Creates a table with the same structure as another table. You can specify a diff
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Creates a table with the structure and data returned by a [table function](../table-functions/index.md).
+Creates a table with the structure and data returned by a [table function](../table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...

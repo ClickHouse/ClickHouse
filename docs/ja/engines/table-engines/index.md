@@ -21,17 +21,17 @@ toc_title: "\u5C0E\u5165"
 
 ### Mergetree {#mergetree}
 
-高負荷仕事のための最も普遍的な、機能テーブルエンジン。 本物件の共有によるこれらのエンジンには迅速にデータを挿入とその後のバックグラウンドデータを処となります。 `MergeTree` 家族のエンジンの支援データレプリケーション（ [複製された\*](mergetree-family/replication.md) バージョンのエンジン)分割、その他の機能で対応していないその他のエンジンです。
+高負荷仕事のための最も普遍的な、機能テーブルエンジン。 本物件の共有によるこれらのエンジンには迅速にデータを挿入とその後のバックグラウンドデータを処となります。 `MergeTree` 家族のエンジンの支援データレプリケーション（ [複製された\*](mergetree-family/replication.md#replication) バージョンのエンジン)分割、その他の機能で対応していないその他のエンジンです。
 
 家族のエンジン:
 
--   [MergeTree](mergetree-family/mergetree.md)
--   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂつｹ](mergetree-family/replacingmergetree.md)
--   [SummingMergeTree](mergetree-family/summingmergetree.md)
--   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ](mergetree-family/aggregatingmergetree.md)
--   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md)
--   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md)
--   [グラフィットメールグツリー](mergetree-family/graphitemergetree.md)
+-   [MergeTree](mergetree-family/mergetree.md#mergetree)
+-   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂつｹ](mergetree-family/replacingmergetree.md#replacingmergetree)
+-   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
+-   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
+-   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
+-   [グラフィットメールグツリー](mergetree-family/graphitemergetree.md#graphitemergetree)
 
 ### ログ {#log}
 
@@ -39,9 +39,9 @@ toc_title: "\u5C0E\u5165"
 
 家族のエンジン:
 
--   [TinyLog](log-family/tinylog.md)
--   [ストリップログ](log-family/stripelog.md)
--   [ログ](log-family/log.md)
+-   [TinyLog](log-family/tinylog.md#tinylog)
+-   [ストリップログ](log-family/stripelog.md#stripelog)
+-   [ログ](log-family/log.md#log)
 
 ### 統合エンジン {#integration-engines}
 
@@ -49,30 +49,30 @@ toc_title: "\u5C0E\u5165"
 
 家族のエンジン:
 
--   [カフカname](integrations/kafka.md)
--   [MySQL](integrations/mysql.md)
--   [ODBC](integrations/odbc.md)
--   [JDBC](integrations/jdbc.md)
--   [HDFS](integrations/hdfs.md)
+-   [カフカname](integrations/kafka.md#kafka)
+-   [MySQL](integrations/mysql.md#mysql)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [HDFS](integrations/hdfs.md#hdfs)
 
 ### 特殊エンジン {#special-engines}
 
 家族のエンジン:
 
--   [分散](special/distributed.md)
--   [MaterializedView](special/materializedview.md)
--   [辞書](special/dictionary.md)
--   [マージ](special/merge.md)
--   [ファイル](special/file.md)
--   [ヌル](special/null.md)
--   [セット](special/set.md)
--   [参加](special/join.md)
--   [URL](special/url.md)
--   [ビュー](special/view.md)
--   [メモリ](special/memory.md)
--   [バッファ](special/buffer.md)
+-   [分散](special/distributed.md#distributed)
+-   [MaterializedView](special/materializedview.md#materializedview)
+-   [辞書](special/dictionary.md#dictionary)
+-   [マージ](special/merge.md#merge
+-   [ファイル](special/file.md#file)
+-   [ヌル](special/null.md#null)
+-   [セット](special/set.md#set)
+-   [参加](special/join.md#join)
+-   [URL](special/url.md#table_engines-url)
+-   [ビュー](special/view.md#table_engines-view)
+-   [メモリ](special/memory.md#memory)
+-   [バッファ](special/buffer.md#buffer)
 
-## 仮想列 {#table_engines-virtual-columns}
+## 仮想列 {#table_engines-virtual_columns}
 
 Virtual columnは、エンジンのソースコードで定義されているテーブルエンジンの属性です。
 

@@ -30,8 +30,8 @@
 -   Движок таблиц [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
 -   Функция [finalizeAggregation](../../sql-reference/aggregate-functions/combinators.md#function-finalizeaggregation).
 -   Функция [runningAccumulate](../../sql-reference/aggregate-functions/combinators.md#function-runningaccumulate).
--   Комбинатор [-Merge](#aggregate_functions_combinators_merge).
--   Комбинатор [-MergeState](#aggregate_functions_combinators_mergestate).
+-   Комбинатор [-Merge](#aggregate_functions_combinators-merge).
+-   Комбинатор [-MergeState](#aggregate_functions_combinators-mergestate).
 
 ## -Merge {#aggregate_functions_combinators-merge}
 

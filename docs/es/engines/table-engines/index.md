@@ -21,17 +21,17 @@ El motor de tabla (tipo de tabla) determina:
 
 ### Mergetree {#mergetree}
 
-Los motores de mesa más universales y funcionales para tareas de alta carga. La propiedad compartida por estos motores es la inserción rápida de datos con el posterior procesamiento de datos en segundo plano. `MergeTree` Los motores familiares admiten la replicación de datos (con [Replicado\*](mergetree-family/replication.md) versiones de motores), particionamiento y otras características no admitidas en otros motores.
+Los motores de mesa más universales y funcionales para tareas de alta carga. La propiedad compartida por estos motores es la inserción rápida de datos con el posterior procesamiento de datos en segundo plano. `MergeTree` Los motores familiares admiten la replicación de datos (con [Replicado\*](mergetree-family/replication.md#replication) versiones de motores), particionamiento y otras características no admitidas en otros motores.
 
 Motores en la familia:
 
--   [Método de codificación de datos:](mergetree-family/mergetree.md)
--   [ReplacingMergeTree](mergetree-family/replacingmergetree.md)
--   [SummingMergeTree](mergetree-family/summingmergetree.md)
--   [AgregaciónMergeTree](mergetree-family/aggregatingmergetree.md)
--   [ColapsarMergeTree](mergetree-family/collapsingmergetree.md)
--   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md)
--   [GraphiteMergeTree](mergetree-family/graphitemergetree.md)
+-   [Método de codificación de datos:](mergetree-family/mergetree.md#mergetree)
+-   [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
+-   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
+-   [AgregaciónMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [ColapsarMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
+-   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
+-   [GraphiteMergeTree](mergetree-family/graphitemergetree.md#graphitemergetree)
 
 ### Registro {#log}
 
@@ -39,9 +39,9 @@ Ligero [motor](log-family/index.md) con funcionalidad mínima. Son los más efec
 
 Motores en la familia:
 
--   [TinyLog](log-family/tinylog.md)
--   [StripeLog](log-family/stripelog.md)
--   [Registro](log-family/log.md)
+-   [TinyLog](log-family/tinylog.md#tinylog)
+-   [StripeLog](log-family/stripelog.md#stripelog)
+-   [Registro](log-family/log.md#log)
 
 ### Motores De integración {#integration-engines}
 
@@ -49,30 +49,30 @@ Motores para comunicarse con otros sistemas de almacenamiento y procesamiento de
 
 Motores en la familia:
 
--   [Kafka](integrations/kafka.md)
--   [MySQL](integrations/mysql.md)
--   [ODBC](integrations/odbc.md)
--   [JDBC](integrations/jdbc.md)
--   [HDFS](integrations/hdfs.md)
+-   [Kafka](integrations/kafka.md#kafka)
+-   [MySQL](integrations/mysql.md#mysql)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [HDFS](integrations/hdfs.md#hdfs)
 
 ### Motores Especiales {#special-engines}
 
 Motores en la familia:
 
--   [Distribuido](special/distributed.md)
--   [Método de codificación de datos:](special/materializedview.md)
--   [Diccionario](special/dictionary.md)
--   [Fusionar](special/merge.md)
--   [File](special/file.md)
--   [Nulo](special/null.md)
--   [Establecer](special/set.md)
--   [Unir](special/join.md)
--   [URL](special/url.md)
--   [Vista](special/view.md)
--   [Memoria](special/memory.md)
--   [Búfer](special/buffer.md)
+-   [Distribuido](special/distributed.md#distributed)
+-   [Método de codificación de datos:](special/materializedview.md#materializedview)
+-   [Diccionario](special/dictionary.md#dictionary)
+-   [Fusionar](special/merge.md#merge
+-   [File](special/file.md#file)
+-   [Nulo](special/null.md#null)
+-   [Establecer](special/set.md#set)
+-   [Unir](special/join.md#join)
+-   [URL](special/url.md#table_engines-url)
+-   [Vista](special/view.md#table_engines-view)
+-   [Memoria](special/memory.md#memory)
+-   [Búfer](special/buffer.md#buffer)
 
-## Virtual Columnas {#table_engines-virtual-columns}
+## Virtual Columnas {#table_engines-virtual_columns}
 
 La columna virtual es un atributo de motor de tabla integral que se define en el código fuente del motor.
 
