@@ -156,7 +156,7 @@ struct Decimal
 
     template <typename U>
     Decimal(const Decimal<U> & x)
-    :   value(x)
+    :   value(x.value)
     {}
 
     constexpr Decimal<T> & operator = (Decimal<T> &&) = default;
@@ -175,6 +175,19 @@ struct Decimal
     T value;
 };
 
+// template <typename T> inline bool operator< (const Decimal<bInt256> & x, const T & y) { return x.value < static_cast<bInt256>(y); }
+// template <typename T> inline bool operator> (const Decimal<bInt256> & x, const T & y) { return x.value > static_cast<bInt256>(y); }
+// template <typename T> inline bool operator== (const Decimal<bInt256> & x, const T & y) { return x.value == static_cast<bInt256>(y); }
+
+template <typename T> inline bool operator< (const Decimal<T> & x, const Decimal<T> & y) { return x.value < y.value; }
+template <typename T> inline bool operator> (const Decimal<T> & x, const Decimal<T> & y) { return x.value > y.value; }
+template <typename T> inline bool operator== (const Decimal<T> & x, const Decimal<T> & y) { return x.value == y.value; }
+template <typename T> inline bool operator!= (const Decimal<T> & x, const Decimal<T> & y) { return x.value != y.value; }
+
+template <typename T> inline Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y) { return x.value + y.value; }
+template <typename T> inline Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y) { return x.value - y.value; }
+template <typename T> inline Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y) { return x.value * y.value; }
+template <typename T> inline Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;

@@ -50,6 +50,7 @@ String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuo
 String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { return formatQuotedWithPrefix(x, "Decimal32_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
+String FieldVisitorDump::operator() (const DecimalField<Decimal256> & x) const { return formatQuotedWithPrefix(x, "Decimal256_"); }
 String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
 
 
@@ -135,6 +136,7 @@ String FieldVisitorToString::operator() (const String & x) const { return format
 String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
 {
@@ -259,6 +261,13 @@ void FieldVisitorHash::operator() (const DecimalField<Decimal64> & x) const
 void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
 {
     UInt8 type = Field::Types::Decimal128;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const DecimalField<Decimal256> & x) const
+{
+    UInt8 type = Field::Types::Decimal256;
     hash.update(type);
     hash.update(x);
 }

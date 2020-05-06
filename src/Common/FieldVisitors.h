@@ -75,6 +75,7 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 
     String operator() (const bUInt128 & x) const;
@@ -99,6 +100,7 @@ public:
     String operator() (const DecimalField<Decimal32> & x) const;
     String operator() (const DecimalField<Decimal64> & x) const;
     String operator() (const DecimalField<Decimal128> & x) const;
+    String operator() (const DecimalField<Decimal256> & x) const;
     String operator() (const AggregateFunctionStateData & x) const;
 
     String operator() (const bUInt128 & x) const;
@@ -145,10 +147,20 @@ public:
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
-        if constexpr (std::is_floating_point_v<T>)
-            return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
+        if constexpr (std::is_same_v<U, Decimal256>)
+        {
+            if constexpr (std::is_floating_point_v<T>)
+                return static_cast<T>(x.getValue().value) / static_cast<T>(x.getScaleMultiplier().value);
+            else
+                return static_cast<T>(x.getValue().value / x.getScaleMultiplier().value);
+        }
         else
-            return x.getValue() / x.getScaleMultiplier();
+        {
+            if constexpr (std::is_floating_point_v<T>)
+                return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
+            else
+                return x.getValue() / x.getScaleMultiplier();
+        }
     }
 
     T operator() (const AggregateFunctionStateData &) const
@@ -206,6 +218,7 @@ public:
     void operator() (const DecimalField<Decimal32> & x) const;
     void operator() (const DecimalField<Decimal64> & x) const;
     void operator() (const DecimalField<Decimal128> & x) const;
+    void operator() (const DecimalField<Decimal256> & x) const;
     void operator() (const AggregateFunctionStateData & x) const;
 
     void operator() (const bUInt128 & x) const;
@@ -219,6 +232,7 @@ template <typename T> constexpr bool isDecimalField() { return false; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal32>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal64>>() { return true; }
 template <> constexpr bool isDecimalField<DecimalField<Decimal128>>() { return true; }
+template <> constexpr bool isDecimalField<DecimalField<Decimal256>>() { return true; }
 
 
 /** More precise comparison, used for index.
@@ -577,7 +591,7 @@ public:
     bool operator() (DecimalField<T> & x) const
     {
         x += get<DecimalField<T>>(rhs);
-        return x.getValue() != 0;
+        return x.getValue().value != 0;
     }
 
     bool operator() (bUInt128 & x) const { x += get<bUInt128>(rhs); return x != 0; }

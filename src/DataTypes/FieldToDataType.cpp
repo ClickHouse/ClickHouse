@@ -77,6 +77,11 @@ DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal128> & x) con
     return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
 }
 
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal256> & x) const
+{
+    using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
 
 DataTypePtr FieldToDataType::operator() (const Array & x) const
 {

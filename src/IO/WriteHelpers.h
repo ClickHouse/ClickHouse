@@ -852,7 +852,7 @@ inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinar
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_v<T> && (sizeof(T) <= 16), void>
+inline std::enable_if_t<is_integral_v<T> && !is_big_int_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -897,6 +897,23 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
         for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
             str_fractional[pos] += value % Decimal<T>(10);
         ostr.write(str_fractional.data(), scale);
+    }
+}
+
+template <>
+void writeText(Decimal<bInt256> value, UInt32 scale, WriteBuffer & ostr)
+{
+    const auto& value_str = value.value.str();
+
+    size_t i = 0;
+    for (; i < value_str.size() - scale; i++)
+        writeChar(value_str[i], ostr);
+
+    if (scale)
+    {
+        writeChar('.', ostr);
+        for (; i < value_str.size(); i++)
+            writeChar(value_str[i], ostr);
     }
 }
 
