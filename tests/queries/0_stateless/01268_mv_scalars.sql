@@ -3,7 +3,7 @@ CREATE MATERIALIZED VIEW dst_mv Engine=Memory as select *, (SELECT count() FROM 
 insert into src_table select * from numbers(2);
 insert into src_table select * from numbers(2);
 insert into src_table select * from numbers(2);
-select * from dst_mv;
+select * from dst_mv order by number;
 
 CREATE TABLE dest_table (`Date` Date, `Id` UInt64, `Units` Float32) ENGINE = Memory;
 create table left_table as dest_table;
