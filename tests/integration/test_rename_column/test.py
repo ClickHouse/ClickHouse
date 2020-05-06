@@ -303,3 +303,40 @@ def test_rename_distributed(started_cluster):
         select(node1, table_name, "foo2", '1998\n', poll=30)
     finally:
         drop_distributed_table(node1, table_name)
+
+def test_rename_distributed_parallel_insert_and_select(started_cluster):
+    table_name = 'test_rename_distributed_parallel_insert_and_select'
+    try:
+        create_distributed_table(node1, table_name)
+        insert(node1, table_name, 1000)
+
+        p = Pool(15)
+        tasks = []
+        for i in range(1):
+            tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'num2', 'foo2', 5, True)))
+            tasks.append(p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'num2', 'foo2', 5, True)))
+            tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo2', 'foo3', 5, True)))
+            tasks.append(p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo2', 'foo3', 5, True)))
+            tasks.append(p.apply_async(rename_column_on_cluster, (node1, table_name, 'foo3', 'num2', 5, True)))
+            tasks.append(p.apply_async(rename_column_on_cluster, (node1, '%s_replicated' % table_name, 'foo3', 'num2', 5, True)))
+            tasks.append(p.apply_async(insert, (node1, table_name, 100, ["num", "foo3"], 5, True)))
+            tasks.append(p.apply_async(insert, (node2, table_name, 100, ["num", "num2"], 5, True)))
+            tasks.append(p.apply_async(insert, (node3, table_name, 100, ["num", "foo2"], 5, True)))
+            tasks.append(p.apply_async(select, (node1, table_name, "foo2", None, 5, True)))
+            tasks.append(p.apply_async(select, (node2, table_name, "foo3", None, 5, True)))
+            tasks.append(p.apply_async(select, (node3, table_name, "num2", None, 5, True)))
+        for task in tasks:
+            task.get(timeout=240)
+
+        rename_column_on_cluster(node1, table_name, 'foo2', 'num2', 1, True)
+        rename_column_on_cluster(node1, '%s_replicated' % table_name, 'foo2', 'num2', 1, True)
+        rename_column_on_cluster(node1, table_name, 'foo3', 'num2', 1, True)
+        rename_column_on_cluster(node1, '%s_replicated' % table_name, 'foo3', 'num2', 1, True)
+
+        insert(node1, table_name, 1000, col_names=['num','num2'])
+        select(node1, table_name, "num2")
+        select(node2, table_name, "num2")
+        select(node3, table_name, "num2")
+        select(node4, table_name, "num2")
+    finally:
+        drop_distributed_table(node1, table_name)
