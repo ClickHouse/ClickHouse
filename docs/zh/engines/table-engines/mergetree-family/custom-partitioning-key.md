@@ -107,7 +107,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 文件夹 ‘201901\_1\_1\_0’，‘201901\_1\_7\_1’ 等是片段的目录。每个片段都与一个对应的分区相关，并且只包含这个月的数据（本例中的表按月分区）。
 
-`detached` 目录存放着使用 [DETACH](#alter_detach-partition) 语句从表中分离的片段。损坏的片段也会移到该目录，而不是删除。服务器不使用`detached`目录中的片段。可以随时添加，删除或修改此目录中的数据 – 在运行 [ATTACH](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md#alter_attach-partition) 语句前，服务器不会感知到。
+`detached` 目录存放着使用 [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) 语句从表中分离的片段。损坏的片段也会移到该目录，而不是删除。服务器不使用`detached`目录中的片段。可以随时添加，删除或修改此目录中的数据 – 在运行 [ATTACH](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md#alter_attach-partition) 语句前，服务器不会感知到。
 
 注意，在操作服务器时，你不能手动更改文件系统上的片段集或其数据，因为服务器不会感知到这些修改。对于非复制表，可以在服务器停止时执行这些操作，但不建议这样做。对于复制表，在任何情况下都不要更改片段文件。
 
