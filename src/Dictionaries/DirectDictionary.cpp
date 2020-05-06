@@ -55,7 +55,9 @@ static inline DirectDictionary::Key getAt(const DirectDictionary::Key & value, c
 DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find) const
 {
     std::vector<Key> required_key = {to_find};
-    auto stream = source_ptr->loadIds(required_key);
+
+    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
+    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(required_key);
     stream->readPrefix();
 
     bool is_found = false;
@@ -417,7 +419,8 @@ void DirectDictionary::getItemsImpl(
     for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
         to_load.emplace_back(static_cast<Key>(it->getKey()));
 
-    auto stream = source_ptr->loadIds(to_load);
+    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
+    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
@@ -471,8 +474,10 @@ void DirectDictionary::getItemsStringImpl(
     for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
         to_load.emplace_back(static_cast<Key>(it->getKey()));
 
-    auto stream = source_ptr->loadIds(to_load);
+    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
+    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(to_load);
     stream->readPrefix();
+
     while (const auto block = stream->read())
     {
         const IColumn & id_column = *block.safeGetByPosition(0).column;
@@ -526,7 +531,8 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
     for (auto it = has_key.begin(); it != has_key.end(); ++it)
         to_load.emplace_back(static_cast<Key>(it->getKey()));
 
-    auto stream = source_ptr->loadIds(to_load);
+    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
+    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
