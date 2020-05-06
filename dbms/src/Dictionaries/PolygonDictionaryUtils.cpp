@@ -3,7 +3,6 @@
 #include <Common/ThreadPool.h>
 
 #include <common/logger_useful.h>
-#include <Common/HashTable/HashMap.h>
 
 #include <algorithm>
 #include <thread>
@@ -327,6 +326,18 @@ bool BucketsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
     return a.polygon_id < b.polygon_id;
 }
 
+namespace
+{
+    inline void update_result(bool & found, size_t & id, const size_t & new_id)
+    {
+        if (!found || new_id < id)
+        {
+            found = true;
+            id = new_id;
+        }
+    }
+}
+
 bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
 {
     /** TODO: maybe we should check for vertical line? */
@@ -343,13 +354,14 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
         return false;
     }
 
+    bool found = false;
+
     /** point is considired inside when ray down from point crosses odd number of edges */
-    HashMap<size_t, bool> is_inside;
-    HashMap<size_t, bool> on_the_edge;
+    std::vector<size_t> intersections;
 
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
-    /** pos += n */
+    /** Here we doing: pos += n */
     pos += this->edges_index_tree.size() / 2;
     do
     {
@@ -367,7 +379,8 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             {
                 if (l.x() == x && y >= l.y() && y <= r.y())
                 {
-                    on_the_edge[polygon_id] = true;
+                    /** point is on the edge */
+                    update_result(found, id, polygon_id);
                 }
                 continue;
             }
@@ -385,29 +398,22 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             }
             if (edge_y == y)
             {
-                on_the_edge[polygon_id] = true;
+                /** point is on the edge */
+                update_result(found, id, polygon_id);
             }
 
-            is_inside[polygon_id] ^= true;
+            intersections.emplace_back(polygon_id);
         }
         pos >>= 1;
     } while (pos != 0);
 
-    bool found = false;
-    for (const auto & item : is_inside)
+    std::sort(intersections.begin(), intersections.end());
+    for (size_t i = 0; i < intersections.size(); i += 2)
     {
-        if (item.getMapped())
+        if (i + 1 == intersections.size() || intersections[i] != intersections[i + 1])
         {
-            found = true;
-            id = item.getKey();
-        }
-    }
-    for (const auto & item : on_the_edge)
-    {
-        if (item.getMapped())
-        {
-            found = true;
-            id = item.getKey();
+            update_result(found, id, intersections[i]);
+            break;
         }
     }
 
