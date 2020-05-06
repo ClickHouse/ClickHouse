@@ -311,7 +311,7 @@ private:
 
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
         {
-            const auto transform = DateTime64BasicTransformWrapper<Transform<unit>>{from_datatype.getScale()};
+            const auto transform = TransformDateTime64<Transform<unit>>{from_datatype.getScale()};
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = transform.execute(time_data[i], num_units, time_zone);
         }
