@@ -114,7 +114,7 @@ FROM句が省略された場合、データは `system.one` テーブル。
 
 -   テーブル
 -   サブクエリ
--   [テーブル機能](../table-functions/index.md)
+-   [テーブル機能](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` そして、定期的に `JOIN` また、（下記参照）が含まれていてもよいです。
 

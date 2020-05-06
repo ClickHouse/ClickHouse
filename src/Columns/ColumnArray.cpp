@@ -159,13 +159,17 @@ void ColumnArray::insertData(const char * pos, size_t length)
 
     size_t field_size = data->sizeOfValueIfFixed();
 
-    const char * end = pos + length;
     size_t elems = 0;
-    for (; pos + field_size <= end; pos += field_size, ++elems)
-        data->insertData(pos, field_size);
 
-    if (pos != end)
-        throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+    if (length)
+    {
+        const char * end = pos + length;
+        for (; pos + field_size <= end; pos += field_size, ++elems)
+            data->insertData(pos, field_size);
+
+        if (pos != end)
+            throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+    }
 
     getOffsets().push_back(getOffsets().back() + elems);
 }

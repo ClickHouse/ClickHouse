@@ -114,7 +114,7 @@ Le `FROM` clause spécifie la source à partir de laquelle lire les données:
 
 -   Table
 -   Sous-requête
--   [Fonction de Table](../table-functions/index.md)
+-   [Fonction de Table](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` et le régulier `JOIN` peuvent également être inclus (voir ci-dessous).
 

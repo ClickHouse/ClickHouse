@@ -36,8 +36,8 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 -   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) 表引擎。
 -   [最后聚会](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) 功能。
 -   [跑累积](../../sql-reference/functions/other-functions.md#function-runningaccumulate) 功能。
--   [-合并](#aggregate_functions_combinators_merge) combinator
--   [-MergeState](#aggregate_functions_combinators_mergestate) combinator
+-   [-合并](#aggregate_functions_combinators-merge) combinator
+-   [-MergeState](#aggregate_functions_combinators-mergestate) combinator
 
 ## -合并 {#aggregate_functions_combinators-merge}
 

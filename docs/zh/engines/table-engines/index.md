@@ -13,16 +13,16 @@
 
 ## MergeTree {#mergetree}
 
-适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](mergetree-family/replication.md) 的引擎版本），分区和一些其他引擎不支持的其他功能。
+适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](mergetree-family/replication.md#replication) 的引擎版本），分区和一些其他引擎不支持的其他功能。
 
 该类型的引擎：
-- [MergeTree](mergetree-family/mergetree.md)
-- [ReplacingMergeTree](mergetree-family/replacingmergetree.md)
-- [SummingMergeTree](mergetree-family/summingmergetree.md)
-- [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md)
-- [CollapsingMergeTree](mergetree-family/collapsingmergetree.md)
-- [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md)
-- [GraphiteMergeTree](mergetree-family/graphitemergetree.md)
+- [MergeTree](mergetree-family/mergetree.md#mergetree)
+- [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
+- [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
+- [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+- [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
+- [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
+- [GraphiteMergeTree](mergetree-family/graphitemergetree.md#graphitemergetree)
 
 ## 日志 {#log}
 
@@ -30,37 +30,37 @@
 
 该类型的引擎：
 
--   [TinyLog](log-family/tinylog.md)
--   [StripeLog](log-family/stripelog.md)
--   [Log](log-family/log.md)
+-   [TinyLog](log-family/tinylog.md#tinylog)
+-   [StripeLog](log-family/stripelog.md#stripelog)
+-   [Log](log-family/log.md#log)
 
 ## 集成引擎 {#integration-engines}
 
 用于与其他的数据存储与处理系统集成的引擎。
 该类型的引擎：
 
--   [Kafka](integrations/kafka.md)
--   [MySQL](integrations/mysql.md)
--   [ODBC](integrations/odbc.md)
--   [JDBC](integrations/jdbc.md)
--   [HDFS](integrations/hdfs.md)
+-   [Kafka](integrations/kafka.md#kafka)
+-   [MySQL](integrations/mysql.md#mysql)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [HDFS](integrations/hdfs.md#hdfs)
 
 ## 用于其他特定功能的引擎 {#yong-yu-qi-ta-te-ding-gong-neng-de-yin-qing}
 
 该类型的引擎：
 
--   [Distributed](special/distributed.md)
--   [MaterializedView](special/materializedview.md)
--   [Dictionary](special/dictionary.md)
--   [Merge](special/merge.md)
--   [File](special/file.md)
--   [Null](special/null.md)
--   [Set](special/set.md)
--   [Join](special/join.md)
--   [URL](special/url.md)
--   [View](special/view.md)
--   [Memory](special/memory.md)
--   [Buffer](special/buffer.md)
+-   [Distributed](special/distributed.md#distributed)
+-   [MaterializedView](special/materializedview.md#materializedview)
+-   [Dictionary](special/dictionary.md#dictionary)
+-   [Merge](special/merge.md#merge
+-   [File](special/file.md#file)
+-   [Null](special/null.md#null)
+-   [Set](special/set.md#set)
+-   [Join](special/join.md#join)
+-   [URL](special/url.md#table_engines-url)
+-   [View](special/view.md#table_engines-view)
+-   [Memory](special/memory.md#memory)
+-   [Buffer](special/buffer.md#buffer)
 
 # 虚拟列 {#xu-ni-lie}
 

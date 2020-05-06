@@ -7,7 +7,7 @@ toc_title: "Clave de partici\xF3n personalizada"
 
 # Clave De partición Personalizada {#custom-partitioning-key}
 
-La partición está disponible para el [Método de codificación de datos:](mergetree.md) mesas familiares (incluyendo [repetición](replication.md) tabla). [Vistas materializadas](../special/materializedview.md) basado en tablas MergeTree soporte de particionamiento, también.
+La partición está disponible para el [Método de codificación de datos:](mergetree.md) mesas familiares (incluyendo [repetición](replication.md) tabla). [Vistas materializadas](../special/materializedview.md#materializedview) basado en tablas MergeTree soporte de particionamiento, también.
 
 Una partición es una combinación lógica de registros en una tabla por un criterio especificado. Puede establecer una partición por un criterio arbitrario, como por mes, por día o por tipo de evento. Cada partición se almacena por separado para simplificar las manipulaciones de estos datos. Al acceder a los datos, ClickHouse utiliza el subconjunto más pequeño de particiones posible.
 

@@ -827,7 +827,7 @@ The results of the compilation are saved in the build directory in the form of .
 -   [\_بههنگامسازی](#settings-insert_quorum_timeout)
 -   [مورد احترام](#settings-select_sequential_consistency)
 
-## \_بههنگامسازی {#settings-insert_quorum-timeout}
+## \_بههنگامسازی {#settings-insert_quorum_timeout}
 
 ارسال به فاصله حد نصاب در ثانیه. اگر ایست را تصویب کرده است و بدون نوشتن صورت گرفته است و در عین حال, تاتر یک استثنا تولید و مشتری باید پرس و جو تکرار برای نوشتن همان بلوک به همان و یا هر ماکت دیگر.
 

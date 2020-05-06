@@ -777,7 +777,7 @@ GROUP BY domain
 
 #### 空处理 {#null-processing}
 
-对于分组，ClickHouse解释 [NULL](../syntax.md) 作为一个值，并且 `NULL=NULL`.
+对于GROUP BY子句，ClickHouse将 [NULL](../syntax.md#null-literal) 解释为一个值，并且支持`NULL=NULL`。
 
 这里有一个例子来说明这意味着什么。
 
@@ -1073,7 +1073,7 @@ ClickHouse支持使用 `DISTINCT` 和 `ORDER BY` 一个查询中不同列的子�
 └───┴───┘
 ```
 
-当与选择数据 `SELECT DISTINCT a FROM t1 ORDER BY b ASC` 查询，我们得到以下结果:
+`DISTINCT`可以与 [NULL](../syntax.md#null-literal)一起工作，就好像`NULL`仅是一个特殊的值一样，并且`NULL=NULL`。换而言之，在`DISTINCT`的结果中，与`NULL`不同的组合仅能出现一次。
 
 ``` text
 ┌─a─┐
@@ -1215,7 +1215,7 @@ IN子句中的子查询始终只在单个服务器上运行一次。 没有依�
 
 #### 空处理 {#null-processing-1}
 
-在请求处理过程中，IN运算符假定与操作的结果 [NULL](../syntax.md) 总是等于 `0`，无论是否 `NULL` 位于操作员的右侧或左侧。 `NULL` 值不包含在任何数据集中，彼此不对应且无法进行比较。
+在处理中，IN操作符总是假定 [NULL](../syntax.md#null-literal) 值的操作结果总是等于`0`，而不管`NULL`位于左侧还是右侧。`NULL`值不应该包含在任何数据集中，它们彼此不能够对应，并且不能够比较。
 
 下面是一个例子 `t_null` 表:
 

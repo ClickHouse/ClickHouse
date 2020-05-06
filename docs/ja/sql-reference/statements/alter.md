@@ -218,7 +218,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 <!-- -->
 
-#### デタッチパーティション{\#alter\_detach-partition} {#detach-partition-alter-detach-partition}
+#### デタッチパーティション{#alter_detach-partition} {#detach-partition-alter-detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr

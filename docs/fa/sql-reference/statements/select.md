@@ -114,7 +114,7 @@ FROM
 
 -   جدول
 -   خرده فروشی
--   [تابع جدول](../table-functions/index.md)
+-   [تابع جدول](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` و به طور منظم `JOIN` همچنین ممکن است شامل شود (پایین را ببینید).
 

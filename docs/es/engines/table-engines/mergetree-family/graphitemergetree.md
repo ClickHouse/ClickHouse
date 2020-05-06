@@ -81,7 +81,7 @@ Todos los parámetros excepto `config_section` el mismo significado que en `Merg
 
 ## Configuración Acumulativa {#rollup-configuration}
 
-La configuración del paquete acumulativo está definida por [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) parámetro en la configuración del servidor. El nombre del parámetro podría ser cualquiera. Puede crear varias configuraciones y usarlas para diferentes tablas.
+La configuración del paquete acumulativo está definida por [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) parámetro en la configuración del servidor. El nombre del parámetro podría ser cualquiera. Puede crear varias configuraciones y usarlas para diferentes tablas.
 
 Estructura de configuración Rollup:
 

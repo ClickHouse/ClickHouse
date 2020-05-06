@@ -9,7 +9,7 @@ toc_title: Travailler avec des arguments nullables
 
 ## isNull {#isnull}
 
-Vérifie si l’argument est [NULL](../syntax.md#null).
+Vérifie si l’argument est [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -49,7 +49,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-Vérifie si l’argument est [NULL](../syntax.md#null).
+Vérifie si l’argument est [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)
