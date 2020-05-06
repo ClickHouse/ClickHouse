@@ -2714,7 +2714,6 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 }
 
 
-
 void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
