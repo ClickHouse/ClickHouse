@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 
@@ -25,7 +26,7 @@ namespace ErrorCodes
  *
  *  SELECT extractAllGroups('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
  * should produce:
- *   [['abc', '111'], ['def', '222'], ['ghi', '333']]
+ *   [['abc','def','ghi'], ['111','333','333']]
  */
 class FunctionExtractAllGroups : public IFunction
 {
@@ -48,7 +49,7 @@ public:
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
-        /// Two-dimensional array of strings, each `row` of top array represents matching groups.
+        // twodimensional array of strings, each `row` of root array represents a group match.
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
@@ -57,54 +58,106 @@ public:
         const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
 
-        const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
+        const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getDataAt(0);
 
-        if (needle.empty())
+        if (needle.size == 0)
             throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        const auto regexp = Regexps::get<false, false>(needle);
-        const auto & re2 = regexp->getRE2();
-        const size_t groups_count = re2->NumberOfCapturingGroups();
+        re2_st::RE2 re{re2_st::StringPiece(needle.data, needle.size)};
+        if (!re.ok())
+            throw Exception(getName() + " invalid regular expression: " + re.error(), ErrorCodes::CANNOT_COMPILE_REGEXP);
 
-        // Including 0-group, which is the whole regexp.
-        PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);
+        const size_t groups_count = re.NumberOfCapturingGroups();
+        std::vector<re2_st::StringPiece> all_matches;
+        // number of times RE matched on each row of haystack column.
+        std::vector<size_t> number_of_matches_per_row;
 
-        ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
-        ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
-        ColumnString::MutablePtr data_col = ColumnString::create();
+        // we expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
+        all_matches.reserve(input_rows_count * groups_count * 8);
+        number_of_matches_per_row.reserve(input_rows_count);
 
-        auto & root_offsets_data = root_offsets_col->getData();
-        auto & nested_offsets_data = nested_offsets_col->getData();
-
-        root_offsets_data.resize(input_rows_count);
-        ColumnArray::Offset current_root_offset = 0;
-        ColumnArray::Offset current_nested_offset = 0;
+        // including 0-group, which is the whole RE
+        std::vector<re2_st::StringPiece> matched_groups(groups_count + 1);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef current_row = column_haystack->getDataAt(i);
+            size_t matches_per_row = 0;
+            const auto & current_row = column_haystack->getDataAt(i);
+            const auto haystack = re2_st::StringPiece(current_row.data, current_row.size);
 
             // Extract all non-intersecting matches from haystack except group #0.
-            const auto * pos = current_row.data;
-            const auto * end = pos + current_row.size;
-            while (pos < end
-                && re2->Match(re2_st::StringPiece(pos, end - pos),
-                    0, end - pos, re2_st::RE2::UNANCHORED, matched_groups.data(), matched_groups.size()))
+            size_t start_pos = 0;
+            while (start_pos < haystack.size() && re.Match(haystack,
+                    start_pos, haystack.size(),
+                    re2_st::RE2::UNANCHORED,
+                    matched_groups.data(), matched_groups.size()))
             {
-                // 1 is to exclude group #0 which is whole re match.
-                for (size_t group = 1; group <= groups_count; ++group)
-                    data_col->insertData(matched_groups[group].data(), matched_groups[group].size());
+                // +1 is to exclude group #0 which is whole re match.
+                all_matches.insert(all_matches.end(), matched_groups.begin() + 1, matched_groups.end());
+                start_pos = (matched_groups[0].begin() - haystack.begin()) + matched_groups[0].size();
 
-                pos = matched_groups[0].data() + matched_groups[0].size();
-
-                current_nested_offset += groups_count;
-                nested_offsets_data.push_back(current_nested_offset);
-
-                ++current_root_offset;
+                ++matches_per_row;
             }
 
-            root_offsets_data[i] = current_root_offset;
+            number_of_matches_per_row.push_back(matches_per_row);
         }
+
+        ColumnString::MutablePtr data_col = ColumnString::create();
+        {
+            size_t total_matched_groups_string_len = 0;
+            for (const auto & m : all_matches)
+                total_matched_groups_string_len += m.length();
+
+            data_col->reserve(total_matched_groups_string_len);
+        }
+
+        ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
+        ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
+        nested_offsets_col->reserve(matched_groups.size());
+        root_offsets_col->reserve(groups_count);
+
+        // Re-arrange `all_matches` from:
+        // [
+        //      "ROW 0: 1st group 1st match",
+        //      "ROW 0: 2nd group 1st match",
+        //      ...,
+        //      "ROW 0: 1st group 2nd match",
+        //      "ROW 0: 2nd group 2nd match",
+        //      ...,
+        //      "ROW 1: 1st group 1st match",
+        //      ...
+        // ]
+        //
+        // into column of 2D arrays:
+        // [
+        //      /* all matchig groups from ROW 0 of haystack column */
+        //      ["ROW 0: 1st group 1st match", "ROW 0: 1st group 2nd match", ...],
+        //      ["ROW 0: 2nd group 1st match", "ROW 0: 2nd group 2nd match", ...],
+        //      ...
+        // ],
+        // [
+        //      /* all matchig groups from row 1 of haystack column */
+        //      ["ROW 1: 1st group 1st match", ...],
+        //      ...
+        // ]
+
+        size_t row_offset = 0;
+        for (const auto matches_per_row : number_of_matches_per_row)
+        {
+            const size_t next_row_offset = row_offset + matches_per_row * groups_count;
+            for (size_t group_id = 0; group_id < groups_count; ++group_id)
+            {
+                for (size_t i = row_offset + group_id; i < next_row_offset && i < all_matches.size(); i += groups_count)
+                {
+                    const auto & match = all_matches[i];
+                    data_col->insertData(match.begin(), match.length());
+                }
+                nested_offsets_col->insertValue(data_col->size());
+            }
+            root_offsets_col->insertValue(nested_offsets_col->size());
+            row_offset = next_row_offset;
+        }
+
         ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(data_col), std::move(nested_offsets_col));
         ColumnArray::MutablePtr root_array_col = ColumnArray::create(std::move(nested_array_col), std::move(root_offsets_col));
         block.getByPosition(result).column = std::move(root_array_col);

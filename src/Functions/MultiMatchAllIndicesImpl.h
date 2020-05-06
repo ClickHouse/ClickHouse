@@ -24,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_BYTES;
 }
 
