@@ -394,20 +394,20 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
     } while (pos != 0);
 
     bool found = false;
-    for (auto & [polygon_id, inside] : is_inside)
+    for (const auto & item : is_inside)
     {
-        if (inside)
+        if (item.getMapped())
         {
             found = true;
-            id = polygon_id;
+            id = item.getKey();
         }
     }
-    for (auto & [polygon_id, is_edge] : on_the_edge)
+    for (const auto & item : on_the_edge)
     {
-        if (is_edge)
+        if (item.getMapped())
         {
             found = true;
-            id = polygon_id;
+            id = item.getKey();
         }
     }
 
