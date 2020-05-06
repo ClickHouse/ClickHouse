@@ -7,8 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
 #include <IO/WriteHelpers.h>
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
 #include <algorithm>
@@ -29,6 +27,7 @@
 #if USE_RE2_ST
 #    include <re2_st/re2.h>
 #else
+#    include <re2/re2.h>
 #    define re2_st re2
 #endif
 
@@ -1113,7 +1112,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnPtr column_haystack = block.getByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
@@ -1123,33 +1122,33 @@ public:
         if (needle.size == 0)
             throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        re2::RE2 re{re2::StringPiece(needle.data, needle.size)};
+        re2_st::RE2 re{re2_st::StringPiece(needle.data, needle.size)};
         if (!re.ok())
             throw Exception(getName() + " invalid regular expression: " + re.error(), ErrorCodes::CANNOT_COMPILE_REGEXP);
 
         const size_t groups_count = re.NumberOfCapturingGroups();
-        std::vector<re2::StringPiece> all_matches;
+        std::vector<re2_st::StringPiece> all_matches;
         // number of times RE matched on each row of haystack column.
         std::vector<size_t> number_of_matches_per_row;
 
         // we expect RE to match multiple times on each row, `* 8` is arbitrary to reduce number of re-allocations.
-        all_matches.reserve(column_haystack->size() * groups_count * 8);
-        number_of_matches_per_row.reserve(column_haystack->size());
+        all_matches.reserve(input_rows_count * groups_count * 8);
+        number_of_matches_per_row.reserve(input_rows_count);
 
         // including 0-group, which is the whole RE
-        std::vector<re2::StringPiece> matched_groups(groups_count + 1);
+        std::vector<re2_st::StringPiece> matched_groups(groups_count + 1);
 
-        for (size_t i = 0; i < column_haystack->size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t matches_per_row = 0;
             const auto & current_row = column_haystack->getDataAt(i);
-            const auto haystack = re2::StringPiece(current_row.data, current_row.size);
+            const auto haystack = re2_st::StringPiece(current_row.data, current_row.size);
 
             // Extract all non-intersecting matches from haystack except group #0.
             size_t start_pos = 0;
             while (start_pos < haystack.size() && re.Match(haystack,
                     start_pos, haystack.size(),
-                    re2::RE2::UNANCHORED,
+                    re2_st::RE2::UNANCHORED,
                     matched_groups.data(), matched_groups.size()))
             {
                 // +1 is to exclude group #0 which is whole re match.
