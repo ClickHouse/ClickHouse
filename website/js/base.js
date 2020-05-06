@@ -55,7 +55,7 @@
     });
 
     function copy_to_clipboard(element) {
-        let temp = $('<textarea></textarea>');
+        var temp = $('<textarea></textarea>');
         $('body').append(temp);
         temp.val($(element).text());
         temp.select();
