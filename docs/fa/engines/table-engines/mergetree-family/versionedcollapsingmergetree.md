@@ -80,7 +80,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## سقوط {#table_engines-versionedcollapsingmergetree}
+## سقوط {#table_engines_versionedcollapsingmergetree}
 
 ### داده {#data}
 

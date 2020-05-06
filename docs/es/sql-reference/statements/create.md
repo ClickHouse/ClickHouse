@@ -65,7 +65,7 @@ Crea una tabla con la misma estructura que otra tabla. Puede especificar un moto
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Crea una tabla con la estructura y los datos [función de la tabla](../table-functions/index.md).
+Crea una tabla con la estructura y los datos [función de la tabla](../table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...

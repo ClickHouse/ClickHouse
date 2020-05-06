@@ -37,8 +37,8 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 -   [ریزدانه](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) موتور جدول.
 -   [پلاکتی](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) تابع.
 -   [خرابی اجرا](../../sql-reference/functions/other-functions.md#function-runningaccumulate) تابع.
--   [- ادغام](#aggregate_functions_combinators_merge) ترکیب کننده.
--   [اطلاعات دقیق](#aggregate_functions_combinators_mergestate) ترکیب کننده.
+-   [- ادغام](#aggregate_functions_combinators-merge) ترکیب کننده.
+-   [اطلاعات دقیق](#aggregate_functions_combinators-mergestate) ترکیب کننده.
 
 ## - ادغام {#aggregate_functions_combinators-merge}
 

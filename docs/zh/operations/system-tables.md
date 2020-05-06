@@ -215,7 +215,7 @@ SELECT * FROM system.events LIMIT 5
 
 ## 系统。graphite\_retentions {#system-graphite-retentions}
 
-包含有关参数的信息 [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) 这是在表中使用 [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) 引擎
+包含有关参数的信息 [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 这是在表中使用 [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) 引擎
 
 列:
 

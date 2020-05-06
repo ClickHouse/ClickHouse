@@ -860,7 +860,7 @@ Ayrıca bakınız:
 -   [ınsert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## ınsert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## ınsert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 Çekirdek zaman aşımına saniyeler içinde yazın. Zaman aşımı geçti ve yazma henüz gerçekleşmedi, ClickHouse bir özel durum oluşturur ve istemci aynı bloğu aynı veya başka bir yineleme yazmak için sorguyu yinelemeniz gerekir.
 

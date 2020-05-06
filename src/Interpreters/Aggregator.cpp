@@ -27,7 +27,7 @@
 #include <common/demangle.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <common/config_common.h>

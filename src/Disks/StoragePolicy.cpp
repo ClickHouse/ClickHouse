@@ -1,4 +1,4 @@
-#include "DiskSpaceMonitor.h"
+#include "StoragePolicy.h"
 #include "DiskFactory.h"
 #include "DiskLocal.h"
 
@@ -23,204 +23,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-
-    auto & factory = DiskFactory::instance();
-
-    constexpr auto default_disk_name = "default";
-    bool has_default_disk = false;
-    for (const auto & disk_name : keys)
-    {
-        if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-        if (disk_name == default_disk_name)
-            has_default_disk = true;
-
-        auto disk_config_prefix = config_prefix + "." + disk_name;
-
-        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
-    }
-    if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context.getPath(), 0));
-}
-
-
-DiskSelectorPtr DiskSelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-
-    auto & factory = DiskFactory::instance();
-
-    std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
-
-    constexpr auto default_disk_name = "default";
-    std::set<String> old_disks_minus_new_disks;
-    for (const auto & [disk_name, _] : result->disks)
-    {
-        old_disks_minus_new_disks.insert(disk_name);
-    }
-
-    for (const auto & disk_name : keys)
-    {
-        if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
-            throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-        if (result->disks.count(disk_name) == 0)
-        {
-            auto disk_config_prefix = config_prefix + "." + disk_name;
-            result->disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
-        }
-        else
-        {
-            old_disks_minus_new_disks.erase(disk_name);
-
-            /// TODO: Ideally ClickHouse shall complain if disk has changed, but
-            /// implementing that may appear as not trivial task.
-        }
-    }
-
-    old_disks_minus_new_disks.erase(default_disk_name);
-
-    if (!old_disks_minus_new_disks.empty())
-    {
-        WriteBufferFromOwnString warning;
-        if (old_disks_minus_new_disks.size() == 1)
-            writeString("Disk ", warning);
-        else
-            writeString("Disks ", warning);
-
-        int index = 0;
-        for (const String & name : old_disks_minus_new_disks)
-        {
-            if (index++ > 0)
-                writeString(", ", warning);
-            writeBackQuotedString(name, warning);
-        }
-
-        writeString(" disappeared from configuration, this change will be applied after restart of ClickHouse", warning);
-        LOG_WARNING(&Logger::get("DiskSelector"), warning.str());
-    }
-
-    return result;
-}
-
-
-DiskPtr DiskSelector::get(const String & name) const
-{
-    auto it = disks.find(name);
-    if (it == disks.end())
-        throw Exception("Unknown disk " + name, ErrorCodes::UNKNOWN_DISK);
-    return it->second;
-}
-
-
-Volume::Volume(
-    String name_,
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    DiskSelectorPtr disk_selector)
-    : name(std::move(name_))
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
-
-    Logger * logger = &Logger::get("StorageConfiguration");
-
-    for (const auto & disk : keys)
-    {
-        if (startsWith(disk, "disk"))
-        {
-            auto disk_name = config.getString(config_prefix + "." + disk);
-            disks.push_back(disk_selector->get(disk_name));
-        }
-    }
-
-    if (disks.empty())
-        throw Exception("Volume must contain at least one disk.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-    auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
-    auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
-    if (has_max_bytes && has_max_ratio)
-        throw Exception(
-            "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-    if (has_max_bytes)
-    {
-        max_data_part_size = config.getUInt64(config_prefix + ".max_data_part_size_bytes", 0);
-    }
-    else if (has_max_ratio)
-    {
-        auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
-        if (ratio < 0)
-            throw Exception("'max_data_part_size_ratio' have to be not less then 0.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        UInt64 sum_size = 0;
-        std::vector<UInt64> sizes;
-        for (const auto & disk : disks)
-        {
-            sizes.push_back(disk->getTotalSpace());
-            sum_size += sizes.back();
-        }
-        max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
-        for (size_t i = 0; i < disks.size(); ++i)
-            if (sizes[i] < max_data_part_size)
-                LOG_WARNING(
-                    logger,
-                    "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) << " have not enough space ("
-                            << formatReadableSizeWithBinarySuffix(sizes[i]) << ") for containing part the size of max_data_part_size ("
-                            << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
-    }
-    static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
-    if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(
-            logger,
-            "Volume " << backQuote(name) << " max_data_part_size is too low (" << formatReadableSizeWithBinarySuffix(max_data_part_size)
-                      << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
-}
-
-DiskPtr Volume::getNextDisk()
-{
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
-    size_t index = start_from % disks.size();
-    return disks[index];
-}
-
-ReservationPtr Volume::reserve(UInt64 bytes)
-{
-    /// This volume can not store files which size greater than max_data_part_size
-
-    if (max_data_part_size != 0 && bytes > max_data_part_size)
-        return {};
-
-    size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
-    size_t disks_num = disks.size();
-    for (size_t i = 0; i < disks_num; ++i)
-    {
-        size_t index = (start_from + i) % disks_num;
-
-        auto reservation = disks[index]->reserve(bytes);
-
-        if (reservation)
-            return reservation;
-    }
-    return {};
-}
-
-
-UInt64 Volume::getMaxUnreservedFreeSpace() const
-{
-    UInt64 res = 0;
-    for (const auto & disk : disks)
-        res = std::max(res, disk->getUnreservedSpace());
-    return res;
-}
-
 StoragePolicy::StoragePolicy(
     String name_,
     const Poco::Util::AbstractConfiguration & config,
@@ -240,7 +42,7 @@ StoragePolicy::StoragePolicy(
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
             throw Exception(
                 "Volume name can contain only alphanumeric and '_' (" + attr_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        volumes.push_back(std::make_shared<Volume>(attr_name, config, volumes_prefix + "." + attr_name, disks));
+        volumes.push_back(std::make_shared<VolumeJBOD>(attr_name, config, volumes_prefix + "." + attr_name, disks));
         if (volumes_names.find(attr_name) != volumes_names.end())
             throw Exception("Volumes names must be unique (" + attr_name + " duplicated)", ErrorCodes::UNKNOWN_POLICY);
         volumes_names[attr_name] = volumes.size() - 1;
@@ -269,7 +71,7 @@ StoragePolicy::StoragePolicy(
 }
 
 
-StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
+StoragePolicy::StoragePolicy(String name_, VolumesJBOD volumes_, double move_factor_)
     : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
 {
     if (volumes.empty())
@@ -453,9 +255,9 @@ StoragePolicySelector::StoragePolicySelector(
     /// Add default policy if it's not specified explicetly
     if (policies.find(default_storage_policy_name) == policies.end())
     {
-        auto default_volume = std::make_shared<Volume>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0);
+        auto default_volume = std::make_shared<VolumeJBOD>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0);
 
-        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
+        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, VolumesJBOD{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);
     }
 }

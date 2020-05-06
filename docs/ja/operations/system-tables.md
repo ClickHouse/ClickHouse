@@ -215,7 +215,7 @@ SELECT * FROM system.events LIMIT 5
 
 ## システム。graphite\_retentions {#system-graphite-retentions}
 
-についての情報が含まれてパラメータ [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) これは、次の表で使用されます [\*グラフィットマージツリー](../engines/table-engines/mergetree-family/graphitemergetree.md) エンジン
+についての情報が含まれてパラメータ [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) これは、次の表で使用されます [\*グラフィットマージツリー](../engines/table-engines/mergetree-family/graphitemergetree.md) エンジン
 
 列:
 

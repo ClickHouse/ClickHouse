@@ -7,7 +7,7 @@ toc_title: "\xD6zel B\xF6l\xFCmleme Anahtar\u0131"
 
 # Özel Bölümleme Anahtarı {#custom-partitioning-key}
 
-Bölümleme için kullanılabilir [MergeTree](mergetree.md) aile tabloları (dahil [çoğaltıyordu](replication.md) Tablolar). [Hayata görünümler](../special/materializedview.md) MergeTree tablolarına dayanarak bölümlemeyi de destekler.
+Bölümleme için kullanılabilir [MergeTree](mergetree.md) aile tabloları (dahil [çoğaltıyordu](replication.md) Tablolar). [Hayata görünümler](../special/materializedview.md#materializedview) MergeTree tablolarına dayanarak bölümlemeyi de destekler.
 
 Bir bölüm, bir tablodaki kayıtların belirtilen bir kritere göre mantıksal bir birleşimidir. Bir bölümü, ay, gün veya olay türü gibi rasgele bir ölçütle ayarlayabilirsiniz. Bu verilerin manipülasyonlarını basitleştirmek için her bölüm ayrı ayrı saklanır. Verilere erişirken, ClickHouse mümkün olan en küçük bölüm alt kümesini kullanır.
 
