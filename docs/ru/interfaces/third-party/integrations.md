@@ -92,7 +92,7 @@
     -   [Ecto](https://github.com/elixir-ecto/ecto)
     -   [clickhouse\_ecto](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
-    -   [Ruby on rails](https://rubyonrails.org/)
+    -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
