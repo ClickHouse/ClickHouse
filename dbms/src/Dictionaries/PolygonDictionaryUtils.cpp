@@ -3,6 +3,7 @@
 #include <Common/ThreadPool.h>
 
 #include <common/logger_useful.h>
+#include <Common/HashTable/HashMap.h>
 
 #include <algorithm>
 #include <thread>
@@ -343,8 +344,8 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
     }
 
     /** point is considired inside when ray down from point crosses odd number of edges */
-    std::map<size_t, bool> is_inside;
-    std::map<size_t, bool> on_the_edge;
+    HashMap<size_t, bool> is_inside;
+    HashMap<size_t, bool> on_the_edge;
 
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
