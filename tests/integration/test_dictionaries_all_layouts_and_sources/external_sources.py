@@ -265,7 +265,7 @@ class SourceFile(ExternalSource):
             self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)], user="root")
 
     def compatible_with_layout(self, layout):
-        return 'cache' not in layout.name
+        return 'cache' not in layout.name and 'direct' not in layout.name
 
 
 class _SourceExecutableBase(ExternalSource):
