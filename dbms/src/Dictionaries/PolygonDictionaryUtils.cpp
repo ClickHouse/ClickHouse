@@ -525,12 +525,12 @@ void BucketsSinglePolygonIndex::indexBuild(const Polygon & polygon)
         {
             if (l & 1)
             {
-                this->edges_index_tree[l++].push_back(i);
+                this->edges_index_tree[l++].push_back(all_edges[i]);
                 ++total_index_edges;
             }
             if (r & 1)
             {
-                this->edges_index_tree[--r].push_back(i);
+                this->edges_index_tree[--r].push_back(all_edges[i]);
                 ++total_index_edges;
             }
         }
@@ -624,10 +624,8 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
     do
     {
         /** iterating over interesting edges */
-        for (size_t edge_id : this->edges_index_tree[pos])
+        for (const auto & edge : this->edges_index_tree[pos])
         {
-            const auto & edge = this->all_edges[edge_id];
-
             const Point & l = edge.l;
             const Point & r = edge.r;
 
