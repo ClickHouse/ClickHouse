@@ -99,7 +99,7 @@ toc_title: "Integraci\xF3n"
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [Método de codificación de datos:](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
-    -   [Ruby on rails](https://rubyonrails.org/)
+    -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
