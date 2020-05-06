@@ -5,7 +5,7 @@ toc_priority: 24
 toc_title: Biblioteca de clientes de C++
 ---
 
-# Biblioteca de clientes de C++ {#c-client-library}
+# Biblioteca De Clientes De C++ {#c-client-library}
 
 Ver README en [Bienvenidos](https://github.com/ClickHouse/clickhouse-cpp) repositorio.
 
