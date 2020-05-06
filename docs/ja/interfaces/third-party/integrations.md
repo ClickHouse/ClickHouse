@@ -98,6 +98,7 @@ toc_title: "\u7D71\u5408"
 -   Ruby
     -   [Ruby on rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
+        -   [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord) 
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
