@@ -777,7 +777,7 @@ GROUP BYは、配列列ではサポートされません。
 
 #### ヌル処理 {#null-processing}
 
-グループ化のために、ClickHouseは [NULL](../syntax.md) 値として、 `NULL=NULL`.
+グループ化のために、ClickHouseは [NULL](../syntax.md#null-literal) 値として、 `NULL=NULL`.
 
 これが何を意味するのかを示す例があります。
 
@@ -1058,7 +1058,7 @@ DISTINCTが指定されている場合、結果に完全に一致する行のす
 
 個別には対応していない場合に選択して少なくとも一つの配列です。
 
-`DISTINCT` で動作 [NULL](../syntax.md) まるで `NULL` 特定の値であり、 `NULL=NULL`. つまり、 `DISTINCT` 結果、異なる組み合わせ `NULL` 一度だけ発生する。
+`DISTINCT` で動作 [NULL](../syntax.md#null-literal) まるで `NULL` 特定の値であり、 `NULL=NULL`. つまり、 `DISTINCT` 結果、異なる組み合わせ `NULL` 一度だけ発生する。
 
 ClickHouseは使用を支えます `DISTINCT` と `ORDER BY` あるクエリ内の異なる列の句。 その `DISTINCT` の前に句が実行されます。 `ORDER BY` 句。
 
@@ -1215,7 +1215,7 @@ IN句のサブクエリは、常に単一のサーバーで一度だけ実行さ
 
 #### ヌル処理 {#null-processing-1}
 
-要求の処理中にIN演算子は、次の条件を満たす操作の結果 [NULL](../syntax.md) は常に等しい `0` かどうかにかかわらず `NULL` 演算子の右側または左側にあります。 `NULL` 値はどのデータセットにも含まれず、互いに対応せず、比較することもできません。
+要求の処理中にIN演算子は、次の条件を満たす操作の結果 [NULL](../syntax.md#null-literal) は常に等しい `0` かどうかにかかわらず `NULL` 演算子の右側または左側にあります。 `NULL` 値はどのデータセットにも含まれず、互いに対応せず、比較することもできません。
 
 ここに例があります `t_null` テーブル:
 
