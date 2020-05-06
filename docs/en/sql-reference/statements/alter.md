@@ -197,6 +197,14 @@ Constraint check *will not be executed* on existing data if it was added.
 
 All changes on replicated tables are broadcasting to ZooKeeper so will be applied on other replicas.
 
+### Manipulations with Replicas {#manipulations-with-replicas}
+Replicas can be dropped using following syntax:
+```sql
+ALTER TABLE [db].name DROP REPLICA replica_name;
+```
+
+Queries will remove the replica path in zookeeper, it's useful when you want to decrease your replica factor. If the replica_name is local replica, then it behavious same as `DROP TABLE`;
+
 ### Manipulations with Partitions and Parts {#alter_manipulations-with-partitions}
 
 The following operations with [partitions](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:

@@ -60,6 +60,7 @@ ASTPtr ASTAlterCommand::clone() const
     {
         res->rename_to = rename_to->clone();
         res->children.push_back(res->rename_to);
+    }
     if (replica)
     {
         res->replica = replica->clone();
@@ -302,9 +303,10 @@ void ASTAlterCommand::formatImpl(
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::DROP_REPLICA)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP " << (settings.hilite ? hilite_none : "") << " " << std::quoted(replica_name, '\'');
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP REPLICA" << (settings.hilite ? hilite_none : "") << " " << std::quoted(replica_name, '\'');
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
