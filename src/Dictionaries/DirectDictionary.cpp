@@ -56,8 +56,7 @@ DirectDictionary::Key DirectDictionary::getValueOrNullByKey(const Key & to_find)
 {
     std::vector<Key> required_key = {to_find};
 
-    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
-    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(required_key);
+    auto stream = source_ptr->loadIds(required_key);
     stream->readPrefix();
 
     bool is_found = false;
@@ -419,8 +418,7 @@ void DirectDictionary::getItemsImpl(
     for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
         to_load.emplace_back(static_cast<Key>(it->getKey()));
 
-    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
-    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(to_load);
+    auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
@@ -474,8 +472,7 @@ void DirectDictionary::getItemsStringImpl(
     for (auto it = value_by_key.begin(); it != value_by_key.end(); ++it)
         to_load.emplace_back(static_cast<Key>(it->getKey()));
 
-    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
-    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(to_load);
+    auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
@@ -531,8 +528,7 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
     for (auto it = has_key.begin(); it != has_key.end(); ++it)
         to_load.emplace_back(static_cast<Key>(it->getKey()));
 
-    const auto is_file_source = "File" == source_ptr->toString().substr(0, 4);
-    auto stream = is_file_source ? source_ptr->loadAll() : source_ptr->loadIds(to_load);
+    auto stream = source_ptr->loadIds(to_load);
     stream->readPrefix();
 
     while (const auto block = stream->read())
@@ -555,35 +551,11 @@ void DirectDictionary::has(const Attribute &, const PaddedPODArray<Key> & ids, P
 }
 
 
-PaddedPODArray<DirectDictionary::Key> DirectDictionary::getIds() const
+BlockInputStreamPtr DirectDictionary::getBlockInputStream(const Names & /* column_names */, size_t /* max_block_size */) const
 {
-
-    PaddedPODArray<Key> ids;
-
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
-
-    while (const auto block = stream->read())
-    {
-        const IColumn & id_column = *block.safeGetByPosition(0).column;
-
-        for (const auto row_idx : ext::range(0, id_column.size()))
-        {
-            const auto key = id_column[row_idx].get<UInt64>();
-            ids.push_back(key);
-        }
-    }
-
-    stream->readSuffix();
-
-    return ids;
+    return source_ptr->loadAll();
 }
 
-BlockInputStreamPtr DirectDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
-{
-    using BlockInputStreamType = DictionaryBlockInputStream<DirectDictionary, Key>;
-    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
-}
 
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
