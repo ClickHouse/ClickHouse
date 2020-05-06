@@ -65,7 +65,7 @@ Crée une table avec la même structure qu’une autre table. Vous pouvez spéci
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Crée une table avec la structure et les données renvoyées par [fonction de table](../table-functions/index.md).
+Crée une table avec la structure et les données renvoyées par [fonction de table](../table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...

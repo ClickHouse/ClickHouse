@@ -237,6 +237,7 @@ endif()
 if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
+
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
@@ -273,11 +274,6 @@ if (NOT ENABLE_SSL)
 endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
-
-# Exception unwinding doesn't work in clang release build without this option
-# TODO investigate that
-set_source_files_properties(Interpreters/InterpreterSelectQuery.cpp PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer")
-set_source_files_properties(Interpreters/executeQuery.cpp PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer")
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")

@@ -683,7 +683,7 @@ Port pour communiquer avec les clients via le protocole TCP.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 Port TCP pour une communication sécurisée avec les clients. Utilisez le avec [OpenSSL](#server_configuration_parameters-openssl) paramètre.
 

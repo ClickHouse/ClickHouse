@@ -79,7 +79,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## 崩溃 {#table_engines-versionedcollapsingmergetree}
+## 崩溃 {#table_engines_versionedcollapsingmergetree}
 
 ### 数据 {#data}
 

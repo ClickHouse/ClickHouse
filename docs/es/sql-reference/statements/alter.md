@@ -218,7 +218,7 @@ Las siguientes operaciones con [partición](../../engines/table-engines/mergetre
 
 <!-- -->
 
-#### DETACH PARTITION {\#alter\_detach-partition} {#detach-partition-alter-detach-partition}
+#### DETACH PARTITION {#alter_detach-partition} {#detach-partition-alter-detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr

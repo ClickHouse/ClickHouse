@@ -707,7 +707,7 @@ TCP protokolü üzerinden istemcilerle iletişim kurmak için bağlantı noktas�
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 İstemcilerle güvenli iletişim için TCP bağlantı noktası. İle kullanın [OpenSSL](#server_configuration_parameters-openssl) ayarlar.
 

@@ -240,7 +240,7 @@ SELECT * FROM system.events LIMIT 5
 
 ## system.graphite\_retentions {#system-graphite-retentions}
 
-Содержит информацию о том, какие параметры [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md).
+Содержит информацию о том, какие параметры [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) используются в таблицах с движками [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md).
 
 Столбцы:
 
@@ -395,7 +395,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Столбцы:
 
--   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql-reference/statements/alter.md#sql_reference_queries_alter).
+-   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql-reference/statements/alter.md#query_language_queries_alter).
 
     Форматы:
 
@@ -526,7 +526,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
 
-Чтобы включить логирование, задайте значение параметра [log\_queries](settings/settings.md#settings-log-queries) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
+Чтобы включить логирование, задайте значение параметра [log\_queries](settings/settings.md#settings-log-queries) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md#settings).
 
 Таблица `system.query_log` содержит информацию о двух видах запросов:
 
@@ -694,7 +694,7 @@ You can specify an arbitrary partitioning key for the `system.query_log` table i
 
 ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
 
-Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
+Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md#settings).
 
 Столбцы:
 
@@ -751,6 +751,10 @@ ClickHouse создаёт таблицу только в том случае, к
     Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
 Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) (параметр `partition_by`).
+
+## system.query_thread_log {#system_tables-query-thread-log}
+
+Содержит информацию о каждом потоке исполнения запроса.
 
 ## system.trace\_log {#system_tables-trace_log}
 
@@ -994,8 +998,8 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
 -   `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
 -   `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
--   `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
--   `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
+-   `supports_replication` (UInt8) — флаг, показывающий поддержку [репликации](../engines/table-engines/mergetree-family/replication.md).
+-   `supports_deduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
 
 Пример:
 

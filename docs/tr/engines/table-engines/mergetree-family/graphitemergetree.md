@@ -81,7 +81,7 @@ Hariç tüm parametreler `config_section` içinde olduğu gibi aynı anlama sahi
 
 ## Toplaması Yapılandırması {#rollup-configuration}
 
-Toplaması için ayarları tarafından tanımlanan [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) sunucu yapılandırmasında parametre. Parametrenin adı herhangi biri olabilir. Birkaç yapılandırma oluşturabilir ve bunları farklı tablolar için kullanabilirsiniz.
+Toplaması için ayarları tarafından tanımlanan [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) sunucu yapılandırmasında parametre. Parametrenin adı herhangi biri olabilir. Birkaç yapılandırma oluşturabilir ve bunları farklı tablolar için kullanabilirsiniz.
 
 Toplaması yapılandırma yapısı:
 
