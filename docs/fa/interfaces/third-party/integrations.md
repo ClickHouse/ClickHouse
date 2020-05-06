@@ -96,7 +96,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
     -   [Ecto](https://github.com/elixir-ecto/ecto)
         -   [حذف جستجو](https://github.com/appodeal/clickhouse_ecto)
 -   Ruby
-    -   [Ruby on rails](https://rubyonrails.org/)
+    -   [Ruby on Rails](https://rubyonrails.org/)
         -   [activecube](https://github.com/bitquery/activecube)
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
