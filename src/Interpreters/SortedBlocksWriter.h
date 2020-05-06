@@ -64,7 +64,7 @@ struct SortedBlocksWriter
     std::condition_variable flush_condvar;
     const SizeLimits & size_limits;
     VolumeJBODPtr volume;
-    const Block & sample_block;
+    Block sample_block;
     const SortDescription & sort_description;
     Blocks inserted_blocks;
     const size_t rows_in_block;

@@ -108,7 +108,6 @@ private:
     void initRightTableWriter();
     void initLeftTableWriter(Block && left_sample_block);
     void setKeepGoing(ExtraBlockPtr & not_processed) const;
-    bool isContinuation(ExtraBlockPtr & not_processed) const;
 };
 
 }

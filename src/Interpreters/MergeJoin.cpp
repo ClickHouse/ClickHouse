@@ -471,8 +471,6 @@ void MergeJoin::mergeFlushedRightBlocks()
     flushed_right_blocks = disk_writer->finishMerge(callback);
     disk_writer.reset();
 
-    disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
-
     /// Get memory limit or approximate it from row limit and bytes per row factor
     UInt64 memory_limit = size_limits.max_bytes;
     UInt64 rows_limit = size_limits.max_rows;
@@ -517,11 +515,6 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
     return saveRightBlock(std::move(block));
 }
 
-bool MergeJoin::isContinuation(ExtraBlockPtr & not_processed) const
-{
-    return not_processed && !not_processed->empty();
-}
-
 void MergeJoin::setKeepGoing(ExtraBlockPtr & not_processed) const
 {
     if (!not_processed)
@@ -530,21 +523,67 @@ void MergeJoin::setKeepGoing(ExtraBlockPtr & not_processed) const
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
-    materializeBlockInplace(block);
-    JoinCommon::removeLowCardinalityInplace(block);
-
-    /// TODO: premerge for in memory mode: reserve half of memory for left table
-
-    if (!disk_writer)
+    if (!not_processed)
     {
-        std::unique_lock lock(rwlock);
+        if (block)
+        {
+            /// Store new block on disk
 
-        if (!disk_writer)
-            initLeftTableWriter(block.cloneEmpty());
+            JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+            materializeBlockInplace(block);
+            JoinCommon::removeLowCardinalityInplace(block);
+
+            if (block.rows())
+            {
+                sortBlock(block, left_sort_description);
+
+                if (!disk_writer)
+                {
+                    std::unique_lock lock(rwlock);
+
+                    if (!disk_writer)
+                        initLeftTableWriter(block.cloneEmpty());
+                }
+
+                Block out = block.cloneEmpty();
+                disk_writer->insert(std::move(block)); /// lock inside: wait memory
+                block = std::move(out); /// keep block structure, return 0 rows. We still need to add right columns.
+            }
+        }
+        else
+        {
+            /// Read block from disk
+
+            if (!block)
+            {
+                if (!disk_reader)
+                {
+                    std::unique_lock lock(rwlock);
+
+                    if (!disk_reader)
+                        disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
+                }
+
+                block = disk_reader->read();
+                if (!block)
+                {
+                    std::unique_lock lock(rwlock); /// premerge barier
+
+                    block = disk_reader->read();
+                    if (!block)
+                    {
+                        disk_reader->addFiles(disk_writer->premerge());
+                        block = disk_reader->read();
+                    }
+                }
+            }
+
+            /// No more data. Do not keep going. Return empty block.
+            if (!block)
+                return;
+        }
     }
 
-    sortBlock(block, left_sort_description);
     if (is_in_memory)
     {
         if (is_all_join)
@@ -554,54 +593,14 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
     else
     {
-        bool is_continuation = isContinuation(not_processed);
-
-        /// Try store new blocks on disk
-        if (block && !is_continuation)
-        {
-            disk_writer->insert(std::move(block)); /// lock inside: wait memory
-
-            setKeepGoing(not_processed);
-            return;
-        }
-
-        /// No source block. Try read block from disk
-        if (!block)
-        {
-            block = disk_reader->read();
-            if (!block)
-            {
-                std::unique_lock lock(rwlock); /// premerge barier
-
-                block = disk_reader->read();
-                if (!block)
-                {
-                    disk_reader->addFiles(disk_writer->premerge());
-                    block = disk_reader->read();
-                }
-            }
-        }
-
-        /// No more data. Do not keep going. Return empty block.
-        if (!block)
-        {
-            not_processed.reset();
-            return;
-        }
-
-        if (!is_continuation)
-            not_processed.reset();
-
-        /// join
-
         if (is_all_join)
             joinSortedBlock<false, true>(block, not_processed);
         else
             joinSortedBlock<false, false>(block, not_processed);
-
-        /// Back thread even with no data. We have some unfinished data on disk.
-        setKeepGoing(not_processed);
     }
+
+    /// Back thread even with no data. We have some unfinished data on disk.
+    setKeepGoing(not_processed);
 }
 
 template <bool in_memory, bool is_all>

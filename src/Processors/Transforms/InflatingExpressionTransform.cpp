@@ -52,12 +52,16 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
 Block InflatingExpressionTransform::readExecute(Chunk & chunk)
 {
     Block res;
+    bool keep_going = not_processed && not_processed->empty(); /// There's data inside expression.
 
-    /// Empty extra data means keep going even if we have finished input. There's some data inside expression.
-    if (!not_processed || not_processed->empty())
+    if (!not_processed || keep_going)
     {
-        res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        if (res || not_processed)
+        not_processed.reset();
+
+        if (chunk.hasColumns())
+            res = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+        if (res || keep_going)
             expression->execute(res, not_processed, action_number);
     }
     else
