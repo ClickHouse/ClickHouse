@@ -10,7 +10,7 @@ toc_title: "\u06A9\u0627\u0631 \u0628\u0627 Nullable \u0627\u0633\u062A\u062F\u0
 
 ## isNull {#isnull}
 
-بررسی اینکه بحث چیست [NULL](../syntax.md#null).
+بررسی اینکه بحث چیست [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -50,7 +50,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## اینترنت {#isnotnull}
 
-بررسی اینکه بحث چیست [NULL](../syntax.md#null).
+بررسی اینکه بحث چیست [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)

@@ -9,7 +9,7 @@ toc_title: "\u30CC\u30EB\u53EF\u80FD\u306A\u5F15\u6570\u306E\u64CD\u4F5C"
 
 ## isNull {#isnull}
 
-引数が [NULL](../syntax.md#null).
+引数が [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -49,7 +49,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-引数が [NULL](../syntax.md#null).
+引数が [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)

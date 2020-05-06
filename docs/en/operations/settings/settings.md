@@ -1,9 +1,4 @@
----
-toc_priority: 60
-toc_title: Settings
----
-
-# Settings {#settings}
+# Настройки {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
@@ -877,10 +872,10 @@ ClickHouse generates an exception
 
 See also:
 
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
--   [select\_sequential\_consistency](#settings-select_sequential_consistency)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
 Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
@@ -908,8 +903,8 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 See also:
 
--   [insert\_quorum](#settings-insert_quorum)
--   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 ## insert\_deduplicate {#settings-insert-deduplicate}
 
@@ -922,7 +917,8 @@ Possible values:
 
 Default value: 1.
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see \[Data Replication\] (../engines/table\_engines/mergetree\_family/replication.md).
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
+
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 

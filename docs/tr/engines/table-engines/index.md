@@ -21,17 +21,17 @@ Tablo motoru (tablo türü) belirler:
 
 ### MergeTree {#mergetree}
 
-Yüksek yük görevleri için en evrensel ve fonksiyonel masa motorları. Bu motorlar tarafından paylaşılan özellik, sonraki arka plan veri işleme ile hızlı veri ekleme ’ dir. `MergeTree` aile motorları destek veri çoğaltma (ile [Çoğaltıyordu\*](mergetree-family/replication.md) sürümleri), bölümleme ve diğer özellikler diğer motorlarda desteklenmez.
+Yüksek yük görevleri için en evrensel ve fonksiyonel masa motorları. Bu motorlar tarafından paylaşılan özellik, sonraki arka plan veri işleme ile hızlı veri ekleme ’ dir. `MergeTree` aile motorları destek veri çoğaltma (ile [Çoğaltıyordu\*](mergetree-family/replication.md#replication) sürümleri), bölümleme ve diğer özellikler diğer motorlarda desteklenmez.
 
 Ailede motorlar:
 
--   [MergeTree](mergetree-family/mergetree.md)
--   [ReplacingMergeTree](mergetree-family/replacingmergetree.md)
--   [SummingMergeTree](mergetree-family/summingmergetree.md)
--   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md)
--   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md)
--   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md)
--   [Graphıtemergetree](mergetree-family/graphitemergetree.md)
+-   [MergeTree](mergetree-family/mergetree.md#mergetree)
+-   [ReplacingMergeTree](mergetree-family/replacingmergetree.md#replacingmergetree)
+-   [SummingMergeTree](mergetree-family/summingmergetree.md#summingmergetree)
+-   [AggregatingMergeTree](mergetree-family/aggregatingmergetree.md#aggregatingmergetree)
+-   [CollapsingMergeTree](mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)
+-   [VersionedCollapsingMergeTree](mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree)
+-   [Graphıtemergetree](mergetree-family/graphitemergetree.md#graphitemergetree)
 
 ### Günlük {#log}
 
@@ -39,9 +39,9 @@ Hafiflik [motorlar](log-family/index.md) minimum işlevsellik ile. Birçok küç
 
 Ailede motorlar:
 
--   [TinyLog](log-family/tinylog.md)
--   [StripeLog](log-family/stripelog.md)
--   [Günlük](log-family/log.md)
+-   [TinyLog](log-family/tinylog.md#tinylog)
+-   [StripeLog](log-family/stripelog.md#stripelog)
+-   [Günlük](log-family/log.md#log)
 
 ### Entegrasyon Motorları {#integration-engines}
 
@@ -49,30 +49,30 @@ Diğer veri depolama ve işleme sistemleri ile iletişim kurmak için motorlar.
 
 Ailede motorlar:
 
--   [Kafka](integrations/kafka.md)
--   [MySQL](integrations/mysql.md)
--   [ODBC](integrations/odbc.md)
--   [JDBC](integrations/jdbc.md)
--   [HDFS](integrations/hdfs.md)
+-   [Kafka](integrations/kafka.md#kafka)
+-   [MySQL](integrations/mysql.md#mysql)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [HDFS](integrations/hdfs.md#hdfs)
 
 ### Özel Motorlar {#special-engines}
 
 Ailede motorlar:
 
--   [Dağılı](special/distributed.md)
--   [MaterializedView](special/materializedview.md)
--   [Sözlük](special/dictionary.md)
--   [Birleştirmek](special/merge.md)
--   [Dosya](special/file.md)
--   [Boş](special/null.md)
--   [Koymak](special/set.md)
--   [Katmak](special/join.md)
--   [URL](special/url.md)
--   [Görünüm](special/view.md)
--   [Bellek](special/memory.md)
--   [Arabellek](special/buffer.md)
+-   [Dağılı](special/distributed.md#distributed)
+-   [MaterializedView](special/materializedview.md#materializedview)
+-   [Sözlük](special/dictionary.md#dictionary)
+-   [Birleştirmek](special/merge.md#merge
+-   [Dosya](special/file.md#file)
+-   [Boş](special/null.md#null)
+-   [Koymak](special/set.md#set)
+-   [Katmak](special/join.md#join)
+-   [URL](special/url.md#table_engines-url)
+-   [Görünüm](special/view.md#table_engines-view)
+-   [Bellek](special/memory.md#memory)
+-   [Arabellek](special/buffer.md#buffer)
 
-## Sanal Sütunlar {#table_engines-virtual-columns}
+## Sanal Sütunlar {#table_engines-virtual_columns}
 
 Sanal sütun, motor kaynak kodunda tanımlanan ayrılmaz bir tablo altyapısı özniteliğidir.
 

@@ -238,6 +238,75 @@ Result:
 └───────────────┘
 ```
 
+## isConstant {is-constant}
+
+Checks whether the argument is a constant expression.
+
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../syntax.md#literals) are constant expressions.
+
+The function is intended for development, debugging and demonstration.
+
+**Syntax**
+
+``` sql
+isConstant(x)
+```
+
+**Parameters**
+
+- `x` — Expression to check.
+
+**Returned values**
+
+- `1` — `x` is constant.
+- `0` — `x` is non-constant.
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+```
+
+Result:
+
+```text
+┌─isConstant(plus(x, 1))─┐
+│                      1 │
+└────────────────────────┘
+```
+
+Query:
+
+```sql
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
+```
+
+Result:
+
+```text
+┌─isConstant(cos(pi))─┐
+│                   1 │
+└─────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT isConstant(number) FROM numbers(1)
+```
+
+Result:
+
+```text
+┌─isConstant(number)─┐
+│                  0 │
+└────────────────────┘
+```
+
 ## isFinite(x) {#isfinitex}
 
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.

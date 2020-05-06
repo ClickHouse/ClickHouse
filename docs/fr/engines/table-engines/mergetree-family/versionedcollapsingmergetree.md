@@ -79,7 +79,7 @@ Tous les paramètres, à l’exception `sign` et `version` ont la même signific
 
 </details>
 
-## Effondrer {#table_engines-versionedcollapsingmergetree}
+## Effondrer {#table_engines_versionedcollapsingmergetree}
 
 ### Données {#data}
 
