@@ -227,18 +227,21 @@ void IPolygonDictionary::loadData()
 
     std::vector<std::pair<Polygon, size_t>> polygon_ids;
     polygon_ids.reserve(polygons.size());
-    for (size_t i = 0; i < polygons.size(); ++i) {
+    for (size_t i = 0; i < polygons.size(); ++i)
+    {
         auto & polygon = polygons[i];
         bg::correct(polygon);
         areas.push_back(bg::area(polygon));
         polygon_ids.emplace_back(polygon, i);
     }
-    sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs) {
+    sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
+    {
         return areas[lhs.second] < areas[rhs.second];
     });
     std::vector<size_t> correct_ids;
     correct_ids.reserve(polygon_ids.size());
-    for (size_t i = 0; i < polygon_ids.size(); ++i) {
+    for (size_t i = 0; i < polygon_ids.size(); ++i)
+    {
         auto & polygon = polygon_ids[i];
         correct_ids.emplace_back(ids[polygon.second]);
         polygons[i] = polygon.first;

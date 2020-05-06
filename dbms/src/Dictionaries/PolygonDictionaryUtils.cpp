@@ -39,7 +39,8 @@ const FinalCell * DividedCell::find(Float64 x, Float64 y) const
 }
 
 GridRoot::GridRoot(const size_t min_intersections_, const size_t max_depth_, const std::vector<Polygon> & polygons_):
-kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_) {
+kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_)
+{
     setBoundingBox();
     std::vector<size_t> order(polygons.size());
     std::iota(order.begin(), order.end(), 0);
