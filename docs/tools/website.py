@@ -120,6 +120,10 @@ def minify_website(args):
         logging.info(closure_args)
         if closure.run(*closure_args):
             raise RuntimeError('failed to run closure compiler')
+        with open(js_out, 'r') as f:
+            js_content = jsmin.jsmin(f.read())
+        with open(js_out, 'w') as f:
+            f.write(js_content)
 
     else:
         js_in = ' '.join(js_in)
