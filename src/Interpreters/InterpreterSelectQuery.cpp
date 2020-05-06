@@ -2,6 +2,7 @@
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/FinishSortingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/OffsetBlockInputStream.h>
 #include <DataStreams/LimitByBlockInputStream.h>
 #include <DataStreams/PartialSortingBlockInputStream.h>
 #include <DataStreams/MergeSortingBlockInputStream.h>
@@ -92,6 +93,7 @@
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/OffsetTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
@@ -675,12 +677,9 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
     UInt64 offset = 0;
 
     if (query.limitLength())
-    {
         length = getLimitUIntValue(query.limitLength(), context);
-        if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context);
-    }
-
+    if (query.limitOffset())
+        offset = getLimitUIntValue(query.limitOffset(), context);
     return {length, offset};
 }
 
@@ -1065,6 +1064,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             if (!(pipeline_with_processors && has_prelimit))  /// Limit is no longer needed if there is prelimit.
                 executeLimit(pipeline);
+
+            executeOffset(pipeline);
         }
     }
 
@@ -2435,6 +2436,50 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 }
 
 
+void InterpreterSelectQuery::executeOffset(Pipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    /// If there is LIMIT
+    if (!query.limitLength() && query.limitOffset())
+    {
+        /** Rare case:
+          *  if there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
+          *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
+          *  because if you cancel the query, we will not get `totals` data from the remote server.
+          *
+          * Another case:
+          *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
+          *  otherwise TOTALS is counted according to incomplete data.
+          */
+        bool always_read_till_end = false;
+
+        if (query.group_by_with_totals && !query.orderBy())
+            always_read_till_end = true;
+
+        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
+            always_read_till_end = true;
+
+        SortDescription order_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            order_descr = getSortDescription(query, *context);
+        }
+
+        UInt64 limit_length;
+        UInt64 limit_offset;
+        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
+
+        pipeline.transform([&](auto & stream)
+        {
+            std::cout << "BLOCK" << std::endl;
+            stream = std::make_shared<OffsetBlockInputStream>(stream, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
+        });
+    }
+}
+
+
 void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
@@ -2527,6 +2572,54 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
         });
     }
 }
+
+
+void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    /// If there is LIMIT
+    if (!query.limitLength() && query.limitOffset())
+    {
+        /** Rare case:
+          *  if there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
+          *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
+          *  because if you cancel the query, we will not get `totals` data from the remote server.
+          *
+          * Another case:
+          *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
+          *  otherwise TOTALS is counted according to incomplete data.
+          */
+        bool always_read_till_end = false;
+
+        if (query.group_by_with_totals && !query.orderBy())
+            always_read_till_end = true;
+
+        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
+            always_read_till_end = true;
+
+        UInt64 limit_length;
+        UInt64 limit_offset;
+        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
+
+        SortDescription order_descr;
+        if (query.limit_with_ties)
+        {
+            if (!query.orderBy())
+                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
+            order_descr = getSortDescription(query, *context);
+        }
+
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipeline::StreamType::Main)
+                return nullptr;
+            std::cout << "TRANSFORM" << std::endl;
+            return std::make_shared<OffsetTransform>(
+                    header, limit_length, limit_offset, 1, always_read_till_end, query.limit_with_ties, order_descr);
+        });
+    }
+}
+
 
 
 void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
