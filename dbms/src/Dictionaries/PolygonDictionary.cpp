@@ -237,6 +237,7 @@ void IPolygonDictionary::loadData()
         return areas[lhs.second] < areas[rhs.second];
     });
     std::vector<size_t> correct_ids;
+    correct_ids.reserve(polygon_ids.size());
     for (size_t i = 0; i < polygon_ids.size(); ++i) {
         auto & polygon = polygon_ids[i];
         correct_ids.emplace_back(ids[polygon.second]);
