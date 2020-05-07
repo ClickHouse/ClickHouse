@@ -244,7 +244,7 @@ JSONExtractKeysAndValuesRaw(json[, path])
 **Returned values**
 
 - Array with key-value pairs grouped into [tuples](../data-types/tuple.md). Each value is represented as an unparsed string.
-- Empty array if the object does not exist.
+- Empty array if the requested object does not exist.
 
 Type: [Array](../data-types/array.md).
 
@@ -294,4 +294,3 @@ Result:
 
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->
-
