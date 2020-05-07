@@ -6,6 +6,4 @@
             <show_table_uuid_in_table_create_query_if_not_nil>0</show_table_uuid_in_table_create_query_if_not_nil>
         </default>
     </profiles>
-
-    <database_atomic_delay_before_drop_table_sec>60</database_atomic_delay_before_drop_table_sec>
 </yandex>
