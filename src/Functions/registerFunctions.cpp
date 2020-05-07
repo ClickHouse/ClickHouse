@@ -30,6 +30,7 @@ void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegex(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
+void registerFunctionsUserAgent(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
@@ -71,6 +72,7 @@ void registerFunctions()
     registerFunctionsStringRegex(factory);
     registerFunctionsStringSimilarity(factory);
     registerFunctionsURL(factory);
+    registerFunctionsUserAgent(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
     registerFunctionsGeo(factory);
