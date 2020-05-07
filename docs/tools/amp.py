@@ -35,7 +35,7 @@ def prepare_amp_html(lang, args, root, site_temp, main_site_dir):
     with open(dst_index, 'w') as f:
         f.write(content)
 
-    test.test_amp(dst_index, lang)
+    return dst_index
 
 
 def build_amp(lang, args, cfg):
@@ -58,10 +58,11 @@ def build_amp(lang, args, cfg):
             mdx_clickhouse.PatchedMacrosPlugin.disabled = True
             mkdocs.commands.build.build(cfg)
 
+        paths = []
         for root, _, filenames in os.walk(site_temp):
             if 'index.html' in filenames:
-                prepare_amp_html(lang, args, root, site_temp, main_site_dir)
-
+                paths.append(prepare_amp_html(lang, args, root, site_temp, main_site_dir))
+        test.test_amp(paths, lang)
     logging.info(f'Finished building AMP version for {lang}')
 
 

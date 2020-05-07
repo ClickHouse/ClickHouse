@@ -14,27 +14,22 @@ import subprocess
 import bs4
 
 
-is_amphtml_validator_installed = False
+def test_amp(paths, lang):
+    try:
+        # Get latest amp validator version
+        subprocess.check_call('amphtml-validator --help',
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              shell=True)
+    except subprocess.CalledProcessError:
+        subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
 
-
-def test_amp(path, lang):
-    global is_amphtml_validator_installed
-    if not is_amphtml_validator_installed:
-        try:
-            # Get latest amp validator version
-            subprocess.check_call('amphtml-validator --help',
-                                  stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL,
-                                  shell=True)
-        except subprocess.CalledProcessError:
-            subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
-        is_amphtml_validator_installed = True
-
-    command = f'amphtml-validator {path}'
+    paths = ' '.join(paths)
+    command = f'amphtml-validator {paths}'
     try:
         subprocess.check_output(command, shell=True).decode('utf-8')
-    except subprocess.CalledProcessError as e:
-        logging.error(f'Invalid AMP at {path} for {lang})')
+    except subprocess.CalledProcessError:
+        logging.error(f'Invalid AMP for {lang})')
         raise
 
 
