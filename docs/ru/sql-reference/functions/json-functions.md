@@ -238,10 +238,12 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Возвращаемые значения**
 
-- Массив с парами «ключ-значение», сгрупированными в [кортежи](../data-types/tuple.md). Каждое значение представляет собой необработанную строку.
+- Массив с кортежами `('key', 'value')`. Члены кортежа — строки.
+
 - Пустой массив, если заданный объект не существует или входные данные не валидный JSON.
 
-Тип: [Массив](../data-types/array.md).
+Тип: Type: [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), [String](../data-types/string.md)).
+.
 
 **Примеры**
 

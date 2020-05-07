@@ -243,10 +243,10 @@ JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 
 **Returned values**
 
-- Array with `('key', 'value')` tuples.
+- Array with `('key', 'value')` tuples. Both tuple members are strings.
 - Empty array if the requested object does not exist, or input JSON is invalid.
 
-Type: [Array](../data-types/array.md)([Tuple][tuples](../data-types/tuple.md)([String](../data-types/string.md), [String](../data-types/string.md)).
+Type: [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), [String](../data-types/string.md)).
 
 **Examples**
 
