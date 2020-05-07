@@ -777,7 +777,7 @@ Une constante ne peut pas être spécifiée comme arguments pour les fonctions d
 
 #### Le Traitement NULL {#null-processing}
 
-Pour le regroupement, ClickHouse interprète [NULL](../syntax.md) comme une valeur, et `NULL=NULL`.
+Pour le regroupement, ClickHouse interprète [NULL](../syntax.md#null-literal) comme une valeur, et `NULL=NULL`.
 
 Voici un exemple pour montrer ce que cela signifie.
 
@@ -1058,7 +1058,7 @@ Le résultat sera le même que si GROUP BY était spécifié dans tous les champ
 
 DISTINCT n'est pas pris en charge si SELECT a au moins une colonne de tableau.
 
-`DISTINCT` fonctionne avec [NULL](../syntax.md) comme si `NULL` ont une valeur spécifique, et `NULL=NULL`. En d'autres termes, dans le `DISTINCT` résultats, différentes combinaisons avec `NULL` qu'une seule fois.
+`DISTINCT` fonctionne avec [NULL](../syntax.md#null-literal) comme si `NULL` ont une valeur spécifique, et `NULL=NULL`. En d'autres termes, dans le `DISTINCT` résultats, différentes combinaisons avec `NULL` qu'une seule fois.
 
 Clickhouse prend en charge l'utilisation du `DISTINCT` et `ORDER BY` clauses pour différentes colonnes dans une requête. Le `DISTINCT` la clause est exécutée avant la `ORDER BY` clause.
 
@@ -1215,7 +1215,7 @@ Une sous-requête dans la clause est toujours exécuter une seule fois sur un se
 
 #### Le Traitement NULL {#null-processing-1}
 
-Pendant le traitement de la demande, l'opérateur n'assume que le résultat d'une opération avec [NULL](../syntax.md) est toujours égale à `0` indépendamment de savoir si `NULL` est sur le côté droit ou gauche de l'opérateur. `NULL` les valeurs ne sont incluses dans aucun jeu de données, ne correspondent pas entre elles et ne peuvent pas être comparées.
+Pendant le traitement de la demande, l'opérateur n'assume que le résultat d'une opération avec [NULL](../syntax.md#null-literal) est toujours égale à `0` indépendamment de savoir si `NULL` est sur le côté droit ou gauche de l'opérateur. `NULL` les valeurs ne sont incluses dans aucun jeu de données, ne correspondent pas entre elles et ne peuvent pas être comparées.
 
 Voici un exemple avec le `t_null` table:
 
