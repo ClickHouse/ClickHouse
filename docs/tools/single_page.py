@@ -84,6 +84,7 @@ def build_single_page_version(lang, args, nav, cfg):
     os.environ['SINGLE_PAGE'] = '1'
     extra = cfg.data['extra']
     extra['single_page'] = True
+    extra['is_amp'] = False
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
         concatenate(lang, args.docs_dir, single_md, nav)
@@ -177,7 +178,9 @@ def build_single_page_version(lang, args, nav, cfg):
                             if img['src'].startswith('/'):
                                 img['src'] = soup_prefix + img['src']
                         for script in soup.findAll('script'):
-                            script['src'] = soup_prefix + script['src'].split('?', 1)[0]
+                            script_src = script.get('src')
+                            if script_src:
+                                script['src'] = soup_prefix + script_src.split('?', 1)[0]
                         for link in soup.findAll('link'):
                             link['href'] = soup_prefix + link['href'].split('?', 1)[0]
 
