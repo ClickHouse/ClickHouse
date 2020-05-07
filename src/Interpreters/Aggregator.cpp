@@ -557,29 +557,11 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys);
 }
 
-void Aggregator::prepareKeysAndInstructions(Columns columns, AggregatedDataVariants & result, ColumnRawPtrs & key_columns,
-                                            AggregateColumns & aggregate_columns, Columns & materialized_columns,
-                                            AggregateFunctionInstructions & aggregate_functions_instructions)
+void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
+                                              AggregateFunctionInstructions & aggregate_functions_instructions)
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
-
-    /// Remember the columns we will work with
-    for (size_t i = 0; i < params.keys_size; ++i)
-    {
-        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfConst());
-        key_columns[i] = materialized_columns.back().get();
-
-        if (!result.isLowCardinality())
-        {
-            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
-            if (column_no_lc.get() != key_columns[i])
-            {
-                materialized_columns.emplace_back(std::move(column_no_lc));
-                key_columns[i] = materialized_columns.back().get();
-            }
-        }
-    }
 
     aggregate_functions_instructions.resize(params.aggregates_size + 1);
     aggregate_functions_instructions[params.aggregates_size].that = nullptr;
@@ -655,9 +637,26 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
       * To make them work anyway, we materialize them.
       */
     Columns materialized_columns;
-    AggregateFunctionInstructions aggregate_functions_instructions;
 
-    prepareKeysAndInstructions(columns, result, key_columns, aggregate_columns, materialized_columns, aggregate_functions_instructions);
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfConst());
+        key_columns[i] = materialized_columns.back().get();
+
+        if (!result.isLowCardinality())
+        {
+            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
+            if (column_no_lc.get() != key_columns[i])
+            {
+                materialized_columns.emplace_back(std::move(column_no_lc));
+                key_columns[i] = materialized_columns.back().get();
+            }
+        }
+    }
+
+    AggregateFunctionInstructions aggregate_functions_instructions;
+    prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions);
 
     if (isCancelled())
         return true;
@@ -1154,7 +1153,7 @@ void Aggregator::fillAggregateColumnsWithSingleKey(
 
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     AggregatedDataVariants & data_variants,
-    ColumnRawPtrs key_columns,
+    Columns key_columns,
     size_t key_row,
     MutableColumns & final_key_columns)
 {
@@ -1164,7 +1163,7 @@ void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
 
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        final_key_columns[i]->insertFrom(*key_columns[i], key_row);
+        final_key_columns[i]->insertFrom(*key_columns[i].get(), key_row);
     }
 }
 
