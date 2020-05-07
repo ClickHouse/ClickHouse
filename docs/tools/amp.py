@@ -84,5 +84,9 @@ def html_to_amp(content):
                 tag.attrs['width'] = '640'
             if not tag.attrs.get('height'):
                 tag.attrs['height'] = '320'
+        elif tag.name == 'a':
+            href = tag.attrs['href']
+            if not (href.startswith('/') or href.startswith('http')):
+                tag.attrs['href'] = f'{href}/amp/'
     content = str(soup)
     return website.minify_html(content)

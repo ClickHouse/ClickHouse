@@ -14,7 +14,7 @@ def find_first_header(content):
             return no_hash.split('{', 1)[0].strip()
 
 
-def build_nav_entry(root):
+def build_nav_entry(root, args):
     if root.endswith('images'):
         return None, None, None
     result_items = []
@@ -23,7 +23,7 @@ def build_nav_entry(root):
     for filename in os.listdir(root):
         path = os.path.join(root, filename)
         if os.path.isdir(path):
-            prio, title, payload = build_nav_entry(path)
+            prio, title, payload = build_nav_entry(path, args)
             if title and payload:
                 result_items.append((prio, title, payload))
         elif filename.endswith('.md'):
@@ -39,6 +39,8 @@ def build_nav_entry(root):
             logging.debug(f'Nav entry: {prio}, {title}, {path}')
             if not content.strip():
                 title = 'hidden'
+            if args.nav_limit and len(result_items) >= args.nav_limit:
+                break
             result_items.append((prio, title, path))
     result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
     result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
@@ -47,7 +49,7 @@ def build_nav_entry(root):
 
 def build_nav(lang, args):
     docs_dir = os.path.join(args.docs_dir, lang)
-    _, _, nav = build_nav_entry(docs_dir)
+    _, _, nav = build_nav_entry(docs_dir, args)
     result = []
     index_key = None
     for key, value in nav.items():
