@@ -21,6 +21,8 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , many_data(std::make_shared<ManyAggregatedData>(1))
     , variants(*many_data->variants[0])
 {
+//    std::cerr << "AggregatingInOrderTransform\n";
+
     Block res_header = params->getHeader();
 
     /// Replace column names to column position in description_sorted.
@@ -86,9 +88,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     /// So that key_columns could live longer xD
     /// Need a better construction probably
     Columns materialized_columns;
+    Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
 
-    AggregateFunctionInstructions aggregate_function_instructions =
-        params->aggregator.prepareBlockForAggregation(materialized_columns, chunk.detachColumns(), variants, key_columns, aggregate_columns);
+    params->aggregator.prepareKeysAndInstructions(chunk.detachColumns(), variants, key_columns, aggregate_columns, materialized_columns, aggregate_function_instructions);
 
 //    std::cerr << "\nPrepared block of size " << rows << "\n";
 

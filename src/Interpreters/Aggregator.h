@@ -828,28 +828,6 @@ using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
-/** This array serves two purposes.
-  *
-  * 1. Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
-  * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
-  *
-  * 2. Calling a function by pointer is better than a virtual call, because in the case of a virtual call,
-  *  GCC 5.1.2 generates code that, at each iteration of the loop, reloads the function address from memory into the register
-  *  (the offset value in the virtual function table).
-  */
-struct AggregateFunctionInstruction
-{
-    const IAggregateFunction * that;
-    IAggregateFunction::AddFunc func;
-    size_t state_offset;
-    const IColumn ** arguments;
-    const IAggregateFunction * batch_that;
-    const IColumn ** batch_arguments;
-    const UInt64 * offsets = nullptr;
-};
-
-using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingBlockInputStream.)
   *
@@ -954,9 +932,6 @@ public:
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
         bool & no_more_keys);
 
-    AggregateFunctionInstructions prepareBlockForAggregation(Columns & materialized_columns, Columns columns, AggregatedDataVariants & result,
-                                                             ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns);
-
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
       *
@@ -1028,7 +1003,6 @@ protected:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
-
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
@@ -1037,6 +1011,28 @@ protected:
     HashMethodContextPtr aggregation_state_cache;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
+
+    /** This array serves two purposes.
+      *
+      * 1. Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
+      * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
+      *
+      * 2. Calling a function by pointer is better than a virtual call, because in the case of a virtual call,
+      *  GCC 5.1.2 generates code that, at each iteration of the loop, reloads the function address from memory into the register
+      *  (the offset value in the virtual function table).
+      */
+    struct AggregateFunctionInstruction
+    {
+        const IAggregateFunction * that;
+        IAggregateFunction::AddFunc func;
+        size_t state_offset;
+        const IColumn ** arguments;
+        const IAggregateFunction * batch_that;
+        const IColumn ** batch_arguments;
+        const UInt64 * offsets = nullptr;
+    };
+
+    using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -1261,6 +1257,14 @@ protected:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    void prepareKeysAndInstructions(
+        Columns columns,
+        AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateColumns & aggregate_columns,
+        Columns & materialized_columns,
+        AggregateFunctionInstructions & instructions);
 
     void fillAggregateColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
