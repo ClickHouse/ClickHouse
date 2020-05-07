@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionWelchTTest.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -14,9 +15,9 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const DataTypes & argumen
 {
     // default value
     Float64 significance_level = 0.1;
-    if (!params.empty())
+    if (!parameters.empty())
     {
-        significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+        significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
     }
 
 
