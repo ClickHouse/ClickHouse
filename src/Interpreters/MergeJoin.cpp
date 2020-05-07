@@ -557,27 +557,24 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         {
             /// Read block from disk
 
+            while (!disk_reader)
+            {
+                std::unique_lock lock(rwlock);
+
+                if (!disk_reader)
+                    disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
+            }
+
+            block = disk_reader->read();
             if (!block)
             {
-                while (!disk_reader)
-                {
-                    std::unique_lock lock(rwlock);
-
-                    if (!disk_reader)
-                        disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
-                }
+                std::unique_lock lock(rwlock); /// premerge barier
 
                 block = disk_reader->read();
-                if (!block)
+                if (!block && disk_writer)
                 {
-                    std::unique_lock lock(rwlock); /// premerge barier
-
+                    disk_reader->addFiles(disk_writer->premerge());
                     block = disk_reader->read();
-                    if (!block && disk_writer)
-                    {
-                        disk_reader->addFiles(disk_writer->premerge());
-                        block = disk_reader->read();
-                    }
                 }
             }
 
