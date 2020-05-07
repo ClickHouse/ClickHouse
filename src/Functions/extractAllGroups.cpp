@@ -64,10 +64,11 @@ public:
             throw Exception(getName() + " length of 'needle' argument must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         const auto regexp = Regexps::get<false, false>(needle);
-        const size_t groups_count = regexp->getNumberOfSubpatterns();
+        const auto & re2 = regexp->getRE2();
+        const size_t groups_count = re2->NumberOfCapturingGroups();
 
         // Including 0-group, which is the whole regexp.
-        OptimizedRegularExpression::MatchVec matched_groups(groups_count + 1);
+        PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);
 
         ColumnArray::ColumnOffsets::MutablePtr root_offsets_col = ColumnArray::ColumnOffsets::create();
         ColumnArray::ColumnOffsets::MutablePtr nested_offsets_col = ColumnArray::ColumnOffsets::create();
@@ -82,18 +83,20 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto & current_row = column_haystack->getDataAt(i);
+            StringRef current_row = column_haystack->getDataAt(i);
 
             // Extract all non-intersecting matches from haystack except group #0.
-            size_t start_pos = 0;
-            while (start_pos < current_row.size
-                && regexp->match(current_row.data + start_pos, current_row.size, matched_groups, groups_count + 1))
+            auto pos = current_row.data;
+            auto end = pos + current_row.size;
+            while (pos < end
+                && re2->Match(re2_st::StringPiece(pos, end - pos),
+                    0, end - pos, re2_st::RE2::UNANCHORED, matched_groups.data(), matched_groups.size()))
             {
                 // 1 is to exclude group #0 which is whole re match.
                 for (size_t group = 1; group <= groups_count; ++group)
-                    data_col->insertData(current_row.data + start_pos + matched_groups[group].offset, matched_groups[group].length);
+                    data_col->insertData(matched_groups[group].data(), matched_groups[group].size());
 
-                start_pos += matched_groups[0].offset + matched_groups[0].length;
+                pos = matched_groups[0].data() + matched_groups[0].size();
 
                 current_nested_offset += groups_count;
                 nested_offsets_data.push_back(current_nested_offset);
