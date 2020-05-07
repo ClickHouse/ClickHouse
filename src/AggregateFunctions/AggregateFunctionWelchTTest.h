@@ -5,6 +5,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitors.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -12,14 +14,8 @@
 #include <IO/WriteHelpers.h>
 #include <limits>
 
-#include <Core/Types.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
-
 #include <type_traits>
 
-#include <DataTypes/DataTypesDecimal.h>
 
 
 namespace DB
@@ -52,7 +48,8 @@ Float64 CriticalValuesTable[SIGN_LVL_CNT][102] = {
 // https://gist.github.com/ltybc-coder/792748cfdb2f7cadef424ffb7b011c71
 // col, col, bool
 template <typename X, typename Y, typename Ret = UInt8>
-struct AggregateFunctionWelchTTestData final {
+struct AggregateFunctionWelchTTestData final
+{
 
     size_t size_x = 0;
     size_t size_y = 0;
@@ -65,14 +62,16 @@ struct AggregateFunctionWelchTTestData final {
 
     /*
      not yet sure how to use them
-    void add_x(X x) {
+    void add_x(X x)
+    {
         mean_x = (Float64)(sum_x + x) / (size_x + 1);
         size_x ++;
         sum_x += x;
         square_sum_x += x * x;
     }
 
-    void add_y(Y y) {
+    void add_y(Y y)
+    {
         mean_y = (sum_y + y) / (size_y + 1);
         size_y ++;
         sum_y += y;
@@ -80,7 +79,8 @@ struct AggregateFunctionWelchTTestData final {
     }
     */
 
-    void add(X x, Y y) {
+    void add(X x, Y y)
+    {
         sum_x += x;
         sum_y += y;
         size_x++;
@@ -91,7 +91,8 @@ struct AggregateFunctionWelchTTestData final {
         square_sum_y += y * y;
     }
 
-    void merge(const AggregateFunctionWelchTTestData &other) {
+    void merge(const AggregateFunctionWelchTTestData &other)
+    {
         sum_x += other.sum_x;
         sum_y += other.sum_y;
         size_x += other.size_x;
@@ -102,7 +103,8 @@ struct AggregateFunctionWelchTTestData final {
         square_sum_y += other.square_sum_y;
     }
 
-    void serialize(WriteBuffer &buf) const {
+    void serialize(WriteBuffer &buf) const
+    {
         writeBinary(mean_x, buf);
         writeBinary(mean_y, buf);
         writeBinary(sum_x, buf);
@@ -113,7 +115,8 @@ struct AggregateFunctionWelchTTestData final {
         writeBinary(size_y, buf);
     }
 
-    void deserialize(ReadBuffer &buf) {
+    void deserialize(ReadBuffer &buf)
+    {
         readBinary(mean_x, buf);
         readBinary(mean_y, buf);
         readBinary(sum_x, buf);
@@ -124,19 +127,23 @@ struct AggregateFunctionWelchTTestData final {
         readBinary(size_y, buf);
     }
 
-    Float64 get_sx() const {
+    Float64 get_sx() const
+    {
         return static_cast<Float64>(square_sum_x + size_x * mean_x * mean_x - 2 * mean_x * sum_x) / (size_x - 1);
     }
 
-    Float64 get_sy() const {
+    Float64 get_sy() const
+    {
         return static_cast<Float64>(square_sum_y + size_y * mean_y * mean_y - 2 * mean_y * sum_y) / (size_y - 1);
     }
 
-    Float64 get_T(Float64 sx, Float64 sy) const {
+    Float64 get_T(Float64 sx, Float64 sy) const
+    {
         return static_cast<Float64>(mean_x - mean_y) / std::sqrt(sx / size_x + sy / size_y);
     }
 
-    Float64 get_degrees_of_freed(Float64 sx, Float64 sy) const {
+    Float64 get_degrees_of_freed(Float64 sx, Float64 sy) const
+    {
         return static_cast<Float64>(sx / size_x + sy / size_y) * (sx / size_x + sy / size_y) /
                ((sx * sx / (size_x * size_x * (size_x - 1))) + (sy * sy / (size_y * size_y * (size_y - 1))));
     }
@@ -161,11 +168,13 @@ struct AggregateFunctionWelchTTestData final {
         }
         //check if abs of t is greater than table[dof]
         t = abs(t);
-        if(t > CriticalValuesTable[table][i_dof]) {
+        if(t > CriticalValuesTable[table][i_dof])
+        {
             return static_cast<UInt8>(1);
             //in this case we reject the null hypothesis
         }
-        else {
+        else
+        {
             return static_cast<UInt8>(0);
         }
     }
