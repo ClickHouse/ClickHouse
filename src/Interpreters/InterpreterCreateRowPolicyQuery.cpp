@@ -29,8 +29,12 @@ namespace
         if (query.is_restrictive)
             policy.setRestrictive(*query.is_restrictive);
 
-        for (const auto & [index, condition] : query.conditions)
-            policy.conditions[index] = condition ? serializeAST(*condition) : String{};
+        for (auto condition_type : ext::range(RowPolicy::MAX_CONDITION_TYPE))
+        {
+            const auto & condition = query.conditions[condition_type];
+            if (condition)
+                policy.conditions[condition_type] = *condition ? serializeAST(**condition) : String{};
+        }
 
         const ExtendedRoleSet * roles = nullptr;
         std::optional<ExtendedRoleSet> temp_role_set;

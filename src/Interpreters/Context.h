@@ -278,7 +278,6 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    std::shared_ptr<const EnabledRowPolicies> getRowPolicies() const;
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
 
     /// Sets an extra row policy based on `client_info.initial_user`, if it exists.

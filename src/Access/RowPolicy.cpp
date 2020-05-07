@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -73,36 +72,6 @@ bool RowPolicy::equal(const IAccessEntity & other) const
     const auto & other_policy = typeid_cast<const RowPolicy &>(other);
     return (name_parts == other_policy.name_parts) && boost::range::equal(conditions, other_policy.conditions)
         && restrictive == other_policy.restrictive && (to_roles == other_policy.to_roles);
-}
-
-
-const char * RowPolicy::conditionTypeToString(ConditionType index)
-{
-    switch (index)
-    {
-        case SELECT_FILTER: return "SELECT_FILTER";
-        case INSERT_CHECK: return "INSERT_CHECK";
-        case UPDATE_FILTER: return "UPDATE_FILTER";
-        case UPDATE_CHECK: return "UPDATE_CHECK";
-        case DELETE_FILTER: return "DELETE_FILTER";
-        case MAX_CONDITION_TYPE: break;
-    }
-    throw Exception("Unexpected condition type: " + std::to_string(static_cast<int>(index)), ErrorCodes::LOGICAL_ERROR);
-}
-
-
-const char * RowPolicy::conditionTypeToColumnName(ConditionType index)
-{
-    switch (index)
-    {
-        case SELECT_FILTER: return "select_filter";
-        case INSERT_CHECK: return "insert_check";
-        case UPDATE_FILTER: return "update_filter";
-        case UPDATE_CHECK: return "update_check";
-        case DELETE_FILTER: return "delete_filter";
-        case MAX_CONDITION_TYPE: break;
-    }
-    throw Exception("Unexpected condition type: " + std::to_string(static_cast<int>(index)), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

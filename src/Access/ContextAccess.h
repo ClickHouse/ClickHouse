@@ -70,7 +70,7 @@ public:
 
     /// Returns information about enabled row policies.
     /// The function can return nullptr.
-    std::shared_ptr<const EnabledRowPolicies> getRowPolicies() const;
+    std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies() const;
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.

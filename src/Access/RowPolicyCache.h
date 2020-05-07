@@ -21,8 +21,6 @@ public:
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles);
 
 private:
-    using ParsedConditions = EnabledRowPolicies::ParsedConditions;
-
     struct PolicyInfo
     {
         PolicyInfo(const RowPolicyPtr & policy_) { setPolicy(policy_); }
@@ -30,7 +28,8 @@ private:
 
         RowPolicyPtr policy;
         const ExtendedRoleSet * roles = nullptr;
-        ParsedConditions parsed_conditions;
+        std::shared_ptr<const std::pair<String, String>> database_and_table_name;
+        ASTPtr parsed_conditions[RowPolicy::MAX_CONDITION_TYPE];
     };
 
     void ensureAllRowPoliciesRead();

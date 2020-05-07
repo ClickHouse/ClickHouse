@@ -167,14 +167,14 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto index : ext::range(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto type : ext::range(RowPolicy::MAX_CONDITION_TYPE))
         {
-            const auto & condition = policy.conditions[index];
+            const auto & condition = policy.conditions[static_cast<size_t>(type)];
             if (!condition.empty())
             {
                 ParserExpression parser;
                 ASTPtr expr = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                query->conditions.push_back(std::pair{index, expr});
+                query->conditions[static_cast<size_t>(type)] = expr;
             }
         }
 

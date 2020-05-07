@@ -2,10 +2,16 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/ExtendedRoleSet.h>
+#include <array>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 /** Represents a row level security policy for a table.
   */
@@ -43,17 +49,27 @@ struct RowPolicy : public IAccessEntity
     enum ConditionType
     {
         SELECT_FILTER,
+
+#if 0 /// Row-level security for INSERT, UPDATE, DELETE is not implemented yet.
         INSERT_CHECK,
         UPDATE_FILTER,
         UPDATE_CHECK,
         DELETE_FILTER,
+#endif
 
         MAX_CONDITION_TYPE
     };
-    static const char * conditionTypeToString(ConditionType index);
-    static const char * conditionTypeToColumnName(ConditionType index);
 
-    String conditions[MAX_CONDITION_TYPE];
+    struct ConditionTypeInfo
+    {
+        const char * const raw_name;
+        const String name;    /// Lowercased with underscores, e.g. "select_filter".
+        const String command; /// Uppercased without last word, e.g. "SELECT".
+        const bool is_check;  /// E.g. false for SELECT_FILTER.
+        static const ConditionTypeInfo & get(ConditionType type);
+    };
+
+    std::array<String, MAX_CONDITION_TYPE> conditions;
 
     /// Sets that the policy is permissive.
     /// A row is only accessible if at least one of the permissive policies passes,
@@ -83,4 +99,58 @@ private:
 };
 
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
+
+
+inline const RowPolicy::ConditionTypeInfo & RowPolicy::ConditionTypeInfo::get(ConditionType type_)
+{
+    static constexpr auto make_info = [](const char * raw_name_)
+    {
+        String init_name = raw_name_;
+        boost::to_lower(init_name);
+        size_t underscore_pos = init_name.find('_');
+        String init_command = init_name.substr(0, underscore_pos);
+        boost::to_upper(init_command);
+        bool init_is_check = (std::string_view{init_name}.substr(underscore_pos + 1) == "check");
+        return ConditionTypeInfo{raw_name_, std::move(init_name), std::move(init_command), init_is_check};
+    };
+
+    switch (type_)
+    {
+        case SELECT_FILTER:
+        {
+            static const ConditionTypeInfo info = make_info("SELECT_FILTER");
+            return info;
+        }
+#if 0 /// Row-level security for INSERT, UPDATE, DELETE is not implemented yet.
+        case INSERT_CHECK:
+        {
+            static const ConditionTypeInfo info = make_info("INSERT_CHECK");
+            return info;
+        }
+        case UPDATE_FILTER:
+        {
+            static const ConditionTypeInfo info = make_info("UPDATE_FILTER");
+            return info;
+        }
+        case UPDATE_CHECK:
+        {
+            static const ConditionTypeInfo info = make_info("UPDATE_CHECK");
+            return info;
+        }
+        case DELETE_FILTER:
+        {
+            static const ConditionTypeInfo info = make_info("DELETE_FILTER");
+            return info;
+        }
+#endif
+        case MAX_CONDITION_TYPE: break;
+    }
+    throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
+}
+
+inline String toString(RowPolicy::ConditionType type)
+{
+    return RowPolicy::ConditionTypeInfo::get(type).raw_name;
+}
+
 }
