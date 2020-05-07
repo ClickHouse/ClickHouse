@@ -233,18 +233,18 @@ Extracts raw data from a JSON object.
 **Syntax**
 
 ``` sql
-JSONExtractKeysAndValuesRaw(json[, path])
+JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
 ```
 
 **Parameters**
 
 - `json` — [String](../data-types/string.md) with valid JSON.
-- `path` — Optional. Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../data-types/string.md) to get the field by the key or an [integer](../data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object.
+- `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../data-types/string.md) to get the field by the key or an [integer](../data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
 
 **Returned values**
 
 - Array with key-value pairs grouped into [tuples](../data-types/tuple.md). Each value is represented as an unparsed string.
-- Empty array if the requested object does not exist.
+- Empty array if the requested object does not exist, or input JSON is invalid.
 
 Type: [Array](../data-types/array.md).
 
