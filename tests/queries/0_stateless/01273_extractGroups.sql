@@ -4,7 +4,7 @@ SELECT extractGroups('hello');  --{serverError 42} not enough arguments
 SELECT extractGroups('hello', 123);  --{serverError 43} invalid argument type
 SELECT extractGroups(123, 'world');  --{serverError 43}  invalid argument type
 SELECT extractGroups('hello world', '((('); --{serverError 427}  invalid re
-SELECT extractGroups('hello world', materialize('\\w+')); --{serverError 44} non-cons needle
+SELECT extractGroups('hello world', materialize('\\w+')); --{serverError 44} non-const needle
 
 SELECT '0 groups, zero matches';
 SELECT extractGroups('hello world', '\\w+');
