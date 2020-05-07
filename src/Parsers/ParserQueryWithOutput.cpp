@@ -14,10 +14,10 @@
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ParserShowGrantsQuery.h>
+#include <Parsers/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
+#include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowQuotasQuery.h>
-#include <Parsers/ParserShowRowPoliciesQuery.h>
 
 
 namespace DB
@@ -38,10 +38,10 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
     ParserWatchQuery watch_p;
+    ParserShowAccessEntitiesQuery show_access_entities_p;
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
     ParserShowGrantsQuery show_grants_p;
     ParserShowQuotasQuery show_quotas_p;
-    ParserShowRowPoliciesQuery show_row_policies_p;
 
     ASTPtr query;
 
@@ -70,9 +70,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
+        || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
-        || show_quotas_p.parse(pos, query, expected)
-        || show_row_policies_p.parse(pos, query, expected);
+        || show_quotas_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

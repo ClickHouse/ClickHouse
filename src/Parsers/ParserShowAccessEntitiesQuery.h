@@ -6,12 +6,12 @@
 namespace DB
 {
 /** Parses queries like
-  * SHOW [ROW] POLICIES [CURRENT] [ON [database.]table]
+  * SHOW [ROW] POLICIES [ON [database.]table]
   */
-class ParserShowRowPoliciesQuery : public IParserBase
+class ParserShowAccessEntitiesQuery : public IParserBase
 {
 protected:
-    const char * getName() const override { return "SHOW POLICIES query"; }
+    const char * getName() const override { return "ShowAccessEntitiesQuery"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 }

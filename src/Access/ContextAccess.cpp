@@ -485,7 +485,7 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     return roles_info;
 }
 
-std::shared_ptr<const EnabledRowPolicies> ContextAccess::getRowPolicies() const
+std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies() const
 {
     std::lock_guard lock{mutex};
     return enabled_row_policies;
