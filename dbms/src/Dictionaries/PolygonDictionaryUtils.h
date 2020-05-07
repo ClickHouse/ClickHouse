@@ -28,7 +28,7 @@ public:
 
     explicit Cell(std::vector<std::unique_ptr<Cell>> children_);
 
-    [[nodiscard]] const Cell * find(Float64 x, Float64 y) const;
+    [[nodiscard]] const Cell * find(Float64 x, Float64 y) const override;
 
 private:
     std::vector<std::unique_ptr<Cell>> children;
@@ -50,7 +50,7 @@ public:
     /** Retrieves the cell containing a given point.
      *  A null pointer is returned when the point falls outside the grid.
      */
-    [[nodiscard]] const Cell * find(Float64 x, Float64 y) const;
+    [[nodiscard]] const Cell * find(Float64 x, Float64 y) const override;
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kSplit = 4;
