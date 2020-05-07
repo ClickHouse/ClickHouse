@@ -17,7 +17,6 @@
 #include <type_traits>
 
 
-
 namespace DB
 {
 // hard-codded values - part of the algorithm
@@ -268,7 +267,6 @@ public:
         auto & column = static_cast<ColumnVector<Ret> &>(to);
         column.getData().push_back(result);
     }
-
 
 };
 };
