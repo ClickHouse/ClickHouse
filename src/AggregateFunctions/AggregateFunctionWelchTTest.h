@@ -168,7 +168,7 @@ struct AggregateFunctionWelchTTestData final
         }
         //check if abs of t is greater than table[dof]
         t = abs(t);
-        if(t > CriticalValuesTable[table][i_dof])
+        if (t > CriticalValuesTable[table][i_dof])
         {
             return static_cast<UInt8>(1);
             //in this case we reject the null hypothesis
@@ -187,15 +187,22 @@ class AggregateFunctionWelchTTest final : public
                                               AggregateFunctionWelchTTest<X, Y, Ret>
                                           >
 {
+
+
+private:
+    Float64 significance_level;
+
+
 public:
     AggregateFunctionWelchTTest(
+        Float64 sglvl_,
         const DataTypes & arguments,
         const  Array & params
     ):
         IAggregateFunctionDataHelper<
             AggregateFunctionWelchTTestData<X, Y, Ret>,
             AggregateFunctionWelchTTest<X, Y, Ret>
-        > ({arguments}, params)
+        > ({arguments}, params), significance_level(sglvl_)
     {
         // notice: arguments has been in factory
     }
@@ -250,7 +257,6 @@ public:
         IColumn & to
     ) const override
     {
-        Float64 significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 
         Float64 sx = this->data(place).get_sx();
         Float64 sy = this->data(place).get_sy();
