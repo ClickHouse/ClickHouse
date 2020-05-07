@@ -8,7 +8,7 @@ toc_title: HDFS
 # HDFS {#table_engines-hdfs}
 
 این موتور ادغام با فراهم می کند [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) اکوسیستم با اجازه دادن به مدیریت داده ها در [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)از طریق کلیکهاوس. این موتور مشابه است
-به [پرونده](../special/file.md) و [URL](../special/url.md) موتورهای, اما فراهم می کند ویژگی های هادوپ خاص.
+به [پرونده](../special/file.md#table_engines-file) و [URL](../special/url.md#table_engines-url) موتورهای, اما فراهم می کند ویژگی های هادوپ خاص.
 
 ## استفاده {#usage}
 

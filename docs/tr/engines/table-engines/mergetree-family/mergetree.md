@@ -30,7 +30,7 @@ Ana özellikler:
     Gerekirse, tabloda veri örnekleme yöntemini ayarlayabilirsiniz.
 
 !!! info "Bilgin"
-    Bu [Birleştirmek](../special/merge.md) motor ait değil `*MergeTree` aile.
+    Bu [Birleştirmek](../special/merge.md#merge) motor ait değil `*MergeTree` aile.
 
 ## Tablo oluşturma {#table_engine-mergetree-creating-a-table}
 
@@ -476,7 +476,7 @@ ALTER TABLE example_table
 
 ClickHouse veri parçalarını birleştirdiğinde süresi dolmuş bir TTL ile veri kaldırılır.
 
-ClickHouse, verilerin süresi dolduğunu gördüğünde, zamanlama dışı bir birleştirme gerçekleştirir. Bu tür birleştirmelerin sıklığını kontrol etmek için şunları ayarlayabilirsiniz [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). Değer çok düşükse, çok fazla kaynak tüketebilecek birçok zamanlama dışı birleştirme gerçekleştirir.
+ClickHouse, verilerin süresi dolduğunu gördüğünde, zamanlama dışı bir birleştirme gerçekleştirir. Bu tür birleştirmelerin sıklığını kontrol etmek için şunları ayarlayabilirsiniz `merge_with_ttl_timeout`. Değer çok düşükse, çok fazla kaynak tüketebilecek birçok zamanlama dışı birleştirme gerçekleştirir.
 
 Gerçekleştir theirseniz `SELECT` birleştirme arasında sorgu, süresi dolmuş veri alabilirsiniz. Bunu önlemek için, [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) önce sorgu `SELECT`.
 
@@ -497,7 +497,7 @@ Veri kısmı için minimum hareketli birimdir `MergeTree`- motor masaları. Bir 
 
 Açıklanan varlıklara verilen isimler sistem tablolarında bulunabilir, [sistem.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) ve [sistem.diskler](../../../operations/system-tables.md#system_tables-disks). Bir tablo için yapılandırılmış depolama ilkelerinden birini uygulamak için `storage_policy` ayarı `MergeTree`- motor aile tabloları.
 
-### Yapılandırma {#table_engine-mergetree-multiple-volumes-configure}
+### Yapılandırma {#table_engine-mergetree-multiple-volumes_configure}
 
 Diskler, birimler ve depolama politikaları içinde bildirilmelidir `<storage_configuration>` ana dosyada ya etiket `config.xml` veya farklı bir dosyada `config.d` dizin.
 

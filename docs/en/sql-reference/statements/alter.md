@@ -206,7 +206,7 @@ The following operations with [partitions](../../engines/table-engines/mergetree
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - Move the data partition from one table to another.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition) - Move the data partition from one table to another.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -215,7 +215,7 @@ The following operations with [partitions](../../engines/table-engines/mergetree
 
 <!-- -->
 
-#### DETACH PARTITION {\#alter\_detach-partition} {#detach-partition-alter-detach-partition}
+#### DETACH PARTITION {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr
@@ -498,5 +498,108 @@ Mutations are totally ordered by their creation order and are applied to each pa
 A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted, but if the mutation is stuck for some reason it can be cancelled with the [`KILL MUTATION`](misc.md#kill-mutation) query.
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+
+## ALTER USER {#alter-user-statement}
+
+Changes ClickHouse user accounts.
+
+### Syntax {#alter-user-syntax}
+
+``` sql
+ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```  
+
+### Description {#alter-user-dscr}
+
+To use `ALTER USER` you must have the [ALTER USER](grant.md#grant-access-management) privilege.
+
+### Examples {#alter-user-examples}
+
+Set granted roles as default:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+If roles aren't previously granted to a user, ClickHouse throws an exception.
+
+Set all the granted roles to default:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+If a role will be granted to a user in the future it will become default automatically.
+
+Set all the granted roles to default excepting `role1` and `role2`:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+
+## ALTER ROLE {#alter-role-statement}
+
+Changes roles.
+
+### Syntax {#alter-role-syntax}
+
+``` sql
+ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+Changes row policy.
+
+### Syntax {#alter-row-policy-syntax}
+
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+
+## ALTER QUOTA {#alter-quota-statement}
+
+Changes quotas.
+
+### Syntax {#alter-quota-syntax}
+
+``` sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+
+Changes quotas.
+
+### Syntax {#alter-settings-profile-syntax}
+
+``` sql
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
+
 
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

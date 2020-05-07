@@ -12,11 +12,11 @@ Bir sözlük bir haritalama (`key -> attributes`) bu referans listeleri çeşitl
 
 ClickHouse, sorgularda kullanılabilecek sözlüklerle çalışmak için özel işlevleri destekler. Sözlükleri işlevlerle kullanmak daha kolay ve daha verimlidir. `JOIN` referans tabloları ile.
 
-[NULL](../syntax.md#null) değerler sözlükte saklanamaz.
+[NULL](../../sql-reference/syntax.md#null-literal) değerler sözlükte saklanamaz.
 
 ClickHouse destekler:
 
 -   [Dahili sözlükler](internal-dicts.md#internal_dicts) bir özel ile [fonksiyonlar kümesi](../../sql-reference/functions/ym-dict-functions.md).
--   [Eklenti (harici) söz dictionarieslükler](external-dictionaries/external-dicts.md) ile bir [fonksiyonlar net](../../sql-reference/functions/ext-dict-functions.md).
+-   [Eklenti (harici) söz dictionarieslükler](external-dictionaries/external-dicts.md#dicts-external-dicts) ile bir [fonksiyonlar net](../../sql-reference/functions/ext-dict-functions.md).
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->
