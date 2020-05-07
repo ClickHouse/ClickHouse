@@ -7,6 +7,10 @@
 {% set no_footer = True %}
 {% set og_type = 'article' %}
 
+{% if page and page.abs_url %}
+    {% set url = 'https://clickhouse.tech' + page.abs_url %}
+{% endif %}
+
 {% if page and page.meta and page.meta.title %}
     {% set title = page.meta.title %}
 {% elif page and page.title and not page.is_homepage and page.title != 'hidden' %}
@@ -25,7 +29,7 @@
 {% set data_single_page = 'true' if config.extra.single_page else 'false' %}
 
 {% if is_amp %}
-    Hi!
+    {% include "templates/docs/amp.html" %}
 {% else %}
     {% set extra_html_attrs = 'data-version="' + data_version + '" data-single-page="' + data_single_page + '"' %}
     {% set extra_body_attrs = 'data-spy="scroll" data-target="#toc" data-offset="80"' %}

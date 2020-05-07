@@ -2,6 +2,8 @@ import collections
 import logging
 import os
 
+import mkdocs.structure.nav
+
 import util
 
 
@@ -62,3 +64,43 @@ def build_nav(lang, args):
         result[0][key].move_to_end(index_key, last=False)
     print('result', result)
     return result
+
+
+def _custom_get_navigation(files, config):
+    nav_config = config['nav'] or mkdocs.structure.nav.nest_paths(f.src_path for f in files.documentation_pages())
+    items = mkdocs.structure.nav._data_to_navigation(nav_config, files, config)
+    if not isinstance(items, list):
+        items = [items]
+
+    pages = mkdocs.structure.nav._get_by_type(items, mkdocs.structure.nav.Page)
+
+    mkdocs.structure.nav._add_previous_and_next_links(pages)
+    mkdocs.structure.nav._add_parent_links(items)
+
+    missing_from_config = [file for file in files.documentation_pages() if file.page is None]
+    if missing_from_config:
+        files._files = [file for file in files._files if file not in missing_from_config]
+
+    links = mkdocs.structure.nav._get_by_type(items, mkdocs.structure.nav.Link)
+    for link in links:
+        scheme, netloc, path, params, query, fragment = mkdocs.structure.nav.urlparse(link.url)
+        if scheme or netloc:
+            mkdocs.structure.nav.log.debug(
+                "An external link to '{}' is included in "
+                "the 'nav' configuration.".format(link.url)
+            )
+        elif link.url.startswith('/'):
+            mkdocs.structure.nav.log.debug(
+                "An absolute path to '{}' is included in the 'nav' configuration, "
+                "which presumably points to an external resource.".format(link.url)
+            )
+        else:
+            msg = (
+                "A relative path to '{}' is included in the 'nav' configuration, "
+                "which is not found in the documentation files".format(link.url)
+            )
+            mkdocs.structure.nav.log.warning(msg)
+    return mkdocs.structure.nav.Navigation(items, pages)
+
+
+mkdocs.structure.nav.get_navigation = _custom_get_navigation

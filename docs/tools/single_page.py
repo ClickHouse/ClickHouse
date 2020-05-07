@@ -6,7 +6,7 @@ import subprocess
 import yaml
 
 import bs4
-from mkdocs.commands import build as mkdocs_build
+import mkdocs.commands.build
 
 import test
 import util
@@ -108,7 +108,7 @@ def build_single_page_version(lang, args, nav, cfg):
                 })
 
                 if not args.test_only:
-                    mkdocs_build.build(cfg)
+                    mkdocs.commands.build.build(cfg)
 
                     if args.version_prefix:
                         single_page_output_path = os.path.join(args.docs_dir, args.docs_output_dir, args.version_prefix, lang, 'single')
@@ -147,7 +147,7 @@ def build_single_page_version(lang, args, nav, cfg):
                             {cfg.data.get('site_name'): 'single.md'}
                         ]
                     })
-                    mkdocs_build.build(cfg)
+                    mkdocs.commands.build.build(cfg)
 
                     css_in = ' '.join(website.get_css_in(args))
                     js_in = ' '.join(website.get_js_in(args))

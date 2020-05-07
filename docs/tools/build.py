@@ -13,13 +13,15 @@ import jinja2
 import livereload
 import markdown.util
 
+import nav  # monkey patches mkdocs
+
 from mkdocs import config
 from mkdocs import exceptions
-from mkdocs.commands import build as mkdocs_build
+import mkdocs.commands.build
 
 import amp
 import mdx_clickhouse
-import nav
+
 import redirects
 import single_page
 import test
@@ -145,6 +147,7 @@ def build_for_lang(lang, args):
             markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra=dict(
+                now=datetime.datetime.now().isoformat(),
                 stable_releases=args.stable_releases,
                 version_prefix=args.version_prefix,
                 single_page=False,
@@ -168,12 +171,12 @@ def build_for_lang(lang, args):
 
         if not args.skip_multi_page:
             try:
-                mkdocs_build.build(cfg)
+                mkdocs.commands.build.build(cfg)
             except jinja2.exceptions.TemplateError:
                 if not args.version_prefix:
                     raise
                 mdx_clickhouse.PatchedMacrosPlugin.disabled = True
-                mkdocs_build.build(cfg)
+                mkdocs.commands.build.build(cfg)
 
         if not (args.skip_amp or args.version_prefix):
             amp.build_amp(lang, args, cfg)

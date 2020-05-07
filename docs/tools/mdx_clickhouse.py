@@ -12,6 +12,9 @@ import macros.plugin
 
 import slugify as slugify_impl
 
+import amp
+import website
+
 
 class ClickHouseLinkMixin(object):
 
@@ -101,6 +104,8 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         )
         chunk_size = 10240
         env.filters['chunks'] = lambda line: [line[i:i+chunk_size] for i in range(0, len(line), chunk_size)]
+        env.filters['html_to_amp'] = amp.html_to_amp
+        env.filters['adjust_markdown_html'] = website.adjust_markdown_html
         return env
 
     def render(self, markdown):

@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 
+import bs4
 import closure
 import cssmin
 import htmlmin
@@ -12,6 +13,31 @@ import jinja2
 import jsmin
 
 import mdx_clickhouse
+
+
+def adjust_markdown_html(content):
+    soup = bs4.BeautifulSoup(
+        content,
+        features='html.parser'
+    )
+    for details in soup.find_all('details'):
+        for summary in details.find_all('summary'):
+            if summary.parent != details:
+                summary.extract()
+                details.insert(0, summary)
+    return str(soup)
+
+
+def minify_html(content):
+    return htmlmin.minify(content,
+                          remove_comments=True,
+                          remove_empty_space=True,
+                          remove_all_empty_space=False,
+                          reduce_empty_attributes=True,
+                          reduce_boolean_attributes=False,
+                          remove_optional_attribute_quotes=True,
+                          convert_charrefs=False,
+                          keep_pre=True)
 
 
 def build_website(args):
@@ -40,6 +66,7 @@ def build_website(args):
             '*.md',
             '*.sh',
             '*.css',
+            '*.json',
             'js/*.js',
             'build',
             'docs',
@@ -150,7 +177,7 @@ def minify_website(args):
                 with open(path, 'rb') as f:
                     content = f.read().decode('utf-8')
                 if filename.endswith('.html'):
-                    content = htmlmin.minify(content, remove_empty_space=False)
+                    content = minify_html(content)
                     content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
                     content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
                 elif filename.endswith('.css'):

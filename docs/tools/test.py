@@ -7,8 +7,43 @@ import sys
 
 import bs4
 
+import logging
+import os
+import subprocess
+
+import bs4
+
+
+is_amphtml_validator_installed = False
+
+
+def test_amp(path, lang):
+    global is_amphtml_validator_installed
+    if not is_amphtml_validator_installed:
+        try:
+            # Get latest amp validator version
+            subprocess.check_call('amphtml-validator --help',
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL,
+                                  shell=True)
+        except subprocess.CalledProcessError:
+            subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
+        is_amphtml_validator_installed = True
+
+    command = f'amphtml-validator {path}'
+    try:
+        subprocess.check_output(command, shell=True).decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        logging.error(f'Invalid AMP at {path} for {lang})')
+        # raise
+        logging.error(str(e))
+
 
 def test_template(template_path):
+    if template_path.endswith('amp.html'):
+        # Inline CSS/JS is ok for AMP pages
+        return
+
     logging.debug(f'Running tests for {template_path} template')
     with open(template_path, 'r') as f:
         soup = bs4.BeautifulSoup(
