@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 
