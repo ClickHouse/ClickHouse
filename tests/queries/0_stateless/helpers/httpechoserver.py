@@ -20,7 +20,7 @@ HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
 HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
 
 ostream = StringIO()
-istream = StringIO()
+istream = sys.stdout
 
 class EchoCSVHTTPServer(BaseHTTPRequestHandler):
     def _set_headers(self):
@@ -57,10 +57,8 @@ class EchoCSVHTTPServer(BaseHTTPRequestHandler):
             chunk = self.read_chunk()
             if not chunk:
                 break
-            pos = istream.tell()
-            istream.seek(0, SEEK_END)
             istream.write(chunk)
-            istream.seek(pos)
+            istream.flush()
         text = ""
         self._set_headers()
         self.wfile.write("ok")
@@ -78,11 +76,10 @@ def start_server(requests_amount, test_data="Hello,2,-2,7.7\nWorld,2,-5,8.8"):
             httpd.handle_request()
 
     t = threading.Thread(target=real_func)
-    t.out = istream
     return t
 
-def run():
-    t = start_server(1)
+def run(requests_amount=1):
+    t = start_server(requests_amount)
     t.start()
     t.join()
 
@@ -90,11 +87,11 @@ if __name__ == "__main__":
     exception_text = ''
     for i in range(1, 5):
         try:
-            run()
+            run(int(sys.argv[1]) if len(sys.argv) > 1 else 1)
             break
         except Exception as ex:
             exception_text = str(ex)
-            time.sleep(0.1)
+            time.sleep(1)
 
     if exception_text:
         print("Exception: {}".format(exception_text), file=sys.stderr)

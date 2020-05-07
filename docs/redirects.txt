@@ -160,6 +160,7 @@ interfaces/http_interface.md interfaces/http.md
 interfaces/third-party/client_libraries.md interfaces/third-party/client-libraries.md
 interfaces/third-party_client_libraries.md interfaces/third-party/client-libraries.md
 interfaces/third-party_gui.md interfaces/third-party/gui.md
+interfaces/third_party/index.md interfaces/third-party/index.md
 introduction/distinctive_features.md introduction/distinctive-features.md
 introduction/features_considered_disadvantages.md introduction/distinctive-features.md
 introduction/possible_silly_questions.md faq/general.md

@@ -112,7 +112,7 @@ The `FROM` clause specifies the source to read data from:
 
 -   Table
 -   Subquery
--   [Table function](../table-functions/index.md)
+-   [Table function](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
@@ -698,7 +698,7 @@ When any of these limits is reached, ClickHouse acts as the [join\_overflow\_mod
 
 While joining tables, the empty cells may appear. The setting [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
 
-If the `JOIN` keys are [Nullable](../data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../syntax.md#null-literal) are not joined.
+If the `JOIN` keys are [Nullable](../data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../../sql-reference/syntax.md#null-literal) are not joined.
 
 #### Syntax Limitations {#syntax-limitations}
 
@@ -775,7 +775,7 @@ A constant can’t be specified as arguments for aggregate functions. Example: s
 
 #### NULL Processing {#null-processing}
 
-For grouping, ClickHouse interprets [NULL](../syntax.md) as a value, and `NULL=NULL`.
+For grouping, ClickHouse interprets [NULL](../syntax.md#null-literal) as a value, and `NULL=NULL`.
 
 Here’s an example to show what this means.
 
@@ -835,7 +835,7 @@ You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause (
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
 The [max\_bytes\_before\_external\_group\_by](../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 
-When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high. This is necessary because there are two stages to aggregation: reading the date and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn’t dumped, then stage 2 might require up to the same amount of memory as in stage 1.
+When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high. This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn’t dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
 For example, if [max\_memory\_usage](../../operations/settings/settings.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and max\_memory\_usage to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
 
@@ -1056,7 +1056,7 @@ The result will be the same as if GROUP BY were specified across all the fields 
 
 DISTINCT is not supported if SELECT has at least one array column.
 
-`DISTINCT` works with [NULL](../syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
+`DISTINCT` works with [NULL](../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
 
@@ -1213,7 +1213,7 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 #### NULL Processing {#null-processing-1}
 
-During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the IN operator assumes that the result of an operation with [NULL](../syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 
 Here is an example with the `t_null` table:
 

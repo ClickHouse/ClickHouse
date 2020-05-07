@@ -7,6 +7,10 @@ toc_title: User Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
+!!! note "Information"
+    ClickHouse also supports [SQL-driven workflow](../access-rights.md#access-control) for managing users. We recommend using it.
+
+
 Structure of the `users` section:
 
 ``` xml
@@ -16,6 +20,8 @@ Structure of the `users` section:
         <password></password>
         <!-- Or -->
         <password_sha256_hex></password_sha256_hex>
+
+        <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -67,6 +73,17 @@ Password can be specified in plaintext or in SHA256 (hex format).
           PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
     The first line of the result is the password. The second line is the corresponding double SHA1 hash.
+
+### access_management {#access_management-user-setting}
+
+This setting enables of disables using of SQL-driven [access control and account management](../access-rights.md#access-control) for the user.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
 
 ### user\_name/networks {#user-namenetworks}
 

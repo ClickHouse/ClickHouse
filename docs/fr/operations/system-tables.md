@@ -215,7 +215,7 @@ Colonne:
 
 ## système.graphite\_retentions {#system-graphite-retentions}
 
-Contient des informations sur les paramètres [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) qui sont utilisés dans les tableaux avec [\* GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) moteur.
+Contient des informations sur les paramètres [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) qui sont utilisés dans les tableaux avec [\* GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md) moteur.
 
 Colonne:
 

@@ -30,7 +30,7 @@ Principales características:
     Si es necesario, puede establecer el método de muestreo de datos en la tabla.
 
 !!! info "INFO"
-    El [Fusionar](../special/merge.md) el motor no pertenece al `*MergeTree` familia.
+    El [Fusionar](../special/merge.md#merge) el motor no pertenece al `*MergeTree` familia.
 
 ## Creación De Una Tabla {#table_engine-mergetree-creating-a-table}
 
@@ -497,7 +497,7 @@ La parte de datos es la unidad móvil mínima para `MergeTree`-mesas de motor. L
 
 Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../../../operations/system-tables.md#system_tables-storage_policies) y [sistema.disco](../../../operations/system-tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-motor de la familia de las tablas.
 
-### Configuración {#table_engine-mergetree-multiple-volumes-configure}
+### Configuración {#table_engine-mergetree-multiple-volumes_configure}
 
 Discos, volúmenes y políticas de almacenamiento deben ser declaradas dentro de la `<storage_configuration>` etiqueta ya sea en el archivo principal `config.xml` o en un archivo distinto en el `config.d` directorio.
 

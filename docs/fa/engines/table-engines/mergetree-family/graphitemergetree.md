@@ -81,7 +81,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## پیکربندی رولپ {#rollup-configuration}
 
-تنظیمات برای خلاصه توسط تعریف [لغزش \_ نمودار](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) پارامتر در پیکربندی سرور. نام پارامتر می تواند هر. شما می توانید تنظیمات متعددی ایجاد کنید و برای جداول مختلف استفاده کنید.
+تنظیمات برای خلاصه توسط تعریف [لغزش \_ نمودار](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) پارامتر در پیکربندی سرور. نام پارامتر می تواند هر. شما می توانید تنظیمات متعددی ایجاد کنید و برای جداول مختلف استفاده کنید.
 
 ساختار پیکربندی رولپ:
 

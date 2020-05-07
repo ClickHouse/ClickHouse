@@ -27,7 +27,7 @@ elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
     set(Protobuf_PROTOC_LIBRARY libprotoc)
     set(Protobuf_LITE_LIBRARY libprotobuf-lite)
 
-    set(Protobuf_PROTOC_EXECUTABLE ${ClickHouse_BINARY_DIR}/contrib/protobuf/cmake/protoc)
+    set(Protobuf_PROTOC_EXECUTABLE "$<TARGET_FILE:protoc>")
 
     if(NOT DEFINED PROTOBUF_GENERATE_CPP_APPEND_PATH)
         set(PROTOBUF_GENERATE_CPP_APPEND_PATH TRUE)
