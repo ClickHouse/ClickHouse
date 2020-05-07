@@ -264,7 +264,7 @@ public:
         Float64 dof = this->data(place).get_degrees_of_freed(sx, sy);
         Ret result = this->data(place).get_result(t_value, dof, significance_level);
 
-        //check the type
+
         auto & column = static_cast<ColumnVector<Ret> &>(to);
         column.getData().push_back(result);
     }
