@@ -86,7 +86,7 @@ public:
 
             // Extract all non-intersecting matches from haystack except group #0.
             const auto * pos = current_row.data;
-            auto end = pos + current_row.size;
+            const auto * end = pos + current_row.size;
             while (pos < end
                 && re2->Match(re2_st::StringPiece(pos, end - pos),
                     0, end - pos, re2_st::RE2::UNANCHORED, matched_groups.data(), matched_groups.size()))
