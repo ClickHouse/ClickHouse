@@ -85,7 +85,7 @@ public:
             StringRef current_row = column_haystack->getDataAt(i);
 
             // Extract all non-intersecting matches from haystack except group #0.
-            auto pos = current_row.data;
+            const auto * pos = current_row.data;
             auto end = pos + current_row.size;
             while (pos < end
                 && re2->Match(re2_st::StringPiece(pos, end - pos),
