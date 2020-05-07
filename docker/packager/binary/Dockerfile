@@ -73,7 +73,7 @@ RUN wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/M
 RUN wget "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
 
 # Download toolchain for FreeBSD 11.3
-RUN wget https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-13.1-toolchain.tar.xz
+RUN wget https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
 
 COPY build.sh /
 CMD ["/bin/bash", "/build.sh"]
