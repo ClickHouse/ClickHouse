@@ -34,6 +34,7 @@ bool onlyConstsInside(ASTFunction * func_node)
            (func_node->arguments->children.size() == 2 &&
            !(func_node->arguments->children[1]->as<ASTFunction>()));
 }
+
 bool inappropriateNameInside(ASTFunction * func_node, const char * inter_func_name)
 {
     return (func_node->arguments->children[0]->as<ASTFunction>() &&
@@ -43,7 +44,7 @@ bool inappropriateNameInside(ASTFunction * func_node, const char * inter_func_na
            inter_func_name != func_node->arguments->children[1]->as<ASTFunction>()->name);
 }
 
-bool isInapprop(ASTPtr & node, const char * inter_func_name)
+bool isInappropriate(ASTPtr & node, const char * inter_func_name)
 {
     return !node->as<ASTFunction>() || inter_func_name != node->as<ASTFunction>()->name;
 }
@@ -112,9 +113,9 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, const char * inter_
             return {{func_node->arguments->children[1]}, {func_node->arguments->children[0]}};
         else
         {
-            if (isInapprop(func_node->arguments->children[0], inter_func_name) && isInapprop(func_node->arguments->children[1], inter_func_name))
+            if (isInappropriate(func_node->arguments->children[0], inter_func_name) && isInappropriate(func_node->arguments->children[1], inter_func_name))
                 return {{}, {func_node->arguments->children[0], func_node->arguments->children[1]}};
-            else if (isInapprop(func_node->arguments->children[0], inter_func_name))
+            else if (isInappropriate(func_node->arguments->children[0], inter_func_name))
             {
                 std::pair<ASTs, ASTs> ans = findAllConsts(func_node->arguments->children[1]->as<ASTFunction>(), inter_func_name);
                 ans.second.push_back(func_node->arguments->children[0]);
@@ -163,24 +164,23 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, const char * inter_
 }
 
 /// rebuilds tree, all scalar values now outside the main func
-void buildTree(ASTFunction * old_tree, const char * func_name, const char * intro_func, std::pair<ASTs, ASTs> & tree_comp)
+void buildTree(ASTFunction * cur_node, const char * func_name, const char * intro_func, std::pair<ASTs, ASTs> & tree_comp)
 {
-    ASTFunction copy = *old_tree;
     ASTs cons_val = tree_comp.first;
     ASTs non_cons = tree_comp.second;
 
-    old_tree->name = intro_func;
-    old_tree = treeFiller(old_tree, cons_val, cons_val.size(), intro_func);
-    old_tree->name = func_name;
+    cur_node->name = intro_func;
+    cur_node = treeFiller(cur_node, cons_val, cons_val.size(), intro_func);
+    cur_node->name = func_name;
 
     if (non_cons.size() == 1)
-        old_tree->arguments->children.push_back(non_cons[0]);
+        cur_node->arguments->children.push_back(non_cons[0]);
     else
     {
-        old_tree->arguments->children.push_back(makeASTFunction(intro_func));
-        old_tree = old_tree->arguments->children[0]->as<ASTFunction>();
-        old_tree = treeFiller(old_tree, non_cons, non_cons.size() - 2, intro_func);
-        old_tree->arguments->children = {non_cons[non_cons.size() - 2], non_cons[non_cons.size() - 1]};
+        cur_node->arguments->children.push_back(makeASTFunction(intro_func));
+        cur_node = cur_node->arguments->children[0]->as<ASTFunction>();
+        cur_node = treeFiller(cur_node, non_cons, non_cons.size() - 2, intro_func);
+        cur_node->arguments->children = {non_cons[non_cons.size() - 2], non_cons[non_cons.size() - 1]};
     }
 }
 
