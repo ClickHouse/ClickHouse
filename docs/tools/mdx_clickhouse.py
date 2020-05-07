@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import datetime
 import os
+import subprocess
 
 import jinja2
 import markdown.inlinepatterns
@@ -113,6 +115,29 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
             return self.render_impl(markdown)
         else:
             return markdown
+
+    def on_page_markdown(self, markdown, page, config, files):
+        markdown = super(PatchedMacrosPlugin, self).on_page_markdown(markdown, page, config, files)
+        src_path = page.file.abs_src_path
+        try:
+            git_log = subprocess.check_output(f'git log --follow --date=iso8601 "{src_path}"', shell=True)
+        except subprocess.CalledProcessError:
+            return markdown
+        max_date = None
+        min_date = None
+        for line in git_log.decode('utf-8').split('\n'):
+            if line.startswith('Date:'):
+                line = line.replace('Date:', '').strip().replace(' ', 'T', 1).replace(' ', '')
+                current_date = datetime.datetime.fromisoformat(line[:-2] + ':' + line[-2:])
+                if (not max_date) or current_date > max_date:
+                    max_date = current_date
+                if (not min_date) or current_date < min_date:
+                    min_date = current_date
+        if min_date:
+            page.meta['published_date'] = min_date
+        if max_date:
+            page.meta['modified_date'] = max_date
+        return markdown
 
     def render_impl(self, markdown):
         md_template = self.env.from_string(markdown)

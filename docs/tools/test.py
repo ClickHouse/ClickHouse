@@ -49,6 +49,8 @@ def test_template(template_path):
             assert not style_attr, f'Inline CSS is prohibited, found {style_attr} in {template_path}'
 
             if tag.name == 'script':
+                if tag.attrs.get('type') == 'application/ld+json':
+                    continue
                 for content in tag.contents:
                     assert not content, f'Inline JavaScript is prohibited, found "{content}" in {template_path}'
 

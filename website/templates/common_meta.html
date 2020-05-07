@@ -14,8 +14,7 @@
 <meta property="og:url" content="{{ url or 'https://clickhouse.tech/' }}"/>
 <link rel="canonical" href="{{ url or 'https://clickhouse.tech/' }}" />
 <link rel="amphtml" href="{{ url or 'https://clickhouse.tech/' }}amp/">
-
-<meta property="twitter:title" content="{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}"/>
+{% include "templates/docs/ld_json.html" %}
 
 <meta name="description" content="{{ description }}"/>
 <meta name="keywords"

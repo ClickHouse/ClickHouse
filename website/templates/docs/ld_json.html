@@ -1,0 +1,12 @@
+{% if page and page.meta %}
+<script type="application/ld+json">{
+"@context": "http://schema.org",
+"@type": "TechArticle",
+"headline": "{{ title }}",
+{% if page.meta.published_date %}"datePublished": "{{ page.meta.published_date.isoformat() }}",{% endif %}
+{% if page.meta.modified_date %}"dateModified": "{{ page.meta.modified_date.isoformat() }}",{% endif %}
+"image": "https://clickhouse.tech/images/logo.svg",
+"author": "ClickHouse developers and contributors",
+"publisher": "Yandex LLC"
+}</script>
+{% endif %}
