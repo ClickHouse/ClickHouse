@@ -50,8 +50,9 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 /// Int32    9
 /// Int64   18
 /// Int128  38
+/// Int256  77
 /// Operation between two decimals leads to Decimal(P, S), where
-///     P is one of (9, 18, 38); equals to the maximum precision for the biggest underlying type of operands.
+///     P is one of (9, 18, 38, 77); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
 class DataTypeDecimalBase : public DataTypeWithSimpleSerialization
@@ -194,7 +195,7 @@ const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalT
 template <template <typename> typename DecimalType>
 DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal128>())
+    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
@@ -204,7 +205,9 @@ DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
     else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
+    else if (precision_value <= DecimalUtils::maxPrecision<Decimal128>())
+       return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
+    return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
 }
 
 }

@@ -176,6 +176,7 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
     factory.registerDataType("Decimal32", createExact<Decimal32>, DataTypeFactory::CaseInsensitive);
     factory.registerDataType("Decimal64", createExact<Decimal64>, DataTypeFactory::CaseInsensitive);
     factory.registerDataType("Decimal128", createExact<Decimal128>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal256", createExact<Decimal256>, DataTypeFactory::CaseInsensitive);
 
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
@@ -185,5 +186,6 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 template class DataTypeDecimal<Decimal32>;
 template class DataTypeDecimal<Decimal64>;
 template class DataTypeDecimal<Decimal128>;
+template class DataTypeDecimal<Decimal256>;
 
 }

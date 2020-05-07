@@ -83,6 +83,7 @@ public:
     bool writeDecimal(Decimal32 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal32, decimal, scale); }
     bool writeDecimal(Decimal64 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal64, decimal, scale); }
     bool writeDecimal(const Decimal128 & decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal128, decimal, scale); }
+    bool writeDecimal(const Decimal256 & decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal256, decimal, scale); }
     bool writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { return writeValueIfPossible(&IConverter::writeAggregateFunction, function, place); }
 
 private:
@@ -173,6 +174,7 @@ private:
         virtual void writeDecimal32(Decimal32, UInt32) = 0;
         virtual void writeDecimal64(Decimal64, UInt32) = 0;
         virtual void writeDecimal128(const Decimal128 &, UInt32) = 0;
+        virtual void writeDecimal256(const Decimal256 &, UInt32) = 0;
         virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) = 0;
     };
 
@@ -284,6 +286,7 @@ public:
     bool writeDecimal(Decimal32 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(Decimal64 /* decimal */, UInt32 /* scale */) { return false; }
     bool writeDecimal(const Decimal128 & /* decimal */, UInt32 /* scale */) { return false; }
+    bool writeDecimal(const Decimal256 & /* decimal */, UInt32 /* scale */) { return false; }
     bool writeAggregateFunction(const AggregateFunctionPtr & /* function */, ConstAggregateDataPtr /* place */) { return false; }
 };
 

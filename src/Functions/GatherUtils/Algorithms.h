@@ -33,18 +33,20 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-        if constexpr (is_big_int_v<U> && std::is_same_v<T, UInt8>)
+        if constexpr (std::is_same_v<T, UInt8> && is_big_int_v<U>)
             sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
-        else if constexpr (is_big_int_v<U> && std::is_same_v<T, Decimal32>)
-            sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int32>(slice.data[i]));
-        else if constexpr (is_big_int_v<U> && std::is_same_v<T, Decimal64>)
-            sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int64>(slice.data[i]));
-        else if constexpr (is_big_int_v<U> && std::is_same_v<T, Decimal128>)
-            throw Exception("Function writeSlice are not implemented for big ints and Decimal128.",
-                            ErrorCodes::NOT_IMPLEMENTED);
+        else if constexpr (IsDecimalNumber<T> && is_big_int_v<U>)
+            sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
         else if constexpr (IsDecimalNumber<U> && is_big_int_v<T>)
-            throw Exception("Function writeSlice are not implemented for big ints and Decimals.",
-                            ErrorCodes::NOT_IMPLEMENTED);
+            sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i]);
+        else if constexpr (std::is_same_v<T, Decimal256> && std::is_same_v<U, UInt8>)
+            sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i].value));
+        else if constexpr (std::is_same_v<T, Decimal256>)
+            sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
+        else if constexpr (std::is_floating_point_v<T> && std::is_same_v<U, Decimal256>)
+            sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int64>(slice.data[i]));
+        else if constexpr (std::is_same_v<T, UInt8> && std::is_same_v<U, Decimal256>)
+            sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
         else
             sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
         ++sink.current_offset;

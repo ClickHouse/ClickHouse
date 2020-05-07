@@ -135,33 +135,22 @@ public:
         throw Exception("Cannot convert Tuple to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const UInt64 & x) const { return x; }
-    T operator() (const Int64 & x) const { return x; }
-    T operator() (const Float64 & x) const { return static_cast<T>(x); }
+    T operator() (const UInt64 & x) const { return static_cast<T>(x); }
+    T operator() (const Int64 & x) const { return static_cast<T>(x); }
+    T operator() (const Float64 & x) const
+    {
+        if constexpr (std::is_same_v<Decimal256, T>)
+            return static_cast<bInt256>(x);
+        else
+            return static_cast<T>(x);
+    }
 
     T operator() (const UInt128 &) const
     {
         throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <typename U>
-    T operator() (const DecimalField<U> & x) const
-    {
-        if constexpr (std::is_same_v<U, Decimal256>)
-        {
-            if constexpr (std::is_floating_point_v<T>)
-                return static_cast<T>(x.getValue().value) / static_cast<T>(x.getScaleMultiplier().value);
-            else
-                return static_cast<T>(x.getValue().value / x.getScaleMultiplier().value);
-        }
-        else
-        {
-            if constexpr (std::is_floating_point_v<T>)
-                return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
-            else
-                return x.getValue() / x.getScaleMultiplier();
-        }
-    }
+    template <typename U> T operator() (const DecimalField<U> & x) const;
 
     T operator() (const AggregateFunctionStateData &) const
     {

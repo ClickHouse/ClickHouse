@@ -17,7 +17,7 @@ namespace ErrorCodes
 template <bool _throw_on_error, typename T>
 inline bool readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
 {
-    x = 0;
+    x = T(0);
     exponent = 0;
     unsigned int max_digits = digits;
     digits = 0;

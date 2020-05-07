@@ -83,6 +83,7 @@ public:
     bool readDecimal(Decimal32 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal32(decimal, precision, scale); }
     bool readDecimal(Decimal64 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal64(decimal, precision, scale); }
     bool readDecimal(Decimal128 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal128(decimal, precision, scale); }
+    bool readDecimal(Decimal256 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal256(decimal, precision, scale); }
 
     bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) { return current_converter->readAggregateFunction(function, place, arena); }
 
@@ -169,6 +170,7 @@ private:
        virtual bool readDecimal32(Decimal32 &, UInt32, UInt32) = 0;
        virtual bool readDecimal64(Decimal64 &, UInt32, UInt32) = 0;
        virtual bool readDecimal128(Decimal128 &, UInt32, UInt32) = 0;
+       virtual bool readDecimal256(Decimal256 &, UInt32, UInt32) = 0;
        virtual bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) = 0;
     };
 
@@ -249,6 +251,7 @@ public:
     bool readDecimal(Decimal32 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }
+    bool readDecimal(Decimal256 &, UInt32, UInt32) { return false; }
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) { return false; }
     bool canReadMoreValues() const { return false; }
 };

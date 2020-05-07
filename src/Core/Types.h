@@ -188,6 +188,7 @@ template <typename T> inline Decimal<T> operator+ (const Decimal<T> & x, const D
 template <typename T> inline Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y) { return x.value - y.value; }
 template <typename T> inline Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y) { return x.value * y.value; }
 template <typename T> inline Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
+template <typename T> inline Decimal<T> operator- (const Decimal<T> & x) { return -x.value; }
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;

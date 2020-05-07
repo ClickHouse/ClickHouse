@@ -147,8 +147,8 @@ public:
     }
 
 private:
-    T dec;
-    UInt32 scale;
+    T dec{};
+    UInt32 scale{};
 };
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,

@@ -335,6 +335,7 @@ public:
     virtual void writeDecimal32(Decimal32, UInt32) override { cannotConvertType("Decimal32"); }
     virtual void writeDecimal64(Decimal64, UInt32) override { cannotConvertType("Decimal64"); }
     virtual void writeDecimal128(const Decimal128 &, UInt32) override { cannotConvertType("Decimal128"); }
+    virtual void writeDecimal256(const Decimal256 &, UInt32) override { cannotConvertType("Decimal256"); }
 
     virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) override { cannotConvertType("AggregateFunction"); }
 
