@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-07 22:58+0300\n"
+"POT-Creation-Date: 2020-05-08 00:37+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -75,11 +75,11 @@ msgid "Built from"
 msgstr ""
 
 #: templates/docs/footer.html:4
-msgid "published at"
+msgid "published on"
 msgstr ""
 
 #: templates/docs/footer.html:4
-msgid "modified at"
+msgid "modified on"
 msgstr ""
 
 #: templates/docs/machine-translated.html:3

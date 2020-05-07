@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-07 22:58+0300\n"
+"POT-Creation-Date: 2020-05-08 00:37+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -76,12 +76,12 @@ msgid "Built from"
 msgstr "から構築"
 
 #: templates/docs/footer.html:4
-msgid "published at"
-msgstr "で公開"
+msgid "published on"
+msgstr "掲載され"
 
 #: templates/docs/footer.html:4
-msgid "modified at"
-msgstr "で変更"
+msgid "modified on"
+msgstr "に変更"
 
 #: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
@@ -301,4 +301,10 @@ msgstr "turn on JavaScriptを見るメールアドレス"
 #~ "queries. Сreated by Yandex ClickHouse "
 #~ "manages extremely large volumes of data"
 #~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "で公開"
+
+#~ msgid "modified at"
+#~ msgstr "で変更"
 

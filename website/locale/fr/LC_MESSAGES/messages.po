@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-07 22:58+0300\n"
+"POT-Creation-Date: 2020-05-08 00:37+0300\n"
 "PO-Revision-Date: 2020-03-30 15:12+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -81,12 +81,12 @@ msgid "Built from"
 msgstr "Construit à partir de"
 
 #: templates/docs/footer.html:4
-msgid "published at"
-msgstr "publié à"
+msgid "published on"
+msgstr "publié le"
 
 #: templates/docs/footer.html:4
-msgid "modified at"
-msgstr "modifié à"
+msgid "modified on"
+msgstr "modifié sur"
 
 #: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
@@ -328,4 +328,10 @@ msgstr "activer JavaScript pour voir l'adresse e-mail"
 #~ "queries. Сreated by Yandex ClickHouse "
 #~ "manages extremely large volumes of data"
 #~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "publié à"
+
+#~ msgid "modified at"
+#~ msgstr "modifié à"
 

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-07 22:58+0300\n"
+"POT-Creation-Date: 2020-05-08 00:37+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fa\n"
@@ -81,12 +81,12 @@ msgid "Built from"
 msgstr "ساخته شده از"
 
 #: templates/docs/footer.html:4
-msgid "published at"
+msgid "published on"
 msgstr "منتشر شده در"
 
 #: templates/docs/footer.html:4
-msgid "modified at"
-msgstr "تغییریافته در"
+msgid "modified on"
+msgstr "تغییریافته"
 
 #: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
@@ -319,4 +319,10 @@ msgstr "روشن کردن جاوا اسکریپت برای دیدن نشانی �
 #~ "queries. Сreated by Yandex ClickHouse "
 #~ "manages extremely large volumes of data"
 #~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "منتشر شده در"
+
+#~ msgid "modified at"
+#~ msgstr "تغییریافته در"
 
