@@ -118,6 +118,8 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
 
     def on_page_markdown(self, markdown, page, config, files):
         markdown = super(PatchedMacrosPlugin, self).on_page_markdown(markdown, page, config, files)
+        if config.data['extra'].get('version_prefix'):
+            return markdown
         src_path = page.file.abs_src_path
         try:
             git_log = subprocess.check_output(f'git log --follow --date=iso8601 "{src_path}"', shell=True)
