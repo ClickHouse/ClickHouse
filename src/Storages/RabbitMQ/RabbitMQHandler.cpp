@@ -30,12 +30,13 @@ void RabbitMQHandler::start()
 }
 
 
-void RabbitMQHandler::startNonBlock()
+bool RabbitMQHandler::startNonBlock()
 {
     if (connection_error)
-        return;
+        return true;
 
     event_base_loop(evbase, EVLOOP_NONBLOCK);
+    return false;
 }
 
 

@@ -54,12 +54,15 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    RabbitMQHandler & getConsumerHandler() { return consumersEventHandler; }
+
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
             Context & context_,
             const ColumnsDescription & columns_,
-            const String & host_port_, const Names & routing_keys_, const String & exchange_name, 
+            const String & host_port_,
+            const Names & routing_keys_, const String & exchange_name, 
             const String & format_name_, char row_delimiter_,
             size_t num_consumers_, size_t skip_broken);
 
@@ -68,7 +71,6 @@ private:
     Context global_context;
     Context rabbitmq_context;
 
-    const String host_port;
     Names routing_keys;
     const String exchange_name;
 
@@ -81,11 +83,15 @@ private:
 
     Poco::Logger * log;
 
+    std::pair<std::string, UInt16> parsed_address;
+
     Poco::Semaphore semaphore;
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    /// Different connections in order to make event loops more deterministic and to avoid library being overloaded with callbacks
+    /* There are several reasons for making separate connections: to limit the number of channels per connection, to make
+     * event loops more deterministic and not shared between publishers and consumers, to avoid library being overloaded with 
+     * callbacks. And it is simply recommended to use separate connections to publish and consume. */
     event_base * consumersEvbase;
     event_base * producersEvbase;
 

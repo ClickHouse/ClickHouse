@@ -26,7 +26,7 @@ public:
 
     ~WriteBufferToRabbitMQProducer() override;
 
-    void startNonBlockEventLoop();
+    bool startNonBlockEventLoop();
     void count_row();
 
     bool exchange_declared = false, exchange_error = false;

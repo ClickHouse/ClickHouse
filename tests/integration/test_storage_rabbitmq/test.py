@@ -21,8 +21,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 config_dir='configs',
                                 main_configs=['configs/rabbitmq.xml','configs/log_conf.xml'],
-                                with_rabbitmq=True,
-                                clickhouse_path_dir='clickhouse_path')
+                                with_rabbitmq=True)
 rabbitmq_id = ''
 
 
@@ -503,7 +502,7 @@ def test_rabbitmq_insert(rabbitmq_cluster):
             channel.stop_consuming()
 
     consumer.basic_qos(prefetch_count=50)
-    consumer.basic_consume(queue=queue_name, on_message_callback=onReceived, auto_ack=True)
+    consumer.basic_consume(onReceived, queue_name)
     consumer.start_consuming()
     consumer_connection.close()
 

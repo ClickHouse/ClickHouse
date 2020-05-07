@@ -36,21 +36,23 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
+    producer_channel->close();
+
     assert(rows == 0 && chunks.empty());
 }
 
 
 void WriteBufferToRabbitMQProducer::initExchange()
 {
-    producer_channel->declareExchange(exchange_name, AMQP::direct)
+    producer_channel->declareExchange(exchange_name, AMQP::direct, AMQP::passive)
         .onSuccess([&]()
         {
             exchange_declared = true;
         })
-        .onError([&](const char * /* message */)
+        .onError([&](const char * message)
         {
             exchange_error = true;
-            LOG_ERROR(log, "Echange was not declared - messages might be lost.");
+            LOG_ERROR(log, "Echange was not declared - " << message);
         });
 }
 
@@ -60,7 +62,12 @@ void WriteBufferToRabbitMQProducer::count_row()
     /// it is important to make sure exchange is declared before we proceed
     while (!exchange_declared && !exchange_error)
     {
-        startNonBlockEventLoop();
+        /// break if connection lost or an exchange successfully declared or failed to be declared
+        if (startNonBlockEventLoop())
+        {
+            LOG_ERROR(log, "Connection lost - cannot publish.");
+            break;
+        }
     }
 
     if (++rows % max_rows == 0)
@@ -96,9 +103,9 @@ void WriteBufferToRabbitMQProducer::nextImpl()
 }
 
 
-void WriteBufferToRabbitMQProducer::startNonBlockEventLoop()
+bool WriteBufferToRabbitMQProducer::startNonBlockEventLoop()
 {
-    eventHandler.startNonBlock();
+    return eventHandler.startNonBlock();
 }
 
 

@@ -35,7 +35,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
-    unsubscribe(); /// actually there is no need to unsubscribe because closing a channel will do the same
+    consumer_channel->close();
 
     messages.clear();
     current = messages.begin();

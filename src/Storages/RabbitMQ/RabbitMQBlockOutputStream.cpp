@@ -37,6 +37,8 @@ void RabbitMQBlockOutputStream::writePrefix()
             {
                 buffer->count_row();
             });
+
+    storage.getConsumerHandler().startNonBlock();
 }
 
 

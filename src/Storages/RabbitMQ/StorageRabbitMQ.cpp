@@ -67,13 +67,13 @@ StorageRabbitMQ::StorageRabbitMQ(
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
-        , host_port(global_context.getMacros()->expand(host_port_))
         , routing_keys(global_context.getMacros()->expand(routing_keys_))
         , exchange_name(exchange_name_)
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
         , skip_broken(skip_broken_)
+        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , consumersEvbase(event_base_new())
@@ -81,9 +81,9 @@ StorageRabbitMQ::StorageRabbitMQ(
         , consumersEventHandler(consumersEvbase, log)
         , producersEventHandler(producersEvbase, log)
         , consumersConnection(&consumersEventHandler,
-          AMQP::Address("rabbitmq1", 5672, AMQP::Login("root", "clickhouse"), "/"))
+          AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
         , producersConnection(&producersEventHandler,
-          AMQP::Address("rabbitmq1", 5672, AMQP::Login("root", "clickhouse"), "/"))
+          AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
 {
     rabbitmq_context.makeQueryContext();
 
@@ -91,12 +91,12 @@ StorageRabbitMQ::StorageRabbitMQ(
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
-    while(!consumersConnection.ready())
+    while (!consumersConnection.ready())
     {
         event_base_loop(consumersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
     }
 
-    while(!producersConnection.ready())
+    while (!producersConnection.ready())
     {
         event_base_loop(producersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
     }
@@ -212,6 +212,8 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
+    producersConnection.heartbeat();
+
     return std::make_shared<WriteBufferToRabbitMQProducer>(std::make_shared<AMQP::TcpChannel>(&producersConnection), producersEventHandler, routing_keys[0], exchange_name, log,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
