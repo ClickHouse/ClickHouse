@@ -35,8 +35,7 @@ def test_amp(path, lang):
         subprocess.check_output(command, shell=True).decode('utf-8')
     except subprocess.CalledProcessError as e:
         logging.error(f'Invalid AMP at {path} for {lang})')
-        # raise
-        logging.error(str(e))
+        raise
 
 
 def test_template(template_path):
