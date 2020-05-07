@@ -25,6 +25,32 @@ def adjust_markdown_html(content):
             if summary.parent != details:
                 summary.extract()
                 details.insert(0, summary)
+    for div in soup.find_all('div'):
+        div.attrs['role'] = 'alert'
+        div_class = div.attrs.get('class')
+        for a in div.find_all('a'):
+            a_class = a.attrs.get('class')
+            if a_class:
+                a.attrs['class'] = a_class + ['alert-link']
+            else:
+                a.attrs['class'] = 'alert-link'
+        for p in div.find_all('p'):
+            p_class = p.attrs.get('class')
+            if p_class and ('admonition-title' in p_class):
+                p.attrs['class'] = p_class + ['alert-heading', 'display-5', 'mb-2']
+        if div_class and 'admonition' in div.attrs.get('class'):
+            if ('info' in div_class) or ('note' in div_class):
+                mode = 'alert-primary'
+            elif ('attention' in div_class) or ('warning' in div_class):
+                mode = 'alert-warning'
+            elif 'important' in div_class:
+                mode = 'alert-danger'
+            elif 'tip' in div_class:
+                mode = 'alert-info'
+            else:
+                mode = 'alert-secondary'
+            div.attrs['class'] = div_class + ['alert', 'lead', 'pb-0', 'mb-4', mode]
+
     return str(soup)
 
 

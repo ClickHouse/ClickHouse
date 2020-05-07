@@ -36,7 +36,8 @@
         </div>
       </div>
       <div class="row">
-        <div class="col">
+        <div id="content" class="col">
+          {% include "templates/docs/machine-translated.html" %}
           {{ page.content|adjust_markdown_html|html_to_amp }}
         </div>
       </div>
