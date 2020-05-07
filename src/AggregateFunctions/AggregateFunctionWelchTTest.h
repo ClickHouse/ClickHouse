@@ -186,7 +186,7 @@ public:
         IAggregateFunctionDataHelper<
             AggregateFunctionWelchTTestData<X, Y, Ret>,
             AggregateFunctionWelchTTest<X, Y, Ret>
-        > {arguments, params}
+        > ({argument}, params)
     {
         // notice: arguments has been in factory
     }
