@@ -303,7 +303,7 @@ Le dictionnaire n'est pas stocké en mémoire et interagit directement avec la s
 
 La clé du dictionnaire a le `UInt64` type.
 
-Tous les types de sources sont pris en charge.
+Tous les types de [sources](external-dicts-dict-sources.md), sauf les fichiers locals, sont pris en charge.
 
 L'exemple de configuration:
 
