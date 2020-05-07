@@ -115,7 +115,7 @@ public:
       */
     void drop() override;
 
-    /** Removes a specific replica from Zookeeper. If replica is local, it works same as `drop` method.
+    /** Removes a specific replica from Zookeeper.
      */
     void dropReplica(const String & replica_name);
 
