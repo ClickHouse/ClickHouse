@@ -4,10 +4,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     Block header, AggregatingTransformParamsPtr params_, SortDescription & sort_description_,
@@ -224,7 +220,9 @@ void AggregatingInOrderTransform::generate()
 {
 //    std::cerr << sz << "\n";
 //    std::cerr << "\nFinalizing the last state in generate().\n";
-    params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+
+    if (res_block_size)
+        params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
 
     Block res = params->getHeader().cloneEmpty();
 
