@@ -656,16 +656,16 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
     return order_descr;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
+static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNativeNumber(type))
-        throw Exception("Illegal type " + type->getName() + " of LIMIT expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception("Illegal type " + type->getName() + " of " + expr + " expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
-        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of LIMIT expression is not representable as UInt64", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as UInt64", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
     return converted.safeGet<UInt64>();
 }
@@ -677,9 +677,9 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
     UInt64 offset = 0;
 
     if (query.limitLength())
-        length = getLimitUIntValue(query.limitLength(), context);
+        length = getLimitUIntValue(query.limitLength(), context, "LIMIT");
     if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context);
+        offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
     return {length, offset};
 }
 
@@ -2336,8 +2336,8 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
     Names columns;
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
-    UInt64 length = getLimitUIntValue(query.limitByLength(), *context);
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context) : 0);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), *context, "LIMIT");
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context, "OFFSET") : 0);
 
     pipeline.transform([&](auto & stream)
     {
@@ -2355,8 +2355,8 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    UInt64 length = getLimitUIntValue(query.limitByLength(), *context);
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context) : 0);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), *context, "LIMIT");
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context, "OFFSET") : 0);
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -2580,23 +2580,6 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
     /// If there is LIMIT
     if (!query.limitLength() && query.limitOffset())
     {
-        /** Rare case:
-          *  if there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
-          *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
-          *  because if you cancel the query, we will not get `totals` data from the remote server.
-          *
-          * Another case:
-          *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
-          *  otherwise TOTALS is counted according to incomplete data.
-          */
-        bool always_read_till_end = false;
-
-        if (query.group_by_with_totals && !query.orderBy())
-            always_read_till_end = true;
-
-        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
-            always_read_till_end = true;
-
         UInt64 limit_length;
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
@@ -2615,7 +2598,7 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
                 return nullptr;
             std::cout << "TRANSFORM" << std::endl;
             return std::make_shared<OffsetTransform>(
-                    header, limit_length, limit_offset, 1, always_read_till_end, query.limit_with_ties, order_descr);
+                    header, limit_offset, 1, true, query.limit_with_ties, order_descr);
         });
     }
 }

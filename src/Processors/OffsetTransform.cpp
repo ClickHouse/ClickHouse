@@ -10,11 +10,11 @@ namespace ErrorCodes
 }
 
 OffsetTransform::OffsetTransform(
-    const Block & header_, size_t limit_, size_t offset_, size_t num_streams,
+    const Block & header_, size_t offset_, size_t num_streams,
     bool always_read_till_end_, bool with_ties_,
     SortDescription description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , limit(limit_), offset(offset_)
+    , offset(offset_)
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
@@ -107,19 +107,6 @@ IProcessor::Status OffsetTransform::prepare(
     if (num_finished_port_pairs == ports_data.size())
         return Status::Finished;
 
-    /// If we reached limit for some port, then close others. Otherwise some sources may infinitely read data.
-    /// Example: SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 1
- //   if ((rows_read >= offset) && !previous_row_chunk && !always_read_till_end)
-   // {
-   //     for (auto & input : inputs)
-     //       input.close();
-
-      //  for (auto & output : outputs)
-        //    output.finish();
-
-        //return Status::Finished;
-    //}
-
     if (has_full_port)
         return Status::PortFull;
 
@@ -145,11 +132,6 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     if (output.isFinished())
     {
         output_finished = true;
-        if (!always_read_till_end)
-        {
-            input.close();
-            return Status::Finished;
-        }
     }
 
     if (!output_finished && !output.canPush())
@@ -167,8 +149,9 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     }
 
     input.setNeeded();
-    if (!input.hasData())
+    if (!input.hasData()) {
         return Status::NeedData;
+    }
 
     data.current_chunk = input.pull(true);
 
@@ -177,10 +160,14 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     if (rows_before_limit_at_least)
         rows_before_limit_at_least->add(rows);
 
-    /// Skip block (for 'always_read_till_end' case).
-    if (output_finished)
+    /// Process block.
+
+    rows_read += rows;
+
+    if (rows_read < offset)
     {
         data.current_chunk.clear();
+
         if (input.isFinished())
         {
             output.finish();
@@ -192,41 +179,8 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
         return Status::NeedData;
     }
 
-    /// Process block.
-
-    rows_read += rows;
-
-    //if (rows_read <= offset)
-    //{
-    //    data.current_chunk.clear();
-    //
-    //    if (input.isFinished())
-    //    {
-    //        output.finish();
-    //        return Status::Finished;
-    //    }
-
-        /// Now, we pulled from input, and it must be empty.
-    //    input.setNeeded();
-    //    return Status::NeedData;
-    //}
-
-    if (rows_read >= offset + rows && rows_read <= offset)
-    {
-        /// Return the whole chunk.
-
-        /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-        if (with_ties && rows_read == offset + limit)
-            previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, data.current_chunk.getNumRows() - 1);
-    }
-    else
-        /// This function may be heavy to execute in prepare. But it happens no more then twice, and make code simpler.
+    if (!(rows_read >= offset + rows))
         splitChunk(data);
-
-    //bool may_need_more_data_for_ties = previous_row_chunk || rows_read - rows <= offset;
-    /// No more data is needed.
-    //if (!always_read_till_end && (rows_read >= offset) && !may_need_more_data_for_ties)
-    //    input.close();
 
     output.push(std::move(data.current_chunk));
 
@@ -245,32 +199,7 @@ void OffsetTransform::splitChunk(PortsData & data)
         static_cast<Int64>(0),
         static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows));
 
-    //size_t length = std::min(
-    //    static_cast<Int64>(rows_read) - static_cast<Int64>(offset),
-    //    static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows));
-
-    size_t length = static_cast<Int64>(num_rows);
-    std::cout << "===========================" << std::endl
-              << start << " " << length << std::endl
-              << static_cast<Int64>(rows_read) << " " << static_cast<Int64>(num_rows) << std::endl
-              << "===========================" << std::endl;
-    /// check if other rows in current block equals to last one in limit
-    if (with_ties && length)
-    {
-        size_t current_row_num = start + length;
-        previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);
-
-        for (; current_row_num < num_rows; ++current_row_num)
-        {
-            if (!sortColumnsEqualAt(current_chunk_sort_columns, current_row_num))
-            {
-                previous_row_chunk = {};
-                break;
-            }
-        }
-
-        length = current_row_num - start;
-    }
+    size_t length = static_cast<Int64>(rows_read) - static_cast<Int64>(offset);
 
     if (length == num_rows)
         return;
@@ -282,6 +211,7 @@ void OffsetTransform::splitChunk(PortsData & data)
 
     data.current_chunk.setColumns(std::move(columns), length);
 }
+
 
 ColumnRawPtrs OffsetTransform::extractSortColumns(const Columns & columns) const
 {
