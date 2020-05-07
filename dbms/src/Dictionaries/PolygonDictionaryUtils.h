@@ -199,6 +199,13 @@ private:
         static bool compare2(const Edge & a, const Edge & b);
     };
 
+    struct EdgeNoId
+    {
+        explicit EdgeNoId(const Edge & e): l(e.l), r(e.r) {}
+        Point l;
+        Point r;
+    };
+
     /** Sorted distinct coordinates of all vertexes. */
     std::vector<Float64> sorted_x;
     std::vector<Edge> all_edges;
@@ -218,7 +225,7 @@ private:
      *  Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
      *  placing it into O(log n) vertexes of this tree.
      */
-    std::vector<std::vector<Edge>> edges_index_tree;
+    std::vector<std::vector<EdgeNoId>> edges_index_tree;
 };
 
 }
