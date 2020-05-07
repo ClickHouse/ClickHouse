@@ -54,6 +54,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [direct](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
@@ -293,6 +294,28 @@ Set a large enough cache size. You need to experiment to select the number of ce
 ### complex\_key\_cache {#complex-key-cache}
 
 This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `cache`.
+
+### direct {#direct}
+
+The dictionary is not stored in memory and directly goes to the source during the processing of a request.
+
+The dictionary key has the `UInt64` type.
+
+All types of sources are supported.
+
+Configuration example:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(DIRECT())
+```
 
 ### ip\_trie {#ip-trie}
 

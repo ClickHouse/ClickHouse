@@ -777,7 +777,7 @@ No se puede especificar una constante como argumentos para funciones agregadas. 
 
 #### Procesamiento NULL {#null-processing}
 
-Para agrupar, ClickHouse interpreta [NULL](../syntax.md) como valor, y `NULL=NULL`.
+Para agrupar, ClickHouse interpreta [NULL](../syntax.md#null-literal) como valor, y `NULL=NULL`.
 
 Aquí hay un ejemplo para mostrar lo que esto significa.
 
@@ -1058,7 +1058,7 @@ El resultado será el mismo que si GROUP BY se especificara en todos los campos 
 
 DISTINCT no se admite si SELECT tiene al menos una columna de matriz.
 
-`DISTINCT` trabaja con [NULL](../syntax.md) como si `NULL` Era un valor específico, y `NULL=NULL`. En otras palabras, en el `DISTINCT` resultados, diferentes combinaciones con `NULL` sólo ocurren una vez.
+`DISTINCT` trabaja con [NULL](../syntax.md#null-literal) como si `NULL` Era un valor específico, y `NULL=NULL`. En otras palabras, en el `DISTINCT` resultados, diferentes combinaciones con `NULL` sólo ocurren una vez.
 
 ClickHouse admite el uso de `DISTINCT` y `ORDER BY` para diferentes columnas en una consulta. El `DISTINCT` cláusula se ejecuta antes de `ORDER BY` clausula.
 
@@ -1215,7 +1215,7 @@ Una subconsulta en la cláusula IN siempre se ejecuta una sola vez en un único 
 
 #### Procesamiento NULL {#null-processing-1}
 
-Durante el procesamiento de la solicitud, el operador IN asume que el resultado de una operación [NULL](../syntax.md) siempre es igual a `0`, independientemente de si `NULL` está en el lado derecho o izquierdo del operador. `NULL` Los valores no se incluyen en ningún conjunto de datos, no se corresponden entre sí y no se pueden comparar.
+Durante el procesamiento de la solicitud, el operador IN asume que el resultado de una operación [NULL](../syntax.md#null-literal) siempre es igual a `0`, independientemente de si `NULL` está en el lado derecho o izquierdo del operador. `NULL` Los valores no se incluyen en ningún conjunto de datos, no se corresponden entre sí y no se pueden comparar.
 
 Aquí hay un ejemplo con el `t_null` tabla:
 

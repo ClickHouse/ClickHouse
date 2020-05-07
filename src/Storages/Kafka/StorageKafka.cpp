@@ -170,17 +170,14 @@ void StorageKafka::shutdown()
     // Interrupt streaming thread
     stream_cancelled = true;
 
+    LOG_TRACE(log, "Waiting for cleanup");
+    task->deactivate();
+
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
-    {
         auto buffer = popReadBuffer();
-        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
-    }
 
-    LOG_TRACE(log, "Waiting for cleanup");
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
-
-    task->deactivate();
 }
 
 
@@ -383,8 +380,7 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub = {false};
-    copyData(*in, *block_io.out, &stub);
+    copyData(*in, *block_io.out, &stream_cancelled);
     for (auto & stream : streams)
         stream->as<KafkaBlockInputStream>()->commit();
 

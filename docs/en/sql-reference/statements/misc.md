@@ -75,7 +75,7 @@ Returns the following `String` type columns:
 
 Nested data structures are output in “expanded” format. Each column is shown separately, with the name after a dot.
 
-## DETACH {#detach-statement}
+## DETACH {#detach}
 
 Deletes information about the ‘name’ table from the server. The server stops knowing about the table’s existence.
 
@@ -216,7 +216,7 @@ The response contains the `kill_status` column, which can take the following val
 
 A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
 
-## KILL MUTATION {#kill-mutation-statement}
+## KILL MUTATION {#kill-mutation}
 
 ``` sql
 KILL MUTATION [ON CLUSTER cluster]

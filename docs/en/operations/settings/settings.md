@@ -1,4 +1,4 @@
-# Настройки {#settings}
+# Settings {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 

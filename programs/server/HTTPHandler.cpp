@@ -567,7 +567,6 @@ void HTTPHandler::processQuery(
             try
             {
                 char b;
-                //FIXME looks like MSG_DONTWAIT is useless because of POCO_BROKEN_TIMEOUTS
                 int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
                 if (status == 0)
                     context.killCurrentQuery();

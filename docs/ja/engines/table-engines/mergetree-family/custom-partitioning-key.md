@@ -118,7 +118,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 フォルダ ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ というように部品のディレクトリです。 各部に関する対応する分割データが含まれまで一定の月のテーブルこの例では、分割による。
 
-その `detached` ディレクト [DETACH](#alter_detach-partition) クエリ。 破損した部分も削除されるのではなく、このディレクトリに移動されます。 サーバーはサーバーからの部品を使用しません `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) クエリ。
+その `detached` ディレクト [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) クエリ。 破損した部分も削除されるのではなく、このディレクトリに移動されます。 サーバーはサーバーからの部品を使用しません `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) クエリ。
 
 オペレーティングサーバーでは、ファイルシステム上の部品またはそのデータのセットを手動で変更することはできません。 非複製のテーブル、これを実行する事ができます。サーバが停止中でないお勧めします。 レプリケートされたテーブルの場合、パートのセットは変更できません。
 

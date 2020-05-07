@@ -114,7 +114,7 @@ FROM
 
 -   表
 -   子查询
--   [表函数](../table-functions/index.md)
+-   [表函数](../table-functions/index.md#table-functions)
 
 `ARRAY JOIN` 和常规 `JOIN` 也可以包括在内（见下文）。
 
@@ -1058,7 +1058,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 如果SELECT至少有一个数组列，则不支持DISTINCT。
 
-`DISTINCT` 适用于 [NULL](../syntax.md) 就好像 `NULL` 是一个特定的值，并且 `NULL=NULL`. 换句话说，在 `DISTINCT` 结果，不同的组合 `NULL` 只发生一次。
+`DISTINCT` 适用于 [NULL](../syntax.md#null-literal) 就好像 `NULL` 是一个特定的值，并且 `NULL=NULL`. 换句话说，在 `DISTINCT` 结果，不同的组合 `NULL` 只发生一次。
 
 ClickHouse支持使用 `DISTINCT` 和 `ORDER BY` 一个查询中不同列的子句。 该 `DISTINCT` 子句之前执行 `ORDER BY` 条款
 
