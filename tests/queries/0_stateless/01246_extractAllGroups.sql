@@ -22,7 +22,7 @@ SELECT extractAllGroups('abc=111, def=222, ghi=333 "jkl mno"="444 foo bar"', '("
 
 SELECT 'big match';
 SELECT
-    length(haystack), length(matches), length(matches[1]), arrayMap((x) -> length(x), matches[1])
+    length(haystack), length(matches[1]), length(matches), arrayMap((x) -> length(x), arrayMap(x -> x[1], matches))
 FROM (
     SELECT
         repeat('abcdefghijklmnopqrstuvwxyz', number * 10) AS haystack,
@@ -32,7 +32,7 @@ FROM (
 
 SELECT 'lots of matches';
 SELECT
-    length(haystack), length(matches), length(matches[1]), arrayReduce('sum', arrayMap((x) -> length(x), matches[1]))
+    length(haystack), length(matches[1]), length(matches), arrayReduce('sum', arrayMap((x) -> length(x), arrayMap(x -> x[1], matches)))
 FROM (
     SELECT
         repeat('abcdefghijklmnopqrstuvwxyz', number * 10) AS haystack,
@@ -42,7 +42,7 @@ FROM (
 
 SELECT 'lots of groups';
 SELECT
-    length(haystack), length(matches), length(matches[1]), arrayMap((x) -> length(x), matches[1])
+    length(haystack), length(matches[1]), length(matches), arrayMap((x) -> length(x), arrayMap(x -> x[1], matches))
 FROM (
     SELECT
         repeat('abcdefghijklmnopqrstuvwxyz', number * 10) AS haystack,
