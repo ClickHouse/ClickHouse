@@ -1,6 +1,5 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
-
-#include <utility>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -12,7 +11,6 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , params(std::move(params_))
     , sort_description(sort_description_)
     , group_by_description(group_by_description_)
-    , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::make_shared<ManyAggregatedData>(1))
     , variants(*many_data->variants[0])
@@ -35,7 +33,6 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
-        /// TODO key_columns have low cardinality removed but res_key_columns not
         res_key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
     }
 
@@ -47,7 +44,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
 
-static bool less(const MutableColumns & lhs, const ColumnRawPtrs & rhs, size_t i, size_t j, const SortDescription & descr)
+static bool less(const MutableColumns & lhs, const Columns & rhs, size_t i, size_t j, const SortDescription & descr)
 {
     for (const auto & elem : descr)
     {
@@ -84,9 +81,16 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     /// So that key_columns could live longer xD
     /// Need a better construction probably
     Columns materialized_columns;
-    Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
 
-    params->aggregator.prepareKeysAndInstructions(chunk.detachColumns(), variants, key_columns, aggregate_columns, materialized_columns, aggregate_function_instructions);
+    Columns key_columns(params->params.keys_size);
+    for (size_t i = 0; i < params->params.keys_size; ++i)
+    {
+        materialized_columns.push_back(chunk.getColumns().at(params->params.keys[i])->convertToFullColumnIfConst());
+        key_columns[i] = materialized_columns.back();
+    }
+
+    Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
+    params->aggregator.prepareAggregateInstructions(chunk.detachColumns(), aggregate_columns, materialized_columns, aggregate_function_instructions);
 
 //    std::cerr << "\nPrepared block of size " << rows << "\n";
 

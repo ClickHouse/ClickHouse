@@ -1258,10 +1258,8 @@ protected:
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
 
-    void prepareKeysAndInstructions(
+    void prepareAggregateInstructions(
         Columns columns,
-        AggregatedDataVariants & result,
-        ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
         AggregateFunctionInstructions & instructions);
@@ -1272,7 +1270,7 @@ protected:
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
-        ColumnRawPtrs key_columns, size_t key_row,
+        Columns key_columns, size_t key_row,
         MutableColumns & final_key_columns);
 };
 

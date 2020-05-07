@@ -30,6 +30,7 @@ private:
 //    size_t sz = 0;
 
     size_t res_block_size{};
+
     MutableColumns res_key_columns;
     MutableColumns res_aggregate_columns;
 
@@ -38,7 +39,6 @@ private:
     SortDescription sort_description;
     SortDescription group_by_description;
 
-    ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
 
     ManyAggregatedDataPtr many_data;
