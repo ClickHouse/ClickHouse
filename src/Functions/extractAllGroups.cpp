@@ -91,7 +91,7 @@ public:
             {
                 // 1 is to exclude group #0 which is whole re match.
                 for (size_t group = 1; group <= groups_count; ++group)
-                    data_col->insertData(current_row.data + matched_groups[group].offset, matched_groups[group].length);
+                    data_col->insertData(current_row.data + start_pos + matched_groups[group].offset, matched_groups[group].length);
 
                 start_pos += matched_groups[0].offset + matched_groups[0].length;
 
