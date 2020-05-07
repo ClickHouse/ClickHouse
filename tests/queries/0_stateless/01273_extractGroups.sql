@@ -7,7 +7,7 @@ SELECT extractGroups('hello world', '((('); --{serverError 427}  invalid re
 SELECT extractGroups('hello world', materialize('\\w+')); --{serverError 44} non-const needle
 
 SELECT '0 groups, zero matches';
-SELECT extractGroups('hello world', '\\w+');
+SELECT extractGroups('hello world', '\\w+'); -- { serverError 36 }
 
 SELECT '1 group, multiple matches, String and FixedString';
 SELECT extractGroups('hello world', '(\\w+) (\\w+)');
