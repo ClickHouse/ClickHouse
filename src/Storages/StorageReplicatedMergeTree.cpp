@@ -884,6 +884,14 @@ void StorageReplicatedMergeTree::removeReplica(const String & replica)
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     auto to_drop_path = zookeeper_path + "/replicas/" + replica;
+
+    //check if is active replica if we drop other replicas
+    if (replica != replica_name && zookeeper->exists(to_drop_path + "/is_active"))
+    {
+        throw Exception("Can't remove replica: " + replica + ", because it's active",
+            ErrorCodes::LOGICAL_ERROR);
+    }
+
     LOG_INFO(log, "Removing replica " << to_drop_path);
     /// It may left some garbage if to_drop_path subtree are concurently modified
     zookeeper->tryRemoveRecursive(to_drop_path);
@@ -4123,9 +4131,10 @@ void StorageReplicatedMergeTree::dropReplica(const String & replica)
 {
     if (replica_name == replica)
     {
-        drop();
-        return;
+        throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica",
+            ErrorCodes::LOGICAL_ERROR);
     }
+    // remove other replicas
     removeReplica(replica);
 }
 
