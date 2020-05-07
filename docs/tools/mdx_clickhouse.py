@@ -118,7 +118,7 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
 
     def on_page_markdown(self, markdown, page, config, files):
         markdown = super(PatchedMacrosPlugin, self).on_page_markdown(markdown, page, config, files)
-        if config.data['extra'].get('version_prefix'):
+        if config.data['extra'].get('version_prefix') or config.data['extra'].get('single_page'):
             return markdown
         src_path = page.file.abs_src_path
         try:
