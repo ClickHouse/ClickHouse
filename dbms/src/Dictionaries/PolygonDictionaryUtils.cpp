@@ -525,7 +525,7 @@ void BucketsSinglePolygonIndex::indexBuild(const Polygon & polygon)
         {
             if (l & 1)
             {
-                this->edges_index_tree[l++].eplace_back(all_edges[i]);
+                this->edges_index_tree[l++].emplace_back(all_edges[i]);
                 ++total_index_edges;
             }
             if (r & 1)
