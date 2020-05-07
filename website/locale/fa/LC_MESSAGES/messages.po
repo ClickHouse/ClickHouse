@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-30 15:45+0300\n"
+"POT-Creation-Date: 2020-05-07 22:58+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fa\n"
@@ -32,31 +32,31 @@ msgstr ""
 msgid "ClickHouse - fast open-source OLAP DBMS"
 msgstr "ClickHouse - سریع باز-منبع OLAP DBMS"
 
-#: templates/common_meta.html:10 templates/common_meta.html:21
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "خانه عروسکی"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "open-source"
 msgstr "متن باز"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "relational"
 msgstr "رابطه"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytics"
 msgstr "تجزیه و تحلیل"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytical"
 msgstr "تحلیلی"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "Big Data"
 msgstr "داده های بزرگ"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "web-analytics"
 msgstr "تجزیه و تحلیل وب سایت"
 
@@ -76,11 +76,23 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex, LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "ساخته شده از"
+
+#: templates/docs/footer.html:4
+msgid "published at"
+msgstr "منتشر شده در"
+
+#: templates/docs/footer.html:4
+msgid "modified at"
+msgstr "تغییریافته در"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "راهنما می خواستم!"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -93,17 +105,13 @@ msgstr ""
 " کنار پایگاه داده اصلی خانه کلیک زندگی می کند و منتظر سخنرانان مادری "
 "همکار به انسان بیشتر قابل خواندن است."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "شما همچنین می توانید نسخه اصلی انگلیسی به عنوان یک مرجع استفاده کنید."
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "راهنما مستندات تاتر با ویرایش این صفحه"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "ساخته شده از"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
