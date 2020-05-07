@@ -14,6 +14,7 @@ target_link_libraries(clickhouse_dictionaries
         ${BTRIE_LIBRARIES}
         clickhouse_common_io
         dbms
+        Poco::Data
         Poco::Data::ODBC
         Poco::MongoDB
         Poco::Redis

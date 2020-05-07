@@ -204,6 +204,8 @@ if (USE_INTERNAL_POCO_LIBRARY)
                 -Wno-extra-semi-stmt
                 -Wno-zero-as-null-pointer-constant
                 -Wno-implicit-int-float-conversion
+                -Wno-thread-safety-analysis
+                -Wno-thread-safety-negative
         )
     endif ()
     target_compile_options (_poco_foundation
