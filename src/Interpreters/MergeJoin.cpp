@@ -523,20 +523,23 @@ void MergeJoin::setKeepGoing(ExtraBlockPtr & not_processed) const
 
 void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
+    if (block)
+    {
+        JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
+        materializeBlockInplace(block);
+        JoinCommon::removeLowCardinalityInplace(block);
+
+        sortBlock(block, left_sort_description);
+    }
+
     if (!not_processed)
     {
         if (block)
         {
             /// Store new block on disk
 
-            JoinCommon::checkTypesOfKeys(block, table_join->keyNamesLeft(), right_table_keys, table_join->keyNamesRight());
-            materializeBlockInplace(block);
-            JoinCommon::removeLowCardinalityInplace(block);
-
             if (block.rows())
             {
-                sortBlock(block, left_sort_description);
-
                 while (!disk_writer)
                 {
                     std::unique_lock lock(rwlock);
