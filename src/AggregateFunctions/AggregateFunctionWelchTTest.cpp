@@ -12,7 +12,15 @@ namespace
 template <typename X, typename Y, typename Ret>
 AggregateFunctionPtr createAggregateFunctionWelchTTest(const DataTypes & argument_types, const Array & parameters)
 {
-    return std::make_shared<AggregateFunctionWelchTTest<X, Y, Ret>>(argument_types, parameters);
+    // default value
+    Float64 significance_level = 0.1;
+    if (!params.empty())
+    {
+        significance_level = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+    }
+
+
+    return std::make_shared<AggregateFunctionWelchTTest<X, Y, Ret>>(significance_level, argument_types, parameters);
 
 }
 
@@ -21,7 +29,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const DataTypes & argumen
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
 
-    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest);
 }
 
 }
