@@ -54,6 +54,8 @@ def build_nav(lang, args):
                 index_key = key
                 continue
             result.append({key: value})
+        if args.nav_limit and len(result) >= args.nav_limit:
+            break
     if index_key:
         key = list(result[0].keys())[0]
         result[0][key][index_key] = 'index.md'
