@@ -31,6 +31,7 @@ SRCS(
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
+    DirectDictionary.cpp
     Embedded/GeodataProviders/HierarchiesProvider.cpp
     Embedded/GeodataProviders/HierarchyFormatReader.cpp
     Embedded/GeodataProviders/NamesFormatReader.cpp
