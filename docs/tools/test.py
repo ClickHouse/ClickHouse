@@ -29,7 +29,7 @@ def test_amp(paths, lang):
     try:
         subprocess.check_output(command, shell=True).decode('utf-8')
     except subprocess.CalledProcessError:
-        logging.error(f'Invalid AMP for {lang})')
+        logging.error(f'Invalid AMP for {lang}')
         raise
 
 
