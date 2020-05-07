@@ -247,11 +247,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!exp_elem.parse(pos, limit_offset, expected))
             return false;
-        if (s_with_ties.ignore(pos, expected))
-        {
-            limit_with_ties_occured = true;
-            select_query->limit_with_ties = true;
-        }
     }
 
     /// Because TOP n in totally equals LIMIT n

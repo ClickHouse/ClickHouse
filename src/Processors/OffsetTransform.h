@@ -19,7 +19,6 @@ class OffsetTransform : public IProcessor
 {
 private:
 
-    size_t limit;
     size_t offset;
     bool always_read_till_end;
 
@@ -52,11 +51,11 @@ private:
 
 public:
     OffsetTransform(
-        const Block & header_, size_t limit_, size_t offset_, size_t num_streams = 1,
+        const Block & header_, size_t offset_, size_t num_streams = 1,
         bool always_read_till_end_ = false, bool with_ties_ = false,
         SortDescription description_ = {});
 
-    String getName() const override { return "Limit"; }
+    String getName() const override { return "Offset"; }
 
     Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
