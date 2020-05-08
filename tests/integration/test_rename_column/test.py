@@ -55,11 +55,11 @@ def create_table(nodes, table_name, with_storage_policy=False, with_time_column=
             """
         if with_ttl_move:
             sql += """
-                TTL time TO DISK 'external'
+                TTL time + INTERVAL (num2 % 1) SECOND TO DISK 'external'
             """
         if with_ttl_delete:
             sql += """
-                TTL time DELETE
+                TTL time + INTERVAL (num2 % 1) SECOND DELETE
             """
             settings.append("merge_with_ttl_timeout = 1")
 
@@ -417,12 +417,18 @@ def test_rename_with_parallel_ttl_move(started_cluster):
 
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, False, True, 0, True)))
         time.sleep(5)
+        rename_column(node1, table_name, "time", "time2", 1, False)
+        #rename_column(node1, table_name, "time2", "time", 1, False)
+        time.sleep(4)
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 500, True)))
         tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 500, True)))
         tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 500, True)))
 
         for task in tasks:
             task.get(timeout=240)
+
+        # check some parts got moved
+        assert "external" in set(node1.query("SELECT disk_name FROM system.parts WHERE table == '{}' AND active=1 ORDER BY modification_time".format(table_name)).strip().splitlines())
 
         # rename column back to original
         rename_column(node1, table_name, "foo2", "num2", 1, True)
