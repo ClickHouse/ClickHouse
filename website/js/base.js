@@ -1,13 +1,4 @@
 (function () {
-    var logo_text = $('#logo-text');
-    if (logo_text.length) {
-        var name = logo_text.attr('alt').trim().toLowerCase();
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        var feedback_email = $('#feedback_email');
-        feedback_email.attr('href', 'mailto:' + feedback_address);
-        feedback_email.html(feedback_address);
-    }
-
     $(document).click(function (event) {
         var target = $(event.target);
         var target_id = target.attr('id');
@@ -82,6 +73,13 @@
            })
         });
     }
+
+    $('#feedback_email, .feedback-email').each(function() {
+        var name = window.location.host.substring(0, 10)
+        var feedback_address = name + '-feedback' + '@yandex-team.com';
+        $(this).attr('href', 'mailto:' + feedback_address);
+        $(this).html(feedback_address);
+    });
 
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
