@@ -11,8 +11,7 @@
                     <nav class="col text-muted" aria-label="breadcrumb">
                         <ol class="breadcrumb bg-transparent p-0">
                             {% for ancestor in ancestors %}
-                            <li class="breadcrumb-item">
-                                <a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor.title }}</a>
+                            <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor.title.strip() }}</a>
                                 {% set ancestor_ns.level = ancestor_ns.level - 1 %}
                             </li>
                            {% endfor %}
