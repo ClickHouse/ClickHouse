@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Disks/DiskFactory.h"
-#include "ProxyListConfiguration.h"
+#include "ProxyConfiguration.h"
 
 #include <aws/s3/S3Client.h>
 #include <Poco/DirectoryIterator.h>

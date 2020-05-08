@@ -40,15 +40,15 @@ namespace
     std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(const Poco::Util::AbstractConfiguration * proxy_resolver_config)
     {
         auto endpoint = Poco::URI(proxy_resolver_config->getString("endpoint"));
-        auto scheme = proxy_resolver_config->getString("scheme");
-        if (scheme != "http" && scheme != "https")
-            throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + scheme, ErrorCodes::BAD_ARGUMENTS);
-        auto port = proxy_resolver_config->getUInt("port");
+        auto proxy_scheme = proxy_resolver_config->getString("proxy_scheme");
+        if (proxy_scheme != "http" && proxy_scheme != "https")
+            throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
+        auto proxy_port = proxy_resolver_config->getUInt("proxy_port");
 
         LOG_DEBUG(
-            &Logger::get("DiskS3"), "Configured proxy resolver: " << endpoint.toString() << ", Scheme: " << scheme << ", Port: " << port);
+            &Logger::get("DiskS3"), "Configured proxy resolver: " << endpoint.toString() << ", Scheme: " << proxy_scheme << ", Port: " << proxy_port);
 
-        return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, scheme, port);
+        return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
     }
 
     std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(const Poco::Util::AbstractConfiguration * proxy_config)
