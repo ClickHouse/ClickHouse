@@ -532,6 +532,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 }
 
+
 void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
         size_t row_begin,
@@ -549,13 +550,6 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
     }
 }
 
-
-bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
-{
-    UInt64 num_rows = block.rows();
-    return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys);
-}
 
 void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
                                               AggregateFunctionInstructions & aggregate_functions_instructions)
@@ -585,11 +579,9 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
         auto * that = aggregate_functions[i];
-
         /// Unnest consecutive trailing -State combinators
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
-
         aggregate_functions_instructions[i].that = that;
         aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
 
@@ -599,7 +591,6 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
             that = func->getNestedFunction().get();
             while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
                 that = nested_func->getNestedFunction().get();
-
             auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
             nested_columns_holder.push_back(std::move(nested_columns));
             aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
@@ -611,6 +602,15 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
         aggregate_functions_instructions[i].batch_that = that;
     }
 }
+
+
+bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
+                                ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
+{
+    UInt64 num_rows = block.rows();
+    return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys);
+}
+
 
 bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
@@ -1153,7 +1153,7 @@ void Aggregator::fillAggregateColumnsWithSingleKey(
 
 void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     AggregatedDataVariants & data_variants,
-    Columns key_columns,
+    Columns & key_columns,
     size_t key_row,
     MutableColumns & final_key_columns)
 {
