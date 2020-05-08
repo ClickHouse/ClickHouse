@@ -25,11 +25,9 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
                   << "SHOW CREATE " << EntityTypeInfo::get(type).name
                   << (settings.hilite ? hilite_none : "");
 
-    if (current_user)
+    if (current_user || current_quota)
     {
     }
-    else if (current_quota)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CURRENT" << (settings.hilite ? hilite_none : "");
     else if (type == EntityType::ROW_POLICY)
     {
         const String & database = row_policy_name_parts.database;

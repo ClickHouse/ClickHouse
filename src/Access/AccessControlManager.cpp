@@ -7,7 +7,7 @@
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
 #include <Access/QuotaCache.h>
-#include <Access/QuotaUsageInfo.h>
+#include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
 #include <Core/Settings.h>
 #include <Poco/ExpireCache.h>
@@ -144,9 +144,9 @@ std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
 }
 
 
-std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
+std::vector<QuotaUsage> AccessControlManager::getAllQuotasUsage() const
 {
-    return quota_cache->getUsageInfo();
+    return quota_cache->getAllQuotasUsage();
 }
 
 

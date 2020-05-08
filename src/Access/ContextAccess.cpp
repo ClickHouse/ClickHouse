@@ -3,6 +3,7 @@
 #include <Access/EnabledRoles.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/EnabledQuota.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
@@ -501,6 +502,13 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 {
     std::lock_guard lock{mutex};
     return enabled_quota;
+}
+
+
+std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_quota ? enabled_quota->getUsage() : std::optional<QuotaUsage>{};
 }
 
 

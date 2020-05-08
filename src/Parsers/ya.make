@@ -45,7 +45,6 @@ SRCS(
     ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
-    ASTShowQuotasQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
@@ -97,7 +96,6 @@ SRCS(
     ParserShowAccessEntitiesQuery.cpp
     ParserShowCreateAccessEntityQuery.cpp
     ParserShowGrantsQuery.cpp
-    ParserShowQuotasQuery.cpp
     ParserShowTablesQuery.cpp
     ParserSystemQuery.cpp
     ParserTablePropertiesQuery.cpp

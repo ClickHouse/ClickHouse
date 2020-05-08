@@ -19,7 +19,6 @@
 #include <Parsers/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
-#include <Parsers/ASTShowQuotasQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -53,7 +52,6 @@
 #include <Interpreters/InterpreterShowAccessEntitiesQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
-#include <Interpreters/InterpreterShowQuotasQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
@@ -225,10 +223,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTShowGrantsQuery>())
     {
         return std::make_unique<InterpreterShowGrantsQuery>(query, context);
-    }
-    else if (query->as<ASTShowQuotasQuery>())
-    {
-        return std::make_unique<InterpreterShowQuotasQuery>(query, context);
     }
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {

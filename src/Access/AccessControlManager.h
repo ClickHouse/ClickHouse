@@ -29,7 +29,7 @@ class EnabledRowPolicies;
 class RowPolicyCache;
 class EnabledQuota;
 class QuotaCache;
-struct QuotaUsageInfo;
+struct QuotaUsage;
 struct SettingsProfile;
 using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
 class EnabledSettings;
@@ -73,7 +73,7 @@ public:
         const Poco::Net::IPAddress & address,
         const String & custom_quota_key) const;
 
-    std::vector<QuotaUsageInfo> getQuotaUsageInfo() const;
+    std::vector<QuotaUsage> getAllQuotasUsage() const;
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(const UUID & user_id,
                                                               const SettingsProfileElements & settings_from_user,
