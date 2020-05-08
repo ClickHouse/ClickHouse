@@ -47,6 +47,8 @@ private:
     bool is_consume_finished = false;
 
     Chunk current_chunk;
+
+    Logger * log = &Logger::get("AggregatingInOrderTransform");
 };
 
 }
