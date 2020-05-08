@@ -885,12 +885,6 @@ bool Context::hasScalar(const String & name) const
 }
 
 
-void Context::dropScalars()
-{
-    scalars.clear();
-}
-
-
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
     /// Slightly suboptimal.
