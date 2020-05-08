@@ -1,5 +1,5 @@
 # coding: utf-8
-
+# proto file shoupd be the same, as in server GRPC
 import os
 import pytest
 import subprocess
@@ -41,7 +41,7 @@ finally:
             user_info = GrpcConnection_pb2.User(user="default", key='123', quota='default')
             query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', format="TabSeparated")
             for response in stub.Query(GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info, interactive_delay=1000)):
-                output += response.query.split()
+                output += response.output.split()
         return output
 
     def test_ordinary_query(server_address):
@@ -53,8 +53,9 @@ finally:
         server_address_and_port = server_address + ':' + str(server_port)
         assert Query(server_address_and_port, "CREATE TABLE t (a UInt8) ENGINE = Memory") == []
         assert Query(server_address_and_port, "INSERT INTO t VALUES (1),(2),(3)") == []
+        assert Query(server_address_and_port, "INSERT INTO t FORMAT TabSeparated 4\n5\n6\n") == []
         assert Query(server_address_and_port, "INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") == []
-        assert Query(server_address_and_port, "SELECT a FROM t ORDER BY a") == [u'1', u'2', u'3', u'10', u'11', u'12']
+        assert Query(server_address_and_port, "SELECT a FROM t ORDER BY a") == [u'1', u'2', u'3', u'4', u'5', u'6', u'10', u'11', u'12']
         assert Query(server_address_and_port, "DROP TABLE t") == []
 
     def test_handle_mistakes(server_address):
@@ -62,7 +63,3 @@ finally:
         assert Query(server_address_and_port, "") == []
         assert Query(server_address_and_port, "CREATE TABLE t (a UInt8) ENGINE = Memory") == []
         assert Query(server_address_and_port, "CREATE TABLE t (a UInt8) ENGINE = Memory") == []
-        
-
-
-

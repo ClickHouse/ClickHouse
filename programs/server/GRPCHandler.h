@@ -49,16 +49,27 @@ class CallDataQuery : public CommonCallData {
      public:
           CallDataQuery(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* notification_cq_, grpc::ServerCompletionQueue* new_call_cq_, IServer* server_, Poco::Logger * log_)
           : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context()), pool(1) {
+               detailsStatus = SEND_TOTALS;
                out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this, nullptr);
                Service->RequestQuery(&gRPCcontext, &request, &responder, new_call_cq, notification_cq, this);
-          }
+          }     
           void ParseQuery();
           void ExecuteQuery();
           void ProgressQuery();
           void FinishQuery();
+          
+          enum DetailsStatus{
+               SEND_TOTALS,
+               SEND_EXTREMES,
+               SEND_PROFILEINFO,
+               FINISH
+          };
+          void SendDetails();
 
           bool senData(const Block & block);
           bool sendProgress();
+          bool sendTotals(const Block & totals);
+          bool sendExtremes(const Block & block);
 
           virtual void respond() override
           {
@@ -68,9 +79,13 @@ class CallDataQuery : public CommonCallData {
                          new CallDataQuery(Service, notification_cq, new_call_cq, iServer, log);
                          ParseQuery();
                          ExecuteQuery();
-                    } else if (out->onProgress() && !out->isFinished()) {
+                    }
+                    else if (out->onProgress())
+                    {
                          ProgressQuery();
-                    } else if (out->isFinished()) {
+                    }
+                    else if (out->isFinished())
+                    {
                          delete this;
                     }
                          
@@ -109,6 +124,7 @@ class CallDataQuery : public CommonCallData {
           Stopwatch progress_watch;
           Stopwatch query_watch;
           Progress progress;
+          DetailsStatus detailsStatus;
 
           std::shared_ptr<LazyOutputFormat> lazy_format;
           BlockIO io;
@@ -156,7 +172,6 @@ class GRPCServer final : public Poco::Runnable {
                bool ok;
                while (true)
                {
-                    
                     GPR_ASSERT(new_call_cq->Next(&tag, &ok));
                     if (!ok) {
                          LOG_WARNING(log, "Client has gone away.");

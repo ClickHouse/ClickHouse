@@ -125,34 +125,6 @@ void CallDataQuery::ExecuteQuery() {
         }
 }
 
-bool CallDataQuery::senData(const Block & block) {
-    out->setResponse([](const String& buffer) {
-                         QueryResponse tmp_response;
-                         tmp_response.set_query(buffer);
-                         return tmp_response;
-                    });
-    String format = request.query_info().format();
-    if (format.empty()) {
-        format = "Pretty";
-    }
-    auto my_block_out_stream = context.getOutputFormat(format, *out, block);
-    my_block_out_stream->write(block);
-    my_block_out_stream->flush();
-    out->next();
-    return out->isWritten();
-}
-bool CallDataQuery::sendProgress() {
-    //TODO fetch_and for total rows?
-    out->setResponse([](const String& buffer) {
-                         QueryResponse tmp_response;
-                         tmp_response.set_progress_tmp(buffer);
-                         return tmp_response;
-                    });
-    auto increment = progress.fetchAndResetPiecewiseAtomically();
-    increment.writeJSON(*out);
-    out->next();
-    return out->isWritten();
-}
 void CallDataQuery::ProgressQuery() {
     LOG_TRACE(log, "Proccess");
     bool sent = false;
@@ -176,19 +148,129 @@ void CallDataQuery::ProgressQuery() {
             break;
         }
     }
-    if ((lazy_format->isFinished() || exception) && !sent) {
-        FinishQuery();
+    if ((lazy_format->isFinished() || exception) && !sent)
+    {
+        lazy_format->finish();
+        pool.wait();
+        SendDetails();
+    }
+}
+void CallDataQuery::SendDetails() {
+    bool sent = false;
+    while (!sent) {
+        switch( detailsStatus ) {
+            case SEND_TOTALS:
+            {
+                sent = sendTotals(lazy_format->getTotals());
+                detailsStatus = SEND_EXTREMES;
+                break;
+            }
+            case SEND_EXTREMES:
+            {
+                sent = sendExtremes(lazy_format->getExtremes());
+                detailsStatus = FINISH;
+                break;
+            }
+            case FINISH:
+            {
+                sent = true;
+                FinishQuery();
+            }
+        }
     }
 }
 
 void CallDataQuery::FinishQuery() {
-    if (lazy_format) {
-        lazy_format->finish();
-        pool.wait();
-    }
     io.onFinish();
     query_scope->logPeakMemoryUsage();
     out->finalize();
+}
+
+bool CallDataQuery::senData(const Block & block) {
+    out->setResponse([](const String& buffer) {
+                         QueryResponse tmp_response;
+                         tmp_response.set_output(buffer);
+                         return tmp_response;
+                    });
+    String format = request.query_info().format();
+    if (format.empty()) {
+        format = "Pretty";
+    }
+    auto my_block_out_stream = context.getOutputFormat(format, *out, block);
+    my_block_out_stream->write(block);
+    my_block_out_stream->flush();
+    out->next();
+    return true;
+}
+
+bool CallDataQuery::sendProgress() {
+    //TODO fetch_and for total rows?
+    auto grpcProgress = [](const String& buffer) {
+        auto in = std::make_unique<ReadBufferFromString>(buffer);
+        ProgressValues progressValues;
+        progressValues.read(*in, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
+        GRPCConnection::Progress progress;
+        progress.set_read_rows(progressValues.read_rows);
+        progress.set_read_bytes(progressValues.read_bytes);
+        progress.set_total_rows_to_read(progressValues.total_rows_to_read);
+        progress.set_written_rows(progressValues.written_rows);
+        progress.set_written_bytes(progressValues.written_bytes);
+        return progress;
+    };
+
+    out->setResponse([&grpcProgress](const String& buffer) {
+                        QueryResponse tmp_response;
+                        auto progress = std::make_unique<GRPCConnection::Progress>(grpcProgress(buffer));
+                        tmp_response.set_allocated_progress(progress.release());
+                        return tmp_response;
+                    });
+    auto increment = progress.fetchAndResetPiecewiseAtomically();
+    increment.write(*out, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
+    out->next();
+    return true;
+}
+
+bool CallDataQuery::sendTotals(const Block & totals) {
+    if (totals) {
+        out->setResponse([](const String& buffer) {
+                         QueryResponse tmp_response;
+                         tmp_response.set_totals(buffer);
+                         return tmp_response;
+                    });
+        //TODO format global?
+        String format = request.query_info().format();
+        //TODO IF NOT JSON*, TabSeparated*, Pretty*
+        if (format.empty()) {
+            format = "Pretty";
+        }
+        auto my_block_out_stream = context.getOutputFormat(format, *out, totals);
+        my_block_out_stream->write(totals);
+        my_block_out_stream->flush();
+        out->next();
+        return true;
+    }
+    return false;
+}
+
+bool CallDataQuery::sendExtremes(const Block & extremes) {
+    if (extremes) {
+        out->setResponse([](const String& buffer) {
+                         QueryResponse tmp_response;
+                         tmp_response.set_extremes(buffer);
+                         return tmp_response;
+                    });
+        String format = request.query_info().format();
+        //TODO IF NOT JSON*, TabSeparated*, Pretty*
+        if (format.empty()) {
+            format = "Pretty";
+        }
+        auto my_block_out_stream = context.getOutputFormat(format, *out, extremes);
+        my_block_out_stream->write(extremes);
+        my_block_out_stream->flush();
+        out->next();
+        return true;
+    }
+    return false;
 }
 
 }

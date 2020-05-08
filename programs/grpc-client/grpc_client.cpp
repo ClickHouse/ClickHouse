@@ -31,7 +31,7 @@ class GRPCClient {
             int id = rand();
 
             querySettigs.set_query_id(std::to_string(id));
-            querySettigs.set_format("Values");
+            querySettigs.set_format("Pretty");
             
             request.set_allocated_query_info(&querySettigs);
 
@@ -41,26 +41,32 @@ class GRPCClient {
             bool ok = false;
             
             std::unique_ptr<grpc::ClientReader<GRPCConnection::QueryResponse> > reader(stub_->Query(&context, request));
-            // if (id % 3 == 0) {
-            //     request.release_query_info();
-            //     request.release_user_info();
-            //     return "Fail check";
-            // }
             while (reader->Read(&reply)) {
-                // if (!reply.progress().read_rows()) {
-                //     std::cout << "Progress " << id<< ":{\n" << "read_rows: "            << reply.progress().read_rows() << '\n'
-                //                                             << "read_bytes: "           << reply.progress().read_bytes() << '\n'
-                //                                             << "total_rows_to_read: "   << reply.progress().total_rows_to_read() << '\n'
-                //                                             << "written_rows: "         << reply.progress().written_rows() << '\n'
-                //                                             << "written_bytes: "        << reply.progress().written_bytes() << '\n';
+                if (!reply.output().empty())
+                {
+                    std::cout << "Query Part:\n " << id<< reply.output()<<'\n';
+                }
+                else if (reply.progress().read_rows()
+                        || reply.progress().read_bytes()
+                        || reply.progress().total_rows_to_read()
+                        || reply.progress().written_rows()
+                        || reply.progress().written_bytes())
+                {
+                    std::cout << "Progress " << id<< ":{\n" << "read_rows: "            << reply.progress().read_rows() << '\n'
+                                                            << "read_bytes: "           << reply.progress().read_bytes() << '\n'
+                                                            << "total_rows_to_read: "   << reply.progress().total_rows_to_read() << '\n'
+                                                            << "written_rows: "         << reply.progress().written_rows() << '\n'
+                                                            << "written_bytes: "        << reply.progress().written_bytes() << '\n';
 
 
-                // }
-
-                if (!reply.query().empty()) {
-                    std::cout << "Query Part:\n " << id<< reply.query()<<'\n';
-                } else if (!reply.progress_tmp().empty()) {
-                    std::cout << "Progress:\n " << id<< reply.progress_tmp() <<'\n';
+                }
+                else if (!reply.totals().empty())
+                {
+                    std::cout << "Totals:\n " << id << " " << reply.totals() <<'\n';
+                }
+                else if (!reply.extremes().empty())
+                {
+                    std::cout << "Extremes:\n " << id << " " << reply.extremes() <<'\n';
                 }
             }
 
@@ -104,6 +110,12 @@ int main(int argc, char** argv) {
     std::cout << client.Query("INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);") << std::endl;
     std::cout << client.Query("SELECT s FROM arrays_test") << std::endl;
     std::cout << client.Query("") << std::endl;
+
+    {//Check Totals
+        std::cout << client.Query("CREATE TABLE tabl (x UInt8, y UInt8) ENGINE = Memory;") << std::endl;
+        std::cout << client.Query("INSERT INTO tabl VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4);") << std::endl;
+        std::cout << client.Query("SELECT sum(x), y FROM tabl GROUP BY y WITH TOTALS") << std::endl;
+    }
 
     return 0;
 }

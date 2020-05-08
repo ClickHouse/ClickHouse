@@ -21,18 +21,13 @@ protected:
 
     bool progress = false;
     bool finished = false;
-    bool written = true;
     std::function<QueryResponse(const String& buffer)> setResposeDetails;
 
 
     void nextImpl() override {
-        written = true;
         progress = true;
         
         String buffer(working_buffer.begin(), working_buffer.begin() + offset());
-        if (buffer.empty()) {
-            written = false;
-        }
         auto response = setResposeDetails(buffer);
         responder->Write(response, tag);
     }
@@ -46,9 +41,6 @@ public:
     }
     bool isFinished() {
         return finished;
-    }
-    bool isWritten() {
-        return written;
     }
     void setFinish(bool fl) {
         finished = fl;
