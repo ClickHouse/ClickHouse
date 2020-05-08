@@ -150,7 +150,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     const Settings & settings = data.context.getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (!settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar) || !data.context.hasQueryContext())
+    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar) || !data.context.hasQueryContext())
     {
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;
