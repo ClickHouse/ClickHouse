@@ -11,6 +11,19 @@
                     <uri>http://proxy2:8888</uri>
                 </proxy>
             </s3>
+            <s3_with_resolver>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <proxy>
+                    <resolver>
+                        <endpoint>http://resolver:8080</endpoint>
+                        <scheme>http</scheme>
+                        <port>8888</port>
+                    </resolver>
+                </proxy>
+            </s3_with_resolver>
         </disks>
         <policies>
             <s3>
@@ -20,6 +33,13 @@
                     </main>
                 </volumes>
             </s3>
+            <s3_with_resolver>
+                <volumes>
+                    <main>
+                        <disk>s3_with_resolver</disk>
+                    </main>
+                </volumes>
+            </s3_with_resolver>
         </policies>
     </storage_configuration>
 </yandex>

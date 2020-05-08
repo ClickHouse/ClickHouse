@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Disks/DiskFactory.h"
-#include "DynamicProxyConfiguration.h"
+#include "ProxyListConfiguration.h"
 
 #include <aws/s3/S3Client.h>
 #include <Poco/DirectoryIterator.h>
@@ -22,7 +22,7 @@ public:
     DiskS3(
         String name_,
         std::shared_ptr<Aws::S3::S3Client> client_,
-        std::shared_ptr<S3::DynamicProxyConfiguration> proxy_configuration_,
+        std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
@@ -102,7 +102,7 @@ private:
 private:
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
-    std::shared_ptr<S3::DynamicProxyConfiguration> proxy_configuration;
+    std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
