@@ -632,4 +632,7 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
+
+    <!-- Uncomment to enable tcp_keep_alive for native protocol -->
+    <!-- <use_tcp_keep_alive>true</use_tcp_keep_alive> -->
 </yandex>

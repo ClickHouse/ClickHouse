@@ -847,6 +847,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
+                if (config().getBool("use_tcp_keep_alive", false))
+                {
+                    socket.setKeepAlive(true);
+                }
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                     new TCPHandlerFactory(*this),
                     server_pool,
@@ -864,6 +868,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
                 socket.setSendTimeout(settings.send_timeout);
+                if (config().getBool("use_tcp_keep_alive", false))
+                {
+                    socket.setKeepAlive(true);
+                }
                 servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                     new TCPHandlerFactory(*this, /* secure= */ true),
                     server_pool,
