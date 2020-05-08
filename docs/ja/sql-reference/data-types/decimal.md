@@ -37,9 +37,9 @@ Pパラメータ値に応じてDecimal(P,S)は以下のシノニムです:
 
 Decimalのバイナリ演算では、結果の型が広くなります（引数の順序は任意です）。
 
--   Decimal64(S1) <op> Decimal32(S2)-\>Decimal64(S)
--   デシマル128(s1) <op> Decimal32(S2)-\>Decimal128S)
--   デシマル128(s1) <op> Decimal64(S2)-\>Decimal128(S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 スケールのルール:
 
