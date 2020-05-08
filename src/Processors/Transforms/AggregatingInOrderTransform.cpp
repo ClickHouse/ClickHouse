@@ -64,24 +64,13 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 {
 //    std::cerr << "\nchunk " << x++ << " of size " << chunk.getNumRows() << "\n";
 //    sz += chunk.getNumRows();
-
     /// Find the position of last already read key in current chunk.
     size_t rows = chunk.getNumRows();
 
     if (rows == 0)
         return;
 
-    size_t mid = 0;
-    size_t high = 0;
-    size_t low = -1;
-
-    size_t key_end = 0;
-    size_t key_begin = 0;
-
-    /// So that key_columns could live longer xD
-    /// Need a better construction probably
     Columns materialized_columns;
-
     Columns key_columns(params->params.keys_size);
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
@@ -92,7 +81,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
     params->aggregator.prepareAggregateInstructions(chunk.detachColumns(), aggregate_columns, materialized_columns, aggregate_function_instructions);
 
-//    std::cerr << "\nPrepared block of size " << rows << "\n";
+    size_t key_end = 0;
+    size_t key_begin = 0;
 
     if (!res_block_size)
     {
@@ -101,6 +91,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
         ++res_block_size;
     }
+    size_t mid = 0;
+    size_t high = 0;
+    size_t low = -1;
 
     while (key_end != rows)
     {
