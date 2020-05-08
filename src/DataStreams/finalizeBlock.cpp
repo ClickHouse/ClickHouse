@@ -19,7 +19,7 @@ namespace DB
                 if (current.column)
                 {
                     auto mut_column = (*std::move(current.column)).mutate();
-                    current.column = typeid_cast<ColumnAggregateFunction *>(mut_column.get())->convertToValues();
+                    current.column = assert_cast<ColumnAggregateFunction *>(mut_column.get())->convertToValues();
                 }
             }
         }

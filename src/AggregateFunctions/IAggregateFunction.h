@@ -98,6 +98,8 @@ public:
     virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Finalize state. This function is called once after all 'add' and 'merge' calls. Only if isFinalizationNeeded().
+    /// 'add', 'merge', and 'serialize' can't be performed after 'finalize' call.
+    /// Serialization is performed for non-finalized state.
     virtual void finalize(AggregateDataPtr /*place*/) const {}
     virtual bool isFinalizationNeeded() const { return false; }
 
