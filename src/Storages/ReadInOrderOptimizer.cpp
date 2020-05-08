@@ -55,6 +55,7 @@ InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & stora
     int read_direction = required_sort_description.at(0).direction;
 
     size_t prefix_size = std::min(required_sort_description.size(), sorting_key_columns.size());
+
     for (size_t i = 0; i < prefix_size; ++i)
     {
         if (forbidden_columns.count(required_sort_description[i].column_name))
@@ -71,7 +72,6 @@ InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & stora
             bool found_function = false;
             for (const auto & action : elements_actions[i]->getActions())
             {
-                std::cerr << action.toString() << "\n";
                 if (action.type != ExpressionAction::APPLY_FUNCTION)
                     continue;
 
@@ -82,6 +82,7 @@ InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & stora
                 }
                 else
                     found_function = true;
+
                 if (action.argument_names.size() != 1 || action.argument_names.at(0) != sorting_key_columns[i])
                 {
                     current_direction = 0;
@@ -94,6 +95,7 @@ InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & stora
                     current_direction = 0;
                     break;
                 }
+
                 auto monotonicity = func.getMonotonicityForRange(*func.getArgumentTypes().at(0), {}, {});
                 if (!monotonicity.is_monotonic)
                 {
@@ -106,8 +108,10 @@ InputSortingInfoPtr ReadInOrderOptimizer::getInputOrder(const StoragePtr & stora
 
             if (!found_function)
                 current_direction = 0;
+
             if (!current_direction || (i > 0 && current_direction != read_direction))
                 break;
+
             if (i == 0)
                 read_direction = current_direction;
 

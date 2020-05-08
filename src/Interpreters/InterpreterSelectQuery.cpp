@@ -1752,7 +1752,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
         pipeline.resize(1);
         pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, group_by_descr);
+            return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, group_by_descr, settings.max_block_size);
         });
 
         pipeline.enableQuotaForCurrentStreams();
