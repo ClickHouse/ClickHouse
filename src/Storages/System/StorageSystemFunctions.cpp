@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/UserDefinedFunctions/UDFManager.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemFunctions.h>
 

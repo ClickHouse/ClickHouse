@@ -4,9 +4,11 @@
 #include <stdexcept>
 #include <mutex>
 #include <unistd.h>
+#include <map>
 
-#include <boost/interprocess/mapped_region.hpp>
+#include <thread>
 #include <boost/interprocess/anonymous_shared_memory.hpp>
+#include <boost/interprocess/mapped_region.hpp>
 
 #include "fdstream.h"
 
@@ -41,7 +43,16 @@ namespace DB
 class UDFManager
 {
 public:
-    UDFManager() = default;
+    // static UDFManager & Instance();
+
+    UDFManager() {
+        this->initIsolatedProcess();
+        std::thread([this](){ this->run(); }).detach();
+    }
+
+    ~UDFManager() {
+        stop();
+    }
 
     void initIsolatedProcess()
     {
@@ -65,8 +76,8 @@ public:
         {
             /// Child
             close(pipe1[0]);
-            outCommands_.set_fd(pipe1[1]);
-            inCommands_.set_fd(pipe2[0]);
+            outCommands.set_fd(pipe1[1]);
+            inCommands.set_fd(pipe2[0]);
             close(pipe2[1]);
             // setuid(uid);
             runIsolated();
@@ -74,30 +85,47 @@ public:
         else
         {
             /// Main
-            inCommands_.set_fd(pipe1[0]);
+            inCommands.set_fd(pipe1[0]);
             close(pipe1[1]);
             close(pipe2[0]);
-            outCommands_.set_fd(pipe2[1]);
+            outCommands.set_fd(pipe2[1]);
             return;
         }
     }
 
-    void run();
+    [[noreturn]] void run();
 
-    void load(std::string_view filename)
-    {
-        std::lock_guard lock(mx_);
-        outCommands_ << "LoadLib " << filename << '\n';
-    }
+    void load(std::string_view filename);
+    void call(std::string_view func_name);
+    void stop();
+
+    struct UDFControlCommand {
+        std::string name;
+        std::string args;
+        unsigned request_id;
+    };
+
+    struct UDFControlCommandResult {
+        unsigned code;
+        std::string message; // Contains error message on error
+        unsigned request_id;
+
+        bool isSuccess() {
+            return code == 0;
+        }
+    };
 
 private:
     [[noreturn]] void runIsolated();
 
-    TestAllocator memInput_;
-    TestAllocator memOutput_;
-    FDIStream inCommands_;
-    FDOStream outCommands_;
-    std::mutex mx_;
+    TestAllocator memInput;
+    TestAllocator memOutput;
+    FDIStream inCommands;
+    FDOStream outCommands;
+    std::mutex mx;
+    unsigned last_id = 0;
+    std::map<unsigned, std::condition_variable> waiters;
+    std::map<unsigned, UDFControlCommandResult> results;
 };
 
 }

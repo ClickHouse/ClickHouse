@@ -42,11 +42,11 @@ public:
     }
 
 protected:
-    int overflow (int c) final {
+    int overflow (int /* c */) final {
         throw std::runtime_error("Not implemented");
     }
 
-    int sync() {
+    int sync() final {
         if (out_size_== 0) {
             return 0;
         }
@@ -162,7 +162,7 @@ protected:
         throw std::runtime_error("Not implemented");
     }
 
-    int pbackfail(int c) final {
+    int pbackfail(int /* c */) final {
         throw std::runtime_error("Not implemented");
     }
 
@@ -179,6 +179,8 @@ class FDOStream : public std::ostream {
 protected:
     FDBuf buf_;
 public:
+    FDOStream() : std::ostream(nullptr) { }
+
     explicit FDOStream(int fd) : std::ostream(nullptr), buf_(fd) {
         rdbuf(&buf_);
     }
@@ -204,6 +206,8 @@ class FDIStream : public std::istream {
 protected:
     FDBuf buf_;
 public:
+    FDIStream() : std::istream(nullptr) { }
+
     explicit FDIStream(int fd) : std::istream(nullptr), buf_(fd) {
         rdbuf(&buf_);
     }
@@ -225,6 +229,8 @@ class FDIOStream : public std::iostream {
 protected:
     FDBuf buf_;
 public:
+    FDIOStream() : std::iostream(nullptr) { }
+
     explicit FDIOStream(int fd) : std::iostream(nullptr), buf_(fd) {
         rdbuf(&buf_);
     }

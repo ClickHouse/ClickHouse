@@ -39,6 +39,9 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
+    /// UDF are case sensitive
+    void registerUserDefinedFunction(const std::string & name, Creator creator);
+
     /// Throws an exception if not found.
     FunctionOverloadResolverPtr get(const std::string & name, const Context & context) const;
 
@@ -54,6 +57,10 @@ private:
 
     Functions functions;
     Functions case_insensitive_functions;
+    Functions user_defined_functions;
+
+    /// For dynamic UDF usage
+    mutable std::mutex udf_mutex;
 
     template <typename Function>
     static FunctionOverloadResolverImplPtr createDefaultFunction(const Context & context)
