@@ -1,6 +1,20 @@
 <div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-2 p-md-5">
     <div id="content" class="mt-md-n3">
         {% if not single_page %}
+            <div class="row">
+                <nav class="col text-muted" aria-label="breadcrumb">
+                    <ol class="breadcrumb bg-transparent p-0">
+                        {% for parent in page.ancestors|reverse %}
+                        <li class="breadcrumb-item">
+                            <a href="{{ page.abs_url }}" class="text-reset">
+                                {{ parent.title }}
+                            </a>
+                        </li>
+                       {% endfor %}
+                    </ol>
+                </nav>
+            </div>
+
             {% include "templates/docs/machine-translated.html" %}
             {{ page.content|adjust_markdown_html }}
         {% endif %}
