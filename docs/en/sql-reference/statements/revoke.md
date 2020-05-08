@@ -46,4 +46,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
-{{# [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) #}}
+{## [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) ##}
