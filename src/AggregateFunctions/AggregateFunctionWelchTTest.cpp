@@ -30,7 +30,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(const DataTypes & argumen
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
 
-    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest);
+    factory.registerFunction("WelchTTest", createAggregateFunctionWelchTTest<Float64, Float64, Float64>);
 }
 
 }
