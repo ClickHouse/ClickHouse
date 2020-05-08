@@ -9,6 +9,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Pool.h>
+#include <mutex>
 
 namespace DB
 {
@@ -29,6 +30,19 @@ private:
     String mysql_database_name;
 
     mutable mysqlxx::Pool pool;
+
+    void synchronization();
+
+    void dumpMySQLDatabase();
+
+    void tryToExecuteQuery(const String & query_to_execute);
+
+    String getCreateQuery(const mysqlxx::Pool::Entry & connection, const String & database, const String & table_name);
+
+    mutable std::mutex sync_mutex;
+    std::atomic<bool> sync_quit{false};
+    std::condition_variable sync_cond;
+    ThreadFromGlobalPool thread{&DatabaseMaterializeMySQL::synchronization, this};
 };
 
 }
