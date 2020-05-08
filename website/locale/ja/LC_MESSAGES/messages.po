@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-30 15:45+0300\n"
+"POT-Creation-Date: 2020-05-08 00:37+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -29,31 +29,31 @@ msgstr "ClickHouseがオープンソース列指向データベース管理シ�
 msgid "ClickHouse - fast open-source OLAP DBMS"
 msgstr "ﾂ環板篠ｮﾂ嘉ｯﾂ偲青エﾂδﾂ-ﾂエﾂスﾂ-ﾂシﾂ"
 
-#: templates/common_meta.html:10 templates/common_meta.html:21
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "クリックハウスDBMS"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "open-source"
 msgstr "オープンソース"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "relational"
 msgstr "関係"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytics"
 msgstr "analytics"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytical"
 msgstr "分析"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "Big Data"
 msgstr "ビッグデータ"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "web-analytics"
 msgstr "ウェブ分析"
 
@@ -71,11 +71,23 @@ msgstr "ソフトウェアは、明示または黙示を問わず、いかなる
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "から構築"
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr "掲載され"
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr "に変更"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "助けが欲しかった！"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -86,17 +98,13 @@ msgstr ""
 "このドキュメントページの以下の内容は機械翻訳されています。 異な他のウェブサイトで行われませんができます。 "
 "この翻訳テキスト生活をGitHubリポジトリとClickHouseコードベース、待ち員ネイティブスピーカーで人間が読む."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "また、参照として、元の英語版を使用することができます。"
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "このページを編集してClickHouseの文書を編集する"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "から構築"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -293,4 +301,10 @@ msgstr "turn on JavaScriptを見るメールアドレス"
 #~ "queries. Сreated by Yandex ClickHouse "
 #~ "manages extremely large volumes of data"
 #~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "で公開"
+
+#~ msgid "modified at"
+#~ msgstr "で変更"
 

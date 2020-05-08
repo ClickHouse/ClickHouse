@@ -83,24 +83,6 @@ $(document).ready(function () {
     headers.mouseleave(function() {
         $(this).find('.headerlink').hide();
     });
-    $('.admonition').each(function () {
-        var current = $(this);
-        current.addClass('alert').addClass('lead').addClass('pb-0').addClass('mb-4');
-        current.attr('role', 'alert');
-        current.find('a').addClass('alert-link');
-        if (current.hasClass('info') || current.hasClass('note')) {
-            current.addClass('alert-primary');
-        } if (current.hasClass('attention') || current.hasClass('warning')) {
-            current.addClass('alert-warning');
-        } else if (current.hasClass('important')) {
-            current.addClass('alert-danger');
-        } else if (current.hasClass('tip') ) {
-            current.addClass('alert-info');
-        } else {
-            current.addClass('alert-secondary');
-        }
-    });
-    $('.admonition-title').addClass('alert-heading').addClass('display-5').addClass('mb-2');
 
     if ($('#docsearch-input').length) {
         docsearch({

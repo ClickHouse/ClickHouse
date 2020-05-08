@@ -88,7 +88,7 @@ logs – The cluster name in the server’s config file.
 - `port` – The TCP port for messenger activity (‘tcp\_port’ در پیکربندی, معمولا به مجموعه 9000). نه اشتباه آن را با http\_port.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [حقوق دسترسی](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
-- `secure` - استفاده از اس اس ال برای اتصال, معمولا شما همچنین باید تعریف `port` = 9440. سرور باید گوش کند <tcp_port_secure>9440</tcp_port_secure> و گواهی صحیح.
+- `secure` - استفاده از اس اس ال برای اتصال, معمولا شما همچنین باید تعریف `port` = 9440. سرور باید گوش کند `<tcp_port_secure>9440</tcp_port_secure>` و گواهی صحیح.
 - `compression` - استفاده از فشرده سازی داده ها. مقدار پیش فرض: درست.
 
 When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [\_تبالسازی](../../../operations/settings/settings.md#settings-load_balancing) تنظیمات.
