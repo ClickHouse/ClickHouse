@@ -153,6 +153,8 @@ public:
     const T & getElement(size_t n) const { return data[n]; }
     T & getElement(size_t n) { return data[n]; }
 
+    UInt32 getScale() const {return scale;}
+
 protected:
     Container data;
     UInt32 scale;
