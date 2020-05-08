@@ -11,8 +11,8 @@ class AggregatingInOrderTransform : public IProcessor
 {
 
 public:
-    AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-        SortDescription & sort_description, SortDescription & group_by_description);
+    AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params, SortDescription & sort_description,
+                                SortDescription & group_by_description, size_t max_block_size);
 
     ~AggregatingInOrderTransform() override;
 
@@ -29,7 +29,8 @@ private:
 //    size_t x = 1;
 //    size_t sz = 0;
 
-    size_t res_block_size{};
+    size_t max_block_size;
+    size_t res_block_size = 0;
 
     MutableColumns res_key_columns;
     MutableColumns res_aggregate_columns;
@@ -44,9 +45,12 @@ private:
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
 
+    bool need_generate = false;
+    bool block_end_reached = false;
     bool is_consume_finished = false;
 
     Chunk current_chunk;
+    Chunk to_push_chunk;
 
     Logger * log = &Logger::get("AggregatingInOrderTransform");
 };
