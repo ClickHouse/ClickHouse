@@ -85,12 +85,12 @@ namespace
 
         const auto * proxy_config = config->createView("proxy");
 
-        std::vector<String> configKeys;
-        proxy_config->keys(configKeys);
+        std::vector<String> config_keys;
+        proxy_config->keys(config_keys);
 
-        if (auto resolverConfigs = std::count(configKeys.begin(), configKeys.end(), "resolver"))
+        if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
         {
-            if (resolverConfigs > 1)
+            if (resolver_configs > 1)
                 throw Exception("Multiple proxy resolver configurations aren't allowed", ErrorCodes::BAD_ARGUMENTS);
 
             return getProxyResolverConfiguration(proxy_config->createView("resolver"));
