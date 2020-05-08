@@ -38,6 +38,7 @@ if (ENABLE_ODBC)
 else ()
     add_library (_poco_data_odbc INTERFACE)
     add_library (Poco::Data::ODBC ALIAS _poco_data_odbc)
+    target_link_libraries (_poco_data_odbc INTERFACE unixodbc)
 
     message (STATUS "Not using Poco::Data::ODBC")
 endif ()
