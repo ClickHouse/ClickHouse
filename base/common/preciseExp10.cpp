@@ -223,5 +223,5 @@ double preciseExp10(double x)
     if (n < -323) return 0;
 
     // Using lookup table based formula to get accurate results for integer arguments.
-    return exp2(3.32192809488736234787031942948939 * y) * p10[(int)n + 323];
+    return exp2(3.32192809488736234787031942948939 * y) * p10[static_cast<int>(n) + 323];
 }

@@ -12,7 +12,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/HTTPSClientSession.h>
@@ -73,7 +73,7 @@ namespace
         HTTPSessionPtr session;
 
         if (https)
-#if USE_POCO_NETSSL
+#if USE_SSL
             session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
