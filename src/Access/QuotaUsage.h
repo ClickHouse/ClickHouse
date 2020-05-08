@@ -7,7 +7,7 @@
 namespace DB
 {
 /// The information about a quota consumption.
-struct QuotaUsageInfo
+struct QuotaUsage
 {
     using ResourceType = Quota::ResourceType;
     using ResourceAmount = Quota::ResourceAmount;
@@ -16,7 +16,7 @@ struct QuotaUsageInfo
     struct Interval
     {
         ResourceAmount used[MAX_RESOURCE_TYPE];
-        ResourceAmount max[MAX_RESOURCE_TYPE];
+        std::optional<ResourceAmount> max[MAX_RESOURCE_TYPE];
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
         std::chrono::system_clock::time_point end_of_interval;
@@ -27,6 +27,6 @@ struct QuotaUsageInfo
     UUID quota_id;
     String quota_name;
     String quota_key;
-    QuotaUsageInfo();
+    QuotaUsage();
 };
 }

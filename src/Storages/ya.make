@@ -111,8 +111,10 @@ SRCS(
     System/StorageSystemPartsBase.cpp
     System/StorageSystemPartsColumns.cpp
     System/StorageSystemProcesses.cpp
-    System/StorageSystemQuotas.cpp
+    System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
+    System/StorageSystemQuotas.cpp
+    System/StorageSystemQuotasUsage.cpp
     System/StorageSystemReplicas.cpp
     System/StorageSystemReplicationQueue.cpp
     System/StorageSystemRowPolicies.cpp

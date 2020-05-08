@@ -58,16 +58,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     }
     else if (type == EntityType::QUOTA)
     {
-        if (ParserKeyword{"CURRENT"}.ignore(pos, expected))
-        {
-            /// SHOW CREATE QUOTA CURRENT
-            current_quota = true;
-        }
-        else if (parseIdentifierOrStringLiteral(pos, expected, name))
-        {
-            /// SHOW CREATE QUOTA name
-        }
-        else
+        if (!parseIdentifierOrStringLiteral(pos, expected, name))
         {
             /// SHOW CREATE QUOTA
             current_quota = true;

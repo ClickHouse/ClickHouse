@@ -18,7 +18,7 @@ using EntityType = IAccessEntity::Type;
 
 
 InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+    : query_ptr(query_ptr_), context(context_), ignore_quota(query_ptr->as<ASTShowAccessEntitiesQuery &>().type == EntityType::QUOTA)
 {
 }
 
@@ -34,7 +34,7 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
     const auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
     String origin;
     String expr = "name";
-    String filter;
+    String filter, order;
 
     if (query.type == EntityType::ROW_POLICY)
     {
@@ -57,11 +57,28 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
         if (show_short_name)
             expr = "short_name";
     }
+    else if (query.type == EntityType::QUOTA)
+    {
+        if (query.current_quota)
+        {
+            origin = "quota_usage";
+            expr = "*";
+            order = "duration";
+        }
+        else
+        {
+            origin = "quotas";
+        }
+    }
     else
         throw Exception(toString(query.type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
 
+    if (order.empty() && expr != "*")
+        order = expr;
+
     return "SELECT " + expr + " from system." + origin +
-            (filter.empty() ? "" : " WHERE " + filter) + " ORDER BY " + expr;
+            (filter.empty() ? "" : " WHERE " + filter) +
+            (order.empty() ? "" : " ORDER BY " + order);
 }
 
 }

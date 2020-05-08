@@ -18,13 +18,12 @@ struct IAccessEntity;
 class InterpreterShowCreateAccessEntityQuery : public IInterpreter
 {
 public:
-    InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_);
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    bool ignoreQuota() const override { return ignore_quota; }
+    bool ignoreLimits() const override { return ignore_quota; }
 
     static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
@@ -35,6 +34,7 @@ private:
 
     ASTPtr query_ptr;
     const Context & context;
+    bool ignore_quota = false;
 };
 
 

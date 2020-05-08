@@ -8,6 +8,8 @@ namespace DB
 {
 
 /// SHOW [ROW] POLICIES [ON [database.]table]
+/// SHOW QUOTAS
+/// SHOW [CURRENT] QUOTA
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput
 {
 public:
@@ -16,6 +18,7 @@ public:
     EntityType type;
     String database;
     String table_name;
+    bool current_quota = false;
 
     String getID(char) const override;
     ASTPtr clone() const override { return std::make_shared<ASTShowAccessEntitiesQuery>(*this); }

@@ -30,6 +30,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
@@ -682,14 +683,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 std::shared_ptr<const User> Context::getUser() const
 {
-    auto lock = getLock();
-    return access->getUser();
+    return getAccess()->getUser();
 }
 
 String Context::getUserName() const
 {
-    auto lock = getLock();
-    return access->getUserName();
+    return getAccess()->getUserName();
 }
 
 std::optional<UUID> Context::getUserID() const
@@ -789,6 +788,12 @@ void Context::setInitialRowPolicy()
 std::shared_ptr<const EnabledQuota> Context::getQuota() const
 {
     return getAccess()->getQuota();
+}
+
+
+std::optional<QuotaUsage> Context::getQuotaUsage() const
+{
+    return getAccess()->getQuotaUsage();
 }
 
 
@@ -1002,8 +1007,7 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
-    auto lock = getLock();
-    return access->getSettingsConstraints();
+    return getAccess()->getSettingsConstraints();
 }
 
 

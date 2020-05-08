@@ -26,7 +26,7 @@ SRCS(
     MultipleAccessStorage.cpp
     Quota.cpp
     QuotaCache.cpp
-    QuotaUsageInfo.cpp
+    QuotaUsage.cpp
     Role.cpp
     RoleCache.cpp
     RowPolicy.cpp

@@ -22,6 +22,7 @@ class EnabledRoles;
 class EnabledRowPolicies;
 class EnabledQuota;
 class EnabledSettings;
+struct QuotaUsage;
 struct Settings;
 class SettingsConstraints;
 class AccessControlManager;
@@ -79,6 +80,7 @@ public:
     /// Returns the quota to track resource consumption.
     /// The function returns nullptr if no tracking or limitation is needed.
     std::shared_ptr<const EnabledQuota> getQuota() const;
+    std::optional<QuotaUsage> getQuotaUsage() const;
 
     /// Returns the default settings, i.e. the settings to apply on user's login.
     /// The function returns nullptr if it's no need to apply settings.

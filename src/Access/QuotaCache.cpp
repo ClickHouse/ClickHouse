@@ -1,6 +1,6 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaCache.h>
-#include <Access/QuotaUsageInfo.h>
+#include <Access/QuotaUsage.h>
 #include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -116,7 +116,8 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         interval.end_of_interval = end_of_interval.time_since_epoch();
         for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
         {
-            interval.max[resource_type] = limits.max[resource_type];
+            if (limits.max[resource_type])
+                interval.max[resource_type] = *limits.max[resource_type];
             interval.used[resource_type] = 0;
         }
     }
@@ -287,16 +288,20 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
 }
 
 
-std::vector<QuotaUsageInfo> QuotaCache::getUsageInfo() const
+std::vector<QuotaUsage> QuotaCache::getAllQuotasUsage() const
 {
     std::lock_guard lock{mutex};
-    std::vector<QuotaUsageInfo> all_infos;
+    std::vector<QuotaUsage> all_usage;
     auto current_time = std::chrono::system_clock::now();
     for (const auto & info : all_quotas | boost::adaptors::map_values)
     {
         for (const auto & intervals : info.key_to_intervals | boost::adaptors::map_values)
-            all_infos.push_back(intervals->getUsageInfo(current_time));
+        {
+            auto usage = intervals->getUsage(current_time);
+            if (usage)
+                all_usage.push_back(std::move(usage).value());
+        }
     }
-    return all_infos;
+    return all_usage;
 }
 }

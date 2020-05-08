@@ -13,7 +13,7 @@
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControlManager.h>
 #include <Access/EnabledQuota.h>
-#include <Access/QuotaUsageInfo.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
@@ -138,8 +138,7 @@ namespace
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
             for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-                if (limits.max[resource_type] != Quota::UNLIMITED)
-                    create_query_limits.max[resource_type] = limits.max[resource_type];
+                create_query_limits.max[resource_type] = limits.max[resource_type];
             query->all_limits.push_back(create_query_limits);
         }
 
@@ -211,6 +210,12 @@ namespace
 }
 
 
+InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
+    : query_ptr(query_ptr_), context(context_), ignore_quota(query_ptr->as<ASTShowCreateAccessEntityQuery &>().type == EntityType::QUOTA)
+{
+}
+
+
 BlockIO InterpreterShowCreateAccessEntityQuery::execute()
 {
     BlockIO res;
@@ -227,11 +232,14 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
     ASTPtr create_query = getCreateQuery(show_query);
 
     /// Build the result column.
-    std::stringstream create_query_ss;
-    formatAST(*create_query, create_query_ss, false, true);
-    String create_query_str = create_query_ss.str();
     MutableColumnPtr column = ColumnString::create();
-    column->insert(create_query_str);
+    if (create_query)
+    {
+        std::stringstream create_query_ss;
+        formatAST(*create_query, create_query_ss, false, true);
+        String create_query_str = create_query_ss.str();
+        column->insert(create_query_str);
+    }
 
     /// Prepare description of the result column.
     std::stringstream desc_ss;
@@ -253,16 +261,21 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(ASTShowCreateAcces
     if (show_query.current_user)
     {
         auto user = context.getUser();
+        if (!user)
+            return nullptr;
         return getCreateQueryImpl(*user, &access_control, false);
     }
 
     if (show_query.current_quota)
     {
-        auto quota = access_control.read<Quota>(context.getQuota()->getUsageInfo().quota_id);
+        auto usage = context.getQuotaUsage();
+        if (!usage)
+            return nullptr;
+        auto quota = access_control.read<Quota>(usage->quota_id);
         return getCreateQueryImpl(*quota, &access_control, false);
     }
 
-    if (show_query.type == Type::ROW_POLICY)
+    if (show_query.type == EntityType::ROW_POLICY)
     {
         if (show_query.row_policy_name_parts.database.empty())
             show_query.row_policy_name_parts.database = context.getCurrentDatabase();

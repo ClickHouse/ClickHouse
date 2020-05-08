@@ -7,6 +7,8 @@ namespace DB
 {
 /** Parses queries like
   * SHOW [ROW] POLICIES [ON [database.]table]
+    SHOW QUOTAS
+    SHOW [CURRENT] QUOTA
   */
 class ParserShowAccessEntitiesQuery : public IParserBase
 {

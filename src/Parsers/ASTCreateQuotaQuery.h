@@ -35,18 +35,16 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
+    using KeyType = Quota::KeyType;
+    using ResourceAmount = Quota::ResourceAmount;
+
     String name;
     String new_name;
-    using KeyType = Quota::KeyType;
     std::optional<KeyType> key_type;
-
-    using ResourceType = Quota::ResourceType;
-    using ResourceAmount = Quota::ResourceAmount;
-    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
 
     struct Limits
     {
-        std::optional<ResourceAmount> max[MAX_RESOURCE_TYPE];
+        std::optional<ResourceAmount> max[Quota::MAX_RESOURCE_TYPE];
         bool drop = false;
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;

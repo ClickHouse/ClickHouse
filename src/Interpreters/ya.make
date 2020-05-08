@@ -88,7 +88,6 @@ SRCS(
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
     InterpreterShowProcesslistQuery.cpp
-    InterpreterShowQuotasQuery.cpp
     InterpreterShowTablesQuery.cpp
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp

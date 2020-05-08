@@ -10,14 +10,16 @@ namespace DB
 namespace
 {
     using KeyType = Quota::KeyType;
+    using KeyTypeInfo = Quota::KeyTypeInfo;
     using ResourceType = Quota::ResourceType;
+    using ResourceTypeInfo = Quota::ResourceTypeInfo;
     using ResourceAmount = Quota::ResourceAmount;
 
 
     void formatKeyType(const KeyType & key_type, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "") << "'"
-                      << Quota::getNameOfKeyType(key_type) << "'";
+                      << KeyTypeInfo::get(key_type).name << "'";
     }
 
 
@@ -35,13 +37,9 @@ namespace
         else
             settings.ostr << ",";
 
-        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << Quota::resourceTypeToKeyword(resource_type)
-                      << (settings.hilite ? IAST::hilite_none : "") << " ";
-
-        if (resource_type == Quota::EXECUTION_TIME)
-            settings.ostr << Quota::executionTimeToSeconds(max);
-        else
-            settings.ostr << max;
+        const auto & type_info = ResourceTypeInfo::get(resource_type);
+        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << type_info.keyword
+                      << (settings.hilite ? IAST::hilite_none : "") << " " << type_info.amountToString(max);
     }
 
 

@@ -225,14 +225,13 @@ namespace
             limits.duration = duration;
             limits.randomize_interval = config.getBool(interval_config + ".randomize", false);
 
-            using ResourceType = Quota::ResourceType;
-            limits.max[ResourceType::QUERIES] = config.getUInt64(interval_config + ".queries", Quota::UNLIMITED);
-            limits.max[ResourceType::ERRORS] = config.getUInt64(interval_config + ".errors", Quota::UNLIMITED);
-            limits.max[ResourceType::RESULT_ROWS] = config.getUInt64(interval_config + ".result_rows", Quota::UNLIMITED);
-            limits.max[ResourceType::RESULT_BYTES] = config.getUInt64(interval_config + ".result_bytes", Quota::UNLIMITED);
-            limits.max[ResourceType::READ_ROWS] = config.getUInt64(interval_config + ".read_rows", Quota::UNLIMITED);
-            limits.max[ResourceType::READ_BYTES] = config.getUInt64(interval_config + ".read_bytes", Quota::UNLIMITED);
-            limits.max[ResourceType::EXECUTION_TIME] = Quota::secondsToExecutionTime(config.getUInt64(interval_config + ".execution_time", Quota::UNLIMITED));
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            {
+                const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
+                auto value = config.getString(interval_config + "." + type_info.name, "0");
+                if (value != "0")
+                    limits.max[resource_type] = type_info.amountFromString(value);
+            }
         }
 
         quota->to_roles.add(user_ids);
