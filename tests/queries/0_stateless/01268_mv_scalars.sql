@@ -24,3 +24,8 @@ truncate table left_table;
 insert into left_table select toDate('2020-01-01') + 5, 5, number * 2 from numbers(3);
 select 'the rows get inserted';
 select * from dest_table;
+
+drop table dest_table_mv;
+drop table left_table;
+drop table right_table;
+drop table dest_table;
