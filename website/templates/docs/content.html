@@ -4,11 +4,11 @@
             <div class="row">
                 <nav class="col text-muted" aria-label="breadcrumb">
                     <ol class="breadcrumb bg-transparent p-0">
+                        {% set ancestor = namespace(level=page.ancestors|length) %}
                         {% for parent in page.ancestors|reverse %}
                         <li class="breadcrumb-item">
-                            <a href="{{ page.abs_url }}" class="text-reset">
-                                {{ parent.title }}
-                            </a>
+                            <a href="{{ '../' * ancestor.level }}" class="text-reset">{{ parent.title }}</a>
+                            {% set ancestor.level = ancestor.level - 1 %}
                         </li>
                        {% endfor %}
                     </ol>
