@@ -5,6 +5,4 @@
 -   Адрес электронной почты: <a class="feedback-email"></a>
 -   Телефон: <a href="tel:88002509639">8-800-250-96-39</a> (звонки бесплатны из всех регионов России)
 
-<br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br>
-
 [Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/info/) <!--hide-->
