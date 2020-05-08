@@ -19,6 +19,7 @@
 
 #if USE_MYSQL
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
+#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Common/parseAddress.h>
 #    include <mysqlxx/Pool.h>
@@ -116,9 +117,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
             auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
 
-            /*if (materializeMySQLDatabase(define->settings))
+            if (materializeMySQLDatabase(engine_define->settings))
                 return std::make_shared<DatabaseMaterializeMySQL>(
-                    context, database_name, metadata_path, define, mysql_database_name, std::move(mysql_pool));*/
+                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_pool));
 
             return std::make_shared<DatabaseConnectionMySQL>(context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_pool));
         }
