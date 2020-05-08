@@ -216,6 +216,7 @@ void PushingToViewsBlockOutputStream::flush()
 void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_num)
 {
     auto & view = views[view_num];
+    const auto & settings = context.getSettingsRef();
 
     try
     {
@@ -250,8 +251,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
             /// and two-level aggregation is triggered).
-            in = std::make_shared<SquashingBlockInputStream>(
-                    in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            in = std::make_shared<SquashingBlockInputStream>(in, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
             in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
@@ -266,6 +266,9 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         }
 
         in->readSuffix();
+
+        if (!settings.insert_materialized_view_atomic)
+            view.out->writeSuffix();
     }
     catch (Exception & ex)
     {

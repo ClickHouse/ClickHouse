@@ -158,6 +158,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingUInt64, max_concurrent_queries_for_user, 0, "The maximum number of concurrent requests per user.", 0) \
     \
+    M(SettingBool, insert_materialized_view_atomic, true, "Atomic push into materialized views (requires more memory in case of multiple MVs).", 0) \
     M(SettingBool, insert_deduplicate, true, "For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed", 0) \
     \
     M(SettingUInt64, insert_quorum, 0, "For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled.", 0) \
