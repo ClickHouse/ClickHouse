@@ -67,7 +67,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze()).getSampleBlock();
+            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+                    .getSampleBlock();
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
