@@ -327,7 +327,6 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
-include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
