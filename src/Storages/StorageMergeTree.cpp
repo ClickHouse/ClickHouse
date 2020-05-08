@@ -783,7 +783,8 @@ bool StorageMergeTree::tryMutatePart()
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::recompressMutateTask()
 {
-    if (shutdown_called) {
+    if (shutdown_called)
+    {
         return BackgroundProcessingPoolTaskResult::ERROR;
     }
 

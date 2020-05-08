@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_SET_THREAD_PRIORITY;
+}
+
 void BackgroundProcessingPoolTaskInfo::wake()
 {
     Poco::Timestamp current_time;
@@ -121,8 +126,10 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
 
 void BackgroundProcessingPool::threadFunction()
 {
-    if (settings.low_cpu_priority) {
-        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param)) {
+    if (settings.low_cpu_priority)
+    {
+        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param))
+        {
             throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
         }
     }
@@ -144,7 +151,7 @@ void BackgroundProcessingPool::threadFunction()
     }
 
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-    if (auto * memory_tracker = CurrentThread::getMemoryTracker())
+    if (auto memory_tracker = CurrentThread::getMemoryTracker())
         memory_tracker->setMetric(settings.memory_metric);
 
     pcg64 rng(randomSeed());

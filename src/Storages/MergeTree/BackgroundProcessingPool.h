@@ -28,11 +28,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_SET_THREAD_PRIORITY;
-}
-
 class BackgroundProcessingPool;
 class BackgroundProcessingPoolTaskInfo;
 
