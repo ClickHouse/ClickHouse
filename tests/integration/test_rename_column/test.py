@@ -418,7 +418,7 @@ def test_rename_with_parallel_ttl_move(started_cluster):
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, False, True, 0, True)))
         time.sleep(5)
         rename_column(node1, table_name, "time", "time2", 1, False)
-        #rename_column(node1, table_name, "time2", "time", 1, False)
+        rename_column(node1, table_name, "time2", "time", 1, False)
         time.sleep(4)
         tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 500, True)))
         tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 500, True)))
