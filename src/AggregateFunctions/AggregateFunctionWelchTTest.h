@@ -46,16 +46,16 @@ Float64 CriticalValuesTable[SIGN_LVL_CNT][102] = {
 // our algorithm implementation via vectors:
 // https://gist.github.com/ltybc-coder/792748cfdb2f7cadef424ffb7b011c71
 // col, col, bool
-template <typename X, typename Y, typename Ret = UInt8>
+//template <typename X = Float64, typename Y = Float64, typename Ret = Float64>
 struct AggregateFunctionWelchTTestData final
 {
 
     size_t size_x = 0;
     size_t size_y = 0;
-    X sum_x = 0;
-    Y sum_y = 0;
-    X square_sum_x = 0;
-    Y square_sum_y = 0;
+    Float64 sum_x = static_cast<Float64>(0);
+    Float64 sum_y = static_cast<Float64>(0);
+    Float64 square_sum_x = static_cast<Float64>(0);
+    Float64 square_sum_y = static_cast<Float64>(0);
     Float64 mean_x = 0;
     Float64 mean_y = 0;
 
@@ -78,7 +78,7 @@ struct AggregateFunctionWelchTTestData final
     }
     */
 
-    void add(X x, Y y)
+    void add(Float64 x, Float64 y)
     {
         sum_x += x;
         sum_y += y;
@@ -147,7 +147,7 @@ struct AggregateFunctionWelchTTestData final
                ((sx * sx / (size_x * size_x * (size_x - 1))) + (sy * sy / (size_y * size_y * (size_y - 1))));
     }
 
-    Ret get_result(Float64 t, Float64 dof, Float64 parametr) const
+    UInt8 get_result(Float64 t, Float64 dof, Float64 parametr) const
     {
         //find our table
         int table = 0;
@@ -179,11 +179,11 @@ struct AggregateFunctionWelchTTestData final
     }
 };
 
-template <typename X, typename Y, typename Ret>
-class AggregateFunctionWelchTTest final : public
+//template <typename X = Float64, typename Y = Float64, typename Ret = Float64>
+class AggregateFunctionWelchTTest : public
                                           IAggregateFunctionDataHelper<
-                                              AggregateFunctionWelchTTestData<X, Y, Ret>,
-                                              AggregateFunctionWelchTTest<X, Y, Ret>
+                                              AggregateFunctionWelchTTestData,
+                                              AggregateFunctionWelchTTest
                                           >
 {
 
@@ -199,8 +199,8 @@ public:
         const  Array & params
     ):
         IAggregateFunctionDataHelper<
-            AggregateFunctionWelchTTestData<X, Y, Ret>,
-            AggregateFunctionWelchTTest<X, Y, Ret>
+            AggregateFunctionWelchTTestData,
+            AggregateFunctionWelchTTest
         > ({arguments}, params), significance_level(sglvl_)
     {
         // notice: arguments has been in factory
@@ -211,6 +211,11 @@ public:
         return "WelchTTest";
     }
 
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     void add(
         AggregateDataPtr place,
         const IColumn ** columns,
@@ -218,11 +223,11 @@ public:
         Arena *
     ) const override
     {
-        auto col_x = assert_cast<const ColumnVector<X> *>(columns[0]);
-        auto col_y = assert_cast<const ColumnVector<Y> *>(columns[1]);
+        auto col_x = assert_cast<const ColumnVector<Float64> *>(columns[0]);
+        auto col_y = assert_cast<const ColumnVector<Float64> *>(columns[1]);
 
-        X x = col_x->getData()[row_num];
-        Y y = col_y->getData()[row_num];
+        Float64 x = col_x->getData()[row_num];
+        Float64 y = col_y->getData()[row_num];
 
         this->data(place).add(x, y);
     }
@@ -261,10 +266,10 @@ public:
         Float64 sy = this->data(place).get_sy();
         Float64 t_value = this->data(place).get_T(sx, sy);
         Float64 dof = this->data(place).get_degrees_of_freed(sx, sy);
-        Ret result = this->data(place).get_result(t_value, dof, significance_level);
+        UInt8 result = this->data(place).get_result(t_value, dof, significance_level);
 
 
-        auto & column = static_cast<ColumnVector<Ret> &>(to);
+        auto & column = static_cast<ColumnVector<UInt8> &>(to);
         column.getData().push_back(result);
     }
 
