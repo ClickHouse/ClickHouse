@@ -100,8 +100,14 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             /// If query is only analyzed, then constants are not correct.
             block = interpreter.getSampleBlock();
             for (auto & column : block)
+            {
                 if (column.column->empty())
-                    column.column->cloneResized(1);
+                {
+                    auto mut_col = column.column->cloneEmpty();
+                    mut_col->insertDefault();
+                    column.column = std::move(mut_col);
+                }
+            }
         }
         else
         {
