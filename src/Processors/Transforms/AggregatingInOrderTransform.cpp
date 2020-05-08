@@ -97,6 +97,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     if (!res_block_size)
     {
 //        std::cerr << "Creating first state with key " << key_begin << "\n";
+        LOG_TRACE(log, "AggregatingInOrder");
         params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
         ++res_block_size;
     }
@@ -228,6 +229,7 @@ void AggregatingInOrderTransform::generate()
     if (res_block_size)
         params->aggregator.fillAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
 
+    LOG_TRACE(log, "Aggregated");
     Block res = params->getHeader().cloneEmpty();
 
     for (size_t i = 0; i < res_key_columns.size(); ++i)

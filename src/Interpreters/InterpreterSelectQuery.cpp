@@ -1746,10 +1746,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     {
         auto & query = getSelectQuery();
         SortDescription group_by_descr = getSortDescriptionFromGroupBy(query, *context);
-        UInt64 limit = getLimitForSorting(query, *context);
 
-        executeOrderOptimized(pipeline, group_by_info, limit, group_by_descr);
+        executeOrderOptimized(pipeline, group_by_info, 0, group_by_descr);
 
+        pipeline.resize(1);
         pipeline.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, group_by_descr);
