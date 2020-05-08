@@ -19,8 +19,8 @@
                 <proxy>
                     <resolver>
                         <endpoint>http://resolver:8080</endpoint>
-                        <scheme>http</scheme>
-                        <port>8888</port>
+                        <proxy_scheme>http</proxy_scheme>
+                        <proxy_port>8888</proxy_port>
                     </resolver>
                 </proxy>
             </s3_with_resolver>
