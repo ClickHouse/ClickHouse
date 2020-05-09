@@ -188,9 +188,9 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s',                                          # 0
-            'New, s',                                          # 1
-            'Relative difference (new&nbsp;-&nbsp;old)/old',   # 2
+            'Old, s.',                                         # 0
+            'New, s.',                                         # 1
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
             'Test',                                            # 5
@@ -205,10 +205,10 @@ if args.report == 'main':
             if int(row[4]):
                 if float(row[2]) < 0.:
                     faster_queries += 1
-                    attrs[2] = 'style="background: #adbdff"'
+                    attrs[2] = 'style="background: #00ff00"'
                 else:
                     slower_queries += 1
-                    attrs[2] = 'style="background: #ffb0a0"'
+                    attrs[2] = 'style="background: #ff0000"'
             else:
                 attrs[2] = ''
 
