@@ -176,7 +176,7 @@ int main(int, char **)
             return 1;
         }
 
-        if (!slave.startBinlogDump(slave_id, "mysql-bin.000005", 4))
+        if (!slave.startBinlogDump(slave_id, "", 4))
         {
             std::cerr << "Connect Error: " << slave.error() << std::endl;
             assert(0);
@@ -185,8 +185,10 @@ int main(int, char **)
         while (true)
         {
             auto event = slave.readOneBinlogEvent();
-            event->dump();
             ASSERT(event != nullptr)
+            event->print();
+            std::cerr << "Binlog Name: " << slave.getPosition().binlog_name << std::endl;
+            std::cerr << "Binlog Pos: " << slave.getPosition().binlog_pos << std::endl;
         }
     }
 

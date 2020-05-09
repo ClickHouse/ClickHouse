@@ -33,24 +33,25 @@ public:
     bool ping();
     String error();
     bool startBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
-    BinlogEventPtr readOneBinlogEvent();
+    BinlogEventPtr readOneBinlogEvent() ;
+    Position getPosition() const { return replication.getPosition(); };
 
 private:
     String host;
     UInt16 port;
     String user;
     String password;
-    String database;
 
     bool connected = false;
     String last_error;
     UInt32 client_capability_flags = 0;
 
     uint8_t seq = 0;
-    UInt8 charset_utf8 = 33;
-    UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
-    String mysql_native_password = "mysql_native_password";
+    const UInt8 charset_utf8 = 33;
+    const UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
+    const String mysql_native_password = "mysql_native_password";
 
+    MySQLFlavor replication;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
