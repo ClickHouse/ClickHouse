@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 
-/* Generate random string of specified length with fully random bytes(including zero). */
+/* Generate random string of specified length with fully random bytes (including zero). */
 class FunctionRandomString : public IFunction
 {
 public:
