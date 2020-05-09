@@ -100,34 +100,34 @@ SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', (k1, k2))) FROM data
 
 SELECT 'VALUE FROM DISK';
 -- -100
-SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', ('1', 3));
+SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', ('1', toInt32(3)));
 
 -- 'clickhouse'
-SELECT dictGetString('database_for_dict.ssd_dict', 'c', ('1', 3));
+SELECT dictGetString('database_for_dict.ssd_dict', 'c', ('1', toInt32(3)));
 
 SELECT 'VALUE FROM RAM BUFFER';
 -- 8
-SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', ('10', -20));
+SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', ('10', toInt32(-20)));
 
 -- ''
-SELECT dictGetString('database_for_dict.ssd_dict', 'c', ('10', -20));
+SELECT dictGetString('database_for_dict.ssd_dict', 'c', ('10', toInt32(-20)));
 
 SELECT 'VALUES FROM DISK AND RAM BUFFER';
 -- 118
 SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', (k1, k2))) FROM database_for_dict.keys_table;
 
 SELECT 'HAS';
--- 1006
+-- 6
 SELECT count() FROM database_for_dict.keys_table WHERE dictHas('database_for_dict.ssd_dict', (k1, k2));
 
 SELECT 'VALUES NOT FROM TABLE';
 -- 0 -1 none
-SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', ('unknown', 0)), dictGetInt32('database_for_dict.ssd_dict', 'b', ('unknown', 0)), dictGetString('database_for_dict.ssd_dict', 'c', ('unknown', 0));
-SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', ('unknown', 0)), dictGetInt32('database_for_dict.ssd_dict', 'b', ('unknown', 0)), dictGetString('database_for_dict.ssd_dict', 'c', ('unknown', 0));
+SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', ('unknown', toInt32(0))), dictGetInt32('database_for_dict.ssd_dict', 'b', ('unknown', toInt32(0))), dictGetString('database_for_dict.ssd_dict', 'c', ('unknown', toInt32(0)));
+SELECT dictGetUInt64('database_for_dict.ssd_dict', 'a', ('unknown', toInt32(0))), dictGetInt32('database_for_dict.ssd_dict', 'b', ('unknown', toInt32(0))), dictGetString('database_for_dict.ssd_dict', 'c', ('unknown', toInt32(0)));
 
 SELECT 'DUPLICATE KEYS';
-SELECT arrayJoin([('1', 3), ('2', -1), ('', 0), ('', 0), ('2', -1), ('1', 3)]) AS keys, dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(keys));
---SELECT
+SELECT arrayJoin([('1', toInt32(3)), ('2', toInt32(-1)), ('', toInt32(0)), ('', toInt32(0)), ('2', toInt32(-1)), ('1', toInt32(3))]) AS keys, dictGetInt32('database_for_dict.ssd_dict', 'b', keys);
+
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
 DROP TABLE IF EXISTS database_for_dict.keys_table;
