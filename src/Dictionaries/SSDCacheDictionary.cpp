@@ -81,6 +81,8 @@ namespace
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
     static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
 
+    //constexpr size_t KEY_RECENTLY_USED_BIT = 63;
+    //constexpr size_t KEY_RECENTLY_USED = (1ULL << KEY_RECENTLY_USED_BIT);
     constexpr size_t KEY_IN_MEMORY_BIT = 63;
     constexpr size_t KEY_IN_MEMORY = (1ULL << KEY_IN_MEMORY_BIT);
     constexpr size_t BLOCK_INDEX_BITS = 32;
@@ -243,7 +245,6 @@ size_t SSDCachePartition::appendBlock(
     if (!write_buffer)
     {
         init_write_buffer();
-        //codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
     }
 
     bool flushed = false;
@@ -375,8 +376,6 @@ void SSDCachePartition::flush()
     write_request.aio_nbytes = block_size * write_buffer_size;
     write_request.aio_offset = block_size * current_file_block_id;
 #endif
-
-    Poco::Logger::get("try:").information("offset: " + std::to_string(write_request.aio_offset) + "  nbytes: " + std::to_string(write_request.aio_nbytes));
 
     while (io_submit(aio_context.ctx, 1, &write_request_ptr) < 0)
     {
@@ -520,7 +519,10 @@ void SSDCachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & se
         if (found[i])
             indices[i].setNotExists();
         else if (key_to_index.get(ids[i], index))
+        {
             indices[i] = index;
+            found[i] = true;
+        }
         else
             indices[i].setNotExists();
     }

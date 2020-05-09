@@ -1228,18 +1228,7 @@ void SSDComplexKeyCacheStorage::update(
 
 PaddedPODArray<KeyRef> SSDComplexKeyCacheStorage::getCachedIds() const
 {
-    /*PaddedPODArray<Key> array;
-
-    const auto now = std::chrono::system_clock::now();
-
-    std::shared_lock lock(rw_lock);
-    for (auto & partition : partitions)
-    {
-        const auto cached_in_partition = partition->getCachedIds(now);
-        array.insert(std::begin(cached_in_partition), std::end(cached_in_partition));
-    }*/
-
-    return {};
+    throw DB::Exception("Method not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 double SSDComplexKeyCacheStorage::getLoadFactor() const
@@ -1684,8 +1673,7 @@ void SSDComplexKeyCacheDictionary::has(
 BlockInputStreamPtr SSDComplexKeyCacheDictionary::getBlockInputStream(
     const Names & /* column_names */, size_t /* max_block_size*/) const
 {
-    //using BlockInputStreamType = DictionaryBlockInputStream<SSDComplexKeyCacheDictionary, Key>;
-    return nullptr;  //std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, storage.getCachedIds(), column_names);
+    throw DB::Exception("Method not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 size_t SSDComplexKeyCacheDictionary::getAttributeIndex(const std::string & attr_name) const
