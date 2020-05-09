@@ -42,33 +42,7 @@ using grpc::Status;
  
 namespace Coordination
 {
-
-    template<typename T>
-    void remove_intersection(std::vector<T>& a, std::vector<T>& b)
-    {
-        std::unordered_multiset<T> st;
-        st.insert(a.begin(), a.end());
-        st.insert(b.begin(), b.end());
-        auto predicate = [&st](const T& k){ return st.count(k) > 1; };
-        a.erase(std::remove_if(a.begin(), a.end(), predicate), a.end());
-    }
-
-    template<typename T0, typename T1>
-    void remove_duplicate_keys(std::vector<T0>& a, std::vector<T1>& b)
-    {
-        std::vector<std::string> keys0, keys1;
-        for (auto v : a) {
-            keys0.push_back(v.key());
-        }
-        for (auto v : b) {
-            keys1.push_back(v.key());
-        }
-        remove_intersection(keys0, keys1);
-        auto predicate = [&keys0](const T0& k){ return std::find(keys0.begin(), keys0.end(), k.key()) == keys0.end(); };
-        a.erase(std::remove_if(a.begin(), a.end(), predicate), a.end());
-    }
- 
-//     struct EtcdKeeperRequest;
+    struct EtcdKey;
     struct EtcdKeeperRequest;
     using EtcdKeeperRequestPtr = std::shared_ptr<EtcdKeeperRequest>; 
  
@@ -222,11 +196,6 @@ namespace Coordination
                 this->failure_delete_ranges.insert(this->failure_delete_ranges.end(), rv.failure_delete_ranges.begin(), rv.failure_delete_ranges.end());
                 return *this;
             }
-            void interaction()
-            {
-                remove_duplicate_keys(this->success_puts, this->success_delete_ranges);
-                remove_duplicate_keys(this->failure_puts, this->failure_delete_ranges);
-            }
             bool empty()
             {
                 return (success_ranges.size() + success_puts.size() + success_delete_ranges.size() + failure_ranges.size() + failure_puts.size() + failure_delete_ranges.size()) == 0;
@@ -242,15 +211,6 @@ namespace Coordination
                 failure_delete_ranges.clear();
             }
         };
-
-        // struct AsyncWatchCall final : AsyncCall 
-        // {
-        //     AsyncWatchCall() {}
-        //     AsyncWatchCall(const AsyncCall & base) : AsyncCall(base) {}
-        //     ClientContext context;
-        //     etcdserverpb::WatchResponse response;
-        //     std::unique_ptr<ClientAsyncReaderWriter<etcdserverpb::WatchRequest, etcdserverpb::WatchResponse>> response_reader;
-        // };
   
         using WatchCallbacks = std::vector<WatchCallback>;
         using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
@@ -273,7 +233,6 @@ namespace Coordination
         void readWatchResponse();
  
     private:
-        Logger * log = nullptr;
         std::atomic<XID> next_xid {1};
 
         using clock = std::chrono::steady_clock;
