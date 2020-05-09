@@ -156,4 +156,4 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/anrieff/libcpuid.git
+	url = https://github.com/ClickHouse-Extras/libcpuid.git
