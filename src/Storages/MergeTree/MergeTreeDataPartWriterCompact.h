@@ -8,7 +8,7 @@ class MergeTreeDataPartWriterCompact : public IMergeTreeDataPartWriter
 {
 public:
     MergeTreeDataPartWriterCompact(
-        DiskPtr disk,
+        const VolumePtr & volume,
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,

@@ -29,7 +29,10 @@ struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
 class IReservation;
-using ReservationPtr = std::unique_ptr<IReservation>;
+using ReservationPtr = std::shared_ptr<IReservation>;
+
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
@@ -60,14 +63,14 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskPtr & disk,
+        const VolumePtr & volume,
         const std::optional<String> & relative_path,
         Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskPtr & disk,
+        const VolumePtr & volume,
         const std::optional<String> & relative_path,
         Type part_type_);
 
@@ -151,7 +154,7 @@ public:
     String name;
     MergeTreePartInfo info;
 
-    DiskPtr disk;
+    VolumePtr volume;
 
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;

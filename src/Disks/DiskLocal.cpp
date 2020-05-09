@@ -12,6 +12,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;

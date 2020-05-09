@@ -138,7 +138,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
             columns_[j++]->insert(info.database);
             columns_[j++]->insert(info.table);
             columns_[j++]->insert(info.engine);
-            columns_[j++]->insert(part->disk->getName());
+            columns_[j++]->insert(part->volume->getDisk()->getName());
             columns_[j++]->insert(part->getFullPath());
 
             columns_[j++]->insert(column.name);

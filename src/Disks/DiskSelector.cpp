@@ -55,7 +55,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
     constexpr auto default_disk_name = "default";
     std::set<String> old_disks_minus_new_disks;
-    for (const auto & [disk_name, _] : result->disks)
+    for (const auto & [disk_name, _] : result->getDisksMap())
     {
         old_disks_minus_new_disks.insert(disk_name);
     }
@@ -65,10 +65,10 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
-        if (result->disks.count(disk_name) == 0)
+        if (result->getDisksMap().count(disk_name) == 0)
         {
             auto disk_config_prefix = config_prefix + "." + disk_name;
-            result->disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
+            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
         }
         else
         {

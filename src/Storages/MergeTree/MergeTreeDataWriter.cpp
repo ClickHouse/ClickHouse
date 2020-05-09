@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
+#include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -231,12 +232,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
+    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
     auto new_data_part = data.createPart(
         part_name,
         data.choosePartType(expected_size, block.rows()),
         new_part_info,
-        reservation->getDisk(),
+        createVolumeFromReservation(reservation, volume),
         TMP_PREFIX + part_name);
 
     new_data_part->setColumns(columns);
@@ -247,13 +249,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// The name could be non-unique in case of stale files from previous runs.
     String full_path = new_data_part->getFullRelativePath();
 
-    if (new_data_part->disk->exists(full_path))
+    if (new_data_part->volume->getDisk()->exists(full_path))
     {
-        LOG_WARNING(log, "Removing old temporary directory " + fullPath(new_data_part->disk, full_path));
-        new_data_part->disk->removeRecursive(full_path);
+        LOG_WARNING(log, "Removing old temporary directory " + fullPath(new_data_part->volume->getDisk(), full_path));
+        new_data_part->volume->getDisk()->removeRecursive(full_path);
     }
 
-    new_data_part->disk->createDirectories(full_path);
+    new_data_part->volume->getDisk()->createDirectories(full_path);
 
     /// If we need to calculate some columns to sort.
     if (data.hasSortingKey() || data.hasSkipIndices())

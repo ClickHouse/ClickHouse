@@ -1294,7 +1294,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MarkRanges & ranges,
     const Settings & settings) const
 {
-    if (!part->disk->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
+    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
     {
         LOG_DEBUG(log, "File for index " << backQuote(index->name) << " does not exist. Skipping it.");
         return ranges;
