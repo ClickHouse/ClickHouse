@@ -11,7 +11,7 @@ public:
     using ColumnToSize = std::map<std::string, UInt64>;
 
     MergeTreeDataPartWriterWide(
-        DiskPtr disk,
+        const VolumePtr & volume,
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,

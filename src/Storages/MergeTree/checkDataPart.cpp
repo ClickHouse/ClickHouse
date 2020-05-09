@@ -167,7 +167,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled)
 {
     return checkDataPart(
-        data_part->disk,
+        data_part->volume->getDisk(),
         data_part->getFullRelativePath(),
         data_part->getColumns(),
         data_part->getType(),

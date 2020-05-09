@@ -7,7 +7,7 @@ namespace DB
 MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeIndexPtr index_, MergeTreeData::DataPartPtr part_, size_t marks_count_, const MarkRanges & all_mark_ranges_)
     : index(index_), stream(
-        part_->disk,
+        part_->volume->getDisk(),
         part_->getFullRelativePath() + index->getFileName(), ".idx", marks_count_,
         all_mark_ranges_,
         MergeTreeReaderSettings{}, nullptr, nullptr,

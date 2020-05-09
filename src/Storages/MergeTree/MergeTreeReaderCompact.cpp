@@ -28,7 +28,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         uncompressed_cache_, mark_cache_, std::move(mark_ranges_),
         std::move(settings_), std::move(avg_value_size_hints_))
     , marks_loader(
-        data_part->disk,
+        data_part->volume->getDisk(),
         mark_cache,
         data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
         data_part->getMarksCount(), data_part->index_granularity_info,
@@ -40,10 +40,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(data_part->disk, full_data_path),
+            fullPath(data_part->volume->getDisk(), full_data_path),
             [this, full_data_path, buffer_size]()
             {
-                return data_part->disk->readFile(
+                return data_part->volume->getDisk()->readFile(
                     full_data_path,
                     buffer_size,
                     0,
@@ -62,7 +62,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     {
         auto buffer =
             std::make_unique<CompressedReadBufferFromFile>(
-                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
+                data_part->volume->getDisk()->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);

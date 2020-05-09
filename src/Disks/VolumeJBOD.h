@@ -25,6 +25,8 @@ public:
         DiskSelectorPtr disk_selector
     );
 
+    VolumeType getType() const override { return VolumeType::JBOD; }
+
     /// Next disk (round-robin)
     ///
     /// - Used with policy for temporary data

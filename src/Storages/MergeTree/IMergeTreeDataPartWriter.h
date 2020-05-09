@@ -61,7 +61,7 @@ public:
     using StreamPtr = std::unique_ptr<Stream>;
 
     IMergeTreeDataPartWriter(
-        DiskPtr disk,
+        const VolumePtr & volume,
         const String & part_path,
         const MergeTreeData & storage,
         const NamesAndTypesList & columns_list,
@@ -118,7 +118,7 @@ protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
-    DiskPtr disk;
+    VolumePtr volume;
     String part_path;
     const MergeTreeData & storage;
     NamesAndTypesList columns_list;
