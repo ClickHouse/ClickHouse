@@ -16,3 +16,8 @@ target_link_libraries (mysql_protocol PRIVATE dbms)
 if(USE_SSL)
     target_include_directories (mysql_protocol SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif()
+
+if (ENABLE_FUZZING)
+    add_executable (names_and_types_fuzzer names_and_types_fuzzer.cpp)
+    target_link_libraries (names_and_types_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
+endif ()
