@@ -193,12 +193,12 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
     if (COMPILER_GCC)
         target_compile_options (_poco_foundation
-            PUBLIC
+            PRIVATE
                 -Wno-suggest-override
         )
     elseif (COMPILER_CLANG)
         target_compile_options (_poco_foundation
-            PUBLIC
+            PRIVATE
                 -Wno-atomic-implicit-seq-cst
                 -Wno-deprecated
                 -Wno-extra-semi-stmt
@@ -209,7 +209,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
         )
     endif ()
     target_compile_options (_poco_foundation
-        PUBLIC
+        PRIVATE
             -Wno-sign-compare
             -Wno-unused-parameter
     )
@@ -221,7 +221,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
             POCO_ENABLE_CPP11
             POCO_OS_FAMILY_UNIX
     )
-    target_include_directories (_poco_foundation PUBLIC ${LIBRARY_DIR}/Foundation/include)
+    target_include_directories (_poco_foundation SYSTEM PUBLIC ${LIBRARY_DIR}/Foundation/include)
     target_link_libraries (_poco_foundation PRIVATE Poco::Foundation::PCRE zlib)
 else ()
     add_library (Poco::Foundation UNKNOWN IMPORTED GLOBAL)

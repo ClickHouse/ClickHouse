@@ -69,7 +69,7 @@ if (ENABLE_JEMALLOC)
             endif ()
         endif ()
 
-        target_compile_options(jemalloc PUBLIC -Wno-redundant-decls)
+        target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
     else ()
         find_library(LIBRARY_JEMALLOC jemalloc)
         find_path(INCLUDE_JEMALLOC jemalloc/jemalloc.h)
