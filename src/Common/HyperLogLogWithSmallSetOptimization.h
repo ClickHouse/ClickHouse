@@ -42,7 +42,7 @@ private:
         Large * tmp_large = new Large;
 
         for (const auto & x : small)
-            tmp_large->insert(static_cast<Large::value_type>(x.getValue()));
+            tmp_large->insert(static_cast<typename Large::value_type>(x.getValue()));
 
         large = tmp_large;
     }
@@ -68,12 +68,12 @@ public:
                 else
                 {
                     toLarge();
-                    large->insert(static_cast<Large::value_type>(value));
+                    large->insert(static_cast<typename Large::value_type>(value));
                 }
             }
         }
         else
-            large->insert(static_cast<Large::value_type>(value));
+            large->insert(static_cast<typename Large::value_type>(value));
     }
 
     UInt64 size() const

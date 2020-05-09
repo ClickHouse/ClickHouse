@@ -11,7 +11,6 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GatherUtils

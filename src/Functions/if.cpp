@@ -57,8 +57,8 @@ template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = PaddedPODArray<A>;
-    using ArrayB = PaddedPODArray<B>;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayB = typename ColumnVector<B>::Container;
     using ColVecResult = ColumnVector<ResultType>;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
@@ -111,8 +111,8 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
 {
     using ResultType = Decimal<R>;
     using ArrayCond = PaddedPODArray<UInt8>;
-    using ArrayA = DecimalPaddedPODArray<Decimal<A>>;
-    using ArrayB = DecimalPaddedPODArray<Decimal<B>>;
+    using ArrayA = typename ColumnDecimal<Decimal<A>>::Container;
+    using ArrayB = typename ColumnDecimal<Decimal<B>>::Container;
     using ColVecResult = ColumnDecimal<ResultType>;
 
     static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)

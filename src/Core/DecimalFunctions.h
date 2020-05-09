@@ -151,6 +151,48 @@ typename DecimalType::NativeType getFractionalPart(const DecimalType & decimal, 
     return result % scaleMultiplier<T>(scale);
 }
 
+template <typename To, typename DecimalType>
+To convertTo(const DecimalType & decimal, size_t scale)
+{
+    using NativeType = typename DecimalType::NativeType;
+
+    if constexpr (std::is_floating_point_v<To>)
+        return static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeType>(scale));
+    else if constexpr (std::is_same_v<NativeType, To>)
+        return getWholePart(decimal, scale);
+    else if constexpr (sizeof(To) > sizeof(NativeType) && is_signed_v<To>)
+        return static_cast<To>(getWholePart(decimal, scale));
+    else if constexpr (sizeof(To) >= sizeof(NativeType) && is_unsigned_v<To>)
+    {
+        const NativeType whole = getWholePart(decimal, scale);
+
+        if (whole < 0)
+            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return static_cast<To>(whole);
+    }
+    else if constexpr (std::is_same_v<To, UInt8>)
+    {
+        // big integers can not be build from uint8_t
+        const NativeType whole = getWholePart(decimal, scale);
+
+        // static constexpr NativeType max_to{255};
+        if (whole > 255)
+            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return static_cast<UInt8>(static_cast<UInt32>(whole));
+    }
+    else
+    {
+        const NativeType whole = getWholePart(decimal, scale);
+
+        static const NativeType min_to = static_cast<NativeType>(std::numeric_limits<To>::min());
+        static const NativeType max_to = static_cast<NativeType>(std::numeric_limits<To>::max());
+
+        if (whole < min_to || whole > max_to)
+            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return static_cast<To>(whole);
+    }
+}
+
 }
 
 }

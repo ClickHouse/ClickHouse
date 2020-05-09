@@ -311,7 +311,7 @@ private:
     using Data = std::array<T, Op::data_count>;
 
 public:
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const ColumnVector<T>::Container & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -352,7 +352,7 @@ private:
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void applyImpl(const ColumnVector<T>::Container & in, typename ColumnVector<T>::Container & out)
     {
         const T * end_in = in.data() + in.size();
 
@@ -367,7 +367,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const ColumnVector<T>::Container & in, size_t scale, typename ColumnVector<T>::Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
@@ -428,7 +428,15 @@ public:
             }
         }
         else
-            memcpy(out.data(), in.data(), in.size() * sizeof(T));
+        {
+            if constexpr (!is_big_int_v<NativeType>)
+                memcpy(out.data(), in.data(), in.size() * sizeof(T));
+            else
+            {
+                for (size_t i = 0; i < in.size(); i++)
+                    out[i] = in[i];
+            }
+        }
     }
 };
 

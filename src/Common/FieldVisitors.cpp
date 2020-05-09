@@ -111,10 +111,7 @@ template <typename T>
 template <typename U>
 T FieldVisitorConvertToNumber<T>::operator() (const DecimalField<U> & x) const
 {
-    if constexpr (std::is_floating_point_v<T>)
-        return static_cast<T>(x.getValue().value) / static_cast<T>(x.getScaleMultiplier().value);
-    else
-        return static_cast<T>(DecimalUtils::getWholePart(x.getValue(), x.getScale()));
+    return DecimalUtils::convertTo<T>(x.getValue(), x.getScale());
 }
 
 /** In contrast to writeFloatText (and writeQuoted),

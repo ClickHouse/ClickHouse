@@ -485,7 +485,9 @@ struct WhichDataType
     bool isUInt32() const { return idx == TypeIndex::UInt32; }
     bool isUInt64() const { return idx == TypeIndex::UInt64; }
     bool isUInt128() const { return idx == TypeIndex::UInt128; }
-    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128(); }
+    bool isbUInt128() const { return idx == TypeIndex::bUInt128; }
+    bool isbUInt256() const { return idx == TypeIndex::bUInt256; }
+    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128() || isbUInt128() || isbUInt256(); }
     bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
 
     bool isInt8() const { return idx == TypeIndex::Int8; }
@@ -493,13 +495,16 @@ struct WhichDataType
     bool isInt32() const { return idx == TypeIndex::Int32; }
     bool isInt64() const { return idx == TypeIndex::Int64; }
     bool isInt128() const { return idx == TypeIndex::Int128; }
-    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128(); }
+    bool isbInt128() const { return idx == TypeIndex::bInt128; }
+    bool isbInt256() const { return idx == TypeIndex::bInt256; }
+    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128() || isbInt128() || isbInt256(); }
     bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
 
     bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
     bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
     bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
-    bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128(); }
+    bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
+    bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
 
     bool isFloat32() const { return idx == TypeIndex::Float32; }
     bool isFloat64() const { return idx == TypeIndex::Float64; }

@@ -288,5 +288,16 @@ namespace std
         }
     };
 
-    // Is Decimal256 hash required
+
+    template <>
+    struct hash<DB::Decimal256>
+    {
+        size_t operator()(const DB::Decimal256 & x) const
+        {
+            // temp solution
+            static constexpr DB::UInt64 max_uint_mask = std::numeric_limits<DB::UInt64>::max();
+            return std::hash<DB::Int64>()(static_cast<DB::Int64>(x.value >> 64 & max_uint_mask))
+                ^ std::hash<DB::Int64>()(static_cast<DB::Int64>(x.value & max_uint_mask));
+        }
+    };
 }

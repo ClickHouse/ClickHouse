@@ -38,6 +38,31 @@ namespace common
     }
 
     template <>
+    inline bool addOverflow(boost::multiprecision::int128_t x,
+                            boost::multiprecision::int128_t y,
+                            boost::multiprecision::int128_t & res)
+    {
+        using boost::multiprecision::int128_t;
+        static const int128_t max_int128 = (int128_t(1) << 127) + ((int128_t(1) << 127) - 1);
+        static const int128_t min_int128 = -max_int128;
+
+        res = x + y;
+        return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
+    }
+
+    template <>
+    inline bool addOverflow(boost::multiprecision::uint128_t x,
+                            boost::multiprecision::uint128_t y,
+                            boost::multiprecision::uint128_t & res)
+    {
+        using boost::multiprecision::uint128_t;
+        static const uint128_t max_uint128 = (uint128_t(1) << 127) + ((uint128_t(1) << 127) - 1);
+
+        res = x + y;
+        return x > max_uint128 - y;
+    }
+
+    template <>
     inline bool addOverflow(boost::multiprecision::int256_t x,
                             boost::multiprecision::int256_t y,
                             boost::multiprecision::int256_t & res)
@@ -48,6 +73,18 @@ namespace common
 
         res = x + y;
         return (y > 0 && x > max_int256 - y) || (y < 0 && x < min_int256 - y);
+    }
+
+    template <>
+    inline bool addOverflow(boost::multiprecision::uint256_t x,
+                            boost::multiprecision::uint256_t y,
+                            boost::multiprecision::uint256_t & res)
+    {
+        using boost::multiprecision::uint256_t;
+        static const uint256_t max_uint256 = (uint256_t(1) << 255) + ((uint256_t(1) << 255) - 1);
+
+        res = x + y;
+        return x > max_uint256 - y;
     }
 
     template <typename T>
@@ -84,6 +121,28 @@ namespace common
     }
 
     template <>
+    inline bool subOverflow(boost::multiprecision::int128_t x,
+                            boost::multiprecision::int128_t y,
+                            boost::multiprecision::int128_t & res)
+    {
+        using boost::multiprecision::int128_t;
+        static const int128_t max_int128 = (int128_t(1) << 127) + ((int128_t(1) << 127) - 1);
+        static const int128_t min_int128 = -max_int128;
+
+        res = x - y;
+        return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
+    }
+
+    template <>
+    inline bool subOverflow(boost::multiprecision::uint128_t x,
+                            boost::multiprecision::uint128_t y,
+                            boost::multiprecision::uint128_t & res)
+    {
+        res = x - y;
+        return x < y;
+    }
+
+    template <>
     inline bool subOverflow(boost::multiprecision::int256_t x,
                             boost::multiprecision::int256_t y,
                             boost::multiprecision::int256_t & res)
@@ -94,6 +153,15 @@ namespace common
 
         res = x - y;
         return (y < 0 && x > max_int256 + y) || (y > 0 && x < min_int256 + y);
+    }
+
+    template <>
+    inline bool subOverflow(boost::multiprecision::uint256_t x,
+                            boost::multiprecision::uint256_t y,
+                            boost::multiprecision::uint256_t & res)
+    {
+        res = x - y;
+        return x < y;
     }
 
     template <typename T>
@@ -133,6 +201,31 @@ namespace common
     }
 
     template <>
+    inline bool mulOverflow(boost::multiprecision::int128_t x,
+                            boost::multiprecision::int128_t y,
+                            boost::multiprecision::int128_t & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+
+        boost::multiprecision::int128_t a = (x > 0) ? x : -x;
+        boost::multiprecision::int128_t b = (y > 0) ? y : -y;
+        return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(boost::multiprecision::uint128_t x,
+                            boost::multiprecision::uint128_t y,
+                            boost::multiprecision::uint128_t & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+        return (x * y) / y != x;
+    }
+
+    template <>
     inline bool mulOverflow(boost::multiprecision::int256_t x,
                             boost::multiprecision::int256_t y,
                             boost::multiprecision::int256_t & res)
@@ -144,5 +237,16 @@ namespace common
         boost::multiprecision::int256_t a = (x > 0) ? x : -x;
         boost::multiprecision::int256_t b = (y > 0) ? y : -y;
         return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(boost::multiprecision::uint256_t x,
+                            boost::multiprecision::uint256_t y,
+                            boost::multiprecision::uint256_t & res)
+    {
+        res = x * y;
+        if (!x || !y)
+            return false;
+        return (x * y) / y != x;
     }
 }
