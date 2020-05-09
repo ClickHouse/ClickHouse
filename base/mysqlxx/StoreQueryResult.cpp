@@ -14,7 +14,6 @@ namespace mysqlxx
 StoreQueryResult::StoreQueryResult(MYSQL_RES * res_, Connection * conn_, const Query * query_) : ResultBase(res_, conn_, query_)
 {
     UInt64 rows = mysql_num_rows(res);
-    UInt32 num_fields = getNumFields();
     reserve(rows);
     lengths.resize(rows * num_fields);
 
