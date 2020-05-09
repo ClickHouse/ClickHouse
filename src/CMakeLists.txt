@@ -42,8 +42,6 @@ option (WEVERYTHING "Enables -Weverything option with some exceptions. This is i
 
 if (COMPILER_CLANG)
     add_warning(pedantic)
-    no_warning(gnu-anonymous-struct)
-    no_warning(nested-anon-types)
     no_warning(vla-extension)
     no_warning(zero-length-array)
 
@@ -88,7 +86,6 @@ if (COMPILER_CLANG)
         no_warning(exit-time-destructors)
         no_warning(float-equal)
         no_warning(global-constructors)
-        no_warning(gnu-anonymous-struct)
         no_warning(missing-prototypes)
         no_warning(missing-variable-declarations)
         no_warning(nested-anon-types)
@@ -100,11 +97,9 @@ if (COMPILER_CLANG)
         no_warning(switch-enum)
         no_warning(undefined-func-template)
         no_warning(unused-template)
-        no_warning(vla-extension)
         no_warning(vla)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
-        no_warning(zero-length-array)
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
