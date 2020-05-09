@@ -19,6 +19,8 @@
 #include <linux/taskstats.h>
 #include <linux/capability.h>
 
+#pragma GCC diagnostic ignored "-Wgnu-anonymous-struct"
+
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt

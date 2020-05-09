@@ -20,6 +20,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
+#pragma GCC diagnostic ignored "-Wgnu-anonymous-struct"
+
 
 struct CompactStringRef
 {
