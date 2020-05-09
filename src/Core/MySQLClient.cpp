@@ -68,7 +68,7 @@ bool MySQLClient::handshake()
     String auth_plugin_data = native41.getAuthPluginData();
 
     HandshakeResponse handshake_response(
-        client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
+        client_capability_flags, max_packet_size, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
 
     PacketResponse packet_response(client_capability_flags);
@@ -128,14 +128,25 @@ bool MySQLClient::ping()
 
 bool MySQLClient::startBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
 {
-    if (!writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = 'NONE'"))
+    String checksum = "CRC32";
+    if (!writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'"))
     {
         return false;
     }
+
+    /// 30s.
+    UInt64 period_ns = (30 * 1e9);
+    if (!writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns)))
+    {
+        return false;
+    }
+
     if (!registerSlaveOnMaster(slave_id))
     {
         return false;
     }
+
+    binlog_pos = binlog_pos < 4 ? 4 : binlog_pos;
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
     packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
     return true;
@@ -143,13 +154,16 @@ bool MySQLClient::startBinlogDump(UInt32 slave_id, String binlog_file_name, UInt
 
 BinlogEventPtr MySQLClient::readOneBinlogEvent()
 {
-    MySQLFlavor mysql;
-    packet_sender->receivePacket(mysql);
-    return mysql.binlogEvent();
+    while (true)
+    {
+        packet_sender->receivePacket(replication);
+        return replication.readOneEvent();
+    }
 }
 
 String MySQLClient::error()
 {
     return last_error;
 }
+
 }
