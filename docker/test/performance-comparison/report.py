@@ -43,7 +43,6 @@ header_template = """
 }}
 
 body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
-h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 td {{ white-space: pre; font-family: Monospace, Courier New; }}
 border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
