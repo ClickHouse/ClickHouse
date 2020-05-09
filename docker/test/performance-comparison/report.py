@@ -49,7 +49,7 @@ border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0,
 a {{ color: #06F; text-decoration: none; }}
 a:hover, a:active {{ color: #F40; text-decoration: underline; }}
 table {{ border: 0; }}
-.main {{ margin-left: 10%; }}
+.main {{ margin: auto; max-width: 95%; }}
 p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 
 .cancela,.cancela:link,.cancela:visited,.cancela:hover,.cancela:focus,.cancela:active{{
