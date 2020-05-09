@@ -9,7 +9,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
-#include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
 #include <common/logger_useful.h>
 #include <Common/SmallObjectPool.h>
@@ -36,11 +35,18 @@ public:
     KeyRef() : ptr(nullptr) {}
 
     inline UInt16 size() const {
-        return *reinterpret_cast<const UInt16 *>(ptr);
+        UInt16 sz;
+        memcpy(&sz, ptr, sizeof(sz));
+        return sz;
+        //return *reinterpret_cast<const UInt16 *>(ptr);
     }
 
     inline size_t fullSize() const {
         return static_cast<size_t>(size()) + sizeof(UInt16);
+    }
+
+    inline bool isNull() const {
+        return ptr == nullptr;
     }
 
     inline char * data() const {
@@ -114,6 +120,7 @@ class ComplexKeysPoolImpl
 public:
     KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys)
     {
+        std::lock_guard lock(m);
         if constexpr (std::is_same_v<A, SmallObjectPool>)
         {
             // not working now
@@ -151,7 +158,7 @@ public:
             {
                 if (!key_columns[j]->valuesHaveFixedSize())  // String
                 {
-                    auto start = key_start;
+                    //auto start = key_start;
                     auto key_size = keys[j].size + 1;
                     memcpy(key_start, &key_size, sizeof(size_t));
                     key_start += sizeof(size_t);
@@ -159,13 +166,13 @@ public:
                     key_start += keys[j].size;
                     *key_start = '\0';
                     ++key_start;
-                    keys[j].data = start;
-                    keys[j].size += sizeof(size_t) + 1;
+                    //keys[j].data = start;
+                    //keys[j].size += sizeof(size_t) + 1;
                 }
                 else
                 {
                     memcpy(key_start, keys[j].data, keys[j].size);
-                    keys[j].data = key_start;
+                    //keys[j].data = key_start;
                     key_start += keys[j].size;
                 }
             }
@@ -176,13 +183,17 @@ public:
 
     KeyRef copyKeyFrom(const KeyRef & key)
     {
+        std::lock_guard lock(m);
+        //Poco::Logger::get("test cpy").information("--- --- --- ");
         char * data = arena.alloc(key.fullSize());
+        //Poco::Logger::get("test cpy").information("--- --- --- finish");
         memcpy(data, key.fullData(), key.fullSize());
         return KeyRef(data);
     }
 
     void freeKey(const KeyRef & key)
     {
+        std::lock_guard lock(m);
         if constexpr (std::is_same_v<A, ArenaWithFreeLists>)
             arena.free(key.fullData(), key.fullSize());
         else if constexpr (std::is_same_v<A, SmallObjectPool>)
@@ -193,6 +204,7 @@ public:
 
     void rollback(const KeyRef & key)
     {
+        std::lock_guard lock(m);
         if constexpr (std::is_same_v<A, Arena>)
             arena.rollback(key.fullSize());
         else
@@ -206,8 +218,10 @@ public:
 
     void readKey(KeyRef & key, ReadBuffer & buf)
     {
+        std::lock_guard lock(m);
         UInt16 sz;
         readBinary(sz, buf);
+        Poco::Logger::get("test read key").information("sz " + std::to_string(sz));
         char * data = nullptr;
         if constexpr (std::is_same_v<A, SmallObjectPool>)
             data = arena.alloc();
@@ -216,6 +230,7 @@ public:
         memcpy(data, &sz, sizeof(sz));
         buf.read(data + sizeof(sz), sz);
         key = KeyRef(data);
+        Poco::Logger::get("test read key").information("ksz = " + std::to_string(key.size()));
     }
 
     void ignoreKey(ReadBuffer & buf) const
@@ -226,6 +241,7 @@ public:
     }
 
 private:
+    std::mutex m;
     A arena;
 };
 
@@ -270,7 +286,7 @@ public:
         else
         {
             queue.erase(it->second.iter);
-            it->second.iter = queue.insert(std::end(queue), key);
+            it->second.iter = queue.insert(std::end(queue), it->first);
             it->second.val = val;
         }
     }
@@ -294,7 +310,7 @@ public:
         if (it == std::end(cache))
             return false;
         
-        keys_pool.freeKey(key);
+        keys_pool.freeKey(it->first);
         queue.erase(it->second.iter);
         cache.erase(it);
         return true;
@@ -492,6 +508,8 @@ private:
 
     ComplexKeysPool keys_pool;
     mutable ComplexKeyLRUCache<KeyRef, Index, ComplexKeysPool> key_to_index;
+
+    std::optional<TemporalComplexKeysPool> keys_buffer_pool;
     KeyRefs keys_buffer;
 
     const std::vector<AttributeUnderlyingType> attributes_structure;
@@ -547,6 +565,7 @@ public:
     void update(DictionarySourcePtr & source_ptr,
             const Columns & key_columns, const DataTypes & key_types,
             const KeyRefs & required_keys, const std::vector<size_t> & required_rows,
+            TemporalComplexKeysPool & tmp_keys_pool,
             PresentIdHandler && on_updated, AbsentIdHandler && on_key_not_found,
             const DictionaryLifetime lifetime);
 
