@@ -268,6 +268,10 @@ size_t SSDComplexKeyCachePartition::append(
     {
         init_write_buffer();
     }
+    if (!keys_buffer_pool)
+    {
+        keys_buffer_pool.emplace();
+    }
 
     bool flushed = false;
     auto finish_block = [&]()
@@ -360,7 +364,7 @@ size_t SSDComplexKeyCachePartition::append(
         if (!flushed)
         {
             key_to_index.set(keys[index], cache_index);
-            keys_buffer.push_back(keys[index]);
+            keys_buffer.push_back(keys_buffer_pool->copyKeyFrom(keys[index]));
             ++index;
             ++keys_in_block;
         }
@@ -442,6 +446,7 @@ void SSDComplexKeyCachePartition::flush()
     for (size_t row = 0; row < keys_buffer.size(); ++row)
     {
         Index index;
+        Poco::Logger::get("get:").information("sz = " + std::to_string(keys_buffer[row].size()));
         if (key_to_index.get(keys_buffer[row], index))
         {
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
@@ -451,6 +456,7 @@ void SSDComplexKeyCachePartition::flush()
             }
             key_to_index.set(keys_buffer[row], index);
         }
+        Poco::Logger::get("get:").information("finish");
     }
 
     current_file_block_id += write_buffer_size;
@@ -458,6 +464,8 @@ void SSDComplexKeyCachePartition::flush()
 
     /// clear buffer
     keys_buffer.clear();
+    keys_buffer_pool.reset();
+    keys_buffer_pool.emplace();
 }
 
 template <typename Out, typename GetDefault>
@@ -754,7 +762,6 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
 
     TemporalComplexKeysPool tmp_keys_pool;
     KeyRefs keys;
-    keys.reserve(write_buffer_size);
 
     // TODO: писать кол-во значений
     for (size_t i = 0; i < write_buffer_size; ++i)
@@ -777,6 +784,8 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
         {
             keys.emplace_back();
             tmp_keys_pool.readKey(keys.back(), read_buffer);
+            Poco::Logger::get("ClearOldestBlocks").information("ktest: sz=" + std::to_string(keys.back().size())
+                + " data=" + std::to_string(reinterpret_cast<size_t>(keys.back().fullData())));
 
             Metadata metadata;
             readBinary(metadata.data, read_buffer);
@@ -827,13 +836,18 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
     Poco::Logger::get("ClearOldestBlocks").information("> erasing keys <");
     for (const auto& key : keys)
     {
+        Poco::Logger::get("ClearOldestBlocks").information("ktest: null=" + std::to_string(key.isNull()));
+        Poco::Logger::get("ClearOldestBlocks").information("ktest: data=" + std::to_string(reinterpret_cast<size_t>(key.fullData())));
+        Poco::Logger::get("ClearOldestBlocks").information("ktest: sz=" + std::to_string(key.size()) + " fz=" + std::to_string(key.fullSize()));
         Index index;
         if (key_to_index.get(key, index))
         {
+            Poco::Logger::get("ClearOldestBlocks").information("erase");
             size_t block_id = index.getBlockId();
             if (start_block <= block_id && block_id < finish_block)
                 key_to_index.erase(key);
         }
+        Poco::Logger::get("ClearOldestBlocks").information("finish");
     }
 }
 
@@ -1038,6 +1052,7 @@ void SSDComplexKeyCacheStorage::update(
     const DataTypes & key_types,
     const KeyRefs & required_keys,
     const std::vector<size_t> & required_rows,
+    TemporalComplexKeysPool & tmp_keys_pool,
     PresentIdHandler && on_updated,
     AbsentIdHandler && on_key_not_found,
     const DictionaryLifetime lifetime)
@@ -1056,9 +1071,9 @@ void SSDComplexKeyCacheStorage::update(
             if (inserted < metadata.size())
             {
                 partitions.emplace_front(std::make_unique<SSDComplexKeyCachePartition>(
-                        AttributeUnderlyingType::utUInt64, attributes_structure, path,
-                        (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
+                    AttributeUnderlyingType::utUInt64, attributes_structure, path,
+                    (partitions.empty() ? 0 : partitions.front()->getId() + 1),
+                    partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1077,7 +1092,6 @@ void SSDComplexKeyCacheStorage::update(
     {
         const auto keys_size = key_columns.size();
         StringRefs keys(keys_size);
-        TemporalComplexKeysPool tmp_keys_pool;
 
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
@@ -1111,7 +1125,7 @@ void SSDComplexKeyCacheStorage::update(
                     for (const auto i : ext::range(0, rows_num))
                     {
                         auto key = tmp_keys_pool.allocKey(i, new_key_columns, keys);
-                        SCOPE_EXIT(tmp_keys_pool.rollback(key));
+                        //SCOPE_EXIT(tmp_keys_pool.rollback(key));
 
                         std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                         metadata[i].setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
@@ -1475,12 +1489,14 @@ void SSDComplexKeyCacheDictionary::getItemsNumberImpl(
     for (const auto & key_ref : required_keys)
         required_rows.push_back(not_found_keys[key_ref].front());
 
+    TemporalComplexKeysPool tmp_keys_pool;
     storage.update(
             source_ptr,
             key_columns,
             key_types,
             required_keys,
             required_rows,
+            tmp_keys_pool,
             [&](const auto key, const auto row, const auto & new_attributes)
             {
                 for (const size_t out_row : not_found_keys[key])
@@ -1580,12 +1596,14 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
     for (const auto & key_ref : required_keys)
         required_rows.push_back(not_found_keys[key_ref].front());
 
+    TemporalComplexKeysPool tmp_keys_pool;
     storage.update(
             source_ptr,
             key_columns,
             key_types,
             required_keys,
             required_rows,
+            tmp_keys_pool,
             [&](const auto key, const auto row, const auto & new_attributes)
             {
                 update_result[key] = std::get<SSDComplexKeyCachePartition::Attribute::Container<String>>(new_attributes[attribute_index].values)[row];
@@ -1593,7 +1611,6 @@ void SSDComplexKeyCacheDictionary::getItemsStringImpl(
             [&](const auto) {},
             getLifetime());
 
-    TemporalComplexKeysPool tmp_keys_pool;
     StringRefs tmp_refs(key_columns.size());
     size_t default_index = 0;
     for (size_t row = 0; row < n; ++row)
@@ -1643,12 +1660,14 @@ void SSDComplexKeyCacheDictionary::has(
     for (const auto & key_ref : required_keys)
         required_rows.push_back(not_found_keys[key_ref].front());
 
+    TemporalComplexKeysPool tmp_keys_pool;
     storage.update(
             source_ptr,
             key_columns,
             key_types,
             required_keys,
             required_rows,
+            tmp_keys_pool,
             [&](const auto key, const auto, const auto &)
             {
                 for (const size_t out_row : not_found_keys[key])
