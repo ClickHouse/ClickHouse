@@ -20,6 +20,8 @@
     #define USE_PHDR_CACHE 1
 #endif
 
+#pragma GCC diagnostic ignored "-Wreserved-id-macro"
+
 #define __msan_unpoison(X, Y)
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)

@@ -103,7 +103,7 @@ endif ()
 include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
-    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
+    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
 endif ()
 
 if (COMPILER_CLANG)
@@ -402,6 +402,9 @@ endmacro()
 
 set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${ConfigIncludePath})
+
+# Add as many warnings as possible for our own code.
+include (cmake/warnings.cmake)
 
 add_subdirectory (base)
 add_subdirectory (programs)
