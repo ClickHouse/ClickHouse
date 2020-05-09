@@ -76,7 +76,7 @@ static void call_default_signal_handler(int sig)
 
 static constexpr size_t max_query_id_size = 127;
 
-static const size_t buf_size =
+static const size_t signal_pipe_buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
     + sizeof(ucontext_t)
@@ -91,8 +91,8 @@ static void writeSignalIDtoSignalPipe(int sig)
 {
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
+    char buf[signal_pipe_buf_size];
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
 
@@ -117,8 +117,8 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    char buf[buf_size];
-    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
+    char buf[signal_pipe_buf_size];
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
@@ -166,10 +166,10 @@ public:
     {
     }
 
-    void run()
+    void run() override
     {
-        char buf[buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
+        char buf[signal_pipe_buf_size];
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
 
         while (!in.eof())
         {
@@ -687,37 +687,37 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
     ServerApplication::terminate();
 }
 
-void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
+void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 {
-    Poco::Util::ServerApplication::defineOptions (_options);
-
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("config-file", "C", "load configuration from a given file")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("config-file"));
 
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("log-file", "L", "use given log file")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("logger.log"));
 
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("logger.errorlog"));
 
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("pid-file", "P", "use given pidfile")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("pid"));
+
+    Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
 bool isPidRunning(pid_t pid)
