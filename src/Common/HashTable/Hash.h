@@ -180,7 +180,7 @@ inline size_t DefaultHash64(T key)
 {
     union
     {
-        T in;
+        T in{}; // is this okey?
         DB::UInt64 out;
     } u;
     u.out = 0;
@@ -211,7 +211,7 @@ struct DefaultHash<T, std::enable_if_t<is_big_int_v<T>>>
 };
 
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && !std::is_same_v<T, DB::Decimal128>>>
 {
     size_t operator() (T key) const
     {
@@ -220,7 +220,7 @@ struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) <= 8>
 };
 
 template <typename T>
-struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T> && sizeof(T) == 16>>
+struct DefaultHash<T, std::enable_if_t<std::is_same_v<T, DB::Decimal128>>>
 {
     size_t operator() (T key) const
     {

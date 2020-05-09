@@ -569,7 +569,14 @@ public:
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::Int128:
                 // TODO: investigate where we need Int128 Fields. There are no
