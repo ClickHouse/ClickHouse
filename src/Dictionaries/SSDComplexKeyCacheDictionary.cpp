@@ -403,7 +403,7 @@ void SSDComplexKeyCachePartition::flush()
     write_request.aio_fildes = fd;
     write_request.aio_buf = reinterpret_cast<UInt64>(memory->data());
     write_request.aio_nbytes = block_size * write_buffer_size;
-    write_request.aio_offset = block_size * current_file_block_id;
+    write_request.aio_offset = (current_file_block_id % max_size) * block_size;
 #endif
 
     Poco::Logger::get("try:").information("offset: " + std::to_string(write_request.aio_offset) + "  nbytes: " + std::to_string(write_request.aio_nbytes));
@@ -452,7 +452,7 @@ void SSDComplexKeyCachePartition::flush()
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
             {
                 index.setInMemory(false);
-                index.setBlockId(current_file_block_id + index.getBlockId());
+                index.setBlockId((current_file_block_id % max_size) + index.getBlockId());
             }
             key_to_index.set(keys_buffer[row], index);
         }
@@ -506,7 +506,7 @@ void SSDComplexKeyCachePartition::getString(const size_t attribute_index,
     {
         keys_pool.ignoreKey(buf);
         Metadata metadata;
-        readVarUInt(metadata.data, buf);
+        readBinary(metadata.data, buf);
 
         if (metadata.expiresAt() > now)
         {
@@ -537,7 +537,7 @@ void SSDComplexKeyCachePartition::has(
     {
         keys_pool.ignoreKey(buf);
         Metadata metadata;
-        readVarUInt(metadata.data, buf);
+        readBinary(metadata.data, buf);
 
         if (metadata.expiresAt() > now)
             out[index] = !metadata.isDefault();
@@ -660,7 +660,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
     {
         /// get io tasks from previous iteration
         int popped = 0;
-        while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) < 0)
+        while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) <= 0)
         {
             if (errno != EINTR)
                 throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
@@ -703,7 +703,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
         const int new_tasks_count = std::min(read_buffer_size - (to_push - to_pop), requests.size() - to_push);
 
         int pushed = 0;
-        while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) < 0)
+        while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) <= 0)
         {
             if (errno != EINTR)
                 throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
@@ -832,7 +832,7 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
     }
 
     const size_t start_block = current_file_block_id % max_size;
-    const size_t finish_block = start_block + block_size * write_buffer_size;
+    const size_t finish_block = start_block + write_buffer_size;
     Poco::Logger::get("ClearOldestBlocks").information("> erasing keys <");
     for (const auto& key : keys)
     {
