@@ -69,7 +69,6 @@ public:
             if (length > (1 << 30))
                 throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-
             IColumn::Offset next_offset = offset + length + 1;
             data_to.resize(next_offset);
             offsets_to[row_num] = next_offset;
