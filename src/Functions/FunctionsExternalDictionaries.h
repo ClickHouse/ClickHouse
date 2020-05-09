@@ -31,6 +31,7 @@
 #include <Dictionaries/CacheDictionary.h>
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include <Dictionaries/ComplexKeyDirectDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
 #include <Dictionaries/PolygonDictionary.h>
@@ -136,6 +137,7 @@ private:
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
@@ -311,6 +313,7 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
@@ -496,6 +499,7 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
@@ -837,6 +841,7 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
@@ -1100,6 +1105,7 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<ComplexKeyDirectDictionary>(block, arguments, result, dict_ptr) &&
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
