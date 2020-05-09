@@ -221,7 +221,7 @@ if args.report == 'main':
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
-        ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
+        ['Client time, s.', 'Server time, s.', 'Ratio', 'Query'],
         slow_on_client_rows)
 
     def print_unstable_queries():
@@ -281,18 +281,18 @@ if args.report == 'main':
 
         columns = [
             'Test',                                          #0
-            'Wall clock time, s',                            #1
-            'Total client time, s',                          #2
+            'Wall clock time, s.',                           #1
+            'Total client time, s.',                         #2
             'Total queries',                                 #3
             'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs), s',        #5
-            'Avg wall clock time<br>(sum for all runs), s',  #6
-            'Shortest query<br>(sum for all runs), s',       #7
+            'Longest query<br>(sum for all runs), s.',       #5
+            'Avg wall clock time<br>(sum for all runs), s.', #6
+            'Shortest query<br>(sum for all runs), s.',      #7
             ]
 
         print(tableStart('Test times'))
         print(tableHeader(columns))
-        
+
         nominal_runs = 13  # FIXME pass this as an argument
         total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
         attrs = ['' for c in columns]
@@ -346,8 +346,9 @@ if args.report == 'main':
     if unstable_queries:
         message_array.append(str(unstable_queries) + ' unstable')
 
-    if very_unstable_queries:
-        status = 'failure'
+#    Disabled before fix.
+#    if very_unstable_queries:
+#        status = 'failure'
 
     error_tests += slow_average_tests
     if error_tests:
@@ -380,10 +381,10 @@ elif args.report == 'all-queries':
         columns = [
             # Changed #0
             # Unstable #1
-            'Old, s', #2
-            'New, s', #3
-            'Relative difference (new&nbsp;-&nbsp;old)/old', #4
-            'Times speedup/slowdown',                 #5
+            'Old, s.', #2
+            'New, s.', #3
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
+            'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
             'Query',                                  #8
