@@ -1,8 +1,11 @@
 #pragma once
+#include <Core/Field.h>
 #include <Core/MySQLProtocol.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+
+#include <map>
 
 /// Implementation of MySQL replication protocol.
 /// Works only on little-endian architecture.
@@ -11,11 +14,14 @@ namespace DB
 {
 namespace MySQLReplication
 {
-    static const int EVENT_VERSION = 4;
+    static const int EVENT_VERSION_V4 = 4;
     static const int EVENT_HEADER_LENGTH = 19;
+    static const int CHECKSUM_CRC32_SIGNATURE_LENGTH = 4;
+    static const int QUERY_EVENT_BEGIN_LENGTH = 74;
+    static const int ROWS_HEADER_LEN_V2 = 10;
 
-    class IBinlogEvent;
-    using BinlogEventPtr = std::shared_ptr<IBinlogEvent>;
+    class EventBase;
+    using BinlogEventPtr = std::shared_ptr<EventBase>;
 
     enum BinlogChecksumAlg
     {
@@ -94,23 +100,28 @@ namespace MySQLReplication
         UInt32 log_pos;
         UInt16 flags;
 
-        void dump() const;
+        void print() const;
         void parse(ReadBuffer & payload);
     };
 
-    class IBinlogEvent
+    class EventBase
     {
     public:
         EventHeader header;
 
-        virtual ~IBinlogEvent() = default;
-        virtual void dump() = 0;
-        virtual void parse(ReadBuffer & payload) = 0;
+        virtual ~EventBase() = default;
+        virtual void print() const = 0;
+        virtual void parseHeader(ReadBuffer & payload) { header.parse(payload); }
 
-        EventType type() { return header.type; }
+        virtual void parseEvent(ReadBuffer & payload) { parseImpl(payload); }
+
+        EventType type() const { return header.type; }
+
+    protected:
+        virtual void parseImpl(ReadBuffer & payload) = 0;
     };
 
-    class FormatDescriptionEvent : public IBinlogEvent
+    class FormatDescriptionEvent : public EventBase
     {
     public:
         UInt16 binlog_version;
@@ -118,45 +129,165 @@ namespace MySQLReplication
         UInt32 create_timestamp;
         UInt8 event_header_length;
         String event_type_header_length;
-        BinlogChecksumAlg checksum_alg;
 
-        void dump() override;
-        void parse(ReadBuffer & payload) override;
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+
+    private:
+        std::vector<UInt8> post_header_lens;
     };
 
-    class RotateEvent : public IBinlogEvent
+    class RotateEvent : public EventBase
     {
     public:
         UInt64 position;
         String next_binlog;
 
-        void dump() override;
-        void parse(ReadBuffer & payload) override;
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
     };
 
-    class DryRunEvent : public IBinlogEvent
-    {
-        void dump() override;
-        void parse(ReadBuffer & payload) override;
-    };
-
-    class IFlavor
+    class QueryEvent : public EventBase
     {
     public:
-        virtual String getName() = 0;
-        virtual BinlogEventPtr binlogEvent() = 0;
+        UInt32 thread_id;
+        UInt32 exec_time;
+        UInt8 schema_len;
+        UInt16 error_code;
+        UInt16 status_len;
+        String status;
+        String schema;
+        String query;
+
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+    };
+
+    class XIDEvent : public EventBase
+    {
+    public:
+        UInt64 xid;
+
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+    };
+
+    class TableMapEvent : public EventBase
+    {
+    public:
+        UInt64 table_id;
+        UInt16 flags;
+        UInt8 schema_len;
+        String schema;
+        UInt8 table_len;
+        String table;
+        UInt32 column_count;
+        std::vector<UInt8> column_type;
+        std::vector<UInt16> column_meta;
+        String null_bitmap;
+
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+        void parseMeta(String meta);
+    };
+
+    class RowsEvent : public EventBase
+    {
+    public:
+        UInt64 table_id;
+        UInt16 flags;
+        UInt16 extra_data_len;
+        UInt32 number_columns;
+        String schema;
+        String table;
+        String columns_before_bitmap;
+        String columns_after_bitmap;
+        std::vector<Field> rows;
+
+        RowsEvent(std::shared_ptr<TableMapEvent> table_map_) : table_map(table_map_)
+        {
+            schema = table_map->schema;
+            table = table_map->table;
+        }
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+        void parseRow(ReadBuffer & payload, String bitmap);
+
+    private:
+        std::shared_ptr<TableMapEvent> table_map;
+    };
+
+    class WriteRowsEvent : public RowsEvent
+    {
+    public:
+        WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+    };
+
+    class DeleteRowsEvent : public RowsEvent
+    {
+    public:
+        DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+    };
+
+    class UpdateRowsEvent : public RowsEvent
+    {
+    public:
+        UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+    };
+
+    class DryRunEvent : public EventBase
+    {
+        void print() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+    };
+
+    class Position
+    {
+    public:
+        UInt64 binlog_pos;
+        String binlog_name;
+
+        Position() : binlog_pos(0), binlog_name("") { }
+        void updateLogPos(UInt64 pos) { binlog_pos = pos; }
+        void updateLogName(String binlog) { binlog_name = std::move(binlog); }
+    };
+
+    class IFlavor : public MySQLProtocol::ReadPacket
+    {
+    public:
+        virtual String getName() const = 0;
+        virtual Position getPosition() const = 0;
+        virtual BinlogEventPtr readOneEvent() = 0;
         virtual ~IFlavor() = default;
     };
 
-    class MySQLFlavor : public IFlavor, public MySQLProtocol::ReadPacket
+    class MySQLFlavor : public IFlavor
     {
     public:
-        BinlogEventPtr  event;
-        BinlogChecksumAlg binlogChecksumAlg = BINLOG_CHECKSUM_ALG_UNDEF;
+        BinlogEventPtr event;
 
-        String getName() override { return "MySQL"; }
+        String getName() const override { return "MySQL"; }
+        Position getPosition() const override { return position; }
         void readPayloadImpl(ReadBuffer & payload) override;
-        BinlogEventPtr binlogEvent() override { return event; }
+        BinlogEventPtr readOneEvent() override { return event; }
+
+    private:
+        Position position;
+        std::shared_ptr<TableMapEvent> table_map;
     };
 }
 
