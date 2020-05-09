@@ -287,14 +287,11 @@ private:
   *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
   * Look at libstdc++-v3/libsupc++/vterminate.cc for example.
   */
-static void terminate_handler()
+[[noreturn]] static void terminate_handler()
 {
     static thread_local bool terminating = false;
     if (terminating)
-    {
         abort();
-        return; /// Just for convenience.
-    }
 
     terminating = true;
 
@@ -524,12 +521,12 @@ void BaseDaemon::initialize(Application & self)
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
-        const std::string timezone = config().getString("timezone");
-        if (0 != setenv("TZ", timezone.data(), 1))
+        const std::string config_timezone = config().getString("timezone");
+        if (0 != setenv("TZ", config_timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
-        DateLUT::setDefaultTimezone(timezone);
+        DateLUT::setDefaultTimezone(config_timezone);
     }
 
     std::string log_path = config().getString("logger.log", "");
