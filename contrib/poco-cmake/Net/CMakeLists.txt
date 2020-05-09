@@ -117,7 +117,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
             PRIVATE
                 -Wno-atomic-implicit-seq-cst
                 -Wno-extra-semi-stmt
-            PUBLIC
                 -Wno-extra-semi
         )
     endif ()
@@ -126,7 +125,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
             -Wno-deprecated
             -Wno-extra-semi
     )
-    target_include_directories (_poco_net PUBLIC ${LIBRARY_DIR}/Net/include)
+    target_include_directories (_poco_net SYSTEM PUBLIC ${LIBRARY_DIR}/Net/include)
     target_link_libraries (_poco_net PUBLIC Poco::Foundation)
 else ()
     add_library (Poco::Net UNKNOWN IMPORTED GLOBAL)
