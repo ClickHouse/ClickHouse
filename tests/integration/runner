@@ -75,7 +75,7 @@ if __name__ == "__main__":
         action='store_true',
         default=False,
         help="Don't use net host in parent docker container")
-    
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()

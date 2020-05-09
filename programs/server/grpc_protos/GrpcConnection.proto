@@ -6,6 +6,7 @@ message User {
    string user = 1;
    string key = 2;
    string quota = 3;
+   string database = 4;
 }
 message QuerySettings {
    string query = 1;

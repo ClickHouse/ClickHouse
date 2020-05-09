@@ -1,5 +1,5 @@
 # coding: utf-8
-# proto file shoupd be the same, as in server GRPC
+# proto file should be the same, as in server GRPC
 import os
 import pytest
 import subprocess
@@ -34,15 +34,20 @@ finally:
             yield cluster.get_instance_ip('node')
         finally:
             cluster.shutdown()
-    def Query(server_address_and_port, query):
+    def Query(server_address_and_port, query, mode="output"):
         output = []
+        totals = []
         with grpc.insecure_channel(server_address_and_port) as channel:
             stub = GrpcConnection_pb2_grpc.GRPCStub(channel)
             user_info = GrpcConnection_pb2.User(user="default", key='123', quota='default')
             query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', format="TabSeparated")
             for response in stub.Query(GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info, interactive_delay=1000)):
                 output += response.output.split()
-        return output
+                totals += response.totals.split()
+        if mode == "output":
+            return output
+        elif mode == "totals":
+            return totals
 
     def test_ordinary_query(server_address):
         server_address_and_port = server_address + ':' + str(server_port)
@@ -63,3 +68,11 @@ finally:
         assert Query(server_address_and_port, "") == []
         assert Query(server_address_and_port, "CREATE TABLE t (a UInt8) ENGINE = Memory") == []
         assert Query(server_address_and_port, "CREATE TABLE t (a UInt8) ENGINE = Memory") == []
+
+    def test_totals(server_address):
+        server_address_and_port = server_address + ':' + str(server_port)
+        assert Query(server_address_and_port, "") == []
+        assert Query(server_address_and_port, "CREATE TABLE tabl (x UInt8, y UInt8) ENGINE = Memory;") == []
+        assert Query(server_address_and_port, "INSERT INTO tabl VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4);") == []
+        assert Query(server_address_and_port, "SELECT sum(x), y FROM tabl GROUP BY y WITH TOTALS") == [u'4', u'2', u'3', u'3', u'5', u'4']
+        assert Query(server_address_and_port, "SELECT sum(x), y FROM tabl GROUP BY y WITH TOTALS", mode="totals") == [u'12', u'0']

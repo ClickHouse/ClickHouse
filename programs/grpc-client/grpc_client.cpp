@@ -12,17 +12,14 @@ class GRPCClient {
     public:
         explicit GRPCClient(std::shared_ptr<grpc::Channel> channel)
             : stub_(GRPCConnection::GRPC::NewStub(channel)) {}
-         std::string Query(const std::string& query) {
+         std::string Query(const GRPCConnection::User& userInfo, const std::string& query) {
             GRPCConnection::QueryRequest request;
             GRPCConnection::QueryResponse reply;
             grpc::Status status;
 
-            GRPCConnection::User userInfo;
-            userInfo.set_user("default");
-            userInfo.set_key("");
-            userInfo.set_quota("default");
+            auto user = std::make_unique<GRPCConnection::User>(userInfo);
 
-            request.set_allocated_user_info(&userInfo);
+            request.set_allocated_user_info(user.release());
             // interactive_delay in miliseconds
             request.set_interactive_delay(1000);
             GRPCConnection::QuerySettings querySettigs;
@@ -31,7 +28,7 @@ class GRPCClient {
             int id = rand();
 
             querySettigs.set_query_id(std::to_string(id));
-            querySettigs.set_format("Pretty");
+            querySettigs.set_format("Values");
             
             request.set_allocated_query_info(&querySettigs);
 
@@ -87,35 +84,55 @@ class GRPCClient {
  };
 
 int main(int argc, char** argv) {
+    GRPCConnection::User userInfo1;
+    userInfo1.set_user("default");
+    userInfo1.set_key("");
+    userInfo1.set_quota("default");
+
+
     std::cout << "Try: " << argv[1] << std::endl;
     grpc::ChannelArguments ch_args;
     ch_args.SetMaxReceiveMessageSize(-1);
     GRPCClient client(
      grpc::CreateCustomChannel(argv[1], grpc::InsecureChannelCredentials(), ch_args));
-    std::cout << client.Query("CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
-    std::cout << client.Query("CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
-    std::cout << client.Query("INSERT INTO t VALUES") << std::endl;
-    std::cout << client.Query("INSERT INTO t VALUES (1),(2),(3)") << std::endl;
-    std::cout << client.Query("INSERT INTO t VALUES (4),(5),(6)") << std::endl;
-    std::cout << client.Query("INSERT INTO t FORMAT Values (7),(8),(9) ") << std::endl;
-    std::cout << client.Query("SELECT count() FROM numbers(1)") << std::endl;
-    std::cout << client.Query("INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") << std::endl;
-    std::cout << client.Query("SELECT a FROM t ORDER BY a") << std::endl;
-    std::cout << client.Query("DROP TABLE t") << std::endl;
-    std::cout << client.Query("SELECT 100") << std::endl;
-    std::cout << client.Query("SELECT count() FROM numbers(10000000000)") << std::endl;
-    std::cout << client.Query("SELECT count() FROM numbers(100)") << std::endl;
-    std::cout << client.Query("WITH ['hello'] AS hello SELECT hello, * FROM ( WITH ['hello'] AS hello SELECT hello)");
-    std::cout << client.Query("CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory;") << std::endl;
-    std::cout << client.Query("INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);") << std::endl;
-    std::cout << client.Query("SELECT s FROM arrays_test") << std::endl;
-    std::cout << client.Query("") << std::endl;
-
-    {//Check Totals
-        std::cout << client.Query("CREATE TABLE tabl (x UInt8, y UInt8) ENGINE = Memory;") << std::endl;
-        std::cout << client.Query("INSERT INTO tabl VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4);") << std::endl;
-        std::cout << client.Query("SELECT sum(x), y FROM tabl GROUP BY y WITH TOTALS") << std::endl;
+    {
+        std::cout << client.Query(userInfo1, "CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
+        std::cout << client.Query(userInfo1, "CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES (1),(2),(3)") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES (4),(5),(6)") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t FORMAT Values (7),(8),(9) ") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT a FROM t ORDER BY a") << std::endl;
+        std::cout << client.Query(userInfo1, "DROP TABLE t") << std::endl;
     }
+    {
+        std::cout << client.Query(userInfo1, "SELECT count() FROM numbers(1)") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT 100") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT count() FROM numbers(10000000000)") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT count() FROM numbers(100)") << std::endl;
+    }
+    {
+        std::cout << client.Query(userInfo1, "WITH ['hello'] AS hello SELECT hello, * FROM ( WITH ['hello'] AS hello SELECT hello)");
+        std::cout << client.Query(userInfo1, "CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory;") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT s FROM arrays_test") << std::endl;
+        std::cout << client.Query(userInfo1, "DROP TABLE arrays_test") << std::endl;
+        std::cout << client.Query(userInfo1, "") << std::endl;
+    }
+
+    {//Check null return from pipe
+        std::cout << client.Query(userInfo1, "CREATE TABLE table2 (x UInt8, y UInt8) ENGINE = Memory;") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT x FROM table2") << std::endl;
+        std::cout << client.Query(userInfo1, "DROP TABLE table2") << std::endl;
+    }
+    {//Check Totals
+        std::cout << client.Query(userInfo1, "CREATE TABLE tabl (x UInt8, y UInt8) ENGINE = Memory;") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO tabl VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4);") << std::endl;
+        std::cout << client.Query(userInfo1, "SELECT sum(x), y FROM tabl GROUP BY y WITH TOTALS") << std::endl;
+        std::cout << client.Query(userInfo1, "DROP TABLE tabl") << std::endl;
+    }
+    
 
     return 0;
 }

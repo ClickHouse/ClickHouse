@@ -135,6 +135,7 @@ class CallDataQuery : public CommonCallData {
           std::optional<Context> query_context;
 
           std::shared_ptr<WriteBufferFromGRPC> out;
+          String format_name;
           std::optional<CurrentThread::QueryScope> query_scope;
 
 

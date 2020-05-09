@@ -24,6 +24,11 @@ using GRPCConnection::GRPC;
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
+}
+
 std::string ParseGrpcPeer(const grpc::ServerContext& context_) {
     String info = context_.peer();
     return info.substr(info.find(":") + 1);
@@ -38,8 +43,20 @@ void CallDataQuery::ParseQuery() {
         std::string user = request.user_info().user();
         std::string password = request.user_info().key();
         std::string quota_key = request.user_info().quota();
-        
+        std::string default_database = request.user_info().database();
+        format_name = request.query_info().format();
+
         context.setProgressCallback([this] (const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
+        
+        if (!default_database.empty())
+        {
+            if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
+            {
+                Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            }
+
+            context.setCurrentDatabase(default_database);
+        }
 
         query_context = context;
         query_scope.emplace(*query_context);
@@ -53,6 +70,8 @@ void CallDataQuery::ParseQuery() {
         client_info.initial_user = client_info.current_user;
         client_info.initial_query_id = client_info.current_query_id;
         client_info.initial_address = client_info.current_address;
+
+
 }       
 
 void CallDataQuery::ExecuteQuery() {
@@ -82,6 +101,9 @@ void CallDataQuery::ExecuteQuery() {
             if (format.empty())
             {
                 format = "Values";
+            }
+            if (format_name.empty()) {
+                format_name = format;
             }
             ReadBufferFromMemory data_in(insert_query->data, insert_query->end - insert_query->data);
             auto res_stream = query_context->getInputFormat(format, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
@@ -192,11 +214,7 @@ bool CallDataQuery::senData(const Block & block) {
                          tmp_response.set_output(buffer);
                          return tmp_response;
                     });
-    String format = request.query_info().format();
-    if (format.empty()) {
-        format = "Pretty";
-    }
-    auto my_block_out_stream = context.getOutputFormat(format, *out, block);
+    auto my_block_out_stream = context.getOutputFormat(format_name, *out, block);
     my_block_out_stream->write(block);
     my_block_out_stream->flush();
     out->next();
@@ -237,13 +255,8 @@ bool CallDataQuery::sendTotals(const Block & totals) {
                          tmp_response.set_totals(buffer);
                          return tmp_response;
                     });
-        //TODO format global?
-        String format = request.query_info().format();
         //TODO IF NOT JSON*, TabSeparated*, Pretty*
-        if (format.empty()) {
-            format = "Pretty";
-        }
-        auto my_block_out_stream = context.getOutputFormat(format, *out, totals);
+        auto my_block_out_stream = context.getOutputFormat(format_name, *out, totals);
         my_block_out_stream->write(totals);
         my_block_out_stream->flush();
         out->next();
@@ -259,12 +272,8 @@ bool CallDataQuery::sendExtremes(const Block & extremes) {
                          tmp_response.set_extremes(buffer);
                          return tmp_response;
                     });
-        String format = request.query_info().format();
         //TODO IF NOT JSON*, TabSeparated*, Pretty*
-        if (format.empty()) {
-            format = "Pretty";
-        }
-        auto my_block_out_stream = context.getOutputFormat(format, *out, extremes);
+        auto my_block_out_stream = context.getOutputFormat(format_name, *out, extremes);
         my_block_out_stream->write(extremes);
         my_block_out_stream->flush();
         out->next();
