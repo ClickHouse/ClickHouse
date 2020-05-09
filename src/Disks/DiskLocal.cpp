@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
+    extern const int INCORRECT_DISK_INDEX;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -34,7 +35,9 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    DiskPtr getDisk() const override { return disk; }
+    DiskPtr getDisk(size_t i = 0) const override;
+
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 
@@ -280,6 +283,15 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         Poco::File(disk_path + from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
+}
+
+DiskPtr DiskLocalReservation::getDisk(size_t i) const
+{
+    if (i != 0)
+    {
+        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+    }
+    return disk;
 }
 
 void DiskLocalReservation::update(UInt64 new_size)
