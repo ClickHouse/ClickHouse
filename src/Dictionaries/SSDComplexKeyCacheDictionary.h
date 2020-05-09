@@ -35,10 +35,7 @@ public:
     KeyRef() : ptr(nullptr) {}
 
     inline UInt16 size() const {
-        UInt16 sz;
-        memcpy(&sz, ptr, sizeof(sz));
-        return sz;
-        //return *reinterpret_cast<const UInt16 *>(ptr);
+        return *reinterpret_cast<const UInt16 *>(ptr);
     }
 
     inline size_t fullSize() const {
@@ -120,7 +117,6 @@ class ComplexKeysPoolImpl
 public:
     KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys)
     {
-        std::lock_guard lock(m);
         if constexpr (std::is_same_v<A, SmallObjectPool>)
         {
             // not working now
@@ -183,7 +179,6 @@ public:
 
     KeyRef copyKeyFrom(const KeyRef & key)
     {
-        std::lock_guard lock(m);
         //Poco::Logger::get("test cpy").information("--- --- --- ");
         char * data = arena.alloc(key.fullSize());
         //Poco::Logger::get("test cpy").information("--- --- --- finish");
@@ -193,7 +188,6 @@ public:
 
     void freeKey(const KeyRef & key)
     {
-        std::lock_guard lock(m);
         if constexpr (std::is_same_v<A, ArenaWithFreeLists>)
             arena.free(key.fullData(), key.fullSize());
         else if constexpr (std::is_same_v<A, SmallObjectPool>)
@@ -204,7 +198,6 @@ public:
 
     void rollback(const KeyRef & key)
     {
-        std::lock_guard lock(m);
         if constexpr (std::is_same_v<A, Arena>)
             arena.rollback(key.fullSize());
         else
@@ -218,7 +211,6 @@ public:
 
     void readKey(KeyRef & key, ReadBuffer & buf)
     {
-        std::lock_guard lock(m);
         UInt16 sz;
         readBinary(sz, buf);
         Poco::Logger::get("test read key").information("sz " + std::to_string(sz));
@@ -241,7 +233,6 @@ public:
     }
 
 private:
-    std::mutex m;
     A arena;
 };
 
