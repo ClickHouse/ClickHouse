@@ -1,4 +1,5 @@
 SET max_memory_usage = 32000000;
+SET join_on_disk_max_files_to_merge = 4;
 
 SELECT number * 200000 as n, j FROM numbers(5) nums
 ANY LEFT JOIN (

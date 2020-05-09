@@ -119,7 +119,6 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
         case TypeIndex::UInt32:
             assert_cast<ColumnUInt32 &>(column).insertValue(value);
             break;
-        case TypeIndex::DateTime64: [[fallthrough]];
         case TypeIndex::UInt64:
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
@@ -141,6 +140,15 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
         case TypeIndex::Float64:
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
             break;
+        case TypeIndex::Decimal32:
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(value);
+            break;
+        case TypeIndex::Decimal64:
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
+            break;
+        case TypeIndex::DateTime64:
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
+            break;
         default:
             throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -151,6 +159,14 @@ static std::string nodeToJson(avro::NodePtr root_node)
     std::ostringstream ss;
     root_node->printJson(ss, 0);
     return ss.str();
+}
+
+static std::string nodeName(avro::NodePtr node)
+{
+    if (node->hasName())
+        return node->name().simpleName();
+    else
+        return avro::toString(node->type());
 }
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type)
@@ -170,25 +186,16 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             }
             break;
         case avro::AVRO_INT:
-            return [target](IColumn & column, avro::Decoder & decoder)
+            if (target_type->isValueRepresentedByNumber())
             {
-                insertNumber(column, target, decoder.decodeInt());
-            };
-        case avro::AVRO_LONG:
-            if (target.isDateTime64())
-            {
-                auto date_time_scale = assert_cast<const DataTypeDateTime64 &>(*target_type).getScale();
-                auto logical_type = root_node->logicalType().type();
-                if ((logical_type == avro::LogicalType::TIMESTAMP_MILLIS && date_time_scale == 3)
-                    || (logical_type == avro::LogicalType::TIMESTAMP_MICROS && date_time_scale == 6))
+                return [target](IColumn & column, avro::Decoder & decoder)
                 {
-                    return [](IColumn & column, avro::Decoder & decoder)
-                    {
-                        assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(decoder.decodeLong());
-                    };
-                }
+                    insertNumber(column, target, decoder.decodeInt());
+                };
             }
-            else
+            break;
+        case avro::AVRO_LONG:
+            if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
@@ -197,20 +204,32 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             }
             break;
         case avro::AVRO_FLOAT:
-            return [target](IColumn & column, avro::Decoder & decoder)
+            if (target_type->isValueRepresentedByNumber())
             {
-                insertNumber(column, target, decoder.decodeFloat());
-            };
+                return [target](IColumn & column, avro::Decoder & decoder)
+                {
+                    insertNumber(column, target, decoder.decodeFloat());
+                };
+            }
+            break;
         case avro::AVRO_DOUBLE:
-            return [target](IColumn & column, avro::Decoder & decoder)
+            if (target_type->isValueRepresentedByNumber())
             {
-                insertNumber(column, target, decoder.decodeDouble());
-            };
+                return [target](IColumn & column, avro::Decoder & decoder)
+                {
+                    insertNumber(column, target, decoder.decodeDouble());
+                };
+            }
+            break;
         case avro::AVRO_BOOL:
-            return [target](IColumn & column, avro::Decoder & decoder)
+            if (target_type->isValueRepresentedByNumber())
             {
-                insertNumber(column, target, decoder.decodeBool());
-            };
+                return [target](IColumn & column, avro::Decoder & decoder)
+                {
+                    insertNumber(column, target, decoder.decodeBool());
+                };
+            }
+            break;
         case avro::AVRO_ARRAY:
             if (target.isArray())
             {
@@ -337,6 +356,17 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             break;
     }
 
+    if (target.isNullable())
+    {
+        auto nested_deserialize = createDeserializeFn(root_node, removeNullable(target_type));
+        return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
+        {
+            ColumnNullable & col = assert_cast<ColumnNullable &>(column);
+            nested_deserialize(col.getNestedColumn(), decoder);
+            col.getNullMapData().push_back(0);
+        };
+    }
+
     throw Exception(
         "Type " + target_type->getName() + " is not compatible with Avro " + avro::toString(root_node->type()) + ":\n" + nodeToJson(root_node),
         ErrorCodes::ILLEGAL_COLUMN);
@@ -437,39 +467,68 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
     }
 }
 
-void AvroDeserializer::createActions(const Block & header, const avro::NodePtr& node, std::string current_path)
+static inline std::string concatPath(const std::string & a, const std::string & b)
 {
-    if (node->type() == avro::AVRO_RECORD)
+    return a.empty() ? b : a + "." + b;
+}
+
+AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path)
+{
+    if (node->type() == avro::AVRO_SYMBOLIC)
     {
+        /// continue traversal only if some column name starts with current_path
+        auto keep_going = std::any_of(header.begin(), header.end(), [&current_path](const ColumnWithTypeAndName & col)
+        {
+            return col.name.starts_with(current_path);
+        });
+        auto resolved_node = avro::resolveSymbol(node);
+        if (keep_going)
+            return createAction(header, resolved_node, current_path);
+        else
+            return AvroDeserializer::Action(createSkipFn(resolved_node));
+    }
+
+    if (header.has(current_path))
+    {
+        auto target_column_idx = header.getPositionByName(current_path);
+        const auto & column = header.getByPosition(target_column_idx);
+        try
+        {
+            AvroDeserializer::Action action(target_column_idx, createDeserializeFn(node, column.type));
+            column_found[target_column_idx] = true;
+            return action;
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("column " + column.name);
+            throw;
+        }
+    }
+    else if (node->type() == avro::AVRO_RECORD)
+    {
+        std::vector<AvroDeserializer::Action> field_actions(node->leaves());
         for (size_t i = 0; i < node->leaves(); ++i)
         {
             const auto & field_node = node->leafAt(i);
             const auto & field_name = node->nameAt(i);
-            auto field_path = current_path.empty() ? field_name : current_path + "." + field_name;
-            createActions(header, field_node, field_path);
+            field_actions[i] = createAction(header, field_node, concatPath(current_path, field_name));
         }
+        return AvroDeserializer::Action::recordAction(field_actions);
+    }
+    else if (node->type() == avro::AVRO_UNION)
+    {
+        std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
+        for (size_t i = 0; i < node->leaves(); ++i)
+        {
+            const auto & branch_node = node->leafAt(i);
+            const auto & branch_name = nodeName(branch_node);
+            branch_actions[i] = createAction(header, branch_node, concatPath(current_path, branch_name));
+        }
+        return AvroDeserializer::Action::unionAction(branch_actions);
     }
     else
     {
-        if (header.has(current_path))
-        {
-            auto target_column_idx = header.getPositionByName(current_path);
-            const auto & column = header.getByPosition(target_column_idx);
-            try
-            {
-                actions.emplace_back(target_column_idx, createDeserializeFn(node, column.type));
-            }
-            catch (Exception & e)
-            {
-                e.addMessage("column " + column.name);
-                throw;
-            }
-            column_found[target_column_idx] = true;
-        }
-        else
-        {
-            actions.emplace_back(createSkipFn(node));
-        }
+        return AvroDeserializer::Action(createSkipFn(node));
     }
 }
 
@@ -482,7 +541,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     }
 
     column_found.resize(header.columns());
-    createActions(header, schema_root);
+    row_action = createAction(header, schema_root);
 
     for (size_t i = 0; i < header.columns(); ++i)
     {
@@ -493,11 +552,16 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     }
 }
 
-void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & decoder) const
+void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
 {
-    for (const auto& action : actions)
+    ext.read_columns.assign(columns.size(), false);
+    row_action.execute(columns, decoder, ext);
+    for (size_t i = 0; i < ext.read_columns.size(); ++i)
     {
-        action.execute(columns, decoder);
+        if (!ext.read_columns[i])
+        {
+            columns[i]->insertDefault();
+        }
     }
 }
 
@@ -510,18 +574,17 @@ AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, 
     file_reader.init();
 }
 
-bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
+bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
     if (file_reader.hasMore())
     {
         file_reader.decr();
-        deserializer.deserializeRow(columns, file_reader.decoder());
+        deserializer.deserializeRow(columns, file_reader.decoder(), ext);
         return true;
     }
     return false;
 }
 
-#if USE_POCO_JSON
 class AvroConfluentRowInputFormat::SchemaRegistry
 {
 public:
@@ -640,7 +703,7 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     decoder->init(*input_stream);
 }
 
-bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
+bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     if (in.eof())
     {
@@ -648,7 +711,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
     }
     SchemaId schema_id = readConfluentSchemaId(in);
     const auto & deserializer = getOrCreateDeserializer(schema_id);
-    deserializer.deserializeRow(columns, *decoder);
+    deserializer.deserializeRow(columns, *decoder, ext);
     decoder->drain();
     return true;
 }
@@ -664,7 +727,6 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     }
     return it->second;
 }
-#endif
 
 void registerInputFormatProcessorAvro(FormatFactory & factory)
 {
@@ -677,7 +739,6 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
         return std::make_shared<AvroRowInputFormat>(sample, buf, params);
     });
 
-#if USE_POCO_JSON
     factory.registerInputFormatProcessor("AvroConfluent",[](
         ReadBuffer & buf,
         const Block & sample,
@@ -686,8 +747,6 @@ void registerInputFormatProcessorAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroConfluentRowInputFormat>(sample, buf, params, settings);
     });
-#endif
-
 }
 
 }

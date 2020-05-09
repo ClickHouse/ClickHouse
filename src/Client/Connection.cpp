@@ -30,7 +30,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
@@ -66,7 +66,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         if (static_cast<bool>(secure))
         {
-#if USE_POCO_NETSSL
+#if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
@@ -379,7 +379,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
+        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();

@@ -7,11 +7,11 @@ toc_title: "HTTP aray\xFCz\xFC"
 
 # HTTP arayüzü {#http-interface}
 
-HTTP arayüzü, herhangi bir programlama dilinden herhangi bir platformda Clickhouse'u kullanmanızı sağlar. Java ve Perl'den ve kabuk komut dosyalarından çalışmak için kullanıyoruz. Diğer bölümlerde, HTTP arayüzü Perl, Python ve Go'dan kullanılır. HTTP arabirimi yerel arabirimden daha sınırlıdır, ancak daha iyi uyumluluğa sahiptir.
+HTTP arayüzü, herhangi bir programlama dilinden herhangi bir platformda Clickhouse’u kullanmanızı sağlar. Java ve Perl’den ve kabuk komut dosyalarından çalışmak için kullanıyoruz. Diğer bölümlerde, HTTP arayüzü Perl, Python ve Go’dan kullanılır. HTTP arabirimi yerel arabirimden daha sınırlıdır, ancak daha iyi uyumluluğa sahiptir.
 
 Varsayılan olarak, clickhouse-server, 8123 numaralı bağlantı noktasında HTTP dinler (bu, yapılandırmada değiştirilebilir).
 
-Parametreler olmadan bir GET / request yaparsanız, 200 yanıt kodunu ve tanımlanan dizeyi döndürür [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
+Parametreler olmadan bir GET / request yaparsanız, 200 yanıt kodunu ve tanımlanan dizeyi döndürür [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) varsayılan değer “Ok.” (sonunda bir çizgi besleme ile)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -25,7 +25,7 @@ $ curl 'http://localhost:8123/ping'
 Ok.
 ```
 
-İsteği URL olarak gönder ‘query’ parametre veya bir POST olarak. Veya sorgunun başlangıcını gönder ‘query’ parametre ve postadaki geri kalanı (bunun neden gerekli olduğunu daha sonra açıklayacağız). URL'nin boyutu 16 KB ile sınırlıdır, bu nedenle büyük sorgular gönderirken bunu aklınızda bulundurun.
+İsteği URL olarak gönder ‘query’ parametre veya bir POST olarak. Veya sorgunun başlangıcını gönder ‘query’ parametre ve postadaki geri kalanı (bunun neden gerekli olduğunu daha sonra açıklayacağız). URL’nin boyutu 16 KB ile sınırlıdır, bu nedenle büyük sorgular gönderirken bunu aklınızda bulundurun.
 
 Başarılı olursa, 200 yanıt Kodu ve yanıt gövdesinde sonucu alırsınız.
 Bir hata oluşursa, 500 yanıt Kodu ve yanıt gövdesinde bir hata açıklaması metni alırsınız.
@@ -53,7 +53,7 @@ X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","writ
 1
 ```
 
-Gördüğünüz gibi, curl, boşlukların URL'den kaçması gerektiği konusunda biraz rahatsız edici.
+Gördüğünüz gibi, curl, boşlukların URL’den kaçması gerektiği konusunda biraz rahatsız edici.
 Her ne kadar wget her şeyden kaçsa da, onu kullanmanızı önermiyoruz çünkü keep-alive ve Transfer-Encoding: chunked kullanırken HTTP 1.1 üzerinde iyi çalışmıyor.
 
 ``` bash
@@ -89,7 +89,7 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-Ekleme sorguları için veri iletmenin POST yöntemi gereklidir. Bu durumda, URL parametresinde sorgunun başlangıcını yazabilir ve eklemek için verileri iletmek için POST'u kullanabilirsiniz. Eklenecek veriler, örneğin Mysql'den sekmeyle ayrılmış bir döküm olabilir. Bu şekilde, INSERT sorgusu MYSQL'DEN load DATA LOCAL INFİLE'IN yerini alır.
+Ekleme sorguları için veri iletmenin POST yöntemi gereklidir. Bu durumda, URL parametresinde sorgunun başlangıcını yazabilir ve eklemek için verileri iletmek için POST’u kullanabilirsiniz. Eklenecek veriler, örneğin Mysql’den sekmeyle ayrılmış bir döküm olabilir. Bu şekilde, INSERT sorgusu MYSQL’DEN load DATA LOCAL INFİLE’IN yerini alır.
 
 Örnekler: tablo oluşturma:
 
@@ -149,10 +149,10 @@ Veri tablosu döndürmeyen başarılı istekler için boş bir yanıt gövdesi d
 
 Veri iletirken dahili ClickHouse sıkıştırma formatını kullanabilirsiniz. Sıkıştırılmış veriler standart olmayan bir biçime sahiptir ve özel `clickhouse-compressor` onunla çalışmak için program (bu ile yüklü `clickhouse-client` paket). Veri ekleme verimliliğini artırmak için, sunucu tarafı sağlama toplamı doğrulamasını kullanarak devre dışı bırakabilirsiniz. [http\_native\_compression\_disable\_checksumming\_on\_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) ayar.
 
-Belirt ift ifiyseniz `compress=1` URL'de, sunucu size gönderdiği verileri sıkıştırır.
-Belirt ift ifiyseniz `decompress=1` URL'de, sunucu içinde geçirdiğiniz aynı verileri açar. `POST` yöntem.
+Belirt ift ifiyseniz `compress=1` URL’de, sunucu size gönderdiği verileri sıkıştırır.
+Belirt ift ifiyseniz `decompress=1` URL’de, sunucu içinde geçirdiğiniz aynı verileri açar. `POST` yöntem.
 
-Ayrıca kullanmayı seçebilirsiniz [HTTP sıkıştırma](https://en.wikipedia.org/wiki/HTTP_compression). Sıkıştırılmış bir göndermek için `POST` istek, istek başlığını Ekle `Content-Encoding: compression_method`. Clickhouse'un yanıtı sıkıştırması için şunları eklemelisiniz `Accept-Encoding: compression_method`. ClickHouse destekler `gzip`, `br`, ve `deflate` [sıkıştırma yöntemleri](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP sıkıştırmasını etkinleştirmek için Clickhouse'u kullanmanız gerekir [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) ayar. Veri sıkıştırma düzeyini [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) tüm sıkıştırma yöntemleri için ayarlama.
+Ayrıca kullanmayı seçebilirsiniz [HTTP sıkıştırma](https://en.wikipedia.org/wiki/HTTP_compression). Sıkıştırılmış bir göndermek için `POST` istek, istek başlığını Ekle `Content-Encoding: compression_method`. Clickhouse’un yanıtı sıkıştırması için şunları eklemelisiniz `Accept-Encoding: compression_method`. ClickHouse destekler `gzip`, `br`, ve `deflate` [sıkıştırma yöntemleri](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens). HTTP sıkıştırmasını etkinleştirmek için Clickhouse’u kullanmanız gerekir [enable\_http\_compression](../operations/settings/settings.md#settings-enable_http_compression) ayar. Veri sıkıştırma düzeyini [http\_zlib\_compression\_level](#settings-http_zlib_compression_level) tüm sıkıştırma yöntemleri için ayarlama.
 
 Bunu, büyük miktarda veri iletirken ağ trafiğini azaltmak veya hemen sıkıştırılmış dökümler oluşturmak için kullanabilirsiniz.
 
@@ -275,7 +275,7 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 
 Yanıt Kodu ve HTTP üstbilgileri istemciye gönderildikten sonra bir sorgu işleme hatası oluştu durumları önlemek için arabelleğe alma kullanın. Bu durumda, yanıt gövdesinin sonunda bir hata iletisi yazılır ve istemci tarafında hata yalnızca ayrıştırma aşamasında algılanabilir.
 
-### Parametrelerle sorgular {#cli-queries-with-parameters}
+### Parametrelerle Sorgular {#cli-queries-with-parameters}
 
 Parametrelerle bir sorgu oluşturabilir ve karşılık gelen HTTP istek parametrelerinden onlar için değerler geçirebilirsiniz. Daha fazla bilgi için, bkz. [CLI için parametrelerle sorgular](cli.md#cli-queries-with-parameters).
 
@@ -285,7 +285,7 @@ Parametrelerle bir sorgu oluşturabilir ve karşılık gelen HTTP istek parametr
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-## Önceden tanımlanmış HTTP arabirimi {#predefined_http_interface}
+## Önceden tanımlanmış HTTP Arabirimi {#predefined_http_interface}
 
 ClickHouse HTTP arabirimi üzerinden belirli sorguları destekler. Örneğin, bir tabloya aşağıdaki gibi veri yazabilirsiniz:
 
@@ -367,7 +367,7 @@ curl -vvv 'http://localhost:8123/metrics'
 
 `<root_handler>` kök yolu isteği için belirtilen içeriği döndürür. Belirli dönüş içeriği tarafından yapılandırılır `http_server_default_response` config.xml. belirtilmemişse, iade **Tamam.**
 
-`http_server_default_response` tanımlanmadı ve Clickhouse'a bir HTTP isteği gönderildi. Sonuç aşağıdaki gibidir:
+`http_server_default_response` tanımlanmadı ve Clickhouse’a bir HTTP isteği gönderildi. Sonuç aşağıdaki gibidir:
 
 ``` xml
 <http_handlers>
@@ -378,7 +378,7 @@ curl -vvv 'http://localhost:8123/metrics'
     $ curl 'http://localhost:8123'
     Ok.
 
-`http_server_default_response` tanımlanır ve Clickhouse'a bir HTTP isteği gönderilir. Sonuç aşağıdaki gibidir:
+`http_server_default_response` tanımlanır ve Clickhouse’a bir HTTP isteği gönderilir. Sonuç aşağıdaki gibidir:
 
 ``` xml
 <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
@@ -393,7 +393,7 @@ curl -vvv 'http://localhost:8123/metrics'
 
 ## ping\_handler {#ping_handler}
 
-`<ping_handler>` geçerli ClickHouse sunucusunun durumunu araştırmak için kullanılabilir. ClickHouse HTTP Sunucusu normal olduğunda, Clickhouse'a erişme `<ping_handler>` dön willecektir **Tamam.**.
+`<ping_handler>` geçerli ClickHouse sunucusunun durumunu araştırmak için kullanılabilir. ClickHouse HTTP Sunucusu normal olduğunda, Clickhouse’a erişme `<ping_handler>` dön willecektir **Tamam.**.
 
 Örnek:
 
@@ -440,7 +440,7 @@ Yapılandırabilirsiniz `<method>`, `<headers>`, `<url>` ve `<queries>` içinde 
 
 `<method>` HTTP isteğinin yöntem bölümünü eşleştirmekten sorumludur. `<method>` tam tanımına uygundur [yöntem](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) HTTP protokolünde. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin yöntem kısmıyla eşleşmez
 
-`<url>` HTTP isteğinin url bölümünü eşleştirmekten sorumludur. İle uyumludur [RE2](https://github.com/google/re2)'In düzenli ifadeleri. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin url kısmıyla eşleşmez
+`<url>` HTTP isteğinin url bölümünü eşleştirmekten sorumludur. İle uyumludur [RE2](https://github.com/google/re2)’In düzenli ifadeleri. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin url kısmıyla eşleşmez
 
 `<headers>` HTTP isteğinin başlık kısmını eşleştirmekten sorumludur. Bu re2 düzenli ifadeler ile uyumludur. İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanımlanmamışsa, HTTP isteğinin başlık kısmıyla eşleşmez
 
@@ -482,7 +482,7 @@ max_alter_threads   2
 
 `<dynamic_query_handler>` göre `<predefined_query_handler>` artmak `<query_param_name>` .
 
-ClickHouse ayıklar ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteğinin url'sindeki değer.
+ClickHouse ayıklar ve karşılık gelen değeri yürütür `<query_param_name>` HTTP isteğinin url’sindeki değer.
 ClickHouse varsayılan ayarı `<query_param_name>` oluyor `/query` . İsteğe bağlı bir yapılandırmadır. Yapılandırma dosyasında tanım yoksa, param iletilmez.
 
 Bu işlevselliği denemek için örnek max\_threads ve max\_alter\_threads değerlerini tanımlar ve ayarların başarıyla ayarlanıp ayarlanmadığını sorgular.

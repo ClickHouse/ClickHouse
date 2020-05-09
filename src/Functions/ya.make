@@ -24,13 +24,27 @@ PEERDIR(
     library/consistent_hashing
 )
 
+# "Arcadia" build is slightly deficient. It lacks many libraries that we need.
 SRCS(
-    array/array.cpp
+    abs.cpp
+    acos.cpp
+    addDays.cpp
+    addHours.cpp
+    addMinutes.cpp
+    addMonths.cpp
+    addQuarters.cpp
+    addressToLine.cpp
+    addressToSymbol.cpp
+    addSeconds.cpp
+    addWeeks.cpp
+    addYears.cpp
+    appendTrailingCharIfAbsent.cpp
     array/arrayAll.cpp
     array/arrayAUC.cpp
     array/arrayCompact.cpp
     array/arrayConcat.cpp
     array/arrayCount.cpp
+    array/array.cpp
     array/arrayCumSum.cpp
     array/arrayCumSumNonNegative.cpp
     array/arrayDifference.cpp
@@ -69,65 +83,13 @@ SRCS(
     array/countEqual.cpp
     array/emptyArray.cpp
     array/emptyArrayToSingle.cpp
-    array/has.cpp
     array/hasAll.cpp
     array/hasAny.cpp
+    array/has.cpp
     array/indexOf.cpp
     array/length.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
-    GatherUtils/concat.cpp
-    GatherUtils/createArraySink.cpp
-    GatherUtils/createArraySource.cpp
-    GatherUtils/createValueSource.cpp
-    GatherUtils/has.cpp
-    GatherUtils/push.cpp
-    GatherUtils/resizeConstantSize.cpp
-    GatherUtils/resizeDynamicSize.cpp
-    GatherUtils/sliceDynamicOffsetBounded.cpp
-    GatherUtils/sliceDynamicOffsetUnbounded.cpp
-    GatherUtils/sliceFromLeftConstantOffsetBounded.cpp
-    GatherUtils/sliceFromLeftConstantOffsetUnbounded.cpp
-    GatherUtils/sliceFromRightConstantOffsetBounded.cpp
-    GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
-    URL/basename.cpp
-    URL/cutFragment.cpp
-    URL/cutQueryString.cpp
-    URL/cutQueryStringAndFragment.cpp
-    URL/cutToFirstSignificantSubdomain.cpp
-    URL/cutURLParameter.cpp
-    URL/cutWWW.cpp
-    URL/decodeURLComponent.cpp
-    URL/domain.cpp
-    URL/domainWithoutWWW.cpp
-    URL/extractURLParameter.cpp
-    URL/extractURLParameterNames.cpp
-    URL/extractURLParameters.cpp
-    URL/firstSignificantSubdomain.cpp
-    URL/fragment.cpp
-    URL/path.cpp
-    URL/pathFull.cpp
-    URL/protocol.cpp
-    URL/queryString.cpp
-    URL/queryStringAndFragment.cpp
-    URL/registerFunctionsURL.cpp
-    URL/tldLookup.generated.cpp
-    URL/topLevelDomain.cpp
-    URL/URLHierarchy.cpp
-    URL/URLPathHierarchy.cpp
-    abs.cpp
-    acos.cpp
-    addDays.cpp
-    addHours.cpp
-    addMinutes.cpp
-    addMonths.cpp
-    addQuarters.cpp
-    addressToLine.cpp
-    addressToSymbol.cpp
-    addSeconds.cpp
-    addWeeks.cpp
-    addYears.cpp
-    appendTrailingCharIfAbsent.cpp
     asin.cpp
     assumeNotNull.cpp
     atan.cpp
@@ -145,9 +107,9 @@ SRCS(
     bitShiftLeft.cpp
     bitShiftRight.cpp
     bitSwapLastTwo.cpp
-    bitTest.cpp
     bitTestAll.cpp
     bitTestAny.cpp
+    bitTest.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
     blockNumber.cpp
@@ -173,12 +135,15 @@ SRCS(
     empty.cpp
     endsWith.cpp
     equals.cpp
-    erf.cpp
     erfc.cpp
+    erf.cpp
     evalMLMethod.cpp
-    exp.cpp
-    exp2.cpp
     exp10.cpp
+    exp2.cpp
+    exp.cpp
+    extractAllGroups.cpp
+    extract.cpp
+    extractGroups.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -200,8 +165,21 @@ SRCS(
     FunctionsRandom.cpp
     FunctionsRound.cpp
     FunctionsStringArray.cpp
-    FunctionsStringRegex.cpp
     FunctionsStringSimilarity.cpp
+    GatherUtils/concat.cpp
+    GatherUtils/createArraySink.cpp
+    GatherUtils/createArraySource.cpp
+    GatherUtils/createValueSource.cpp
+    GatherUtils/has.cpp
+    GatherUtils/push.cpp
+    GatherUtils/resizeConstantSize.cpp
+    GatherUtils/resizeDynamicSize.cpp
+    GatherUtils/sliceDynamicOffsetBounded.cpp
+    GatherUtils/sliceDynamicOffsetUnbounded.cpp
+    GatherUtils/sliceFromLeftConstantOffsetBounded.cpp
+    GatherUtils/sliceFromLeftConstantOffsetUnbounded.cpp
+    GatherUtils/sliceFromRightConstantOffsetBounded.cpp
+    GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     gcd.cpp
     generateUUIDv4.cpp
     GeoHash.cpp
@@ -216,8 +194,8 @@ SRCS(
     greaterOrEquals.cpp
     greatest.cpp
     hasColumnInTable.cpp
-    hasToken.cpp
     hasTokenCaseInsensitive.cpp
+    hasToken.cpp
     hostName.cpp
     identity.cpp
     if.cpp
@@ -229,8 +207,8 @@ SRCS(
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
-    intExp2.cpp
     intExp10.cpp
+    intExp2.cpp
     isConstant.cpp
     isFinite.cpp
     isInfinite.cpp
@@ -245,61 +223,70 @@ SRCS(
     less.cpp
     lessOrEquals.cpp
     lgamma.cpp
-    log.cpp
-    log2.cpp
+    like.cpp
     log10.cpp
+    log2.cpp
+    log.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
     lowerUTF8.cpp
+    match.cpp
     materialize.cpp
     minus.cpp
     modulo.cpp
     moduloOrZero.cpp
+    multiFuzzyMatchAllIndices.cpp
+    multiFuzzyMatchAny.cpp
+    multiFuzzyMatchAnyIndex.cpp
     multiIf.cpp
+    multiMatchAllIndices.cpp
+    multiMatchAny.cpp
+    multiMatchAnyIndex.cpp
     multiply.cpp
-    multiSearchAllPositions.cpp
     multiSearchAllPositionsCaseInsensitive.cpp
     multiSearchAllPositionsCaseInsensitiveUTF8.cpp
+    multiSearchAllPositions.cpp
     multiSearchAllPositionsUTF8.cpp
-    multiSearchAny.cpp
     multiSearchAnyCaseInsensitive.cpp
     multiSearchAnyCaseInsensitiveUTF8.cpp
+    multiSearchAny.cpp
     multiSearchAnyUTF8.cpp
-    multiSearchFirstIndex.cpp
     multiSearchFirstIndexCaseInsensitive.cpp
     multiSearchFirstIndexCaseInsensitiveUTF8.cpp
+    multiSearchFirstIndex.cpp
     multiSearchFirstIndexUTF8.cpp
-    multiSearchFirstPosition.cpp
     multiSearchFirstPositionCaseInsensitive.cpp
     multiSearchFirstPositionCaseInsensitiveUTF8.cpp
+    multiSearchFirstPosition.cpp
     multiSearchFirstPositionUTF8.cpp
     negate.cpp
     neighbor.cpp
     notEmpty.cpp
     notEquals.cpp
-    now.cpp
+    notLike.cpp
     now64.cpp
+    now.cpp
     nullIf.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
-    position.cpp
     positionCaseInsensitive.cpp
     positionCaseInsensitiveUTF8.cpp
+    position.cpp
     positionUTF8.cpp
     pow.cpp
-    rand.cpp
     rand64.cpp
     randConstant.cpp
+    rand.cpp
     randomPrintableASCII.cpp
     regexpQuoteMeta.cpp
-    registerFunctions.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
     registerFunctionsConditional.cpp
     registerFunctionsConsistentHashing.cpp
+    registerFunctions.cpp
     registerFunctionsDateTime.cpp
     registerFunctionsGeo.cpp
     registerFunctionsHigherOrder.cpp
@@ -310,6 +297,7 @@ SRCS(
     registerFunctionsRandom.cpp
     registerFunctionsReinterpret.cpp
     registerFunctionsString.cpp
+    registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
     registerFunctionsTuple.cpp
     registerFunctionsVisitParam.cpp
@@ -317,6 +305,10 @@ SRCS(
     reinterpretAsString.cpp
     reinterpretStringAs.cpp
     repeat.cpp
+    replaceAll.cpp
+    replaceOne.cpp
+    replaceRegexpAll.cpp
+    replaceRegexpOne.cpp
     replicate.cpp
     reverse.cpp
     reverseUTF8.cpp
@@ -402,6 +394,31 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    URL/basename.cpp
+    URL/cutFragment.cpp
+    URL/cutQueryStringAndFragment.cpp
+    URL/cutQueryString.cpp
+    URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutURLParameter.cpp
+    URL/cutWWW.cpp
+    URL/decodeURLComponent.cpp
+    URL/domain.cpp
+    URL/domainWithoutWWW.cpp
+    URL/extractURLParameter.cpp
+    URL/extractURLParameterNames.cpp
+    URL/extractURLParameters.cpp
+    URL/firstSignificantSubdomain.cpp
+    URL/fragment.cpp
+    URL/path.cpp
+    URL/pathFull.cpp
+    URL/protocol.cpp
+    URL/queryStringAndFragment.cpp
+    URL/queryString.cpp
+    URL/registerFunctionsURL.cpp
+    URL/tldLookup.generated.cpp
+    URL/topLevelDomain.cpp
+    URL/URLHierarchy.cpp
+    URL/URLPathHierarchy.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
@@ -413,6 +430,7 @@ SRCS(
     visitParamHas.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
+
 )
 
 END()

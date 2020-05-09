@@ -397,7 +397,7 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 
 AggregatingTransform::AggregatingTransform(
     Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
-    size_t current_variant, size_t temporary_data_merge_threads_, size_t max_threads_)
+    size_t current_variant, size_t max_threads_, size_t temporary_data_merge_threads_)
     : IProcessor({std::move(header)}, {params_->getHeader()}), params(std::move(params_))
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)

@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -63,7 +63,7 @@ public:
 
     CancellationCode killMutation(const String & mutation_id) override;
 
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void alter(const AlterCommands & commands, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;

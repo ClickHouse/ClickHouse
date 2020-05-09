@@ -83,7 +83,7 @@ add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
 set(FLATBUFFERS_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/flatbuffers)
 set(FLATBUFFERS_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/flatbuffers)
 set(FLATBUFFERS_INCLUDE_DIR ${FLATBUFFERS_SRC_DIR}/include)
-set(FLATBUFFERS_COMPILER "${FLATBUFFERS_BINARY_DIR}/flatc")
+set(FLATBUFFERS_COMPILER "$<TARGET_FILE:flatc>")
 
 # set flatbuffers CMake options
 if (${USE_STATIC_LIBRARIES})

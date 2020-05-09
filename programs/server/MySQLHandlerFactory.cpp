@@ -7,8 +7,8 @@
 #include "IServer.h"
 #include "MySQLHandler.h"
 
-#if USE_POCO_NETSSL
-#include <Poco/Net/SSLManager.h>
+#if USE_SSL
+#    include <Poco/Net/SSLManager.h>
 #endif
 
 namespace DB
@@ -25,8 +25,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     : server(server_)
     , log(&Logger::get("MySQLHandlerFactory"))
 {
-
-#if USE_POCO_NETSSL
+#if USE_SSL
     try
     {
         Poco::Net::SSLManager::instance().defaultServerContext();
@@ -36,9 +35,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
         LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
-#endif
 
-#if USE_SSL
     /// Reading rsa keys for SHA256 authentication plugin.
     try
     {
@@ -126,7 +123,7 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
 {
     size_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: " << connection_id << ". Address: " << socket.peerAddress().toString());
-#if USE_POCO_NETSSL && USE_SSL
+#if USE_SSL
     return new MySQLHandlerSSL(server, socket, ssl_enabled, connection_id, *public_key, *private_key);
 #else
     return new MySQLHandler(server, socket, ssl_enabled, connection_id);

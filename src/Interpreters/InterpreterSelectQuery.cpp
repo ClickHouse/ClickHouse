@@ -853,14 +853,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 {
                     pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
                     {
-                        if (stream_type == QueryPipeline::StreamType::Totals)
-                            return nullptr;
+                        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
 
                         return std::make_shared<FilterTransform>(
                             block,
                             expressions.filter_info->actions,
                             expressions.filter_info->column_name,
-                            expressions.filter_info->do_remove_column);
+                            expressions.filter_info->do_remove_column,
+                            on_totals);
                     });
                 }
                 else
@@ -1608,9 +1608,10 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 
 void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
-    pipeline.addSimpleTransform([&](const Block & block)
+    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type)
     {
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter);
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter, on_totals);
     });
 }
 
@@ -1869,11 +1870,10 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
 
         /// TODO: do we need to save filter there?
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false);
+        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false, on_totals);
     });
 }
 
@@ -2033,7 +2033,9 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
                 sorting_stream, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort / pipeline.streams.size(),
-                context->getTemporaryVolume(), settings.min_free_disk_space_for_temporary_data);
+                context->getTemporaryVolume(),
+                settings.temporary_files_codec,
+                settings.min_free_disk_space_for_temporary_data);
 
             stream = merging_stream;
         });

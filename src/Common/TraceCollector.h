@@ -20,6 +20,7 @@ enum class TraceType : uint8_t
     Real,
     CPU,
     Memory,
+    MemorySample
 };
 
 class TraceCollector
@@ -31,7 +32,7 @@ public:
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
     /// size - for memory tracing is the amount of memory allocated; for other trace types it is 0.
-    static void collect(TraceType trace_type, const StackTrace & stack_trace, UInt64 size);
+    static void collect(TraceType trace_type, const StackTrace & stack_trace, Int64 size);
 
 private:
     std::shared_ptr<TraceLog> trace_log;

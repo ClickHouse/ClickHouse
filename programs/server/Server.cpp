@@ -29,7 +29,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
-#include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
@@ -62,7 +62,6 @@
 #include "MySQLHandlerFactory.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <common/config_common.h>
 #    include "config_core.h"
 #    include "Common/config_version.h"
 #endif
@@ -72,7 +71,7 @@
 #    include <Common/hasLinuxCapability.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -310,10 +309,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
-    /// Create directories for 'path' and for default database, if not exist.
-    Poco::File(path + "data/" + default_database).createDirectories();
-    Poco::File(path + "metadata/" + default_database).createDirectories();
-
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -402,6 +397,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         Poco::File(dictionaries_lib_path).createDirectories();
+    }
+
+    {
+        /// Directory with metadata of tables, which was marked as dropped by Atomic database
+        Poco::File(path + "metadata_dropped/").createDirectories();
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -593,7 +593,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
-        loadMetadata(*global_context);
+        loadMetadata(*global_context, default_database);
         DatabaseCatalog::instance().loadDatabases();
     }
     catch (...)
@@ -628,6 +628,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
+        }
+
+        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
+        if (total_memory_tracker_sample_probability)
+        {
+            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
         }
     }
 #endif
@@ -673,11 +679,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
 #if defined(OS_LINUX)
-    if (!TaskStatsInfoGetter::checkPermissions())
+    if (!TasksStatsCounters::checkIfAvailable())
     {
-        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
+            " neither clickhouse-server process has CAP_NET_ADMIN capability."
+            " 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
+            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -805,15 +813,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
-                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handler_factory,
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://" + address.toString());
             });
@@ -821,16 +823,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// HTTPS
             create_server("https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://" + address.toString());
 #else
@@ -859,7 +858,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// TCP with SSL
             create_server("tcp_port_secure", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
@@ -885,26 +884,20 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
@@ -936,13 +929,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handler_factory,
-                    server_pool,
-                    socket,
-                    http_params));
+                    createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });

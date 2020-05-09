@@ -73,11 +73,13 @@ SRCS(
     parseRemoteDescription.cpp
     PipeFDs.cpp
     PODArray.cpp
+    ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
     RemoteHostFilter.cpp
+    renameat2.cpp
     RWLock.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp
@@ -94,6 +96,7 @@ SRCS(
     TerminalSize.cpp
     thread_local_rng.cpp
     ThreadFuzzer.cpp
+    ThreadProfileEvents.cpp
     ThreadPool.cpp
     ThreadStatus.cpp
     TraceCollector.cpp
