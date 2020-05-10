@@ -156,6 +156,8 @@ public:
 
     size_t getElementCount() const;
 
+    size_t getBytesAllocated() const;
+
 private:
     template <typename SetFunc>
     void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found) const;
@@ -249,6 +251,8 @@ public:
 
     double getLoadFactor() const;
 
+    size_t getBytesAllocated() const;
+
 private:
     SSDCachePartition::Attributes createAttributesFromBlock(
             const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
@@ -277,9 +281,6 @@ private:
     mutable size_t update_error_count = 0;
     mutable std::chrono::system_clock::time_point backoff_end_time;
 
-    // stats
-    //mutable size_t bytes_allocated = 0;
-
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
 };
@@ -307,7 +308,7 @@ public:
 
     std::string getTypeName() const override { return "SSDCache"; }
 
-    size_t getBytesAllocated() const override { return 0; } // TODO: ?
+    size_t getBytesAllocated() const override { return storage.getBytesAllocated(); }
 
     size_t getQueryCount() const override { return storage.getQueryCount(); }
 

@@ -99,7 +99,7 @@ public:
         cells[idx].index = val;
     }
 
-    bool get(K key, V & val)
+    bool get(K key, V & val) const
     {
         const size_t bucket = (hash(key) & bucket_mask);
         const size_t idx = getCellIndex(key, bucket);
@@ -109,7 +109,7 @@ public:
         return true;
     }
 
-    bool getKeyAndValue(K & key, V & val)
+    bool getKeyAndValue(K & key, V & val) const
     {
         const size_t bucket = (hash(key) & bucket_mask);
         const size_t idx = getCellIndex(key, bucket);
@@ -135,12 +135,17 @@ public:
         return true;
     }
 
-    size_t size()
+    size_t size() const
     {
         return sz;
     }
 
-    auto keys()
+    size_t capacity() const
+    {
+        return cells.size();
+    }
+
+    auto keys() const
     {
         std::vector<K> res;
         for (const auto & cell : cells)
@@ -154,7 +159,7 @@ public:
     }
 
 private:
-    size_t getCellIndex(const K key, const size_t bucket)
+    size_t getCellIndex(const K key, const size_t bucket) const
     {
         const size_t pos = getPosition(bucket);
         for (size_t idx = 0; idx < bucket_size; ++idx)
@@ -170,7 +175,7 @@ private:
         return bucket * bucket_size + pos;
     }
 
-    size_t getPosition(const size_t bucket)
+    size_t getPosition(const size_t bucket) const
     {
         const size_t idx = (bucket >> 1);
         if ((bucket & 1) == 0)
