@@ -1670,7 +1670,7 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);
     };
-    factory.registerLayout("ssd", create_layout, false);
+    factory.registerLayout("ssd_cache", create_layout, false);
 }
 
 }
