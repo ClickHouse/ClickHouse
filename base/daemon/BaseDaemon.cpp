@@ -52,11 +52,12 @@
 #include <Common/Config/ConfigProcessor.h>
 
 #if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
+#   include <Common/config_version.h>
 #endif
 
 #if defined(OS_DARWIN)
-#    define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
+#   pragma GCC diagnostic ignored "-Wunused-macros"
+#   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
 
@@ -633,12 +634,18 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             sa.sa_flags = SA_SIGINFO;
 
             {
+#if defined(OS_DARWIN)
+                sigemptyset(&sa.sa_mask);
+                for (auto signal : signals)
+                    sigaddset(&sa.sa_mask, signal);
+#else
                 if (sigemptyset(&sa.sa_mask))
                     throw Poco::Exception("Cannot set signal handler.");
 
                 for (auto signal : signals)
                     if (sigaddset(&sa.sa_mask, signal))
                         throw Poco::Exception("Cannot set signal handler.");
+#endif
 
                 for (auto signal : signals)
                     if (sigaction(signal, &sa, nullptr))
