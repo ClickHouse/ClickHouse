@@ -75,7 +75,9 @@ class ServerThread(threading.Thread):
 
             # If process has died then try to fetch output before releasing lock
             if self._proc.returncode is not None:
-                self._proc.communicate()
+                stdout, stderr = self._proc.communicate()
+                print >> sys.stderr, stdout
+                print >> sys.stderr, stderr
 
             if self._proc.returncode == 70:  # Address already in use
                 retries -= 1
@@ -122,7 +124,7 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
     <users_config>users.xml</users_config>
     <mark_cache_size>5368709120</mark_cache_size>
 
-    <timezone>UTC</timezone>
+    <timezone>Europe/Moscow</timezone>
 
     <remote_servers>
         <test_shard_localhost>

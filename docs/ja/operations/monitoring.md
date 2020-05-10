@@ -28,16 +28,16 @@ ClickHouseは、ハードウェアリソースの状態を単独で監視しま�
 
 ClickHouseサーバーは自己状態の監視のための器械を埋め込んだ。
 
-追跡サーバのイベントサーバーを利用ます。 を見る [ロガー](server_configuration_parameters/settings.md#server_configuration_parameters-logger) 設定ファイルのセクション。
+追跡サーバのイベントサーバーを利用ます。 を見る [ロガー](server-configuration-parameters/settings.md#server_configuration_parameters-logger) 設定ファイルのセクション。
 
 ClickHouseの収集:
 
 -   異なるメトリクスのサーバがどのように利用計算資源です。
 -   クエリ処理に関する一般的な統計。
 
-メトリックは次の場所にあります [システム。指標](../operations/system_tables.md#system_tables-metrics), [システム。イベント](../operations/system_tables.md#system_tables-events)、と [システム。asynchronous\_metrics](../operations/system_tables.md#system_tables-asynchronous_metrics) テーブル。
+メトリックは次の場所にあります [システム。指標](../operations/system-tables.md#system_tables-metrics), [システム。イベント](../operations/system-tables.md#system_tables-events)、と [システム。asynchronous\_metrics](../operations/system-tables.md#system_tables-asynchronous_metrics) テーブル。
 
-を設定することができclickhouse輸出の指標に [黒鉛](https://github.com/graphite-project). を見る [グラファイト部](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) クリックハウスサーバー設定ファイルで。 を設定する前に輸出のメトリックトに設定する必要があります黒鉛は以下の公式 [ガイド](https://graphite.readthedocs.io/en/latest/install.html).
+を設定することができclickhouse輸出の指標に [黒鉛](https://github.com/graphite-project). を見る [グラファイト部](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) クリックハウスサーバー設定ファイルで。 を設定する前に輸出のメトリックトに設定する必要があります黒鉛は以下の公式 [ガイド](https://graphite.readthedocs.io/en/latest/install.html).
 
 さらに、http apiを使用してサーバーの可用性を監視できます。 を送信 `HTTP GET` への要求 `/ping`. サーバーが使用可能な場合は、次のように応答します `200 OK`.
 

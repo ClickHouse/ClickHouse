@@ -83,7 +83,6 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 public:
     IStorage() = delete;
     explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {}
-    IStorage(StorageID id_, ColumnsDescription virtuals_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -153,11 +152,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// result structure doesn't affect storage.
     virtual StorageInMemoryMetadata getInMemoryMetadata() const;
 
-    /// NOTE: these methods should include virtual columns,
-    ///       but should NOT include ALIAS columns (they are treated separately).
-    virtual NameAndTypePair getColumn(const String & column_name) const;
-    virtual bool hasColumn(const String & column_name) const;
-
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
@@ -178,6 +172,18 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+    /// Return list of virtual columns (like _part, _table, etc). In the vast
+    /// majority of cases virtual columns are static constant part of Storage
+    /// class and don't depend on Storage object. But sometimes we have fake
+    /// storages, like Merge, which works as proxy for other storages and it's
+    /// virtual columns must contain virtual columns from underlying table.
+    ///
+    /// User can create columns with the same name as virtual column. After that
+    /// virtual column will be overriden and inaccessible.
+    ///
+    /// By default return empty list of columns.
+    virtual NamesAndTypesList getVirtuals() const;
+
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
 
@@ -189,13 +195,13 @@ protected: /// still thread-unsafe part.
 private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
-    ColumnsDescription columns; /// combined real and virtual columns
+    ColumnsDescription columns;
     IndicesDescription indices;
     ConstraintsDescription constraints;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
-            const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of

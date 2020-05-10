@@ -2,13 +2,8 @@
 
 #include <Core/Block.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
-#if USE_POCO_MONGODB
-#    include "DictionaryStructure.h"
-#    include "IDictionarySource.h"
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 
 namespace Poco
 {
@@ -94,5 +89,3 @@ private:
 };
 
 }
-
-#endif
