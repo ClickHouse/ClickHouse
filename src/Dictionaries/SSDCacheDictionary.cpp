@@ -52,16 +52,17 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR;
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_IO_GETEVENTS;
     extern const int CANNOT_IO_SUBMIT;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
-    extern const int TOO_SMALL_BUFFER_SIZE;
+    extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
-    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -78,8 +79,8 @@ namespace
     constexpr size_t BLOCK_CHECKSUM_SIZE = 8;
     constexpr size_t BLOCK_SPECIAL_FIELDS_SIZE = 4;
 
-    static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
-    static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
+    constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
+    constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
 
     //constexpr size_t KEY_RECENTLY_USED_BIT = 63;
     //constexpr size_t KEY_RECENTLY_USED = (1ULL << KEY_RECENTLY_USED_BIT);
@@ -266,10 +267,10 @@ size_t SSDCachePartition::appendBlock(
         cache_index.setInMemory(true);
         cache_index.setBlockId(current_memory_block_id);
         // Poco::Logger::get("wr").information(" block mem: " + std::to_string(current_memory_block_id) + " wb: " + std::to_string(write_buffer_size));
-        if (current_memory_block_id >= write_buffer_size) {
+        if (current_memory_block_id >= write_buffer_size)
             throw DB::Exception("lel " + std::to_string(current_memory_block_id) + " " +
                 std::to_string(write_buffer_size) + " " + std::to_string(index), ErrorCodes::LOGICAL_ERROR);
-        }
+
         cache_index.setAddressInBlock(write_buffer->offset());
 
         flushed = false;
@@ -927,7 +928,7 @@ void SSDCacheStorage::getValue(const size_t attribute_index, const PaddedPODArra
 
     {
         std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
+        for (const auto & partition : partitions)
             partition->getValue<Out>(attribute_index, ids, out, found, get_default, now);
     }
 
@@ -947,7 +948,7 @@ void SSDCacheStorage::getString(const size_t attribute_index, const PaddedPODArr
 
     {
         std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
+        for (const auto & partition : partitions)
             partition->getString(attribute_index, ids, refs, arena, found, default_ids, now);
     }
 
@@ -968,7 +969,7 @@ void SSDCacheStorage::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UI
 
     {
         std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
+        for (const auto & partition : partitions)
             partition->has(ids, out, found, now);
 
         for (size_t i = 0; i < ids.size(); ++i)
@@ -1149,7 +1150,7 @@ PaddedPODArray<SSDCachePartition::Key> SSDCacheStorage::getCachedIds() const
     const auto now = std::chrono::system_clock::now();
 
     std::shared_lock lock(rw_lock);
-    for (auto & partition : partitions)
+    for (const auto & partition : partitions)
     {
         const auto cached_in_partition = partition->getCachedIds(now);
         array.insert(std::begin(cached_in_partition), std::end(cached_in_partition));

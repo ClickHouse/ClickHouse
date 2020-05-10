@@ -52,16 +52,16 @@ namespace ErrorCodes
     extern const int AIO_READ_ERROR;
     extern const int AIO_WRITE_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_IO_GETEVENTS;
     extern const int CANNOT_IO_SUBMIT;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
-    extern const int LOGICAL_ERROR;
-    extern const int TOO_SMALL_BUFFER_SIZE;
+    extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
-    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -78,8 +78,8 @@ namespace
     constexpr size_t BLOCK_CHECKSUM_SIZE = 8;
     constexpr size_t BLOCK_SPECIAL_FIELDS_SIZE = 4;
 
-    static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
-    static constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
+    constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
+    constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
 
     constexpr size_t KEY_IN_MEMORY_BIT = 63;
     constexpr size_t KEY_IN_MEMORY = (1ULL << KEY_IN_MEMORY_BIT);
@@ -961,7 +961,7 @@ void SSDComplexKeyCacheStorage::getValue(
 
     {
         std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
+        for (const auto & partition : partitions)
             partition->getValue<Out>(attribute_index, key_columns, key_types, out, found, get_default, now);
     }
 
@@ -993,7 +993,7 @@ void SSDComplexKeyCacheStorage::getString(
 
     {
         std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
+        for (const auto & partition : partitions)
             partition->getString(attribute_index, key_columns, key_types, refs, arena, found, default_ids, now);
     }
 
@@ -1025,7 +1025,7 @@ void SSDComplexKeyCacheStorage::has(
 
     {
         std::shared_lock lock(rw_lock);
-        for (auto & partition : partitions)
+        for (const auto & partition : partitions)
             partition->has(key_columns, key_types, out, found, now);
     }
 
