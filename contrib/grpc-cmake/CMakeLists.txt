@@ -54,7 +54,7 @@ if(TARGET c-ares)
 endif()
 
 # protobuf.cmake
-set(PROTOBUF_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
+set(_gRPC_PROTOBUF_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
 # if(NOT protobuf_BUILD_TESTS)
   # set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
 # endif()
@@ -97,7 +97,7 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/../zlib-ng)
 include_directories("${ZLIB_ROOT_DIR}")
 ## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 if(TARGET zlibstatic)
