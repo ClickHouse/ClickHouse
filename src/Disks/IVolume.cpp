@@ -10,6 +10,30 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int UNKNOWN_VOLUME_TYPE;
+}
+
+void VolumeType::fromString(const String & str)
+{
+    if (str == "JBOD")
+        value = JBOD;
+    else if (str == "SINGLE_DISK")
+        value = SINGLE_DISK;
+    else
+        throw DB::Exception("Unexpected string for volume type: " + str, ErrorCodes::UNKNOWN_VOLUME_TYPE);
+}
+
+String VolumeType::toString() const
+{
+    switch (value)
+    {
+        case JBOD:
+            return "JBOD";
+        case SINGLE_DISK:
+            return "SINGLE_DISK";
+        default:
+            return "Unknown";
+    }
 }
 
 IVolume::IVolume(
