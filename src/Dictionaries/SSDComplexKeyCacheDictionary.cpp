@@ -182,7 +182,7 @@ SSDComplexKeyCachePartition::SSDComplexKeyCachePartition(
     , write_buffer_size(write_buffer_size_)
     , max_stored_keys(max_stored_keys_)
     , path(dir_path + "/" + std::to_string(file_id))
-    , key_to_index(max_stored_keys, keys_pool)
+    , key_to_index(max_stored_keys, KeyDeleter(keys_pool))
     , attributes_structure(attributes_structure_)
 {
     std::filesystem::create_directories(std::filesystem::path{dir_path});
@@ -363,7 +363,7 @@ size_t SSDComplexKeyCachePartition::append(
 
         if (!flushed)
         {
-            key_to_index.set(keys[index], cache_index);
+            key_to_index.setWithDelete(keys[index], cache_index);
             keys_buffer.push_back(keys_buffer_pool->copyKeyFrom(keys[index]));
             ++index;
             ++keys_in_block;
@@ -447,7 +447,7 @@ void SSDComplexKeyCachePartition::flush()
     {
         Index index;
         Poco::Logger::get("get:").information("sz = " + std::to_string(keys_buffer[row].size()));
-        if (key_to_index.get(keys_buffer[row], index))
+        if (key_to_index.getKeyAndValue(keys_buffer[row], index))
         {
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
             {
@@ -910,8 +910,8 @@ PaddedPODArray<KeyRef> SSDComplexKeyCachePartition::getCachedIds(const std::chro
 {
     std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
     PaddedPODArray<KeyRef> array;
-    for (const auto & [key, index] : key_to_index)
-        array.push_back(key); // TODO: exclude default
+    //for (const auto & [key, index] : key_to_index)
+        //array.push_back(key); // TODO: exclude default
     return array;
 }
 
