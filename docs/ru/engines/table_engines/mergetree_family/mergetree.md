@@ -61,7 +61,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
         Кортеж столбцов или произвольных выражений. Пример: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](mergetree.md).
+-   `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](#pervichnyi-kliuch-otlichnyi-ot-kliucha-sortirovki).
 
         По умолчанию первичный ключ совпадает с ключом сортировки (который задаётся секцией `ORDER BY`.) Поэтому в большинстве случаев секцию `PRIMARY KEY` отдельно указывать не нужно.
 

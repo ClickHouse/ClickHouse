@@ -68,7 +68,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
     列または任意の式のタプル。 例えば: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [ソートキーとは異なります](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [ソートキーとは異なります](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     デフォルトでは、プライマリキーはソートキー(プライマリキーで指定)と同じです。 `ORDER BY` 句）。 したがって、ほとんどの場合、別の `PRIMARY KEY` 句。
 

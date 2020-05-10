@@ -68,9 +68,17 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
-    extern const Metric MemoryTrackingForMerges;
     extern const Metric BackgroundMovePoolTask;
     extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
+
+    extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundSchedulePool;
+
+    extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundBufferFlushSchedulePool;
+
+    extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
 }
 
 
@@ -1352,7 +1360,11 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
-        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+        shared->buffer_flush_schedule_pool.emplace(
+            settings.background_buffer_flush_schedule_pool_size,
+            CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundBufferFlushSchedulePool,
+            "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
 }
 
@@ -1360,7 +1372,11 @@ BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
-        shared->schedule_pool.emplace(settings.background_schedule_pool_size);
+        shared->schedule_pool.emplace(
+            settings.background_schedule_pool_size,
+            CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundSchedulePool,
+            "BgSchPool");
     return *shared->schedule_pool;
 }
 
@@ -1368,7 +1384,11 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
-        shared->distributed_schedule_pool.emplace(settings.background_distributed_schedule_pool_size);
+        shared->distributed_schedule_pool.emplace(
+            settings.background_distributed_schedule_pool_size,
+            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundDistributedSchedulePool,
+            "BgDistSchPool");
     return *shared->distributed_schedule_pool;
 }
 
