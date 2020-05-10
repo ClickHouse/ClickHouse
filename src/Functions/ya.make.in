@@ -1,5 +1,9 @@
 LIBRARY()
 
+CFLAGS(
+    -DUSE_SSL -DUSE_XXHASH
+)
+
 ADDINCL(
     library/consistent_hashing
     contrib/libs/farmhash
