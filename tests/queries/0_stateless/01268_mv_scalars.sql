@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS src_table;
+
 create table src_table Engine=Memory as system.numbers;
 CREATE MATERIALIZED VIEW dst_mv Engine=Memory as select *, (SELECT count() FROM src_table) AS cnt FROM src_table;
 insert into src_table select * from numbers(2);
