@@ -88,7 +88,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context)
+    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context, bool attach)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name.", ErrorCodes::INCORRECT_QUERY);
@@ -105,18 +105,28 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
     const auto & arguments = node->type->arguments;
 
     if (arguments && arguments->children.size() > 1)
-        throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    {
+        if (!attach)    /// This is for backward compatibility.
+            throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        arguments->children = { arguments->children[0] };
+    }
+
 
     if (arguments && !arguments->children.empty())
     {
-        const auto & argument = arguments->children[0]->as<ASTLiteral>();
+        auto * argument = arguments->children[0]->as<ASTLiteral>();
 
         if (!argument || (argument->value.safeGet<Float64>() < 0 || argument->value.safeGet<Float64>() > 1))
-            throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
+        {
+            if (!attach || !argument)   /// This is for backward compatibility.
+                throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
+
+            argument->value = Field(std::min(Float64(1), std::max(argument->value.safeGet<Float64>(), Float64(0))));
+        }
 
         max_conflict_probability = argument->value.safeGet<Float64>();
     }
-
 
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);
 

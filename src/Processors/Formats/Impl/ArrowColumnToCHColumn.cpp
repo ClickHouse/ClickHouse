@@ -1,7 +1,7 @@
 #include "config_formats.h"
 #include "ArrowColumnToCHColumn.h"
 
-#if USE_ORC || USE_PARQUET
+#if USE_ARROW || USE_ORC || USE_PARQUET
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -22,7 +22,6 @@ namespace DB
     {
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-        extern const int CANNOT_READ_ALL_DATA;
         extern const int CANNOT_CONVERT_TYPE;
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;
@@ -244,9 +243,8 @@ namespace DB
         }
     }
 
-    void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk &res, std::shared_ptr<arrow::Table> &table,
-                                                    arrow::Status &read_status, const Block &header,
-                                                    int &row_group_current, std::string format_name)
+    void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table,
+                                                    const Block & header, std::string format_name)
     {
         Columns columns_list;
         UInt64 num_rows = 0;
@@ -254,11 +252,6 @@ namespace DB
         columns_list.reserve(header.rows());
 
         using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
-        if (!read_status.ok())
-            throw Exception{"Error while reading " + format_name + " data: " + read_status.ToString(),
-                            ErrorCodes::CANNOT_READ_ALL_DATA};
-
-        ++row_group_current;
 
         NameToColumnPtr name_to_column_ptr;
         for (const auto& column_name : table->ColumnNames())

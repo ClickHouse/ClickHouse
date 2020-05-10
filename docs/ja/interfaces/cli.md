@@ -9,7 +9,7 @@ toc_title: "\u30B3\u30DE\u30F3\u30C9\u30E9\u30A4\u30F3"
 
 ClickHouseスネイティブコマンドラインのクライアント: `clickhouse-client`. クライアン 詳細については、 [設定](#interfaces_cli_configuration).
 
-[設置](../getting_started/index.md) それから `clickhouse-client` パッケージとコマンドでそれを実行 `clickhouse-client`.
+[設置](../getting-started/index.md) それから `clickhouse-client` パッケージとコマンドでそれを実行 `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -89,7 +89,7 @@ $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = 
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [データ型](../sql_reference/data_types/index.md) アプリのパラメータ値の。 たとえば、次のようなデータ構造 `(integer, ('string', integer))` を持つことができ `Tuple(UInt8, Tuple(String, UInt8))` デー [整数](../sql_reference/data_types/int_uint.md) タイプ）。
+-   `data type` — [データ型](../sql-reference/data-types/index.md) アプリのパラメータ値の。 たとえば、次のようなデータ構造 `(integer, ('string', integer))` を持つことができ `Tuple(UInt8, Tuple(String, UInt8))` デー [整数](../sql-reference/data-types/int-uint.md) タイプ）。
 
 #### 例えば {#example}
 

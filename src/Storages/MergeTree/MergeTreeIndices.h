@@ -137,12 +137,14 @@ public:
             std::unique_ptr<IMergeTreeIndex>(
                     const NamesAndTypesList & columns,
                     std::shared_ptr<ASTIndexDeclaration> node,
-                    const Context & context)>;
+                    const Context & context,
+                    bool attach)>;
 
     std::unique_ptr<IMergeTreeIndex> get(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context) const;
+        const Context & context,
+        bool attach) const;
 
     void registerIndex(const std::string & name, Creator creator);
 
@@ -159,21 +161,25 @@ private:
 std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+    const Context & context,
+    bool attach);
 
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+    const Context & context,
+    bool attach);
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+    const Context & context,
+    bool attach);
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
+    const Context & context,
+    bool attach);
 
 }

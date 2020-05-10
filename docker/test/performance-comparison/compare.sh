@@ -93,52 +93,51 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    # When testing commits from master, use the older test files. This allows the
-    # tests to pass even when we add new functions and tests for them, that are
-    # not supported in the old revision.
-    # When testing a PR, use the test files from the PR so that we can test their
-    # changes.
-    test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
+    # Find the directory with test files.
+    if [ -v CHPC_TEST_PATH ]
+    then
+        # Use the explicitly set path to directory with test files.
+        test_prefix="$CHPC_TEST_PATH"
+    elif [ "$PR_TO_TEST" = "0" ]
+    then
+        # When testing commits from master, use the older test files. This
+        # allows the tests to pass even when we add new functions and tests for
+        # them, that are not supported in the old revision.
+        test_prefix=left/performance
+    elif [ "$PR_TO_TEST" != "" ] && [ "$PR_TO_TEST" != "0" ]
+    then
+        # For PRs, use newer test files so we can test these changes.
+        test_prefix=right/performance
 
+        # If some tests were changed in the PR, we may want to run only these
+        # ones. The list of changed tests in changed-test.txt is prepared in
+        # entrypoint.sh from git diffs, because it has the cloned repo.  Used
+        # to use rsync for that but it was really ugly and not always correct
+        # (e.g. when the reference SHA is really old and has some other
+        # differences to the tested SHA, besides the one introduced by the PR).
+        changed_test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
+    fi
+
+    # Determine which tests to run.
+    if [ -v CHPC_TEST_GREP ]
+    then
+        # Run only explicitly specified tests, if any.
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
+    elif [ "$changed_test_files" != "" ]
+    then
+        # Use test files that changed in the PR.
+        test_files="$changed_test_files"
+    else
+        # The default -- run all tests found in the test dir.
+        test_files=$(ls "$test_prefix"/*.xml)
+    fi
+
+    # Delete old report files.
     for x in {test-times,skipped-tests,wall-clock-times,report-thresholds,client-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
     done
-
-
-    # FIXME a quick crutch to bring the run time down for the unstable tests --
-    # if some performance tests xmls were changed in a PR, run only these ones.
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        # changed-test.txt prepared in entrypoint.sh from git diffs, because it
-        # has the cloned repo. Used to use rsync for that but it was really ugly
-        # and not always correct (e.g. when the reference SHA is really old and
-        # has some other differences to the tested SHA, besides the one introduced
-        # by the PR).
-        test_files_override=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
-        if [ "$test_files_override" != "" ]
-        then
-            test_files=$test_files_override
-        fi
-    fi
-
-    # Run only explicitly specified tests, if any
-    if [ -v CHPC_TEST_GREP ]
-    then
-        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
-    fi
-
-    if [ "$test_files" == "" ]
-    then
-        # FIXME remove some broken long tests
-        for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
-        do
-            printf "%s\tMarked as broken (see compare.sh)\n" "$test_name">> skipped-tests.tsv
-            rm "$test_prefix/$test_name.xml" ||:
-        done
-        test_files=$(ls "$test_prefix"/*.xml)
-    fi
 
     # Run the tests.
     test_name="<none>"
@@ -159,15 +158,6 @@ function run_tests
 
         # The test completed with zero status, so we treat stderr as warnings
         mv "$test_name-err.log" "$test_name-warn.log"
-
-        grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
-        sed -n 's/^client-time/$test_name/p' < "$test_name-raw.tsv" >> "client-times.tsv"
-        sed -n 's/^threshold/$test_name/p' < "$test_name-raw.tsv" >> "report-thresholds.tsv"
-        skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
-        if [ "$skipped" != "" ]
-        then
-            printf "%s\t%s\n" "$test_name" "$skipped">> skipped-tests.tsv
-        fi
     done
 
     unset TIMEFORMAT
@@ -183,11 +173,11 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        gdb -p $pid --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
-    for i in {1..10}
+    for _ in {1..10}
     do
         if ! pkill -f clickhouse
         then
@@ -230,7 +220,19 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv *-report.tsv ||:
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv client-times.tsv report-thresholds.tsv ||:
+
+# Split the raw test output into files suitable for analysis.
+IFS=$'\n'
+for test_file in $(find . -maxdepth 1 -name "*-raw.tsv" -print)
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^query\t//p" < "$test_file" > "$test_name-queries.tsv"
+    sed -n "s/^client-time/$test_name/p" < "$test_file" >> "client-times.tsv"
+    sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "report-thresholds.tsv"
+    sed -n "s/^skipped/$test_name/p" < "$test_file" >> "skipped-tests.tsv"
+done
+unset IFS
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with 
@@ -246,14 +248,14 @@ do
     for query in $(cut -d'	' -f1 "$test_file" | sort | uniq)
     do
         query_prefix="$test_name.q$query_index"
-        query_index=$(($query_index + 1))
+        query_index=$((query_index + 1))
         grep -F "$query	" "$test_file" > "$query_prefix.tmp"
         printf "%s\0\n" \
             "clickhouse-local \
-                --file "$query_prefix.tmp" \
+                --file \"$query_prefix.tmp\" \
                 --structure 'query text, run int, version UInt32, time float' \
                 --query \"$(cat "$script_dir/eqmed.sql")\" \
-                >> "$test_name-report.tsv"" \
+                >> \"$test_name-report.tsv\"" \
                 2>> analyze-errors.log \
             >> analyze-commands.txt
     done
@@ -289,14 +291,13 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
         not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
         
-        not short and not changed_fail and stat_threshold > report_threshold + 0.05 as unstable_fail,
+        not short and not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
         not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
         
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         reports.test,
-        -- Truncate long queries.
-        if(length(query) < 300, query, substr(query, 1, 298) || '...') query
+        query
     from
         (
             select *,
@@ -345,8 +346,8 @@ create table test_time engine Memory as
         minIf(client, not short) query_min,
         count(*) queries,
         sum(short) short_queries
-    from query_time, queries
-    where query_time.query = queries.query
+    from query_time full join queries
+    on query_time.query = queries.query
     group by test;
 
 create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
@@ -357,7 +358,10 @@ create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
         floor(query_max, 3),
         floor(real / queries, 3) avg_real_per_query,
         floor(query_min, 3)
-    from test_time join wall_clock using test
+    from test_time
+        -- wall clock times are also measured for skipped tests, so don't
+        -- do full join
+        left join wall_clock using test
     order by avg_real_per_query desc;
 
 create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
@@ -549,11 +553,10 @@ case "$stage" in
     echo Servers stopped.
     ;&
 "analyze_queries")
-    # FIXME grep for set_index fails -- argument list too long.
     time analyze_queries ||:
     ;&
 "report")
-    time report
+    time report ||:
 
     time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html

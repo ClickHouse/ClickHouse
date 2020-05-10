@@ -12,24 +12,25 @@ PEERDIR(
 NO_COMPILER_WARNINGS()
 
 SRCS(
+    CacheDictionary.cpp
     CacheDictionary_generate1.cpp
     CacheDictionary_generate2.cpp
     CacheDictionary_generate3.cpp
-    CacheDictionary.cpp
     ClickHouseDictionarySource.cpp
+    ComplexKeyCacheDictionary.cpp
     ComplexKeyCacheDictionary_createAttributeWithType.cpp
     ComplexKeyCacheDictionary_generate1.cpp
     ComplexKeyCacheDictionary_generate2.cpp
     ComplexKeyCacheDictionary_generate3.cpp
     ComplexKeyCacheDictionary_setAttributeValue.cpp
     ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
-    ComplexKeyCacheDictionary.cpp
     ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
+    DirectDictionary.cpp
     Embedded/GeodataProviders/HierarchiesProvider.cpp
     Embedded/GeodataProviders/HierarchyFormatReader.cpp
     Embedded/GeodataProviders/NamesFormatReader.cpp
@@ -58,6 +59,7 @@ SRCS(
     registerDictionaries.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
+
 )
 
 END()
