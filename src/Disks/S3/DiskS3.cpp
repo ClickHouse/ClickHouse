@@ -370,7 +370,7 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    DiskPtr getDisk(size_t i = 0) const override
+    DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
         {
