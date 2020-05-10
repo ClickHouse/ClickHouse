@@ -68,7 +68,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
     return std::make_unique<MergeTreeDataPartWriterCompact>(
-        volume, getFullRelativePath(), storage, ordered_columns_list, indices_to_recalc,
+        shared_from_this(), ordered_columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);
 }

@@ -59,7 +59,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
-        volume, getFullRelativePath(), storage, columns_list, indices_to_recalc,
+        shared_from_this(), columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);
 }
