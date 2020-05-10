@@ -10,7 +10,7 @@ namespace DB
 
 namespace
 {
-    size_t nearestPowTwo(size_t x)
+    inline size_t nearestPowTwo(size_t x)
     {
         size_t r = 8;
         while (x > r)

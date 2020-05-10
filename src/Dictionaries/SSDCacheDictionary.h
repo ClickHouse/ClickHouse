@@ -254,9 +254,6 @@ public:
     size_t getBytesAllocated() const;
 
 private:
-    SSDCachePartition::Attributes createAttributesFromBlock(
-            const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
-
     void collectGarbage();
 
     const AttributeTypes attributes_structure;
