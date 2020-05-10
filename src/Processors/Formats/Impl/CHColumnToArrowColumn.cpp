@@ -201,37 +201,6 @@ namespace DB
         }
         status = builder.Finish(&arrow_array);
         checkStatus(status, write_column->getName(), format_name);
-
-    /* TODO column copy
-        const auto & internal_data = static_cast<const typename DataType::ColumnType &>(*write_column).getData();
-        //ArrowBuilderType numeric_builder;
-        arrow::DecimalBuilder builder(arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()));
-        arrow::Status status;
-
-        const uint8_t * arrow_null_bytemap_raw_ptr = nullptr;
-        PaddedPODArray<UInt8> arrow_null_bytemap;
-        if (null_bytemap)
-        {
-            /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
-            arrow_null_bytemap.reserve(null_bytemap->size());
-            for (size_t i = 0, size = null_bytemap->size(); i < size; ++i)
-                arrow_null_bytemap.emplace_back(1 ^ (*null_bytemap)[i]);
-
-            arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
-        }
-
-        if constexpr (std::is_same_v<NumericType, UInt8>)
-            status = builder.AppendValues(
-                reinterpret_cast<const uint8_t *>(internal_data.data()),
-                internal_data.size(),
-                reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
-        else
-            status = builder.AppendValues(internal_data.data(), internal_data.size(), reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
-        checkStatus(status, write_column->getName(), format_name);
-
-        status = builder.Finish(&arrow_array);
-        checkStatus(status, write_column->getName(), format_name);
-    */
     }
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
