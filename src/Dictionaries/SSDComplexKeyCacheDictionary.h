@@ -34,41 +34,50 @@ public:
 
     KeyRef() : ptr(nullptr) {}
 
-    inline UInt16 size() const {
+    inline UInt16 size() const
+    {
         UInt16 res;
         memcpy(&res, ptr, sizeof(res));
         return res;
     }
 
-    inline size_t fullSize() const {
+    inline size_t fullSize() const
+    {
         return static_cast<size_t>(size()) + sizeof(UInt16);
     }
 
-    inline bool isNull() const {
+    inline bool isNull() const
+    {
         return ptr == nullptr;
     }
 
-    inline char * data() const {
+    inline char * data() const
+    {
         return ptr + sizeof(UInt16);
     }
 
-    inline char * fullData() const {
+    inline char * fullData() const
+    {
         return ptr;
     }
 
-    inline char * fullData() {
+    inline char * fullData()
+    {
         return ptr;
     }
 
-    inline const StringRef getRef() const {
+    inline const StringRef getRef() const
+    {
         return StringRef(data(), size());
     }
 
-    inline bool operator==(const KeyRef & other) const {
+    inline bool operator==(const KeyRef & other) const
+    {
         return getRef() == other.getRef();
     }
 
-    inline bool operator<(const KeyRef & other) const {
+    inline bool operator<(const KeyRef & other) const
+    {
         return getRef() <  other.getRef();
     }
 
@@ -194,16 +203,16 @@ public:
             arena.free(key.fullData(), key.fullSize());
         else if constexpr (std::is_same_v<A, SmallObjectPool>)
             arena.free(key.fullData());
-        else
-            throw Exception("Free not supported.", ErrorCodes::LOGICAL_ERROR);
+        //else
+        //    throw Exception("Free not supported.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void rollback(const KeyRef & key)
     {
         if constexpr (std::is_same_v<A, Arena>)
             arena.rollback(key.fullSize());
-        else
-            throw Exception("Rollback not supported.", ErrorCodes::LOGICAL_ERROR);
+        //else
+        //    throw Exception("Rollback not supported.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void writeKey(const KeyRef & key, WriteBuffer & buf)
@@ -302,7 +311,6 @@ public:
         auto it = cache.find(key);
         if (it == std::end(cache))
             return false;
-        
         keys_pool.freeKey(it->first);
         queue.erase(it->second.iter);
         cache.erase(it);
