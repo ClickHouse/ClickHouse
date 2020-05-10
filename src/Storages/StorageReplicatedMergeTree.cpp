@@ -2954,6 +2954,7 @@ void StorageReplicatedMergeTree::startup()
     /// If we don't separate create/start steps, race condition will happen
     /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
     {
+        auto lock = queue.lockQueue();
         auto & pool = global_context.getBackgroundPool();
         queue_task_handle = pool.createTask([this] { return queueTask(); });
         pool.startTask(queue_task_handle);
@@ -2992,7 +2993,6 @@ void StorageReplicatedMergeTree::shutdown()
         auto lock = queue.lockQueue();
         queue_task_handle.reset();
     }
-
 
     if (move_parts_task_handle)
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);

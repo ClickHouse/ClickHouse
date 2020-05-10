@@ -50,33 +50,6 @@ SELECT
         (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
-
-# Check ProfileEvents in query_thread_log
-
-$CLICKHOUSE_CLIENT $settings --max_threads=3 -q "$heavy_cpu_query"
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
-query_id=`$CLICKHOUSE_CLIENT $settings -q "SELECT query_id FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query='$heavy_cpu_query' ORDER BY event_time DESC LIMIT 1"`
-query_elapsed=`$CLICKHOUSE_CLIENT $settings -q "SELECT query_duration_ms*1000 FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query_id='$query_id' ORDER BY event_time DESC LIMIT 1"`
-threads=`$CLICKHOUSE_CLIENT $settings -q "SELECT length(thread_ids) FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query_id='$query_id' ORDER BY event_time DESC LIMIT 1"`
-
-$CLICKHOUSE_CLIENT $settings -q "
-SELECT
-    -- max(thread_realtime), $query_elapsed, max(thread_time_user_system_io),
-    0.9 * $query_elapsed <= max(thread_realtime) AND max(thread_realtime) <= 1.1 * $query_elapsed,
-    uniqExact(thread_id) = $threads
-FROM
-(
-    SELECT
-        thread_id,
-        sumIf(PV, PN = 'RealTimeMicroseconds') AS thread_realtime,
-        sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS thread_time_user_system_io
-        FROM
-            (SELECT * FROM system.query_thread_log PREWHERE query_id='$query_id' WHERE event_date >= today()-1)
-        ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-        GROUP BY thread_id
-)
-"
-
 # Check per-thread and per-query ProfileEvents consistency
 
 $CLICKHOUSE_CLIENT $settings --any_join_distinct_right_table_keys=1 -q "
