@@ -1,4 +1,4 @@
-# Конфигурационные параметры сервера {#konfiguratsionnye-parametry-servera}
+# Конфигурационные параметры сервера {#server-configuration-parameters-reference}
 
 ## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}
 
@@ -552,7 +552,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Настройка логирования запросов, принятых с настройкой [log\_queries=1](../settings/settings.md).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
@@ -662,7 +662,7 @@ The default server configuration file `config.xml` contains the following settin
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_configuration_parameters-openssl).
 

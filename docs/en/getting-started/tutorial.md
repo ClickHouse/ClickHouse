@@ -46,6 +46,7 @@ Once the `clickhouse-server` is up and running, we can use `clickhouse-client` t
 <details markdown="1">
 
 <summary>Quick tips for clickhouse-client</summary>
+
 Interactive mode:
 
 ``` bash

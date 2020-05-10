@@ -915,7 +915,7 @@ SELECT arrayReverse([1, 2, 3])
 
 ## ters (arr) {#array-functions-reverse}
 
-Eşanlamlı [“arrayReverse”](#array_functions-arrayreverse)
+Eşanlamlı [“arrayReverse”](#arrayreverse)
 
 ## arrayFlatten {#arrayflatten}
 

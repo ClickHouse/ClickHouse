@@ -36,8 +36,8 @@ Pour travailler avec ces états, utilisez:
 -   [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tableau moteur.
 -   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) fonction.
 -   [runningAccumulate](../../sql-reference/functions/other-functions.md#function-runningaccumulate) fonction.
--   [-Fusionner](#aggregate_functions_combinators_merge) combinator.
--   [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
+-   [-Fusionner](#aggregate_functions_combinators-merge) combinator.
+-   [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
 
 ## -Fusionner {#aggregate_functions_combinators-merge}
 

@@ -915,7 +915,7 @@ SELECT arrayReverse([1, 2, 3])
 
 ## معکوس) {#array-functions-reverse}
 
-مترادف برای [“arrayReverse”](#array_functions-arrayreverse)
+مترادف برای [“arrayReverse”](#arrayreverse)
 
 ## ارریفلاتتن {#arrayflatten}
 

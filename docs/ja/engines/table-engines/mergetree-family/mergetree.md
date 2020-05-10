@@ -30,7 +30,7 @@ toc_title: MergeTree
     必要に応じて、テーブル内のデータサンプリング方法を設定できます。
 
 !!! info "情報"
-    その [マージ](../special/merge.md) エンジンはに属しません `*MergeTree` 家族
+    その [マージ](../special/merge.md#merge) エンジンはに属しません `*MergeTree` 家族
 
 ## テーブルの作成 {#table_engine-mergetree-creating-a-table}
 
@@ -476,7 +476,7 @@ ALTER TABLE example_table
 
 データ切れのttlを取り除きclickhouse合併しデータの部品です。
 
-時clickhouseるデータの期間は終了しましたので、行offスケジュール内スケジュールする必要がありません。 このようなマージの頻度を制御するには、次のように設定します [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). 値が低すぎる場合は、多くのリソースを消費する可能性のある多くのオフスケジュールマージを実行します。
+時clickhouseるデータの期間は終了しましたので、行offスケジュール内スケジュールする必要がありません。 このようなマージの頻度を制御するには、次のように設定します `merge_with_ttl_timeout`. 値が低すぎる場合は、多くのリソースを消費する可能性のある多くのオフスケジュールマージを実行します。
 
 あなたが実行する場合 `SELECT` 期限切れのデータを取得できます。 それを避けるために、を使用 [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) 前にクエリ `SELECT`.
 
@@ -497,7 +497,7 @@ ALTER TABLE example_table
 
 の名称を記載することから、システムテーブル, [システム。ストレージ\_policies](../../../operations/system-tables.md#system_tables-storage_policies) と [システム。ディスク](../../../operations/system-tables.md#system_tables-disks). テーブ `storage_policy` の設定 `MergeTree`-エンジン家族のテーブル。
 
-### 設定 {#table_engine-mergetree-multiple-volumes-configure}
+### 設定 {#table_engine-mergetree-multiple-volumes_configure}
 
 ディスク、ボリューム、およびストレージポリシーは、 `<storage_configuration>` メインファイルのいずれかのタグ `config.xml` または、 `config.d` ディレクトリ。
 

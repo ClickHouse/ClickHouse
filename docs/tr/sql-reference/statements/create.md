@@ -61,7 +61,7 @@ Başka bir tablo ile aynı yapıya sahip bir tablo oluşturur. Tablo için farkl
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-Yapısı ve veri tarafından döndürülen bir tablo oluşturur. [tablo fonksiyonu](../table-functions/index.md).
+Yapısı ve veri tarafından döndürülen bir tablo oluşturur. [tablo fonksiyonu](../table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
