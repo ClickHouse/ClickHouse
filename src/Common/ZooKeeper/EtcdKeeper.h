@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <grpcpp/grpcpp.h>
 #include <Common/ZooKeeper/rpc.grpc.pb.h>
@@ -210,6 +211,29 @@ namespace Coordination
                 failure_puts.clear();
                 failure_delete_ranges.clear();
             }
+            void take_last_create(const String prefix)
+            {
+                std::unordered_map<String, String> last_data;
+                for (const auto success_put : success_puts)
+                {
+                    if (startsWith(success_put.key(), prefix))
+                    {
+                        last_data[success_put.key()] = success_put.value();
+                    }
+                }
+                auto it = success_puts.begin();
+                while (it != success_puts.end())
+                {
+                    if (startsWith(it->key(), prefix) && it->value() != last_data[it->key()])
+                    {
+                        it = success_puts.erase(it);
+                    }
+                    else
+                    {
+                        it++;
+                    }
+                }
+            }
         };
   
         using WatchCallbacks = std::vector<WatchCallback>;
@@ -323,5 +347,8 @@ namespace Coordination
 
     struct EtcdKeeperResponse;
     using EtcdKeeperResponsePtr = std::shared_ptr<EtcdKeeperResponse>;
+    
+    using EtcdKeeperRequestPtr = std::shared_ptr<EtcdKeeperRequest>;
+    using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
  
 }
