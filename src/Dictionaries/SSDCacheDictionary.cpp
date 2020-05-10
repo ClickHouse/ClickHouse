@@ -364,7 +364,7 @@ void SSDCachePartition::flush()
     const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
     if (ids.empty())
         return;
-
+    Poco::Logger::get("paritiiton").information("flushing to SSD.");
     // Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
 
     AIOContext aio_context{1};
@@ -808,7 +808,7 @@ void SSDCachePartition::clearOldestBlocks()
 
     const size_t start_block = current_file_block_id % max_size;
     const size_t finish_block = start_block + write_buffer_size;
-    // Poco::Logger::get("ClearOldestBlocks").information("> erasing keys < start = " + std::to_string(start_block) + " end = " + std::to_string(finish_block));
+    Poco::Logger::get("partition gc").information("erasing keys start = " + std::to_string(start_block) + " end = " + std::to_string(finish_block));
     for (const auto& key : keys)
     {
         Index index;
