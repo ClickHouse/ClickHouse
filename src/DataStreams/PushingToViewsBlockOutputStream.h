@@ -33,12 +33,18 @@ private:
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
 
     const Context & context;
+    bool atomic = true;
     ASTPtr query_ptr;
 
     struct ViewInfo
     {
-        ASTPtr query;
         StorageID table_id;
+        StoragePtr dependent_table;
+
+        ASTPtr query;
+        ASTPtr insert_query;
+
+        /// null if atomic == false, since created for each block.
         BlockOutputStreamPtr out;
     };
 
@@ -46,6 +52,8 @@ private:
     std::unique_ptr<Context> views_context;
 
     void process(const Block & block, size_t view_num);
+
+    BlockOutputStreamPtr createOutput(ViewInfo & view) const;
 };
 
 

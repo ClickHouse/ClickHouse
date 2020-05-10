@@ -19,7 +19,7 @@ namespace DB
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const StoragePtr & storage_,
     const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
-    : storage(storage_), context(context_), query_ptr(query_ptr_)
+    : storage(storage_), context(context_), atomic(context.getSettingsRef().insert_materialized_view_atomic), query_ptr(query_ptr_)
 {
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
@@ -48,12 +48,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
+        ViewInfo view_info{database_table, DatabaseCatalog::instance().getTable(database_table)};
 
-        ASTPtr query;
-        BlockOutputStreamPtr out;
-
-        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view_info.dependent_table.get()))
         {
             addTableLock(
                     materialized_view->lockStructureForShare(
@@ -61,13 +58,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            query = materialized_view->getInnerQuery();
+            view_info.query = materialized_view->getInnerQuery();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+            auto header = InterpreterSelectQuery(view_info.query, *views_context, SelectQueryOptions().analyze())
                     .getSampleBlock();
 
             /// Insert only columns returned by select.
@@ -80,17 +77,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             insert->columns = std::move(list);
 
-            ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
-            BlockIO io = interpreter.execute();
-            out = io.out;
+            view_info.insert_query.reset(insert.release());
         }
-        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
-        else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
+        if (atomic)
+            view_info.out = createOutput(view_info);
+
+        views.emplace_back(view_info);
     }
 
     /// Do not push to destination table if the flag is set
@@ -171,16 +164,19 @@ void PushingToViewsBlockOutputStream::writePrefix()
     if (output)
         output->writePrefix();
 
-    for (auto & view : views)
+    if (atomic)
     {
-        try
+        for (auto & view : views)
         {
-            view.out->writePrefix();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
-            throw;
+            try
+            {
+                view.out->writePrefix();
+            }
+            catch (Exception & ex)
+            {
+                ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
+                throw;
+            }
         }
     }
 }
@@ -190,16 +186,19 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (output)
         output->writeSuffix();
 
-    for (auto & view : views)
+    if (atomic)
     {
-        try
+        for (auto & view : views)
         {
-            view.out->writeSuffix();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
-            throw;
+            try
+            {
+                view.out->writeSuffix();
+            }
+            catch (Exception & ex)
+            {
+                ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
+                throw;
+            }
         }
     }
 }
@@ -209,8 +208,11 @@ void PushingToViewsBlockOutputStream::flush()
     if (output)
         output->flush();
 
-    for (auto & view : views)
-        view.out->flush();
+    if (atomic)
+    {
+        for (auto & view : views)
+            view.out->flush();
+    }
 }
 
 void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_num)
@@ -221,6 +223,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     try
     {
         BlockInputStreamPtr in;
+        BlockOutputStreamPtr out = view.out;
 
         /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
         ///
@@ -234,6 +237,12 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         ///    execute*() method, like FunctionDictGet do)
         /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
         std::optional<InterpreterSelectQuery> select;
+
+        /// In case of non-atomic push we need to create output every time,
+        /// since we cannot use flush()/writeSuffix() because we can get
+        /// multiple blocks for view.
+        if (!atomic)
+            out = createOutput(view);
 
         if (view.query)
         {
@@ -252,7 +261,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(in, settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+            in = std::make_shared<ConvertingBlockInputStream>(in, out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
@@ -262,19 +271,40 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         while (Block result_block = in->read())
         {
             Nested::validateArraySizes(result_block);
-            view.out->write(result_block);
+            out->write(result_block);
         }
 
         in->readSuffix();
 
-        if (!settings.insert_materialized_view_atomic)
-            view.out->writeSuffix();
+        if (!atomic)
+            out->writeSuffix();
     }
     catch (Exception & ex)
     {
         ex.addMessage("while pushing to view " + view.table_id.getNameForLogs());
         throw;
     }
+}
+
+BlockOutputStreamPtr PushingToViewsBlockOutputStream::createOutput(ViewInfo & view) const
+{
+    assert(!view.out);
+
+    const auto & dependent_table = view.dependent_table;
+    BlockOutputStreamPtr out;
+
+    if (dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
+    {
+        InterpreterInsertQuery interpreter(view.insert_query, *views_context);
+        BlockIO io = interpreter.execute();
+        out = io.out;
+    }
+    else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
+    else
+        out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
+
+    return out;
 }
 
 }
