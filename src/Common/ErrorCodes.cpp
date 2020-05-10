@@ -494,6 +494,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE = 520;
     extern const int ATOMIC_RENAME_FAIL = 521;
     extern const int INCORRECT_DISK_INDEX = 522;
+    extern const int UNKNOWN_VOLUME_TYPE = 523;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

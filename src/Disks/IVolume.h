@@ -8,11 +8,33 @@
 namespace DB
 {
 
-enum VolumeType
+class VolumeType
 {
-    JBOD,
-    SINGLE_DISK,
-    UNKNOWN
+public:
+    enum Value
+    {
+        JBOD,
+        SINGLE_DISK,
+        UNKNOWN
+    };
+    VolumeType() : value(UNKNOWN) {}
+    VolumeType(Value value_) : value(value_) {}
+
+    bool operator==(const VolumeType & other) const
+    {
+        return value == other.value;
+    }
+
+    bool operator!=(const VolumeType & other) const
+    {
+        return !(*this == other);
+    }
+
+    void fromString(const String & str);
+    String toString() const;
+
+private:
+    Value value;
 };
 
 class IVolume;
