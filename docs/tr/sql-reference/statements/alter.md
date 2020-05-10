@@ -217,7 +217,7 @@ Aşağıdaki işlemler ile [bölümler](../../engines/table-engines/mergetree-fa
 
 <!-- -->
 
-#### Bölüm ayırmak {\#alter\_detach-bölüm} {#detach-partition-alter-detach-partition}
+#### DETACH PARTITION {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr

@@ -51,6 +51,6 @@ WHERE a = 'b\0'
 
 这种方式与MySQL的`CHAR`类型的方式不同（MySQL中使用空格填充字符串，并在输出时删除空格）。
 
-请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[长度](../../sql-reference/data-types/fixedstring.md#array_functions-length)返回值为`N`,而函数[空](../../sql-reference/data-types/fixedstring.md#string_functions-empty)的返回值为`1`。
+请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[length](../../sql-reference/functions/array-functions.md#array_functions-length)返回值为`N`,而函数[empty](../../sql-reference/functions/string-functions.md#empty)的返回值为`1`。
 
 [来源文章](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->
