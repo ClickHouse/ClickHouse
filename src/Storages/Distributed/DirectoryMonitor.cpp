@@ -131,9 +131,10 @@ void StorageDistributedDirectoryMonitor::run()
 {
     std::unique_lock lock{mutex};
 
+    bool do_sleep = false;
     while (!quit)
     {
-        bool do_sleep = true;
+        do_sleep = true;
         if (!monitor_blocker.isCancelled())
         {
             try
@@ -166,7 +167,7 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    if (!quit && error_count)
+    if (!quit && do_sleep)
         task_handle->scheduleAfter(sleep_time.count());
 }
 
