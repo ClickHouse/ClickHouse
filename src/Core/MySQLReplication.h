@@ -23,6 +23,8 @@ namespace MySQLReplication
     class EventBase;
     using BinlogEventPtr = std::shared_ptr<EventBase>;
 
+    inline bool check_string_bit(String s, int k) { return (s[(k / 8)] & (1 << (k % 8))) != 0; }
+
     enum BinlogChecksumAlg
     {
         BINLOG_CHECKSUM_ALG_OFF = 0,
@@ -210,8 +212,8 @@ namespace MySQLReplication
         UInt32 number_columns;
         String schema;
         String table;
-        String columns_before_bitmap;
-        String columns_after_bitmap;
+        String columns_present_bitmap1;
+        String columns_present_bitmap2;
         std::vector<Field> rows;
 
         RowsEvent(std::shared_ptr<TableMapEvent> table_map_) : table_map(table_map_)
