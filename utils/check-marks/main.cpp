@@ -16,16 +16,6 @@
 /** This program checks correctness of .mrk (marks) file for corresponding compressed .bin file.
   */
 
-
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int TOO_LARGE_SIZE_COMPRESSED;
-    }
-}
-
-
 static void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string & bin_path)
 {
     DB::ReadBufferFromFile mrk_in(mrk_path);
