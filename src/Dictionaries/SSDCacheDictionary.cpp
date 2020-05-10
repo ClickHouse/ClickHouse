@@ -81,8 +81,6 @@ namespace
     constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
     constexpr UInt64 KEY_METADATA_IS_DEFAULT_MASK = ~KEY_METADATA_EXPIRES_AT_MASK;
 
-    //constexpr size_t KEY_RECENTLY_USED_BIT = 63;
-    //constexpr size_t KEY_RECENTLY_USED = (1ULL << KEY_RECENTLY_USED_BIT);
     constexpr size_t KEY_IN_MEMORY_BIT = 63;
     constexpr size_t KEY_IN_MEMORY = (1ULL << KEY_IN_MEMORY_BIT);
     constexpr size_t BLOCK_INDEX_BITS = 32;
@@ -875,6 +873,12 @@ size_t SSDCachePartition::getElementCount() const
     return key_to_index.size();
 }
 
+size_t SSDCachePartition::getBytesAllocated() const
+{
+    std::shared_lock lock(rw_lock);
+    return 16.5 * key_to_index.capacity() + (memory ? memory->size() : 0);
+}
+
 PaddedPODArray<SSDCachePartition::Key> SSDCachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
 {
     std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
@@ -1173,6 +1177,15 @@ size_t SSDCacheStorage::getElementCount() const
     std::shared_lock lock(rw_lock);
     for (const auto & partition : partitions)
         result += partition->getElementCount();
+    return result;
+}
+
+size_t SSDCacheStorage::getBytesAllocated() const
+{
+    size_t result = 0;
+    std::shared_lock lock(rw_lock);
+    for (const auto & partition : partitions)
+        result += partition->getBytesAllocated();
     return result;
 }
 

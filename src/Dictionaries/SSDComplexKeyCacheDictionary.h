@@ -219,104 +219,17 @@ public:
         buf.ignore(sz);
     }
 
+    size_t size() const
+    {
+        return arena.size();
+    }
+
 private:
     A arena;
 };
 
 using TemporalComplexKeysPool = ComplexKeysPoolImpl<Arena>;
 using ComplexKeysPool = ComplexKeysPoolImpl<ArenaWithFreeLists>;
-
-template <typename K, typename V, typename Pool>
-class ComplexKeyLRUCache
-{
-    using Iter = typename std::list<K>::iterator;
-
-    struct Cell
-    {
-        Iter iter;
-        V val;
-    };
-
-public:
-    ComplexKeyLRUCache(size_t max_size_, Pool & keys_pool_)
-        : max_size(max_size_)
-        , keys_pool(keys_pool_)
-    {
-    }
-
-    void set(K key, V val)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cache.find(key);
-        if (it == std::end(cache))
-        {
-            auto & item = cache[key];
-            item.iter = queue.insert(std::end(queue), key);
-            item.val = val;
-            if (queue.size() > max_size)
-            {
-                keys_pool.freeKey(queue.front());
-                cache.erase(queue.front());
-                queue.pop_front();
-            }
-        }
-        else
-        {
-            queue.erase(it->second.iter);
-            it->second.iter = queue.insert(std::end(queue), it->first);
-            it->second.val = val;
-        }
-    }
-
-    bool get(K key, V & val)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cache.find(key);
-        if (it == std::end(cache))
-            return false;
-        val = it->second.val;
-        queue.erase(it->second.iter);
-        it->second.iter = queue.insert(std::end(queue), key);
-        return true;
-    }
-
-    bool erase(K key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cache.find(key);
-        if (it == std::end(cache))
-            return false;
-        keys_pool.freeKey(it->first);
-        queue.erase(it->second.iter);
-        cache.erase(it);
-        return true;
-    }
-
-    size_t size()
-    {
-        std::lock_guard lock(mutex);
-        return cache.size();
-    }
-
-    auto begin()
-    {
-        std::lock_guard lock(mutex);
-        return std::begin(cache);
-    }
-
-    auto end()
-    {
-        std::lock_guard lock(mutex);
-        return std::end(cache);
-    }
-
-private:
-    std::unordered_map<K, Cell> cache;
-    std::list<K> queue;
-    size_t max_size;
-    Pool & keys_pool;
-    std::mutex mutex;
-};
 
 struct KeyDeleter
 {
@@ -454,6 +367,8 @@ public:
     double getLoadFactor() const;
 
     size_t getElementCount() const;
+
+    size_t getBytesAllocated() const;
 
 private:
     size_t append(

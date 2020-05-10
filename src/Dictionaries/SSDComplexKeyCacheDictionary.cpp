@@ -906,6 +906,13 @@ size_t SSDComplexKeyCachePartition::getElementCount() const
     return key_to_index.size();
 }
 
+size_t SSDComplexKeyCachePartition::getBytesAllocated() const
+{
+    std::shared_lock lock(rw_lock);
+    return 16.5 * key_to_index.capacity() + keys_pool.size() +
+        (keys_buffer_pool ? keys_buffer_pool->size() : 0) + (memory ? memory->size() : 0);
+}
+
 PaddedPODArray<KeyRef> SSDComplexKeyCachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
 {
     throw DB::Exception("Method not supported.", ErrorCodes::NOT_IMPLEMENTED);
