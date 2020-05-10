@@ -31,4 +31,6 @@ if (ENABLE_CODE_QUALITY)
     add_subdirectory (check-style)
 endif ()
 
+add_object_library(clickhouse_uatraitsfast uatraits-fast)
+
 add_subdirectory (package)
