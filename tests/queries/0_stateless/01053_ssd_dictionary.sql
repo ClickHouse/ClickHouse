@@ -33,7 +33,7 @@ CREATE DICTIONARY database_for_dict.ssd_dict
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1000 MAX 2000)
-LAYOUT(SSD(PARTITION_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/0d'));
+LAYOUT(SSD_CACHE(PARTITION_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/0d'));
 
 SELECT 'TEST_SMALL';
 SELECT dictGetInt32('database_for_dict.ssd_dict', 'b', toUInt64(1));
@@ -74,7 +74,7 @@ CREATE DICTIONARY database_for_dict.ssd_dict
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1000 MAX 2000)
-LAYOUT(SSD(PARTITION_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096 MAX_STORED_KEYS 1000000));
+LAYOUT(SSD_CACHE(PARTITION_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/1d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 4096 MAX_STORED_KEYS 1000000));
 
 SELECT 'UPDATE DICTIONARY';
 -- 118
@@ -140,7 +140,7 @@ CREATE DICTIONARY database_for_dict.ssd_dict
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB 'database_for_dict'))
 LIFETIME(MIN 1000 MAX 2000)
-LAYOUT(SSD(PARTITION_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/2d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 1024 MAX_STORED_KEYS 10));
+LAYOUT(SSD_CACHE(PARTITION_SIZE 8192 PATH '/var/lib/clickhouse/clickhouse_dicts/2d' BLOCK_SIZE 512 WRITE_BUFFER_SIZE 1024 MAX_STORED_KEYS 10));
 
 SELECT 'UPDATE DICTIONARY (MT)';
 -- 118
