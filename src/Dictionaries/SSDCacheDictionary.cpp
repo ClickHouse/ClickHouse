@@ -1626,42 +1626,42 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
                             ErrorCodes::BAD_ARGUMENTS};
         const auto & layout_prefix = config_prefix + ".layout";
 
-        const auto max_partitions_count = config.getInt(layout_prefix + ".ssd.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
+        const auto max_partitions_count = config.getInt(layout_prefix + ".ssd_cache.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
         if (max_partitions_count <= 0)
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_partitions_count", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) max_partitions_count", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto block_size = config.getInt(layout_prefix + ".ssd.block_size", DEFAULT_SSD_BLOCK_SIZE);
+        const auto block_size = config.getInt(layout_prefix + ".ssd_cache.block_size", DEFAULT_SSD_BLOCK_SIZE);
         if (block_size <= 0)
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto partition_size = config.getInt64(layout_prefix + ".ssd.partition_size", DEFAULT_FILE_SIZE);
+        const auto partition_size = config.getInt64(layout_prefix + ".ssd_cache.partition_size", DEFAULT_FILE_SIZE);
         if (partition_size <= 0)
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) partition_size", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) partition_size", ErrorCodes::BAD_ARGUMENTS};
         if (partition_size % block_size != 0)
             throw Exception{name + ": partition_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto read_buffer_size = config.getInt64(layout_prefix + ".ssd.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
+        const auto read_buffer_size = config.getInt64(layout_prefix + ".ssd_cache.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
         if (read_buffer_size <= 0)
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) read_buffer_size", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) read_buffer_size", ErrorCodes::BAD_ARGUMENTS};
         if (read_buffer_size % block_size != 0)
             throw Exception{name + ": read_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto write_buffer_size = config.getInt64(layout_prefix + ".ssd.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE);
+        const auto write_buffer_size = config.getInt64(layout_prefix + ".ssd_cache.write_buffer_size", DEFAULT_WRITE_BUFFER_SIZE);
         if (write_buffer_size <= 0)
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) write_buffer_size", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) write_buffer_size", ErrorCodes::BAD_ARGUMENTS};
         if (write_buffer_size % block_size != 0)
             throw Exception{name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        auto path = config.getString(layout_prefix + ".ssd.path");
+        auto path = config.getString(layout_prefix + ".ssd_cache.path");
         if (path.empty())
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have empty path",
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have empty path",
                             ErrorCodes::BAD_ARGUMENTS};
         if (path.at(0) != '/')
             path = std::filesystem::path{config.getString("path")}.concat(path).string();
 
-        const auto max_stored_keys = config.getInt64(layout_prefix + ".ssd.max_stored_keys", DEFAULT_MAX_STORED_KEYS);
+        const auto max_stored_keys = config.getInt64(layout_prefix + ".ssd_cache.max_stored_keys", DEFAULT_MAX_STORED_KEYS);
         if (max_stored_keys <= 0)
-            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_stored_keys", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) max_stored_keys", ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
