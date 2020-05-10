@@ -880,7 +880,7 @@ PaddedPODArray<SSDCachePartition::Key> SSDCachePartition::getCachedIds(const std
 {
     std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
     PaddedPODArray<Key> array;
-    for (const auto & [key, index] : key_to_index)
+    for (const auto & key : key_to_index.keys())
         array.push_back(key); // TODO: exclude default
     return array;
 }
