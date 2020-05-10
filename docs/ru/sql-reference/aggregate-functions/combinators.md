@@ -30,8 +30,8 @@
 -   Движок таблиц [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
 -   Функция [finalizeAggregation](../../sql-reference/aggregate-functions/combinators.md#function-finalizeaggregation).
 -   Функция [runningAccumulate](../../sql-reference/aggregate-functions/combinators.md#function-runningaccumulate).
--   Комбинатор [-Merge](#aggregate_functions_combinators_merge).
--   Комбинатор [-MergeState](#aggregate_functions_combinators_mergestate).
+-   Комбинатор [-Merge](#aggregate_functions_combinators-merge).
+-   Комбинатор [-MergeState](#aggregate_functions_combinators-mergestate).
 
 ## -Merge {#aggregate_functions_combinators-merge}
 
@@ -44,6 +44,130 @@
 ## -ForEach {#foreach}
 
 Преобразует агрегатную функцию для таблиц в агрегатную функцию для массивов, которая применяет агрегирование для соответствующих элементов массивов и возвращает массив результатов. Например, `sumForEach` для массивов `[1, 2]`, `[3, 4, 5]` и `[6, 7]` даст результат `[10, 13, 5]`, сложив соответственные элементы массивов.
+
+## -OrDefault {#agg-functions-combinator-ordefault}
+
+Изменяет поведение агрегатной функции.
+
+Если на вход агрегатной функции передан пустой набор данных, то с помощью комбинатора `-OrDefault` функция возвращает значение по умолчанию для соответствующего типа данных. Комбинатор применяется к агрегатным функциям, которые могут принимать пустые входные данные.
+
+`-OrDefault` можно использовать с другими комбинаторами.
+
+**Синтаксис** 
+
+``` sql
+<aggFunction>OrDefault(x)
+```
+
+**Параметры**
+
+- `x` — Параметры агрегатной функции.
+
+**Возращаемые зачения** 
+ 
+Возвращает значение по умолчанию для соответствующего типа агрегатной функции, если агрегировать нечего.
+
+Тип данных зависит от используемой агрегатной функции.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+
+Результат:
+
+``` text
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+Также `-OrDefault` может использоваться с другими комбинаторами. Это полезно, когда агрегатная функция не принимает пустые входные данные.
+
+Запрос:
+
+``` sql
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+Результат:
+
+``` text
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
+```
+
+
+## -OrNull {#agg-functions-combinator-ornull}
+
+Изменяет поведение агрегатной функции.
+
+Комбинатор преобразует результат агрегатной функции к типу [Nullable](../data-types/nullable.md). Если агрегатная функция не получает данных на вход, то с комбинатором она возвращает [NULL](../syntax.md#null-literal). 
+
+`-OrNull` может использоваться с другими комбинаторами.
+
+**Синтаксис** 
+
+``` sql
+<aggFunction>OrNull(x)
+```
+
+**Параметры**
+
+- `x` — Параметры агрегатной функции.
+ 
+**Возвращаемые значения** 
+
+- Результат агрегатной функции, преобразованный в тип данных `Nullable`.
+- `NULL`, если у агрегатной функции нет входных данных.
+
+Тип: `Nullable(aggregate function return type)`.
+
+**Пример**
+
+Добавьте `-orNull` в конец агрегатной функции.
+
+Запрос:
+
+``` sql
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+Результат:
+
+``` text
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+Также `-OrNull` может использоваться с другими комбинаторами. Это полезно, когда агрегатная функция не принимает пустые входные данные.
+
+Запрос:
+
+``` sql
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+Результат:
+
+``` text
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
 
 ## -Resample {#agg-functions-combinator-resample}
 

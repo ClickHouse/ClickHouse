@@ -117,11 +117,8 @@ When ClickHouse merges data parts, each group of consecutive rows with the same 
 For each resulting data part ClickHouse saves:
 
 1.  The first “cancel” and the last “state” rows, if the number of “state” and “cancel” rows matches and the last row is a “state” row.
-
 2.  The last “state” row, if there are more “state” rows than “cancel” rows.
-
 3.  The first “cancel” row, if there are more “cancel” rows than “state” rows.
-
 4.  None of the rows, in all other cases.
 
 Also when there are at least 2 more “state” rows than “cancel” rows, or at least 2 more “cancel” rows then “state” rows, the merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.

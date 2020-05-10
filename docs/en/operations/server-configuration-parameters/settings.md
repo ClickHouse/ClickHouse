@@ -705,7 +705,7 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
 
@@ -890,5 +890,16 @@ The period of updating IP addresses stored in the ClickHouse internal DNS cache 
 The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
+
+
+## access_control_path {#access_control_path}
+
+Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
+
+Default value: `/var/lib/clickhouse/access/`.
+
+**See also**
+
+- [Access Control and Account Management](../access-rights.md#access-control)
 
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

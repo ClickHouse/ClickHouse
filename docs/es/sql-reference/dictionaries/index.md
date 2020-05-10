@@ -12,11 +12,11 @@ Un diccionario es un mapeo (`key -> attributes`) que es conveniente para varios 
 
 ClickHouse admite funciones especiales para trabajar con diccionarios que se pueden usar en consultas. Es más fácil y más eficiente usar diccionarios con funciones que un `JOIN` con tablas de referencia.
 
-[NULL](../syntax.md#null) los valores no se pueden almacenar en un diccionario.
+[NULL](../../sql-reference/syntax.md#null-literal) los valores no se pueden almacenar en un diccionario.
 
 Soporta ClickHouse:
 
 -   [Diccionarios incorporados](internal-dicts.md#internal_dicts) con una específica [conjunto de funciones](../../sql-reference/functions/ym-dict-functions.md).
--   [Diccionarios complementarios (externos)](external-dictionaries/external-dicts.md) con un [neto de funciones](../../sql-reference/functions/ext-dict-functions.md).
+-   [Diccionarios complementarios (externos)](external-dictionaries/external-dicts.md#dicts-external-dicts) con un [neto de funciones](../../sql-reference/functions/ext-dict-functions.md).
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

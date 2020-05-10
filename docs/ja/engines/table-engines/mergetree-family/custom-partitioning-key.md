@@ -7,7 +7,7 @@ toc_title: "\u30AB\u30B9\u30BF\u30E0\u5206\u5272\u30AD\u30FC"
 
 # カスタム分割キー {#custom-partitioning-key}
 
-パーティション分割は [MergeTree](mergetree.md) ファミリーテーブル [複製された](replication.md) テーブル）。 [マテリアライズ表示](../special/materializedview.md) に基づくMergeTreeテーブル支援を分割します。
+パーティション分割は [MergeTree](mergetree.md) ファミリーテーブル [複製された](replication.md) テーブル）。 [マテリアライズ表示](../special/materializedview.md#materializedview) に基づくMergeTreeテーブル支援を分割します。
 
 パーティションが論理的に組み合わせの記録テーブルに指定された評価のポイントになります。 パーティションは、月別、日別、またはイベントタイプ別など、任意の基準によって設定できます。 各パーティションは別に保存される簡単操作のデータです。 アクセス時のデータclickhouseの最小サブセットのパーティションは可能です。
 
@@ -118,7 +118,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 フォルダ ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ というように部品のディレクトリです。 各部に関する対応する分割データが含まれまで一定の月のテーブルこの例では、分割による。
 
-その `detached` ディレクト [DETACH](#alter_detach-partition) クエリ。 破損した部分も削除されるのではなく、このディレクトリに移動されます。 サーバーはサーバーからの部品を使用しません `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) クエリ。
+その `detached` ディレクト [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) クエリ。 破損した部分も削除されるのではなく、このディレクトリに移動されます。 サーバーはサーバーからの部品を使用しません `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) クエリ。
 
 オペレーティングサーバーでは、ファイルシステム上の部品またはそのデータのセットを手動で変更することはできません。 非複製のテーブル、これを実行する事ができます。サーバが停止中でないお勧めします。 レプリケートされたテーブルの場合、パートのセットは変更できません。
 

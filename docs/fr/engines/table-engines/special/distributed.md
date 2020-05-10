@@ -88,7 +88,7 @@ Paramètre `host`, `port` et , éventuellement, `user`, `password`, `secure`, `c
 - `port` – The TCP port for messenger activity (‘tcp\_port’ dans la configuration, généralement définie sur 9000). Ne le confondez pas avec http\_port.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [Les droits d’accès](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
-- `secure` - Utilisez ssl pour la connexion, généralement vous devez également définir `port` = 9440. Le serveur doit écouter <tcp_port_secure>9440</tcp_port_secure> et avoir des certificats corrects.
+- `secure` - Utilisez ssl pour la connexion, généralement vous devez également définir `port` = 9440. Le serveur doit écouter `<tcp_port_secure>9440</tcp_port_secure>` et avoir des certificats corrects.
 - `compression` - Utiliser la compression de données. Valeur par défaut: true.
 
 When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [équilibrage](../../../operations/settings/settings.md#settings-load_balancing) paramètre.

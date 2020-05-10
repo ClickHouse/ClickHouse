@@ -2,7 +2,7 @@
 
 ## isNull {#isnull}
 
-检查参数是否为[NULL](../syntax.md#null)。
+检查参数是否为[NULL](../../sql-reference/syntax.md#null-literal)。
 
     isNull(x)
 
@@ -40,7 +40,7 @@
 
 ## isNotNull {#isnotnull}
 
-检查参数是否不为 [NULL](../syntax.md#null).
+检查参数是否不为 [NULL](../../sql-reference/syntax.md#null-literal).
 
     isNotNull(x)
 

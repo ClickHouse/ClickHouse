@@ -7,7 +7,7 @@ toc_title: "Clave de partici\xF3n personalizada"
 
 # Clave De partición Personalizada {#custom-partitioning-key}
 
-La partición está disponible para el [Método de codificación de datos:](mergetree.md) mesas familiares (incluyendo [repetición](replication.md) tabla). [Vistas materializadas](../special/materializedview.md) basado en tablas MergeTree soporte de particionamiento, también.
+La partición está disponible para el [Método de codificación de datos:](mergetree.md) mesas familiares (incluyendo [repetición](replication.md) tabla). [Vistas materializadas](../special/materializedview.md#materializedview) basado en tablas MergeTree soporte de particionamiento, también.
 
 Una partición es una combinación lógica de registros en una tabla por un criterio especificado. Puede establecer una partición por un criterio arbitrario, como por mes, por día o por tipo de evento. Cada partición se almacena por separado para simplificar las manipulaciones de estos datos. Al acceder a los datos, ClickHouse utiliza el subconjunto más pequeño de particiones posible.
 
@@ -118,7 +118,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 Carpeta ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ y así sucesivamente son los directorios de las partes. Cada parte se relaciona con una partición correspondiente y contiene datos solo para un mes determinado (la tabla de este ejemplo tiene particiones por mes).
 
-El `detached` el directorio contiene partes que se separaron de la tabla utilizando el [DETACH](#alter_detach-partition) consulta. Las partes dañadas también se mueven a este directorio, en lugar de eliminarse. El servidor no utiliza las piezas del `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) consulta.
+El `detached` el directorio contiene partes que se separaron de la tabla utilizando el [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) consulta. Las partes dañadas también se mueven a este directorio, en lugar de eliminarse. El servidor no utiliza las piezas del `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) consulta.
 
 Tenga en cuenta que en el servidor operativo, no puede cambiar manualmente el conjunto de piezas o sus datos en el sistema de archivos, ya que el servidor no lo sabrá. Para tablas no replicadas, puede hacer esto cuando se detiene el servidor, pero no se recomienda. Para tablas replicadas, el conjunto de piezas no se puede cambiar en ningún caso.
 

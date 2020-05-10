@@ -8,7 +8,7 @@ toc_title: HDFS
 # HDFS {#table_engines-hdfs}
 
 このエンジンは、 [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) データの管理を可能にすることによって生態系 [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)クリックハウス経由。 このエンジンは同様です
-に [ファイル](../special/file.md) と [URL](../special/url.md) エンジンが、Hadoop固有の機能を提供します。
+に [ファイル](../special/file.md#table_engines-file) と [URL](../special/url.md#table_engines-url) エンジンが、Hadoop固有の機能を提供します。
 
 ## 使い方 {#usage}
 
