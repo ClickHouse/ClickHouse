@@ -9,6 +9,19 @@ include(../cmake/limit_jobs.cmake)
 add_subdirectory (config-processor)
 add_subdirectory (report)
 
+
+macro(add_object_library name common_path)
+    if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+        add_headers_and_sources(dbms ${common_path})
+    else ()
+        list (APPEND all_modules ${name})
+        add_headers_and_sources(${name} ${common_path})
+        add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
+        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+    endif ()
+endmacro()
+
+
 # Not used in package
 if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (compressor)
@@ -25,6 +38,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (test-data-generator)
     add_subdirectory (convert-month-partitioned-parts)
     add_subdirectory (checksum-for-compressed-block)
+    add_subdirectory (uatraits-fast)
 endif ()
 
 if (ENABLE_CODE_QUALITY)
