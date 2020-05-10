@@ -101,10 +101,10 @@ SELECT sum(x) FROM distributed SETTINGS
 ''').strip() == '2'
 
 
-# in some scenarios one of the replica can misbehave in a very weird way
+# in some scenarios one of the replicas can misbehave in a very weird way
 # just like if the process listening the socket was stopped
-# that can happen in clouds due to some operations on instances / vms
-# or in certain network conditions
+# that can happen in clouds due to some operations on instances / VMs
+# or under certain network conditions
 @pytest.mark.timeout(120)
 def test_stuck_replica(started_cluster):
     node_1_2.query("INSERT INTO replicated VALUES ('2020-03-27', 1)")
