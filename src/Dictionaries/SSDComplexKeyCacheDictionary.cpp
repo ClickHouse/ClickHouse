@@ -1806,7 +1806,7 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);
     };
-    factory.registerLayout("ssd_complex_key", create_layout, true);
+    factory.registerLayout("complex_key_ssd_cache", create_layout, true);
 }
 
 }

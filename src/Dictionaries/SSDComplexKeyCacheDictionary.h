@@ -35,7 +35,9 @@ public:
     KeyRef() : ptr(nullptr) {}
 
     inline UInt16 size() const {
-        return *reinterpret_cast<const UInt16 *>(ptr);
+        UInt16 res;
+        memcpy(&res, ptr, sizeof(res));
+        return res;
     }
 
     inline size_t fullSize() const {
