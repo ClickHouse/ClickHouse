@@ -439,10 +439,34 @@ namespace MySQLReplication
 
             switch (field_type)
             {
+                case MYSQL_TYPE_TINY: {
+                    Int8 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 1);
+                    row.push_back(Field{Int8{val}});
+                    break;
+                }
+                case MYSQL_TYPE_SHORT: {
+                    Int16 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 2);
+                    row.push_back(Field{Int16{val}});
+                    break;
+                }
+                case MYSQL_TYPE_INT24: {
+                    Int32 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 3);
+                    row.push_back(Field{Int32{val}});
+                    break;
+                }
                 case MYSQL_TYPE_LONG: {
-                    UInt32 val = 0;
+                    Int32 val = 0;
                     payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                    row.push_back(Field{UInt32{val}});
+                    row.push_back(Field{Int32{val}});
+                    break;
+                }
+                case MYSQL_TYPE_LONGLONG: {
+                    Int64 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 8);
+                    row.push_back(Field{Int64{val}});
                     break;
                 }
                 case MYSQL_TYPE_VARCHAR:
