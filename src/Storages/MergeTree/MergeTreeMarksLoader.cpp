@@ -45,7 +45,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
     return (*marks)[row_index * columns_in_mark + column_index];
 }
 
-MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
+MarkCache::ValuePtr MergeTreeMarksLoader::loadMarksImpl()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
@@ -85,7 +85,9 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         if (i * mark_size != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
+
     res->protect();
+
     return res;
 }
 
@@ -112,5 +114,5 @@ void MergeTreeMarksLoader::loadMarks()
     if (!marks)
         throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
 }
-
 }
+

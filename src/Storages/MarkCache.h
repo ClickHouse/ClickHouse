@@ -3,11 +3,11 @@
 #include <memory>
 
 #include <Common/LRUCache.h>
+#include <Common/IGrabberAllocator.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
 #include <DataStreams/MarkInCompressedFile.h>
-
 
 namespace ProfileEvents
 {
@@ -28,21 +28,26 @@ struct MarksWeightFunction
     }
 };
 
+using MarkCacheBase = IGrabberAllocator<
+    /* Key */ UInt128,
+    /* Value */ MarksInCompressedFile,
+    /* Key hash */ UInt128TrivialHash,
+    /* Value Size func */ MarksWeightFunction>;
 
-/** Cache of 'marks' for StorageMergeTree.
-  * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
-  */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
+/**
+ * @brief Cache of marks for StorageMergeTree.
+ *
+ * Mark is an index structure that addresses ranges in column file corresponding to ranges of primary key.
+ */
+class MarkCache : public MarkCacheBase
 {
-private:
-    using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
-
 public:
-    MarkCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
+    using MarkCacheBase::ValuePtr;
+
+    constexpr explicit MarkCache(size_t max_size_in_bytes): MarkCacheBase(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file)
+    static UInt128 hash(const String & path_to_file) noexcept
     {
         UInt128 key;
 
@@ -53,10 +58,10 @@ public:
         return key;
     }
 
-    template <typename LoadFunc>
-    MappedPtr getOrSet(const Key & key, LoadFunc && load)
+    ValuePtr getOrSet(const Key & key, GAInitFunction auto && init_func)
     {
-        auto result = Base::getOrSet(key, load);
+        auto result = MarkCacheBase::getOrSet(key, init_func);
+
         if (result.second)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
         else
@@ -67,5 +72,5 @@ public:
 };
 
 using MarkCachePtr = std::shared_ptr<MarkCache>;
-
 }
+

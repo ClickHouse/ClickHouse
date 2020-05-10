@@ -41,9 +41,9 @@ struct runtime {};
 static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024;
 
 template <class Value>
-static constexpr size_t const defaultValueAlignment = std::max(16,  alignof(Value));
+static constexpr size_t const defaultValueAlignment = std::max(16lu,  alignof(Value));
 
-[[nodiscard, gnu::const]] constexpr void * defaultASLR(const pcg64& rng) noexcept
+[[nodiscard, gnu::const]] void * defaultASLR(const pcg64& rng) noexcept
 {
     return reinterpret_cast<void *>(
             std::uniform_int_distribution<size_t>(0x100000000000UL, 0x700000000000UL)(rng));
@@ -131,6 +131,7 @@ template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
  * #SizeFunction, etc).
  * As opposed to that, the default value is ga::runtime which indicates that such a function needs to access the
  * object's state, so it should be passed as a parameter to the routines.
+ *
  *
  *
  * @tparam TKey Object that will be used to @e quickly address #Value.
@@ -807,14 +808,14 @@ private:
      */
     constexpr RegionMetadata * allocate(size_t size)
     {
-        size = roundUp(size, ValueAlignment);
+        size = ga::roundUp(size, ValueAlignment);
 
         if (auto it = free_regions.lower_bound(size, RegionCompareBySize()); free_regions.end() != it)
             return allocateFromFreeRegion(*it, size);
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
         /// allocate from a newly created region spanning through the chunk.
-        if (size_t req = std::max(min_chunk_size, roundUp(size, page_size)); total_chunks_size + req <= max_total_size)
+        if (size_t req = std::max(min_chunk_size, ga::roundUp(size, page_size)); total_chunks_size + req <= max_total_size)
             return allocateFromFreeRegion(*addNewChunk(req), size);
 
         /// Evict something from cache and continue.
