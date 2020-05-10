@@ -102,3 +102,25 @@ EOL
     execute --max_memory_usage=$TEST_01275_MEMORY --insert_materialized_view_atomic=0
 }
 echo 'select count() from out_01275' | execute
+
+#
+# INSERT insert_materialized_view_atomic=0 with multiple blocks
+#
+{
+cat <<EOL
+insert into data_01275 select
+    number,
+    reinterpretAsString(number), // s1
+    reinterpretAsString(number), // s2
+    reinterpretAsString(number), // s3
+    reinterpretAsString(number), // s4
+    reinterpretAsString(number), // s5
+    reinterpretAsString(number), // s6
+    reinterpretAsString(number), // s7
+    reinterpretAsString(number)  // s8
+from numbers(100000);
+EOL
+} | {
+    execute --max_memory_usage=$TEST_01275_MEMORY --insert_materialized_view_atomic=0 --min_insert_block_size_rows=50000
+}
+echo 'select count() from out_01275' | execute
