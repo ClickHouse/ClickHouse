@@ -88,7 +88,7 @@ Parametre `host`, `port` ve isteğe bağlı olarak `user`, `password`, `secure`,
 - `port` – The TCP port for messenger activity (‘tcp\_port’ yapılandırmada, genellikle 9000 olarak ayarlanır). Http\_port ile karıştırmayın.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [Erişim hakları](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
-- `secure` - Bağlantı için ssl kullanın, genellikle de tanımlamanız gerekir `port` = 9440. Sunucu dinlem shouldeli <tcp_port_secure>9440</tcp_port_secure> ve doğru sertifikalara sahip.
+- `secure` - Bağlantı için ssl kullanın, genellikle de tanımlamanız gerekir `port` = 9440. Sunucu dinlem shouldeli `<tcp_port_secure>9440</tcp_port_secure>` ve doğru sertifikalara sahip.
 - `compression` - Kullanım veri sıkıştırma. Varsayılan değer: true.
 
 When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [dengeleme](../../../operations/settings/settings.md#settings-load_balancing) ayar.

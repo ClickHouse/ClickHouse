@@ -51,7 +51,7 @@ Accepte un argument numérique et renvoie un Float64 nombre proche de la racine 
 
 ## erf (x) {#erfx}
 
-Si ‘x’ is non-negative, then erf(x / σ√2)<g> est la probabilité qu’une variable aléatoire ayant une distribution normale avec un écart type ‘σ’ prend la valeur qui est séparée de la valeur attendue par plus de ‘x’.
+Si ‘x’ is non-negative, then `erf(x / σ√2)` est la probabilité qu’une variable aléatoire ayant une distribution normale avec un écart type ‘σ’ prend la valeur qui est séparée de la valeur attendue par plus de ‘x’.
 
 Exemple (règle de trois sigma):
 

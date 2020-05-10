@@ -12,7 +12,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 要在不支持SSE 4.2或具有AArch64或PowerPC64LE体系结构的处理器上运行ClickHouse，您应该[通过源构建ClickHouse](#from-sources)进行适当的配置调整。
 
-## 可用的安装选项 {#ke-yong-de-an-zhuang-xuan-xiang}
+## 可用的安装选项 {#install-from-deb-packages}
 
 建议为Debian或Ubuntu使用官方的预编译`deb`软件包。 运行以下命令以安装软件包：
 

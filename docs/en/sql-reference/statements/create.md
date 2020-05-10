@@ -461,7 +461,7 @@ Keyword `ALL` means all the ClickHouse users including current user. Keywords `A
 
 ## CREATE QUOTA {#create-quota-statement}
 
-Creates a [quota](../../operations/access-rights.md#quota-management) that can be assigned to a user or a role.
+Creates a [quota](../../operations/access-rights.md#quotas-management) that can be assigned to a user or a role.
 
 ### Syntax {#create-quota-syntax}
 
@@ -485,7 +485,7 @@ CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
 
 ## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
 
-Creates a [settings profile](../../operations/access-rights.md#settings-profile-management) that can be assigned to a user or a role.
+Creates a [settings profile](../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
 
 ### Syntax {#create-settings-profile-syntax}
 

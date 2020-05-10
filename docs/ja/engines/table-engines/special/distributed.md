@@ -88,7 +88,7 @@ logs – The cluster name in the server’s config file.
 - `port` – The TCP port for messenger activity (‘tcp\_port’ 設定では、通常9000）に設定します。 それをhttp\_portと混同しないでください。
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [アクセス権](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
-- `secure` -接続にsslを使用します。 `port` = 9440. サーバーがリッスンする <tcp_port_secure>9440</tcp_port_secure> と正しい証明書。
+- `secure` -接続にsslを使用します。 `port` = 9440. サーバーがリッスンする `<tcp_port_secure>9440</tcp_port_secure>` と正しい証明書。
 - `compression` -データ圧縮を使用します。 デフォルト値:true。
 
 When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load\_balancing](../../../operations/settings/settings.md#settings-load_balancing) 設定。

@@ -224,7 +224,8 @@ private:
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    time_t drop_delay_sec = 60;
+    static constexpr time_t default_drop_delay_sec = 8 * 60;
+    time_t drop_delay_sec = default_drop_delay_sec;
 };
 
 }
