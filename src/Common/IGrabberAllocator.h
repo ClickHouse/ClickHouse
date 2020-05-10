@@ -5,14 +5,18 @@
 #include <mutex>
 #include <memory>
 #include <random>
-#include <pcg_random.hpp>
 #include <type_traits>
+#include <functional>
 #include <unordered_map>
+
 #include <sys/mman.h>
+
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
 #include <ext/scope_guard.h>
+
+#include <pcg_random.hpp>
 
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -39,8 +43,15 @@ static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024;
 template <class Value>
 static constexpr size_t const defaultValueAlignment = std::max(16,  alignof(Value));
 
-[[nodiscard, gnu::pure]] constexpr void * defaultASLR(const pcg64& rng) {
-    return reinterpret_cast<void *>( std::uniform_int_distribution<size_t>( 0x100000000000UL, 0x700000000000UL)(rng));
+[[nodiscard, gnu::const]] constexpr void * defaultASLR(const pcg64& rng) noexcept
+{
+    return reinterpret_cast<void *>(
+            std::uniform_int_distribution<size_t>(0x100000000000UL, 0x700000000000UL)(rng));
+}
+
+[[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding) noexcept
+{
+    return (x + (rounding - 1)) / rounding * rounding;
 }
 
 struct Stats
@@ -91,14 +102,13 @@ concept GASizeFunction = std::is_same<F, ga::runtime> || requires(const Value& v
 /// @anchor ga_init_func
 template <class F, class Value>
 concept GAInitFunction = std::is_same<F, ga::runtime> || requires(void * address_hint) {
-    F(address_hint);
+    F(address_hint, Value*);
 };
 
 /// @anchor ga_aslr_func
 template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
     {T()} -> std::is_same<void *>;
 };
-
 
 /**
  * @brief This class represents a tool combining a reference-counted memory block cache integrated with a mmap-backed
@@ -121,10 +131,6 @@ template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
  * #SizeFunction, etc).
  * As opposed to that, the default value is ga::runtime which indicates that such a function needs to access the
  * object's state, so it should be passed as a parameter to the routines.
- *
- * @section overview Algorithms overview.
- *
- *
  *
  *
  * @tparam TKey Object that will be used to @e quickly address #Value.
@@ -162,6 +168,10 @@ private:
 
     class RegionMetadata;
     static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
+
+    mutable std::mutex mutex;
+
+    pcg64 rng{randomSeed()};
 
 /**
  * Constructing, destructing, and usings.
@@ -362,6 +372,12 @@ private:
      */
     TUnusedRegionsList unused_allocated_regions;
 
+    /**
+     * Used to identify metadata associated with some #Value (needed while deleting #ValuePtr).
+     * @see IGrabberAllocator::getImpl
+     */
+    std::unordered_map<Value*, RegionMetadata*> value_to_region;
+
     struct MemoryChunk;
     std::list<MemoryChunk> chunks;
 
@@ -380,6 +396,218 @@ public:
         InsertionAttempt * attempt;
 
         return getImpl(key, disposer, attempt);
+    }
+
+    using GetOrSetRet = std::pair<ValuePtr, bool>;
+
+    template <std::enable_if_t<!std::is_same_v<SizeFunction, ga::runtime> &&
+                               !std::is_same_v<InitFunction, ga::runtime>>>
+    inline GetOrSetRet getOrSet(const Key & key)
+    {
+        return getOrSet(key, SizeFunction, InitFunction);
+    }
+
+    template <std::enable_if_t<!std::is_same_v<SizeFunction, ga::runtime> &&
+                                std::is_same_v<InitFunction, ga::runtime>>>
+    inline GetOrSetRet getOrSet(const Key & key, GAInitFunction auto && init_func)
+    {
+        return getOrSet(key, SizeFunction, init_func);
+    }
+
+    template <std::enable_if_t<!std::is_same_v<SizeFunction, ga::runtime> &&
+                                std::is_same_v<InitFunction, ga::runtime>>>
+    inline GetOrSetRet getOrSet(const Key & key, GAInitFunction auto && init_func)
+    {
+        return getOrSet(key, SizeFunction, init_func);
+    }
+
+    /**
+     * @brief If the value for the key is in the cache, returns it.
+     *        Otherwise, calls #get_size to obtain required size of storage for the key, then allocates storage and
+     *        calls #initialize for necessary initialization before data from cache could be used.
+     *
+     * @note Only one of several concurrent threads calling this method will call #get_size or #initialize functors.
+     *       Others will wait for that call to complete and will use its result (this helps to prevent cache stampede).
+     *
+     * @note Exceptions that occur in callback functors (#get_size and #initialize) will be propagated to the caller.
+     *       Another thread from the set of concurrent threads will then try to call its callbacks et cetera.
+     *
+     * @note During insertion, each key is locked - to avoid parallel initialization of regions for same key.
+     *
+     * @param key Key that is used to find the target value.
+     *
+     * @param get_size Callback functor that is called if value with a given #key was neither found in cache
+     *      nor produced by any of other threads.
+     *
+     * @param initialize Callback function that is called if
+     *      <ul>
+     *      <li>#get_size is called and doesn't throw.</li>
+     *      <li>Allocator did not fail to allocate another memory region.</li>
+     *      </ul>
+     *
+     * @return Cached value.
+     * @return Bool indicating whether the value was produced during the call. <br>
+     *      False on cache hit (including a concurrent cache hit), true on cache miss).
+     */
+    inline GetOrSetRet getOrSet(const Key & key, SizeFunction auto && get_size, InitFunction auto && initialize)
+    {
+        InsertionAttemptDisposer disposer;
+        InsertionAttempt * attempt;
+
+        if (ValuePtr out = getImpl(key, disposer, attempt); out)
+            return {out, false}; // value was found in the cache.
+
+        /// No try-catch here because it is not needed.
+        size_t size = get_size();
+
+        RegionMetadata * region = nullptr;
+
+        {
+            std::lock_guard cache_lock(mutex);
+            region = allocate(size);
+        }
+
+        /// Cannot allocate memory.
+        if (!region) return {};
+
+        region->key = key;
+
+        {
+            total_size_currently_initialized.fetch_add(size, std::memory_order_release);
+            SCOPE_EXIT({ total_size_currently_initialized.fetch_sub(size, std::memory_order_release); });
+
+            try
+            {
+                initialize(region->ptr, region->value);
+            }
+            catch (...)
+            {
+                {
+                    std::lock_guard cache_lock(mutex);
+                    freeAndCoalesce(*region);
+                }
+
+                throw;
+            }
+        }
+
+        std::lock_guard cache_lock(mutex);
+
+        try
+        {
+            onSharedValueCreate(region);
+            attempt->value = std::make_shared<Value>(&region->value, onValueDelete);
+
+            /// Insert the new value only if the attempt is still present in #insertion_attempts.
+            /// (may be absent because of a concurrent reset() call).
+            auto attempt_it = insertion_attempts.find(key);
+
+            if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
+                used_regions.insert(*region);
+
+            if (!attempt->is_disposed)
+                disposer.dispose();
+
+            return {attempt->value, true};
+        }
+        catch (...)
+        {
+            if (region->TAllocatedRegionHook::is_linked())
+                used_regions.erase(used_regions.iterator_to(*region));
+
+            freeAndCoalesce(*region);
+
+            throw;
+        }
+    }
+
+/**
+ * Get implementation, value deleter for shared_ptr.
+ */
+private:
+    constexpr void onSharedValueCreate(RegionMetadata& metadata) noexcept
+    {
+        std::lock_guard cache_lock(cache.mutex);
+
+        ++metadata.refcount;
+
+        if (metadata.refcount == 1 && metadata.TUnusedRegionHook::is_linked())
+        {
+            value_to_region.emplace_back(&metadata.value, &metadata);
+            unused_allocated_regions.erase(unused_allocated_regions.iterator_to(metadata));
+        }
+
+        total_size_in_use += metadata.size;
+    }
+
+    constexpr void onValueDelete(Value * value) noexcept
+    {
+        std::lock_guard cache_lock(cache.mutex);
+
+        auto it = value_to_region.find(value);
+
+        // it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
+        // invoking this function), thus value_to_region contains a metadata struct associated with #value.
+
+        RegionMetadata& metadata = **it;
+
+        --metadata.refcount;
+
+        if (metadata.refcount == 0)
+        {
+            value_to_region.erase(it);
+            cache.unused_allocated_regions.push_back(metadata);
+        }
+
+        cache.total_size_in_use -= metadata.size;
+
+        delete value;
+    }
+
+    inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
+    {
+        {
+            std::lock_guard cache_lock(mutex);
+
+            if (auto it = used_regions.find(key, RegionCompareByKey()); used_regions.end() != it)
+            {
+                /// Value found in cache
+
+                hits.fetch_add(1, std::memory_order_relaxed);
+
+                RegionMetadata& metadata = *it;
+
+                onSharedValueCreate(metadata);
+
+                return std::make_shared<Value>(&metadata->value, onValueDelete);
+            }
+
+            auto & insertion_attempt = insertion_attempts[key];
+
+            if (!insertion_attempt)
+                insertion_attempt = std::make_shared<InsertionAttempt>(*this);
+
+            disposer.acquire(&key, insertion_attempt);
+        }
+
+        attempt = disposer.attempt.get();
+
+        std::lock_guard attempt_lock(attempt->mutex);
+
+        disposer.attempt_disposed = attempt->is_disposed;
+
+        if (attempt->value)
+        {
+            /// Another thread already produced the value while we were acquiring the attempt's mutex.
+            hits.fetch_add(1, std::memory_order_relaxed);
+            concurrent_hits.fetch_add(1, std::memory_order_relaxed);
+
+            return attempt->value;
+        }
+
+        misses.fetch_add(1, std::memory_order_relaxed);
+
+        return nullptr;
     }
 
 /**
@@ -541,9 +769,9 @@ private:
 
         void * chunk {nullptr};
 
-        [[nodiscard, gnu::pure]] bool operator< (const RegionMetadata & other) const noexcept { return size < other.size; }
+        [[nodiscard, gnu::pure]] constexpr bool operator< (const RegionMetadata & other) const noexcept { return size < other.size; }
 
-        [[nodiscard, gnu::pure]] bool isFree() const noexcept { return TFreeRegionHook::is_linked(); }
+        [[nodiscard, gnu::pure]] constexpr bool isFree() const noexcept { return TFreeRegionHook::is_linked(); }
 
         [[nodiscard, gnu::malloc]] static RegionMetadata * create() { return new RegionMetadata; }
 
@@ -759,217 +987,5 @@ private:
 
         free_regions.insert(region);
     }
-
-
-
-
 };
 
-
-public:
-    /**
-     *  If the value for the key is in the cache, returns it.
-     *
-     * Otherwise, calls \c get_size to obtain required size of storage for the key, then allocates storage and calls
-     *  \c initialize for necessary initialization before data from cache could be used.
-     *
-     * @note Only one of several concurrent threads calling this method will call \c get_size or \c initialize functors.
-     *      Others will wait for that call to complete and will use its result (this helps to prevent cache stampede).
-     *
-     * @note Exceptions that occur in callback functors (\c get_size and \c initialize) will be propagated to the caller.
-     *      Another thread from the set of concurrent threads will then try to call its callbacks et cetera.
-     *
-     * @note During insertion, each key is locked - to avoid parallel initialization of regions for same key.
-     *
-     * @param key Key that is used to find the target value.
-     *
-     * @param get_size Callback functor that is called if value with a given \c key was neither found in cache
-     *      nor produced by any of other threads.
-     *      Functor is assumed to be invokable with no arguments and return a size_t representing
-     *      the size needed to be allocated.
-     *
-     * @param initialize Callback function that is called if
-     *      <ul>
-     *      <li>\c get_size is called and doesn't throw.</li>
-     *      <li>Allocator did not fail to allocate another memory region.</li>
-     *      </ul>
-     *      Functor is assumed to be invokable with arguments (<tt>void * ptr, Payload& payload</tt>).
-     *      TODO What must it do?
-     *
-     * @return Cached value inside a \c MemoryRegion wrapper (it prevents the cache entry from eviction).
-     * @return Bool indicating whether the value was produced during the call. <br>
-     *      False on cache hit (including a concurrent cache hit), true on cache miss).
-     */
-    template <typename GetSize, typename Init>
-    inline std::pair<MemoryRegionPtr, bool> getOrSet(const Key & key, GetSize && get_size, Init && initialize)
-    {
-        InsertionAttemptDisposer disposer;
-        InsertionAttempt * attempt;
-
-        MemoryRegionPtr out = getImpl(key, disposer, attempt);
-
-        if (out)
-            return {out, false}; // value was found in the cache.
-
-        /// No try-catch here because it is not needed.
-        size_t size = get_size();
-
-        RegionMetadata * region;
-
-        {
-            std::lock_guard cache_lock(mutex);
-            region = allocate(size);
-        }
-
-        /// Cannot allocate memory.
-        if (!region) return {};
-
-        region->key = key;
-
-        {
-            total_size_currently_initialized += size;
-            SCOPE_EXIT({ total_size_currently_initialized -= size; });
-
-            try
-            {
-                initialize(region->ptr, region->payload);
-            }
-            catch (...)
-            {
-                {
-                    std::lock_guard cache_lock(mutex);
-                    freeAndCoalesce(*region);
-                }
-
-                throw;
-            }
-        }
-
-        std::lock_guard cache_lock(mutex);
-
-        try
-        {
-            attempt->value = std::make_shared<MemoryRegion>(*this, *region);
-
-            /// Insert the new value only if the attempt is still present in \c insertion_attempts.
-            /// (may be absent because of a concurrent reset() call).
-            auto attempt_it = insertion_attempts.find(key);
-
-            if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
-                used_regions.insert(*region);
-
-            if (!attempt->is_disposed)
-                disposer.dispose();
-
-            return {attempt->value, true};
-        }
-        catch (...)
-        {
-            if (region->TAllocatedRegionHook::is_linked())
-                used_regions.erase(used_regions.iterator_to(*region));
-
-            freeAndCoalesce(*region);
-
-            throw;
-        }
-    }
-
-private:
-    mutable std::mutex mutex;
-
-    pcg64 rng{randomSeed()};
-
-    /**
-      * Represents a used (currently used) memory region of a \c MemoryChunk.
-      * You can think of it as a view over some chunk's part (probably, of the whole chunk).
-      * Modifies \c unused_allocated_regions in the cache according to region's \c refcount in ctor and dtor.
-      */
-    struct MemoryRegion : private boost::noncopyable
-    {
-        MemoryRegion(CachingAllocator & cache_, RegionMetadata & region_) noexcept
-            : cache(cache_), metadata(region_)
-        {
-            ++metadata.refcount;
-
-            if (metadata.refcount == 1 && metadata.TUnusedRegionHook::is_linked())
-                cache.unused_allocated_regions.erase(cache.unused_allocated_regions.iterator_to(metadata));
-
-            cache.total_size_in_use += metadata.size;
-        }
-
-        ~MemoryRegion() noexcept
-        {
-            std::lock_guard cache_lock(cache.mutex);
-
-            --metadata.refcount;
-
-            if (metadata.refcount == 0)
-                cache.unused_allocated_regions.push_back(metadata);
-
-            cache.total_size_in_use -= metadata.size;
-        }
-
-        [[nodiscard, gnu::assume_aligned(ptrs_alignment), gnu::pure]] void * ptr() { return metadata.ptr; }
-        [[nodiscard, gnu::assume_aligned(ptrs_alignment), gnu::pure]] const void * ptr() const { return metadata.ptr; }
-
-        [[nodiscard, gnu::pure]] size_t size() const { return metadata.size; }
-
-        [[nodiscard, gnu::pure]] Key key() const { return metadata.key; }
-
-        [[nodiscard, gnu::pure]] Mapped & mapped() { return metadata.mapped; }
-        [[nodiscard, gnu::pure]] const Mapped & mapped() const { return metadata.mapped; }
-
-    private:
-        CachingAllocator & cache;
-        RegionMetadata & metadata;
-    };
-
-    inline MemoryRegionPtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
-    {
-        {
-            std::lock_guard cache_lock(mutex);
-
-            auto region_it = used_regions.find(key, RegionCompareByKey());
-
-            if (used_regions.end() != region_it)
-            {
-                ++hits;
-
-                return std::make_shared<MemoryRegion>(*this, *region_it);
-            }
-
-            auto & insertion_attempt = insertion_attempts[key];
-
-            if (!insertion_attempt)
-                insertion_attempt = std::make_shared<InsertionAttempt>(*this);
-
-            disposer.acquire(&key, insertion_attempt);
-        }
-
-        attempt = disposer.attempt.get();
-
-        std::lock_guard attempt_lock(attempt->mutex);
-
-        disposer.attempt_disposed = attempt->is_disposed;
-
-        if (attempt->value)
-        {
-            /// Another thread already produced the value while we were acquiring the attempt's mutex.
-            ++hits;
-            ++concurrent_hits;
-
-            return attempt->value;
-        }
-
-        ++misses;
-
-        return {};
-    }
-
-
-    [[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding)
-    {
-        return (x + (rounding - 1)) / rounding * rounding;
-    }
-
-}
