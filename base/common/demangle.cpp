@@ -14,7 +14,7 @@
 
 #if defined(_MSC_VER) || MEMORY_SANITIZER
 
-DemangleResult tryDemangle(const char * name)
+DemangleResult tryDemangle(const char *)
 {
     return DemangleResult{};
 }
