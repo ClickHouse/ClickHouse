@@ -1,4 +1,4 @@
-add_compile_options(-Wno-zero-as-null-pointer-constant) # Protobuf generated files
+add_compile_options(-Wno-zero-as-null-pointer-constant -Wno-array-bounds) # Protobuf generated files
 
 if (USE_PROTOBUF)
     protobuf_generate_cpp(ProtobufDelimitedMessagesSerializer_Srcs ProtobufDelimitedMessagesSerializer_Hdrs ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/queries/0_stateless/00825_protobuf_format.proto)
