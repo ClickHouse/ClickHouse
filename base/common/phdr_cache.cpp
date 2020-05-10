@@ -25,6 +25,7 @@
 
 #if defined(__clang__)
 #   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
 #endif
 
 #define __msan_unpoison(X, Y)
