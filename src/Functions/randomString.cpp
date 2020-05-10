@@ -73,9 +73,9 @@ public:
             data_to.resize(next_offset);
             offsets_to[row_num] = next_offset;
 
-            auto * data_to_ptr = data_to.data(); // avoid assert on array indexing after end
+            auto data_to_ptr = reinterpret_cast<UInt64 *>(data_to.data()); // avoid assert on array indexing after end
             for (size_t pos = offset, end = offset + length; pos < end;
-                 pos += 8) // We have padding in column buffers that we can overwrite.
+                 pos += sizeof(UInt64)) // We have padding in column buffers that we can overwrite.
             {
                 UInt64 rand = thread_local_rng();
                 data_to_ptr[pos] = rand;
