@@ -11,7 +11,7 @@
 #include <re2/re2.h>
 #include <sparsehash/dense_hash_map>
 
-#include <contrib/libs/clickhouse/libs/libcommon/include/common/StringRef.h>
+#include <../base/common/StringRef.h>
 #include <dbms/src/IO/ReadBuffer.h>
 #include <dbms/src/IO/ReadHelpers.h>
 

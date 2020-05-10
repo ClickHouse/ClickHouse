@@ -5,7 +5,7 @@
 #include <metrika/core/libs/appmetrica/types/BrowserBase.h>
 #include <metrika/core/libs/appmetrica/types/OperatingSystem.h>
 #include <metrika/core/libs/statdaemons/mobile/server/Request.h>
-#include <metrika/core/libs/uatraits-fast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <chrono>
 #include <memory>

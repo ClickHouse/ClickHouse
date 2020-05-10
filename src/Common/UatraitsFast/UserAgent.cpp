@@ -1,4 +1,4 @@
-#include <metrika/core/libs/uatraits-fast/UserAgent.h>
+#include <Common/UatraitsFast/UserAgent.h>
 
 #include <metrika/core/libs/statdaemons/mobile/OperatingSystem.h>
 #include <boost/algorithm/string/case_conv.hpp>

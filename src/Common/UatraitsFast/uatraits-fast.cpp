@@ -15,10 +15,10 @@
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/SAX/InputSource.h>
 
-#include <dbms/src/Common/OptimizedRegularExpression.h>
+#include <Common/OptimizedRegularExpression.h>
 
-#include <metrika/core/libs/uatraits-fast/rules.h>
-#include <metrika/core/libs/uatraits-fast/uatraits-fast.h>
+#include <Common/UatraitsFast/rules.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include "Actions.h"
 #include "ActionsHelpers.h"
 
