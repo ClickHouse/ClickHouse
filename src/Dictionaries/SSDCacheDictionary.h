@@ -9,10 +9,10 @@
 #include <Columns/ColumnString.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/HashTable/Hash.h>
 #include <common/logger_useful.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
+#include <Dictionaries/BucketCache.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferAIO.h>
 #include <list>
@@ -23,142 +23,6 @@
 
 namespace DB
 {
-
-namespace
-{
-    size_t nearestPowTwo(size_t x) {
-        size_t r = 1;
-        while (x > r) {
-            r <<= 1;
-        }
-        return r;
-    }
-}
-
-template <typename K, typename V>
-class CLRUCache
-{
-    struct Cell {
-        K key;
-        V index;
-    };
-
-public:
-    CLRUCache(size_t cells_)
-        : buckets(nearestPowTwo(cells_) / bucket_size)
-        , bucket_mask(buckets - 1)
-        , cells(buckets * bucket_size)
-        , positions((buckets / 2) + 1)
-    {
-        Poco::Logger::get("cache").information(" buckets: " + std::to_string(buckets) + " cells: " + std::to_string(cells.size()));
-        for (auto & cell : cells)
-            cell.index.setNotExists();
-        for (size_t bucket = 0; bucket < buckets; ++bucket)
-            setPosition(bucket, 0);
-    }
-
-    void set(K key, V val)
-    {
-        const size_t bucket = (intHash64(key) & bucket_mask);
-        const size_t idx = getCellIndex(key, bucket);
-        if (!cells[idx].index.exists())
-        {
-            incPosition(bucket);
-            ++sz;
-        }
-
-        cells[idx].key = key;
-        cells[idx].index = val;
-    }
-
-    bool get(K key, V & val)
-    {
-        const size_t bucket = (intHash64(key) & bucket_mask);
-        const size_t idx = getCellIndex(key, bucket);
-        if (!cells[idx].index.exists() || cells[idx].key != key)
-            return false;
-        val = cells[idx].index;
-        return true;
-    }
-
-    bool erase(K key)
-    {
-        const size_t bucket = (intHash64(key) & bucket_mask);
-        const size_t idx = getCellIndex(key, bucket);
-        if (!cells[idx].index.exists() || cells[idx].key != key)
-            return false;
-        cells[idx].index.setNotExists();
-        --sz;
-        return true;
-    }
-
-    size_t size()
-    {
-        return sz;
-    }
-
-    auto keys()
-    {
-        std::vector<K> res;
-        for (const auto & cell : cells)
-        {
-            if (cell.index.exists())
-            {
-                res.push_back(cell.key);
-            }
-        }
-        return res;
-    }
-
-private:
-    size_t getCellIndex(const K key, const size_t bucket)
-    {
-        const size_t pos = getPosition(bucket);
-        for (size_t idx = 0; idx < bucket_size; ++idx)
-        {
-            const size_t cur = ((pos + 1 + idx) & pos_mask);
-            if (cells[bucket * bucket_size + cur].index.exists() &&
-                cells[bucket * bucket_size + cur].key == key)
-            {
-                return bucket * bucket_size + cur;
-            }
-        }
-
-        return bucket * bucket_size + pos;
-    }
-
-    size_t getPosition(const size_t bucket)
-    {
-        const size_t idx = (bucket >> 1);
-        if ((bucket & 1) == 0)
-            return ((positions[idx] >> 4) & pos_mask);
-        return (positions[idx] & pos_mask);
-    }
-
-    void setPosition(const size_t bucket, const size_t pos)
-    {
-        const size_t idx = bucket >> 1;
-        if ((bucket & 1) == 0)
-            positions[idx] = ((pos << 4) | (positions[idx] & ((1 << 4) - 1)));
-        else
-            positions[idx] = (pos | (positions[idx] & (((1 << 4) - 1) << 4)));
-    }
-
-    void incPosition(const size_t bucket)
-    {
-        setPosition(bucket, (getPosition(bucket) + 1) & pos_mask);
-    }
-
-    static constexpr size_t bucket_size = 8;
-    static constexpr size_t pos_size = 3;
-    static constexpr size_t pos_mask = (1 << pos_size) - 1;
-    size_t buckets;
-    size_t bucket_mask;
-
-    std::vector<Cell> cells;
-    std::vector<char> positions;
-    size_t sz = 0;
-};
 
 using AttributeValueVariant = std::variant<
         UInt8,
@@ -316,7 +180,7 @@ private:
 
     int fd = -1;
 
-    mutable CLRUCache<UInt64, Index> key_to_index;
+    mutable BucketCacheIndex<UInt64, Index, Int64Hasher> key_to_index;
 
     Attribute keys_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;

@@ -14,6 +14,7 @@
 #include <Common/SmallObjectPool.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
+#include <Dictionaries/BucketCache.h>
 #include <ext/scope_guard.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferAIO.h>
@@ -76,6 +77,11 @@ public:
         return getRef() == other.getRef();
     }
 
+    inline bool operator!=(const KeyRef & other) const
+    {
+        return !(*this == other);
+    }
+
     inline bool operator<(const KeyRef & other) const
     {
         return getRef() <  other.getRef();
@@ -128,22 +134,7 @@ class ComplexKeysPoolImpl
 public:
     KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys)
     {
-        if constexpr (std::is_same_v<A, SmallObjectPool>)
-        {
-            // not working now
-            const auto res = arena->alloc();
-            auto place = res;
-
-            for (const auto & key_column : key_columns)
-            {
-                const StringRef key = key_column->getDataAt(row);
-                memcpy(place, key.data, key.size);
-                place += key.size;
-            }
-
-            return KeyRef(res);
-        }
-        else
+        if constexpr (!std::is_same_v<A, SmallObjectPool>)
         {
             const auto keys_size = key_columns.size();
             UInt16 sum_keys_size{};
@@ -165,7 +156,6 @@ public:
             {
                 if (!key_columns[j]->valuesHaveFixedSize())  // String
                 {
-                    //auto start = key_start;
                     auto key_size = keys[j].size + 1;
                     memcpy(key_start, &key_size, sizeof(size_t));
                     key_start += sizeof(size_t);
@@ -173,26 +163,36 @@ public:
                     key_start += keys[j].size;
                     *key_start = '\0';
                     ++key_start;
-                    //keys[j].data = start;
-                    //keys[j].size += sizeof(size_t) + 1;
                 }
                 else
                 {
                     memcpy(key_start, keys[j].data, keys[j].size);
-                    //keys[j].data = key_start;
                     key_start += keys[j].size;
                 }
             }
 
             return KeyRef(place);
         }
+        else
+        {
+            // not working now
+            const auto res = arena->alloc();
+            auto place = res;
+
+            for (const auto & key_column : key_columns)
+            {
+                const StringRef key = key_column->getDataAt(row);
+                memcpy(place, key.data, key.size);
+                place += key.size;
+            }
+
+            return KeyRef(res);
+        }
     }
 
     KeyRef copyKeyFrom(const KeyRef & key)
     {
-        //Poco::Logger::get("test cpy").information("--- --- --- ");
         char * data = arena.alloc(key.fullSize());
-        //Poco::Logger::get("test cpy").information("--- --- --- finish");
         memcpy(data, key.fullData(), key.fullSize());
         return KeyRef(data);
     }
@@ -201,18 +201,14 @@ public:
     {
         if constexpr (std::is_same_v<A, ArenaWithFreeLists>)
             arena.free(key.fullData(), key.fullSize());
-        else if constexpr (std::is_same_v<A, SmallObjectPool>)
-            arena.free(key.fullData());
-        //else
-        //    throw Exception("Free not supported.", ErrorCodes::LOGICAL_ERROR);
+        /*else if constexpr (std::is_same_v<A, SmallObjectPool>)
+            arena.free(key.fullData());*/
     }
 
     void rollback(const KeyRef & key)
     {
         if constexpr (std::is_same_v<A, Arena>)
             arena.rollback(key.fullSize());
-        //else
-        //    throw Exception("Rollback not supported.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void writeKey(const KeyRef & key, WriteBuffer & buf)
@@ -249,7 +245,6 @@ private:
 
 using TemporalComplexKeysPool = ComplexKeysPoolImpl<Arena>;
 using ComplexKeysPool = ComplexKeysPoolImpl<ArenaWithFreeLists>;
-//using FixedComplexKeysPool = ComplexKeysPoolImpl<SmallObjectPool>;
 
 template <typename K, typename V, typename Pool>
 class ComplexKeyLRUCache
@@ -341,6 +336,18 @@ private:
     size_t max_size;
     Pool & keys_pool;
     std::mutex mutex;
+};
+
+struct KeyDeleter
+{
+    KeyDeleter(ComplexKeysPool & keys_pool_) : keys_pool(keys_pool_) {}
+
+    void operator()(const KeyRef key) const
+    {
+        keys_pool.freeKey(key);
+    }
+
+    ComplexKeysPool & keys_pool;
 };
 
 class SSDComplexKeyCachePartition
@@ -487,14 +494,6 @@ private:
 
     void ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const;
 
-    /*KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys) const;
-    void freeKey(const KeyRef key) const;
-
-    void writeKey(KeyRef key, WriteBuffer & buf);
-    template <typename ArenaForKey>
-    void readKey(KeyRef & key, ArenaForKey & arena, ReadBuffer & buf);
-    void ignoreKey(ReadBuffer & buf);*/
-
     const size_t file_id;
     const size_t max_size;
     const size_t block_size;
@@ -508,7 +507,7 @@ private:
     int fd = -1;
 
     ComplexKeysPool keys_pool;
-    mutable ComplexKeyLRUCache<KeyRef, Index, ComplexKeysPool> key_to_index;
+    mutable BucketCacheIndex<KeyRef, Index, std::hash<KeyRef>, KeyDeleter> key_to_index;
 
     std::optional<TemporalComplexKeysPool> keys_buffer_pool;
     KeyRefs keys_buffer;
@@ -518,7 +517,6 @@ private:
     std::optional<Memory<>> memory;
     std::optional<WriteBuffer> write_buffer;
     uint32_t keys_in_block = 0;
-    //CompressionCodecPtr codec;
 
     size_t current_memory_block_id = 0;
     size_t current_file_block_id = 0;
