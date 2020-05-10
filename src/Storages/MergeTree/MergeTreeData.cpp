@@ -1157,26 +1157,37 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
 {
     DataPartsVector parts;
 
+    std::unique_lock lock(grab_old_parts_mutex, std::defer_lock);
+    if (!lock.try_lock())
+        return parts;
+
     time_t now = time(nullptr);
-
-    auto parts_range = getDataPartsStateRange(DataPartState::Committed);
-    for (auto it = parts_range.begin(); it != parts_range.end(); ++it)
+    
     {
-        const DataPartPtr & part = *it;
+        auto parts_lock = lockParts();
 
-        if (part->modification_time < now - interval)
+        auto parts_range = getDataPartsStateRange(DataPartState::Committed);
+        for (auto it = parts_range.begin(); it != parts_range.end(); ++it)
         {
-            parts.emplace_back(*it);
+            const DataPartPtr & part = *it;
+
+            if (part->modification_time < now - interval)
+            {
+                parts.emplace_back(*it);
+            }
         }
     }
+    if (!res.empty())
+        LOG_TRACE(log, "Found " << res.size() << " old parts to recompress.");
     return parts;
 }
 
-void MergeTreeData::recompressOldParts()
+bool MergeTreeData::recompressOldParts()
 {
     auto parts = grabOldModifiedParts();
 
     /// TODO recompress
+    return true;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)

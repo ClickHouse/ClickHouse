@@ -21,7 +21,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
+   extern const Metric BackgroundPoolTask;
     extern const Metric MemoryTrackingInBackgroundProcessingPool;
 }
 
@@ -78,7 +78,7 @@ public:
     BackgroundProcessingPool(int size_,
         const PoolSettings & pool_settings = {},
         const char * log_name = "BackgroundProcessingPool",
-        const char * thread_name_ = "BackgrProcPool",
+        const char * thread_name_ = "BackgrProcPool"
         const sched_param & sched_param_ = {});
 
     size_t getNumberOfThreads() const

@@ -51,7 +51,7 @@ void BackgroundProcessingPoolTaskInfo::wake()
 BackgroundProcessingPool::BackgroundProcessingPool(int size_,
         const PoolSettings & pool_settings,
         const char * log_name,
-        const char * thread_name_,
+        const char * thread_name_
         const struct sched_param & sched_param_)
     : size(size_)
     , thread_name(thread_name_)

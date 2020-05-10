@@ -477,7 +477,7 @@ public:
     DataPartsVector grabOldModifiedParts();
 
     /// Recompress old commited parts that have been chosen by modification_time
-    void recompressOldParts();
+    bool recompressOldParts();
 
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts but not from the disk.
     /// If 'force' - don't wait for old_parts_lifetime.

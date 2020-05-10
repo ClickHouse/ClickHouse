@@ -788,8 +788,26 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::recompressMutateTask()
         return BackgroundProcessingPoolTaskResult::ERROR;
     }
 
-    recompressOldParts();
-    return BackgroundProcessingPoolTaskResult::SUCCESS;
+    try
+    {
+        auto lock_structure = lockStructureForShare(false, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+        if (recompressOldParts())
+        {
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+        }
+        return BackgroundProcessingPoolTaskResult::ERROR;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::ABORTED)
+        {
+            LOG_INFO(log, e.message());
+            return BackgroundProcessingPoolTaskResult::ERROR;
+        }
+
+        throw;
+    }
+
 }
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
