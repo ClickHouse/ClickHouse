@@ -46,7 +46,7 @@ if (ENABLE_REPLXX)
     endif ()
 
     if (COMPILER_CLANG)
-        target_compile_options(replxx PUBLIC -Wno-documentation)
+        target_compile_options(replxx PRIVATE -Wno-documentation)
     endif ()
 
     target_compile_definitions(replxx PUBLIC USE_REPLXX=1)
