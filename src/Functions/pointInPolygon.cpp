@@ -141,12 +141,12 @@ public:
 
         if (arguments.size() == 2)
         {
-            auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            const auto * array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
             if (array == nullptr)
                 throw Exception(getMessagePrefix(1) + " must contain an array of tuples or an array of arrays of tuples.",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
+            const auto * nested_array = checkAndGetDataType<DataTypeArray>(array->getNestedType().get());
             if (nested_array != nullptr)
             {
                 array = nested_array;
@@ -158,7 +158,7 @@ public:
         {
             for (size_t i = 1; i < arguments.size(); i++)
             {
-                auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+                const auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
                 if (array == nullptr)
                     throw Exception(getMessagePrefix(i) + " must contain an array of tuples",
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
