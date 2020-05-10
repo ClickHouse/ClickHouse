@@ -20,7 +20,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#pragma GCC diagnostic ignored "-Wgnu-anonymous-struct"
+#if defined(__clang__)
+    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#endif
 
 
 struct CompactStringRef
