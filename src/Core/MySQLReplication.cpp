@@ -358,10 +358,13 @@ namespace MySQLReplication
         {
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2:
+                columns_present_bitmap1.resize(columns_bitmap_size);
+                columns_present_bitmap2.resize(columns_bitmap_size);
                 payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap1.data()), columns_bitmap_size);
                 payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap2.data()), columns_bitmap_size);
                 break;
             default:
+                columns_present_bitmap1.resize(columns_bitmap_size);
                 payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap1.data()), columns_bitmap_size);
                 break;
         }
@@ -469,20 +472,34 @@ namespace MySQLReplication
                     row.push_back(Field{Int64{val}});
                     break;
                 }
+                case MYSQL_TYPE_FLOAT: {
+                    Float32 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
+                    row.push_back(Field{Float32{val}});
+                    break;
+                }
+                case MYSQL_TYPE_DOUBLE: {
+                    Float64 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 8);
+                    row.push_back(Field{Float64{val}});
+                    break;
+                }
+                case MYSQL_TYPE_TIMESTAMP: {
+                    UInt32 val = 0;
+                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
+                    row.push_back(Field{UInt32{val}});
+                    break;
+                }
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
-                    uint32_t size = meta;
-                    if (size < 256)
+                    uint32_t size = 0;
+                    if (meta < 256)
                     {
-                        uint8_t tmp1 = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&tmp1), 1);
-                        size = tmp1;
+                        payload.readStrict(reinterpret_cast<char *>(&size), 1);
                     }
                     else
                     {
-                        uint16_t tmp2 = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&tmp2), 2);
-                        size = tmp2;
+                        payload.readStrict(reinterpret_cast<char *>(&size), 2);
                     }
 
                     String val;
@@ -492,21 +509,55 @@ namespace MySQLReplication
                     break;
                 }
                 case MYSQL_TYPE_STRING: {
-                    UInt32 size = field_len;
-                    if (size < 256)
+                    UInt32 size = 0;
+                    if (field_len < 256)
                     {
-                        uint8_t tmp1 = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&tmp1), 1);
-                        size = tmp1;
+                        payload.readStrict(reinterpret_cast<char *>(&size), 1);
                     }
                     else
                     {
-                        uint16_t tmp2 = 0;
-                        payload.readStrict(reinterpret_cast<char *>(&tmp2), 2);
-                        size = tmp2;
+                        payload.readStrict(reinterpret_cast<char *>(&size), 2);
                     }
+
+                    String val;
+                    val.resize(size);
+                    payload.readStrict(reinterpret_cast<char *>(val.data()), size);
+                    row.push_back(Field{String{val}});
                     break;
                 }
+                case MYSQL_TYPE_GEOMETRY:
+                case MYSQL_TYPE_BLOB: {
+                    UInt32 size = 0;
+                    switch (meta)
+                    {
+                        case 1: {
+                            payload.readStrict(reinterpret_cast<char *>(&size), 1);
+                            break;
+                        }
+                        case 2: {
+                            payload.readStrict(reinterpret_cast<char *>(&size), 2);
+                            break;
+                        }
+                        case 3: {
+                            payload.readStrict(reinterpret_cast<char *>(&size), 3);
+                            break;
+                        }
+                        case 4: {
+                            payload.readStrict(reinterpret_cast<char *>(&size), 4);
+                            break;
+                        }
+                        default:
+                            break;
+                    }
+
+                    String val;
+                    val.resize(size);
+                    payload.readStrict(reinterpret_cast<char *>(val.data()), size);
+                    row.push_back(Field{String{val}});
+                    break;
+                }
+                default:
+                    throw ReplicationError("ParseRow: Unhandled field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
             }
         }
         rows.push_back(row);
