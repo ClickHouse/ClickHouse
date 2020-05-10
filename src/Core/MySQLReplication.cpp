@@ -26,9 +26,8 @@ namespace MySQLReplication
                 return "BINLOG_CHECKSUM_ALG_ENUM_END";
             case BINLOG_CHECKSUM_ALG_UNDEF:
                 return "BINLOG_CHECKSUM_ALG_UNDEF";
-            default:
-                return std::string("Unknown checksum alg: ") + std::to_string(static_cast<int>(type));
         }
+        return std::string("Unknown checksum alg: ") + std::to_string(static_cast<int>(type));
     }
 
     String ToString(EventType type)
@@ -162,9 +161,6 @@ namespace MySQLReplication
         size_t len = header.event_size - (2 + 50 + 4 + 1 + EVENT_HEADER_LENGTH) - 1;
         event_type_header_length.resize(len);
         payload.readStrict(reinterpret_cast<char *>(event_type_header_length.data()), len);
-        assert(event_type_header_length[WRITE_ROWS_EVENT_V2] == ROWS_HEADER_LEN_V2);
-        assert(event_type_header_length[UPDATE_ROWS_EVENT_V2] == ROWS_HEADER_LEN_V2);
-        assert(event_type_header_length[DELETE_ROWS_EVENT_V2] == ROWS_HEADER_LEN_V2);
     }
 
     void FormatDescriptionEvent::print() const
@@ -358,18 +354,24 @@ namespace MySQLReplication
 
         number_columns = readLengthEncodedNumber(payload);
         size_t columns_bitmap_size = (number_columns + 8) / 7;
-        payload.readStrict(reinterpret_cast<char *>(columns_before_bitmap.data()), columns_bitmap_size);
-        if (header.type == UPDATE_ROWS_EVENT_V2)
+        switch (header.type)
         {
-            payload.readStrict(reinterpret_cast<char *>(columns_after_bitmap.data()), columns_bitmap_size);
+            case UPDATE_ROWS_EVENT_V1:
+            case UPDATE_ROWS_EVENT_V2:
+                payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap1.data()), columns_bitmap_size);
+                payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap2.data()), columns_bitmap_size);
+                break;
+            default:
+                payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap1.data()), columns_bitmap_size);
+                break;
         }
 
         while (payload.available() > CHECKSUM_CRC32_SIGNATURE_LENGTH)
         {
-            parseRow(payload, columns_before_bitmap);
-            if (header.type == UPDATE_ROWS_EVENT_V2)
+            parseRow(payload, columns_present_bitmap1);
+            if (header.type == UPDATE_ROWS_EVENT_V1 || header.type == UPDATE_ROWS_EVENT_V2)
             {
-                parseRow(payload, columns_after_bitmap);
+                parseRow(payload, columns_present_bitmap2);
             }
         }
     }
@@ -379,18 +381,30 @@ namespace MySQLReplication
         UInt32 field_type = 0;
         UInt32 field_len = 0;
 
-        bitmap = "";
         size_t columns_null_bitmap_size = (number_columns + 8) / 7;
         String columns_null_bitmap;
         columns_null_bitmap.resize(columns_null_bitmap_size);
         payload.readStrict(reinterpret_cast<char *>(columns_null_bitmap.data()), columns_null_bitmap_size);
 
+
         Tuple row;
         for (auto i = 0U; i < number_columns; i++)
         {
-            field_type = table_map->column_type[i];
-            UInt16 meta = table_map->column_meta[i];
+            /// Column not presents.
+            if (!check_string_bit(bitmap, i))
+            {
+                continue;
+            }
 
+            /// NULL column.
+            if (check_string_bit(columns_null_bitmap, i))
+            {
+                row.push_back(Field{Null{}});
+                continue;
+            }
+
+            field_type = table_map->column_type[i];
+            auto meta = table_map->column_meta[i];
             if (field_type == MYSQL_TYPE_STRING)
             {
                 if (meta >= 256)
@@ -559,18 +573,21 @@ namespace MySQLReplication
                 position.updateLogPos(event->header.log_pos);
                 break;
             }
+            case WRITE_ROWS_EVENT_V1:
             case WRITE_ROWS_EVENT_V2: {
                 event = std::make_shared<WriteRowsEvent>(table_map);
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
+            case DELETE_ROWS_EVENT_V1:
             case DELETE_ROWS_EVENT_V2: {
                 event = std::make_shared<DeleteRowsEvent>(table_map);
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
+            case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2: {
                 event = std::make_shared<UpdateRowsEvent>(table_map);
                 event->parseHeader(payload);
