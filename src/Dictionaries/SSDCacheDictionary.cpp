@@ -297,7 +297,7 @@ size_t SSDCachePartition::appendBlock(
                     } \
                     else \
                     { \
-                        const auto & values = std::get<Attribute::Container<TYPE>>(attribute.values); \
+                        const auto & values = std::get<Attribute::Container<TYPE>>(attribute.values); /* NOLINT */ \
                         writeBinary(values[index], *write_buffer); \
                     } \
                 } \
@@ -764,10 +764,9 @@ void SSDCachePartition::clearOldestBlocks()
 
             if (!metadata.isDefault())
             {
-                for (size_t attr = 0; attr < attributes_structure.size(); ++attr)
+                for (const auto & attribute : attributes_structure)
                 {
-
-                    switch (attributes_structure[attr])
+                    switch (attribute)
                     {
             #define DISPATCH(TYPE) \
                     case AttributeUnderlyingType::ut##TYPE: \
@@ -982,6 +981,67 @@ void SSDCacheStorage::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UI
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
     hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
+}
+
+namespace
+{
+SSDCachePartition::Attributes createAttributesFromBlock(
+        const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure)
+{
+    SSDCachePartition::Attributes attributes;
+
+    const auto columns = block.getColumns();
+    for (size_t i = 0; i < structure.size(); ++i)
+    {
+        const auto & column = columns[i + begin_column];
+        switch (structure[i])
+        {
+#define DISPATCH(TYPE) \
+        case AttributeUnderlyingType::ut##TYPE: \
+            { \
+                SSDCachePartition::Attribute::Container<TYPE> values(column->size()); \
+                memcpy(&values[0], column->getRawData().data, sizeof(TYPE) * values.size()); \
+                attributes.emplace_back(); \
+                attributes.back().type = structure[i]; \
+                attributes.back().values = std::move(values); \
+            } \
+            break;
+
+            DISPATCH(UInt8)
+            DISPATCH(UInt16)
+            DISPATCH(UInt32)
+            DISPATCH(UInt64)
+            DISPATCH(UInt128)
+            DISPATCH(Int8)
+            DISPATCH(Int16)
+            DISPATCH(Int32)
+            DISPATCH(Int64)
+            DISPATCH(Decimal32)
+            DISPATCH(Decimal64)
+            DISPATCH(Decimal128)
+            DISPATCH(Float32)
+            DISPATCH(Float64)
+#undef DISPATCH
+
+        case AttributeUnderlyingType::utString:
+            {
+                attributes.emplace_back();
+                SSDCachePartition::Attribute::Container<String> values(column->size());
+                for (size_t j = 0; j < column->size(); ++j)
+                {
+                    const auto ref = column->getDataAt(j);
+                    values[j].resize(ref.size);
+                    memcpy(values[j].data(), ref.data, ref.size);
+                }
+                attributes.back().type = structure[i];
+                attributes.back().values = std::move(values);
+            }
+            break;
+        }
+    }
+
+    return attributes;
+}
 }
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
@@ -1205,64 +1265,6 @@ void SSDCacheStorage::collectGarbage()
     }
 }
 
-SSDCachePartition::Attributes SSDCacheStorage::createAttributesFromBlock(
-        const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure)
-{
-    SSDCachePartition::Attributes attributes;
-
-    const auto columns = block.getColumns();
-    for (size_t i = 0; i < structure.size(); ++i)
-    {
-        const auto & column = columns[i + begin_column];
-        switch (structure[i])
-        {
-#define DISPATCH(TYPE) \
-        case AttributeUnderlyingType::ut##TYPE: \
-            { \
-                SSDCachePartition::Attribute::Container<TYPE> values(column->size()); \
-                memcpy(&values[0], column->getRawData().data, sizeof(TYPE) * values.size()); \
-                attributes.emplace_back(); \
-                attributes.back().type = structure[i]; \
-                attributes.back().values = std::move(values); \
-            } \
-            break;
-
-            DISPATCH(UInt8)
-            DISPATCH(UInt16)
-            DISPATCH(UInt32)
-            DISPATCH(UInt64)
-            DISPATCH(UInt128)
-            DISPATCH(Int8)
-            DISPATCH(Int16)
-            DISPATCH(Int32)
-            DISPATCH(Int64)
-            DISPATCH(Decimal32)
-            DISPATCH(Decimal64)
-            DISPATCH(Decimal128)
-            DISPATCH(Float32)
-            DISPATCH(Float64)
-#undef DISPATCH
-
-        case AttributeUnderlyingType::utString:
-            {
-                attributes.emplace_back();
-                SSDCachePartition::Attribute::Container<String> values(column->size());
-                for (size_t j = 0; j < column->size(); ++j)
-                {
-                    const auto ref = column->getDataAt(j);
-                    values[j].resize(ref.size);
-                    memcpy(values[j].data(), ref.data, ref.size);
-                }
-                attributes.back().type = structure[i];
-                attributes.back().values = std::move(values);
-            }
-            break;
-        }
-    }
-
-    return attributes;
-}
-
 SSDCacheDictionary::SSDCacheDictionary(
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
@@ -1303,8 +1305,8 @@ SSDCacheDictionary::SSDCacheDictionary(
     { \
         const auto index = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
-        const auto null_value = std::get<TYPE>(null_values[index]); \
-        getItemsNumberImpl<TYPE, TYPE>( \
+        const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
+        getItemsNumberImpl<TYPE, TYPE>( /* NOLINT */ \
                 index, \
                 ids, \
                 out, \

@@ -228,7 +228,6 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        check_config = false;
         if (check_config)
             throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
 
