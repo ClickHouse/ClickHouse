@@ -134,60 +134,42 @@ class ComplexKeysPoolImpl
 public:
     KeyRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys)
     {
-        if constexpr (!std::is_same_v<A, SmallObjectPool>)
+        const auto keys_size = key_columns.size();
+        UInt16 sum_keys_size{};
+
+        for (size_t j = 0; j < keys_size; ++j)
         {
-            const auto keys_size = key_columns.size();
-            UInt16 sum_keys_size{};
-
-            for (size_t j = 0; j < keys_size; ++j)
-            {
-                keys[j] = key_columns[j]->getDataAt(row);
-                sum_keys_size += keys[j].size;
-                if (!key_columns[j]->valuesHaveFixedSize())  // String
-                    sum_keys_size += sizeof(size_t) + 1;
-            }
-
-            auto place = arena.alloc(sum_keys_size + sizeof(sum_keys_size));
-
-            auto key_start = place;
-            memcpy(key_start, &sum_keys_size, sizeof(sum_keys_size));
-            key_start += sizeof(sum_keys_size);
-            for (size_t j = 0; j < keys_size; ++j)
-            {
-                if (!key_columns[j]->valuesHaveFixedSize())  // String
-                {
-                    auto key_size = keys[j].size + 1;
-                    memcpy(key_start, &key_size, sizeof(size_t));
-                    key_start += sizeof(size_t);
-                    memcpy(key_start, keys[j].data, keys[j].size);
-                    key_start += keys[j].size;
-                    *key_start = '\0';
-                    ++key_start;
-                }
-                else
-                {
-                    memcpy(key_start, keys[j].data, keys[j].size);
-                    key_start += keys[j].size;
-                }
-            }
-
-            return KeyRef(place);
+            keys[j] = key_columns[j]->getDataAt(row);
+            sum_keys_size += keys[j].size;
+            if (!key_columns[j]->valuesHaveFixedSize())  // String
+                sum_keys_size += sizeof(size_t) + 1;
         }
-        else
+
+        auto place = arena.alloc(sum_keys_size + sizeof(sum_keys_size));
+
+        auto key_start = place;
+        memcpy(key_start, &sum_keys_size, sizeof(sum_keys_size));
+        key_start += sizeof(sum_keys_size);
+        for (size_t j = 0; j < keys_size; ++j)
         {
-            // not working now
-            const auto res = arena->alloc();
-            auto place = res;
-
-            for (const auto & key_column : key_columns)
+            if (!key_columns[j]->valuesHaveFixedSize())  // String
             {
-                const StringRef key = key_column->getDataAt(row);
-                memcpy(place, key.data, key.size);
-                place += key.size;
+                auto key_size = keys[j].size + 1;
+                memcpy(key_start, &key_size, sizeof(size_t));
+                key_start += sizeof(size_t);
+                memcpy(key_start, keys[j].data, keys[j].size);
+                key_start += keys[j].size;
+                *key_start = '\0';
+                ++key_start;
             }
-
-            return KeyRef(res);
+            else
+            {
+                memcpy(key_start, keys[j].data, keys[j].size);
+                key_start += keys[j].size;
+            }
         }
+
+        return KeyRef(place);
     }
 
     KeyRef copyKeyFrom(const KeyRef & key)
@@ -201,8 +183,6 @@ public:
     {
         if constexpr (std::is_same_v<A, ArenaWithFreeLists>)
             arena.free(key.fullData(), key.fullSize());
-        /*else if constexpr (std::is_same_v<A, SmallObjectPool>)
-            arena.free(key.fullData());*/
     }
 
     void rollback(const KeyRef & key)
@@ -220,7 +200,7 @@ public:
     {
         UInt16 sz;
         readBinary(sz, buf);
-        Poco::Logger::get("test read key").information("sz " + std::to_string(sz));
+        //Poco::Logger::get("test read key").information("sz " + std::to_string(sz));
         char * data = nullptr;
         if constexpr (std::is_same_v<A, SmallObjectPool>)
             data = arena.alloc();
@@ -229,7 +209,7 @@ public:
         memcpy(data, &sz, sizeof(sz));
         buf.read(data + sizeof(sz), sz);
         key = KeyRef(data);
-        Poco::Logger::get("test read key").information("ksz = " + std::to_string(key.size()));
+        //Poco::Logger::get("test read key").information("ksz = " + std::to_string(key.size()));
     }
 
     void ignoreKey(ReadBuffer & buf) const
@@ -534,7 +514,7 @@ public:
             const AttributeTypes & attributes_structure,
             const std::string & path,
             const size_t max_partitions_count,
-            const size_t partition_size,
+            const size_t file_size,
             const size_t block_size,
             const size_t read_buffer_size,
             const size_t write_buffer_size,
@@ -592,7 +572,7 @@ private:
 
     const std::string path;
     const size_t max_partitions_count;
-    const size_t partition_size;
+    const size_t file_size;
     const size_t block_size;
     const size_t read_buffer_size;
     const size_t write_buffer_size;
@@ -628,7 +608,7 @@ public:
             const DictionaryLifetime dict_lifetime_,
             const std::string & path,
             const size_t max_partitions_count_,
-            const size_t partition_size_,
+            const size_t file_size_,
             const size_t block_size_,
             const size_t read_buffer_size_,
             const size_t write_buffer_size_,
@@ -660,7 +640,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<SSDComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
-                max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
+                max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -791,7 +771,7 @@ private:
 
     const std::string path;
     const size_t max_partitions_count;
-    const size_t partition_size;
+    const size_t file_size;
     const size_t block_size;
     const size_t read_buffer_size;
     const size_t write_buffer_size;

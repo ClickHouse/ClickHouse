@@ -60,7 +60,6 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -895,7 +894,7 @@ SSDCacheStorage::SSDCacheStorage(
         const AttributeTypes & attributes_structure_,
         const std::string & path_,
         const size_t max_partitions_count_,
-        const size_t partition_size_,
+        const size_t file_size_,
         const size_t block_size_,
         const size_t read_buffer_size_,
         const size_t write_buffer_size_,
@@ -903,7 +902,7 @@ SSDCacheStorage::SSDCacheStorage(
     : attributes_structure(attributes_structure_)
     , path(path_)
     , max_partitions_count(max_partitions_count_)
-    , partition_size(partition_size_)
+    , file_size(file_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
@@ -999,7 +998,7 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
                 partitions.emplace_front(std::make_unique<SSDCachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
+                        file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1086,7 +1085,7 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
                 partitions.emplace_front(std::make_unique<SSDCachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
+                        file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1258,7 +1257,7 @@ SSDCacheDictionary::SSDCacheDictionary(
     const DictionaryLifetime dict_lifetime_,
     const std::string & path_,
     const size_t max_partitions_count_,
-    const size_t partition_size_,
+    const size_t file_size_,
     const size_t block_size_,
     const size_t read_buffer_size_,
     const size_t write_buffer_size_,
@@ -1269,13 +1268,13 @@ SSDCacheDictionary::SSDCacheDictionary(
     , dict_lifetime(dict_lifetime_)
     , path(path_)
     , max_partitions_count(max_partitions_count_)
-    , partition_size(partition_size_)
+    , file_size(file_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
     , max_stored_keys(max_stored_keys_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
-            path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
+            path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
     LOG_INFO(log, "Using storage path '" << path << "'.");
@@ -1635,11 +1634,11 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         if (block_size <= 0)
             throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto partition_size = config.getInt64(layout_prefix + ".ssd_cache.partition_size", DEFAULT_FILE_SIZE);
-        if (partition_size <= 0)
-            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) partition_size", ErrorCodes::BAD_ARGUMENTS};
-        if (partition_size % block_size != 0)
-            throw Exception{name + ": partition_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+        const auto file_size = config.getInt64(layout_prefix + ".ssd_cache.file_size", DEFAULT_FILE_SIZE);
+        if (file_size <= 0)
+            throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) file_size", ErrorCodes::BAD_ARGUMENTS};
+        if (file_size % block_size != 0)
+            throw Exception{name + ": file_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
         const auto read_buffer_size = config.getInt64(layout_prefix + ".ssd_cache.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
         if (read_buffer_size <= 0)
@@ -1667,7 +1666,7 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
                 name, dict_struct, std::move(source_ptr), dict_lifetime, path,
-                max_partitions_count, partition_size / block_size, block_size,
+                max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);
     };

@@ -287,7 +287,7 @@ size_t SSDComplexKeyCachePartition::append(
 
     for (size_t index = begin; index < keys.size();)
     {
-        Poco::Logger::get("test").information("wb off: " + std::to_string(write_buffer->offset()));
+        //Poco::Logger::get("test").information("wb off: " + std::to_string(write_buffer->offset()));
         Index cache_index;
         cache_index.setInMemory(true);
         cache_index.setBlockId(current_memory_block_id);
@@ -304,7 +304,7 @@ size_t SSDComplexKeyCachePartition::append(
             writeBinary(metadata[index].data, *write_buffer);
         }
 
-        Poco::Logger::get("test key").information("wb off: " + std::to_string(write_buffer->offset()));
+        //Poco::Logger::get("test key").information("wb off: " + std::to_string(write_buffer->offset()));
 
         for (const auto & attribute : new_attributes)
         {
@@ -372,7 +372,7 @@ size_t SSDComplexKeyCachePartition::append(
         {
             init_write_buffer();
         }
-        Poco::Logger::get("test final").information("wb off: " + std::to_string(write_buffer->offset()));
+        //Poco::Logger::get("test final").information("wb off: " + std::to_string(write_buffer->offset()));
     }
     return keys.size() - begin;
 }
@@ -385,7 +385,7 @@ void SSDComplexKeyCachePartition::flush()
     if (keys_buffer.empty())
         return;
 
-    Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
+    //Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
 
     AIOContext aio_context{1};
 
@@ -406,7 +406,7 @@ void SSDComplexKeyCachePartition::flush()
     write_request.aio_offset = (current_file_block_id % max_size) * block_size;
 #endif
 
-    Poco::Logger::get("try:").information("offset: " + std::to_string(write_request.aio_offset) + "  nbytes: " + std::to_string(write_request.aio_nbytes));
+    //Poco::Logger::get("try:").information("offset: " + std::to_string(write_request.aio_offset) + "  nbytes: " + std::to_string(write_request.aio_nbytes));
 
     while (io_submit(aio_context.ctx, 1, &write_request_ptr) < 0)
     {
@@ -446,7 +446,7 @@ void SSDComplexKeyCachePartition::flush()
     for (size_t row = 0; row < keys_buffer.size(); ++row)
     {
         Index index;
-        Poco::Logger::get("get:").information("sz = " + std::to_string(keys_buffer[row].size()));
+        //Poco::Logger::get("get:").information("sz = " + std::to_string(keys_buffer[row].size()));
         if (key_to_index.getKeyAndValue(keys_buffer[row], index))
         {
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
@@ -456,7 +456,7 @@ void SSDComplexKeyCachePartition::flush()
             }
             key_to_index.set(keys_buffer[row], index);
         }
-        Poco::Logger::get("get:").information("finish");
+        //Poco::Logger::get("get:").information("finish");
     }
 
     current_file_block_id += write_buffer_size;
@@ -714,7 +714,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
 
 void SSDComplexKeyCachePartition::clearOldestBlocks()
 {
-    Poco::Logger::get("GC").information("GC clear -----------------");
+    //Poco::Logger::get("GC").information("GC clear -----------------");
     // write_buffer_size, because we need to erase the whole buffer.
     Memory read_buffer_memory(block_size * write_buffer_size, BUFFER_ALIGNMENT);
 
@@ -778,14 +778,14 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
 
         uint32_t keys_in_current_block = 0;
         readBinary(keys_in_current_block, read_buffer);
-        Poco::Logger::get("GC").information("keys in block: " + std::to_string(keys_in_current_block) + " offset=" + std::to_string(read_buffer.offset()));
+        //Poco::Logger::get("GC").information("keys in block: " + std::to_string(keys_in_current_block) + " offset=" + std::to_string(read_buffer.offset()));
 
         for (uint32_t j = 0; j < keys_in_current_block; ++j)
         {
             keys.emplace_back();
             tmp_keys_pool.readKey(keys.back(), read_buffer);
-            Poco::Logger::get("ClearOldestBlocks").information("ktest: sz=" + std::to_string(keys.back().size())
-                + " data=" + std::to_string(reinterpret_cast<size_t>(keys.back().fullData())));
+            //Poco::Logger::get("ClearOldestBlocks").information("ktest: sz=" + std::to_string(keys.back().size())
+            //    + " data=" + std::to_string(reinterpret_cast<size_t>(keys.back().fullData())));
 
             Metadata metadata;
             readBinary(metadata.data, read_buffer);
@@ -833,21 +833,21 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
 
     const size_t start_block = current_file_block_id % max_size;
     const size_t finish_block = start_block + write_buffer_size;
-    Poco::Logger::get("ClearOldestBlocks").information("> erasing keys <");
+    //Poco::Logger::get("ClearOldestBlocks").information("> erasing keys <");
     for (const auto& key : keys)
     {
-        Poco::Logger::get("ClearOldestBlocks").information("ktest: null=" + std::to_string(key.isNull()));
-        Poco::Logger::get("ClearOldestBlocks").information("ktest: data=" + std::to_string(reinterpret_cast<size_t>(key.fullData())));
-        Poco::Logger::get("ClearOldestBlocks").information("ktest: sz=" + std::to_string(key.size()) + " fz=" + std::to_string(key.fullSize()));
+        //Poco::Logger::get("ClearOldestBlocks").information("ktest: null=" + std::to_string(key.isNull()));
+        //Poco::Logger::get("ClearOldestBlocks").information("ktest: data=" + std::to_string(reinterpret_cast<size_t>(key.fullData())));
+        //Poco::Logger::get("ClearOldestBlocks").information("ktest: sz=" + std::to_string(key.size()) + " fz=" + std::to_string(key.fullSize()));
         Index index;
         if (key_to_index.get(key, index))
         {
-            Poco::Logger::get("ClearOldestBlocks").information("erase");
+            //Poco::Logger::get("ClearOldestBlocks").information("erase");
             size_t block_id = index.getBlockId();
             if (start_block <= block_id && block_id < finish_block)
                 key_to_index.erase(key);
         }
-        Poco::Logger::get("ClearOldestBlocks").information("finish");
+        //Poco::Logger::get("ClearOldestBlocks").information("finish");
     }
 }
 
@@ -908,11 +908,7 @@ size_t SSDComplexKeyCachePartition::getElementCount() const
 
 PaddedPODArray<KeyRef> SSDComplexKeyCachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
 {
-    std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
-    PaddedPODArray<KeyRef> array;
-    //for (const auto & [key, index] : key_to_index)
-        //array.push_back(key); // TODO: exclude default
-    return array;
+    throw DB::Exception("Method not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void SSDComplexKeyCachePartition::remove()
@@ -925,7 +921,7 @@ SSDComplexKeyCacheStorage::SSDComplexKeyCacheStorage(
         const AttributeTypes & attributes_structure_,
         const std::string & path_,
         const size_t max_partitions_count_,
-        const size_t partition_size_,
+        const size_t file_size_,
         const size_t block_size_,
         const size_t read_buffer_size_,
         const size_t write_buffer_size_,
@@ -933,7 +929,7 @@ SSDComplexKeyCacheStorage::SSDComplexKeyCacheStorage(
     : attributes_structure(attributes_structure_)
     , path(path_)
     , max_partitions_count(max_partitions_count_)
-    , partition_size(partition_size_)
+    , file_size(file_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
@@ -1073,7 +1069,7 @@ void SSDComplexKeyCacheStorage::update(
                 partitions.emplace_front(std::make_unique<SSDComplexKeyCachePartition>(
                     AttributeUnderlyingType::utUInt64, attributes_structure, path,
                     (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                    partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
+                    file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1119,7 +1115,6 @@ void SSDComplexKeyCacheStorage::update(
                     const auto new_attributes = createAttributesFromBlock(block, keys_size, attributes_structure);
 
                     const auto rows_num = block.rows();
-                    
                     PaddedPODArray<SSDComplexKeyCachePartition::Metadata> metadata(rows_num);
 
                     for (const auto i : ext::range(0, rows_num))
@@ -1172,7 +1167,7 @@ void SSDComplexKeyCacheStorage::update(
                 partitions.emplace_front(std::make_unique<SSDComplexKeyCachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
+                        file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1330,7 +1325,7 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
     const DictionaryLifetime dict_lifetime_,
     const std::string & path_,
     const size_t max_partitions_count_,
-    const size_t partition_size_,
+    const size_t file_size_,
     const size_t block_size_,
     const size_t read_buffer_size_,
     const size_t write_buffer_size_,
@@ -1341,13 +1336,13 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
     , dict_lifetime(dict_lifetime_)
     , path(path_)
     , max_partitions_count(max_partitions_count_)
-    , partition_size(partition_size_)
+    , file_size(file_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
     , max_stored_keys(max_stored_keys_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
-            path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
+            path, max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDComplexKeyCacheDictionary"))
 {
     LOG_INFO(log, "Using storage path '" << path << "'.");
@@ -1770,11 +1765,11 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
         if (block_size <= 0)
             throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto partition_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.partition_size", DEFAULT_FILE_SIZE);
-        if (partition_size <= 0)
-            throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) partition_size", ErrorCodes::BAD_ARGUMENTS};
-        if (partition_size % block_size != 0)
-            throw Exception{name + ": partition_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
+        const auto file_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.file_size", DEFAULT_FILE_SIZE);
+        if (file_size <= 0)
+            throw Exception{name + ": dictionary of layout 'complex_key_ssd_cache' cannot have 0 (or less) file_size", ErrorCodes::BAD_ARGUMENTS};
+        if (file_size % block_size != 0)
+            throw Exception{name + ": file_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
         const auto read_buffer_size = config.getInt64(layout_prefix + ".complex_key_ssd_cache.read_buffer_size", DEFAULT_READ_BUFFER_SIZE);
         if (read_buffer_size <= 0)
@@ -1802,7 +1797,7 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDComplexKeyCacheDictionary>(
                 name, dict_struct, std::move(source_ptr), dict_lifetime, path,
-                max_partitions_count, partition_size / block_size, block_size,
+                max_partitions_count, file_size / block_size, block_size,
                 read_buffer_size / block_size, write_buffer_size / block_size,
                 max_stored_keys);
     };
