@@ -10,11 +10,11 @@ namespace DB
 
 namespace
 {
-    size_t nearestPowTwo(size_t x) {
+    size_t nearestPowTwo(size_t x)
+    {
         size_t r = 8;
-        while (x > r) {
+        while (x > r)
             r <<= 1;
-        }
         return r;
     }
 }
@@ -32,7 +32,8 @@ struct Int64Hasher
 template <typename K, typename V, typename Hasher, typename Deleter = EmptyDeleter>
 class BucketCacheIndex
 {
-    struct Cell {
+    struct Cell
+    {
         K key;
         V index;
     };

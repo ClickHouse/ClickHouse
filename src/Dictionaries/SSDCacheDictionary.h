@@ -207,7 +207,7 @@ public:
             const AttributeTypes & attributes_structure,
             const std::string & path,
             const size_t max_partitions_count,
-            const size_t partition_size,
+            const size_t file_size,
             const size_t block_size,
             const size_t read_buffer_size,
             const size_t write_buffer_size,
@@ -259,7 +259,7 @@ private:
 
     const std::string path;
     const size_t max_partitions_count;
-    const size_t partition_size;
+    const size_t file_size;
     const size_t block_size;
     const size_t read_buffer_size;
     const size_t write_buffer_size;
@@ -295,7 +295,7 @@ public:
             const DictionaryLifetime dict_lifetime_,
             const std::string & path,
             const size_t max_partitions_count_,
-            const size_t partition_size_,
+            const size_t file_size_,
             const size_t block_size_,
             const size_t read_buffer_size_,
             const size_t write_buffer_size_,
@@ -325,7 +325,7 @@ public:
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
         return std::make_shared<SSDCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, path,
-                max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
+                max_partitions_count, file_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -441,7 +441,7 @@ private:
 
     const std::string path;
     const size_t max_partitions_count;
-    const size_t partition_size;
+    const size_t file_size;
     const size_t block_size;
     const size_t read_buffer_size;
     const size_t write_buffer_size;
