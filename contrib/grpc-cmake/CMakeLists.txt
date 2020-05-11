@@ -54,7 +54,7 @@ if(TARGET c-ares)
 endif()
 
 # protobuf.cmake
-set(_gRPC_PROTOBUF_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
+set(PROTOBUF_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
 # if(NOT protobuf_BUILD_TESTS)
   # set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
 # endif()
@@ -63,9 +63,6 @@ if(NOT protobuf_WITH_ZLIB)
   set(protobuf_WITH_ZLIB OFF CACHE BOOL "Build protobuf with zlib.")
 endif()
 set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Link static runtime libraries")
-if(NOT USE_INTERNAL_PROTOBUF_LIBRARY)
-  add_subdirectory(${PROTOBUF_ROOT_DIR}/cmake ${GRPC_BINARY_DIR}/third_party/protobuf)
-endif()
 if(TARGET ${_gRPC_PROTOBUF_LIBRARY_NAME})
   set(_gRPC_PROTOBUF_LIBRARIES ${_gRPC_PROTOBUF_LIBRARY_NAME})
 endif()
@@ -77,7 +74,7 @@ if(TARGET protoc)
   set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
 endif()
 # For well-known .proto files distributed with protobuf
-set(_gRPC_PROTOBUF_WELLKNOWN_INCLUDE_DIR "${PROTOBUF_ROOT_DIR}/src")
+set(_gRPC_PROTOBUF_INCLUDE_DIR "${PROTOBUF_ROOT_DIR}/src")
 if(gRPC_INSTALL)
   message(WARNING "gRPC_INSTALL will be forced to FALSE because gRPC_PROTOBUF_PROVIDER is \"module\"")
   set(gRPC_INSTALL FALSE)
@@ -97,7 +94,7 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/../zlib-ng)
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
 include_directories("${ZLIB_ROOT_DIR}")
 ## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 if(TARGET zlibstatic)
@@ -134,6 +131,7 @@ target_include_directories(address_sorting
 )
 target_link_libraries(address_sorting
   ${_gRPC_BASELIB_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
 )
 
@@ -194,6 +192,7 @@ target_include_directories(gpr
 )
 target_link_libraries(gpr
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
 )
 
 add_library(grpc
@@ -597,6 +596,7 @@ target_link_libraries(grpc
   ${_gRPC_CARES_LIBRARIES}
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   gpr
 )
 if (_gRPC_PLATFORM_MAC)
@@ -943,6 +943,7 @@ target_link_libraries(grpc_cronet
   ${_gRPC_CARES_LIBRARIES}
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   gpr
 )
 if (_gRPC_PLATFORM_MAC)
@@ -1273,6 +1274,7 @@ target_link_libraries(grpc_unsecure
   ${_gRPC_CARES_LIBRARIES}
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   gpr
 )
 if (_gRPC_PLATFORM_MAC)
@@ -1436,8 +1438,8 @@ add_library(grpc_plugin_support
 )
 
 target_include_directories(grpc_plugin_support
-  PRIVATE ${GRPC_SOURCE_DIR}
-  PUBLIC ${GRPC_INCLUDE_DIR}
+  PUBLIC ${GRPC_SOURCE_DIR}
+  PRIVATE ${GRPC_INCLUDE_DIR}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
   PRIVATE ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
   PRIVATE ${_gRPC_BENCHMARK_INCLUDE_DIR}
@@ -1462,8 +1464,8 @@ add_executable(grpc_cpp_plugin
 )
 
 target_include_directories(grpc_cpp_plugin
-  PRIVATE ${GRPC_SOURCE_DIR}
-  PUBLIC ${GRPC_INCLUDE_DIR}
+  PUBLIC ${GRPC_SOURCE_DIR}
+  PRIVATE ${GRPC_INCLUDE_DIR}
   PRIVATE ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
   PRIVATE ${_gRPC_BENCHMARK_INCLUDE_DIR}
   PRIVATE ${_gRPC_CARES_INCLUDE_DIR}
