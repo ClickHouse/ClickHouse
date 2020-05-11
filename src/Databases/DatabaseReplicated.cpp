@@ -99,8 +99,6 @@ DatabaseReplicated::DatabaseReplicated(
     if (!current_zookeeper)
     {
             throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
-
-
     }
 
     current_zookeeper->createAncestors(zookeeper_path);
@@ -109,7 +107,6 @@ DatabaseReplicated::DatabaseReplicated(
     // TODO if no last_entry then make it equal to 0 in zk;
 
     // TODO launch a worker here
-
     main_thread = ThreadFromGlobalPool(&DatabaseReplicated::runMainThread, this);
 }
 
@@ -126,15 +123,20 @@ void DatabaseReplicated::runMainThread() {
     while (!stop_flag) {
         attachToThreadGroup();
 
-        sleepForSeconds(10);
+        sleepForSeconds(2);
         current_zookeeper = getZooKeeper();
-        String last_n = current_zookeeper->get(zookeeper_path + "/last_entry", {}, NULL);
+        String last_n;
+        if (!current_zookeeper->tryGet(zookeeper_path + "/last_entry", last_n, {}, NULL)) {
+            continue;
+        }
         size_t last_n_parsed = parse<size_t>(last_n);
+        LOG_DEBUG(log, "PARSED " << last_n_parsed);
+        LOG_DEBUG(log, "LOCAL CURRENT " << current_log_entry_n);
         while (current_log_entry_n < last_n_parsed) {
             current_log_entry_n++;
             executeLog(current_log_entry_n);
         }
-        break; // debug purpose 
+        // break; // debug purpose 
     }
 }
 

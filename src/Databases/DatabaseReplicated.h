@@ -37,7 +37,7 @@ private:
     Context & context; // is it overkiill?
     std::unique_ptr<Context> current_context; // to run executeQuery
 
-    size_t current_log_entry_n = 0;
+    std::atomic<size_t> current_log_entry_n = 0;
     std::atomic<bool> stop_flag{false};
 
     ThreadFromGlobalPool main_thread;
