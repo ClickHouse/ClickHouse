@@ -154,7 +154,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         if (limit_with_ties)
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << " WITH TIES" << (s.hilite ? hilite_none : "");
     }
-    else if(limitOffset())
+    else if (limitOffset())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "OFFSET " << (s.hilite ? hilite_none : "");
         limitOffset()->formatImpl(s, state, frame);

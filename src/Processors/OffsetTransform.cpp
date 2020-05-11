@@ -121,9 +121,8 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
     }
 
     input.setNeeded();
-    if (!input.hasData()) {
+    if (!input.hasData())
         return Status::NeedData;
-    }
 
     data.current_chunk = input.pull(true);
 
