@@ -87,7 +87,7 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/../zlib-ng)
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
 include_directories("${ZLIB_ROOT_DIR}")
 ## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 if(TARGET zlibstatic)
