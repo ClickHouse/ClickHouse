@@ -1,8 +1,0 @@
-<root>
-    <cmd>
-        <part>/home/mfilitov/.ya/tools/1d6fba5151_d/ya-bin</part>
-        <part>ide</part>
-        <part>clion</part>
-    </cmd>
-    <cwd>/home/mfilitov/arc/arcadia/metrika/core/libs/uatraits-fast</cwd>
-</root>

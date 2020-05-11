@@ -76,7 +76,7 @@ UserAgent::Agent UserAgent::detect(const std::string & user_agent) const
 UserAgent::OperatingSystem::OperatingSystem(
     const std::string & os,
     const UATraits::Version & version_)
-    : operating_system(tools::operatingSystemFromString(os))
+    : operating_system(uatraits::types::operatingSystemFromString(os))
     , version(version_)
 {
 }
@@ -92,8 +92,8 @@ const UATraits::Version & UserAgent::OperatingSystem::getVersion() const
 }
 
 UserAgent::Browser::Browser(const std::string & name_, const UATraits::Version & version_, const std::string & browser_base_, const UATraits::Version & version_base_)
-    : browser(appmetrica::types::browserFromString(name_))
-    , browser_base(appmetrica::types::browserBaseFromString(browser_base_))
+    : browser(uatraits::types::browserFromString(name_))
+    , browser_base(uatraits::types::browserBaseFromString(browser_base_))
     , version(version_)
     , version_base(version_base_)
 {

@@ -46,6 +46,13 @@ namespace ErrorCodes
 extern const int NO_ROOT_ELEMENT;
 extern const int NO_ROOT_NODE_ELEMENT;
 extern const int UNEXPECTED_NAME_FOR_ROOT_NODE;
+extern const int PARSE_NO_VALUE_SPECIFIED;
+extern const int PARSE_NO_NAME_SPECIFIED;
+extern const int CONDITION_WITHOUT_FIELD;
+extern const int CONDITION_WITHOUT_VALUE;
+extern const int UNSUPPORTED_CONDITION_TYPE;
+extern const int TOO_MANY_CONDITIONS_INSIDE_RULE;
+extern const int NO_CONDITIONS_INSIDE_RULE;
 }
 
 template <template<typename> class Comparator>
@@ -66,7 +73,7 @@ std::shared_ptr<BasicCondition<UATraits::Result>> parseCondition(Poco::XML::Node
         Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs = node->attributes();
         Poco::XML::Node * type = attrs->getNamedItem("type");
         if (!type)
-            throw TWithBackTrace<yexception>() << "Condition without type";
+            throw DB::Exception("Condition without type", ErrorCodes::CONDITION_WITHOUT_TYPE);
 
         std::shared_ptr<BaseGroupCondition<UATraits::Result>> group;
 
@@ -80,7 +87,7 @@ std::shared_ptr<BasicCondition<UATraits::Result>> parseCondition(Poco::XML::Node
         }
         else
         {
-            throw TWithBackTrace<yexception>() << "Unsupported condition type: " << type->getNodeValue();
+            throw DB::Exception("Unsupported condition type " + type->getNodeValue(), ErrorCodes::UNSUPPORTED_CONDITION_TYPE);
         }
         Poco::AutoPtr<Poco::XML::NodeList> group_children = node->childNodes();
 
@@ -98,11 +105,11 @@ std::shared_ptr<BasicCondition<UATraits::Result>> parseCondition(Poco::XML::Node
     Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs = node->attributes();
     Poco::XML::Node * field = attrs->getNamedItem("field");
     if (!field)
-        throw TWithBackTrace<yexception>() << "Condition without field";
+        throw DB::Exception("Condition without field", ErrorCodes::CONDITION_WITHOUT_FIELD);
 
     const auto value = node->innerText();
     if (value == "")
-        throw TWithBackTrace<yexception>() << "Condition without value";
+        throw DB::Exception("Condition without value", ErrorCodes::CONDITION_WITHOUT_VALUE);
 
     constexpr std::string_view version_suffix = "Version";
 
@@ -149,11 +156,11 @@ auto parseRule(Poco::XML::Node * rule)
     Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs = rule->attributes();
     Poco::XML::Node * name = attrs->getNamedItem("name");
     if (!name)
-        throw TWithBackTrace<yexception>() << "No name specified";
+        throw DB::Exception("No name specified", ErrorCodes::PARSE_NO_NAME_SPECIFIED);
 
     Poco::XML::Node * value = attrs->getNamedItem("value");
     if (!value)
-        throw TWithBackTrace<yexception>() << "No value specified";
+        throw DB::Exception("No value specified", ErrorCodes::PARSE_NO_VALUE_SPECIFIED);
 
     std::shared_ptr<BasicCondition<UATraits::Result>> condition;
 
@@ -167,14 +174,14 @@ auto parseRule(Poco::XML::Node * rule)
             continue;
 
         if (condition)
-            throw TWithBackTrace<yexception>() << "Too many conditions inside rule";
+            throw DB::Exception("Too many conditions inside rule", ErrorCodes::TOO_MANY_CONDITIONS_INSIDE_RULE);
 
         condition = parseCondition(rule_child);
     }
 
     if (!condition)
     {
-        throw TWithBackTrace<yexception>() << "No conditions inside rule";
+        throw DB::Exception("No conditions inside rule", ErrorCodes::NO_CONDITIONS_INSIDE_RULE);
     }
 
     return std::make_shared<Rule<UATraits::Result>>(name->getNodeValue(), value->getNodeValue(), condition);
@@ -682,7 +689,7 @@ void UATraits::processPattern(Poco::XML::Node & pattern, Node & node, std::strin
         {
             const std::string & str = substrings_to_indices.insert(std::make_pair(text, substrings_count)).first->first;
 
-            automata_builder->AddString(TString{str}, substrings_count);
+            automata_builder->AddString(std::string{str}, substrings_count);
             node.patterns.push_back(Pattern(substrings_count, false, false));
             node.patterns.back().substring = str;
             ++substrings_count;

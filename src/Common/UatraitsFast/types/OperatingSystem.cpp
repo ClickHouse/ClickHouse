@@ -1,6 +1,6 @@
 #include "OperatingSystem.h"
 #include <stdexcept>
-namespace uatriats::types
+namespace uatraits::types
 {
 namespace
 {
