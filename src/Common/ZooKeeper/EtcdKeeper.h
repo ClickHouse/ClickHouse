@@ -310,9 +310,9 @@ namespace Coordination
         void watchCompleteThread();
 
         // tmp
-        std::unique_ptr<ClientAsyncReaderWriter<etcdserverpb::WatchRequest, etcdserverpb::WatchResponse>> stream_;
+        std::unique_ptr<ClientAsyncReaderWriter<etcdserverpb::WatchRequest, etcdserverpb::WatchResponse>> stream;
         ClientContext context_;
-        etcdserverpb::WatchResponse response_;
+        etcdserverpb::WatchResponse watch_response;
 
         std::unique_ptr<PutRequest> preparePutRequest(const std::string &, const std::string &);
         std::unique_ptr<RangeRequest> prepareRangeRequest(const std::string &);
