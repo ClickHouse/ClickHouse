@@ -59,35 +59,44 @@ public:
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
-        offsets_to.resize(input_rows_count);
 
+        if (input_rows_count == 0)
+        {
+            block.getByPosition(result).column = std::move(col_to);
+            return;
+        }
+
+        /// Fill offsets.
+        offsets_to.resize(input_rows_count);
         const IColumn & length_column = *block.getByPosition(arguments[0]).column;
 
         IColumn::Offset offset = 0;
-
-        pcg64_fast rng(randomSeed());
-
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t length = length_column.getUInt(row_num);
             if (length > (1 << 30))
                 throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-            IColumn::Offset next_offset = offset + length + 1;
-            data_to.resize(next_offset);
-            offsets_to[row_num] = next_offset;
-
-            auto * data_to_ptr = data_to.data(); // avoid assert on array indexing after end
-            for (size_t pos = offset, end = offset + length; pos < end;
-                 pos += sizeof(UInt64)) // We have padding in column buffers that we can overwrite.
-            {
-                unalignedStore<UInt64>(data_to_ptr + pos, rng());
-            }
-
-            data_to[offset + length] = 0;
-
-            offset = next_offset;
+            offset += length + 1;
+            offsets_to[row_num] = offset;
         }
+
+        /// Fill random bytes.
+        data_to.resize(offsets_to.back());
+        pcg64_fast rng(randomSeed());
+
+        auto * pos = data_to.data();
+        auto * end = pos + data_to.size();
+        while (pos < end)
+        {
+            unalignedStore<UInt64>(pos, rng());
+            pos += sizeof(UInt64); // We have padding in column buffers that we can overwrite.
+        }
+
+        /// Put zero bytes in between.
+        pos = data_to.data();
+        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            pos[offsets_to[row_num] - 1] = 0;
 
         block.getByPosition(result).column = std::move(col_to);
     }
