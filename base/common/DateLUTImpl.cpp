@@ -135,7 +135,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
     while (i < DATE_LUT_SIZE)
     {
-        lut[i] = lut[DATE_LUT_MAX_DAY_NUM];
+        lut[i] = lut[i - 1];
         ++i;
     }
 
