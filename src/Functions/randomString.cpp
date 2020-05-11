@@ -83,13 +83,13 @@ public:
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
-        pcg64_fast rng(randomSeed());
+        pcg64_fast rng(randomSeed()); /// TODO It is inefficient. We should use SIMD PRNG instead.
 
         auto * pos = data_to.data();
         auto * end = pos + data_to.size();
         while (pos < end)
         {
-            unalignedStore<UInt64>(pos, rng()); /// TODO It is inefficient. We should use SIMD PRNG instead.
+            unalignedStore<UInt64>(pos, rng());
             pos += sizeof(UInt64); // We have padding in column buffers that we can overwrite.
         }
 
