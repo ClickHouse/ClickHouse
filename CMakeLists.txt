@@ -103,16 +103,7 @@ endif ()
 include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
-    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
-endif ()
-
-if (COMPILER_GCC OR COMPILER_CLANG)
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-endif ()
-
-if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
-    # Warnings in protobuf generating
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-array-bounds")
+    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
 endif ()
 
 if (COMPILER_CLANG)
@@ -411,6 +402,9 @@ endmacro()
 
 set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${ConfigIncludePath})
+
+# Add as many warnings as possible for our own code.
+include (cmake/warnings.cmake)
 
 add_subdirectory (base)
 add_subdirectory (programs)
