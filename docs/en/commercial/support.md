@@ -10,14 +10,7 @@ toc_title: Support
 
 ## Altinity {#altinity}
 
-Altinity was the first company to offer enterprise ClickHouse support and services. Since 2017 we have helped customers from Fortune 100 enterprises to startups use ClickHouse successfully. Our offerings include:
-* ClickHouse 24x7 Support -- Fast, expert assistance on problems in deployed systems.
-* ClickHouse Feature Engineering -- Altinity is a major contributor to ClickHouse server and ecosystem projects.  We can implement any feature required by enterprises.
-* ClickHouse PoC and Training -- Experienced guidance to design optimal solutions and grow your in-house expertise.
-
-You can meet us online or through our many ClickHouse events in EU and North America. 
-
-Visit [www.altinity.com](https://www.altinity.com/) for more information.
+Altinity has offered enterprise ClickHouse support and services since 2017. Altinity customers range from Fortune 100 enterprises to startups. Visit [www.altinity.com](https://www.altinity.com/) for more information.
 
 ## Mafiree {#mafiree}
 
