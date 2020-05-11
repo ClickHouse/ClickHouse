@@ -146,7 +146,7 @@ void BackgroundProcessingPool::threadFunction()
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
     if (auto memory_tracker = CurrentThread::getMemoryTracker())
         memory_tracker->setMetric(settings.memory_metric);
-    
+
     if (settings.low_cpu_priority)
     {
         if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param))
