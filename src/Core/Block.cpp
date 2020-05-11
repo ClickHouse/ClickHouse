@@ -13,6 +13,7 @@
 
 #include <iterator>
 #include <memory>
+#include <map>
 
 
 namespace DB
@@ -403,7 +404,12 @@ Block Block::sortColumns() const
 {
     Block sorted_block;
 
+    /// std::unordered_map cannot be used to guarantee the sort order
+    std::map<String, size_t> sorted_index_by_name;
     for (const auto & name : index_by_name)
+        sorted_index_by_name[name.first] = name.second;
+
+    for (const auto & name : sorted_index_by_name)
         sorted_block.insert(data[name.second]);
 
     return sorted_block;
