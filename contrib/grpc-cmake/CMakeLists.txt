@@ -74,11 +74,9 @@ if(gRPC_INSTALL)
 endif()
 
 # ssl.cmake
-set(BORINGSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ssl)
-if(TARGET ssl)
-  set(_gRPC_SSL_LIBRARIES ssl)
-  set(_gRPC_SSL_INCLUDE_DIR ${BORINGSSL_ROOT_DIR}/include)
-endif()
+set(BORINGSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../openssl)
+set(_gRPC_SSL_LIBRARIES ssl)
+set(_gRPC_SSL_INCLUDE_DIR ${BORINGSSL_ROOT_DIR}/include)
 
 # upb.cmake
 set(UPB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/upb)
