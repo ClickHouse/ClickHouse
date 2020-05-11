@@ -3,14 +3,18 @@
 #if defined(__has_feature)
     #if __has_feature(memory_sanitizer)
         #define MEMORY_SANITIZER 1
+    #else
+        #define MEMORY_SANITIZER 0
     #endif
 #elif defined(__MEMORY_SANITIZER__)
     #define MEMORY_SANITIZER 1
+#else
+    #define MEMORY_SANITIZER 0
 #endif
 
-#if _MSC_VER || MEMORY_SANITIZER
+#if defined(_MSC_VER) || MEMORY_SANITIZER
 
-DemangleResult tryDemangle(const char * name)
+DemangleResult tryDemangle(const char *)
 {
     return DemangleResult{};
 }
