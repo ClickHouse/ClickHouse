@@ -55,26 +55,19 @@ endif()
 
 # protobuf.cmake
 set(PROTOBUF_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
-# if(NOT protobuf_BUILD_TESTS)
-  # set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
-# endif()
+
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
 if(NOT protobuf_WITH_ZLIB)
   set(protobuf_WITH_ZLIB OFF CACHE BOOL "Build protobuf with zlib.")
 endif()
 set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Link static runtime libraries")
-if(TARGET ${_gRPC_PROTOBUF_LIBRARY_NAME})
-  set(_gRPC_PROTOBUF_LIBRARIES ${_gRPC_PROTOBUF_LIBRARY_NAME})
-endif()
-if(TARGET libprotoc)
-  set(_gRPC_PROTOBUF_PROTOC_LIBRARIES libprotoc)
-endif()
-if(TARGET protoc)
-  set(_gRPC_PROTOBUF_PROTOC protoc)
-  set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
-endif()
-# For well-known .proto files distributed with protobuf
+
+set(_gRPC_PROTOBUF_LIBRARIES libprotobuf)
+set(_gRPC_PROTOBUF_PROTOC_LIBRARIES libprotoc)
+set(_gRPC_PROTOBUF_PROTOC protoc)
+set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
 set(_gRPC_PROTOBUF_INCLUDE_DIR "${PROTOBUF_ROOT_DIR}/src")
+
 if(gRPC_INSTALL)
   message(WARNING "gRPC_INSTALL will be forced to FALSE because gRPC_PROTOBUF_PROVIDER is \"module\"")
   set(gRPC_INSTALL FALSE)
@@ -94,7 +87,7 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/../zlib-ng)
 include_directories("${ZLIB_ROOT_DIR}")
 ## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 if(TARGET zlibstatic)
@@ -1438,8 +1431,8 @@ add_library(grpc_plugin_support
 )
 
 target_include_directories(grpc_plugin_support
-  PUBLIC ${GRPC_SOURCE_DIR}
-  PRIVATE ${GRPC_INCLUDE_DIR}
+  PRIVATE ${GRPC_SOURCE_DIR}
+  PUBLIC ${GRPC_INCLUDE_DIR}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
   PRIVATE ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
   PRIVATE ${_gRPC_BENCHMARK_INCLUDE_DIR}
@@ -1464,8 +1457,8 @@ add_executable(grpc_cpp_plugin
 )
 
 target_include_directories(grpc_cpp_plugin
-  PUBLIC ${GRPC_SOURCE_DIR}
-  PRIVATE ${GRPC_INCLUDE_DIR}
+  PRIVATE ${GRPC_SOURCE_DIR}
+  PUBLIC ${GRPC_INCLUDE_DIR}
   PRIVATE ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
   PRIVATE ${_gRPC_BENCHMARK_INCLUDE_DIR}
   PRIVATE ${_gRPC_CARES_INCLUDE_DIR}
