@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <Common/thread_local_rng.h>
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -78,7 +79,7 @@ public:
                  pos += sizeof(UInt64)) // We have padding in column buffers that we can overwrite.
             {
                 UInt64 rand = thread_local_rng();
-                *reinterpret_cast<UInt64 *>(data_to_ptr + pos) = rand;
+                unalignedStore<UInt64>(data_to_ptr + pos, rand);
             }
 
             data_to[offset + length] = 0;
