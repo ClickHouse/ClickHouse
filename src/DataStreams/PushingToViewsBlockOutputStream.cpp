@@ -48,9 +48,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        ViewInfo view_info{database_table, DatabaseCatalog::instance().getTable(database_table)};
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
 
-        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view_info.dependent_table.get()))
+        ASTPtr query;
+        ASTPtr insert_query;
+
+        if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
             addTableLock(
                     materialized_view->lockStructureForShare(
@@ -58,13 +61,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            view_info.query = materialized_view->getInnerQuery();
+            query = materialized_view->getInnerQuery();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(view_info.query, *views_context, SelectQueryOptions().analyze())
+            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
                     .getSampleBlock();
 
             /// Insert only columns returned by select.
@@ -77,13 +80,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             insert->columns = std::move(list);
 
-            view_info.insert_query.reset(insert.release());
+            insert_query.reset(insert.release());
         }
 
-        if (atomic)
-            view_info.out = createOutput(view_info);
+        views.emplace_back(ViewInfo{
+            database_table, dependent_table,
+            std::move(query), std::move(insert_query),
+            {}
+        });
 
-        views.emplace_back(view_info);
+        if (atomic)
+        {
+            auto & view = views.back();
+            view.out = createOutput(view);
+        }
     }
 
     /// Do not push to destination table if the flag is set
