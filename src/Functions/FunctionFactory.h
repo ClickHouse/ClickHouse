@@ -39,6 +39,8 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
+    std::vector<std::string> getAllNames() const;
+
     /// Throws an exception if not found.
     FunctionOverloadResolverPtr get(const std::string & name, const Context & context) const;
 
