@@ -300,7 +300,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 options, joined_tables.tablesWithColumns(), required_result_column_names);
 
         /// Save scalar sub queries's results in the query context
-        if (context->hasQueryContext())
+        if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext().addScalar(it.first, it.second);
 
