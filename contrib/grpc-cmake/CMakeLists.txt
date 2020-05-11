@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.5.1)
 
+
 set(GRPC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc)
 set(GRPC_INCLUDE_DIR ${GRPC_SOURCE_DIR}/include/)
 set(GRPC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/grpc)
