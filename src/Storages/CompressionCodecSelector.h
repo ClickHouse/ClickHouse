@@ -91,7 +91,7 @@ public:
 
         for (const auto & element : elements)
             if (element.check(part_size, part_size_ratio))
-                res = factory.get(element.family_name, element.level);
+                res = factory.get(element.family_name, element.level, false);
 
         return res;
     }

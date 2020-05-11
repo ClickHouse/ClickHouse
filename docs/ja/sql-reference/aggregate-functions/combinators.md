@@ -36,8 +36,8 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 -   [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) テーブルエンジン。
 -   [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) 機能。
 -   [runningAccumulate](../../sql-reference/functions/other-functions.md#function-runningaccumulate) 機能。
--   [-マージ](#aggregate_functions_combinators_merge) コンビネータ
--   [-MergeState](#aggregate_functions_combinators_mergestate) コンビネータ
+-   [-マージ](#aggregate_functions_combinators-merge) コンビネータ
+-   [-MergeState](#aggregate_functions_combinators-mergestate) コンビネータ
 
 ## -マージ {#aggregate_functions_combinators-merge}
 

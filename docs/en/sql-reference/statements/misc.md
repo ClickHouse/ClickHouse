@@ -1,5 +1,5 @@
 ---
-toc_priority: 39
+toc_priority: 41
 toc_title: Other
 ---
 
@@ -111,7 +111,69 @@ If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t
 Delets the dictionary.
 If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t exist or the database doesn’t exist.
 
-## EXISTS {#exists}
+## DROP USER {#drop-user-statement}
+
+Deletes a user.
+
+### Syntax {#drop-user-syntax}
+
+```sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+
+## DROP ROLE {#drop-role-statement}
+
+Deletes a role.
+
+Deleted role is revoked from all the entities where it was granted.
+
+### Syntax {#drop-role-syntax}
+
+```sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROW POLICY {#drop-row-policy-statement}
+
+Deletes a row policy.
+
+Deleted row policy is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-row-policy-syntax}
+
+``` sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+```
+
+
+## DROP QUOTA {#drop-quota-statement}
+
+Deletes a quota.
+
+Deleted quota is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-quota-syntax}
+
+``` sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
+
+Deletes a quota.
+
+Deleted quota is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-settings-profile-syntax}
+
+``` sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+
+## EXISTS {#exists-statement}
 
 ``` sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -119,7 +181,7 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT 
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn’t exist, or `1` if the table exists in the specified database.
 
-## KILL QUERY {#kill-query}
+## KILL QUERY {#kill-query-statement}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -227,7 +289,58 @@ SET profile = 'profile-name-from-the-settings-file'
 
 For more information, see [Settings](../../operations/settings/settings.md).
 
-## TRUNCATE {#truncate}
+## SET ROLE {#set-role-statement}
+
+Activates roles for the current user.
+
+### Syntax {#set-role-syntax}
+
+``` sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+## SET DEFAULT ROLE {#set-default-role-statement}
+
+Sets default roles to a user.
+
+Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn't granted to a user, ClickHouse throws an exception.
+
+
+### Syntax {#set-default-role-syntax}
+
+``` sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+
+### Examples {#set-default-role-examples}
+
+Set multiple default roles to a user:
+
+``` sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+Set all the granted roles as default to a user:
+
+``` sql
+SET DEFAULT ROLE ALL TO user
+```
+
+Purge default roles from a user:
+
+``` sql
+SET DEFAULT ROLE NONE TO user
+```
+
+Set all the granted roles as default excepting some of them:
+
+```sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```
+
+
+## TRUNCATE {#truncate-statement}
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]

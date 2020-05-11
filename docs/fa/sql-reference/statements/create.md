@@ -65,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ```
 
-ایجاد یک جدول با ساختار و داده های بازگردانده شده توسط یک [تابع جدول](../table-functions/index.md).
+ایجاد یک جدول با ساختار و داده های بازگردانده شده توسط یک [تابع جدول](../table-functions/index.md#table-functions).
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...

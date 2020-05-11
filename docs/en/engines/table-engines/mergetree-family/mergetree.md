@@ -28,7 +28,7 @@ Main features:
     If necessary, you can set the data sampling method in the table.
 
 !!! info "Info"
-    The [Merge](../special/merge.md) engine does not belong to the `*MergeTree` family.
+    The [Merge](../special/merge.md#merge) engine does not belong to the `*MergeTree` family.
 
 ## Creating a Table {#table_engine-mergetree-creating-a-table}
 
@@ -474,11 +474,11 @@ ALTER TABLE example_table
 
 Data with an expired TTL is removed when ClickHouse merges data parts.
 
-When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
+When ClickHouse see that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
 If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) query before `SELECT`.
 
-## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes} 
 
 ### Introduction {#introduction}
 
@@ -495,7 +495,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 The names given to the described entities can be found in the system tables, [system.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) and [system.disks](../../../operations/system-tables.md#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
-### Configuration {#table_engine-mergetree-multiple-volumes-configure}
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
 Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory.
 

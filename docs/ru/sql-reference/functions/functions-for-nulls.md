@@ -2,7 +2,7 @@
 
 ## isNull {#isnull}
 
-Проверяет является ли аргумент [NULL](../syntax.md#null).
+Проверяет является ли аргумент [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -42,7 +42,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-Проверяет не является ли аргумент [NULL](../syntax.md#null).
+Проверяет не является ли аргумент [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)

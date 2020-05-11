@@ -37,9 +37,9 @@ toc_title: "\u062F\u0647\u062F\u0647\u06CC"
 
 عملیات دودویی در نتیجه اعشاری در نوع نتیجه گسترده تر (با هر سفارش از استدلال).
 
--   اعشار64 (س1) <op> Decimal32(S2) -\> Decimal64(S)
--   اعشار128 (س1) <op> Decimal32(S2) -\> Decimal128(S)
--   اعشار128 (س1) <op> Decimal64(S2) -\> Decimal128(S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 قوانین برای مقیاس:
 

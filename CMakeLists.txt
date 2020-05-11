@@ -103,16 +103,7 @@ endif ()
 include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
-    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
-endif ()
-
-if (COMPILER_GCC OR COMPILER_CLANG)
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-endif ()
-
-if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
-    # Warnings in protobuf generating
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-array-bounds")
+    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
 endif ()
 
 if (COMPILER_CLANG)
@@ -192,16 +183,16 @@ endif ()
 
 option(WITH_COVERAGE "Build with coverage." 0)
 
-if(WITH_COVERAGE AND COMPILER_CLANG)
-   set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-   # If we want to disable coverage for specific translation units
-   set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+if (WITH_COVERAGE AND COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    # If we want to disable coverage for specific translation units
+    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
 
-if(WITH_COVERAGE AND COMPILER_GCC)
-   set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
-   set(COVERAGE_OPTION "-lgcov")
-   set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
+if (WITH_COVERAGE AND COMPILER_GCC)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
+    set(COVERAGE_OPTION "-lgcov")
+    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -333,7 +324,7 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
-include(GNUInstallDirs)
+include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
 include (cmake/lib_name.cmake)
 
@@ -345,9 +336,7 @@ include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
 include (cmake/find/termcap.cmake)
-include (cmake/find/odbc.cmake)
-# openssl, zlib, odbc before poco
-include (cmake/find/poco.cmake)
+# openssl, zlib before poco
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
@@ -357,10 +346,6 @@ include (cmake/find/rdkafka.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/h3.cmake)
-include (cmake/find/cpuid.cmake) # Freebsd, bundled
-if (NOT USE_CPUID)
-    include (cmake/find/cpuinfo.cmake) # Debian
-endif()
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
@@ -417,6 +402,9 @@ endmacro()
 
 set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${ConfigIncludePath})
+
+# Add as many warnings as possible for our own code.
+include (cmake/warnings.cmake)
 
 add_subdirectory (base)
 add_subdirectory (programs)
