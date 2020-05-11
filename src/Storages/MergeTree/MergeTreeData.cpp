@@ -1163,6 +1163,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
         return parts;
 
     time_t now = time(nullptr);
+    std::vector<DataPartIteratorByStateAndInfo> parts_to_recompress;
     
     {
         auto parts_lock = lockParts();
@@ -1174,12 +1175,19 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
 
             if (part->modification_time < now - interval)
             {
-                parts.emplace_back(*it);
+                parts_to_recompress.emplace_back(it);
             }
         }
+
+        parts.reserve(parts_to_recompress.size());
+        for (const auto & it : parts_to_recompress)
+        {
+            parts.emplace_back(*it);
+        }
+
     }
-    if (!res.empty())
-        LOG_TRACE(log, "Found " << res.size() << " old parts to recompress.");
+    if (!parts.empty())
+        LOG_TRACE(log, "Found " << parts.size() << " old parts to recompress.");
     return parts;
 }
 

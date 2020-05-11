@@ -51,7 +51,7 @@ void BackgroundProcessingPoolTaskInfo::wake()
 BackgroundProcessingPool::BackgroundProcessingPool(int size_,
         const PoolSettings & pool_settings,
         const char * log_name,
-        const char * thread_name_
+        const char * thread_name_,
         const struct sched_param & sched_param_)
     : size(size_)
     , thread_name(thread_name_)
@@ -126,13 +126,6 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
 
 void BackgroundProcessingPool::threadFunction()
 {
-    if (settings.low_cpu_priority)
-    {
-        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param))
-        {
-            throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-        }
-    }
     setThreadName(thread_name);
 
     {
@@ -153,9 +146,18 @@ void BackgroundProcessingPool::threadFunction()
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
     if (auto memory_tracker = CurrentThread::getMemoryTracker())
         memory_tracker->setMetric(settings.memory_metric);
+    
+    if (settings.low_cpu_priority)
+    {
+        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param))
+        {
+            throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+        }
+    }
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, settings.thread_sleep_seconds_random_part)(rng)));
+
 
     while (!shutdown)
     {

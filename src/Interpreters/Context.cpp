@@ -426,6 +426,7 @@ struct ContextShared
         external_models_loader.reset();
         buffer_flush_schedule_pool.reset();
         background_pool.reset();
+        background_low_priority_pool.reset();
         background_move_pool.reset();
         schedule_pool.reset();
         distributed_schedule_pool.reset();
