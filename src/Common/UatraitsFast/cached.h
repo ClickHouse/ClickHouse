@@ -1,10 +1,10 @@
 #pragma once
 
-#include <dbms/src/Common/SipHash.h>
+#include <Common/SipHash.h>
 
-#include <contrib/libs/clickhouse/libs/libcommon/include/ext/unlock_guard.h>
+#include <ext/unlock_guard.h>
 
-#include <metrika/core/libs/uatraits-fast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 
 
 /** Вариант UATraits с кэшом готовых результатов.

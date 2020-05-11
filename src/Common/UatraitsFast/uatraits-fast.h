@@ -11,11 +11,11 @@
 #include <re2/re2.h>
 #include <sparsehash/dense_hash_map>
 
-#include <../base/common/StringRef.h>
+#include <common/StringRef.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
-#include <../base/common/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <library/cpp/on_disk/aho_corasick/reader.h>
 #include <library/cpp/on_disk/aho_corasick/writer.h>
@@ -472,11 +472,19 @@ private:
     using SubstringsToIndices = std::map<std::string, size_t>;
     SubstringsToIndices substrings_to_indices;
 
-    using Profiles = google::sparsehash::dense_hash_map<StringRef, Actions, StringRefHash>;
-    Profiles profiles;
+#if !defined(ARCADIA_BUILD)
+    using Profiles = google::dense_hash_map<StringRef, Actions, StringRefHash>;
+
+    /// Отображение DeviceModel -> DeviceName
+    using ModelToName = google::dense_hash_map<std::string, std::string>;
+#else
+    using Profiles = google::sparsehash::dense_hash_map<StringRef, Actions, StringRefHash> types;
 
     /// Отображение DeviceModel -> DeviceName
     using ModelToName = google::sparsehash::dense_hash_map<std::string, std::string>;
+#endif
+    Profiles profiles;
+
     ModelToName model_to_name;
 
 

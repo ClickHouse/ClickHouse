@@ -1,8 +1,8 @@
 #pragma once
 
-#include <metrika/core/libs/uatraits-fast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include "Actions.h"
-#include <contrib/libs/clickhouse/libs/libcommon/include/common/StringRef.h>
+#include <common/StringRef.h>
 #include <string>
 
 

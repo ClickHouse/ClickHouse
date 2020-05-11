@@ -5,20 +5,6 @@
 
 namespace components
 {
-namespace
-{
-
-std::string getProfile(const server::Request & request)
-{
-    const auto wap_profile = request.getHeader("X-WAP-Profile");
-    if (!wap_profile.empty())
-        return wap_profile;
-
-    return request.getHeader("Profile");
-}
-
-} // anonymous namespace
-
 void UserAgent::create(const Poco::Util::AbstractConfiguration & config)
 {
     reload_frequency = std::chrono::seconds(config.getInt("reload_frequency_sec"));

@@ -1,16 +1,14 @@
 #pragma once
 
 #include <algorithm>
-#include <contrib/libs/clickhouse/libs/libcommon/include/common/StringRef.h>
+#include <common/StringRef.h>
 #include <iterator>
 #include <memory>
-#include <metrika/core/libs/uatraits-fast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
-#include <util/generic/yexception.h>
-#include <util/generic/bt_exception.h>
 
 
 bool operator>=(const StringRef & lhs, const StringRef & rhs)

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <metrika/core/libs/uatraits-fast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include <re2/re2.h>
-#include <contrib/libs/clickhouse/libs/libcommon/include/common/StringRef.h>
+#include <common/StringRef.h>
 
 
 struct SimpleMatchingActionSetStringRef : public UATraits::IAction

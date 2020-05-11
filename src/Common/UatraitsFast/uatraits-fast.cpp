@@ -16,6 +16,7 @@
 #include <Poco/SAX/InputSource.h>
 
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/Exception.h>
 
 #include <Common/UatraitsFast/rules.h>
 #include <Common/UatraitsFast/uatraits-fast.h>
@@ -40,6 +41,12 @@
 
 namespace
 {
+namespace ErrorCodes
+{
+extern const int NO_ROOT_ELEMENT;
+extern const int NO_ROOT_NODE_ELEMENT;
+extern const int UNEXPECTED_NAME_FOR_ROOT_NODE;
+}
 
 template <template<typename> class Comparator>
 std::shared_ptr<BasicCondition<UATraits::Result>> createCondition(const bool isVersionField, const std::string & field_name, const UATraits::Version version, const StringRef src)
@@ -711,7 +718,7 @@ void UATraits::processPattern(Poco::XML::Node & pattern, Node & node, std::strin
             {
                 const std::string & str = substrings_to_indices.insert(std::make_pair(required_substring, substrings_count)).first->first;
 
-                automata_builder->AddString(TString{str}, substrings_count);
+                automata_builder->AddString(std::string{str}, substrings_count);
                 node.patterns.push_back(Pattern(substrings_count, !is_trivial, required_substring_is_prefix));
                 node.patterns.back().substring = str;
                 if (!is_trivial)
@@ -1067,17 +1074,17 @@ void UATraits::loadExtra(std::istream & istr)
     root_rule = std::make_unique<RootRule<Result>>();
 
     if (root_elem->length() == 0)
-        throw TWithBackTrace<yexception>() << "No root element in " << std::string(extra_path);
+        throw DB::Exception("No root element in " + extra_path, ErrorCodes::NO_ROOT_ELEMENT);
 
     auto root_node = root_elem->item(0);
     while (root_node && root_node->nodeType() == Poco::XML::Node::COMMENT_NODE)
         root_node = root_node->nextSibling();
 
     if (!root_node)
-        throw TWithBackTrace<yexception>() << "No root node element in " << std::string(extra_path);
+        throw DB::Exception("No root node element in " + extra_path, ErrorCodes::NO_ROOT_NODE_ELEMENT);
 
     if (root_node->nodeName() != "rules")
-        throw TWithBackTrace<yexception>() << "Unexpected name for root node: " << root_node->nodeName() << ", expected: 'rules'";
+        throw DB::Exception("Unexpected name for root node: " + root_node->nodeName() + ", expected 'rules'", ErrorCodes::UNEXPECTED_NAME_FOR_ROOT_NODE);
 
     Poco::AutoPtr<Poco::XML::NodeList> branch_children = root_node->childNodes();
 
