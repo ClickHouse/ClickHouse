@@ -418,10 +418,10 @@ void SSDCachePartition::flush()
         throwFromErrnoWithPath("Cannot fsync " + path + BIN_FILE_EXT, path + BIN_FILE_EXT, ErrorCodes::CANNOT_FSYNC);
 
     /// commit changes in index
-    for (size_t row = 0; row < ids.size(); ++row)
+    for (const auto & id : ids)
     {
         Index index;
-        if (key_to_index.get(ids[row], index))
+        if (key_to_index.get(id, index))
         {
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
             {
@@ -429,7 +429,7 @@ void SSDCachePartition::flush()
                 // Poco::Logger::get("pt").information("block: " + std::to_string(index.getBlockId()) + " " + std::to_string(current_file_block_id) + " ");
                 index.setBlockId((current_file_block_id % max_size) + index.getBlockId());
             }
-            key_to_index.set(ids[row], index);
+            key_to_index.set(id, index);
         }
     }
 
@@ -1307,10 +1307,10 @@ SSDCacheDictionary::SSDCacheDictionary(
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
         getItemsNumberImpl<TYPE, TYPE>( /* NOLINT */ \
-                index, \
-                ids, \
-                out, \
-                [&](const size_t) { return null_value; }); \
+                index, /* NOLINT */ \
+                ids, /* NOLINT */ \
+                out, /* NOLINT */ \
+                [&](const size_t) { return null_value; }); /* NOLINT */ \
     }
 
     DECLARE(UInt8)
