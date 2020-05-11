@@ -817,6 +817,14 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     return res;
 }
 
+static ExpressionActionsPtr createProjection(const Pipe & pipe, const MergeTreeData & data)
+{
+    const auto & header = pipe.getHeader();
+    auto projection = std::make_shared<ExpressionActions>(header.getNamesAndTypesList(), data.global_context);
+    projection->add(ExpressionAction::project(header.getNames()));
+    return projection;
+}
+
 Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
     size_t num_streams,
@@ -1003,13 +1011,19 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 sort_description.emplace_back(data.sorting_key_columns[j],
                     input_sorting_info->direction, 1);
 
+            /// Project input columns to drop columns from sorting_key_prefix_expr
+            /// to allow execute the same expression later.
+            /// NOTE: It may lead to double computation of expression.
+            auto projection = createProjection(pipes.back(), data);
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
 
             auto merging_sorted = std::make_shared<MergingSortedTransform>(
                 pipes.back().getHeader(), pipes.size(), sort_description, max_block_size);
 
-            res.emplace_back(std::move(pipes), std::move(merging_sorted));
+            Pipe merged(std::move(pipes), std::move(merging_sorted));
+            merged.addSimpleTransform(std::make_shared<ExpressionTransform>(merged.getHeader(), projection));
+            res.emplace_back(std::move(merged));
         }
         else
             res.emplace_back(std::move(pipes.front()));
@@ -1056,6 +1070,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         use_uncompressed_cache = false;
 
     Pipes pipes;
+    /// Project input columns to drop columns from sorting_key_expr
+    /// to allow execute the same expression later.
+    /// NOTE: It may lead to double computation of expression.
+    ExpressionActionsPtr projection;
 
     for (const auto & part : parts)
     {
@@ -1066,6 +1084,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             virt_columns, part.part_index_in_query);
 
         Pipe pipe(std::move(source_processor));
+        if (!projection)
+            projection = createProjection(pipe, data);
+
         pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr));
         pipes.emplace_back(std::move(pipe));
     }
@@ -1182,6 +1203,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     Processors processors;
     for (auto & pipe : pipes)
     {
+        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), projection));
         auto pipe_processors = std::move(pipe).detachProcessors();
         processors.insert(processors.end(), pipe_processors.begin(), pipe_processors.end());
     }

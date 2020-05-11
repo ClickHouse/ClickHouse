@@ -5,7 +5,7 @@ toc_priority: 58
 toc_title: Recomendaciones de uso
 ---
 
-# Recomendaciones de uso {#usage-recommendations}
+# Recomendaciones De Uso {#usage-recommendations}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
 
@@ -15,7 +15,7 @@ Utilice siempre el `performance` gobernador de escala. El `on-demand` regulador 
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## Limitaciones de la CPU {#cpu-limitations}
+## Limitaciones De La CPU {#cpu-limitations}
 
 Los procesadores pueden sobrecalentarse. Utilizar `dmesg` para ver si la velocidad de reloj de la CPU era limitada debido al sobrecalentamiento.
 La restricción también se puede establecer externamente en el nivel del centro de datos. Usted puede utilizar `turbostat` para controlarlo bajo una carga.
@@ -32,7 +32,7 @@ No deshabilite el sobrecompromiso. Valor `cat /proc/sys/vm/overcommit_memory` de
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Páginas enormes {#huge-pages}
+## Páginas Enormes {#huge-pages}
 
 Siempre deshabilite las páginas enormes transparentes. Interfiere con los asignadores de memoria, lo que conduce a una degradación significativa del rendimiento.
 
@@ -43,7 +43,7 @@ $ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 Utilizar `perf top` para ver el tiempo pasado en el kernel para la administración de memoria.
 Las páginas enormes permanentes tampoco necesitan ser asignadas.
 
-## Subsistema de almacenamiento {#storage-subsystem}
+## Subsistema De Almacenamiento {#storage-subsystem}
 
 Si su presupuesto le permite usar SSD, use SSD.
 Si no, utilice el disco duro. Discos Duros SATA de 7200 RPM va a hacer.
@@ -76,13 +76,13 @@ Independientemente del uso de RAID, utilice siempre la replicación para la segu
 Habilite NCQ con una cola larga. Para HDD, elija el programador CFQ, y para SSD, elija noop. No reduzca el ‘readahead’ configuración.
 Para HDD, habilite la memoria caché de escritura.
 
-## Sistema de archivos {#file-system}
+## Sistema De Archivos {#file-system}
 
 Ext4 es la opción más confiable. Establecer las opciones de montaje `noatime, nobarrier`.
 XFS también es adecuado, pero no ha sido probado tan a fondo con ClickHouse.
 La mayoría de los otros sistemas de archivos también deberían funcionar bien. Los sistemas de archivos con asignación retrasada funcionan mejor.
 
-## Núcleo de Linux {#linux-kernel}
+## Núcleo De Linux {#linux-kernel}
 
 No use un kernel de Linux obsoleto.
 
@@ -97,7 +97,7 @@ Utilice al menos una red de 10 GB, si es posible. 1 Gb también funcionará, per
 
 Probablemente ya esté utilizando ZooKeeper para otros fines. Puede usar la misma instalación de ZooKeeper, si aún no está sobrecargada.
 
-It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 Nunca debe usar scripts escritos manualmente para transferir datos entre diferentes clústeres de ZooKeeper, ya que el resultado será incorrecto para los nodos secuenciales. Nunca utilice el “zkcopy” utilidad por la misma razón: https://github.com/ksprojects/zkcopy/issues/15
 

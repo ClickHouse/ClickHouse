@@ -44,7 +44,7 @@ namespace ErrorCodes
 }
 
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
     const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
@@ -75,7 +75,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -131,7 +131,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         command.if_exists = command_ast->if_exists;
 

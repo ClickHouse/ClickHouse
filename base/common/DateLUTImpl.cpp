@@ -31,9 +31,8 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::friday:     return 5;
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
-        default:
-            throw Poco::Exception("Logical error: incorrect week day.");
     }
+    __builtin_unreachable();
 }
 
 }
@@ -74,6 +73,11 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.day_of_month = date.day();
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
+
+        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR);
+        assert(values.month >= 1 && values.month <= 12);
+        assert(values.day_of_month >= 1 && values.day_of_month <= 31);
+        assert(values.day_of_week >= 1 && values.day_of_week <= 7);
 
         if (values.day_of_month == 1)
         {

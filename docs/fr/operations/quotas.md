@@ -7,10 +7,10 @@ toc_title: Quota
 
 # Quota {#quotas}
 
-Les Quotas permettent de limiter l'utilisation des ressources au cours d'une période de temps, ou tout simplement suivre l'utilisation des ressources.
-Les Quotas sont configurés dans la configuration utilisateur. Ce n'est généralement ‘users.xml’.
+Les Quotas permettent de limiter l’utilisation des ressources au cours d’une période de temps, ou tout simplement suivre l’utilisation des ressources.
+Les Quotas sont configurés dans la configuration utilisateur. Ce n’est généralement ‘users.xml’.
 
-Le système dispose également d'une fonctionnalité pour limiter la complexité d'une seule requête. Voir la section “Restrictions on query complexity”).
+Le système dispose également d’une fonctionnalité pour limiter la complexité d’une seule requête. Voir la section “Restrictions on query complexity”).
 
 Contrairement aux restrictions de complexité des requêtes, les quotas:
 
@@ -39,7 +39,7 @@ Regardons la section de la ‘users.xml’ fichier qui définit les quotas.
     </default>
 ```
 
-Par défaut, le quota suit simplement la consommation de ressources pour chaque heure, sans limiter l'utilisation.
+Par défaut, le quota suit simplement la consommation de ressources pour chaque heure, sans limiter l’utilisation.
 La consommation de ressources calculé pour chaque intervalle est sortie dans le journal du serveur après chaque demande.
 
 ``` xml
@@ -68,9 +68,9 @@ La consommation de ressources calculé pour chaque intervalle est sortie dans le
 </statbox>
 ```
 
-Pour l' ‘statbox’ quota, restrictions sont fixées pour toutes les heures et pour toutes les 24 heures (86 400 secondes). L'intervalle de temps est compté à partir d'un moment fixe défini par l'implémentation. En d'autres termes, l'intervalle de 24 heures ne commence pas nécessairement à minuit.
+Pour l’ ‘statbox’ quota, restrictions sont fixées pour toutes les heures et pour toutes les 24 heures (86 400 secondes). L’intervalle de temps est compté à partir d’un moment fixe défini par l’implémentation. En d’autres termes, l’intervalle de 24 heures ne commence pas nécessairement à minuit.
 
-Lorsque l'intervalle se termine, toutes les valeurs collectées sont effacées. Pour l'heure suivante, le calcul du quota recommence.
+Lorsque l’intervalle se termine, toutes les valeurs collectées sont effacées. Pour l’heure suivante, le calcul du quota recommence.
 
 Voici les montants qui peuvent être restreint:
 
@@ -105,7 +105,7 @@ Les Quotas peuvent utiliser le “quota key” fonctionnalité afin de rendre co
 
 Le quota est attribué aux utilisateurs dans le ‘users’ section de la configuration. Voir la section “Access rights”.
 
-Pour le traitement des requêtes distribuées, les montants accumulés sont stockés sur le serveur demandeur. Donc, si l'utilisateur se rend sur un autre serveur, le quota y sera “start over”.
+Pour le traitement des requêtes distribuées, les montants accumulés sont stockés sur le serveur demandeur. Donc, si l’utilisateur se rend sur un autre serveur, le quota y sera “start over”.
 
 Lorsque le serveur est redémarré, les quotas sont réinitialisés.
 

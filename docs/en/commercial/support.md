@@ -1,6 +1,6 @@
 ---
-toc_title: Support
 toc_priority: 3
+toc_title: Support
 ---
 
 # ClickHouse Commercial Support Service Providers {#clickhouse-commercial-support-service-providers}
