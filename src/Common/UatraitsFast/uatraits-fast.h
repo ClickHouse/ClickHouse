@@ -12,10 +12,10 @@
 #include <sparsehash/dense_hash_map>
 
 #include <../base/common/StringRef.h>
-#include <dbms/src/IO/ReadBuffer.h>
-#include <dbms/src/IO/ReadHelpers.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 
-#include <contrib/libs/clickhouse/libs/libcommon/include/common/logger_useful.h>
+#include <../base/common/logger_useful.h>
 
 #include <library/cpp/on_disk/aho_corasick/reader.h>
 #include <library/cpp/on_disk/aho_corasick/writer.h>

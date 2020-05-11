@@ -1,6 +1,6 @@
 #include <Common/UatraitsFast/UserAgent.h>
 
-#include <metrika/core/libs/statdaemons/mobile/OperatingSystem.h>
+#include "types/OperatingSystem.h"
 #include <boost/algorithm/string/case_conv.hpp>
 
 namespace components
@@ -82,14 +82,6 @@ UserAgent::Agent UserAgent::detect(
     };
 }
 
-UserAgent::Agent UserAgent::detect(const server::Request & request) const
-{
-    return detect(
-        request.getHeader("User-Agent"),
-        getProfile(request),
-        request.getHeader("X-OperaMini-Phone-UA"));
-}
-
 UserAgent::Agent UserAgent::detect(const std::string & user_agent) const
 {
     return detect(user_agent, {}, {});
@@ -103,7 +95,7 @@ UserAgent::OperatingSystem::OperatingSystem(
 {
 }
 
-appmetrica::types::OperatingSystem UserAgent::OperatingSystem::getName() const
+uatraits::types::OperatingSystem UserAgent::OperatingSystem::getName() const
 {
     return operating_system;
 }
@@ -121,7 +113,7 @@ UserAgent::Browser::Browser(const std::string & name_, const UATraits::Version &
 {
 }
 
-UserAgent::Browser::Browser(const appmetrica::types::Browser browser_, const UATraits::Version & version_)
+UserAgent::Browser::Browser(const uatraits::types::Browser browser_, const UATraits::Version & version_)
     : browser(browser_)
     , browser_base{}
     , version(version_)
@@ -129,12 +121,12 @@ UserAgent::Browser::Browser(const appmetrica::types::Browser browser_, const UAT
 {
 }
 
-const std::optional<appmetrica::types::Browser> & UserAgent::Browser::getName() const
+const std::optional<uatraits::types::Browser> & UserAgent::Browser::getName() const
 {
     return browser;
 }
 
-const std::optional<appmetrica::types::BrowserBase> & UserAgent::Browser::getBase() const
+const std::optional<uatraits::types::BrowserBase> & UserAgent::Browser::getBase() const
 {
     return browser_base;
 }
