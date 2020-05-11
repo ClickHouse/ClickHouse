@@ -37,9 +37,9 @@ Parce que les processeurs modernes ne prennent pas en charge les entiers 128 bit
 
 Les opérations binaires sur le résultat décimal dans le type de résultat plus large (avec n’importe quel ordre d’arguments).
 
--   Décimal64 (S1) <op> Decimal32 (S2) - \> Decimal64 (S)
--   Décimal128 (S1) <op> Decimal32 (S2) - \> Decimal128 (S)
--   Décimal128 (S1) <op> Decimal64 (S2) - \> Decimal128 (S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 Règles pour l’échelle:
 

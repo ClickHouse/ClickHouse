@@ -79,7 +79,7 @@ Todos los parámetros excepto `sign` y `version` el mismo significado que en `Me
 
 </details>
 
-## Derrumbar {#table_engines-versionedcollapsingmergetree}
+## Derrumbar {#table_engines_versionedcollapsingmergetree}
 
 ### Datos {#data}
 

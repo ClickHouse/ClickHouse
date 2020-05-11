@@ -24,3 +24,8 @@ target_link_libraries (get_abandonable_lock_in_all_partitions PRIVATE dbms click
 
 add_executable (transform_part_zk_nodes transform_part_zk_nodes.cpp)
 target_link_libraries (transform_part_zk_nodes PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper string_utils ${Boost_PROGRAM_OPTIONS_LIBRARY})
+
+if (ENABLE_FUZZING)
+    add_executable (mergetree_checksum_fuzzer mergetree_checksum_fuzzer.cpp)
+    target_link_libraries (mergetree_checksum_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
+endif ()

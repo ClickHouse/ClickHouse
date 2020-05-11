@@ -269,7 +269,7 @@ Also see the `toUnixTimestamp` function.
 ## toFixedString(s, N) {#tofixedstrings-n}
 
 Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant.
-If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
+If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
 ## toStringCutToZero(s) {#tostringcuttozeros}
 

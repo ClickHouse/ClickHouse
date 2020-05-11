@@ -255,7 +255,7 @@ Sütun:
 
 ## sistem.graphite\_retentions {#system-graphite-retentions}
 
-Parametreleri hakkında bilgi içerir [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) tablo usedlarında kullanılan [\* Graphıtemergetree](../engines/table-engines/mergetree-family/graphitemergetree.md) motorlar.
+Parametreleri hakkında bilgi içerir [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) tablo usedlarında kullanılan [\* Graphıtemergetree](../engines/table-engines/mergetree-family/graphitemergetree.md) motorlar.
 
 Sütun:
 

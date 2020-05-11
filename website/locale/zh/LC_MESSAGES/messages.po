@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-30 15:45+0300\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: zh\n"
@@ -29,31 +29,31 @@ msgstr "ClickHouse是一个快速开源的面向列的数据库管理系统，�
 msgid "ClickHouse - fast open-source OLAP DBMS"
 msgstr "ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人"
 
-#: templates/common_meta.html:10 templates/common_meta.html:21
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "ﾂ环板msｮﾂ嘉ｯﾂ偲"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "open-source"
 msgstr "开源"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "relational"
 msgstr "关系"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytics"
 msgstr "分析"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytical"
 msgstr "分析"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "Big Data"
 msgstr "大数据"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "web-analytics"
 msgstr "网络分析"
 
@@ -71,11 +71,23 @@ msgstr "软件按\"原样\"分发，不附带任何明示或暗示的担保或�
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "建于"
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr "发表于"
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr "修改于"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "帮助通缉！"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -86,17 +98,13 @@ msgstr ""
 "本文档页面的以下内容已经过机器翻译。 但与其他网站不同，它不是在飞行中完成。 "
 "这个翻译的文本生活在github存储库旁边的主ClickHouse代码库，并等待同胞母语，使其更具人类可读性。"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "您也可以使用原始的英文版本作为参考。"
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "通过编辑此页面帮助ClickHouse文档"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "建于"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -293,4 +301,10 @@ msgstr "打开JavaScript查看电子邮件地址"
 #~ "queries. Сreated by Yandex ClickHouse "
 #~ "manages extremely large volumes of data"
 #~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "发表于"
+
+#~ msgid "modified at"
+#~ msgstr "修改时"
 

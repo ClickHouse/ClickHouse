@@ -37,9 +37,9 @@ Modern CPU 128-bit tamsayıları doğal olarak desteklemediğinden, Decimal128 �
 
 Ondalık sonuçtaki ikili işlemler daha geniş sonuç türünde (herhangi bir bağımsız değişken sırası ile) sonuçlanır.
 
--   Decimal64(S1) <op> Decimal32 (S2) - \> Decimal64 (S)
--   Decimal128(S1) <op> Decimal32 (S2) - \> Decimal128(S)
--   Decimal128(S1) <op> Decimal64 (S2) - \> Decimal128(S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 Ölçek kuralları:
 
