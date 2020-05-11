@@ -54,6 +54,9 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"hash_of_uncompressed_files",                  std::make_shared<DataTypeString>()},
         {"uncompressed_hash_of_compressed_files",       std::make_shared<DataTypeString>()},
 
+        {"delete_ttl_info_min",                         std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"delete_ttl_info_max",                         std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
         {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
         {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
@@ -133,6 +136,12 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         checksum = helper.uncompressed_hash_of_compressed_files;
         columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));
+
+        /// delete_ttl_info
+        {
+            columns_[i++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.min));
+            columns_[i++]->insert(static_cast<UInt32>(part->ttl_infos.table_ttl.max));
+        }
 
         /// move_ttl_info
         {
