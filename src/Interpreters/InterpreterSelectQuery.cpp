@@ -2541,21 +2541,13 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
 
-        SortDescription order_descr;
-        if (query.limit_with_ties)
-        {
-            if (!query.orderBy())
-                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
-            order_descr = getSortDescription(query, *context);
-        }
-
         pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipeline::StreamType::Main)
                 return nullptr;
             std::cout << "TRANSFORM" << std::endl;
             return std::make_shared<OffsetTransform>(
-                    header, limit_offset, 1, true, query.limit_with_ties, order_descr);
+                    header, limit_offset, 1);
         });
     }
 }
