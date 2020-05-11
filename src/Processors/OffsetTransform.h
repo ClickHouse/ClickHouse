@@ -20,13 +20,6 @@ class OffsetTransform : public IProcessor
 private:
 
     size_t offset;
-    bool always_read_till_end;
-
-    bool with_ties;
-    const SortDescription description;
-
-    Chunk previous_row_chunk;  /// for WITH TIES, contains only sort columns
-    std::vector<size_t> sort_column_positions;
 
     size_t rows_read = 0; /// including the last read block
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
@@ -46,10 +39,7 @@ private:
     size_t num_finished_port_pairs = 0;
 
 public:
-    OffsetTransform(
-        const Block & header_, size_t offset_, size_t num_streams = 1,
-        bool always_read_till_end_ = false, bool with_ties_ = false,
-        SortDescription description_ = {});
+    OffsetTransform(const Block & header_, size_t offset_, size_t num_streams = 1);
 
     String getName() const override { return "Offset"; }
 

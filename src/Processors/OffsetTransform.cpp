@@ -10,17 +10,10 @@ namespace ErrorCodes
 }
 
 OffsetTransform::OffsetTransform(
-    const Block & header_, size_t offset_, size_t num_streams,
-    bool always_read_till_end_, bool with_ties_,
-    SortDescription description_)
+    const Block & header_, size_t offset_, size_t num_streams)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , offset(offset_)
-    , always_read_till_end(always_read_till_end_)
-    , with_ties(with_ties_), description(std::move(description_))
 {
-    if (num_streams != 1 && with_ties)
-        throw Exception("Cannot use OffsetTransform with multiple ports and ties.", ErrorCodes::LOGICAL_ERROR);
-
     ports_data.resize(num_streams);
 
     size_t cur_stream = 0;
@@ -35,14 +28,6 @@ OffsetTransform::OffsetTransform(
     {
         ports_data[cur_stream].output_port = &output;
         ++cur_stream;
-    }
-
-    for (const auto & desc : description)
-    {
-        if (!desc.column_name.empty())
-            sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
-        else
-            sort_column_positions.push_back(desc.column_number);
     }
 }
 
