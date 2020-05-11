@@ -159,7 +159,7 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
 }
 
 
-void OffsetTransform::splitChunk(PortsData & data)
+void OffsetTransform::splitChunk(PortsData & data) const
 {
     size_t num_rows = data.current_chunk.getNumRows();
     size_t num_columns = data.current_chunk.getNumColumns();
