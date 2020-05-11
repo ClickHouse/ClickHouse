@@ -687,7 +687,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
@@ -2436,7 +2436,7 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 }
 
 
-void InterpreterSelectQuery::executeOffset(Pipeline & pipeline)
+void InterpreterSelectQuery::executeOffset(Pipeline & /*pipeline*/)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
@@ -2451,6 +2451,7 @@ void InterpreterSelectQuery::executeOffset(Pipeline & pipeline)
           *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
           *  otherwise TOTALS is counted according to incomplete data.
           */
+        /*
         bool always_read_till_end = false;
 
         if (query.group_by_with_totals && !query.orderBy())
@@ -2476,6 +2477,7 @@ void InterpreterSelectQuery::executeOffset(Pipeline & pipeline)
             std::cout << "BLOCK" << std::endl;
             stream = std::make_shared<OffsetBlockInputStream>(stream, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
         });
+        */
     }
 }
 
