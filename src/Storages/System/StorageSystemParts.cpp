@@ -4,7 +4,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -55,15 +54,9 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"hash_of_uncompressed_files",                  std::make_shared<DataTypeString>()},
         {"uncompressed_hash_of_compressed_files",       std::make_shared<DataTypeString>()},
 
-        {"move_ttl_info",                               std::make_shared<DataTypeArray>(
-                                                            std::make_shared<DataTypeTuple>(
-                                                                DataTypes({
-                                                                    std::make_shared<DataTypeString>(),
-                                                                    std::make_shared<DataTypeDateTime>(),
-                                                                    std::make_shared<DataTypeDateTime>()
-                                                                }),
-                                                                Strings({"expression", "min", "max"})
-                                                            ))},
+        {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"move_ttl_info.max",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
     }
     )
 {
@@ -143,17 +136,19 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         /// move_ttl_info
         {
-            Array move_ttl_info_array;
-            move_ttl_info_array.reserve(part->ttl_infos.moves_ttl.size());
+            Array expression_array, min_array, max_array;
+            expression_array.reserve(part->ttl_infos.moves_ttl.size());
+            min_array.reserve(part->ttl_infos.moves_ttl.size());
+            max_array.reserve(part->ttl_infos.moves_ttl.size());
             for (const auto & [expression, move_ttl_info] : part->ttl_infos.moves_ttl)
             {
-                Tuple move_ttl_info_tuple;
-                move_ttl_info_tuple.push_back(expression);
-                move_ttl_info_tuple.push_back(static_cast<UInt32>(move_ttl_info.min));
-                move_ttl_info_tuple.push_back(static_cast<UInt32>(move_ttl_info.max));
-                move_ttl_info_array.emplace_back(std::move(move_ttl_info_tuple));
+                expression_array.emplace_back(expression);
+                min_array.push_back(static_cast<UInt32>(move_ttl_info.min));
+                max_array.push_back(static_cast<UInt32>(move_ttl_info.max));
             }
-            columns_[i++]->insert(move_ttl_info_array);
+            columns_[i++]->insert(expression_array);
+            columns_[i++]->insert(min_array);
+            columns_[i++]->insert(max_array);
         }
     }
 }
