@@ -185,8 +185,9 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-    # Needed by /src/Common/IGrabberAllocator.h
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fconcepts")
+    # Needed by /src/Common/IGrabberAllocator.h, but unavailable as for now due to gcc bug,
+    # see referenced file for details.
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fconcepts")
 endif ()
 
 option(WITH_COVERAGE "Build with coverage." 0)

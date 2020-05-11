@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Common/LRUCache.h>
 #include <Common/IGrabberAllocator.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -58,16 +57,18 @@ public:
         return key;
     }
 
-    ValuePtr getOrSet(const Key & key, GAInitFunction auto && init_func)
+    //ValuePtr getOrSet(const Key & key, GAInitFunction auto && init_func)
+    template <class InitFunc>
+    ValuePtr getOrSet(const Key & key, InitFunc && init_func)
     {
-        auto result = MarkCacheBase::getOrSet(key, init_func);
+        auto&& [ptr, produced] = MarkCacheBase::getOrSet(key, init_func);
 
-        if (result.second)
+        if (produced)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
 
-        return result.first;
+        return ptr;
     }
 };
 

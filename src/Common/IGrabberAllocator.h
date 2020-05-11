@@ -8,12 +8,14 @@
 #include <type_traits>
 #include <functional>
 #include <unordered_map>
+#include <list>
 
 #include <sys/mman.h>
 
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
+
 #include <ext/scope_guard.h>
 
 #include <pcg_random.hpp>
@@ -43,11 +45,17 @@ static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024;
 template <class Value>
 static constexpr size_t const defaultValueAlignment = std::max(16lu,  alignof(Value));
 
-[[nodiscard, gnu::const]] void * defaultASLR(const pcg64& rng) noexcept
+struct DefaultASLR
 {
-    return reinterpret_cast<void *>(
-            std::uniform_int_distribution<size_t>(0x100000000000UL, 0x700000000000UL)(rng));
-}
+    [[nodiscard, gnu::const]] void * operator()(pcg64& rng) const noexcept
+    {
+        return reinterpret_cast<void *>(
+                std::uniform_int_distribution<size_t>(
+                    0x100000000000UL,
+                    0x700000000000UL)(rng));
+
+    };
+};
 
 [[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding) noexcept
 {
@@ -80,35 +88,38 @@ struct Stats
 }
 
 /**
- * Constraints on allocator's template parameters
+ * Constraints on allocator's template parameters.
+ * Currently turned off, because gcc fails to compile contrib/re2 with -fconcepts.
+ *
+ * Linked bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91867
  */
 
-template <class T> concept GAKey = GADefault; //TODO Form constraints
-
-template <class T> concept GAValue = requires(T x) { };
-
-/// @anchor ga_key_hash
-template <class Hash, class Value>
-concept GAKeyHash = requires(const Value& v) {
-    { Hash{}.operator()(v) } -> std::convertible_to<std::size_t>;
-};
-
-/// @anchor ga_size_func
-template <class F, class Value>
-concept GASizeFunction = std::is_same<F, ga::runtime> || requires(const Value& v) {
-    {F(v)} -> std::convertible_to<std::size_t>;
-};
-
-/// @anchor ga_init_func
-template <class F, class Value>
-concept GAInitFunction = std::is_same<F, ga::runtime> || requires(void * address_hint) {
-    F(address_hint, Value*);
-};
-
-/// @anchor ga_aslr_func
-template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
-    {T()} -> std::is_same<void *>;
-};
+//template <class T> concept GAKey = GADefault; //TODO Form constraints
+//
+//template <class T> concept GAValue = requires(T x) { };
+//
+///// @anchor ga_key_hash
+//template <class Hash, class Value>
+//concept GAKeyHash = requires(const Value& v) {
+//    { Hash().operator()(v) } -> std::convertible_to<std::size_t>;
+//};
+//
+///// @anchor ga_size_func
+//template <class F, class Value>
+//concept GASizeFunction = std::is_same<F, ga::runtime> || requires(const Value& v) {
+//    {F().operator()(v)} -> std::convertible_to<std::size_t>;
+//};
+//
+///// @anchor ga_init_func
+//template <class F, class Value>
+//concept GAInitFunction = std::is_same<F, ga::runtime> || requires(void * address_hint) {
+//    F(address_hint, Value*);
+//};
+//
+///// @anchor ga_aslr_func
+//template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
+//    {T().operator()(rng)} -> std::is_same<void *>;
+//};
 
 /**
  * @brief This class represents a tool combining a reference-counted memory block cache integrated with a mmap-backed
@@ -151,17 +162,23 @@ template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
  * @note Cache is not NUMA friendly.
  */
 template <
-    GAKey TKey,
-    GAValue TValue,
-
-    GAKeyHash KeyHash = std::hash<Key>,
-
-    GASizeFunction SizeFunction = ga::runtime,
-    GAInitFunction InitFunction = ga::runtime,
-    GAAslrFunction ASLRFunction = ga::defaultASLR,
+//    GAKey TKey,
+//    GAValue TValue,
+//
+//    GAKeyHash KeyHash = std::hash<Key>,
+//
+//    GASizeFunction SizeFunction = ga::runtime,
+//    GAInitFunction InitFunction = ga::runtime,
+//    GAAslrFunction ASLRFunction = ga::DefaultASLR,
+    class TKey,
+    class TValue,
+    class KeyHash = std::hash<TKey>,
+    class SizeFunction = ga::runtime,
+    class InitFunction = ga::runtime,
+    class ASLRFunction = ga::DefaultASLR,
 
     size_t MinChunkSize = ga::defaultMinChunkSize,
-    size_t ValueAlignment = ga::defaultValueAlignment<Value>>
+    size_t ValueAlignment = ga::defaultValueAlignment<TValue>>
 class IGrabberAllocator : private boost::noncopyable
 {
 private:
@@ -174,6 +191,10 @@ private:
 
     pcg64 rng{randomSeed()};
 
+    static constexpr auto ASLR = ASLRFunction();
+    static constexpr auto getSize = SizeFunction();
+    static constexpr auto initValue = InitFunction();
+
 /**
  * Constructing, destructing, and usings.
  */
@@ -184,11 +205,11 @@ public:
     /**
      * @brief Output type, tracks reference counf (@ref overview) via a custom Deleter.
      */
-    using ValuePtr = std:shared_ptr<Value>;
+    using ValuePtr = std::shared_ptr<Value>;
 
-    constexpr CachingAllocator(size_t max_cache_size_) noexcept: max_cache_size(max_cache_size_) {}
+    constexpr IGrabberAllocator(size_t max_cache_size_) noexcept: max_cache_size(max_cache_size_) {}
 
-    constexpr ~CachingAllocator() noexcept
+    ~IGrabberAllocator() noexcept
     {
         std::lock_guard _(mutex);
 
@@ -285,14 +306,14 @@ public:
 
         out.total_chunks_size = total_chunks_size;
         out.total_allocated_size = total_allocated_size;
-        out.total_size_currently_initialized = total_size_currently_initialized.load(std::memory_order_relaxed);
-        out.total_size_in_use = total_size_in_use;
+        out.total_currently_initialized_size = total_size_currently_initialized.load(std::memory_order_relaxed);
+        out.total_currently_used_size = total_size_in_use;
 
-        out.num_chunks = chunks.size();
-        out.num_regions = all_regions.size();
-        out.num_free_regions = free_regions.size();
-        out.num_regions_in_use = all_regions.size() - free_regions.size() - unused_allocated_regions.size();
-        out.num_keyed_regions = used_regions.size();
+        out.chunks_count = chunks.size();
+        out.all_regions_count = all_regions.size();
+        out.free_regions_count = free_regions.size();
+        out.used_regions_count = all_regions.size() - free_regions.size() - unused_allocated_regions.size();
+        out.keyed_regions_count = used_regions.size();
 
         out.hits = hits.load(std::memory_order_relaxed);
         out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
@@ -328,7 +349,6 @@ private:
     using TFreeRegionHook      = boost::intrusive::set_base_hook< boost::intrusive::tag<FreeRegionTag>>;
     using TAllocatedRegionHook = boost::intrusive::set_base_hook< boost::intrusive::tag<AllocatedRegionTag>>;
 
-    struct RegionMetadata;
     struct RegionCompareBySize;
     struct RegionCompareByKey;
 
@@ -401,25 +421,28 @@ public:
 
     using GetOrSetRet = std::pair<ValuePtr, bool>;
 
-    template <std::enable_if_t<!std::is_same_v<SizeFunction, ga::runtime> &&
-                               !std::is_same_v<InitFunction, ga::runtime>>>
-    inline GetOrSetRet getOrSet(const Key & key)
+    template<class S = SizeFunction, class I = InitFunction>
+    inline typename std::enable_if<!std::is_same_v<S, ga::runtime> &&
+                                   !std::is_same_v<I, ga::runtime>,
+        GetOrSetRet>::type getOrSet(const Key & key)
     {
-        return getOrSet(key, SizeFunction, InitFunction);
+        return getOrSet(key, getSize, initValue);
     }
 
-    template <std::enable_if_t<!std::is_same_v<SizeFunction, ga::runtime> &&
-                                std::is_same_v<InitFunction, ga::runtime>>>
-    inline GetOrSetRet getOrSet(const Key & key, GAInitFunction auto && init_func)
+    template<class Init, class S = SizeFunction, class I = InitFunction>
+    inline typename std::enable_if<!std::is_same_v<S, ga::runtime> &&
+                                    std::is_same_v<I, ga::runtime>,
+        GetOrSetRet>::type getOrSet(const Key & key, Init /* GAInitFunction auto */ && init_func)
     {
-        return getOrSet(key, SizeFunction, init_func);
+        return getOrSet(key, getSize, init_func);
     }
 
-    template <std::enable_if_t<!std::is_same_v<SizeFunction, ga::runtime> &&
-                                std::is_same_v<InitFunction, ga::runtime>>>
-    inline GetOrSetRet getOrSet(const Key & key, GAInitFunction auto && init_func)
+    template<class Size, class S = SizeFunction, class I = InitFunction>
+    inline typename std::enable_if<std::is_same_v<S, ga::runtime> &&
+                                   !std::is_same_v<I, ga::runtime>,
+        GetOrSetRet>::type getOrSet(const Key & key, Size /* GASizeFunction auto */ && size_func)
     {
-        return getOrSet(key, SizeFunction, init_func);
+        return getOrSet(key, size_func, initValue);
     }
 
     /**
@@ -450,7 +473,9 @@ public:
      * @return Bool indicating whether the value was produced during the call. <br>
      *      False on cache hit (including a concurrent cache hit), true on cache miss).
      */
-    inline GetOrSetRet getOrSet(const Key & key, SizeFunction auto && get_size, InitFunction auto && initialize)
+    //inline GetOrSetRet getOrSet(const Key & key, SizeFunction auto && get_size, InitFunction auto && initialize)
+    template <class Init, class Size>
+    inline GetOrSetRet getOrSet(const Key & key, Size && get_size, Init && initialize)
     {
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
@@ -479,7 +504,7 @@ public:
 
             try
             {
-                initialize(region->ptr, region->value);
+                region->value = initialize();
             }
             catch (...)
             {
@@ -496,8 +521,15 @@ public:
 
         try
         {
-            onSharedValueCreate(region);
-            attempt->value = std::make_shared<Value>(&region->value, onValueDelete);
+            onSharedValueCreate(*region);
+
+            // can't use std::make_shared due to custom deleter.
+            attempt->value = std::shared_ptr<Value>(
+                    &region->value,
+                    /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
+                    /// see also line 619.
+                    /// std::bind_front(&IGrabberAllocator::onValueDelete, this));
+                    std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
 
             /// Insert the new value only if the attempt is still present in #insertion_attempts.
             /// (may be absent because of a concurrent reset() call).
@@ -528,13 +560,13 @@ public:
 private:
     constexpr void onSharedValueCreate(RegionMetadata& metadata) noexcept
     {
-        std::lock_guard cache_lock(cache.mutex);
+        std::lock_guard cache_lock(mutex);
 
         ++metadata.refcount;
 
         if (metadata.refcount == 1 && metadata.TUnusedRegionHook::is_linked())
         {
-            value_to_region.emplace_back(&metadata.value, &metadata);
+            value_to_region.emplace(&metadata.value, &metadata);
             unused_allocated_regions.erase(unused_allocated_regions.iterator_to(metadata));
         }
 
@@ -543,27 +575,29 @@ private:
 
     constexpr void onValueDelete(Value * value) noexcept
     {
-        std::lock_guard cache_lock(cache.mutex);
+        std::lock_guard cache_lock(mutex);
 
         auto it = value_to_region.find(value);
 
         // it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
         // invoking this function), thus value_to_region contains a metadata struct associated with #value.
 
-        RegionMetadata& metadata = **it;
+        RegionMetadata& metadata = *(it->second);
 
         --metadata.refcount;
 
         if (metadata.refcount == 0)
         {
             value_to_region.erase(it);
-            cache.unused_allocated_regions.push_back(metadata);
+            unused_allocated_regions.push_back(metadata);
         }
 
-        cache.total_size_in_use -= metadata.size;
+        total_size_in_use -= metadata.size;
 
         delete value;
     }
+
+    class InsertionAttemptDisposer;
 
     inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {
@@ -580,7 +614,13 @@ private:
 
                 onSharedValueCreate(metadata);
 
-                return std::make_shared<Value>(&metadata->value, onValueDelete);
+                // can't use std::make_shared due to custom deleter.
+                return std::shared_ptr<Value>(
+                        &metadata.value,
+                        /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
+                        /// see also line 530.
+                        /// std::bind_front(&IGrabberAllocator::onValueDelete, this));
+                        std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
             }
 
             auto & insertion_attempt = insertion_attempts[key];
@@ -655,7 +695,7 @@ private:
     {
         constexpr InsertionAttemptDisposer() noexcept = default;
 
-        const Key * const key {nullptr};
+        const Key * key {nullptr};
         bool attempt_disposed{false};
 
         std::shared_ptr<InsertionAttempt> attempt;
@@ -670,7 +710,7 @@ private:
 
         inline void dispose() noexcept
         {
-            attempt->cache.insertion_attempts.erase(*key);
+            attempt->alloc.insertion_attempts.erase(*key);
             attempt->is_disposed = true;
             attempt_disposed = true;
         }
@@ -688,7 +728,7 @@ private:
             if (attempt->is_disposed)
                 return;
 
-            std::lock_guard cache_lock(attempt->cache.mutex);
+            std::lock_guard cache_lock(attempt->alloc.mutex);
 
             --attempt->refcount;
 
@@ -713,7 +753,7 @@ private:
         constexpr MemoryChunk(size_t size_, void * address_hint) : size(size_)
         {
             ptr = mmap(
-                __builtin_assume_aligned(address_hint, ptrs_alignment),
+                __builtin_assume_aligned(address_hint, ValueAlignment),
                 size,
                 PROT_READ | PROT_WRITE,
                 MAP_PRIVATE |
@@ -774,12 +814,12 @@ private:
 
         [[nodiscard, gnu::pure]] constexpr bool isFree() const noexcept { return TFreeRegionHook::is_linked(); }
 
-        [[nodiscard, gnu::malloc]] static RegionMetadata * create() { return new RegionMetadata; }
+        [[nodiscard]] static RegionMetadata * create() { return new RegionMetadata(); }
 
         void destroy() { delete this; }
 
     private:
-        RegionMetadata() = default;
+        RegionMetadata() {}
         ~RegionMetadata() = default;
     };
 
@@ -815,7 +855,7 @@ private:
 
         /// If nothing was found and total size of allocated chunks plus required size is lower than maximum,
         /// allocate from a newly created region spanning through the chunk.
-        if (size_t req = std::max(min_chunk_size, ga::roundUp(size, page_size)); total_chunks_size + req <= max_total_size)
+        if (size_t req = std::max(MinChunkSize, ga::roundUp(size, page_size)); total_chunks_size + req <= max_cache_size)
             return allocateFromFreeRegion(*addNewChunk(req), size);
 
         /// Evict something from cache and continue.
@@ -878,7 +918,7 @@ private:
      */
     constexpr RegionMetadata * addNewChunk(size_t size)
     {
-        chunks.emplace_back(size, ASLRFunction());
+        chunks.emplace_back(size, ASLR(rng));
         MemoryChunk & chunk = chunks.back();
 
         total_chunks_size += size;
@@ -930,7 +970,7 @@ private:
 
             unused_allocated_regions.erase(unused_allocated_regions.iterator_to(evicted));
 
-            if (target.TAllocatedRegionHook::is_linked())
+            if (evicted.TAllocatedRegionHook::is_linked())
                 used_regions.erase(used_regions.iterator_to(evicted));
 
             ++evictions;
