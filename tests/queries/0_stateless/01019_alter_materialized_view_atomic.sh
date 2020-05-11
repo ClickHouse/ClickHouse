@@ -5,6 +5,8 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
+trap 'kill -9 $(jobs -p)' EXIT
+
 $CLICKHOUSE_CLIENT --multiquery <<EOF
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
