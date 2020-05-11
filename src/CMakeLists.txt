@@ -223,7 +223,7 @@ add_subdirectory (Compression)
 
 
 set(dbms_headers)
-set(dbms_sources)
+set(dbms_sources Common/UatraitsFast/types/Browser.h Common/UatraitsFast/types/Browser.cpp Common/UatraitsFast/types/BrowserBase.h Common/UatraitsFast/types/BrowserBase.cpp Common/UatraitsFast/types/OperatingSystem.h Common/UatraitsFast/types/OperatingSystem.cpp)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)

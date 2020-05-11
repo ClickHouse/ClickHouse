@@ -1,10 +1,9 @@
 #pragma once
 
-#include <contrib/libs/clickhouse/libs/libcommon/include/ext/singleton.h>
-#include <metrika/core/libs/appmetrica/types/Browser.h>
-#include <metrika/core/libs/appmetrica/types/BrowserBase.h>
-#include <metrika/core/libs/appmetrica/types/OperatingSystem.h>
-#include <metrika/core/libs/statdaemons/mobile/server/Request.h>
+#include "types/Browser.h"
+#include "types/BrowserBase.h"
+#include "types/OperatingSystem.h"
+#include <boost/serialization/singleton.hpp>
 #include <Common/UatraitsFast/uatraits-fast.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <chrono>
@@ -16,9 +15,9 @@
 namespace components
 {
 
-class UserAgent : public ext::singleton<UserAgent>
+class UserAgent : public boost::serialization::singleton<UserAgent>
 {
-friend class ext::singleton<UserAgent>;
+friend class boost::serialization::singleton<UserAgent>;
 
 public:
     void create(const Poco::Util::AbstractConfiguration & config);
@@ -31,13 +30,13 @@ public:
     {
     friend class UserAgent;
     public:
-        appmetrica::types::OperatingSystem getName() const;
+        uatraits::types::OperatingSystem getName() const;
         const UATraits::Version & getVersion() const;
 
     private:
         OperatingSystem(const std::string & os, const UATraits::Version & version);
 
-        const appmetrica::types::OperatingSystem operating_system;
+        const uatraits::types::OperatingSystem operating_system;
         const UATraits::Version version;
     };
 
@@ -45,18 +44,18 @@ public:
     {
     friend class UserAgent;
     public:
-        Browser(const appmetrica::types::Browser browser, const UATraits::Version & version);
+        Browser(const uatraits::types::Browser browser, const UATraits::Version & version);
 
-        const std::optional<appmetrica::types::Browser> & getName() const;
-        const std::optional<appmetrica::types::BrowserBase> & getBase() const;
+        const std::optional<uatraits::types::Browser> & getName() const;
+        const std::optional<uatraits::types::BrowserBase> & getBase() const;
         const UATraits::Version & getVersion() const;
         const UATraits::Version & getBaseVersion() const;
 
     private:
         Browser(const std::string & name, const UATraits::Version & version, const std::string & browser_base, const UATraits::Version & version_base);
 
-        const std::optional<appmetrica::types::Browser> browser;
-        const std::optional<appmetrica::types::BrowserBase> browser_base;
+        const std::optional<uatraits::types::Browser> browser;
+        const std::optional<uatraits::types::BrowserBase> browser_base;
 
         const UATraits::Version version;
         const UATraits::Version version_base;
@@ -90,7 +89,6 @@ public:
         const Browser browser;
     };
 
-    Agent detect(const server::Request & request) const;
     Agent detect(const std::string & user_agent) const;
 
 private:
