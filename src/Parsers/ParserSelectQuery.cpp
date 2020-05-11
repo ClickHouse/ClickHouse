@@ -241,9 +241,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (top_length && limit_length)
             throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
     }
-
-
-    if (s_offset.ignore(pos, expected))
+    else if (s_offset.ignore(pos, expected))
     {
         if (!exp_elem.parse(pos, limit_offset, expected))
             return false;
