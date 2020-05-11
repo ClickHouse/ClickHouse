@@ -2550,7 +2550,6 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
 }
 
 
-
 void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 {
     if (!context->getSettingsRef().extremes)
