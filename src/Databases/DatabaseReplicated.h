@@ -1,8 +1,11 @@
 #pragma once
 
-#include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+
+#include <atomic>
+#include <thread>
 
 namespace DB
 {
@@ -11,49 +14,35 @@ namespace DB
   *  that contain declaration of table represented by SQL ATTACH TABLE query
   *  and operation log in zookeeper
   */
-class DatabaseReplicated : public DatabaseAtomic
+class DatabaseReplicated : public DatabaseOrdinary
 {
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, const String & zookeeper_path_, const String & replica_name_, Context & context);
 
-//    void drop(const Context & context) override;
+    ~DatabaseReplicated();
 
     String getEngineName() const override { return "Replicated"; }
 
     void propose(const ASTPtr & query) override;
 
-//    void createTable(
-//        const Context & context,
-//        const String & table_name,
-//        const StoragePtr & table,
-//        const ASTPtr & query) override;
-//
-//    void dropTable(
-//        const Context & context,
-//        const String & table_name,
-//        bool no_delay) override;
-//
-//    void renameTable(
-//        const Context & context,
-//        const String & table_name,
-//        IDatabase & to_database,
-//        const String & to_table_name,
-//        bool exchange) override;
-//
-//    void alterTable(
-//        const Context & context,
-//        const StorageID & table_id,
-//        const StorageInMemoryMetadata & metadata) override;
-
-//    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
-//
-//    StoragePtr detachTable(const String & name) override;
-
-//    void loadStoredObjects(
-//        Context & context,
-//        bool has_force_restore_data_flag) override;
-
 private:
+
+    void runMainThread();
+    void runCleanupThread();
+
+    void attachToThreadGroup();
+    
+    void executeLog(size_t n);
+
+    Context & context; // is it overkiill?
+    std::unique_ptr<Context> current_context; // to run executeQuery
+
+    size_t current_log_entry_n = 0;
+    std::atomic<bool> stop_flag{false};
+
+    ThreadFromGlobalPool main_thread;
+    ThreadGroupStatusPtr thread_group;
+
     String zookeeper_path;
     String replica_name;
     String replica_path;

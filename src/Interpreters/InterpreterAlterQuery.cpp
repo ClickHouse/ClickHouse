@@ -15,6 +15,8 @@
 #include <Common/typeid_cast.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <algorithm>
+#include <Databases/IDatabase.h>
+#include <Databases/DatabaseFactory.h>
 
 
 namespace DB
@@ -37,6 +39,7 @@ BlockIO InterpreterAlterQuery::execute()
 {
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
+
     if (!alter.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
 
@@ -45,6 +48,12 @@ BlockIO InterpreterAlterQuery::execute()
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
     auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
+    // TODO it's dirty. need to add database to parsing stage
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
+        database->propose(query_ptr);
+    }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
