@@ -689,7 +689,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
     if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-        return limit_length + limit_offset;
+        return limit_length != 0 ? limit_length + limit_offset : 0;
     }
     return 0;
 }
@@ -2314,6 +2314,9 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_n
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
 
+        if (limit_length == 0)
+            limit_offset = 0;
+
         if (do_not_skip_offset)
         {
             limit_length += limit_offset;
@@ -2427,6 +2430,9 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
 
+        if (limit_length == 0)
+            limit_offset = 0;
+
         pipeline.transform([&](auto & stream)
         {
             stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
@@ -2509,6 +2515,9 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
         UInt64 limit_length;
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
+
+        if (limit_length == 0)
+            limit_offset = 0;
 
         SortDescription order_descr;
         if (query.limit_with_ties)
