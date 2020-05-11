@@ -5,7 +5,7 @@ toc_priority: 78
 toc_title: Preguntas generales
 ---
 
-# Preguntas generales {#general-questions}
+# Preguntas Generales {#general-questions}
 
 ## ¿por qué no usar algo como mapreduce? {#why-not-use-something-like-mapreduce}
 
@@ -25,9 +25,9 @@ Si utiliza Oracle a través del controlador ODBC como fuente de diccionarios ext
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
-## Cómo exporto datos de ClickHouse a un archivo? {#how-to-export-to-file}
+## Cómo Exporto Datos De ClickHouse a Un Archivo? {#how-to-export-to-file}
 
-### Uso de la cláusula INTO OUTFILE {#using-into-outfile-clause}
+### Uso De La cláusula INTO OUTFILE {#using-into-outfile-clause}
 
 Añadir un [INTO OUTFILE](../query_language/select/#into-outfile-clause) cláusula a su consulta.
 
@@ -45,11 +45,11 @@ Por ejemplo:
 SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 ```
 
-### Uso de una tabla de motor de archivo {#using-a-file-engine-table}
+### Uso De Una Tabla De Motor De Archivo {#using-a-file-engine-table}
 
-Ver [File](../engines/table_engines/special/file.md).
+Ver [File](../engines/table-engines/special/file.md).
 
-### Uso de la redirección de línea de comandos {#using-command-line-redirection}
+### Uso De La redirección De línea De Comandos {#using-command-line-redirection}
 
 ``` sql
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt

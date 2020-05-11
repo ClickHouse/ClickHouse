@@ -5,7 +5,7 @@ toc_priority: 47
 toc_title: "Actualizaci\xF3n de ClickHouse"
 ---
 
-# Actualización de ClickHouse {#clickhouse-update}
+# Actualización De ClickHouse {#clickhouse-update}
 
 Si se instaló ClickHouse desde paquetes deb, ejecute los siguientes comandos en el servidor:
 

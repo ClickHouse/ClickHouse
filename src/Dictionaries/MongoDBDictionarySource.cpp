@@ -5,29 +5,16 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                 const Poco::Util::AbstractConfiguration & config,
-                                 const std::string & config_prefix,
-                                 Block & sample_block,
-                                 const Context & /* context */,
-                                 bool /* check_config */) -> DictionarySourcePtr {
-#if USE_POCO_MONGODB
+                                   const Poco::Util::AbstractConfiguration & config,
+                                   const std::string & config_prefix,
+                                   Block & sample_block,
+                                   const Context & /* context */,
+                                   bool /* check_config */) -> DictionarySourcePtr {
         return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
-#else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
-        throw Exception{"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
     };
     factory.registerSource("mongodb", create_table_source);
 }
@@ -35,24 +22,22 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 }
 
 
-#if USE_POCO_MONGODB
-
-#    include <Poco/MongoDB/Array.h>
-#    include <Poco/MongoDB/Connection.h>
-#    include <Poco/MongoDB/Cursor.h>
-#    include <Poco/MongoDB/Database.h>
-#    include <Poco/MongoDB/ObjectId.h>
-#    include <Poco/Util/AbstractConfiguration.h>
-#    include <Poco/Version.h>
+#include <Poco/MongoDB/Array.h>
+#include <Poco/MongoDB/Connection.h>
+#include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Database.h>
+#include <Poco/MongoDB/ObjectId.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
-#    include <IO/WriteHelpers.h>
-#    include <Common/FieldVisitors.h>
-#    include <ext/enumerate.h>
-#    include "MongoDBBlockInputStream.h"
+#include <IO/WriteHelpers.h>
+#include <Common/FieldVisitors.h>
+#include <ext/enumerate.h>
+#include "MongoDBBlockInputStream.h"
 
 
 namespace DB
@@ -67,7 +52,7 @@ namespace ErrorCodes
 static const UInt64 max_block_size = 8192;
 
 
-#    if POCO_VERSION < 0x01070800
+#if POCO_VERSION < 0x01070800
 /// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
 static void
 authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
@@ -165,7 +150,7 @@ authenticate(Poco::MongoDB::Connection & connection, const std::string & databas
         }
     }
 }
-#    endif
+#endif
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
@@ -191,13 +176,13 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 {
     if (!user.empty())
     {
-#    if POCO_VERSION >= 0x01070800
+#if POCO_VERSION >= 0x01070800
         Poco::MongoDB::Database poco_db(db);
         if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
             throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
-#    else
+#else
         authenticate(*connection, db, user, password);
-#    endif
+#endif
     }
 }
 
@@ -208,29 +193,22 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     const std::string & config_prefix,
     Block & sample_block_)
     : MongoDBDictionarySource(
-          dict_struct_,
-          config.getString(config_prefix + ".host"),
-          config.getUInt(config_prefix + ".port"),
-          config.getString(config_prefix + ".user", ""),
-          config.getString(config_prefix + ".password", ""),
-          config.getString(config_prefix + ".method", ""),
-          config.getString(config_prefix + ".db", ""),
-          config.getString(config_prefix + ".collection"),
-          sample_block_)
+        dict_struct_,
+        config.getString(config_prefix + ".host"),
+        config.getUInt(config_prefix + ".port"),
+        config.getString(config_prefix + ".user", ""),
+        config.getString(config_prefix + ".password", ""),
+        config.getString(config_prefix + ".method", ""),
+        config.getString(config_prefix + ".db", ""),
+        config.getString(config_prefix + ".collection"),
+        sample_block_)
 {
 }
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
-    : MongoDBDictionarySource{other.dict_struct,
-                              other.host,
-                              other.port,
-                              other.user,
-                              other.password,
-                              other.method,
-                              other.db,
-                              other.collection,
-                              other.sample_block}
+    : MongoDBDictionarySource{
+        other.dict_struct, other.host, other.port, other.user, other.password, other.method, other.db, other.collection, other.sample_block}
 {
 }
 
@@ -348,5 +326,3 @@ std::string MongoDBDictionarySource::toString() const
 }
 
 }
-
-#endif

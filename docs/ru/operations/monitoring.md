@@ -21,18 +21,18 @@ ClickHouse не отслеживает состояние аппаратных �
 
 Сервер ClickHouse имеет встроенные инструменты мониторинга.
 
-Для отслеживания событий на сервере используйте логи. Подробнее смотрите в разделе конфигурационного файла [logger](server_configuration_parameters/settings.md#server_configuration_parameters-logger).
+Для отслеживания событий на сервере используйте логи. Подробнее смотрите в разделе конфигурационного файла [logger](server-configuration-parameters/settings.md#server_configuration_parameters-logger).
 
 ClickHouse собирает:
 
 -   Различные метрики того, как сервер использует вычислительные ресурсы.
 -   Общую статистику обработки запросов.
 
-Метрики находятся в таблицах [system.metrics](system_tables.md#system_tables-metrics), [system.events](system_tables.md#system_tables-events) и [system.asynchronous\_metrics](system_tables.md#system_tables-asynchronous_metrics).
+Метрики находятся в таблицах [system.metrics](system-tables.md#system_tables-metrics), [system.events](system-tables.md#system_tables-events) и [system.asynchronous\_metrics](system-tables.md#system_tables-asynchronous_metrics).
 
-Можно настроить экспорт метрик из ClickHouse в [Graphite](https://github.com/graphite-project). Смотрите секцию [graphite](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Graphite, как указано в [официальном руководстве](https://graphite.readthedocs.io/en/latest/install.html).
+Можно настроить экспорт метрик из ClickHouse в [Graphite](https://github.com/graphite-project). Смотрите секцию [graphite](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Graphite, как указано в [официальном руководстве](https://graphite.readthedocs.io/en/latest/install.html).
 
-Можно настроить экспорт метрик из ClickHouse в [Prometheus](https://prometheus.io). Смотрите [prometheus](server_configuration_parameters/settings.md#server_configuration_parameters-prometheus) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить  Prometheus, как указано в [официальном руководстве](https://prometheus.io/docs/prometheus/latest/installation/).
+Можно настроить экспорт метрик из ClickHouse в [Prometheus](https://prometheus.io). Смотрите [prometheus](server-configuration-parameters/settings.md#server_configuration_parameters-prometheus) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Prometheus, как указано в [официальном руководстве](https://prometheus.io/docs/prometheus/latest/installation/).
 
 Также, можно отслеживать доступность сервера через HTTP API. Отправьте `HTTP GET` к ресурсу `/ping`. Если сервер доступен, он отвечает `200 OK`.
 

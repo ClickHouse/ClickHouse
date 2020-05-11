@@ -10,6 +10,7 @@
     "docker/test/stateful": "yandex/clickhouse-stateful-test",
     "docker/test/stateful_with_coverage": "yandex/clickhouse-stateful-test-with-coverage",
     "docker/test/stateless": "yandex/clickhouse-stateless-test",
+    "docker/test/stateless_pytest": "yandex/clickhouse-stateless-pytest",
     "docker/test/stateless_with_coverage": "yandex/clickhouse-stateless-test-with-coverage",
     "docker/test/unit": "yandex/clickhouse-unit-test",
     "docker/test/stress": "yandex/clickhouse-stress-test",

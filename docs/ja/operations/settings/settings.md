@@ -9,7 +9,7 @@ toc_title: "\u8A2D\u5B9A"
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-の動作を変更します。 [分散サブクエリ](../../sql_reference/statements/select.md).
+の動作を変更します。 [分散サブクエリ](../../sql-reference/statements/select.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -18,7 +18,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 -   INおよびJOINサブクエリにのみ適用されます。
 -   FROMセクションが複数のシャードを含む分散テーブルを使用する場合のみ。
 -   サブクエリが複数のシャードを含む分散テーブルに関係する場合。
--   テーブル値には使用されません [リモート](../../sql_reference/table_functions/remote.md) 機能。
+-   テーブル値には使用されません [リモート](../../sql-reference/table-functions/remote.md) 機能。
 
 可能な値:
 
@@ -53,7 +53,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-更新されたデータが利用できない場合、クエリを古いレプリカに強制的に適用します。 見る [複製](../../engines/table_engines/mergetree_family/replication.md).
+更新されたデータが利用できない場合、クエリを古いレプリカに強制的に適用します。 見る [複製](../../engines/table-engines/mergetree-family/replication.md).
 
 ClickHouseは、テーブルの古いレプリカから最も関連性の高いものを選択します。
 
@@ -67,7 +67,7 @@ ClickHouseは、テーブルの古いレプリカから最も関連性の高い�
 
 MergeTreeファミリーのテーブルで動作します。
 
-もし `force_index_by_date=1` ClickHouseは、データ範囲の制限に使用できる日付キー条件がクエリにあるかどうかをチェックします。 適切な条件がない場合は、例外がスローされます。 ただし、読み取るデータの量が条件によって減少するかどうかはチェックされません。 たとえば、条件 `Date != ' 2000-01-01 '` テーブル内のすべてのデータに一致する場合でも許容されます（つまり、クエリを実行するにはフルスキャンが必要です）。 MergeTreeテーブルのデータ範囲の詳細については、次を参照してください [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+もし `force_index_by_date=1` ClickHouseは、データ範囲の制限に使用できる日付キー条件がクエリにあるかどうかをチェックします。 適切な条件がない場合は、例外がスローされます。 ただし、読み取るデータの量が条件によって減少するかどうかはチェックされません。 たとえば、条件 `Date != ' 2000-01-01 '` テーブル内のすべてのデータに一致する場合でも許容されます（つまり、クエリを実行するにはフルスキャンが必要です）。 MergeTreeテーブルのデータ範囲の詳細については、次を参照してください [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## force\_primary\_key {#force-primary-key}
 
@@ -75,11 +75,11 @@ MergeTreeファミリーのテーブルで動作します。
 
 MergeTreeファミリーのテーブルで動作します。
 
-もし `force_primary_key=1` ClickHouseは、データ範囲の制限に使用できる主キー条件がクエリにあるかどうかを確認します。 適切な条件がない場合は、例外がスローされます。 ただし、読み取るデータの量が条件によって減少するかどうかはチェックされません。 MergeTreeテーブルのデータ範囲の詳細については、 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+もし `force_primary_key=1` ClickHouseは、データ範囲の制限に使用できる主キー条件がクエリにあるかどうかを確認します。 適切な条件がない場合は、例外がスローされます。 ただし、読み取るデータの量が条件によって減少するかどうかはチェックされません。 MergeTreeテーブルのデータ範囲の詳細については、 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## format\_schema {#format-schema}
 
-このパラメーターは、次のようなスキーマ定義を必要とする形式を使用する場合に便利です [Cap'n Proto](https://capnproto.org/) または [Protobuf](https://developers.google.com/protocol-buffers/). 値は形式によって異なります。
+このパラメーターは、次のようなスキーマ定義を必要とする形式を使用する場合に便利です [Cap’n Proto](https://capnproto.org/) または [Protobuf](https://developers.google.com/protocol-buffers/). 値は形式によって異なります。
 
 ## fsync\_metadata {#fsync-metadata}
 
@@ -136,7 +136,7 @@ HTTP要求に対する応答のデータ圧縮レベルを次の場合に設定�
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-HTTP GETリダイレクトホップの最大数を制限する [URL](../../engines/table_engines/special/url.md)-エンジンテーブル。 この設定は、両方のタイプのテーブルに適用されます。 [CREATE TABLE](../../query_language/create/#create-table-query) クエリとによって [url](../../sql_reference/table_functions/url.md) テーブル機能。
+HTTP GETリダイレクトホップの最大数を制限する [URL](../../engines/table-engines/special/url.md)-エンジンテーブル。 この設定は、両方のタイプのテーブルに適用されます。 [CREATE TABLE](../../query_language/create/#create-table-query) クエリとによって [url](../../sql-reference/table-functions/url.md) テーブル機能。
 
 可能な値:
 
@@ -172,7 +172,7 @@ HTTP GETリダイレクトホップの最大数を制限する [URL](../../engin
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
-を有効または無効にしのsqlのパーサの場合の高速ストリームのパーサで構文解析のデータです。 この設定は、 [値](../../interfaces/formats.md#data-format-values) データ挿入時のフォーマット。 構文の解析の詳細については、以下を参照してください [構文](../../sql_reference/syntax.md) セクション。
+を有効または無効にしのsqlのパーサの場合の高速ストリームのパーサで構文解析のデータです。 この設定は、 [値](../../interfaces/formats.md#data-format-values) データ挿入時のフォーマット。 構文の解析の詳細については、以下を参照してください [構文](../../sql-reference/syntax.md) セクション。
 
 可能な値:
 
@@ -188,7 +188,7 @@ HTTP GETリダイレクトホップの最大数を制限する [URL](../../engin
 
 使用例
 
-を挿入 [DateTime](../../sql_reference/data_types/datetime.md) 異なる設定で値を入力します。
+を挿入 [DateTime](../../sql-reference/data-types/datetime.md) 異なる設定で値を入力します。
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -333,7 +333,7 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 
 日付と時刻のテキスト表現のパーサーを選択できます。
 
-この設定は、以下には適用されません [日付と時刻の関数](../../sql_reference/functions/date_time_functions.md).
+この設定は、以下には適用されません [日付と時刻の関数](../../sql-reference/functions/date-time-functions.md).
 
 可能な値:
 
@@ -349,12 +349,12 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 
 また見なさい:
 
--   [DateTimeデータ型。](../../sql_reference/data_types/datetime.md)
--   [日付と時刻を操作するための関数。](../../sql_reference/functions/date_time_functions.md)
+-   [DateTimeデータ型。](../../sql-reference/data-types/datetime.md)
+-   [日付と時刻を操作するための関数。](../../sql-reference/functions/date-time-functions.md)
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-デフォルトの厳密さを [結合句](../../sql_reference/statements/select.md#select-join).
+デフォルトの厳密さを [結合句](../../sql-reference/statements/select.md#select-join).
 
 可能な値:
 
@@ -370,7 +370,7 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 Join操作の動作を次のもので変更する `ANY` 厳密さ
 
 !!! warning "注意"
-    この設定は、 `JOIN` との操作 [参加](../../engines/table_engines/special/join.md) エンジンテーブル。
+    この設定は、 `JOIN` との操作 [参加](../../engines/table-engines/special/join.md) エンジンテーブル。
 
 可能な値:
 
@@ -381,18 +381,18 @@ Join操作の動作を次のもので変更する `ANY` 厳密さ
 
 また見なさい:
 
--   [JOIN句](../../sql_reference/statements/select.md#select-join)
--   [結合テーブルエンジン](../../engines/table_engines/special/join.md)
+-   [JOIN句](../../sql-reference/statements/select.md#select-join)
+-   [結合テーブルエンジン](../../engines/table-engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-のタイプを設定します。 [JOIN](../../sql_reference/statements/select.md) 行動。 際融合のテーブル、空細胞が表示される場合があります。 ClickHouseは、この設定に基づいて異なる塗りつぶします。
+のタイプを設定します。 [JOIN](../../sql-reference/statements/select.md) 行動。 際融合のテーブル、空細胞が表示される場合があります。 ClickHouseは、この設定に基づいて異なる塗りつぶします。
 
 可能な値:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` 標準SQLと同じように動作します。 対応するフィールドの型は次のように変換されます [Nullable](../../sql_reference/data_types/nullable.md#data_type-nullable) 空のセルは [NULL](../../sql_reference/syntax.md).
+-   1 — `JOIN` 標準SQLと同じように動作します。 対応するフィールドの型は次のように変換されます [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) 空のセルは [NULL](../../sql-reference/syntax.md).
 
 デフォルト値:0.
 
@@ -412,7 +412,7 @@ ClickHouseでは、データはブロック（列部分のセット）によっ�
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-Aのファイルから読み込まれる行の数 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) テーブルを超え `merge_tree_min_rows_for_concurrent_read` その後ClickHouseしようとして行な兼職の状況からの読み出しこのファイルに複数のスレッド）。
+Aのファイルから読み込まれる行の数 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) テーブルを超え `merge_tree_min_rows_for_concurrent_read` その後ClickHouseしようとして行な兼職の状況からの読み出しこのファイルに複数のスレッド）。
 
 可能な値:
 
@@ -422,7 +422,7 @@ Aのファイルから読み込まれる行の数 [MergeTree](../../engines/tabl
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-ファイルから読み込むバイト数 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-エンジンテーブル超え `merge_tree_min_bytes_for_concurrent_read` そのClickHouseを同時に読みこのファイルから複数のスレッド）。
+ファイルから読み込むバイト数 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-エンジンテーブル超え `merge_tree_min_bytes_for_concurrent_read` そのClickHouseを同時に読みこのファイルから複数のスレッド）。
 
 可能な値:
 
@@ -464,7 +464,7 @@ Aのファイルから読み込まれる行の数 [MergeTree](../../engines/tabl
 
 ClickHouseはより多くを読むべきであれば `merge_tree_max_rows_to_use_cache` あるクエリの行では、圧縮されていないブロックのキャッシュは使用されません。
 
-のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 clickhouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破棄されるのを防ぎます。 その [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
+のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 clickhouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破棄されるのを防ぎます。 その [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
 
 可能な値:
 
@@ -476,7 +476,7 @@ Default value: 128 ✕ 8192.
 
 ClickHouseはより多くを読むべきであれば `merge_tree_max_bytes_to_use_cache` バイトあるクエリでは、圧縮されていないブロックのキャッシュは使用されません。
 
-のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 clickhouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破棄されるのを防ぎます。 その [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
+のキャッシュされた、圧縮解除されたブロックの店舗データを抽出したためます。 clickhouseこのキャッシュの高速化対応小の繰り返します。 この設定は、大量のデータを読み取るクエリによってキャッシュが破棄されるのを防ぎます。 その [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) サーバー設定は、非圧縮ブロックのキャッシュのサイズを定義します。
 
 可能な値:
 
@@ -501,7 +501,7 @@ ClickHouseこの設定からデータを読み込むときます。 読み取ら
 
 クエリログの設定。
 
-この設定でclickhouseに送信されたクエリは、次のルールに従ってログに記録されます。 [クエリーログ](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) サーバー構成パラメータ。
+この設定でclickhouseに送信されたクエリは、次のルールに従ってログに記録されます。 [クエリーログ](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) サーバー構成パラメータ。
 
 例えば:
 
@@ -513,7 +513,7 @@ log_queries=1
 
 クエリスレッドログの設定。
 
-この設定でclickhouseによって実行されたクエリのスレッドは、以下のルールに従ってログに記録されます [query\_thread\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) サーバー構成パラメータ。
+この設定でclickhouseによって実行されたクエリのスレッドは、以下のルールに従ってログに記録されます [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) サーバー構成パラメータ。
 
 例えば:
 
@@ -535,7 +535,7 @@ log_query_threads=1
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
-分散クエリの遅延レプリカを無効にします。 見る [複製](../../engines/table_engines/mergetree_family/replication.md).
+分散クエリの遅延レプリカを無効にします。 見る [複製](../../engines/table-engines/mergetree-family/replication.md).
 
 時間を秒単位で設定します。 レプリカが設定値よりも遅れている場合、このレプリカは使用されません。
 
@@ -580,7 +580,7 @@ log_query_threads=1
 
 ## min\_compress\_block\_size {#min-compress-block-size}
 
-のために [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)"テーブル。 削減のため、遅延が処理クエリーのブロックの圧縮を書くとき、次のマークがそのサイズは少なくとも ‘min\_compress\_block\_size’. デフォルトでは、65,536。
+のために [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)"テーブル。 削減のため、遅延が処理クエリーのブロックの圧縮を書くとき、次のマークがそのサイズは少なくとも ‘min\_compress\_block\_size’. デフォルトでは、65,536。
 
 圧縮されていないデータが以下の場合、ブロックの実際のサイズ ‘max\_compress\_block\_size’、この値よりも小さく、一つのマークのためのデータの量よりも小さくありません。
 
@@ -658,7 +658,7 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 非圧縮ブロックのキャッシュを使用するかどうか。 0または1を受け入れます。 デフォルトでは、0(無効)。
-圧縮されていないキャッシュ(mergetreeファミリーのテーブルのみ)を使用すると、多数の短いクエリを処理するときに待ち時間が大幅に短縮され、スループット この設定を有効にユーザーに送信頻繁に短います。 また、に注意を払う [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+圧縮されていないキャッシュ(mergetreeファミリーのテーブルのみ)を使用すると、多数の短いクエリを処理するときに待ち時間が大幅に短縮され、スループット この設定を有効にユーザーに送信頻繁に短います。 また、に注意を払う [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 少なくとも大量のデータ（百万行以上）を読み取るクエリの場合、圧縮されていないキャッシュは自動的に無効になり、本当に小さなクエリの容量を節 これは保つことができることを意味する ‘use\_uncompressed\_cache’ 常に1に設定します。
 
@@ -667,7 +667,7 @@ Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connectio
 HTTPインターフェイスを使用する場合、 ‘query\_id’ 変数は渡すことができます。 これは、クエリ識別子として機能する任意の文字列です。
 同じユーザーからのクエリが同じ場合 ‘query\_id’ この時点で既に存在している場合、その動作は ‘replace\_running\_query’ パラメータ。
 
-`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ すでに実行されている）。
+`0` (default) – Throw an exception (don’t allow the query to run if a query with the same ‘query\_id’ すでに実行されている）。
 
 `1` – Cancel the old query and start running the new one.
 
@@ -707,7 +707,7 @@ load_balancing = random
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 たとえば、example01-01-1とexample01-01-2.yandex.ru example01-01-1とexample01-02-2は二つの場所で異なりますが、一つの位置では異なります。
 この方法はプリミティブに思えるかもしれませんが、ネットワークトポロジに関する外部データを必要とせず、ipv6アドレスでは複雑なipアドレスを
@@ -778,7 +778,7 @@ For testing, the value can be set to 0: compilation runs synchronously and the q
 値が1以上の場合、コンパイルは別のスレッドで非同期に行われます。 結果は、現在実行中のクエリを含め、準備が整ったらすぐに使用されます。
 
 コンパイルされたコードは、クエリで使用される集計関数とgroup by句のキーのタイプの組み合わせごとに必要です。
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don’t use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -827,7 +827,7 @@ ClickHouseは例外を生成します
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 書き込み数が定員タイムアウトを秒で指定します。 タイムアウトが経過し、まだ書き込みが行われていない場合、clickhouseは例外を生成し、クライアントは同じブロックまたは他のレプリカに同じブロック
 
@@ -886,7 +886,7 @@ ClickHouseは例外を生成します
 
 デフォルトで、重複排除圧縮を行わないための顕在化が行われは上流のソース。
 ソーステーブルの重複排除により挿入されたブロックがスキップされた場合、マテリアライズドビューには挿入されません。 この動作は、マテリアライズドビューに高度に集計されたデータを挿入できるようにするために存在します。
-同時に、この動作 “breaks” `INSERT` 冪等性 もし `INSERT` メインテーブルに成功したと `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` この動作を変更できます。 再試行の際、マテリアライズドビューは繰り返しインサートを受け取り、重複排除チェックを単独で実行します,
+同時に、この動作 “breaks” `INSERT` 冪等性 もし `INSERT` メインテーブルに成功したと `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` この動作を変更できます。 再試行の際、マテリアライズドビューは繰り返しインサートを受け取り、重複排除チェックを単独で実行します,
 ソーステーブルのチェック結果を無視すると、最初の失敗のために失われた行が挿入されます。
 
 ## max\_network\_bytes {#settings-max-network-bytes}
@@ -935,15 +935,15 @@ ClickHouseは例外を生成します
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-どちらを指定するか `uniq*` 機能は実行するのに使用されるべきです [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) 建設。
+どちらを指定するか `uniq*` 機能は実行するのに使用されるべきです [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) 建設。
 
 可能な値:
 
--   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
--   [unihll12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
--   [ユニキャック](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [unihll12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [ユニキャック](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 デフォルト値: `uniqExact`.
 
@@ -1008,7 +1008,7 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-例外のスローを有効または無効にします。 [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) クエリはマージを実行しませんでした。
+例外のスローを有効または無効にします。 [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) クエリはマージを実行しませんでした。
 
 デフォルトでは, `OPTIMIZE` 何もしなかった場合でも正常に戻ります。 この設定では、これらの状況を区別し、例外メッセージの理由を取得できます。
 
@@ -1028,7 +1028,7 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 また見なさい:
 
--   [分散テーブルエンジン](../../engines/table_engines/special/distributed.md)
+-   [分散テーブルエンジン](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
@@ -1040,12 +1040,12 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 また見なさい:
 
--   [分散テーブルエンジン](../../engines/table_engines/special/distributed.md)
+-   [分散テーブルエンジン](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
-のための基礎間隔 [分散](../../engines/table_engines/special/distributed.md) データを送信する表エンジン。 実際の間隔は、エラーが発生した場合に指数関数的に増加します。
+のための基礎間隔 [分散](../../engines/table-engines/special/distributed.md) データを送信する表エンジン。 実際の間隔は、エラーが発生した場合に指数関数的に増加します。
 
 可能な値:
 
@@ -1055,7 +1055,7 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 ## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-のための最大間隔 [分散](../../engines/table_engines/special/distributed.md) データを送信する表エンジン。 インターバルセットの指数関数的な成長を制限する [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) 設定。
+のための最大間隔 [分散](../../engines/table-engines/special/distributed.md) データを送信する表エンジン。 インターバルセットの指数関数的な成長を制限する [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) 設定。
 
 可能な値:
 
@@ -1067,7 +1067,7 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 挿入されたデータのバッチでの送信を有効/無効にします。
 
-バッチ送信が有効になっている場合は、 [分散](../../engines/table_engines/special/distributed.md) テーブルエンジンをお送り複数のファイルの挿入データを移動するようになっていますの代わりに送信します。 一括送信の改善にクラスターの性能をより活用してサーバやネットワーク資源です。
+バッチ送信が有効になっている場合は、 [分散](../../engines/table-engines/special/distributed.md) テーブルエンジンをお送り複数のファイルの挿入データを移動するようになっていますの代わりに送信します。 一括送信の改善にクラスターの性能をより活用してサーバやネットワーク資源です。
 
 可能な値:
 
@@ -1093,7 +1093,7 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-の実際のクロックタイマーの期間を設定します。 [クエリプロファイラ](../../operations/optimizing_performance/sampling_query_profiler.md). リアルクロックタイマーカウント壁時計の時間。
+の実際のクロックタイマーの期間を設定します。 [クエリプロファイラ](../../operations/optimizing-performance/sampling-query-profiler.md). リアルクロックタイマーカウント壁時計の時間。
 
 可能な値:
 
@@ -1106,17 +1106,17 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 -   タイマーを消すための0。
 
-タイプ: [UInt64](../../sql_reference/data_types/int_uint.md).
+タイプ: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 デフォルト値:1000000000ナノ秒(秒)。
 
 また見なさい:
 
--   システム表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   システム表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
-のcpuクロックタイマーの期間を設定します。 [クエリプロファイラ](../../operations/optimizing_performance/sampling_query_profiler.md). このタ
+のcpuクロックタイマーの期間を設定します。 [クエリプロファイラ](../../operations/optimizing-performance/sampling-query-profiler.md). このタ
 
 可能な値:
 
@@ -1129,17 +1129,17 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 -   タイマーを消すための0。
 
-タイプ: [UInt64](../../sql_reference/data_types/int_uint.md).
+タイプ: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 デフォルト値:1000000000ナノ秒。
 
 また見なさい:
 
--   システム表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   システム表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-ディスエーブルの有効 [introspections関数](../../sql_reference/functions/introspection.md) のためのクエリープロファイリング.
+ディスエーブルの有効 [introspections関数](../../sql-reference/functions/introspection.md) のためのクエリープロファイリング.
 
 可能な値:
 
@@ -1150,8 +1150,8 @@ PREWHERE/WHEREでシャーディングキー条件を持つSELECTクエリの未
 
 **また見なさい**
 
--   [クエリプ](../optimizing_performance/sampling_query_profiler.md)
--   システム表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   [クエリプ](../optimizing-performance/sampling-query-profiler.md)
+-   システム表 [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parallel\_paralsing {#input-format-parallel-parsing}
 

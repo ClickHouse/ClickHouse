@@ -22,7 +22,7 @@ En la mayoría de los casos, se recomienda utilizar la herramienta o biblioteca 
 
 También hay una amplia gama de bibliotecas de terceros para trabajar con ClickHouse:
 
--   [Bibliotecas de clientes](third-party/client_libraries.md)
+-   [Bibliotecas de clientes](third-party/client-libraries.md)
 -   [Integración](third-party/integrations.md)
 -   [Interfaces visuales](third-party/gui.md)
 

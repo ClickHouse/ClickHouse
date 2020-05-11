@@ -174,7 +174,7 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::insertFromChunk(size_t source_
 
     if (limit && total_merged_rows_after_insertion > limit)
     {
-        num_rows = total_merged_rows_after_insertion - limit;
+        num_rows -= total_merged_rows_after_insertion - limit;
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
     }
     else

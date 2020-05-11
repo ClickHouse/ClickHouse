@@ -20,9 +20,9 @@ start_clickhouse () {
 }
 
 wait_llvm_profdata () {
-    while kill -0 `pgrep llvm-profdata-9`;
+    while kill -0 `pgrep llvm-profdata-10`;
     do
-        echo "Waiting for profdata" `pgrep llvm-profdata-9` "still alive"
+        echo "Waiting for profdata" `pgrep llvm-profdata-10` "still alive"
         sleep 3
     done
 }
@@ -31,7 +31,7 @@ merge_client_files_in_background () {
     client_files=`ls /client_*profraw 2>/dev/null`
     if [ ! -z "$client_files" ]
     then
-        llvm-profdata-9 merge -sparse $client_files -o merged_client_`date +%s`.profraw
+        llvm-profdata-10 merge -sparse $client_files -o merged_client_`date +%s`.profraw
         rm $client_files
     fi
 }

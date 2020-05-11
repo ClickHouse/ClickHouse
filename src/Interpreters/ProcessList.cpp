@@ -151,58 +151,56 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_, client_info, settings.max_memory_usage, settings.memory_tracker_fault_probability, priorities.insert(settings.priority));
+            query_, client_info, priorities.insert(settings.priority));
 
         res = std::make_shared<Entry>(*this, process_it);
 
         process_it->query_context = &query_context;
 
-        if (!client_info.current_query_id.empty())
+        ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
+        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+
+        process_it->setUserProcessList(&user_process_list);
+
+        /// Track memory usage for all simultaneously running queries from single user.
+        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setDescription("(for user)");
+
+        /// Actualize thread group info
+        if (auto thread_group = CurrentThread::getGroup())
         {
-            ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+            std::lock_guard lock_thread_group(thread_group->mutex);
+            thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+            thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            thread_group->query = process_it->query;
 
-            process_it->setUserProcessList(&user_process_list);
+            /// Set query-level memory trackers
+            thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
 
-            /// Track memory usage for all simultaneously running queries from single user.
-            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
-            user_process_list.user_memory_tracker.setDescription("(for user)");
-
-            /// Actualize thread group info
-            if (auto thread_group = CurrentThread::getGroup())
+            if (query_context.hasTraceCollector())
             {
-                std::lock_guard lock_thread_group(thread_group->mutex);
-                thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
-                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-                thread_group->query = process_it->query;
-
-                /// Set query-level memory trackers
-                thread_group->memory_tracker.setOrRaiseHardLimit(process_it->max_memory_usage);
-
-                if (query_context.hasTraceCollector())
-                {
-                    /// Set up memory profiling
-                    thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
-                    thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
-                }
-
-                thread_group->memory_tracker.setDescription("(for query)");
-                if (process_it->memory_tracker_fault_probability)
-                    thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
-
-                /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
-                ///  since allocation and deallocation could happen in different threads
-
-                process_it->thread_group = std::move(thread_group);
+                /// Set up memory profiling
+                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+                thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
             }
 
-            if (!user_process_list.user_throttler)
-            {
-                if (settings.max_network_bandwidth_for_user)
-                    user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, total_network_throttler);
-                else if (settings.max_network_bandwidth_for_all_users)
-                    user_process_list.user_throttler = total_network_throttler;
-            }
+            thread_group->memory_tracker.setDescription("(for query)");
+            if (settings.memory_tracker_fault_probability)
+                thread_group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
+
+            /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
+            ///  since allocation and deallocation could happen in different threads
+
+            process_it->thread_group = std::move(thread_group);
+        }
+
+        if (!user_process_list.user_throttler)
+        {
+            if (settings.max_network_bandwidth_for_user)
+                user_process_list.user_throttler = std::make_shared<Throttler>(settings.max_network_bandwidth_for_user, total_network_throttler);
+            else if (settings.max_network_bandwidth_for_all_users)
+                user_process_list.user_throttler = total_network_throttler;
         }
 
         if (!total_network_throttler && settings.max_network_bandwidth_for_all_users)
@@ -270,16 +268,12 @@ ProcessListEntry::~ProcessListEntry()
 QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
-    size_t max_memory_usage_,
-    double memory_tracker_fault_probability_,
     QueryPriorities::Handle && priority_handle_)
     :
     query(query_),
     client_info(client_info_),
     priority_handle(std::move(priority_handle_)),
-    num_queries_increment{CurrentMetrics::Query},
-    max_memory_usage(max_memory_usage_),
-    memory_tracker_fault_probability(memory_tracker_fault_probability_)
+    num_queries_increment{CurrentMetrics::Query}
 {
 }
 
