@@ -231,6 +231,10 @@ def test_rename_with_parallel_select(started_cluster):
         create_table(nodes, table_name)
         insert(node1, table_name, 1000)
 
+        select(node1, table_name, "num2", "999\n", poll=30)
+        select(node2, table_name, "num2", "999\n", poll=30)
+        select(node3, table_name, "num2", "999\n", poll=30)
+
         p = Pool(15)
         tasks = []
         for i in range(1):
