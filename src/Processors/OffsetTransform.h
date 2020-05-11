@@ -45,10 +45,6 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_port_pairs = 0;
 
-    Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, size_t row_num) const;
-    ColumnRawPtrs extractSortColumns(const Columns & columns) const;
-    bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const;
-
 public:
     OffsetTransform(
         const Block & header_, size_t offset_, size_t num_streams = 1,

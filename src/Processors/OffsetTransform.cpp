@@ -46,19 +46,6 @@ OffsetTransform::OffsetTransform(
     }
 }
 
-Chunk OffsetTransform::makeChunkWithPreviousRow(const Chunk & chunk, size_t row) const
-{
-    assert(row < chunk.getNumRows());
-    ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
-    MutableColumns last_row_sort_columns;
-    for (size_t i = 0; i < current_columns.size(); ++i)
-    {
-        last_row_sort_columns.emplace_back(current_columns[i]->cloneEmpty());
-        last_row_sort_columns[i]->insertFrom(*current_columns[i], row);
-    }
-    return Chunk(std::move(last_row_sort_columns), 1);
-}
-
 
 IProcessor::Status OffsetTransform::prepare(
         const PortNumbers & updated_input_ports,
@@ -190,7 +177,6 @@ OffsetTransform::Status OffsetTransform::preparePair(PortsData & data)
 
 void OffsetTransform::splitChunk(PortsData & data)
 {
-    auto current_chunk_sort_columns = extractSortColumns(data.current_chunk.getColumns());
     size_t num_rows = data.current_chunk.getNumRows();
     size_t num_columns = data.current_chunk.getNumColumns();
 
@@ -210,28 +196,6 @@ void OffsetTransform::splitChunk(PortsData & data)
         columns[i] = columns[i]->cut(start, length);
 
     data.current_chunk.setColumns(std::move(columns), length);
-}
-
-
-ColumnRawPtrs OffsetTransform::extractSortColumns(const Columns & columns) const
-{
-    ColumnRawPtrs res;
-    res.reserve(description.size());
-    for (size_t pos : sort_column_positions)
-        res.push_back(columns[pos].get());
-
-    return res;
-}
-
-bool OffsetTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, size_t current_chunk_row_num) const
-{
-    assert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
-    size_t size = current_chunk_sort_columns.size();
-    const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
-    for (size_t i = 0; i < size; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
-            return false;
-    return true;
 }
 
 }

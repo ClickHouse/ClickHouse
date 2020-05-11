@@ -2,7 +2,6 @@
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/FinishSortingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
-#include <DataStreams/OffsetBlockInputStream.h>
 #include <DataStreams/LimitByBlockInputStream.h>
 #include <DataStreams/PartialSortingBlockInputStream.h>
 #include <DataStreams/MergeSortingBlockInputStream.h>
@@ -2435,51 +2434,7 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
     }
 }
 
-
-void InterpreterSelectQuery::executeOffset(Pipeline & /*pipeline*/)
-{
-    auto & query = getSelectQuery();
-    /// If there is LIMIT
-    if (!query.limitLength() && query.limitOffset())
-    {
-        /** Rare case:
-          *  if there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
-          *  then when using LIMIT, you should read the data to the end, rather than cancel the query earlier,
-          *  because if you cancel the query, we will not get `totals` data from the remote server.
-          *
-          * Another case:
-          *  if there is WITH TOTALS and there is no ORDER BY, then read the data to the end,
-          *  otherwise TOTALS is counted according to incomplete data.
-          */
-        /*
-        bool always_read_till_end = false;
-
-        if (query.group_by_with_totals && !query.orderBy())
-            always_read_till_end = true;
-
-        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
-            always_read_till_end = true;
-
-        SortDescription order_descr;
-        if (query.limit_with_ties)
-        {
-            if (!query.orderBy())
-                throw Exception("LIMIT WITH TIES without ORDER BY", ErrorCodes::LOGICAL_ERROR);
-            order_descr = getSortDescription(query, *context);
-        }
-
-        UInt64 limit_length;
-        UInt64 limit_offset;
-        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
-
-        pipeline.transform([&](auto & stream)
-        {
-            std::cout << "BLOCK" << std::endl;
-            stream = std::make_shared<OffsetBlockInputStream>(stream, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
-        });
-        */
-    }
-}
+void InterpreterSelectQuery::executeOffset(Pipeline & /* pipeline */) {}
 
 
 void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
