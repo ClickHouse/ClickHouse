@@ -2534,7 +2534,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
 void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    /// If there is LIMIT
+    /// If there is not a LIMIT but an offset
     if (!query.limitLength() && query.limitOffset())
     {
         UInt64 limit_length;
@@ -2545,9 +2545,7 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
         {
             if (stream_type != QueryPipeline::StreamType::Main)
                 return nullptr;
-            std::cout << "TRANSFORM" << std::endl;
-            return std::make_shared<OffsetTransform>(
-                    header, limit_offset, 1);
+            return std::make_shared<OffsetTransform>(header, limit_offset, 1);
         });
     }
 }
