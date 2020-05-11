@@ -32,5 +32,5 @@ select 'Distributed(rand)-over-Distributed(rand)';
 create table dist_layer_01247 as data_01247 engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01247, rand());
 create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards, currentDatabase(), dist_layer_01247, number);
 select count(), * from dist_01247 group by number;
-drop table if exists dist_01247;
-drop table if exists dist_layer_01247;
+drop table dist_01247;
+drop table dist_layer_01247;
