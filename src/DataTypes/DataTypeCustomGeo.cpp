@@ -80,7 +80,8 @@ public:
 
 }
 
-void registerDataTypeDomainGeo(DataTypeFactory & factory) {
+void registerDataTypeDomainGeo(DataTypeFactory & factory)
+{
     factory.registerSimpleDataTypeCustom("Point", []
     {
         return std::make_pair(DataTypeFactory::instance().get("Tuple(Float64, Float64)"),
