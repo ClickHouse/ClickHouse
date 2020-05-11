@@ -3,8 +3,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
-#include <Common/thread_local_rng.h>
+#include <pcg_random.hpp>
 #include <common/unaligned.h>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -64,6 +65,8 @@ public:
 
         IColumn::Offset offset = 0;
 
+        pcg64_fast rng(randomSeed());
+
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t length = length_column.getUInt(row_num);
@@ -78,8 +81,7 @@ public:
             for (size_t pos = offset, end = offset + length; pos < end;
                  pos += sizeof(UInt64)) // We have padding in column buffers that we can overwrite.
             {
-                UInt64 rand = thread_local_rng();
-                unalignedStore<UInt64>(data_to_ptr + pos, rand);
+                unalignedStore<UInt64>(data_to_ptr + pos, rng());
             }
 
             data_to[offset + length] = 0;
