@@ -21,3 +21,5 @@ select finalizeAggregation(x) as y from test_quantile union all
 select finalizeAggregation(x) as y from test_quantile union all
 select finalizeAggregation(x) as y from test_quantile)
 order by y;
+drop table test_quantile;
+                                                
