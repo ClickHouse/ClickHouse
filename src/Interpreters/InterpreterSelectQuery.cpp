@@ -321,7 +321,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage, NamesAndTypesList());
 
         /// Save scalar sub queries's results in the query context
-        if (context->hasQueryContext())
+        if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext().addScalar(it.first, it.second);
 
