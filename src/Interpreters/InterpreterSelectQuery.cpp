@@ -2436,7 +2436,6 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeOffset(Pipeline & /* pipeline */) {}
 
-
 void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
