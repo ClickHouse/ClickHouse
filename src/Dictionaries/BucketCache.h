@@ -162,7 +162,7 @@ private:
     size_t getCellIndex(const K key, const size_t bucket) const
     {
         const size_t pos = getPosition(bucket);
-        for (size_t idx = 0; idx < bucket_size; ++idx)
+        for (int idx = 7; idx >= 0; --idx)
         {
             const size_t cur = ((pos + 1 + idx) & pos_mask);
             if (cells[bucket * bucket_size + cur].index.exists() &&
