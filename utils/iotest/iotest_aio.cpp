@@ -1,4 +1,4 @@
-#if !OS_LINUX
+#if !defined(OS_LINUX)
 int main(int, char **) { return 0; }
 #else
 
