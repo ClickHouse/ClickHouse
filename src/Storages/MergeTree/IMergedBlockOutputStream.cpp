@@ -9,7 +9,7 @@ namespace DB
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part)
     : storage(data_part->storage)
-    , disk(data_part->volume->getDisk())
+    , volume(data_part->volume)
     , part_path(data_part->getFullRelativePath())
 {
 }
