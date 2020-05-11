@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <map>
+#include <boost/dynamic_bitset.hpp>
 
 /// Implementation of MySQL replication protocol.
 /// Works only on little-endian architecture.
@@ -18,12 +19,79 @@ namespace MySQLReplication
     static const int EVENT_HEADER_LENGTH = 19;
     static const int CHECKSUM_CRC32_SIGNATURE_LENGTH = 4;
     static const int QUERY_EVENT_BEGIN_LENGTH = 74;
-    static const int ROWS_HEADER_LEN_V2 = 10;
+
+    using Bitmap = boost::dynamic_bitset<>;
+
+    inline UInt64 readBits(UInt64 val, UInt8 start, UInt8 size, UInt8 length)
+    {
+        val = val >> (length - (start + size));
+        return val & (UInt64(1 << size) - 1);
+    }
+
+    inline void readBigEndianStrict(ReadBuffer & payload, char * to, size_t n)
+    {
+        payload.readStrict(to, n);
+        char *start = to, *end = to + n;
+        std::reverse(start, end);
+    }
+
+    inline void readTimeFractionalPart(ReadBuffer & payload, char * to, UInt16 meta)
+    {
+        switch (meta)
+        {
+            case 1:
+            case 2: {
+                readBigEndianStrict(payload, to, 1);
+                break;
+            }
+            case 3:
+            case 4: {
+                readBigEndianStrict(payload, to, 2);
+                break;
+            }
+            case 5:
+            case 6: {
+                readBigEndianStrict(payload, to, 3);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    inline void readBitmap(ReadBuffer & payload, Bitmap & bitmap, size_t bitmap_size)
+    {
+        String byte_buffer;
+        byte_buffer.resize(bitmap_size);
+        payload.readStrict(reinterpret_cast<char *>(byte_buffer.data()), bitmap_size);
+        bitmap.resize(bitmap_size * 8, false);
+        for (size_t i = 0; i < bitmap_size; ++i)
+        {
+            uint8_t tmp = byte_buffer[i];
+            boost::dynamic_bitset<>::size_type bit = i * 8;
+            if (tmp == 0)
+                continue;
+            if ((tmp & 0x01) != 0)
+                bitmap.set(bit);
+            if ((tmp & 0x02) != 0)
+                bitmap.set(bit + 1);
+            if ((tmp & 0x04) != 0)
+                bitmap.set(bit + 2);
+            if ((tmp & 0x08) != 0)
+                bitmap.set(bit + 3);
+            if ((tmp & 0x10) != 0)
+                bitmap.set(bit + 4);
+            if ((tmp & 0x20) != 0)
+                bitmap.set(bit + 5);
+            if ((tmp & 0x40) != 0)
+                bitmap.set(bit + 6);
+            if ((tmp & 0x80) != 0)
+                bitmap.set(bit + 7);
+        }
+    }
 
     class EventBase;
     using BinlogEventPtr = std::shared_ptr<EventBase>;
-
-    inline bool check_string_bit(String s, int k) { return (s[(k / 8)] & (1 << (k % 8))) != 0; }
 
     enum BinlogChecksumAlg
     {
@@ -32,7 +100,22 @@ namespace MySQLReplication
         BINLOG_CHECKSUM_ALG_ENUM_END,
         BINLOG_CHECKSUM_ALG_UNDEF = 255
     };
-    String ToString(BinlogChecksumAlg type);
+
+    inline String to_string(BinlogChecksumAlg type)
+    {
+        switch (type)
+        {
+            case BINLOG_CHECKSUM_ALG_OFF:
+                return "BINLOG_CHECKSUM_ALG_OFF";
+            case BINLOG_CHECKSUM_ALG_CRC32:
+                return "BINLOG_CHECKSUM_ALG_CRC32";
+            case BINLOG_CHECKSUM_ALG_ENUM_END:
+                return "BINLOG_CHECKSUM_ALG_ENUM_END";
+            case BINLOG_CHECKSUM_ALG_UNDEF:
+                return "BINLOG_CHECKSUM_ALG_UNDEF";
+        }
+        return std::string("Unknown checksum alg: ") + std::to_string(static_cast<int>(type));
+    }
 
     /// http://dev.mysql.com/doc/internals/en/binlog-event-type.html
     enum EventType
@@ -84,7 +167,111 @@ namespace MySQLReplication
         MARIA_GTID_LIST_EVENT = 163,
         MARIA_START_ENCRYPTION_EVENT = 164,
     };
-    String ToString(EventType type);
+
+    inline String to_string(EventType type)
+    {
+        switch (type)
+        {
+            case START_EVENT_V3:
+                return "StartEventV3";
+            case QUERY_EVENT:
+                return "QueryEvent";
+            case STOP_EVENT:
+                return "StopEvent";
+            case ROTATE_EVENT:
+                return "RotateEvent";
+            case INT_VAR_EVENT:
+                return "IntVarEvent";
+            case LOAD_EVENT:
+                return "LoadEvent";
+            case SLAVE_EVENT:
+                return "SlaveEvent";
+            case CREATE_FILE_EVENT:
+                return "CreateFileEvent";
+            case APPEND_BLOCK_EVENT:
+                return "AppendBlockEvent";
+            case EXEC_LOAD_EVENT:
+                return "ExecLoadEvent";
+            case DELETE_FILE_EVENT:
+                return "DeleteFileEvent";
+            case NEW_LOAD_EVENT:
+                return "NewLoadEvent";
+            case RAND_EVENT:
+                return "RandEvent";
+            case USER_VAR_EVENT:
+                return "UserVarEvent";
+            case FORMAT_DESCRIPTION_EVENT:
+                return "FormatDescriptionEvent";
+            case XID_EVENT:
+                return "XIDEvent";
+            case BEGIN_LOAD_QUERY_EVENT:
+                return "BeginLoadQueryEvent";
+            case EXECUTE_LOAD_QUERY_EVENT:
+                return "ExecuteLoadQueryEvent";
+            case TABLE_MAP_EVENT:
+                return "TableMapEvent";
+            case WRITE_ROWS_EVENT_V0:
+                return "WriteRowsEventV0";
+            case UPDATE_ROWS_EVENT_V0:
+                return "UpdateRowsEventV0";
+            case DELETE_ROWS_EVENT_V0:
+                return "DeleteRowsEventV0";
+            case WRITE_ROWS_EVENT_V1:
+                return "WriteRowsEventV1";
+            case UPDATE_ROWS_EVENT_V1:
+                return "UpdateRowsEventV1";
+            case DELETE_ROWS_EVENT_V1:
+                return "DeleteRowsEventV1";
+            case INCIDENT_EVENT:
+                return "IncidentEvent";
+            case HEARTBEAT_EVENT:
+                return "HeartbeatEvent";
+            case IGNORABLE_EVENT:
+                return "IgnorableEvent";
+            case ROWS_QUERY_EVENT:
+                return "RowsQueryEvent";
+            case WRITE_ROWS_EVENT_V2:
+                return "WriteRowsEventV2";
+            case UPDATE_ROWS_EVENT_V2:
+                return "UpdateRowsEventV2";
+            case DELETE_ROWS_EVENT_V2:
+                return "DeleteRowsEventV2";
+            case GTID_EVENT:
+                return "GTIDEvent";
+            case ANONYMOUS_GTID_EVENT:
+                return "AnonymousGTIDEvent";
+            case PREVIOUS_GTIDS_EVENT:
+                return "PreviousGTIDsEvent";
+            case TRANSACTION_CONTEXT_EVENT:
+                return "TransactionContextEvent";
+            case VIEW_CHANGE_EVENT:
+                return "ViewChangeEvent";
+            case XA_PREPARE_LOG_EVENT:
+                return "XAPrepareLogEvent";
+            case MARIA_ANNOTATE_ROWS_EVENT:
+                return "MariaAnnotateRowsEvent";
+            case MARIA_BINLOG_CHECKPOINT_EVENT:
+                return "MariaBinlogCheckpointEvent";
+            case MARIA_GTID_EVENT:
+                return "MariaGTIDEvent";
+            case MARIA_GTID_LIST_EVENT:
+                return "MariaGTIDListEvent";
+            case MARIA_START_ENCRYPTION_EVENT:
+                return "MariaStartEncryptionEvent";
+            default:
+                break;
+        }
+        return std::string("Unknown event: ") + std::to_string(static_cast<int>(type));
+    }
+
+    enum MySQLEventType
+    {
+        MYSQL_UNHANDLED_EVENT = 0,
+        MYSQL_QUERY_EVENT = 1,
+        MYSQL_WRITE_ROWS_EVENT = 2,
+        MYSQL_UPDATE_ROWS_EVENT = 3,
+        MYSQL_DELETE_ROWS_EVENT = 4,
+    };
 
     class ReplicationError : public DB::Exception
     {
@@ -114,10 +301,8 @@ namespace MySQLReplication
         virtual ~EventBase() = default;
         virtual void print() const = 0;
         virtual void parseHeader(ReadBuffer & payload) { header.parse(payload); }
-
         virtual void parseEvent(ReadBuffer & payload) { parseImpl(payload); }
-
-        EventType type() const { return header.type; }
+        virtual MySQLEventType type() const { return MYSQL_UNHANDLED_EVENT; }
 
     protected:
         virtual void parseImpl(ReadBuffer & payload) = 0;
@@ -125,7 +310,7 @@ namespace MySQLReplication
 
     class FormatDescriptionEvent : public EventBase
     {
-    public:
+    protected:
         UInt16 binlog_version;
         String server_version;
         UInt32 create_timestamp;
@@ -133,8 +318,6 @@ namespace MySQLReplication
         String event_type_header_length;
 
         void print() const override;
-
-    protected:
         void parseImpl(ReadBuffer & payload) override;
 
     private:
@@ -166,6 +349,7 @@ namespace MySQLReplication
         String query;
 
         void print() const override;
+        MySQLEventType type() const override { return MYSQL_QUERY_EVENT; }
 
     protected:
         void parseImpl(ReadBuffer & payload) override;
@@ -173,12 +357,10 @@ namespace MySQLReplication
 
     class XIDEvent : public EventBase
     {
-    public:
+    protected:
         UInt64 xid;
 
         void print() const override;
-
-    protected:
         void parseImpl(ReadBuffer & payload) override;
     };
 
@@ -206,26 +388,29 @@ namespace MySQLReplication
     class RowsEvent : public EventBase
     {
     public:
-        UInt64 table_id;
-        UInt16 flags;
-        UInt16 extra_data_len;
         UInt32 number_columns;
         String schema;
         String table;
-        String columns_present_bitmap1;
-        String columns_present_bitmap2;
         std::vector<Field> rows;
 
-        RowsEvent(std::shared_ptr<TableMapEvent> table_map_) : table_map(table_map_)
+        RowsEvent(std::shared_ptr<TableMapEvent> table_map_)
+            : number_columns(0), table_id(0), flags(0), extra_data_len(0), table_map(table_map_)
         {
             schema = table_map->schema;
             table = table_map->table;
         }
+
         void print() const override;
 
     protected:
+        UInt64 table_id;
+        UInt16 flags;
+        UInt16 extra_data_len;
+        Bitmap columns_present_bitmap1;
+        Bitmap columns_present_bitmap2;
+
         void parseImpl(ReadBuffer & payload) override;
-        void parseRow(ReadBuffer & payload, String bitmap);
+        void parseRow(ReadBuffer & payload, Bitmap & bitmap);
 
     private:
         std::shared_ptr<TableMapEvent> table_map;
@@ -235,18 +420,21 @@ namespace MySQLReplication
     {
     public:
         WriteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+        MySQLEventType type() const override { return MYSQL_WRITE_ROWS_EVENT; }
     };
 
     class DeleteRowsEvent : public RowsEvent
     {
     public:
         DeleteRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+        MySQLEventType type() const override { return MYSQL_DELETE_ROWS_EVENT; }
     };
 
     class UpdateRowsEvent : public RowsEvent
     {
     public:
         UpdateRowsEvent(std::shared_ptr<TableMapEvent> table_map_) : RowsEvent(table_map_) { }
+        MySQLEventType type() const override { return MYSQL_UPDATE_ROWS_EVENT; }
     };
 
     class DryRunEvent : public EventBase
@@ -274,6 +462,7 @@ namespace MySQLReplication
         virtual String getName() const = 0;
         virtual Position getPosition() const = 0;
         virtual BinlogEventPtr readOneEvent() = 0;
+        virtual void setReplicateDatabase(String db) = 0;
         virtual ~IFlavor() = default;
     };
 
@@ -282,14 +471,18 @@ namespace MySQLReplication
     public:
         BinlogEventPtr event;
 
+        void readPayloadImpl(ReadBuffer & payload) override;
+        void setReplicateDatabase(String db) override;
         String getName() const override { return "MySQL"; }
         Position getPosition() const override { return position; }
-        void readPayloadImpl(ReadBuffer & payload) override;
         BinlogEventPtr readOneEvent() override { return event; }
 
     private:
         Position position;
+        String replicate_do_db;
         std::shared_ptr<TableMapEvent> table_map;
+
+        inline bool do_replicate() { return (replicate_do_db.empty() || (table_map->schema == replicate_do_db)); }
     };
 }
 

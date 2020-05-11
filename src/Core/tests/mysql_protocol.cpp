@@ -162,35 +162,68 @@ int main(int, char **)
     }
 
     {
-        UInt32 slave_id = 9004;
-        MySQLClient slave("127.0.0.1", 9001, "default", "123");
-        if (!slave.connect())
+        try
         {
-            std::cerr << "Connect Error: " << slave.error() << std::endl;
+            UInt32 slave_id = 9004;
+            MySQLClient slave("127.0.0.1", 9001, "default", "123");
+            if (!slave.connect())
+            {
+                std::cerr << "Connect Error: " << slave.error() << std::endl;
+                return 1;
+            }
+
+            if (!slave.startBinlogDump(slave_id, "", "", 4))
+            {
+                std::cerr << "Connect Error: " << slave.error() << std::endl;
+                return 1;
+            }
+
+            while (true)
+            {
+                auto event = slave.readOneBinlogEvent();
+                switch (event->type())
+                {
+                    case MYSQL_QUERY_EVENT: {
+                        auto binlogEvent = std::dynamic_pointer_cast<QueryEvent>(event);
+                        binlogEvent->print();
+
+                        Position pos = slave.getPosition();
+                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        break;
+                    }
+                    case MYSQL_WRITE_ROWS_EVENT: {
+                        auto binlogEvent = std::dynamic_pointer_cast<WriteRowsEvent>(event);
+                        binlogEvent->print();
+
+                        Position pos = slave.getPosition();
+                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        break;
+                    }
+                    case MYSQL_UPDATE_ROWS_EVENT: {
+                        auto binlogEvent = std::dynamic_pointer_cast<UpdateRowsEvent>(event);
+                        binlogEvent->print();
+
+                        Position pos = slave.getPosition();
+                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        break;
+                    }
+                    case MYSQL_DELETE_ROWS_EVENT: {
+                        auto binlogEvent = std::dynamic_pointer_cast<DeleteRowsEvent>(event);
+                        binlogEvent->print();
+
+                        Position pos = slave.getPosition();
+                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+        }
+        catch (const Exception & ex)
+        {
+            std::cerr << "Error: " << ex.message() << std::endl;
             return 1;
-        }
-
-        if (!slave.ping())
-        {
-            std::cerr << "Connect Error: " << slave.error() << std::endl;
-            return 1;
-        }
-
-        if (!slave.startBinlogDump(slave_id, "", 4))
-        {
-            std::cerr << "Connect Error: " << slave.error() << std::endl;
-            assert(0);
-        }
-
-        while (true)
-        {
-            auto event = slave.readOneBinlogEvent();
-            ASSERT(event != nullptr)
-            event->print();
-            std::cerr << "Binlog Name: " << slave.getPosition().binlog_name << std::endl;
-            std::cerr << "Binlog Pos: " << slave.getPosition().binlog_pos << std::endl;
         }
     }
-
-    return 0;
 }
