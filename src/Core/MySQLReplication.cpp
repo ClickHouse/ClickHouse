@@ -14,118 +14,6 @@ namespace MySQLReplication
 {
     using namespace MySQLProtocol;
 
-    String ToString(BinlogChecksumAlg type)
-    {
-        switch (type)
-        {
-            case BINLOG_CHECKSUM_ALG_OFF:
-                return "BINLOG_CHECKSUM_ALG_OFF";
-            case BINLOG_CHECKSUM_ALG_CRC32:
-                return "BINLOG_CHECKSUM_ALG_CRC32";
-            case BINLOG_CHECKSUM_ALG_ENUM_END:
-                return "BINLOG_CHECKSUM_ALG_ENUM_END";
-            case BINLOG_CHECKSUM_ALG_UNDEF:
-                return "BINLOG_CHECKSUM_ALG_UNDEF";
-        }
-        return std::string("Unknown checksum alg: ") + std::to_string(static_cast<int>(type));
-    }
-
-    String ToString(EventType type)
-    {
-        switch (type)
-        {
-            case START_EVENT_V3:
-                return "StartEventV3";
-            case QUERY_EVENT:
-                return "QueryEvent";
-            case STOP_EVENT:
-                return "StopEvent";
-            case ROTATE_EVENT:
-                return "RotateEvent";
-            case INT_VAR_EVENT:
-                return "IntVarEvent";
-            case LOAD_EVENT:
-                return "LoadEvent";
-            case SLAVE_EVENT:
-                return "SlaveEvent";
-            case CREATE_FILE_EVENT:
-                return "CreateFileEvent";
-            case APPEND_BLOCK_EVENT:
-                return "AppendBlockEvent";
-            case EXEC_LOAD_EVENT:
-                return "ExecLoadEvent";
-            case DELETE_FILE_EVENT:
-                return "DeleteFileEvent";
-            case NEW_LOAD_EVENT:
-                return "NewLoadEvent";
-            case RAND_EVENT:
-                return "RandEvent";
-            case USER_VAR_EVENT:
-                return "UserVarEvent";
-            case FORMAT_DESCRIPTION_EVENT:
-                return "FormatDescriptionEvent";
-            case XID_EVENT:
-                return "XIDEvent";
-            case BEGIN_LOAD_QUERY_EVENT:
-                return "BeginLoadQueryEvent";
-            case EXECUTE_LOAD_QUERY_EVENT:
-                return "ExecuteLoadQueryEvent";
-            case TABLE_MAP_EVENT:
-                return "TableMapEvent";
-            case WRITE_ROWS_EVENT_V0:
-                return "WriteRowsEventV0";
-            case UPDATE_ROWS_EVENT_V0:
-                return "UpdateRowsEventV0";
-            case DELETE_ROWS_EVENT_V0:
-                return "DeleteRowsEventV0";
-            case WRITE_ROWS_EVENT_V1:
-                return "WriteRowsEventV1";
-            case UPDATE_ROWS_EVENT_V1:
-                return "UpdateRowsEventV1";
-            case DELETE_ROWS_EVENT_V1:
-                return "DeleteRowsEventV1";
-            case INCIDENT_EVENT:
-                return "IncidentEvent";
-            case HEARTBEAT_EVENT:
-                return "HeartbeatEvent";
-            case IGNORABLE_EVENT:
-                return "IgnorableEvent";
-            case ROWS_QUERY_EVENT:
-                return "RowsQueryEvent";
-            case WRITE_ROWS_EVENT_V2:
-                return "WriteRowsEventV2";
-            case UPDATE_ROWS_EVENT_V2:
-                return "UpdateRowsEventV2";
-            case DELETE_ROWS_EVENT_V2:
-                return "DeleteRowsEventV2";
-            case GTID_EVENT:
-                return "GTIDEvent";
-            case ANONYMOUS_GTID_EVENT:
-                return "AnonymousGTIDEvent";
-            case PREVIOUS_GTIDS_EVENT:
-                return "PreviousGTIDsEvent";
-            case TRANSACTION_CONTEXT_EVENT:
-                return "TransactionContextEvent";
-            case VIEW_CHANGE_EVENT:
-                return "ViewChangeEvent";
-            case XA_PREPARE_LOG_EVENT:
-                return "XAPrepareLogEvent";
-            case MARIA_ANNOTATE_ROWS_EVENT:
-                return "MariaAnnotateRowsEvent";
-            case MARIA_BINLOG_CHECKPOINT_EVENT:
-                return "MariaBinlogCheckpointEvent";
-            case MARIA_GTID_EVENT:
-                return "MariaGTIDEvent";
-            case MARIA_GTID_LIST_EVENT:
-                return "MariaGTIDListEvent";
-            case MARIA_START_ENCRYPTION_EVENT:
-                return "MariaStartEncryptionEvent";
-            default:
-                break;
-        }
-        return std::string("Unknown event: ") + std::to_string(static_cast<int>(type));
-    }
-
     /// https://dev.mysql.com/doc/internals/en/binlog-event-header.html
     void EventHeader::parse(ReadBuffer & payload)
     {
@@ -139,7 +27,7 @@ namespace MySQLReplication
 
     void EventHeader::print() const
     {
-        std::cerr << "\n=== " << ToString(this->type) << " ===" << std::endl;
+        std::cerr << "\n=== " << to_string(this->type) << " ===" << std::endl;
         std::cerr << "Timestamp: " << this->timestamp << std::endl;
         std::cerr << "Event Type: " << this->type << std::endl;
         std::cerr << "Server ID: " << this->server_id << std::endl;
@@ -353,19 +241,16 @@ namespace MySQLReplication
         payload.ignore(extra_data_len - 2);
 
         number_columns = readLengthEncodedNumber(payload);
-        size_t columns_bitmap_size = (number_columns + 8) / 7;
+        size_t columns_bitmap_size = (number_columns + 7) / 8;
         switch (header.type)
         {
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2:
-                columns_present_bitmap1.resize(columns_bitmap_size);
-                columns_present_bitmap2.resize(columns_bitmap_size);
-                payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap1.data()), columns_bitmap_size);
-                payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap2.data()), columns_bitmap_size);
+                readBitmap(payload, columns_present_bitmap1, columns_bitmap_size);
+                readBitmap(payload, columns_present_bitmap2, columns_bitmap_size);
                 break;
             default:
-                columns_present_bitmap1.resize(columns_bitmap_size);
-                payload.readStrict(reinterpret_cast<char *>(columns_present_bitmap1.data()), columns_bitmap_size);
+                readBitmap(payload, columns_present_bitmap1, columns_bitmap_size);
                 break;
         }
 
@@ -379,186 +264,339 @@ namespace MySQLReplication
         }
     }
 
-    void RowsEvent::parseRow(ReadBuffer & payload, String bitmap)
+    void RowsEvent::parseRow(ReadBuffer & payload, Bitmap & bitmap)
     {
+        Tuple row;
         UInt32 field_type = 0;
         UInt32 field_len = 0;
+        UInt32 null_index = 0;
 
-        size_t columns_null_bitmap_size = (number_columns + 8) / 7;
-        String columns_null_bitmap;
-        columns_null_bitmap.resize(columns_null_bitmap_size);
-        payload.readStrict(reinterpret_cast<char *>(columns_null_bitmap.data()), columns_null_bitmap_size);
+        UInt32 re_count = 0;
+        for (auto i = 0U; i < number_columns; i++)
+        {
+            if (bitmap[i])
+                re_count++;
+        }
+        re_count = (re_count + 7) / 8;
+        boost::dynamic_bitset<> columns_null_set;
+        readBitmap(payload, columns_null_set, re_count);
 
-
-        Tuple row;
         for (auto i = 0U; i < number_columns; i++)
         {
             /// Column not presents.
-            if (!check_string_bit(bitmap, i))
-            {
+            if (!bitmap[i])
                 continue;
-            }
 
-            /// NULL column.
-            if (check_string_bit(columns_null_bitmap, i))
+            if (columns_null_set[null_index])
             {
                 row.push_back(Field{Null{}});
-                continue;
             }
-
-            field_type = table_map->column_type[i];
-            auto meta = table_map->column_meta[i];
-            if (field_type == MYSQL_TYPE_STRING)
+            else
             {
-                if (meta >= 256)
+                field_type = table_map->column_type[i];
+                auto meta = table_map->column_meta[i];
+                if (field_type == MYSQL_TYPE_STRING)
                 {
-                    UInt32 byte0 = meta >> 8;
-                    UInt32 byte1 = meta & 0xff;
-                    if ((byte0 & 0x30) != 0x30)
+                    if (meta >= 256)
                     {
-                        field_len = byte1 | (((byte0 & 0x30) ^ 0x30) << 4);
-                        field_type = byte0 | 0x30;
-                    }
-                    else
-                    {
-                        switch (byte0)
+                        UInt32 byte0 = meta >> 8;
+                        UInt32 byte1 = meta & 0xff;
+                        if ((byte0 & 0x30) != 0x30)
                         {
-                            case MYSQL_TYPE_SET:
-                            case MYSQL_TYPE_ENUM:
-                            case MYSQL_TYPE_STRING:
-                                field_type = byte0;
-                                field_len = byte1;
-                                break;
-                            default:
-                                throw ReplicationError("ParseRow: Illegal event", ErrorCodes::UNKNOWN_EXCEPTION);
+                            field_len = byte1 | (((byte0 & 0x30) ^ 0x30) << 4);
+                            field_type = byte0 | 0x30;
+                        }
+                        else
+                        {
+                            switch (byte0)
+                            {
+                                case MYSQL_TYPE_SET:
+                                case MYSQL_TYPE_ENUM:
+                                case MYSQL_TYPE_STRING:
+                                    field_type = byte0;
+                                    field_len = byte1;
+                                    break;
+                                default:
+                                    throw ReplicationError("ParseRow: Unhandled binlog event", ErrorCodes::UNKNOWN_EXCEPTION);
+                            }
                         }
                     }
+                    else
+                    {
+                        field_len = meta;
+                    }
                 }
-                else
+
+                switch (field_type)
                 {
-                    field_len = meta;
-                }
-            }
+                    case MYSQL_TYPE_TINY: {
+                        UInt8 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 1);
+                        row.push_back(Field{UInt8{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_SHORT: {
+                        UInt16 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 2);
+                        row.push_back(Field{UInt16{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_INT24: {
+                        Int32 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 3);
+                        row.push_back(Field{Int32{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_LONG: {
+                        UInt32 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 4);
+                        row.push_back(Field{UInt32{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_LONGLONG: {
+                        UInt64 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 8);
+                        row.push_back(Field{UInt64{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_FLOAT: {
+                        Float64 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 4);
+                        row.push_back(Field{Float64{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_DOUBLE: {
+                        Float64 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 8);
+                        row.push_back(Field{Float64{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_TIMESTAMP: {
+                        UInt32 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 4);
 
-            switch (field_type)
-            {
-                case MYSQL_TYPE_TINY: {
-                    Int8 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                    row.push_back(Field{Int8{val}});
-                    break;
-                }
-                case MYSQL_TYPE_SHORT: {
-                    Int16 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                    row.push_back(Field{Int16{val}});
-                    break;
-                }
-                case MYSQL_TYPE_INT24: {
-                    Int32 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 3);
-                    row.push_back(Field{Int32{val}});
-                    break;
-                }
-                case MYSQL_TYPE_LONG: {
-                    Int32 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                    row.push_back(Field{Int32{val}});
-                    break;
-                }
-                case MYSQL_TYPE_LONGLONG: {
-                    Int64 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                    row.push_back(Field{Int64{val}});
-                    break;
-                }
-                case MYSQL_TYPE_FLOAT: {
-                    Float32 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                    row.push_back(Field{Float32{val}});
-                    break;
-                }
-                case MYSQL_TYPE_DOUBLE: {
-                    Float64 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                    row.push_back(Field{Float64{val}});
-                    break;
-                }
-                case MYSQL_TYPE_TIMESTAMP: {
-                    UInt32 val = 0;
-                    payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                    row.push_back(Field{UInt32{val}});
-                    break;
-                }
-                case MYSQL_TYPE_VARCHAR:
-                case MYSQL_TYPE_VAR_STRING: {
-                    uint32_t size = 0;
-                    if (meta < 256)
-                    {
-                        payload.readStrict(reinterpret_cast<char *>(&size), 1);
+                        time_t time = time_t(val);
+                        std::tm * gtm = std::gmtime(&time);
+                        char buffer[32];
+                        std::strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", gtm);
+                        row.push_back(Field{String{buffer}});
+                        break;
                     }
-                    else
-                    {
-                        payload.readStrict(reinterpret_cast<char *>(&size), 2);
-                    }
+                    case MYSQL_TYPE_TIME: {
+                        UInt32 i24 = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                    String val;
-                    val.resize(size);
-                    payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                    row.push_back(Field{String{val}});
-                    break;
-                }
-                case MYSQL_TYPE_STRING: {
-                    UInt32 size = 0;
-                    if (field_len < 256)
-                    {
-                        payload.readStrict(reinterpret_cast<char *>(&size), 1);
+                        String time_buff;
+                        time_buff.resize(8);
+                        sprintf(
+                            time_buff.data(),
+                            "%02d:%02d:%02d",
+                            static_cast<int>(i24 / 10000),
+                            static_cast<int>(i24 % 10000) / 100,
+                            static_cast<int>(i24 % 100));
+                        row.push_back(Field{String{time_buff}});
+                        break;
                     }
-                    else
-                    {
-                        payload.readStrict(reinterpret_cast<char *>(&size), 2);
-                    }
+                    case MYSQL_TYPE_DATE: {
+                        UInt32 i24 = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                    String val;
-                    val.resize(size);
-                    payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                    row.push_back(Field{String{val}});
-                    break;
-                }
-                case MYSQL_TYPE_GEOMETRY:
-                case MYSQL_TYPE_BLOB: {
-                    UInt32 size = 0;
-                    switch (meta)
-                    {
-                        case 1: {
+                        String time_buff;
+                        time_buff.resize(10);
+                        sprintf(
+                            time_buff.data(),
+                            "%04d-%02d-%02d",
+                            static_cast<int>((i24 >> 9) & 0x7fff),
+                            static_cast<int>((i24 >> 5) & 0xf),
+                            static_cast<int>(i24 & 0x1f));
+                        row.push_back(Field{String{time_buff}});
+                        break;
+                    }
+                    case MYSQL_TYPE_YEAR: {
+                        Int32 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 1);
+                        row.push_back(Field{Int32{val + 1900}});
+                        break;
+                    }
+                    case MYSQL_TYPE_TIME2: {
+                        UInt32 val = 0, frac_part = 0;
+                        char sign = 0x22;
+
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 3);
+                        if (readBits(val, 0, 1, 24) == 0)
+                        {
+                            sign = '-';
+                            val = ~val + 1;
+                        }
+                        UInt32 hour = readBits(val, 2, 10, 24);
+                        UInt32 minute = readBits(val, 12, 6, 24);
+                        UInt32 second = readBits(val, 18, 6, 24);
+                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&frac_part), meta);
+
+                        if (frac_part != 0)
+                        {
+                            String time_buff;
+                            time_buff.resize(16);
+                            sprintf(
+                                time_buff.data(),
+                                "%c%02d:%02d:%02d.%06d",
+                                static_cast<char>(sign),
+                                static_cast<int>(hour),
+                                static_cast<int>(minute),
+                                static_cast<int>(second),
+                                static_cast<int>(frac_part));
+                            row.push_back(Field{String{time_buff}});
+                        }
+                        else
+                        {
+                            String time_buff;
+                            time_buff.resize(9);
+                            sprintf(
+                                time_buff.data(),
+                                "%c%02d:%02d:%02d",
+                                static_cast<char>(sign),
+                                static_cast<int>(hour),
+                                static_cast<int>(minute),
+                                static_cast<int>(second));
+                            row.push_back(Field{String{time_buff}});
+                        }
+                        break;
+                    }
+                    case MYSQL_TYPE_DATETIME2: {
+                        Int64 val = 0, fsp = 0;
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 5);
+                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&fsp), meta);
+
+                        struct tm timeinfo;
+                        UInt32 year_month = readBits(val, 1, 17, 40);
+                        timeinfo.tm_year = year_month / 13 - 1900;
+                        timeinfo.tm_mon = year_month % 13;
+                        timeinfo.tm_mday = readBits(val, 18, 5, 40);
+                        timeinfo.tm_hour = readBits(val, 23, 5, 40);
+                        timeinfo.tm_min = readBits(val, 28, 6, 40);
+                        timeinfo.tm_sec = readBits(val, 34, 6, 40);
+
+                        time_t time = mktime(&timeinfo);
+                        std::tm * gtm = std::gmtime(&time);
+                        char buffer[32];
+                        std::strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", gtm);
+                        row.push_back(Field{String{buffer}});
+                        break;
+                    }
+                    case MYSQL_TYPE_TIMESTAMP2: {
+                        UInt32 sec = 0, subsec = 0, whole_part = 0;
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
+                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&sec), meta);
+
+                        whole_part = (sec + subsec / 1e6);
+                        time_t time = time_t(whole_part);
+                        std::tm * gtm = std::gmtime(&time);
+                        char buffer[32];
+                        std::strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", gtm);
+                        row.push_back(Field{String{buffer}});
+                        break;
+                    }
+                    case MYSQL_TYPE_ENUM: {
+                        Int32 val = 0;
+                        Int32 len = (meta & 0xff);
+                        switch (len)
+                        {
+                            case 1: {
+                                payload.readStrict(reinterpret_cast<char *>(&val), 1);
+                                break;
+                            }
+                            case 2: {
+                                payload.readStrict(reinterpret_cast<char *>(&val), 2);
+                                break;
+                            }
+                            default:
+                                break;
+                        }
+                        row.push_back(Field{Int32{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_VARCHAR:
+                    case MYSQL_TYPE_VAR_STRING: {
+                        uint32_t size = 0;
+                        if (meta < 256)
+                        {
                             payload.readStrict(reinterpret_cast<char *>(&size), 1);
-                            break;
                         }
-                        case 2: {
+                        else
+                        {
                             payload.readStrict(reinterpret_cast<char *>(&size), 2);
-                            break;
                         }
-                        case 3: {
-                            payload.readStrict(reinterpret_cast<char *>(&size), 3);
-                            break;
-                        }
-                        case 4: {
-                            payload.readStrict(reinterpret_cast<char *>(&size), 4);
-                            break;
-                        }
-                        default:
-                            break;
-                    }
 
-                    String val;
-                    val.resize(size);
-                    payload.readStrict(reinterpret_cast<char *>(val.data()), size);
-                    row.push_back(Field{String{val}});
-                    break;
+                        String val;
+                        val.resize(size);
+                        payload.readStrict(reinterpret_cast<char *>(val.data()), size);
+                        row.push_back(Field{String{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_STRING: {
+                        UInt32 size = 0;
+                        if (field_len < 256)
+                        {
+                            payload.readStrict(reinterpret_cast<char *>(&size), 1);
+                        }
+                        else
+                        {
+                            payload.readStrict(reinterpret_cast<char *>(&size), 2);
+                        }
+
+                        String val;
+                        val.resize(size);
+                        payload.readStrict(reinterpret_cast<char *>(val.data()), size);
+                        row.push_back(Field{String{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_GEOMETRY:
+                    case MYSQL_TYPE_BLOB: {
+                        UInt32 size = 0;
+                        switch (meta)
+                        {
+                            case 1: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 1);
+                                break;
+                            }
+                            case 2: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 2);
+                                break;
+                            }
+                            case 3: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 3);
+                                break;
+                            }
+                            case 4: {
+                                payload.readStrict(reinterpret_cast<char *>(&size), 4);
+                                break;
+                            }
+                            default:
+                                break;
+                        }
+
+                        String val;
+                        val.resize(size);
+                        payload.readStrict(reinterpret_cast<char *>(val.data()), size);
+                        row.push_back(Field{String{val}});
+                        break;
+                    }
+                    case MYSQL_TYPE_JSON: {
+                        UInt32 size = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&size), meta);
+
+                        String val;
+                        val.resize(size);
+                        payload.readStrict(reinterpret_cast<char *>(val.data()), size);
+                        row.push_back(Field{String{val}});
+                        break;
+                    }
+                    default:
+                        throw ReplicationError(
+                            "ParseRow: Unhandled MySQL field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
                 }
-                default:
-                    throw ReplicationError("ParseRow: Unhandled field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
             }
+            null_index++;
         }
         rows.push_back(row);
     }
@@ -588,6 +626,8 @@ namespace MySQLReplication
         header.print();
         std::cerr << "[DryRun Event]" << std::endl;
     }
+
+    void MySQLFlavor::setReplicateDatabase(String db) { replicate_do_db = std::move(db); }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
@@ -630,6 +670,8 @@ namespace MySQLReplication
                 event->parseEvent(payload);
                 if (event->header.event_size > QUERY_EVENT_BEGIN_LENGTH)
                     position.updateLogPos(event->header.log_pos);
+                else
+                    event = std::make_shared<DryRunEvent>();
                 break;
             }
             case XID_EVENT: {
@@ -650,21 +692,30 @@ namespace MySQLReplication
             }
             case WRITE_ROWS_EVENT_V1:
             case WRITE_ROWS_EVENT_V2: {
-                event = std::make_shared<WriteRowsEvent>(table_map);
+                if (do_replicate())
+                    event = std::make_shared<WriteRowsEvent>(table_map);
+                else
+                    event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
             case DELETE_ROWS_EVENT_V1:
             case DELETE_ROWS_EVENT_V2: {
-                event = std::make_shared<DeleteRowsEvent>(table_map);
+                if (do_replicate())
+                    event = std::make_shared<DeleteRowsEvent>(table_map);
+                else
+                    event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2: {
-                event = std::make_shared<UpdateRowsEvent>(table_map);
+                if (do_replicate())
+                    event = std::make_shared<UpdateRowsEvent>(table_map);
+                else
+                    event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;

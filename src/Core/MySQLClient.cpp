@@ -126,21 +126,30 @@ bool MySQLClient::ping()
     return writeCommand(Command::COM_PING, "");
 }
 
-bool MySQLClient::startBinlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
+bool MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos)
 {
+    /// Set binlog checksum to CRC32.
     String checksum = "CRC32";
     if (!writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'"))
     {
         return false;
     }
 
-    /// 30s.
+    /// Set heartbeat 30s.
     UInt64 period_ns = (30 * 1e9);
     if (!writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns)))
     {
         return false;
     }
 
+    /// Set replication filter to master
+    /// This requires MySQL version >=5.6, so results are not checked here.
+    writeCommand(Command::COM_QUERY, "CHANGE REPLICATION FILTER REPLICATE_DO_DB = (" + replicate_db + ")");
+
+    /// Set Filter rule to replication.
+    replication.setReplicateDatabase(replicate_db);
+
+    // Register slave.
     if (!registerSlaveOnMaster(slave_id))
     {
         return false;
