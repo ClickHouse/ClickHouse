@@ -89,7 +89,7 @@ public:
         auto * end = pos + data_to.size();
         while (pos < end)
         {
-            unalignedStore<UInt64>(pos, rng());
+            unalignedStore<UInt64>(pos, rng()); /// TODO It is inefficient. We should use SIMD PRNG instead.
             pos += sizeof(UInt64); // We have padding in column buffers that we can overwrite.
         }
 
