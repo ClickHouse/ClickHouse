@@ -59,7 +59,7 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-*See [IN operators](statements/select.md#select-in-operators).*
+*See [IN operators](in.md).*
 
 `a IN ...` – The `in(a, b)` function.
 
@@ -90,7 +90,7 @@ The `part` parameter specifies which part of the date to retrieve. The following
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or the time to process. Either [Date](../sql-reference/data-types/date.md) or [DateTime](../sql-reference/data-types/datetime.md) type is supported.
+The `date` parameter specifies the date or the time to process. Either [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md) type is supported.
 
 Examples:
 
@@ -137,7 +137,7 @@ You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/bl
 
 ### INTERVAL {#operator-interval}
 
-Creates an [Interval](../sql-reference/data-types/special-data-types/interval.md)-type value that should be used in arithmetical operations with [Date](../sql-reference/data-types/date.md) and [DateTime](../sql-reference/data-types/datetime.md)-type values.
+Creates an [Interval](../../sql-reference/data-types/special-data-types/interval.md)-type value that should be used in arithmetical operations with [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md)-type values.
 
 Types of intervals:
 - `SECOND`
@@ -166,8 +166,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **See Also**
 
--   [Interval](../sql-reference/data-types/special-data-types/interval.md) data type
--   [toInterval](../sql-reference/functions/type-conversion-functions.md#function-tointerval) type convertion functions
+-   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
+-   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type convertion functions
 
 ## Logical Negation Operator {#logical-negation-operator}
 
@@ -187,7 +187,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 Note:
 
-The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](../sql-reference/functions/array-join.md#functions_arrayjoin) function, each row will be replicated regardless of the “a” condition.
+The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) function, each row will be replicated regardless of the “a” condition.
 
 ## Conditional Expression {#operator_case}
 
@@ -236,7 +236,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 ### IS NULL {#operator-is-null}
 
--   For [Nullable](../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
+-   For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NULL` operator returns:
     -   `1`, if the value is `NULL`.
     -   `0` otherwise.
 -   For other values, the `IS NULL` operator always returns `0`.
@@ -255,7 +255,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is-not-null}
 
--   For [Nullable](../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
+-   For [Nullable](../../sql-reference/data-types/nullable.md) type values, the `IS NOT NULL` operator returns:
     -   `0`, if the value is `NULL`.
     -   `1` otherwise.
 -   For other values, the `IS NOT NULL` operator always returns `1`.
