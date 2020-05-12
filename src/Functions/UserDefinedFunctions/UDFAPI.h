@@ -4,16 +4,28 @@
 #include <unistd.h>
 
 struct UserDefinedFunctionResult {
-    char * data_type;
+    const char * data_type;
     void * data;
     size_t size;
 };
 
-typedef struct UserDefinedFunctionResult (*ExecImpl)(UserDefinedFunctionResult* input);
+/// All allocated memory will automatically free after ExecImpl return
+/// Allocated memory should be used in UserDefinedFunctionResult as data pointer
+typedef void * (*AllocateImpl)(size_t size);
+
+/// Return one column of result data
+typedef struct UserDefinedFunctionResult (*ExecImpl)(UserDefinedFunctionResult* input, AllocateImpl allocate);
+/// Return type of function result (data should be nullptr)
+typedef struct UserDefinedFunctionResult (*GetReturnTypeImpl)(UserDefinedFunctionResult* input);
 
 struct UserDefinedFunction {
     /// Name of UDF
-    char * name;
+    const char * name;
+
+    /// Accept null terminated list of input columns types (data is nullptr)
+    /// Returns type of data
+    GetReturnTypeImpl get_return_type_impl;
+
     /// Accept null terminated list of input columns
     /// Returns one column
     ExecImpl exec_impl;
@@ -21,7 +33,7 @@ struct UserDefinedFunction {
 
 struct UDFList {
     /// Name of UDF lib
-    char * name;
+    const char * name;
     /// Null terminated list
     UserDefinedFunction * functions;
 };
