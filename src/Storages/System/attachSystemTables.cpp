@@ -49,6 +49,7 @@
 #include <Storages/System/StorageSystemQuotaLimits.h>
 #include <Storages/System/StorageSystemQuotaUsage.h>
 #include <Storages/System/StorageSystemQuotasUsage.h>
+#include <Storages/System/StorageSystemPrivileges.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -88,6 +89,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("quota_limits", StorageSystemQuotaLimits::create("quota_limits"));
     system_database.attachTable("quota_usage", StorageSystemQuotaUsage::create("quota_usage"));
     system_database.attachTable("quotas_usage", StorageSystemQuotasUsage::create("all_quotas_usage"));
+    system_database.attachTable("privileges", StorageSystemPrivileges::create("privileges"));
 #if !defined(ARCADIA_BUILD)
     system_database.attachTable("licenses", StorageSystemLicenses::create("licenses"));
 #endif

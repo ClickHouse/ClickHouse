@@ -87,6 +87,7 @@ SRCS(
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
+    InterpreterShowPrivilegesQuery.cpp
     InterpreterShowProcesslistQuery.cpp
     InterpreterShowTablesQuery.cpp
     InterpreterSystemQuery.cpp

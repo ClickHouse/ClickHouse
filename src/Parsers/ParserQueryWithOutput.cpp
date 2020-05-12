@@ -17,6 +17,7 @@
 #include <Parsers/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/ParserShowGrantsQuery.h>
+#include <Parsers/ParserShowPrivilegesQuery.h>
 
 
 namespace DB
@@ -40,6 +41,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowAccessEntitiesQuery show_access_entities_p;
     ParserShowCreateAccessEntityQuery show_create_access_entity_p;
     ParserShowGrantsQuery show_grants_p;
+    ParserShowPrivilegesQuery show_privileges_p;
 
     ASTPtr query;
 
@@ -69,7 +71,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || optimize_p.parse(pos, query, expected)
         || watch_p.parse(pos, query, expected)
         || show_access_entities_p.parse(pos, query, expected)
-        || show_grants_p.parse(pos, query, expected);
+        || show_grants_p.parse(pos, query, expected)
+        || show_privileges_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
