@@ -33,9 +33,9 @@ private:
 
     void synchronization();
 
-    void dumpMySQLDatabase();
-
     void tryToExecuteQuery(const String & query_to_execute);
+
+    void dumpMySQLDatabase(const std::function<bool()> & is_cancelled);
 
     String getCreateQuery(const mysqlxx::Pool::Entry & connection, const String & database, const String & table_name);
 
