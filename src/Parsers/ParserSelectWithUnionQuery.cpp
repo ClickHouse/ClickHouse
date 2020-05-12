@@ -27,23 +27,19 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 {
     ASTPtr list_node;
 
-    ParserList parser_all(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
-    ParserList parser_distinct(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION DISTINCT"), false);
-    if (parser_all.parse(pos, list_node, expected)) {
-        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-
-        node = select_with_union_query;
-        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
-        select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
-
-        // flatten inner union query
-        for (auto & child : list_node->children)
-            getSelectsFromUnionListNode(child, select_with_union_query->list_of_selects->children);
-    } else if (parser_all.parse(pos, list_node, expected)) {
-        // distinct parser
-    }
-    else
+    ParserList parser(std::make_unique<ParserUnionQueryElement>(), std::make_unique<ParserKeyword>("UNION ALL"), false);
+    if (!parser.parse(pos, list_node, expected))
         return false;
+
+    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+
+    node = select_with_union_query;
+    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+    select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+
+    // flatten inner union query
+    for (auto & child : list_node->children)
+        getSelectsFromUnionListNode(child, select_with_union_query->list_of_selects->children);
 
     return true;
 }
