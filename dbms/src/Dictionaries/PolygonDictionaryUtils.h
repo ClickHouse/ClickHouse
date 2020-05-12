@@ -152,7 +152,80 @@ private:
      *  Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
      *  placing it into O(log n) vertexes of this tree.
      */
-    std::vector<std::vector<size_t>> edges_index_tree;
+    std::vector<std::vector<Edge>> edges_index_tree;
+};
+
+/** Generate edge indexes during its construction in
+ *  the following way: sort all polygon's vertexes by x coordinate, and then store all interesting
+ *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and
+ *  iterates over them, finding required polygon. If there is more than one any such polygon may be returned.
+ */
+class BucketsSinglePolygonIndex
+{
+public:
+    /** A two-dimensional point in Euclidean coordinates. */
+    using Point = IPolygonDictionary::Point;
+    /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
+    using Polygon = IPolygonDictionary::Polygon;
+    /** A ring in boost used for describing the polygons. */
+    using Ring = IPolygonDictionary::Ring;
+
+    /** Builds an index by splitting all edges with all points x coordinates. */
+    BucketsSinglePolygonIndex(const Polygon & polygon);
+
+    /** Finds polygon id the same way as IPolygonIndex. */
+    bool find(const Point & point) const;
+
+private:
+    /** Returns unique x coordinates among all points. */
+    std::vector<Float64> uniqueX(const Polygon & polygon);
+
+    /** Builds indexes described above. */
+    void indexBuild(const Polygon & polygon);
+
+    /** Auxiliary function for adding ring to index */
+    void indexAddRing(const Ring & ring);
+
+    /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
+     *  Invariant here is first point has x not greater than second point.
+     */
+    struct Edge
+    {
+        Point l;
+        Point r;
+        size_t edge_id;
+
+        static bool compare1(const Edge & a, const Edge & b);
+        static bool compare2(const Edge & a, const Edge & b);
+    };
+
+    struct EdgeNoId
+    {
+        explicit EdgeNoId(const Edge & e): l(e.l), r(e.r) {}
+        Point l;
+        Point r;
+    };
+
+    /** Sorted distinct coordinates of all vertexes. */
+    std::vector<Float64> sorted_x;
+    std::vector<Edge> all_edges;
+
+    /** Edges from all polygons, classified by sorted_x borders.
+     *  edges_index[i] stores all interesting edges in range ( sorted_x[i]; sorted_x[i + 1] ]
+     *  That means edges_index.size() + 1 == sorted_x.size()
+     *
+     *  std::vector<std::vector<Edge>> edges_index;
+     */
+
+    /** TODO: fix this and previous comments.
+     *  This edges_index_tree stores the same info as edges_index, but more efficiently.
+     *  To do that, edges_index_tree is actually a segment tree of segments between x coordinates.
+     *  edges_index_tree.size() == edges_index.size() * 2 == n * 2, and as in usual segment tree,
+     *  edges_index_tree[i] combines segments edges_index_tree[i*2] and edges_index_tree[i*2+1].
+     *  Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
+     *  placing it into O(log n) vertexes of this tree.
+     */
+    std::vector<std::vector<EdgeNoId>> edges_index_tree;
 };
 
 }
