@@ -7,10 +7,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
+
+#include <Common/HashTable/HashMap.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <ext/map.h>
-#include <Common/HashTable/StringHashMap.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
