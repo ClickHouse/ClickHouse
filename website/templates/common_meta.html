@@ -11,14 +11,13 @@
 <meta property="og:description" content="{{ description }}"/>
 <meta property="og:type" content="{{ og_type or 'website' }}" />
 <meta property="og:image" content="https://clickhouse.tech/images/logo.png" />
-{% if page and page.abs_url %}
-    {% set url = 'https://clickhouse.tech' + page.abs_url %}
-{% endif %}
 <meta property="og:url" content="{{ url or 'https://clickhouse.tech/' }}"/>
 <link rel="canonical" href="{{ url or 'https://clickhouse.tech/' }}" />
-
-
-<meta property="twitter:title" content="{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}"/>
+{% if page and not single_page %}
+<link rel="amphtml" href="{{ url or 'https://clickhouse.tech/' }}amp/">
+{% endif %}
+<link rel="search" href="/opensearch.xml" title="ClickHouse" type="application/opensearchdescription+xml" />
+{% include "templates/docs/ld_json.html" %}
 
 <meta name="description" content="{{ description }}"/>
 <meta name="keywords"

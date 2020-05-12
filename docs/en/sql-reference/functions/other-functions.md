@@ -238,7 +238,7 @@ Result:
 └───────────────┘
 ```
 
-## isConstant {is-constant}
+## isConstant {#is-constant}
 
 Checks whether the argument is a constant expression.
 

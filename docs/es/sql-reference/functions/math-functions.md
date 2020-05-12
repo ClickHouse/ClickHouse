@@ -51,7 +51,7 @@ Acepta un argumento numérico y devuelve un número Float64 cercano a la raíz c
 
 ## erf(x) {#erfx}
 
-Si ‘x’ is non-negative, then erf(x / σ√2)<g> es la probabilidad de que una variable aleatoria tenga una distribución normal con desviación estándar ‘σ’ toma el valor que está separado del valor esperado en más de ‘x’.
+Si ‘x’ is non-negative, then `erf(x / σ√2)` es la probabilidad de que una variable aleatoria tenga una distribución normal con desviación estándar ‘σ’ toma el valor que está separado del valor esperado en más de ‘x’.
 
 Ejemplo (regla de tres sigma):
 
