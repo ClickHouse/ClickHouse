@@ -573,6 +573,8 @@ namespace MySQLReplication
                                     readBigEndianStrict(reader, reinterpret_cast<char *>(&val), 4);
                                     break;
                                 }
+                                default:
+                                    break;
                             }
                             format += std::to_string(val);
                         }
