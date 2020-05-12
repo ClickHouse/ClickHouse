@@ -381,12 +381,12 @@ void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int
     for (size_t i = 0; i < equal_range.size() && !found_null_value_index; ++i){
         auto& [first, last] = equal_range[i];
         for (auto j = first; j < last; ++j) {
-            if (res[i] == getNullValueIndex()) {
+            if (res[j] == getNullValueIndex()) {
                 if ((nan_direction_hint > 0) != reverse) {
-                    std::swap(res[i], res[last - 1]);
+                    std::swap(res[j], res[last - 1]);
                     --last;
                 } else {
-                    std::swap(res[i], first);
+                    std::swap(res[j], res[first]);
                     ++first;
                 }
                 if (last - first <= 1) {
