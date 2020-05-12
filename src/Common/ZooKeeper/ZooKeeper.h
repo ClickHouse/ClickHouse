@@ -185,8 +185,9 @@ public:
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
+    using WaitCondition = std::function<bool()>;
     /// Wait for the node to disappear or return immediately if it doesn't exist.
-    void waitForDisappear(const std::string & path);
+    bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
     /// Async interface (a small subset of operations is implemented).
     ///
