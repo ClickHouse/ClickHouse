@@ -266,6 +266,9 @@ private:
 
         if (stack_trace.getSize())
         {
+            /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
+            /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
+
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
@@ -306,9 +309,6 @@ static void sanitizerDeathCallback()
     StackTrace stack_trace;
     if (stack_trace.getSize())
     {
-        /// Write bare stack trace (addresses) just in case if we will fail to print symbolized stack trace.
-        /// NOTE This still require memory allocations and mutex lock inside logger. BTW we can also print it to stderr using write syscalls.
-
         std::stringstream bare_stacktrace;
         bare_stacktrace << "Stack trace:";
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
