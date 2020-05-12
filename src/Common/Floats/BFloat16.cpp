@@ -192,7 +192,7 @@ struct BFloat16 {
             }
         }
         unsigned short resultingMantissa = (getValue() & 0x7f) * (fl.getValue() & 0x7f);
-        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15) << 15);
+        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
         while (!(bool)(resultingMantissa >> 6)) {
             resultingExponent--;
@@ -238,7 +238,7 @@ struct BFloat16 {
             }
         }
         unsigned short resultingMantissa = (getValue() & 0x7f) / (fl.getValue() & 0x7f);
-        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15) << 15);
+        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
         while (!(bool)(resultingMantissa >> 6)) {
             resultingExponent--;

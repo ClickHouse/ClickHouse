@@ -198,7 +198,7 @@ struct Float16 {
             }
         }
         unsigned short resultingMantissa = (getValue() & 0x3ff) * (fl.getValue() & 0x3ff);
-        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15) << 15);
+        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
         while (!(bool)(resultingMantissa >> 9)) {
             resultingExponent--;
@@ -244,7 +244,7 @@ struct Float16 {
             }
         }
         unsigned short resultingMantissa = (getValue() & 0x3ff) / (fl.getValue() & 0x3ff);
-        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15) << 15);
+        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
         while (!(bool)(resultingMantissa >> 9)) {
             resultingExponent--;
