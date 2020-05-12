@@ -1460,45 +1460,45 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set("SET");
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_eq(TokenType::Equals);
+
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
     ParserIdentifierList parser_identifier_list;
 
-
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    ASTPtr where_expr;
-
-    std::vector<String> group_by_key_columns;
-    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
-
-    ASTTTLElement::Mode mode;
+    TTLMode mode;
     PartDestinationType destination_type = PartDestinationType::DELETE;
     String destination_name;
+
     if (s_to_disk.ignore(pos))
     {
-        mode = ASTTTLElement::Mode::MOVE;
+        mode = TTLMode::MOVE;
         destination_type = PartDestinationType::DISK;
     }
     else if (s_to_volume.ignore(pos))
     {
-        mode = ASTTTLElement::Mode::MOVE;
+        mode = TTLMode::MOVE;
         destination_type = PartDestinationType::VOLUME;
     }
     else if (s_group_by.ignore(pos)) 
     {
-        mode = ASTTTLElement::Mode::GROUP_BY;
+        mode = TTLMode::GROUP_BY;
     }
     else
     {
         s_delete.ignore(pos);
-        mode = ASTTTLElement::Mode::DELETE;
+        mode = TTLMode::DELETE;
     }
 
-    if (mode == ASTTTLElement::Mode::MOVE)
+    ASTPtr where_expr;
+    std::vector<String> group_by_key_columns;
+    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
+
+    if (mode == TTLMode::MOVE)
     {
         ASTPtr ast_space_name;
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
@@ -1506,7 +1506,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
     }
-    else if (mode == ASTTTLElement::Mode::GROUP_BY)
+    else if (mode == TTLMode::GROUP_BY)
     {
         ASTPtr ast_group_by_key_columns;
         if (!parser_identifier_list.parse(pos, ast_group_by_key_columns, expected))
@@ -1541,17 +1541,16 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             group_by_aggregations.emplace_back(name_str, std::move(value));
         }
     }
-
-    if ((mode == ASTTTLElement::Mode::MOVE || mode == ASTTTLElement::Mode::DELETE) && s_where.ignore(pos))
+    else if (mode == TTLMode::DELETE && s_where.ignore(pos))
     {
         if (!parser_exp.parse(pos, where_expr, expected))
             return false;
     }
 
     auto ttl_element = std::make_shared<ASTTTLElement>(mode, destination_type, destination_name);
-    ttl_element->setExpression(ASTTTLElement::Expression::TTL, std::move(ttl_expr));
+    ttl_element->setTTL(std::move(ttl_expr));
     if (where_expr)
-        ttl_element->setExpression(ASTTTLElement::Expression::WHERE, std::move(where_expr));
+        ttl_element->setWhere(std::move(where_expr));
 
     ttl_element->group_by_key_columns = std::move(group_by_key_columns);
     ttl_element->group_by_aggregations = std::move(group_by_aggregations);

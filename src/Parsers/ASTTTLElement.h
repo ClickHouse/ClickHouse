@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/PartDestinationType.h>
+#include <Storages/MergeTree/TTLMode.h>
 
 
 namespace DB
@@ -12,29 +13,19 @@ namespace DB
 class ASTTTLElement : public IAST
 {
 public:
-    enum class Expression : uint8_t
-    {
-        TTL,
-        WHERE
-    };
-
-    enum class Mode : uint8_t
-    {
-        DELETE,
-        MOVE,
-        GROUP_BY
-    };
-
-    Mode mode;
+    TTLMode mode;
     PartDestinationType destination_type;
     String destination_name;
-    std::vector<String> group_by_key_columns;
+
+    Strings group_by_key_columns;
     std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
-    ASTTTLElement(Mode mode_, PartDestinationType destination_type_, const String & destination_name_)
+    ASTTTLElement(TTLMode mode_, PartDestinationType destination_type_, const String & destination_name_)
         : mode(mode_) 
         , destination_type(destination_type_)
         , destination_name(destination_name_)
+        , ttl_expr_pos(-1)
+        , where_expr_pos(-1)
     {
     }
 
@@ -42,17 +33,22 @@ public:
 
     ASTPtr clone() const override;
 
-    const ASTPtr ttl() const { return getExpression(Expression::TTL); }
-    const ASTPtr where() const { return getExpression(Expression::WHERE); }
+    const ASTPtr ttl() const { return getExpression(ttl_expr_pos); }
+    const ASTPtr where() const { return getExpression(where_expr_pos); }
 
-    void setExpression(Expression expr, ASTPtr && ast);
-    ASTPtr getExpression(Expression expr, bool clone = false) const;
+    void setTTL(ASTPtr && ast) { setExpression(ttl_expr_pos, std::forward<ASTPtr>(ast)); }
+    void setWhere(ASTPtr && ast) { setExpression(where_expr_pos, std::forward<ASTPtr>(ast)); }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+private: 
+    int ttl_expr_pos;
+    int where_expr_pos;
+
 private:
-    std::unordered_map<Expression, size_t> positions;
+    void setExpression(int & pos, ASTPtr && ast);    
+    ASTPtr getExpression(int pos, bool clone = false) const;
 };
 
 }

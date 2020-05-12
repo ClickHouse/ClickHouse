@@ -624,6 +624,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         result.result_column = ttl_expr_ast->getColumnName();
 
         result.destination_type = PartDestinationType::DELETE;
+        result.mode = TTLMode::DELETE;
 
         checkTTLExpression(result.expression, result.result_column);
         return result;
@@ -632,27 +633,43 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
     auto create_rows_ttl_entry = [this, &new_columns, &create_ttl_entry](const ASTTTLElement * ttl_element)
     {
         auto result = create_ttl_entry(ttl_element->ttl());
-        if (ttl_element->mode == ASTTTLElement::Mode::DELETE || ttl_element->mode ==ASTTTLElement::Mode::MOVE)         
+        result.mode = ttl_element->mode;
+
+        if (ttl_element->mode == TTLMode::DELETE)         
         {
             if (ASTPtr where_expr_ast = ttl_element->where()) 
             {
                 auto where_syntax_result = SyntaxAnalyzer(global_context).analyze(where_expr_ast, new_columns.getAllPhysical());
                 result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, global_context).getActions(false);
-                result.where_filter_column = where_expr_ast->getColumnName();
+                result.where_result_column = where_expr_ast->getColumnName();
             }
         }
-        else if (ttl_element->mode == ASTTTLElement::Mode::GROUP_BY) 
+        else if (ttl_element->mode == TTLMode::GROUP_BY) 
         {
+            if (ttl_element->group_by_key_columns.size() > this->primary_key_columns.size())
+                throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
+            for (size_t i = 0; i < ttl_element->group_by_key_columns.size(); ++i)
+            {
+                if (ttl_element->group_by_key_columns[i] != this->primary_key_columns[i])
+                    throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
+            }
+
             result.group_by_keys = ttl_element->group_by_key_columns;
-            for (auto [name, value] : ttl_element->group_by_aggregations)
+
+            auto aggregations = ttl_element->group_by_aggregations;
+            for (size_t i = ttl_element->group_by_key_columns.size(); i < this->primary_key_columns.size(); ++i)
+            {
+                ASTPtr expr = makeASTFunction("max", std::make_shared<ASTIdentifier>(this->primary_key_columns[i]));
+                aggregations.emplace_back(this->primary_key_columns[i], std::move(expr));
+            }
+            for (auto [name, value] : aggregations)
             {
                 auto syntax_result = SyntaxAnalyzer(global_context).analyze(value, new_columns.getAllPhysical(), {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, global_context);
 
-                result.group_by_aggregations.emplace_back(name, expr_analyzer.getActions(false));
-                result.group_by_aggregations_res_column.emplace_back(name, value->getColumnName());
+                result.group_by_aggregations.emplace_back(name, value->getColumnName(), expr_analyzer.getActions(false));
 
-                for (const auto descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
+                for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
                     result.aggregate_descriptions.push_back(descr);
             }
         }
@@ -703,7 +720,6 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
                     throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                LOG_DEBUG(log, "ttl_element->size is " << ttl_element->size());
                 auto new_rows_ttl_entry = create_rows_ttl_entry(ttl_element);
                 if (!only_check)
                     update_rows_ttl_entry = new_rows_ttl_entry;
