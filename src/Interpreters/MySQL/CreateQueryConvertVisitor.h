@@ -45,29 +45,21 @@ public:
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return false; }
 private:
-    static void visit(MySQLParser::ASTCreateQuery & create, ASTPtr & ast, Data &);
+    static void visit(const MySQLParser::ASTCreateQuery & create, const ASTPtr &, Data & data);
 
-    static void visit(MySQLParser::ASTCreateDefines & create_defines, ASTPtr & ast, Data & data);
+    static void visit(const MySQLParser::ASTDeclareIndex & declare_index, const ASTPtr &, Data & data);
 
-    static void visit(const MySQLParser::ASTDeclareIndex & declare_index, ASTPtr & ast, Data & data);
+    static void visit(const MySQLParser::ASTCreateDefines & create_defines, const ASTPtr &, Data & data);
 
-    static void visit(const MySQLParser::ASTDeclareColumn & declare_column, ASTPtr & ast, Data & data);
+    static void visit(const MySQLParser::ASTDeclareColumn & declare_column, const ASTPtr &, Data & data);
 
-    static void visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, ASTPtr & ast, Data & data);
-
-//    static void visitPartitionBy(MySQLParser::ASTCreateQuery & create, ASTPtr & ast, Data & data);
-
-//    static void visitPartitionBy(MySQLParser::ASTCreateDefines & create_defines, ASTPtr & ast, Data & data);
-
-//    static void visitPartitionBy(const MySQLParser::ASTDeclarePartitionOptions & partition_options, ASTPtr & ast, Data & data);
-
-//    static void visitColumns(const ASTFunction & declare_column, ASTPtr & ast, Data & data);
-//    static void visit(ASTTableJoin & join, const ASTPtr & ast, Data &);
-
+    static void visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, const ASTPtr &, Data & data);
 };
 
 using CreateQueryConvertVisitor = CreateQueryMatcher::Visitor;
 
 }
+
+
 
 }

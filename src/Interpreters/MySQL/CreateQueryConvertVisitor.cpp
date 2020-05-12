@@ -83,7 +83,7 @@ void CreateQueryMatcher::visit(ASTPtr & ast, Data & data)
         visit(*t, ast, data);
 }
 
-void CreateQueryMatcher::visit(MySQLParser::ASTCreateQuery & create, ASTPtr &, Data & data)
+void CreateQueryMatcher::visit(const MySQLParser::ASTCreateQuery & create, const ASTPtr &, Data & data)
 {
     if (create.like_table)
         throw Exception("Cannot convert create like statement to ClickHouse SQL", ErrorCodes::NOT_IMPLEMENTED);
@@ -104,7 +104,13 @@ void CreateQueryMatcher::visit(MySQLParser::ASTCreateQuery & create, ASTPtr &, D
         << " ORDER BY " << queryToString(data.getFormattedOrderByExpression());
 }
 
-void CreateQueryMatcher::visit(MySQLParser::ASTCreateDefines & create_defines, ASTPtr &, Data & data)
+void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareIndex & declare_index, const ASTPtr &, Data & data)
+{
+    if (startsWith(declare_index.index_type, "PRIMARY_KEY_"))
+        data.addPrimaryKey(declare_index.index_columns);
+}
+
+void CreateQueryMatcher::visit(const MySQLParser::ASTCreateDefines & create_defines, const ASTPtr &, Data & data)
 {
     if (!create_defines.columns || create_defines.columns->children.empty())
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -119,13 +125,7 @@ void CreateQueryMatcher::visit(MySQLParser::ASTCreateDefines & create_defines, A
         visit(*column->as<MySQLParser::ASTDeclareColumn>(), column, data);
 }
 
-void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareIndex & declare_index, ASTPtr &, Data & data)
-{
-    if (startsWith(declare_index.index_type, "PRIMARY_KEY_"))
-        data.addPrimaryKey(declare_index.index_columns);
-}
-
-void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareColumn & declare_column, ASTPtr &, Data & data)
+void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareColumn & declare_column, const ASTPtr &, Data & data)
 {
     if (!declare_column.data_type)
         throw Exception("Missing type in definition of column.", ErrorCodes::UNKNOWN_TYPE);
@@ -158,7 +158,7 @@ void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareColumn & declare_col
         throw Exception("Unsupported MySQL data type " + queryToString(declare_column.data_type) + ".", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void CreateQueryMatcher::visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, ASTPtr &, Data & data)
+void CreateQueryMatcher::visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, const ASTPtr &, Data & data)
 {
     data.addPartitionKey(declare_partition_options.partition_expression);
 }
