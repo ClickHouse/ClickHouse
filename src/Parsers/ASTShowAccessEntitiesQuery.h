@@ -10,6 +10,7 @@ namespace DB
 /// SHOW [ROW] POLICIES [ON [database.]table]
 /// SHOW QUOTAS
 /// SHOW [CURRENT] QUOTA
+/// SHOW [SETTINGS] PROFILES
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput
 {
 public:
@@ -25,6 +26,9 @@ public:
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+
+private:
+    const char * getKeyword() const;
 };
 
 }

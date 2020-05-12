@@ -15,6 +15,7 @@
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Storages/System/StorageSystemGraphite.h>
+
 #include <Storages/System/StorageSystemMacros.h>
 #include <Storages/System/StorageSystemMerges.h>
 #include <Storages/System/StorageSystemMetrics.h>
@@ -25,13 +26,8 @@
 #include <Storages/System/StorageSystemParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
-#include <Storages/System/StorageSystemQuotas.h>
-#include <Storages/System/StorageSystemQuotaLimits.h>
-#include <Storages/System/StorageSystemQuotaUsage.h>
-#include <Storages/System/StorageSystemQuotasUsage.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
-#include <Storages/System/StorageSystemRowPolicies.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -45,6 +41,14 @@
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
+
+#include <Storages/System/StorageSystemSettingsProfiles.h>
+#include <Storages/System/StorageSystemSettingsProfileElements.h>
+#include <Storages/System/StorageSystemRowPolicies.h>
+#include <Storages/System/StorageSystemQuotas.h>
+#include <Storages/System/StorageSystemQuotaLimits.h>
+#include <Storages/System/StorageSystemQuotaUsage.h>
+#include <Storages/System/StorageSystemQuotasUsage.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -68,11 +72,6 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("functions", StorageSystemFunctions::create("functions"));
     system_database.attachTable("events", StorageSystemEvents::create("events"));
     system_database.attachTable("settings", StorageSystemSettings::create("settings"));
-    system_database.attachTable("quotas", StorageSystemQuotas::create("quotas"));
-    system_database.attachTable("quota_limits", StorageSystemQuotaLimits::create("quota_limits"));
-    system_database.attachTable("quota_usage", StorageSystemQuotaUsage::create("quota_usage"));
-    system_database.attachTable("quotas_usage", StorageSystemQuotasUsage::create("all_quotas_usage"));
-    system_database.attachTable("row_policies", StorageSystemRowPolicies::create("row_policies"));
     system_database.attachTable("merge_tree_settings", SystemMergeTreeSettings::create("merge_tree_settings"));
     system_database.attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
     system_database.attachTable("formats", StorageSystemFormats::create("formats"));
@@ -82,6 +81,13 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
     system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
     system_database.attachTable("contributors", StorageSystemContributors::create("contributors"));
+    system_database.attachTable("settings_profiles", StorageSystemSettingsProfiles::create("settings_profiles"));
+    system_database.attachTable("settings_profile_elements", StorageSystemSettingsProfileElements::create("settings_profile_elements"));
+    system_database.attachTable("row_policies", StorageSystemRowPolicies::create("row_policies"));
+    system_database.attachTable("quotas", StorageSystemQuotas::create("quotas"));
+    system_database.attachTable("quota_limits", StorageSystemQuotaLimits::create("quota_limits"));
+    system_database.attachTable("quota_usage", StorageSystemQuotaUsage::create("quota_usage"));
+    system_database.attachTable("quotas_usage", StorageSystemQuotasUsage::create("all_quotas_usage"));
 #if !defined(ARCADIA_BUILD)
     system_database.attachTable("licenses", StorageSystemLicenses::create("licenses"));
 #endif

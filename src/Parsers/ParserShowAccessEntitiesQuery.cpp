@@ -43,6 +43,10 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
         type = EntityType::QUOTA;
         current_quota = true;
     }
+    else if (ParserKeyword{"PROFILES"}.ignore(pos, expected) || ParserKeyword{"SETTINGS PROFILES"}.ignore(pos, expected))
+    {
+        type = EntityType::SETTINGS_PROFILE;
+    }
     else
         return false;
 

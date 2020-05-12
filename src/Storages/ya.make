@@ -119,6 +119,8 @@ SRCS(
     System/StorageSystemReplicationQueue.cpp
     System/StorageSystemRowPolicies.cpp
     System/StorageSystemSettings.cpp
+    System/StorageSystemSettingsProfileElements.cpp
+    System/StorageSystemSettingsProfiles.cpp
     System/StorageSystemStackTrace.cpp
     System/StorageSystemStoragePolicies.cpp
     System/StorageSystemTableEngines.cpp
