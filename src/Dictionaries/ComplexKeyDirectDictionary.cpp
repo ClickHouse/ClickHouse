@@ -371,7 +371,8 @@ void ComplexKeyDirectDictionary::getItemsImpl(
     std::vector<size_t> to_load(rows);
     PODArray<StringRef> keys(rows);
 
-    for (const auto row : ext::range(0, rows)) {
+    for (const auto row : ext::range(0, rows))
+    {
         const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
         value_by_key[key] = get_default(row);
@@ -422,7 +423,8 @@ void ComplexKeyDirectDictionary::getItemsImpl(
 
     stream->readSuffix();
 
-    for (const auto row : ext::range(0, rows)) {
+    for (const auto row : ext::range(0, rows))
+    {
         set_value(row, value_by_key[keys[row]]);
     }
 
@@ -441,7 +443,8 @@ void ComplexKeyDirectDictionary::getItemsStringImpl(
     std::vector<size_t> to_load(rows);
     PODArray<StringRef> keys(rows);
 
-    for (const auto row : ext::range(0, rows)) {
+    for (const auto row : ext::range(0, rows))
+    {
         const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
         value_by_key[key] = get_default(row);
@@ -485,7 +488,8 @@ void ComplexKeyDirectDictionary::getItemsStringImpl(
 
     stream->readSuffix();
 
-    for (const auto row : ext::range(0, rows)) {
+    for (const auto row : ext::range(0, rows))
+    {
         set_value(row, value_by_key[keys[row]]);
     }
 
@@ -509,12 +513,13 @@ void ComplexKeyDirectDictionary::has(const Attribute & attribute, const Columns 
     const auto rows = key_columns.front()->size();
     const auto keys_size = dict_struct.key->size();
     StringRefs keys_array(keys_size);
-    MapType<bool> has_key;
+    MapType<UInt8> has_key;
     Arena temporary_keys_pool;
     std::vector<size_t> to_load(rows);
     PODArray<StringRef> keys(rows);
 
-    for (const auto row : ext::range(0, rows)) {
+    for (const auto row : ext::range(0, rows))
+    {
         const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
         has_key[key] = 0;
@@ -551,7 +556,8 @@ void ComplexKeyDirectDictionary::has(const Attribute & attribute, const Columns 
 
     stream->readSuffix();
 
-    for (const auto row : ext::range(0, rows)) {
+    for (const auto row : ext::range(0, rows))
+    {
         out[row] = has_key[keys[row]];
     }
 
