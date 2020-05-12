@@ -107,7 +107,7 @@ A constant can’t be specified as arguments for aggregate functions. Example: s
 
 ## Implementation Details
 
-Aggregation is one of the most important features of a column-oriented DBMS, and thus it's implementation is one of the most heavily optimized parts of ClickHouse. By default aggregation is done in memory using a hash-table. It has 40+ specializations that are chosen automatically depending on “grouping key” data types.
+Aggregation is one of the most important features of a column-oriented DBMS, and thus it's implementation is one of the most heavily optimized parts of ClickHouse. By default, aggregation is done in memory using a hash-table. It has 40+ specializations that are chosen automatically depending on “grouping key” data types.
 
 ### GROUP BY in External Memory {#select-group-by-in-external-memory}
 
