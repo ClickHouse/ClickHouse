@@ -83,7 +83,7 @@ private:
             if (rows_remaining != 0)
             {
                 RightType right_src_remaining[Impl::rows_per_iteration];
-                if constexpr(!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
+                if constexpr (!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
                 {
                     memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
                     memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
@@ -131,7 +131,7 @@ private:
             if (rows_remaining != 0)
             {
                 LeftType left_src_remaining[Impl::rows_per_iteration];
-                if constexpr(!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
+                if constexpr (!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
                 {
                     memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
                     memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
@@ -145,7 +145,7 @@ private:
                 }
 
                 RightType right_src_remaining[Impl::rows_per_iteration];
-                if constexpr(!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
+                if constexpr (!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
                 {
                     memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
                     memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
@@ -187,7 +187,7 @@ private:
             if (rows_remaining != 0)
             {
                 LeftType left_src_remaining[Impl::rows_per_iteration];
-                if constexpr(!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
+                if constexpr (!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
                 {
                     memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
                     memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
