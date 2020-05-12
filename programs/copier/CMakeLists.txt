@@ -6,6 +6,7 @@ set(CLICKHOUSE_COPIER_SOURCES
 set (CLICKHOUSE_COPIER_LINK
         PRIVATE
                 clickhouse_common_zookeeper
+                clickhouse_common_config
                 clickhouse_parsers
                 clickhouse_functions
                 clickhouse_table_functions
