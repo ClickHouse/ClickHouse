@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSearchToString.h>
-#include <Common/UatraitsFast/UserAgent.h>
 
 namespace DB
 {
