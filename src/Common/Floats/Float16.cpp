@@ -3,15 +3,16 @@
 #include <limits.h>
 #include <cstring>
 #include <iomanip>
-#include <Core/Types.h>
+//#include <Core/Types.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
-#define FLOAT16_NAN_HEX 0x7c01
 namespace DB
 {
+
+static constexpr const unsigned short FLOAT16_NAN = 0x7c01;
 
 struct Float16 {
     unsigned short value;
@@ -143,7 +144,7 @@ struct Float16 {
             exponent++;
             if (flExponent - exponent != 1) {
                 // report overflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX); 
+                return Float16(FLOAT16_NAN); 
             }
         }
         flExponent = exponent;
@@ -152,7 +153,7 @@ struct Float16 {
             resultingMantissa = resultingMantissa << 1;
             if (flExponent - exponent != 1) {
                 // report underflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
             flExponent--;
         }
@@ -179,19 +180,19 @@ struct Float16 {
             resultingExponent = exponent - exponentBias + flExponent;
             if (resultingExponent - flExponent != exponent - exponentBias) {
                 // report overflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
         } else if (flExponent > exponentBias) {
             resultingExponent = flExponent - exponentBias + exponent;
             if (resultingExponent - exponent != flExponent - exponentBias) {
                 // report overflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
         } else {
             resultingExponent = exponent + flExponent - exponentBias;
             if (resultingExponent + exponentBias != exponent + flExponent) {
                 // report underflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
         }
         unsigned short resultingMantissa = (getValue() & 0x3ff) * (fl.getValue() & 0x3ff);
@@ -202,7 +203,7 @@ struct Float16 {
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
                 // report underflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
             resultingExponentCopy--;
         }
@@ -215,7 +216,7 @@ struct Float16 {
             return Float16((unsigned short) 0);
         }
         if (fl.isNull()) {
-            return Float16((unsigned short) FLOAT16_NAN_HEX);
+            return Float16(FLOAT16_NAN);
         }
         unsigned short resultingExponent;
         unsigned short exponentBias = 0x10;
@@ -225,19 +226,19 @@ struct Float16 {
             resultingExponent = exponent - flExponent + exponentBias;
             if (resultingExponent - exponentBias != exponent - flExponent) {
                 // report overflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
         } else if (exponentBias > flExponent) {
             resultingExponent = exponentBias - flExponent + exponent;
             if (resultingExponent - exponent != exponentBias - flExponent) {
                 // report overflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
         } else {
             resultingExponent = exponent + exponentBias - flExponent;
             if (resultingExponent + flExponent != exponent + exponentBias) {
                 // report underflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
         }
         unsigned short resultingMantissa = (getValue() & 0x3ff) / (fl.getValue() & 0x3ff);
@@ -248,7 +249,7 @@ struct Float16 {
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
                 // report underflow
-                return Float16((unsigned short) FLOAT16_NAN_HEX);
+                return Float16(FLOAT16_NAN);
             }
             resultingExponentCopy--;
         }
