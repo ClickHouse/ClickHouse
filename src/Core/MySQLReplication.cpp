@@ -26,7 +26,7 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
     }
 
-    void EventHeader::print() const
+    void EventHeader::dump() const
     {
         std::cerr << "\n=== " << to_string(this->type) << " ===" << std::endl;
         std::cerr << "Timestamp: " << this->timestamp << std::endl;
@@ -52,9 +52,9 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(event_type_header_length.data()), len);
     }
 
-    void FormatDescriptionEvent::print() const
+    void FormatDescriptionEvent::dump() const
     {
-        header.print();
+        header.dump();
         std::cerr << "Binlog Version: " << this->binlog_version << std::endl;
         std::cerr << "Server Version: " << this->server_version << std::endl;
         std::cerr << "Create Timestamp: " << this->create_timestamp << std::endl;
@@ -70,9 +70,9 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(next_binlog.data()), len);
     }
 
-    void RotateEvent::print() const
+    void RotateEvent::dump() const
     {
-        header.print();
+        header.dump();
         std::cerr << "Position: " << this->position << std::endl;
         std::cerr << "Next Binlog: " << this->next_binlog << std::endl;
     }
@@ -108,9 +108,9 @@ namespace MySQLReplication
         }
     }
 
-    void QueryEvent::print() const
+    void QueryEvent::dump() const
     {
-        header.print();
+        header.dump();
         std::cerr << "Thread ID: " << this->thread_id << std::endl;
         std::cerr << "Execution Time: " << this->exec_time << std::endl;
         std::cerr << "Schema Len: " << this->schema_len << std::endl;
@@ -123,9 +123,9 @@ namespace MySQLReplication
     void XIDEvent::parseImpl(ReadBuffer & payload) { payload.readStrict(reinterpret_cast<char *>(&xid), 8); }
 
 
-    void XIDEvent::print() const
+    void XIDEvent::dump() const
     {
-        header.print();
+        header.dump();
         std::cerr << "XID: " << this->xid << std::endl;
     }
 
@@ -224,9 +224,9 @@ namespace MySQLReplication
         }
     }
 
-    void TableMapEvent::print() const
+    void TableMapEvent::dump() const
     {
-        header.print();
+        header.dump();
         std::cerr << "Table ID: " << this->table_id << std::endl;
         std::cerr << "Flags: " << this->flags << std::endl;
         std::cerr << "Schema Len: " << this->schema_len << std::endl;
@@ -530,19 +530,19 @@ namespace MySQLReplication
                         if (compressed_integers != 0)
                         {
                             Int64 val = 0;
-                            UInt32 to_read = compressed_byte_map[compressed_integers];
+                            UInt8 to_read = compressed_byte_map[compressed_integers];
                             readBigEndianStrict(reader, reinterpret_cast<char *>(&val), to_read);
                             format += std::to_string(val);
                         }
 
-                        for (auto k = 0; k < uncompressed_integers; k++)
+                        for (auto k = 0U; k < uncompressed_integers; k++)
                         {
                             UInt32 val = 0;
                             readBigEndianStrict(reader, reinterpret_cast<char *>(&val), 4);
                             format += std::to_string(val);
                         }
                         format += ".";
-                        for (auto k = 0; k < uncompressed_decimals; k++)
+                        for (auto k = 0U; k < uncompressed_decimals; k++)
                         {
                             UInt32 val = 0;
                             reader.readStrict(reinterpret_cast<char *>(&val), 4);
@@ -554,7 +554,7 @@ namespace MySQLReplication
                         {
                             Int64 val = 0;
                             String compressed_buff;
-                            UInt32 to_read = compressed_byte_map[compressed_decimals];
+                            UInt8 to_read = compressed_byte_map[compressed_decimals];
                             switch (to_read)
                             {
                                 case 1: {
@@ -686,11 +686,11 @@ namespace MySQLReplication
         rows.push_back(row);
     }
 
-    void RowsEvent::print() const
+    void RowsEvent::dump() const
     {
         FieldVisitorToString to_string;
 
-        header.print();
+        header.dump();
         std::cerr << "Schema: " << this->schema << std::endl;
         std::cerr << "Table: " << this->table << std::endl;
         for (auto i = 0U; i < rows.size(); i++)
@@ -706,9 +706,9 @@ namespace MySQLReplication
         }
     }
 
-    void DryRunEvent::print() const
+    void DryRunEvent::dump() const
     {
-        header.print();
+        header.dump();
         std::cerr << "[DryRun Event]" << std::endl;
     }
 
