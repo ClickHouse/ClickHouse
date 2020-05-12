@@ -21,6 +21,7 @@
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
+#include <Storages/MergeTree/TTLMode.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -650,15 +651,16 @@ public:
 
     struct TTLEntry
     {
+        TTLMode mode;
+
         ExpressionActionsPtr expression;
         String result_column;
 
         ExpressionActionsPtr where_expression;
-        String where_filter_column;
+        String where_result_column;
 
         Names group_by_keys;
-        std::vector<std::pair<String, ExpressionActionsPtr>> group_by_aggregations;
-        std::vector<std::pair<String, String>> group_by_aggregations_res_column;
+        std::vector<std::tuple<String, String, ExpressionActionsPtr>> group_by_aggregations;
         AggregateDescriptions aggregate_descriptions;
 
         /// Name and type of a destination are only valid in table-level context.

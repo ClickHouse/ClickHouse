@@ -66,6 +66,12 @@ private:
 
     /// Removes rows with expired table ttl and computes new ttl_infos for part
     void removeRowsWithExpiredTableTTL(Block & block);
+    
+    // Calculate aggregates of aggregate_columns into agg_result
+    void calculateAggregates(const MutableColumns & aggregate_columns, size_t start_pos, size_t length);
+
+    /// Finalize agg_result into result_columns
+    void finalizeAggregates(MutableColumns & result_columns);
 
     /// Updates TTL for moves
     void updateMovesTTL(Block & block);
