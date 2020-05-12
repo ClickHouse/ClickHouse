@@ -88,7 +88,7 @@ String DatabaseMaterializeMySQL::getCreateQuery(const mysqlxx::Pool::Entry & con
 {
     Block show_create_table_header{
         {std::make_shared<DataTypeString>(), "Table"},
-        {std::make_shared<DataTypeUInt64>(), "Create Table"},
+        {std::make_shared<DataTypeString>(), "Create Table"},
     };
 
     MySQLBlockInputStream show_create_table(
@@ -104,8 +104,12 @@ String DatabaseMaterializeMySQL::getCreateQuery(const mysqlxx::Pool::Entry & con
     MySQLParser::ParserCreateQuery p_create_query;
     ASTPtr ast = parseQuery(p_create_query, create_query.data, create_query.data + create_query.size, "", 0, 0);
 
+    if (!ast || !ast->as<MySQLParser::ASTCreateQuery>())
+        throw Exception("LOGICAL ERROR: ast cannot cast to MySQLParser::ASTCreateQuery.", ErrorCodes::LOGICAL_ERROR);
+
     WriteBufferFromOwnString out;
-    MySQLVisitor::CreateQueryConvertVisitor::Data data{.out = out};
+    ast->as<MySQLParser::ASTCreateQuery>()->database = database;
+    MySQLVisitor::CreateQueryConvertVisitor::Data data{.out = out, .context = global_context};
     MySQLVisitor::CreateQueryConvertVisitor visitor(data);
     visitor.visit(ast);
     return out.str();
@@ -152,12 +156,12 @@ void DatabaseMaterializeMySQL::dumpMySQLDatabase()
             + backQuoteIfNeed(database_name) + "  Database */ ";
 
         tryToExecuteQuery(query_prefix + " DROP TABLE IF EXISTS " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(dumping_table_name));
-        tryToExecuteQuery(query_prefix + getCreateQuery(connection, mysql_database_name, dumping_table_name));
+        tryToExecuteQuery(query_prefix + getCreateQuery(connection, database_name, dumping_table_name));
 
         Context context = global_context;
         context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         context.setCurrentQueryId(""); // generate random query_id
-        BlockIO streams = executeQuery(query_prefix + " INSERT INTO " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(dumping_table_name), context, true);
+        BlockIO streams = executeQuery( query_prefix + " INSERT INTO " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(dumping_table_name) + " VALUES", context, true);
 
         if (!streams.out)
             throw Exception("LOGICAL ERROR out stream is undefined.", ErrorCodes::LOGICAL_ERROR);
@@ -178,10 +182,11 @@ void DatabaseMaterializeMySQL::synchronization()
     {
         std::unique_lock<std::mutex> lock{sync_mutex};
 
-        /// Check database is exists in ClickHouse.
+        LOG_DEBUG(log, "Checking " + database_name + " database status.");
         while (!sync_quit && !DatabaseCatalog::instance().isDatabaseExist(database_name))
             sync_cond.wait_for(lock, std::chrono::seconds(1));
 
+        LOG_DEBUG(log, database_name + " database status is OK.");
         /// 查找一下位点文件, 如果不存在需要清理目前的数据库, 然后dump全量数据.
         dumpMySQLDatabase();
     }

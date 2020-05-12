@@ -207,7 +207,7 @@ bool ParserDeclareIndex::parseDeclareConstraintIndex(IParser::Pos & pos, String 
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_type = temp_node->as<ASTIdentifier>()->name;
+            index_type = "UNIQUE_" + temp_node->as<ASTIdentifier>()->name;
         }
     }
     else if (ParserKeyword("PRIMARY KEY").ignore(pos, expected))
@@ -218,7 +218,7 @@ bool ParserDeclareIndex::parseDeclareConstraintIndex(IParser::Pos & pos, String 
             if (!p_identifier.parse(pos, temp_node, expected))
                 return false;
 
-            index_type = temp_node->as<ASTIdentifier>()->name;
+            index_type = "PRIMARY_KEY_" + temp_node->as<ASTIdentifier>()->name;
         }
     }
     else if (ParserKeyword("FOREIGN KEY").ignore(pos, expected))

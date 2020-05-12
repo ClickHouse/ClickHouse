@@ -122,12 +122,10 @@ bool ParserCharsetName::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected &)
 
         while (true)
         {
-            if (isWhitespaceASCII(*pos->end))
-                break;
-            else
-            {
+            if (!isWhitespaceASCII(*pos->end) && pos->type != TokenType::EndOfStream)
                 ++pos;
-            }
+            else
+                break;
         }
 
         node = std::make_shared<ASTIdentifier>(String(begin, pos->end));

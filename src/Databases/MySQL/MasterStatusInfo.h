@@ -20,8 +20,5 @@ struct MasterStatusInfo
 
 };
 
-
-std::shared_ptr<MasterStatusInfo> fetchMasterStatusInfo(mysqlxx::Connection * connection);
-
 }
 

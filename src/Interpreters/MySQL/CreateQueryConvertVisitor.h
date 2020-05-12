@@ -1,14 +1,15 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
+#include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
+#include <Parsers/MySQL/ASTDeclarePartitionOptions.h>
 
 namespace DB
 {
-
-using namespace MySQLParser;
 
 namespace MySQLVisitor
 {
@@ -23,18 +24,42 @@ public:
     {
         /// SETTINGS
         WriteBuffer & out;
-        std::string declare_columns;
+        const Context & context;
+        size_t max_ranges;
+        size_t min_rows_pre_range;
+
+        ASTs primary_keys;
+        ASTs partition_keys;
+        NamesAndTypesList columns_name_and_type;
+
+        void addPrimaryKey(const ASTPtr & primary_key);
+
+        void addPartitionKey(const ASTPtr & partition_key);
+
+        ASTPtr getFormattedOrderByExpression();
+
+        ASTPtr getFormattedPartitionByExpression();
     };
 
     static void visit(ASTPtr & ast, Data & data);
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return false; }
 private:
-    static void visit(ASTCreateQuery & create, ASTPtr & ast, Data &);
+    static void visit(MySQLParser::ASTCreateQuery & create, ASTPtr & ast, Data &);
 
-    static void visitColumns(ASTCreateDefines & create_defines, ASTPtr & ast, Data & data);
+    static void visit(MySQLParser::ASTCreateDefines & create_defines, ASTPtr & ast, Data & data);
 
-    static void visitColumns(const ASTDeclareColumn & declare_column, ASTPtr & ast, Data & data);
+    static void visit(const MySQLParser::ASTDeclareIndex & declare_index, ASTPtr & ast, Data & data);
+
+    static void visit(const MySQLParser::ASTDeclareColumn & declare_column, ASTPtr & ast, Data & data);
+
+    static void visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, ASTPtr & ast, Data & data);
+
+//    static void visitPartitionBy(MySQLParser::ASTCreateQuery & create, ASTPtr & ast, Data & data);
+
+//    static void visitPartitionBy(MySQLParser::ASTCreateDefines & create_defines, ASTPtr & ast, Data & data);
+
+//    static void visitPartitionBy(const MySQLParser::ASTDeclarePartitionOptions & partition_options, ASTPtr & ast, Data & data);
 
 //    static void visitColumns(const ASTFunction & declare_column, ASTPtr & ast, Data & data);
 //    static void visit(ASTTableJoin & join, const ASTPtr & ast, Data &);
