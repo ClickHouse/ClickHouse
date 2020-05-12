@@ -11,13 +11,13 @@ Approximated query processing can be useful in the following cases:
 -   Business requirements target approximate results (for cost-effectiveness, or in order to market exact results to premium users).
 
 !!! note "Note"
-    You can only use sampling with the tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
+    You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 The features of data sampling are listed below:
 
 -   Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
--   Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](#select-in-operators) clause. Also, you can join samples using the [JOIN](#select-join) clause.
--   Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table).
+-   Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](../../operators/in.md) clause. Also, you can join samples using the [JOIN](join.md) clause.
+-   Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table).
 
 For the `SAMPLE` clause the following syntax is supported:
 
@@ -57,7 +57,7 @@ Since the minimum unit for data reading is one granule (its size is set by the `
 
 When using the `SAMPLE n` clause, you don’t know which relative percent of data was processed. So you don’t know the coefficient the aggregate functions should be multiplied by. Use the `_sample_factor` virtual column to get the approximate result.
 
-The `_sample_factor` column contains relative coefficients that are calculated dynamically. This column is created automatically when you [create](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) a table with the specified sampling key. The usage examples of the `_sample_factor` column are shown below.
+The `_sample_factor` column contains relative coefficients that are calculated dynamically. This column is created automatically when you [create](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) a table with the specified sampling key. The usage examples of the `_sample_factor` column are shown below.
 
 Let’s consider the table `visits`, which contains the statistics about site visits. The first example shows how to calculate the number of page views:
 
