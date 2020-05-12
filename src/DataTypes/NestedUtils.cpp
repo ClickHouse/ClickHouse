@@ -86,7 +86,8 @@ Block flatten(const Block & block)
     {
         if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
         {
-            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get()))
+            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
+            if (type_tuple && type_tuple->haveExplicitNames())
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();

@@ -55,13 +55,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime
+/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
+ *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
 class ParserCompoundIdentifier : public IParserBase
 {
+public:
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
+    : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool table_name_with_optional_uuid;
 };
 
 /// Just *
@@ -346,9 +351,16 @@ protected:
   */
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
+public:
+    ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
+        : brackets_can_be_omitted(brackets_can_be_omitted_) {}
 protected:
+
     const char * getName() const override { return "function with key-value arguments"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    /// brackets for function arguments can be omitted
+    bool brackets_can_be_omitted;
 };
 
 /** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters

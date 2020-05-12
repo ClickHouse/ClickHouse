@@ -1,4 +1,4 @@
-// /*	$OpenBSD: readpassphrase.h,v 1.5 2003/06/17 21:56:23 millert Exp $	*/
+// /* $OpenBSD: readpassphrase.h,v 1.5 2003/06/17 21:56:23 millert Exp $ */
 
 /*
  * Copyright (c) 2000, 2002 Todd C. Miller <Todd.Miller@courtesan.com>

@@ -4,9 +4,9 @@ set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
 PUBLISH_DIR="${BASE_DIR}/../publish"
-BASE_DOMAIN="${BASE_DOMAIN:-clickhouse.tech}"
-GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse.github.io.git}"
-GIT_PROD_URI="git@github.com:ClickHouse/clickhouse.github.io.git"
+BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.tech}"
+GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-website-content.git}"
+GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
 EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases --minify}"
 HISTORY_SIZE="${HISTORY_SIZE:-5}"
 
@@ -44,7 +44,7 @@ then
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m
-        git diff --stat="9999,9999" --diff-filter=M HEAD~1 | grep '|' | awk '$1 ~ /\.html$/ { if ($3>4) { url="https://'${BASE_DOMAIN}'/"$1; sub(/\/index.html/, "/", url); print "\""url"\""; }}' | split -l 25 /dev/stdin PURGE
+        git diff --stat="9999,9999" --diff-filter=M HEAD~1 | grep '|' | awk '$1 ~ /\.html$/ { if ($3>4) { url="https://clickhouse.tech/"$1; sub(/\/index.html/, "/", url); print "\""url"\""; }}' | split -l 25 /dev/stdin PURGE
         for FILENAME in $(ls PURGE*)
         do
             POST_DATA=$(cat "${FILENAME}" | sed -n -e 'H;${x;s/\n/,/g;s/^,//;p;}' | awk '{print "{\"files\":["$0"]}";}')

@@ -70,6 +70,13 @@ void MetricLog::stopCollectMetric()
 }
 
 
+void MetricLog::shutdown()
+{
+    stopCollectMetric();
+    stopFlushThread();
+}
+
+
 inline UInt64 time_in_milliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(timepoint.time_since_epoch()).count();

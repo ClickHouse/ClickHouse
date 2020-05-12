@@ -8,6 +8,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsageInfo.h>
+#include <Access/AccessFlags.h>
 #include <ext/range.h>
 
 
@@ -40,7 +41,9 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypes()
 
 void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
+    context.checkAccess(AccessType::SHOW_QUOTAS);
     const auto & access_control = context.getAccessControlManager();
+
     for (const auto & info : access_control.getQuotaUsageInfo())
     {
         for (const auto & interval : info.intervals)

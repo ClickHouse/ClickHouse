@@ -25,7 +25,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructureForShare(true, context.getInitialQueryId()));
+    addTableLock(
+            storage->lockStructureForShare(true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -54,7 +55,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
-            addTableLock(materialized_view->lockStructureForShare(true, context.getInitialQueryId()));
+            addTableLock(
+                    materialized_view->lockStructureForShare(
+                            true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
@@ -69,9 +72,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
+            const auto & inner_table_columns = inner_table->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
-                if (inner_table->hasColumn(column.name))
+                if (inner_table_columns.hasPhysical(column.name))
                     list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
@@ -89,7 +93,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
     }
 
-    /* Do not push to destination table if the flag is set */
+    /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
         output = storage->write(query_ptr, context);
@@ -235,10 +239,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
+
             Context local_context = *views_context;
             local_context.addViewSource(
-                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
-                                          block));
+                StorageValues::create(
+                    storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
@@ -247,7 +252,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
                     in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(context, in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+            in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);

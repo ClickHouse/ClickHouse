@@ -89,7 +89,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             table = DatabaseCatalog::instance().getTable(table_id);
         }
 
-        auto table_lock = table->lockStructureForShare(false, context.getInitialQueryId());
+        auto table_lock = table->lockStructureForShare(
+                false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
         columns = table->getColumns();
     }
 
@@ -98,9 +99,6 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     for (const auto & column : columns)
     {
-        if (column.is_virtual)
-            continue;
-
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 

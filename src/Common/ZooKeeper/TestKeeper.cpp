@@ -140,20 +140,20 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 
         for (const auto & generic_request : generic_requests)
         {
-            if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
+            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
                 auto create = std::make_shared<TestKeeperCreateRequest>(*concrete_request_create);
                 requests.push_back(create);
             }
-            else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperRemoveRequest>(*concrete_request_remove));
             }
-            else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
+            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperSetRequest>(*concrete_request_set));
             }
-            else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
+            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
             }

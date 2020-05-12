@@ -143,7 +143,7 @@ void ColumnLowCardinality::insertDefault()
 
 void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
 {
-    auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
         throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -174,7 +174,7 @@ void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 
 void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
         throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -250,7 +250,7 @@ void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
         throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
                         ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
-    auto & dict = getDictionary().getNestedColumn();
+    const auto & dict = getDictionary().getNestedColumn();
     WeakHash32 dict_hash(dict->size());
     dict->updateWeakHash32(dict_hash);
 

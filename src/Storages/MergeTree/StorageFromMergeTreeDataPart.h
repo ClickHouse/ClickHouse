@@ -52,15 +52,18 @@ public:
         return part->storage.getInMemoryMetadata();
     }
 
-
     bool hasSortingKey() const { return part->storage.hasSortingKey(); }
 
     Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
+    NamesAndTypesList getVirtuals() const override
+    {
+        return part->storage.getVirtuals();
+    }
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
+        : IStorage(getIDFromPart(part_))
         , part(part_)
     {
         setColumns(part_->storage.getColumns());

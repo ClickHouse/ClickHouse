@@ -6,7 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -32,6 +31,10 @@
 #include <Processors/Formats/LazyOutputFormat.h>
 
 #include "TCPHandler.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 
 namespace DB
@@ -146,10 +149,6 @@ void TCPHandler::runImpl()
         /// If we need to shut down, or client disconnects.
         if (server.isCancelled() || in->eof())
             break;
-
-        /// receiveHello() has set the default settings for the current user,
-        /// but this default itself could change while we were waiting for a packet from the client.
-        connection_context.resetSettingsToDefault();
 
         /// Set context of request.
         query_context = connection_context;
@@ -1067,14 +1066,16 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
+            const Settings & query_settings = query_context->getSettingsRef();
+
+            std::string method = Poco::toUpper(query_settings.network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
-                level = query_context->getSettingsRef().network_zstd_compression_level;
+                level = query_settings.network_zstd_compression_level;
 
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
+                    *out, CompressionCodecFactory::instance().get(method, level, !query_settings.allow_suspicious_codecs));
             else
                 state.maybe_compressed_out = out;
         }

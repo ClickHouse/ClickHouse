@@ -64,6 +64,7 @@ def test_linear_structure(start_cluster):
                      ("file?", "10"),
                      ("nothing*", "0"),
                      ("file{0..9}{0..9}{0..9}", "10"),
+                     ("file{000..999}", "10"),
                      ("file???", "10"),
                      ("file*", "20"),
                      ("a_{file,data}", "4"),

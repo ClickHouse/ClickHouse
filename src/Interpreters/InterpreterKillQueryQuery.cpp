@@ -267,7 +267,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                 else
                 {
                     ParserAlterCommand parser;
-                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0);
+                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0, context.getSettingsRef().max_parser_depth);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), required_access_rights))
                     {
@@ -319,7 +319,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     if (query.type == ASTKillQueryQuery::Type::Query)
         required_access.emplace_back(AccessType::KILL_QUERY);
     else if (query.type == ASTKillQueryQuery::Type::Mutation)
-        required_access.emplace_back(AccessType::UPDATE | AccessType::DELETE | AccessType::MATERIALIZE_INDEX | AccessType::MATERIALIZE_TTL);
+        required_access.emplace_back(AccessType::ALTER_UPDATE | AccessType::ALTER_DELETE | AccessType::ALTER_MATERIALIZE_INDEX | AccessType::ALTER_MATERIALIZE_TTL);
     return required_access;
 }
 

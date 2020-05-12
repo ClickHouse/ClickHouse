@@ -40,7 +40,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        auto arg = arguments[0].get();
+        const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isFloat64())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be Float64",
@@ -63,9 +63,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto col_lon = block.getByPosition(arguments[0]).column.get();
-        const auto col_lat = block.getByPosition(arguments[1]).column.get();
-        const auto col_res = block.getByPosition(arguments[2]).column.get();
+        const auto * col_lon = block.getByPosition(arguments[0]).column.get();
+        const auto * col_lat = block.getByPosition(arguments[1]).column.get();
+        const auto * col_res = block.getByPosition(arguments[2]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();

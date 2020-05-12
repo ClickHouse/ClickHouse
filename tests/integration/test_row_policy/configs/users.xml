@@ -13,7 +13,6 @@
             </networks>
             <profile>default</profile>
             <quota>default</quota>
-            <allow_row_policy_management>true</allow_row_policy_management>
         </default>
         <another>
             <password/>

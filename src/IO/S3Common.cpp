@@ -2,15 +2,15 @@
 
 #if USE_AWS_S3
 
-#include <IO/S3Common.h>
-#include <IO/WriteBufferFromString.h>
+#    include <IO/S3Common.h>
+#    include <IO/WriteBufferFromString.h>
 
-#include <regex>
-#include <aws/s3/S3Client.h>
-#include <aws/core/auth/AWSCredentialsProvider.h>
-#include <aws/core/utils/logging/LogSystemInterface.h>
-#include <aws/core/utils/logging/LogMacros.h>
-#include <common/logger_useful.h>
+#    include <aws/core/auth/AWSCredentialsProvider.h>
+#    include <aws/core/utils/logging/LogMacros.h>
+#    include <aws/core/utils/logging/LogSystemInterface.h>
+#    include <aws/s3/S3Client.h>
+#    include <re2/re2.h>
+#    include <common/logger_useful.h>
 
 
 namespace
@@ -38,13 +38,13 @@ public:
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
-        auto & [level, prio] = convertLogLevel(log_level);
+        const auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
-        auto & [level, prio] = convertLogLevel(log_level);
+        const auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + message_stream.str(), level, prio);
     }
 
@@ -57,7 +57,6 @@ private:
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -67,7 +66,7 @@ namespace S3
 {
     ClientFactory::ClientFactory()
     {
-        aws_options = Aws::SDKOptions {};
+        aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
     }
@@ -84,6 +83,7 @@ namespace S3
         return ret;
     }
 
+    /// This method is not static because it requires ClientFactory to be initialized.
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
         const String & access_key_id,
@@ -93,59 +93,71 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
+        return create(cfg, access_key_id, secret_access_key);
+    }
+
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
+        Aws::Client::ClientConfiguration & cfg,
+        const String & access_key_id,
+        const String & secret_access_key)
+    {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
         return std::make_shared<Aws::S3::S3Client>(
-                credentials, // Aws credentials.
-                std::move(cfg), // Client configuration.
-                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-                endpoint.empty() // Use virtual addressing only if endpoint is not specified.
+            credentials, // Aws credentials.
+            std::move(cfg), // Client configuration.
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
+            cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
         );
     }
 
-
     URI::URI(const Poco::URI & uri_)
     {
-        static const std::regex bucket_key_pattern("([^/]+)/(.*)"); /// TODO std::regex is discouraged
+        /// Case when bucket name represented in domain name of S3 URL.
+        /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
+        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
+        static const RE2 virtual_hosted_style_pattern(R"((.+\.)?s3[.\-][a-z0-9\-.]+)");
+        /// Case when bucket name and key represented in path of S3 URL.
+        /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
+        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
+        static const RE2 path_style_pattern("([^/]+)/(.*)");
 
         uri = uri_;
 
-        // s3://*
-        if (uri.getScheme() == "s3" || uri.getScheme() == "S3")
-        {
-            bucket = uri.getAuthority();
-            if (bucket.empty())
-                throw Exception ("Invalid S3 URI: no bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
-
-            const auto & path = uri.getPath();
-            // s3://bucket or s3://bucket/
-            if (path.length() <= 1)
-                throw Exception ("Invalid S3 URI: no key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
-
-            key = path.substr(1);
-            return;
-        }
-
         if (uri.getHost().empty())
-            throw Exception("Invalid S3 URI: no host: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
 
-        // Parse bucket and key from path.
-        std::smatch match;
-        std::regex_search(uri.getPath(), match, bucket_key_pattern);
-        if (!match.empty())
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket))
         {
-            bucket = match.str(1);
-            if (bucket.empty())
-                throw Exception ("Invalid S3 URI: no bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            if (!bucket.empty())
+                bucket.pop_back(); /// Remove '.' character from the end of the bucket name.
 
-            key = match.str(2);
-            if (key.empty())
-                throw Exception ("Invalid S3 URI: no key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception(
+                    "Bucket name length out of bounds in S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+
+            /// Remove leading '/' from path to extract key.
+            key = uri.getPath().substr(1);
+            if (key.empty() || key == "/")
+                throw Exception("Key name is empty in S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+        }
+        else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+        {
+            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception(
+                    "Bucket name length out of bounds in S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+
+            if (key.empty() || key == "/")
+                throw Exception("Key name is empty in S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
-            throw Exception("Invalid S3 URI: no bucket or key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 

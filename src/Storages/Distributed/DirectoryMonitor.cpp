@@ -1,7 +1,6 @@
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Common/escapeForFileName.h>
-#include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
@@ -78,8 +77,7 @@ namespace
 
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
-    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_)
-    /// It's important to initialize members before `thread` to avoid race.
+    StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_)
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
@@ -92,7 +90,10 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
+    , bg_pool(bg_pool_)
 {
+    task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
+    task_handle->activateAndSchedule();
 }
 
 
@@ -100,12 +101,8 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 {
     if (!quit)
     {
-        {
-            quit = true;
-            std::lock_guard lock{mutex};
-        }
-        cond.notify_one();
-        thread.join();
+        quit = true;
+        task_handle->deactivate();
     }
 }
 
@@ -122,12 +119,8 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 {
     if (!quit)
     {
-        {
-            quit = true;
-            std::lock_guard lock{mutex};
-        }
-        cond.notify_one();
-        thread.join();
+        quit = true;
+        task_handle->deactivate();
     }
 
     Poco::File(path).remove(true);
@@ -136,16 +129,12 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 
 void StorageDistributedDirectoryMonitor::run()
 {
-    setThreadName("DistrDirMonitor");
-
     std::unique_lock lock{mutex};
 
-    const auto quit_requested = [this] { return quit.load(std::memory_order_relaxed); };
-
-    while (!quit_requested())
+    bool do_sleep = false;
+    while (!quit)
     {
-        auto do_sleep = true;
-
+        do_sleep = true;
         if (!monitor_blocker.isCancelled())
         {
             try
@@ -167,16 +156,19 @@ void StorageDistributedDirectoryMonitor::run()
             LOG_DEBUG(log, "Skipping send data over distributed table.");
         }
 
-        if (do_sleep)
-            cond.wait_for(lock, sleep_time, quit_requested);
-
         const auto now = std::chrono::system_clock::now();
         if (now - last_decrease_time > decrease_error_count_period)
         {
             error_count /= 2;
             last_decrease_time = now;
         }
+
+        if (do_sleep)
+            break;
     }
+
+    if (!quit && do_sleep)
+        task_handle->scheduleAfter(sleep_time.count());
 }
 
 
@@ -586,6 +578,13 @@ BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(con
     return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
 }
 
+bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
+{
+    if (quit)
+        return false;
+    return task_handle->scheduleAfter(ms, false);
+}
+
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
     std::unordered_set<UInt64> file_indices_to_skip;
@@ -714,8 +713,13 @@ std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 void StorageDistributedDirectoryMonitor::updatePath(const std::string & new_path)
 {
     std::lock_guard lock{mutex};
+
+    task_handle->deactivate();
+
     path = new_path;
     current_batch_file_path = path + "current_batch.txt";
+
+    task_handle->activateAndSchedule();
 }
 
 }

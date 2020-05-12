@@ -30,7 +30,9 @@ class Port
 public:
     struct UpdateInfo
     {
-        std::vector<void *> * update_list = nullptr;
+        using UpdateList = std::vector<void *>;
+
+        UpdateList * update_list = nullptr;
         void * id = nullptr;
         UInt64 version = 0;
         UInt64 prev_version = 0;

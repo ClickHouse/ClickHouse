@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
+#include <Access/AccessType.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
@@ -12,9 +13,12 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <Common/config.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 namespace DB
 {
@@ -230,6 +234,10 @@ struct JDBCBridgeMixin
     {
         return "JDBC";
     }
+    static AccessType getSourceAccessType()
+    {
+        return AccessType::JDBC;
+    }
 
     static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, const Poco::Timespan &)
     {
@@ -252,6 +260,10 @@ struct ODBCBridgeMixin
     static const String getName()
     {
         return "ODBC";
+    }
+    static AccessType getSourceAccessType()
+    {
+        return AccessType::ODBC;
     }
 
     static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)

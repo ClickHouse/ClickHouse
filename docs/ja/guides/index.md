@@ -10,7 +10,7 @@ toc_title: "\u6982\u8981"
 
 ClickHouseを使用してさまざまなタスクを解決するのに役立つ詳細な手順のリスト:
 
--   [ストリートビューを簡単にクラスタの設定](../getting_started/tutorial.md)
--   [ClickHouseでのCatBoostモデルの適用](apply_catboost_model.md)
+-   [ストリートビューを簡単にクラスタの設定](../getting-started/tutorial.md)
+-   [ClickHouseでのCatBoostモデルの適用](apply-catboost-model.md)
 
 [元の記事](https://clickhouse.tech/docs/en/guides/) <!--hide-->

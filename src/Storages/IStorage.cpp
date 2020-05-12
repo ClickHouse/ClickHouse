@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
+
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -8,9 +11,6 @@
 #include <Common/quoteString.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
-
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
 
 
 namespace DB
@@ -28,20 +28,12 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
-}
-
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
-{
+    extern const int DEADLOCK_AVOIDED;
 }
 
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
-}
-
-const ColumnsDescription & IStorage::getVirtuals() const
-{
-    return virtuals;
 }
 
 const IndicesDescription & IStorage::getIndices() const
@@ -52,18 +44,6 @@ const IndicesDescription & IStorage::getIndices() const
 const ConstraintsDescription & IStorage::getConstraints() const
 {
     return constraints;
-}
-
-NameAndTypePair IStorage::getColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().getPhysical(column_name);
-}
-
-bool IStorage::hasColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().hasPhysical(column_name);
 }
 
 Block IStorage::getSampleBlock() const
@@ -80,7 +60,9 @@ Block IStorage::getSampleBlockWithVirtuals() const
 {
     auto res = getSampleBlock();
 
-    for (const auto & column : getColumns().getVirtuals())
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -100,10 +82,16 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
-    NamesAndTypesList all_columns = getColumns().getAll();
     std::unordered_map<String, DataTypePtr> columns_map;
+
+    NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
+
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : getVirtuals())
+        columns_map.emplace(column.name, column.type);
 
     for (const auto & name : column_names)
     {
@@ -114,9 +102,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
         }
         else
         {
-            /// Virtual columns.
-            NameAndTypePair elem = getColumn(name);
-            res.insert({elem.type->createColumn(), elem.type, elem.name});
+            throw Exception(
+                "Column " + backQuote(name) + " not found in table " + getStorageID().getNameForLogs(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 
@@ -125,8 +112,13 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
+#if !defined(ARCADIA_BUILD)
+    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+#else
+    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
+#endif
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -163,7 +155,10 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     if (include_virtuals)
-        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+    {
+        auto virtuals = getVirtuals();
+        available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
+    }
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -291,12 +286,6 @@ void IStorage::setColumns(ColumnsDescription columns_)
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     columns = std::move(columns_);
-
-    for (const auto & column : virtuals)
-    {
-        if (!columns.has(column.name))
-            columns.add(column);
-    }
 }
 
 void IStorage::setIndices(IndicesDescription indices_)
@@ -311,51 +300,68 @@ void IStorage::setConstraints(ConstraintsDescription constraints_)
 
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
-    return getColumns().get(column_name).is_virtual;
+    /// Virtual column maybe overriden by real column
+    return !getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 
-TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
+RWLockImpl::LockHolder IStorage::tryLockTimed(
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const
+{
+    auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
+    if (!lock_holder)
+    {
+        const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
+        throw Exception(
+                type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
+                "\" has timed out! (" + toString(acquire_timeout.totalMilliseconds()) + "ms) "
+                "Possible deadlock avoided. Client should retry.",
+                ErrorCodes::DEADLOCK_AVOIDED);
+    }
+    return lock_holder;
+}
+
+TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id, const SettingSeconds & acquire_timeout)
 {
     TableStructureReadLockHolder result;
     if (will_add_new_data)
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
+        result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Read, query_id, acquire_timeout);
+    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     return result;
 }
 
-TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
+TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id, const SettingSeconds & acquire_timeout)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     return result;
 }
 
-void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
+void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id, const SettingSeconds & acquire_timeout)
 {
     if (!lock_holder.alter_intention_lock)
         throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+        lock_holder.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    lock_holder.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
 }
 
-TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
+TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id, const SettingSeconds & acquire_timeout)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+    result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     return result;
 }
@@ -370,11 +376,11 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -412,15 +418,19 @@ BlockInputStreams IStorage::readStreams(
 
 StorageID IStorage::getStorageID() const
 {
-    std::lock_guard<std::mutex> lock(id_mutex);
+    std::lock_guard lock(id_mutex);
     return storage_id;
 }
 
-void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
+void IStorage::renameInMemory(const StorageID & new_table_id)
 {
-    std::lock_guard<std::mutex> lock(id_mutex);
-    storage_id.database_name = new_database_name;
-    storage_id.table_name = new_table_name;
+    std::lock_guard lock(id_mutex);
+    storage_id = new_table_id;
+}
+
+NamesAndTypesList IStorage::getVirtuals() const
+{
+    return {};
 }
 
 }

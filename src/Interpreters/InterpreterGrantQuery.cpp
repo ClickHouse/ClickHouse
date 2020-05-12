@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Parsers/ASTGrantQuery.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/ExtendedRoleSet.h>
@@ -59,7 +61,7 @@ namespace
 
 BlockIO InterpreterGrantQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTGrantQuery &>();
+    auto & query = query_ptr->as<ASTGrantQuery &>();
     auto & access_control = context.getAccessControlManager();
     auto access = context.getAccess();
     access->checkGrantOption(query.access_rights_elements);
@@ -70,6 +72,12 @@ BlockIO InterpreterGrantQuery::execute()
         roles_from_query = ExtendedRoleSet{*query.roles, access_control}.getMatchingIDs(access_control);
         for (const UUID & role_from_query : roles_from_query)
             access->checkAdminOption(role_from_query);
+    }
+
+    if (!query.cluster.empty())
+    {
+        query.replaceCurrentUserTagWithName(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
     }
 
     std::vector<UUID> to_roles = ExtendedRoleSet{*query.to_roles, access_control, context.getUserID()}.getMatchingIDs(access_control);

@@ -22,10 +22,14 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_SSL
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
+#    include <openssl/pem.h>
+#    include <openssl/rsa.h>
 #endif
 
 /// Implementation of MySQL wire protocol.
@@ -914,8 +918,17 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+       /** Generate a random string using ASCII characters but avoid separator character,
+         * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
+         * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
+         */
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
+        {
             generator >> scramble[i];
+            scramble[i] &= 0x7f;
+            if (scramble[i] == '\0' || scramble[i] == '$')
+                scramble[i] = scramble[i] + 1;
+        }
     }
 
     String getName() override
@@ -993,8 +1006,13 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
+        {
             generator >> scramble[i];
+            scramble[i] &= 0x7f;
+            if (scramble[i] == '\0' || scramble[i] == '$')
+                scramble[i] = scramble[i] + 1;
+        }
     }
 
     String getName() override

@@ -168,7 +168,14 @@ namespace
                 user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
         }
 
-        user->access_with_grant_option = user->access;
+        user->access_with_grant_option = user->access; /// By default the user can grant everything he has.
+
+        bool access_management = config.getBool(user_config + ".access_management", false);
+        if (!access_management)
+        {
+            user->access.revoke(AccessType::ACCESS_MANAGEMENT);
+            user->access_with_grant_option.clear();
+        }
 
         return user;
     }

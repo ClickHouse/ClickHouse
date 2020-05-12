@@ -35,7 +35,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
     std::string fail_messages;
 
-    for (auto & shard_info : shards_info)
+    for (const auto & shard_info : shards_info)
     {
         try
         {
@@ -137,7 +137,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
                 column.default_desc.expression = parseQuery(
-                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0);
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context.getSettingsRef().max_parser_depth);
             }
 
             res.add(column);

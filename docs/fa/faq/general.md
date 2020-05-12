@@ -47,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### با استفاده از جدول فایل موتور {#using-a-file-engine-table}
 
-ببینید [پرونده](../engines/table_engines/special/file.md).
+ببینید [پرونده](../engines/table-engines/special/file.md).
 
 ### با استفاده از تغییر مسیر خط فرمان {#using-command-line-redirection}
 

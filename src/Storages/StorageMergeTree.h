@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -63,7 +63,7 @@ public:
 
     CancellationCode killMutation(const String & mutation_id) override;
 
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     void alter(const AlterCommands & commands, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
@@ -120,7 +120,11 @@ private:
 
     BackgroundProcessingPoolTaskResult movePartsTask();
 
-    void mutateImpl(const MutationCommands & commands, size_t mutations_sync);
+    /// Allocate block number for new mutation, write mutation to disk
+    /// and into in-memory structures. Wake up merge-mutation task.
+    Int64 startMutation(const MutationCommands & commands, String & mutation_file_name);
+    /// Wait until mutation with version will finish mutation for all parts
+    void waitForMutation(Int64 version, const String & file_name);
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
@@ -165,6 +169,8 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
+
+    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }
