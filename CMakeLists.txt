@@ -332,7 +332,6 @@ find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
 include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
-include (cmake/find/boost.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
@@ -357,7 +356,6 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
-include (cmake/find/hyperscan.cmake)
 include (cmake/find/simdjson.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)

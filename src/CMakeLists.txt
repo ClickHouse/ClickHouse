@@ -243,8 +243,8 @@ target_link_libraries(clickhouse_common_io
             ${EXECINFO_LIBRARIES}
             cpuid
         PUBLIC
-            ${Boost_PROGRAM_OPTIONS_LIBRARY}
-            ${Boost_SYSTEM_LIBRARY}
+            boost::program_options
+            boost::system
             ${CITYHASH_LIBRARIES}
             ${ZLIB_LIBRARIES}
             pcg_random
@@ -267,18 +267,18 @@ endif()
 dbms_target_link_libraries (
     PRIVATE
         ${BTRIE_LIBRARIES}
-        ${Boost_PROGRAM_OPTIONS_LIBRARY}
-        ${Boost_FILESYSTEM_LIBRARY}
         ${LZ4_LIBRARY}
-        clickhouse_parsers
+        boost::filesystem
+        boost::program_options
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
+        clickhouse_parsers
         Poco::JSON
         string_utils
     PUBLIC
-        ${Boost_SYSTEM_LIBRARY}
         ${MYSQLXX_LIBRARY}
+        boost::system
         clickhouse_common_io
 )
 
@@ -297,10 +297,6 @@ if (ZSTD_LIBRARY)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
     endif ()
 endif()
-
-if (NOT USE_INTERNAL_BOOST_LIBRARY)
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-endif ()
 
 if (USE_ICU)
     dbms_target_link_libraries (PRIVATE ${ICU_LIBRARIES})

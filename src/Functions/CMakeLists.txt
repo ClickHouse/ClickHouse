@@ -10,22 +10,22 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        clickhouse_dictionaries
-        clickhouse_dictionaries_embedded
-        dbms
-        consistent-hashing
-        consistent-hashing-sumbur
+        ${BASE64_LIBRARY}
         ${CITYHASH_LIBRARIES}
         ${FARMHASH_LIBRARIES}
-        ${METROHASH_LIBRARIES}
-        murmurhash
-        ${BASE64_LIBRARY}
         ${FASTOPS_LIBRARY}
+        ${METROHASH_LIBRARIES}
+        clickhouse_dictionaries
+        clickhouse_dictionaries_embedded
+        consistent-hashing
+        consistent-hashing-sumbur
+        dbms
+        murmurhash
 
     PRIVATE
-        libdivide
         ${ZLIB_LIBRARIES}
-        ${Boost_FILESYSTEM_LIBRARY}
+        boost::filesystem
+        libdivide
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)
