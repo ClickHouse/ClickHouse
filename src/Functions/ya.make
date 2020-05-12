@@ -380,6 +380,7 @@ SRCS(
     toStartOfMinute.cpp
     toStartOfMonth.cpp
     toStartOfQuarter.cpp
+    toStartOfSecond.cpp
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
