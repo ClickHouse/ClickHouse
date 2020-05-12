@@ -3,12 +3,13 @@
 #include <limits.h>
 #include <cstring>
 #include <iomanip>
-#include <Core/Types.h>
+//#include <Core/Types.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
+#define FLOAT16_NAN_HEX 0x7c01
 
 namespace DB
 {
@@ -32,13 +33,30 @@ struct Float16 {
         value = fl16;
     }
 
+    unsigned short getValue() const {
+        return value;
+    }
+
     bool sign() const {
-        return (bool(~(1 << 16) & value));
+        return (bool)(~((0x1 << 15) & value));
     }
 
     unsigned short withoutSign() const {
-        return value & (~(1 << 16));
+        return value & 0x7fff;
     }
+
+    bool isNull() const {
+        return !(bool)(value & 0x7fff);
+    }
+
+    bool isInfinity() const {
+        return !((bool)(value << 6)) && (((value >> 10) & 0x1f) == 0x1f);
+    }
+
+    bool isNan() const {
+        return ((bool)(value << 6)) && (((value >> 10) & 0x1f) == 0x1f);
+    }
+
 
     unsigned short asShort() const { return value; }
 
@@ -58,43 +76,96 @@ struct Float16 {
         return fl;
     }
 
-    bool inline operator== (const Float16 fl) const { return withoutSign() == fl.withoutSign(); }
-    bool inline operator!= (const Float16 fl) const { return withoutSign() != fl.withoutSign(); }
+    bool inline operator== (const Float16 fl) const { return (sign() == fl.sign()) && (withoutSign() == fl.withoutSign()); }
+    bool inline operator!= (const Float16 fl) const { return (sign() != fl.sign()) || (withoutSign() != fl.withoutSign()); }
     bool inline operator<  (const Float16 fl) const {
-        return (sign() && !fl.sign()) && ((!sign() && fl.sign()) || (!fl.sign()*(withoutSign() > fl.withoutSign())));
+        return asFloat() < fl.asFloat();
     }
     bool inline operator<= (const Float16 fl) const {
-        return (withoutSign() == fl.withoutSign()) || ((sign() && !fl.sign()) && ((!sign() && fl.sign()) || (!fl.sign()*(withoutSign() > fl.withoutSign()))));
+        return asFloat() <= fl.asFloat();
     }
     bool inline operator>  (const Float16 fl) const {
-        return (!sign() && fl.sign()) && ((sign() && !fl.sign()) || (!sign()*(withoutSign() < fl.withoutSign())));
+        return asFloat() > fl.asFloat();
     }
     bool inline operator>= (const Float16 fl) const {
-        return (withoutSign() == fl.withoutSign()) || ((!sign() && fl.sign()) && ((sign() && !fl.sign()) || (!sign()*(withoutSign() < fl.withoutSign()))));
+        return asFloat() >= fl.asFloat();
     }
 
     Float16 inline operator+(const Float16 fl) const {
-        if (!sign() && !fl.sign()) {
-            return positiveAddition(withoutSign(), fl.withoutSign());
-        } else if (sign() && fl.sign()) {
-            positiveAddition(withoutSign(), fl.withoutSign());
-        return fl;
+        if (isNull()) {
+            return Float16(fl.getValue());
+        }
+        if (fl.isNull()) {
+            return Float16(getValue());
+        }
+        unsigned short mantissa = value & 0x3ff;
+        unsigned short flMantissa = fl.getValue() & 0x3ff;
+        unsigned short exponent = (value >> 10) & 0x1f;
+        unsigned short flExponent = (fl.getValue() >> 10) & 0x1f;
+        while (exponent != flExponent) {
+            if (exponent < flExponent) {
+                exponent++;
+                mantissa = mantissa >> 1;
+                if (!mantissa) {
+                    return Float16(fl.getValue());
+                }
+            } else {
+                flExponent++;
+                flMantissa = flMantissa >> 1;
+                if (!flMantissa) {
+                    return Float16(getValue());
+                }
+            }
+        }
+        bool isOverflow = false;
+        bool resultingSign;
+        unsigned short resultingMantissa;
+        if ((!sign() && !fl.sign()) || (sign() && fl.sign())) {
+            resultingSign = sign();
+            resultingMantissa = mantissa + flMantissa;
+            isOverflow = (resultingMantissa - mantissa) - flMantissa;
+        } else if (!sign() && fl.sign()) {
+            resultingSign = mantissa - flMantissa < 0;
+            if (resultingSign) {
+                resultingMantissa = flMantissa - mantissa;
+            } else {
+                resultingMantissa = mantissa - flMantissa;
+            }
+        } else if (sign() && !fl.sign()) {
+            resultingSign = flMantissa - mantissa < 0;
+            if (resultingSign) {
+                resultingMantissa = mantissa - flMantissa;
+            } else {
+                resultingMantissa = flMantissa - mantissa;
+            }
+        }
+        if (isOverflow) {
+            resultingMantissa = resultingMantissa >> 1;
+            exponent++;
+            if (flExponent - exponent != 1) {
+                // report overflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX); 
+            }
+        }
+        flExponent = exponent;
+        while ((bool)(resultingMantissa >> 9)) {
+            exponent--;
+            resultingMantissa = resultingMantissa << 1;
+            if (flExponent - exponent == 1) {
+                // report underflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+            flExponent--;
+        }
+        exponent = (exponent << 10) | resultingMantissa;
+        if (resultingSign) {
+            exponent |= (0x1 << 16);
+        }
+        return Float16(exponent);
     }
 
-    Float16 positiveAddition(const Float16 fl1, const Float16 fl2) const {
-        return fl1;
-    }
-
-    Float16 positiveSubtraction(const Float16 fl1, const Float16 fl2) const {
-        return fl1;
-    }
-
-    Float16 positiveMultiplication(const Float16 fl1, const Float16 fl2) const {
-        return fl1;
-    }
-
-    Float16 positiveDivision(const Float16 fl1, const Float16 fl2) const {
-        return fl1;
+    Float16 inline operator-(const Float16 fl) const {
+        return Float16(getValue()) + Float16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
     }
 
     template <typename T> bool inline operator== (const T rhs) const { return *this == Float16(rhs); }
