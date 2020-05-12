@@ -184,7 +184,7 @@ int main(int, char **)
                 switch (event->type())
                 {
                     case MYSQL_QUERY_EVENT: {
-                        auto binlogEvent = std::dynamic_pointer_cast<QueryEvent>(event);
+                        auto binlogEvent = std::static_pointer_cast<QueryEvent>(event);
                         binlogEvent->print();
 
                         Position pos = slave.getPosition();
@@ -192,7 +192,7 @@ int main(int, char **)
                         break;
                     }
                     case MYSQL_WRITE_ROWS_EVENT: {
-                        auto binlogEvent = std::dynamic_pointer_cast<WriteRowsEvent>(event);
+                        auto binlogEvent = std::static_pointer_cast<WriteRowsEvent>(event);
                         binlogEvent->print();
 
                         Position pos = slave.getPosition();
@@ -200,7 +200,7 @@ int main(int, char **)
                         break;
                     }
                     case MYSQL_UPDATE_ROWS_EVENT: {
-                        auto binlogEvent = std::dynamic_pointer_cast<UpdateRowsEvent>(event);
+                        auto binlogEvent = std::static_pointer_cast<UpdateRowsEvent>(event);
                         binlogEvent->print();
 
                         Position pos = slave.getPosition();
@@ -208,7 +208,7 @@ int main(int, char **)
                         break;
                     }
                     case MYSQL_DELETE_ROWS_EVENT: {
-                        auto binlogEvent = std::dynamic_pointer_cast<DeleteRowsEvent>(event);
+                        auto binlogEvent = std::static_pointer_cast<DeleteRowsEvent>(event);
                         binlogEvent->print();
 
                         Position pos = slave.getPosition();
