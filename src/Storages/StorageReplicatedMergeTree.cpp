@@ -2998,7 +2998,6 @@ void StorageReplicatedMergeTree::shutdown()
         queue.pull_log_blocker.cancelForever();
     }
 
-
     if (move_parts_task_handle)
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
     move_parts_task_handle.reset();
