@@ -65,7 +65,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     std::cout << "\n;\n";
                 std::cout << std::endl;
             }
-        } while(multiple && pos != end);
+        } while (multiple && pos != end);
     }
     catch (...)
     {
