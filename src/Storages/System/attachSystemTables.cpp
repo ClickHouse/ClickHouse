@@ -42,6 +42,12 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
 
+#include <Storages/System/StorageSystemUsers.h>
+#include <Storages/System/StorageSystemRoles.h>
+#include <Storages/System/StorageSystemGrants.h>
+#include <Storages/System/StorageSystemRoleGrants.h>
+#include <Storages/System/StorageSystemCurrentRoles.h>
+#include <Storages/System/StorageSystemEnabledRoles.h>
 #include <Storages/System/StorageSystemSettingsProfiles.h>
 #include <Storages/System/StorageSystemSettingsProfileElements.h>
 #include <Storages/System/StorageSystemRowPolicies.h>
@@ -82,6 +88,12 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
     system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
     system_database.attachTable("contributors", StorageSystemContributors::create("contributors"));
+    system_database.attachTable("users", StorageSystemUsers::create("users"));
+    system_database.attachTable("roles", StorageSystemRoles::create("roles"));
+    system_database.attachTable("grants", StorageSystemGrants::create("grants"));
+    system_database.attachTable("role_grants", StorageSystemRoleGrants::create("role_grants"));
+    system_database.attachTable("current_roles", StorageSystemCurrentRoles::create("current_roles"));
+    system_database.attachTable("enabled_roles", StorageSystemEnabledRoles::create("enabled_roles"));
     system_database.attachTable("settings_profiles", StorageSystemSettingsProfiles::create("settings_profiles"));
     system_database.attachTable("settings_profile_elements", StorageSystemSettingsProfileElements::create("settings_profile_elements"));
     system_database.attachTable("row_policies", StorageSystemRowPolicies::create("row_policies"));

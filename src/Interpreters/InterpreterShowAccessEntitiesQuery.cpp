@@ -33,48 +33,81 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 {
     const auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
     String origin;
-    String expr = "name";
+    String expr = "*";
     String filter, order;
 
-    if (query.type == EntityType::ROW_POLICY)
+    switch (query.type)
     {
-        origin = "row_policies";
-
-        const String & table_name = query.table_name;
-        String database;
-        bool show_short_name = false;
-        if (!table_name.empty())
+        case EntityType::ROW_POLICY:
         {
-            database = query.database;
-            if (database.empty())
-                database = context.getCurrentDatabase();
-            show_short_name = true;
+            origin = "row_policies";
+            expr = "name";
+            const String & table_name = query.table_name;
+            if (!table_name.empty())
+            {
+                String database = query.database;
+                if (database.empty())
+                    database = context.getCurrentDatabase();
+                filter = "database = " + quoteString(database) + " AND table = " + quoteString(table_name);
+                expr = "short_name";
+            }
+            break;
         }
 
-        if (!table_name.empty())
-            filter = "database = " + quoteString(database) + " AND table = " + quoteString(table_name);
+        case EntityType::QUOTA:
+        {
+            if (query.current_quota)
+            {
+                origin = "quota_usage";
+                order = "duration";
+            }
+            else
+            {
+                origin = "quotas";
+                expr = "name";
+            }
+            break;
+        }
 
-        if (show_short_name)
-            expr = "short_name";
-    }
-    else if (query.type == EntityType::QUOTA)
-    {
-        if (query.current_quota)
+        case EntityType::SETTINGS_PROFILE:
         {
-            origin = "quota_usage";
-            expr = "*";
-            order = "duration";
+            origin = "settings_profiles";
+            expr = "name";
+            break;
         }
-        else
+
+        case EntityType::USER:
         {
-            origin = "quotas";
+            origin = "users";
+            expr = "name";
+            break;
         }
+
+        case EntityType::ROLE:
+        {
+            if (query.current_roles)
+            {
+                origin = "current_roles";
+                order = "role_name";
+            }
+            else if (query.enabled_roles)
+            {
+                origin = "enabled_roles";
+                order = "role_name";
+            }
+            else
+            {
+                origin = "roles";
+                expr = "name";
+            }
+            break;
+        }
+
+        case EntityType::MAX:
+            break;
     }
-    else if (query.type == EntityType::SETTINGS_PROFILE)
-    {
-        origin = "settings_profiles";
-    }
-    else
+
+    if (origin.empty())
         throw Exception(toString(query.type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
 
     if (order.empty() && expr != "*")

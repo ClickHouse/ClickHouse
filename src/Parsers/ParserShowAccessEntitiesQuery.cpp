@@ -29,8 +29,28 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
 
     std::optional<EntityType> type;
     bool current_quota = false;
+    bool current_roles = false;
+    bool enabled_roles = false;
 
-    if (ParserKeyword{"POLICIES"}.ignore(pos, expected) || ParserKeyword{"ROW POLICIES"}.ignore(pos, expected))
+    if (ParserKeyword{"USERS"}.ignore(pos, expected))
+    {
+        type = EntityType::USER;
+    }
+    else if (ParserKeyword{"ROLES"}.ignore(pos, expected))
+    {
+        type = EntityType::ROLE;
+    }
+    else if (ParserKeyword{"CURRENT ROLES"}.ignore(pos, expected))
+    {
+        type = EntityType::ROLE;
+        current_roles = true;
+    }
+    else if (ParserKeyword{"ENABLED ROLES"}.ignore(pos, expected))
+    {
+        type = EntityType::ROLE;
+        enabled_roles = true;
+    }
+    else if (ParserKeyword{"POLICIES"}.ignore(pos, expected) || ParserKeyword{"ROW POLICIES"}.ignore(pos, expected))
     {
         type = EntityType::ROW_POLICY;
     }
@@ -59,6 +79,8 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
 
     query->type = *type;
     query->current_quota = current_quota;
+    query->current_roles = current_roles;
+    query->enabled_roles = enabled_roles;
     query->database = std::move(database);
     query->table_name = std::move(table_name);
 

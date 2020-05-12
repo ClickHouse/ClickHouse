@@ -20,9 +20,14 @@ const char * ASTShowAccessEntitiesQuery::getKeyword() const
             return current_quota ? "SHOW CURRENT QUOTA" : "SHOW QUOTAS";
         case EntityType::SETTINGS_PROFILE:
             return "SHOW SETTINGS PROFILES";
-        default:
-            throw Exception(toString(type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
+        case EntityType::USER:
+            return "SHOW USERS";
+        case EntityType::ROLE:
+            return current_roles ? "SHOW CURRENT ROLES" : (enabled_roles ? "SHOW ENABLED ROLES" : "SHOW ROLES");
+        case EntityType::MAX:
+            break;
     }
+    throw Exception(toString(type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
