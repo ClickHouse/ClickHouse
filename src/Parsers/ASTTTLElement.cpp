@@ -7,13 +7,13 @@
 namespace DB
 {
 
-ASTPtr ASTTTLElement::clone() const 
+ASTPtr ASTTTLElement::clone() const
 {
     auto clone = std::make_shared<ASTTTLElement>(*this);
     clone->children.clear();
     clone->ttl_expr_pos = -1;
     clone->where_expr_pos = -1;
-    
+
     clone->setExpression(clone->ttl_expr_pos, getExpression(ttl_expr_pos, true));
     clone->setExpression(clone->where_expr_pos, getExpression(where_expr_pos, true));
 
@@ -57,14 +57,14 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
         /// It would be better to output "DELETE" here but that will break compatibility with earlier versions.
     }
 
-    if (where()) 
+    if (where())
     {
         settings.ostr << " WHERE ";
         where()->formatImpl(settings, state, frame);
     }
 }
 
-void ASTTTLElement::setExpression(int & pos, ASTPtr && ast) 
+void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
 {
     if (ast)
     {
@@ -83,7 +83,7 @@ void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
     }
 }
 
-ASTPtr ASTTTLElement::getExpression(int  pos, bool clone) const 
+ASTPtr ASTTTLElement::getExpression(int  pos, bool clone) const
 {
     return pos != -1 ? (clone ? children[pos]->clone() : children[pos]) : ASTPtr{};
 }

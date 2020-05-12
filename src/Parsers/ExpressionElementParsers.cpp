@@ -1484,7 +1484,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         mode = TTLMode::MOVE;
         destination_type = PartDestinationType::VOLUME;
     }
-    else if (s_group_by.ignore(pos)) 
+    else if (s_group_by.ignore(pos))
     {
         mode = TTLMode::GROUP_BY;
     }
@@ -1517,7 +1517,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!tryGetIdentifierNameInto(identifier, identifier_str))
                 return false;
             group_by_key_columns.emplace_back(std::move(identifier_str));
-        }        
+        }
 
         if (!s_set.ignore(pos))
             return false;
@@ -1525,7 +1525,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
                 break;
-            
+
             ASTPtr name;
             ASTPtr value;
             if (!parser_identifier.parse(pos, name, expected))

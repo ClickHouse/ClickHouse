@@ -197,7 +197,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
-        size_t rows_with_current_key = 0; 
+        size_t rows_with_current_key = 0;
         for (size_t i = 0; i < block.rows(); ++i)
         {
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
