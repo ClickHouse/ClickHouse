@@ -1,15 +1,24 @@
 # DISTINCT Clause {#select-distinct}
 
-If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
-The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:
+If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus only a single row will remain out of all the sets of fully matching rows in the result.
 
--   DISTINCT can be applied together with GROUP BY.
--   When ORDER BY is omitted and LIMIT is defined, the query stops running immediately after the required number of different rows has been read.
+## Null Processing
+
+`DISTINCT` works with [NULL](../../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in differen contexts.
+
+## Alternatives
+
+It is possible to obtain the same result by applying [GROUP BY](group-by.md) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
+
+-   `DISTINCT` can be applied together with `GROUP BY`.
+-   When [ORDER BY](order-by.md) is omitted and [LIMIT](limit.md) is defined, the query stops running immediately after the required number of different rows has been read.
 -   Data blocks are output as they are processed, without waiting for the entire query to finish running.
 
-DISTINCT is not supported if SELECT has at least one array column.
+## Limitations
 
-`DISTINCT` works with [NULL](../../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
+`DISTINCT` is not supported if `SELECT` has at least one array column.
+
+## Examples
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
 
