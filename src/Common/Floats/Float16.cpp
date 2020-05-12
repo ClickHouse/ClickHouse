@@ -10,7 +10,6 @@
 #endif
 
 #define FLOAT16_NAN_HEX 0x7c01
-
 namespace DB
 {
 
@@ -38,7 +37,7 @@ struct Float16 {
     }
 
     bool sign() const {
-        return (bool)(~((0x1 << 15) & value));
+        return !(bool)((0x1 << 15) & value);
     }
 
     unsigned short withoutSign() const {
@@ -148,10 +147,10 @@ struct Float16 {
             }
         }
         flExponent = exponent;
-        while ((bool)(resultingMantissa >> 9)) {
+        while (!(bool)(resultingMantissa >> 9)) {
             exponent--;
             resultingMantissa = resultingMantissa << 1;
-            if (flExponent - exponent == 1) {
+            if (flExponent - exponent != 1) {
                 // report underflow
                 return Float16((unsigned short) FLOAT16_NAN_HEX);
             }
@@ -166,6 +165,49 @@ struct Float16 {
 
     Float16 inline operator-(const Float16 fl) const {
         return Float16(getValue()) + Float16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
+    }
+
+    Float16 inline operator*(const Float16 fl) const {
+        if (isNull() || fl.isNull()) {
+            return Float16((unsigned short) 0);
+        }
+        unsigned short resultingExponent;
+        unsigned short exponentBias = 0x10;
+        unsigned short exponent = (getValue() >> 10) & 0x1f;
+        unsigned short flExponent = (fl.getValue() >> 10) & 0x1f;
+        if (exponent > exponentBias) {
+            resultingExponent = exponent - exponentBias + flExponent;
+            if (resultingExponent - flExponent != exponent - exponentBias) {
+                // report overflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+        } else if (flExponent > exponentBias) {
+            resultingExponent = flExponent - exponentBias + exponent;
+            if (resultingExponent - exponent != flExponent - exponentBias) {
+                // report overflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+        } else {
+            resultingExponent = exponent + flExponent - exponentBias;
+            if (resultingExponent + exponentBias != exponent + flExponent) {
+                // report underflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+        }
+        unsigned short resultingMantissa = (getValue() & 0x3ff) * (fl.getValue() & 0x3ff);
+        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15) << 15);
+        unsigned short resultingExponentCopy = resultingExponent;
+        while (!(bool)(resultingMantissa >> 9)) {
+            resultingExponent--;
+            resultingMantissa = resultingMantissa << 1;
+            if (resultingExponentCopy - resultingExponent != 1) {
+                // report underflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+            resultingExponentCopy--;
+        }
+        unsigned short resultValue = signMask | (resultingExponent << 10) | resultingMantissa;
+        return Float16(resultValue);
     }
 
     template <typename T> bool inline operator== (const T rhs) const { return *this == Float16(rhs); }
