@@ -37,7 +37,6 @@ using grpc::ClientContext;
 using grpc::CompletionQueue;
 using grpc::Status;
 
- 
 namespace Coordination
 {
     struct EtcdKey;
@@ -106,9 +105,6 @@ public:
         bool is_sequental = false;
         Stat stat{};
         int32_t seq_num = 0;
-        String unpursed_data;
-        void serialize();
-        void deserialize();
     };
 
     struct Call
@@ -134,85 +130,10 @@ public:
         TxnResponse response;
         std::unique_ptr<ClientAsyncResponseReader<TxnResponse>> response_reader;
     };
-
-    struct TxnRequests
-    {
-        std::vector<Compare> compares;
-        std::vector<RangeRequest> success_ranges;
-        std::vector<PutRequest> success_puts;
-        std::vector<DeleteRangeRequest> success_delete_ranges;
-        std::vector<RangeRequest> failure_ranges;
-        std::vector<PutRequest> failure_puts;
-        std::vector<DeleteRangeRequest> failure_delete_ranges;
-        TxnRequests& operator+=(const TxnRequests& rv)
-        {
-            this->compares.insert(this->compares.end(), rv.compares.begin(), rv.compares.end());
-            this->success_ranges.insert(this->success_ranges.end(), rv.success_ranges.begin(), rv.success_ranges.end());
-            this->success_puts.insert(this->success_puts.end(), rv.success_puts.begin(), rv.success_puts.end());
-            this->success_delete_ranges.insert(this->success_delete_ranges.end(), rv.success_delete_ranges.begin(), rv.success_delete_ranges.end());
-            this->failure_ranges.insert(this->failure_ranges.end(), rv.failure_ranges.begin(), rv.failure_ranges.end());
-            this->failure_puts.insert(this->failure_puts.end(), rv.failure_puts.begin(), rv.failure_puts.end());
-            this->failure_delete_ranges.insert(this->failure_delete_ranges.end(), rv.failure_delete_ranges.begin(), rv.failure_delete_ranges.end());
-            return *this;
-        }
-        bool empty()
-        {
-            return (success_ranges.size() + success_puts.size() + success_delete_ranges.size() + failure_ranges.size() + failure_puts.size() + failure_delete_ranges.size()) == 0;
-        }
-        void clear()
-        {
-            compares.clear();
-            success_ranges.clear();
-            success_puts.clear();
-            success_delete_ranges.clear();
-            failure_ranges.clear();
-            failure_puts.clear();
-            failure_delete_ranges.clear();
-        }
-        void take_last_create_request(const String & prefix)
-        {
-            std::unordered_map<String, String> create_requests;
-            for (const auto success_put : success_puts)
-            {
-                if (startsWith(success_put.key(), prefix))
-                {
-                    create_requests[success_put.key()] = success_put.value();
-                }
-            }
-            auto it = success_puts.begin();
-            while (it != success_puts.end())
-            {
-                if (startsWith(it->key(), prefix) && it->value() != create_requests[it->key()])
-                {
-                    it = success_puts.erase(it);
-                }
-                else
-                {
-                    it++;
-                }
-            }
-        }
-    };
+    struct TxnRequests;
 
     using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
-    std::unique_ptr<KV::Stub> kv_stub_;
-    CompletionQueue kv_cq_;
-
-    std::unique_ptr<Watch::Stub> watch_stub_;
-    CompletionQueue watch_cq_;
-
-    std::unique_ptr<KV::Stub> lease_stub_;
-    CompletionQueue lease_cq_;
-
-    void callWatchRequest(
-        const std::string & key,
-        bool list_watch,
-        std::unique_ptr<Watch::Stub> & stub_,
-        CompletionQueue & cq_);
-
-    void readWatchResponse();
 private:
         std::atomic<XID> next_xid {1};
 
@@ -266,6 +187,23 @@ private:
         std::unique_ptr<ClientAsyncReaderWriter<etcdserverpb::WatchRequest, etcdserverpb::WatchResponse>> stream;
         ClientContext context;
         etcdserverpb::WatchResponse watch_response;
+
+        std::unique_ptr<KV::Stub> kv_stub;
+        CompletionQueue kv_cq;
+
+        std::unique_ptr<Watch::Stub> watch_stub;
+        CompletionQueue watch_cq;
+
+        std::unique_ptr<KV::Stub> lease_stub;
+        CompletionQueue lease_cq;
+
+        void callWatchRequest(
+            const std::string & key,
+            bool list_watch,
+            std::unique_ptr<Watch::Stub> & stub,
+            CompletionQueue & cq);
+
+        void readWatchResponse();
 
         std::unique_ptr<PutRequest> preparePutRequest(const String &, const String &);
         std::unique_ptr<RangeRequest> prepareRangeRequest(const String &);
