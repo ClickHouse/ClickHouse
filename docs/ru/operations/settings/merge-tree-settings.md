@@ -110,7 +110,7 @@ Eсли суммарное число активных кусков во все�
 
 Значение по умолчанию: 604800 (1 неделя).
 
-Аналогично [replicated_deduplication_window](#replicated_deduplication_window), задает, сколько времени хранить хеш-суммы блоков для дедупликции `Insert`-в. Хеш-суммы старше `replicated_deduplication_window_seconds` удаляются из Zookeeper, даже если их меньше чем `replicated_deduplication_window`.
+Аналогично [replicated_deduplication_window](#replicated-deduplication-window), задает, сколько времени хранить хеш-суммы блоков для дедупликции `Insert`-в. Хеш-суммы старше `replicated_deduplication_window_seconds` удаляются из Zookeeper, даже если их меньше чем `replicated_deduplication_window`.
 
 ## old\_parts\_lifetime {#old-parts-lifetime}
 

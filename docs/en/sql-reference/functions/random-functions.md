@@ -33,7 +33,7 @@ randConstant([x])
 
 **Parameters**
 
--   `x` — [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../data-types/index.md). Its value is used for bypassing [common subexpression elimination](index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+-   `x` — [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../data-types/index.md#data_types). Its value is used for bypassing [common subexpression elimination](index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
