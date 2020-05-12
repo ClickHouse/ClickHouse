@@ -130,9 +130,6 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     /// This requires MySQL version >=5.6, so results are not checked here.
     writeCommand(Command::COM_QUERY, "CHANGE REPLICATION FILTER REPLICATE_DO_DB = (" + replicate_db + ")");
 
-    /// Set Filter rule to replication.
-    replication.setReplicateDatabase(replicate_db);
-
     // Register slave.
     registerSlaveOnMaster(slave_id);
 
