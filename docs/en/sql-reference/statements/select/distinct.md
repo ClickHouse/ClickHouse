@@ -4,7 +4,7 @@ If `SELECT DISTINCT` is specified, only unique rows will remain in a query resul
 
 ## Null Processing
 
-`DISTINCT` works with [NULL](../../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in differen contexts.
+`DISTINCT` works with [NULL](../../syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
 
 ## Alternatives
 
