@@ -93,7 +93,7 @@ def html_to_amp(content):
                         href, anchor = href.split('#')
                     else:
                         anchor = None
-                    href = f'{href}amp/'
+                    href = f'../{href}amp/'
                     if anchor:
                         href = f'{href}#{anchor}'
                     tag.attrs['href'] = href
