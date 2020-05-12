@@ -25,6 +25,8 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
+typedef std::vector<std::pair<size_t, size_t>> EqualRanges;
+
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
 {
@@ -244,6 +246,8 @@ public:
       * nan_direction_hint - see above.
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
+
+    virtual void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges &equal_ranges) const = 0;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
