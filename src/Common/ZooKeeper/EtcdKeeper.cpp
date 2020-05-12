@@ -1652,7 +1652,7 @@ namespace Coordination
             const String & path,
             GetCallback callback,
             WatchCallback watch)
-    { 
+    {
         LOG_DEBUG(log, "_GET");
         EtcdKeeperGetRequest request;
         request.path = path;
@@ -1702,7 +1702,7 @@ namespace Coordination
             const String & path,
             int32_t version,
             CheckCallback callback)
-    { 
+    {
         LOG_DEBUG(log, "_CHECK " << version);
         EtcdKeeperCheckRequest request;
         request.path = path;
