@@ -1,58 +1,47 @@
 # JOIN Clause {#select-join}
 
-Joins the data in the normal [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
+Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as "self-join".
 
-!!! info "Note"
-    Not related to [ARRAY JOIN](array-join.md).
-
+Syntax:
 ``` sql
 SELECT <expr_list>
-FROM <left_subquery>
-[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_subquery>
+FROM <left_table>
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../../../engines/table-engines/special/join.md) engine – an array prepared for joining.
+Expressions from `ON` clause and columns from `USING` clause are called "join keys". Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching "join keys", which might produce results with much more rows than the source tables.
 
 ## Supported Types of JOIN {#select-join-types}
 
--   `INNER JOIN` (or `JOIN`)
--   `LEFT JOIN` (or `LEFT OUTER JOIN`)
--   `RIGHT JOIN` (or `RIGHT OUTER JOIN`)
--   `FULL JOIN` (or `FULL OUTER JOIN`)
--   `CROSS JOIN` (or `,` )
+All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supported:
 
-See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
+-   `INNER JOIN`, only matching rows are returned.
+-   `LEFT OUTER JOIN`, non-matching rows from left table are returned in addition to matching rows.
+-   `RIGHT OUTER JOIN`, non-matching rows from left table are returned in addition to matching rows.
+-   `FULL OUTER JOIN`, non-matching rows from both tables are returned in addition to matching rows.
+-   `CROSS JOIN`, produces cartesian product of whole tables, "join keys" are **not** specified.
 
-## Multiple JOIN {#multiple-join}
+`JOIN` without specified type implies `INNER`. Keyword `OUTER` can be safely omitted. Alternative syntax for `CROSS JOIN` is specifying multiple tables in [FROM clause](from.md) separated by commas.
 
-Performing queries, ClickHouse rewrites multi-table joins into the sequence of two-table joins. For example, if there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
+Additional join types available in ClickHouse:
 
-If a query contains the `WHERE` clause, ClickHouse tries to pushdown filters from this clause through the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
-
-We recommend the `JOIN ON` or `JOIN USING` syntax for creating queries. For example:
-
-``` sql
-SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
-```
-
-You can use comma-separated lists of tables in the `FROM` clause. For example:
-
-``` sql
-SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
-```
-
-Don’t mix these syntaxes.
-
-ClickHouse doesn’t directly support syntax with commas, so we don’t recommend using them. The algorithm tries to rewrite the query in terms of `CROSS JOIN` and `INNER JOIN` clauses and then proceeds to query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats commas as an `INNER JOIN` clause and converts `INNER JOIN` to `CROSS JOIN` when the algorithm cannot guarantee that `INNER JOIN` returns the required data.
+-   `SEMI JOIN`, a whitelist on "join keys", without producing a cartesian product.
+-   `ANTI JOIN`, a blacklist on "join keys", without producing a cartesian product. 
 
 ## Strictness {#select-join-strictness}
 
--   `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the standard `JOIN` behavior in SQL.
--   `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
+Modifies how matching by "join keys" is performed
+
+-   `ALL` — The standard `JOIN` behavior in SQL as described above. The default.
+-   `ANY` — Partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types. 
 -   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-**ASOF JOIN Usage**
+!!! note "Note"
+    The default strictness value can be overriden using [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+
+
+### ASOF JOIN Usage
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
 
@@ -98,19 +87,60 @@ For example, consider the following tables:
 !!! note "Note"
     `ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 
-To set the default strictness value, use the session configuration parameter [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
+## Distributed Join {#global-join}
 
-## GLOBAL JOIN {#global-join}
+There are two ways to execute join involving distributed tables:
 
-When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
+-   When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
+-   When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
-
-Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#select-distributed-subqueries).
+Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](../../operators/in.md#select-distributed-subqueries) section.
 
 ## Usage Recommendations {#usage-recommendations}
 
-When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation. In order to explicitly set the processing order, we recommend running a `JOIN` subquery with a subquery.
+### Processing of Empty or NULL Cells {#processing-of-empty-or-null-cells}
+
+While joining tables, the empty cells may appear. The setting [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
+
+If the `JOIN` keys are [Nullable](../../data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../../../sql-reference/syntax.md#null-literal) are not joined.
+
+### Syntax
+
+The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries.
+
+The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
+
+### Syntax Limitations {#syntax-limitations}
+
+For multiple `JOIN` clauses in a single `SELECT` query:
+
+-   Taking all the columns via `*` is available only if tables are joined, not subqueries.
+-   The `PREWHERE` clause is not available.
+
+For `ON`, `WHERE`, and `GROUP BY` clauses:
+
+-   Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
+
+### Performance
+
+When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation. 
+
+Each time a query is run with the same `JOIN`, the subquery is run again because the result is not cached. To avoid this, use the special [Join](../../../engines/table-engines/special/join.md) table engine, which is a prepared array for joining that is always in RAM.
+
+In some cases, it is more efficient to use [IN](../../operators/in.md) instead of `JOIN`.
+
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is an “external dictionaries” feature that you should use instead of `JOIN`. For more information, see the [External dictionaries](../../dictionaries/external-dictionaries/external-dicts.md) section.
+
+**Memory Limitations**
+
+ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_subquery>` and creates a hash table for it in RAM. If you need to restrict join operation memory consumption use the following settings:
+
+-   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+
+When any of these limits is reached, ClickHouse acts as the [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) setting instructs.
+
+## Examples
 
 Example:
 
@@ -152,43 +182,3 @@ LIMIT 10
 │    722884 │  77492 │  11056 │
 └───────────┴────────┴────────┘
 ```
-
-Subqueries don’t allow you to set names or use them for referencing a column from a specific subquery.
-The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases `hits` and `visits`).
-
-The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
-
-The right table (the subquery result) resides in RAM. If there isn’t enough memory, you can’t run a `JOIN`.
-
-Each time a query is run with the same `JOIN`, the subquery is run again because the result is not cached. To avoid this, use the special [Join](../../../engines/table-engines/special/join.md) table engine, which is a prepared array for joining that is always in RAM.
-
-In some cases, it is more efficient to use `IN` instead of `JOIN`.
-Among the various types of `JOIN`, the most efficient is `ANY LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
-
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is an “external dictionaries” feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](../../dictionaries/external-dictionaries/external-dicts.md).
-
-**Memory Limitations**
-
-ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_subquery>` and creates a hash table for it in RAM. If you need to restrict join operation memory consumption use the following settings:
-
--   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
--   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
-
-When any of these limits is reached, ClickHouse acts as the [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode) setting instructs.
-
-## Processing of Empty or NULL Cells {#processing-of-empty-or-null-cells}
-
-While joining tables, the empty cells may appear. The setting [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) define how ClickHouse fills these cells.
-
-If the `JOIN` keys are [Nullable](../../data-types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](../../../sql-reference/syntax.md#null-literal) are not joined.
-
-## Syntax Limitations {#syntax-limitations}
-
-For multiple `JOIN` clauses in a single `SELECT` query:
-
--   Taking all the columns via `*` is available only if tables are joined, not subqueries.
--   The `PREWHERE` clause is not available.
-
-For `ON`, `WHERE`, and `GROUP BY` clauses:
-
--   Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.

@@ -10,6 +10,8 @@ The `FROM` clause specifies the source to read data from:
 
 Subquery is another `SELECT` query that may be specified in parenthesis inside `FROM` clause.
 
+`FROM` clause can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](join.md) on them.
+
 ## FINAL Modifier {#select-from-final}
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result and thus performs all data transformations that happen during merges for the given table engine.
