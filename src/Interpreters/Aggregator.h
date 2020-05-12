@@ -1003,6 +1003,7 @@ protected:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class AggregatingInOrderTransform;
+
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
