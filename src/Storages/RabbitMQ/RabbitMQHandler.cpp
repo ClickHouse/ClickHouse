@@ -23,20 +23,13 @@ void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char
 
 void RabbitMQHandler::start()
 {
-    if (connection_error)
-        return;
-
     event_base_dispatch(evbase);
 }
 
 
-bool RabbitMQHandler::startNonBlock()
+void RabbitMQHandler::startNonBlock()
 {
-    if (connection_error)
-        return true;
-
     event_base_loop(evbase, EVLOOP_NONBLOCK);
-    return false;
 }
 
 

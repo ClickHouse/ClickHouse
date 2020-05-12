@@ -19,17 +19,14 @@ public:
             const String & routing_key_,
             const String & exchange_,
             Poco::Logger * log_,
+            const bool hash_exchange_,
             std::optional<char> delimiter,
             size_t rows_per_message,
             size_t chunk_size_
     );
 
     ~WriteBufferToRabbitMQProducer() override;
-
-    bool startNonBlockEventLoop();
     void count_row();
-
-    bool exchange_declared = false, exchange_error = false;
 
 private:
     void nextImpl() override;
@@ -39,11 +36,15 @@ private:
     RabbitMQHandler & eventHandler;
     const String routing_key;
     const String exchange_name;
+    const bool hash_exchange;
+    std::atomic<bool> exchange_declared = false, exchange_error = false;
 
     Poco::Logger * log;
     const std::optional<char> delim;
     const size_t max_rows;
     const size_t chunk_size;
+
+    void startNonBlockEventLoop();
 
     size_t rows = 0;
     std::list<std::string> chunks;

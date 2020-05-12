@@ -25,17 +25,19 @@ public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr channel_,
             RabbitMQHandler & eventHandler_,
+            const String & exchange_name_,
+            const String & routing_key_,
             Poco::Logger * log_,
             char row_delimiter_,
+            const bool hash_exchange_,
             const std::atomic<bool> & stopped_);
     ~ReadBufferFromRabbitMQConsumer() override;
 
-    void initQueueBindings(const String & exchange_name, const Names & routing_keys);
+    void initExchange();
+    void initQueueBindings();
     void subscribe();
     void unsubscribe();
-    void flush();
 
-    void startEventLoop();
     void startNonBlockEventLoop();
     void stopEventLoop();
 
@@ -44,14 +46,20 @@ private:
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & eventHandler;
+    const String & exchange_name;
+    const String & routing_key;
 
     Poco::Logger * log;
     char row_delimiter;
+    const bool hash_exchange;
     bool stalled = false;
     const std::atomic<bool> & stopped;
+    std::atomic<bool> consumer_ok = false, consumer_error = false;
+    std::atomic<bool> exchange_declared = false;
 
     String consumerTag; // ID for the consumer
-    const String queue_name = "ClickHouseRabbitMQQueue";
+    String queue_name;
+    String hash_exchange_name;
 
     Messages received;
     Messages messages;

@@ -40,21 +40,23 @@ public:
             const ASTPtr & query,
             const Context & context) override;
 
-    void pushReadBuffer(ConsumerBufferPtr buf, bool make_init);
+    void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
     ProducerBufferPtr createWriteBuffer();
 
     const String & getExchangeName() const { return exchange_name; }
-    const Names & getRoutingKeys() const { return routing_keys; }
+    const String & getRoutingKey() const { return routing_key; }
 
     const String & getFormatName() const { return format_name; }
-    const auto & skipBroken() const { return skip_broken; }
 
     NamesAndTypesList getVirtuals() const override;
 
     RabbitMQHandler & getConsumerHandler() { return consumersEventHandler; }
+    Poco::Logger * getLog() { return log; }
+
+    bool MV = false;
 
 protected:
     StorageRabbitMQ(
@@ -62,7 +64,7 @@ protected:
             Context & context_,
             const ColumnsDescription & columns_,
             const String & host_port_,
-            const Names & routing_keys_, const String & exchange_name, 
+            const String & routing_key_, const String & exchange_name, 
             const String & format_name_, char row_delimiter_,
             size_t num_consumers_, size_t skip_broken);
 
@@ -71,15 +73,14 @@ private:
     Context global_context;
     Context rabbitmq_context;
 
-    Names routing_keys;
+    String routing_key;
     const String exchange_name;
 
     const String format_name;
     char row_delimiter;
     size_t num_consumers;
-    UInt64 max_block_size;
     size_t num_created_consumers = 0;
-    size_t skip_broken;
+    bool hash_exchange = false;
 
     Poco::Logger * log;
 
@@ -89,9 +90,6 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    /* There are several reasons for making separate connections: to limit the number of channels per connection, to make
-     * event loops more deterministic and not shared between publishers and consumers, to avoid library being overloaded with 
-     * callbacks. And it is simply recommended to use separate connections to publish and consume. */
     event_base * consumersEvbase;
     event_base * producersEvbase;
 
@@ -100,6 +98,9 @@ private:
 
     AMQP::TcpConnection consumersConnection;
     AMQP::TcpConnection producersConnection;
+
+    ChannelPtr consumer_channel;
+    bool set_consumer_channel = true;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};

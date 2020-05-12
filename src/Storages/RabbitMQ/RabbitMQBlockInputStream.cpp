@@ -10,22 +10,16 @@ namespace DB
 {
 
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
-        StorageRabbitMQ & storage_, const Context & context_, const Names & columns,
-        size_t max_block_size_, Poco::Logger * log_, bool commit_in_suffix_)
+        StorageRabbitMQ & storage_, const Context & context_, const Names & columns, Poco::Logger * log_)
         : storage(storage_)
         , context(context_)
         , column_names(columns)
-        , max_block_size(max_block_size_)
         , log(log_)
-        , commit_in_suffix(commit_in_suffix_)
         , non_virtual_header(storage.getSampleBlockNonMaterialized())
         , virtual_header(storage.getSampleBlockForColumns(
             {"_exchange", "_routingKey"}) 
         )
 {
-    context.setSetting("input_format_skip_unknown_fields", 1u); 
-    context.setSetting("input_format_allow_errors_ratio", 0.);
-    context.setSetting("input_format_allow_errors_num", storage.skipBroken());
 }
 
 
@@ -34,7 +28,7 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
     if (!claimed)
         return;
 
-    storage.pushReadBuffer(buffer, 0);
+    storage.pushReadBuffer(buffer);
 }
 
 
@@ -69,7 +63,7 @@ Block RabbitMQBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
+            storage.getFormatName(), *buffer, non_virtual_header, context, 1);
     
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);
@@ -127,7 +121,7 @@ Block RabbitMQBlockInputStream::readImpl()
         auto new_rows = read_rabbitmq_message();
 
         auto _exchange = storage.getExchangeName();
-        auto _routingKey = storage.getRoutingKeys()[0];
+        auto _routingKey = storage.getRoutingKey();
 
         for (size_t i = 0; i < new_rows; ++i)
         {
@@ -137,7 +131,7 @@ Block RabbitMQBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
 
-        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
+        if (!new_rows || !checkTimeLimit())
             break;
     }
 
