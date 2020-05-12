@@ -1144,6 +1144,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     {
 
         Pipe pipe(std::move(pipes), get_merging_processor());
+        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), projection));
         pipes = Pipes();
         pipes.emplace_back(std::move(pipe));
 
