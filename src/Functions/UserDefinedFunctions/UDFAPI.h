@@ -3,7 +3,8 @@
 
 #include <unistd.h>
 
-struct UserDefinedFunctionResult {
+struct UserDefinedFunctionResult
+{
     const char * data_type;
     void * data;
     size_t size;
@@ -18,7 +19,8 @@ typedef struct UserDefinedFunctionResult (*ExecImpl)(UserDefinedFunctionResult* 
 /// Return type of function result (data should be nullptr)
 typedef struct UserDefinedFunctionResult (*GetReturnTypeImpl)(UserDefinedFunctionResult* input);
 
-struct UserDefinedFunction {
+struct UserDefinedFunction
+{
     /// Name of UDF
     const char * name;
 
@@ -31,7 +33,8 @@ struct UserDefinedFunction {
     ExecImpl exec_impl;
 };
 
-struct UDFList {
+struct UDFList
+{
     /// Name of UDF lib
     const char * name;
     /// Null terminated list

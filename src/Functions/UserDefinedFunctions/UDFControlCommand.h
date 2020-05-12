@@ -21,7 +21,8 @@ struct UDFControlCommand
     std::vector<std::string> args;
     unsigned request_id;
 
-    void read(ReadBuffer & in) {
+    void read(ReadBuffer & in)
+    {
         readVarUInt(request_id, in);
         readStringBinary(name, in);
         size_t args_num;
@@ -33,7 +34,8 @@ struct UDFControlCommand
         }
     }
 
-    void write(WriteBuffer & out) {
+    void write(WriteBuffer & out)
+    {
         writeVarUInt(request_id, out);
         writeStringBinary(name, out);
         writeVarUInt(args.size(), out);
@@ -53,13 +55,15 @@ struct UDFControlCommandResult
 
     bool isSuccess() { return code == 0; }
 
-    void read(ReadBuffer & in) {
+    void read(ReadBuffer & in)
+    {
         readVarUInt(request_id, in);
         readVarUInt(code, in);
         readStringBinary(message, in);
     }
 
-    void write(WriteBuffer & out) {
+    void write(WriteBuffer & out)
+    {
         writeVarUInt(request_id, out);
         writeVarUInt(code, out);
         writeStringBinary(message, out);

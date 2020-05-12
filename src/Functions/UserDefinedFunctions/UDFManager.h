@@ -13,8 +13,11 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromOStream.h>
 
-#include "UDFLib.h"
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+
 #include "UDFControlCommand.h"
+#include "UDFLib.h"
 
 
 namespace DB
@@ -23,7 +26,7 @@ namespace DB
 class UDFManager : private boost::noncopyable
 {
 public:
-    UDFManager() : in(ReadBufferFromIStream(std::cin)), out(WriteBufferFromOStream(std::cout)) { }
+    UDFManager() : in(std::cin, 16), out(std::cout, 16) { }
     ~UDFManager() = default;
 
     int run();
@@ -31,8 +34,8 @@ public:
 private:
     UDFControlCommandResult initLib(const std::string & filename);
 
-    ReadBuffer in;
-    WriteBuffer out;
+    ReadBufferFromIStream in;
+    WriteBufferFromOStream out;
     std::map<std::string, UDFLib> libs;
 };
 

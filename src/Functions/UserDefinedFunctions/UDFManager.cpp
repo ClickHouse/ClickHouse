@@ -3,7 +3,8 @@
 namespace DB
 {
 
-UDFControlCommandResult UDFManager::initLib(const std::string & filename) {
+UDFControlCommandResult UDFManager::initLib(const std::string & filename)
+{
     UDFLib lib(filename);
     UDFControlCommandResult result = lib.load();
     if (result.isSuccess())
@@ -33,12 +34,13 @@ int UDFManager::run()
         if (command.name == UDFControlCommand::InitLib)
         {
             /// Arg is filename
-            if (command.args.size() != 1) {
+            if (command.args.size() != 1)
+            {
                 result.code = 1;
                 result.message = "Wrong arguments";
-            } else {
-                result = initLib(command.args[0]);
             }
+            else
+                result = initLib(command.args[0]);
         }
         else if (command.name == UDFControlCommand::ExecFunc)
         {
