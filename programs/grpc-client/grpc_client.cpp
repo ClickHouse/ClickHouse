@@ -1,6 +1,8 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
+#include <thread> 
 #include <stdlib.h>
 #include <grpc++/channel.h>
 #include <grpc++/client_context.h>
@@ -12,33 +14,60 @@ class GRPCClient {
     public:
         explicit GRPCClient(std::shared_ptr<grpc::Channel> channel)
             : stub_(GRPCConnection::GRPC::NewStub(channel)) {}
-         std::string Query(const GRPCConnection::User& userInfo, const std::string& query) {
+         std::string Query(const GRPCConnection::User& userInfo,
+                            const std::string& query,
+                            std::vector<std::string> insert_data = {}) {
             GRPCConnection::QueryRequest request;
-            GRPCConnection::QueryResponse reply;
             grpc::Status status;
-
+            GRPCConnection::QueryResponse reply;
+            grpc::ClientContext context;
             auto user = std::make_unique<GRPCConnection::User>(userInfo);
-
+            auto querySettigs = std::make_unique<GRPCConnection::QuerySettings>();
+            int id = rand();
             request.set_allocated_user_info(user.release());
             // interactive_delay in miliseconds
             request.set_interactive_delay(1000);
-            GRPCConnection::QuerySettings querySettigs;
-            querySettigs.set_query(query);
 
-            int id = rand();
+            querySettigs->set_query(query);
+            querySettigs->set_query_id(std::to_string(id));
+            querySettigs->set_format("Values");
+            querySettigs->set_insert_data((insert_data.size() != 0));
 
-            querySettigs.set_query_id(std::to_string(id));
-            querySettigs.set_format("Values");
-            
-            request.set_allocated_query_info(&querySettigs);
-
-            grpc::ClientContext context;
+            request.set_allocated_query_info(querySettigs.release());
             
             void* got_tag = (void*)1;
             bool ok = false;
+
+            std::unique_ptr<grpc::ClientReaderWriter<GRPCConnection::QueryRequest, GRPCConnection::QueryResponse> > reader(stub_->Query(&context));
+            reader->Write(request);
+
+            auto write = [&reply, &reader, &insert_data]()
+            {
+                GRPCConnection::QueryRequest request_insert;
+                for (const auto& data : insert_data) {                
+                    request_insert.set_insert_data(data);
+                    if(reply.exception_occured().empty())
+                    {
+                        reader->Write(request_insert);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                request_insert.set_insert_data("");
+                if(reply.exception_occured().empty())
+                {
+                    reader->Write(request_insert);
+                }
+                // reader->WritesDone();
+            };
+            std::thread write_thread(write);
+            write_thread.detach();
+
             
-            std::unique_ptr<grpc::ClientReader<GRPCConnection::QueryResponse> > reader(stub_->Query(&context, request));
             while (reader->Read(&reply)) {
+
                 if (!reply.output().empty())
                 {
                     std::cout << "Query Part:\n " << id<< reply.output()<<'\n';
@@ -67,9 +96,6 @@ class GRPCClient {
                 }
             }
 
-            request.release_query_info();
-            request.release_user_info();
-
             if (status.ok() && reply.exception_occured().empty()) {
                 return "";
             } else if (status.ok() && !reply.exception_occured().empty()) {
@@ -86,7 +112,7 @@ class GRPCClient {
 int main(int argc, char** argv) {
     GRPCConnection::User userInfo1;
     userInfo1.set_user("default");
-    userInfo1.set_key("");
+    userInfo1.set_password("");
     userInfo1.set_quota("default");
 
 
@@ -98,11 +124,8 @@ int main(int argc, char** argv) {
     {
         std::cout << client.Query(userInfo1, "CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
         std::cout << client.Query(userInfo1, "CREATE TABLE t (a UInt8) ENGINE = Memory") << std::endl;
-        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES") << std::endl;
-        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES (1),(2),(3)") << std::endl;
-        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES (4),(5),(6)") << std::endl;
-        std::cout << client.Query(userInfo1, "INSERT INTO t FORMAT Values (7),(8),(9) ") << std::endl;
-        std::cout << client.Query(userInfo1, "INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t VALUES", {"(1),(2),(3)", "(4),(6),(5)"}) << std::endl;
+        std::cout << client.Query(userInfo1, "INSERT INTO t_not_defined VALUES", {"(1),(2),(3)", "(4),(6),(5)"}) << std::endl;
         std::cout << client.Query(userInfo1, "SELECT a FROM t ORDER BY a") << std::endl;
         std::cout << client.Query(userInfo1, "DROP TABLE t") << std::endl;
     }

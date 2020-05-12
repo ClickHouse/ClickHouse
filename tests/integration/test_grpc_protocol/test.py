@@ -39,9 +39,12 @@ finally:
         totals = []
         with grpc.insecure_channel(server_address_and_port) as channel:
             stub = GrpcConnection_pb2_grpc.GRPCStub(channel)
-            user_info = GrpcConnection_pb2.User(user="default", key='123', quota='default')
-            query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', format="TabSeparated")
-            for response in stub.Query(GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info, interactive_delay=1000)):
+            def write_query():
+                user_info = GrpcConnection_pb2.User(user="default", password='123', quota='default')
+                query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', format="TabSeparated", insert_data=False)
+                yield GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info, interactive_delay=1000)
+            
+            for response in stub.Query(write_query()):
                 output += response.output.split()
                 totals += response.totals.split()
         if mode == "output":

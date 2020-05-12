@@ -4,7 +4,7 @@ package GRPCConnection;
 
 message User {
    string user = 1;
-   string key = 2;
+   string password = 2;
    string quota = 3;
    string database = 4;
 }
@@ -12,11 +12,13 @@ message QuerySettings {
    string query = 1;
    string query_id = 2;
    string format = 3;
+   bool insert_data = 4;
 }
 message QueryRequest {
    User user_info = 1;
    QuerySettings query_info = 2;
-   uint64 interactive_delay = 3;
+   string insert_data = 3;
+   uint64 interactive_delay = 4;
 }
 
 message Progress {
@@ -36,5 +38,5 @@ message QueryResponse {
 }
 
 service GRPC {
-   rpc Query(QueryRequest) returns (stream QueryResponse) {}
+   rpc Query(stream QueryRequest) returns (stream QueryResponse) {}
 } 

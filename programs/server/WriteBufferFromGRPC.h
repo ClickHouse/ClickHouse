@@ -16,7 +16,7 @@ class WriteBufferFromGRPC : public BufferWithOwnMemory<WriteBuffer>
 {
 protected:
 
-    grpc::ServerAsyncWriter<QueryResponse>* responder;
+    grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder;
     void* tag;
 
     bool progress = false;
@@ -33,7 +33,7 @@ protected:
     }
 
 public:
-    WriteBufferFromGRPC(grpc::ServerAsyncWriter<QueryResponse>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_) : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) {}
+    WriteBufferFromGRPC(grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_) : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) {}
 
     ~WriteBufferFromGRPC() override {}
     bool onProgress() {

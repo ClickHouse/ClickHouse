@@ -50,15 +50,18 @@ class CallDataQuery : public CommonCallData {
           CallDataQuery(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* notification_cq_, grpc::ServerCompletionQueue* new_call_cq_, IServer* server_, Poco::Logger * log_)
           : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context()), pool(1) {
                detailsStatus = SEND_TOTALS;
+               status = START_QUERY;
                out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this, nullptr);
-               Service->RequestQuery(&gRPCcontext, &request, &responder, new_call_cq, notification_cq, this);
+               Service->RequestQuery(&gRPCcontext, &responder, new_call_cq, notification_cq, this);
           }     
           void ParseQuery();
+          void ParseData();
+          void ReadData();
           void ExecuteQuery();
           void ProgressQuery();
           void FinishQuery();
           
-          enum DetailsStatus{
+          enum DetailsStatus {
                SEND_TOTALS,
                SEND_EXTREMES,
                SEND_PROFILEINFO,
@@ -71,31 +74,73 @@ class CallDataQuery : public CommonCallData {
           bool sendTotals(const Block & totals);
           bool sendExtremes(const Block & block);
 
+          enum Status {
+               START_QUERY,
+               PARSE_QUERY,
+               READ_DATA,
+               PROGRESS,
+               FINISH_QUERY
+          };
           virtual void respond() override
           {
                try {
-                    if (!out->onProgress() && !out->isFinished())
-                    {
-                         new CallDataQuery(Service, notification_cq, new_call_cq, iServer, log);
-                         ParseQuery();
-                         ExecuteQuery();
+                    // if (!out->onProgress() && !out->isFinished())
+                    // {
+                    //      new CallDataQuery(Service, notification_cq, new_call_cq, iServer, log);
+                    //      responder.Read(&request, (void*)this);
+                    //      ParseQuery();
+                    //      ExecuteQuery();
+                    // }
+                    // else if (out->onProgress())
+                    // {
+                    //      ProgressQuery();
+                    // }
+                    // else if (out->isFinished())
+                    // {
+                    //      delete this;
+                    // }
+                    LOG_TRACE(log, "ID: " << request.query_info().query_id());
+                    switch( status ) {
+                         case START_QUERY:
+                         {
+                              new CallDataQuery(Service, notification_cq, new_call_cq, iServer, log);
+                              LOG_TRACE(log, "Read");
+                              status = PARSE_QUERY;
+                              responder.Read(&request, (void*)this);
+                              break;
+                         }
+                         case PARSE_QUERY:
+                         {
+                              ParseQuery();
+                              ParseData();
+                              break;
+                         }
+                         case READ_DATA:
+                         {
+                              ReadData();
+                              break;
+                         }
+                         case PROGRESS:
+                         {
+                              ProgressQuery();
+                              break;
+                         }
+                         case FINISH_QUERY:
+                         {
+                              delete this;
+                         }
                     }
-                    else if (out->onProgress())
-                    {
-                         ProgressQuery();
-                    }
-                    else if (out->isFinished())
-                    {
-                         delete this;
-                    }
-                         
+                              
                } 
                catch(...) {
+                    if (executor) {
+                         executor->cancel();
+                    }
                     tryLogCurrentException(log);
                     std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
                     int exception_code = getCurrentExceptionCode();
                     response.set_exception_occured(exception_message);
-                    out->setFinish(true);
+                    status = FINISH_QUERY;
                     responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), (void*)this);
                }
           }
@@ -119,12 +164,13 @@ class CallDataQuery : public CommonCallData {
      private:
           QueryRequest request;
           QueryResponse response;
-          grpc::ServerAsyncWriter<QueryResponse> responder;
+          grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest> responder;
 
           Stopwatch progress_watch;
           Stopwatch query_watch;
           Progress progress;
           DetailsStatus detailsStatus;
+          Status status;
 
           std::shared_ptr<LazyOutputFormat> lazy_format;
           BlockIO io;
@@ -135,7 +181,8 @@ class CallDataQuery : public CommonCallData {
           std::optional<Context> query_context;
 
           std::shared_ptr<WriteBufferFromGRPC> out;
-          String format_name;
+          String format_output;
+          String format_input;
           std::optional<CurrentThread::QueryScope> query_scope;
 
 
