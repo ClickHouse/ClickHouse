@@ -85,6 +85,7 @@ The `Replicated` prefix is added to the table engine name. For example:`Replicat
 
 -   `zoo_path` — The path to the table in ZooKeeper.
 -   `replica_name` — The replica name in ZooKeeper.
+-   `other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, `ver` in `ReplacingMergeTree`.
 
 Example:
 

@@ -80,6 +80,8 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 -   `zoo_path` — путь к таблице в ZooKeeper.
 -   `replica_name` — имя реплики в ZooKeeper.
+-   `other_parameters` — параметры движка, для которого создаётся реплицированная версия, например, `ver` для `ReplacingMergeTree`.
+
 
 Пример:
 
