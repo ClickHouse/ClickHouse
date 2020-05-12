@@ -4,7 +4,6 @@
 #include "DictionaryFactory.h"
 #include <Core/Defines.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -366,15 +365,14 @@ void ComplexKeyDirectDictionary::getItemsImpl(
 {
     const auto rows = key_columns.front()->size();
     const auto keys_size = dict_struct.key->size();
-    StringRefs keys_array(rows);
-    std::unordered_map<std::string, OutputType> value_by_key;
+    StringRefs keys_array(keys_size);
+    MapType<OutputType> value_by_key;
     Arena temporary_keys_pool;
     std::vector<size_t> to_load(rows);
-    std::vector<std::string> keys(rows);
+    PODArray<StringRef> keys(rows);
 
     for (const auto row : ext::range(0, rows)) {
-        const StringRef keyref = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
-        std::string key(keyref.data, keyref.size);
+        const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
         value_by_key[key] = get_default(row);
         to_load[row] = row;
@@ -387,31 +385,34 @@ void ComplexKeyDirectDictionary::getItemsImpl(
 
     while (const auto block = stream->read())
     {
-        const auto key_columns = ext::map<Columns>(
+        const auto columns = ext::map<Columns>(
             ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
 
+        const auto attribute_columns = ext::map<Columns>(ext::range(0, attributes_size), [&](const size_t attribute_idx)
+            {
+                return block.safeGetByPosition(keys_size + attribute_idx).column;
+            });
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
-            const IColumn & attribute_column = *block.safeGetByPosition(keys_size + attribute_idx).column;
+            const IColumn & attribute_column = *attribute_columns[attribute_idx];
             Arena pool;
 
-            const auto keys_size = dict_struct.key->size();
-            StringRefs keys(keys_size);
+            StringRefs keys_temp(keys_size);
 
-            for (const auto row_idx : ext::range(0, attribute_column.size()))
+            const auto columns_size = columns.front()->size();
+
+            for (const auto row_idx : ext::range(0, columns_size))
             {
-                const StringRef keyref = placeKeysInPool(row_idx, key_columns, keys, *dict_struct.key, pool);
-                std::string key(keyref.data, keyref.size);
-
-                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
+                const StringRef key = placeKeysInPool(row_idx, columns, keys_temp, *dict_struct.key, pool);
+                if (value_by_key.has(key) && attribute.name == attribute_name_by_index.at(attribute_idx))
                 {
                     if (attribute.type == AttributeUnderlyingType::utFloat32)
                     {
-                        value_by_key[key] = static_cast<Float32>(attribute_column[row_idx].get<Float64>());
+                        value_by_key[key] = static_cast<Float32>(attribute_column[row_idx].template get<Float64>());
                     }
                     else
                     {
-                        value_by_key[key] = static_cast<OutputType>(attribute_column[row_idx].get<AttributeType>());
+                        value_by_key[key] = static_cast<OutputType>(attribute_column[row_idx].template get<AttributeType>());
                     }
 
                 }
@@ -434,15 +435,14 @@ void ComplexKeyDirectDictionary::getItemsStringImpl(
 {
     const auto rows = key_columns.front()->size();
     const auto keys_size = dict_struct.key->size();
-    StringRefs keys_array(rows);
-    std::unordered_map<std::string, String> value_by_key;
+    StringRefs keys_array(keys_size);
+    MapType<String> value_by_key;
     Arena temporary_keys_pool;
     std::vector<size_t> to_load(rows);
-    std::vector<std::string> keys(rows);
+    PODArray<StringRef> keys(rows);
 
     for (const auto row : ext::range(0, rows)) {
-        const StringRef keyref = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
-        std::string key(keyref.data, keyref.size);
+        const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
         value_by_key[key] = get_default(row);
         to_load[row] = row;
@@ -455,34 +455,39 @@ void ComplexKeyDirectDictionary::getItemsStringImpl(
 
     while (const auto block = stream->read())
     {
-        const auto key_columns = ext::map<Columns>(
-                    ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
+        const auto columns = ext::map<Columns>(
+            ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
 
+        const auto attribute_columns = ext::map<Columns>(ext::range(0, attributes_size), [&](const size_t attribute_idx)
+            {
+                return block.safeGetByPosition(keys_size + attribute_idx).column;
+            });
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
-
-            const IColumn & attribute_column = *block.safeGetByPosition(keys_size + attribute_idx).column;
+            const IColumn & attribute_column = *attribute_columns[attribute_idx];
             Arena pool;
 
-            const auto keys_size = dict_struct.key->size();
-            StringRefs keys(keys_size);
+            StringRefs keys_temp(keys_size);
 
-            for (const auto row_idx : ext::range(0, attribute_column.size()))
+            const auto columns_size = columns.front()->size();
+
+            for (const auto row_idx : ext::range(0, columns_size))
             {
-                const StringRef keyref = placeKeysInPool(row_idx, key_columns, keys, *dict_struct.key, pool);
-                std::string key(keyref.data, keyref.size);
-                if (value_by_key.find(key) != value_by_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
+                const StringRef key = placeKeysInPool(row_idx, columns, keys_temp, *dict_struct.key, pool);
+                if (value_by_key.has(key) && attribute.name == attribute_name_by_index.at(attribute_idx))
                 {
-                    const String from_source = attribute_column[row_idx].get<String>();
+                    const String from_source = attribute_column[row_idx].template get<String>();
                     value_by_key[key] = from_source;
                 }
             }
         }
     }
+
     stream->readSuffix();
 
-    for (const auto row : ext::range(0, rows))
+    for (const auto row : ext::range(0, rows)) {
         set_value(row, value_by_key[keys[row]]);
+    }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
@@ -503,54 +508,52 @@ void ComplexKeyDirectDictionary::has(const Attribute & attribute, const Columns 
 {
     const auto rows = key_columns.front()->size();
     const auto keys_size = dict_struct.key->size();
-    StringRefs keys_array(rows);
-    std::unordered_map<std::string, bool> has_key;
+    StringRefs keys_array(keys_size);
+    MapType<bool> has_key;
     Arena temporary_keys_pool;
     std::vector<size_t> to_load(rows);
-    std::vector<std::string> keys(rows);
+    PODArray<StringRef> keys(rows);
 
     for (const auto row : ext::range(0, rows)) {
-        const StringRef keyref = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
-        std::string key(keyref.data, keyref.size);
+        const StringRef key = placeKeysInPool(row, key_columns, keys_array, *dict_struct.key, temporary_keys_pool);
         keys[row] = key;
         has_key[key] = 0;
         to_load[row] = row;
     }
 
     auto stream = source_ptr->loadKeys(key_columns, to_load);
-    const auto attributes_size = attributes.size();
 
     stream->readPrefix();
 
     while (const auto block = stream->read())
     {
-        const auto key_columns = ext::map<Columns>(
-                    ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
+        const auto columns = ext::map<Columns>(
+            ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
 
         for (const size_t attribute_idx : ext::range(0, attributes.size()))
         {
-
-            const IColumn & attribute_column = *block.safeGetByPosition(keys_size + attribute_idx).column;
             Arena pool;
 
-            const auto keys_size = dict_struct.key->size();
-            StringRefs keys(keys_size);
+            StringRefs keys_temp(keys_size);
 
-            for (const auto row_idx : ext::range(0, attribute_column.size()))
+            const auto columns_size = columns.front()->size();
+
+            for (const auto row_idx : ext::range(0, columns_size))
             {
-                const StringRef keyref = placeKeysInPool(row_idx, key_columns, keys, *dict_struct.key, pool);
-                std::string key(keyref.data, keyref.size);
-                if (has_key.find(key) != has_key.end() && attribute.name == attribute_name_by_index.at(attribute_idx))
+                const StringRef key = placeKeysInPool(row_idx, columns, keys_temp, *dict_struct.key, pool);
+                if (has_key.has(key) && attribute.name == attribute_name_by_index.at(attribute_idx))
                 {
                     has_key[key] = 1;
                 }
             }
         }
     }
+
     stream->readSuffix();
 
-    for (const auto row : ext::range(0, rows))
+    for (const auto row : ext::range(0, rows)) {
         out[row] = has_key[keys[row]];
+    }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
