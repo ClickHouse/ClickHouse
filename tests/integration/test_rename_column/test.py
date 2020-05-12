@@ -491,7 +491,8 @@ def test_rename_distributed(started_cluster):
         select(node1, table_name, "foo2", '1998\n', poll=30)
     finally:
         drop_distributed_table(node1, table_name)
-
+        
+@pytest.mark.skip(reason="temporary disabled")
 def test_rename_distributed_parallel_insert_and_select(started_cluster):
     table_name = 'test_rename_distributed_parallel_insert_and_select'
     try:
