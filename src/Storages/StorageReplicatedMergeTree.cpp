@@ -2993,7 +2993,7 @@ void StorageReplicatedMergeTree::shutdown()
         queue_task_handle.reset();
     }
 
-    /// Block logs pulling after background task were cancelled. It's still
+    /// Cancel logs pulling after background task were cancelled. It's still
     /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
     /// MUTATE, etc query.
     queue.pull_log_blocker.cancelForever();
