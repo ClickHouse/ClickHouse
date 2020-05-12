@@ -49,9 +49,9 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
 
         return cfg;
     }
-    catch (Exception & e)
+    catch (...)
     {
-        LOG_ERROR(&Logger::get("AWSClient"), "Failed to obtain proxy: " << e.message());
+        tryLogCurrentException("AWSClient", "Failed to obtain proxy");
         /// Don't use proxy if it can't be obtained.
         return cfg;
     }

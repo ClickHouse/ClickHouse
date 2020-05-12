@@ -16,6 +16,9 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    depends_on:
+      - redirect
+      - resolver
 
 # Redirects all requests to origin Minio.
   redirect:
@@ -44,6 +47,9 @@ services:
     ports:
       - "4083:8080"
     tty: true
+    depends_on:
+      - proxy1
+      - proxy2
 
 volumes:
   data1-1:

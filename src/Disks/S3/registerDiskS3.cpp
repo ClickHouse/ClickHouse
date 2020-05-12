@@ -69,7 +69,7 @@ namespace
 
                 proxies.push_back(proxy_uri);
 
-                LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: " << proxy_uri.toString() << " " << key);
+                LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: " << proxy_uri.toString());
             }
 
         if (!proxies.empty())
@@ -134,7 +134,7 @@ void registerDiskS3(DiskFactory & factory)
         auto s3disk = std::make_shared<DiskS3>(
             name,
             client,
-            std::move(proxy_config),
+            proxy_config,
             uri.bucket,
             uri.key,
             metadata_path,
