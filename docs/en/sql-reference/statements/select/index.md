@@ -107,6 +107,17 @@ In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c'
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` doesn’t match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
+### Asterisk
+
+You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:
+
+-   When creating a table dump.
+-   For tables containing just a few columns, such as system tables.
+-   For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
+-   When there is strong filtration on a small number of columns using `PREWHERE`.
+-   In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
+
+In all other cases, we don’t recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
 ### Extreme Values {#extreme-values}
 
@@ -120,20 +131,10 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 ### Notes {#notes}
 
-The `GROUP BY` and `ORDER BY` clauses do not support positional arguments. This contradicts MySQL, but conforms to standard SQL.
-For example, `GROUP BY 1, 2` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).
-
 You can use synonyms (`AS` aliases) in any part of a query.
 
-You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:
+The `GROUP BY` and `ORDER BY` clauses do not support positional arguments. This contradicts MySQL, but conforms to standard SQL. For example, `GROUP BY 1, 2` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).
 
--   When creating a table dump.
--   For tables containing just a few columns, such as system tables.
--   For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
--   When there is strong filtration on a small number of columns using `PREWHERE`.
--   In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
-
-In all other cases, we don’t recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
 ## Implementation Details
 
