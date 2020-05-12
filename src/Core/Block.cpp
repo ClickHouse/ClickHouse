@@ -410,7 +410,8 @@ Block Block::sortColumns() const
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
             sorted_index_by_name[i++] = it;
     }
-    std::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs) {
+    std::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs)
+    {
         return lhs->first < rhs->first;
     });
 
