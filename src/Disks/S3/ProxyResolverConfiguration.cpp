@@ -1,6 +1,7 @@
 #include "ProxyResolverConfiguration.h"
 
 #include <utility>
+#include <IO/HTTPCommon.h>
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
