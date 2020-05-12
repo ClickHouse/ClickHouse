@@ -2980,7 +2980,6 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
-    queue.pull_log_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
@@ -2993,6 +2992,11 @@ void StorageReplicatedMergeTree::shutdown()
         auto lock = queue.lockQueue();
         queue_task_handle.reset();
     }
+
+    /// Block logs pulling after background task were cancelled. It's still
+    /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
+    /// MUTATE, etc query.
+    queue.pull_log_blocker.cancelForever();
 
     if (move_parts_task_handle)
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
