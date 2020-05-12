@@ -90,7 +90,7 @@ struct VarMoments
 
     T NO_SANITIZE_UNDEFINED getSample() const
     {
-        if (m[0] == 0)
+        if (m[0] <= 1)
             return std::numeric_limits<T>::quiet_NaN();
         return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1));
     }
