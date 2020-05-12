@@ -3,7 +3,7 @@
 HTTP интерфейс позволяет использовать ClickHouse на любой платформе, из любого языка программирования. У нас он используется для работы из Java и Perl, а также из shell-скриптов. В других отделах, HTTP интерфейс используется из Perl, Python и Go. HTTP интерфейс более ограничен по сравнению с родным интерфейсом, но является более совместимым.
 
 По умолчанию, clickhouse-server слушает HTTP на порту 8123 (это можно изменить в конфиге).
-Если запросить GET / без параметров, то вернётся строка заданная с помощью настройки [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response). Значение по умолчанию «Ok.» (с переводом строки на конце).
+Если запросить GET / без параметров, то вернётся строка заданная с помощью настройки [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response). Значение по умолчанию «Ok.» (с переводом строки на конце).
 
 ``` bash
 $ curl 'http://localhost:8123/'

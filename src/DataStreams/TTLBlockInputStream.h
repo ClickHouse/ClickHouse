@@ -45,7 +45,7 @@ private:
 
     size_t rows_removed = 0;
     Logger * log;
-    DateLUTImpl date_lut;
+    const DateLUTImpl & date_lut;
 
     /// TODO rewrite defaults logic to evaluteMissingDefaults
     std::unordered_map<String, String> defaults_result_column;

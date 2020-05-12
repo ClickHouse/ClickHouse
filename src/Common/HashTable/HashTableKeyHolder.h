@@ -98,8 +98,7 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaKeyHolder &)
 namespace DB
 {
 
-/**
-  * SerializedKeyHolder is a key holder for a StringRef key that is already
+/** SerializedKeyHolder is a key holder for a StringRef key that is already
   * serialized to an Arena. The key must be the last allocation in this Arena,
   * and is discarded by rolling back the allocation.
   */

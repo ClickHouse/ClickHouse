@@ -44,7 +44,7 @@ namespace ErrorCodes
 }
 
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
     const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
@@ -75,7 +75,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -131,7 +131,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         command.if_exists = command_ast->if_exists;
 
@@ -257,7 +257,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 {
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type, false);
+        ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
             column.default_desc.kind = default_kind;
@@ -751,7 +751,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            all_columns.add(ColumnDescription(column_name, command.data_type, false));
+            all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {

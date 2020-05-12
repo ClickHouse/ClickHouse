@@ -1,6 +1,8 @@
 #pragma once
+
 #include "config_formats.h"
 #include "config_core.h"
+
 #if USE_AVRO
 
 #include <unordered_map>
@@ -23,7 +25,7 @@ class AvroDeserializer
 {
 public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema);
-    void deserializeRow(MutableColumns & columns, avro::Decoder & decoder) const;
+    void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
     using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
@@ -33,13 +35,18 @@ private:
 
     struct Action
     {
-        enum Type { Deserialize, Skip };
+        enum Type {Noop, Deserialize, Skip, Record, Union};
         Type type;
         /// Deserialize
         int target_column_idx;
         DeserializeFn deserialize_fn;
         /// Skip
         SkipFn skip_fn;
+        /// Record | Union
+        std::vector<Action> actions;
+
+
+        Action() : type(Noop) {}
 
         Action(int target_column_idx_, DeserializeFn deserialize_fn_)
             : type(Deserialize)
@@ -50,27 +57,46 @@ private:
             : type(Skip)
             , skip_fn(skip_fn_) {}
 
-        void execute(MutableColumns & columns, avro::Decoder & decoder) const
+        static Action recordAction(std::vector<Action> field_actions) { return Action(Type::Record, field_actions); }
+
+        static Action unionAction(std::vector<Action> branch_actions) { return Action(Type::Union, branch_actions); }
+
+
+        void execute(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
         {
             switch (type)
             {
+                case Noop:
+                    break;
                 case Deserialize:
                     deserialize_fn(*columns[target_column_idx], decoder);
+                    ext.read_columns[target_column_idx] = true;
                     break;
                 case Skip:
                     skip_fn(decoder);
                     break;
+                case Record:
+                    for (const auto & action : actions)
+                        action.execute(columns, decoder, ext);
+                    break;
+                case Union:
+                    actions[decoder.decodeUnionIndex()].execute(columns, decoder, ext);
+                    break;
             }
         }
+    private:
+        Action(Type type_, std::vector<Action> actions_)
+            : type(type_)
+            , actions(actions_) {}
     };
 
     /// Populate actions by recursively traversing root schema
-    void createActions(const Block & header, const avro::NodePtr& node, std::string current_path = "");
+    AvroDeserializer::Action createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path = "");
 
     /// Bitmap of columns found in Avro schema
     std::vector<bool> column_found;
     /// Deserialize/Skip actions for a row
-    std::vector<Action> actions;
+    Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
@@ -88,7 +114,6 @@ private:
     AvroDeserializer deserializer;
 };
 
-#if USE_POCO_JSON
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
 /// Uses 3 caches:
 /// 1. global: schema registry cache (base_url -> SchemaRegistry)
@@ -112,7 +137,7 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
 };
-#endif
 
 }
+
 #endif

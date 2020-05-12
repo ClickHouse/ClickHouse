@@ -83,12 +83,7 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage(table_id_,
-        ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
-                            {"_key", std::make_shared<DataTypeString>()},
-                            {"_offset", std::make_shared<DataTypeUInt64>()},
-                            {"_partition", std::make_shared<DataTypeUInt64>()},
-                            {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
+    : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
     , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
@@ -175,17 +170,14 @@ void StorageKafka::shutdown()
     // Interrupt streaming thread
     stream_cancelled = true;
 
+    LOG_TRACE(log, "Waiting for cleanup");
+    task->deactivate();
+
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
-    {
         auto buffer = popReadBuffer();
-        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
-    }
 
-    LOG_TRACE(log, "Waiting for cleanup");
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
-
-    task->deactivate();
 }
 
 
@@ -388,8 +380,7 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub = {false};
-    copyData(*in, *block_io.out, &stub);
+    copyData(*in, *block_io.out, &stream_cancelled);
     for (auto & stream : streams)
         stream->as<KafkaBlockInputStream>()->commit();
 
@@ -633,5 +624,15 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 
+NamesAndTypesList StorageKafka::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_topic", std::make_shared<DataTypeString>()},
+        {"_key", std::make_shared<DataTypeString>()},
+        {"_offset", std::make_shared<DataTypeUInt64>()},
+        {"_partition", std::make_shared<DataTypeUInt64>()},
+        {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
+    };
+}
 
 }

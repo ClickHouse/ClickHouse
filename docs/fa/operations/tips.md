@@ -98,7 +98,7 @@ XFS نیز مناسب است اما از آن شده است به طور کامل
 
 شما احتمالا در حال حاضر با استفاده از باغ وحش برای مقاصد دیگر. شما می توانید نصب و راه اندازی همان باغ وحش استفاده, اگر در حال حاضر بیش از حد نیست.
 
-It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 شما هرگز نباید از اسکریپت های دستی نوشته شده برای انتقال داده ها بین خوشه های مختلف باغ وحش استفاده کنید زیرا نتیجه برای گره های متوالی نادرست خواهد بود. هرگز استفاده از “zkcopy” ابزار به همین دلیل: https://github.com/ksprojects/zkcopy/issues/15
 

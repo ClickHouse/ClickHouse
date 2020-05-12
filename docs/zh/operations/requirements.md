@@ -24,9 +24,9 @@ RAM所需的体积取决于:
 -   查询的复杂性。
 -   在查询中处理的数据量。
 
-要计算所需的RAM体积，您应该估计临时数据的大小 [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) 和您使用的其他操作。
+要计算所需的RAM体积，您应该估计临时数据的大小 [GROUP BY](../sql-reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select.md#select-distinct), [JOIN](../sql-reference/statements/select.md#select-join) 和您使用的其他操作。
 
-ClickHouse可以使用外部存储器来存储临时数据。 看 [在外部存储器中分组](../sql_reference/statements/select.md#select-group-by-in-external-memory) 有关详细信息。
+ClickHouse可以使用外部存储器来存储临时数据。 看 [在外部存储器中分组](../sql-reference/statements/select.md#select-group-by-in-external-memory) 有关详细信息。
 
 ## 交换文件 {#swap-file}
 
@@ -58,4 +58,4 @@ ClickHouse可以使用外部存储器来存储临时数据。 看 [在外部存�
 
 ClickHouse主要是为Linux系列操作系统开发的。 推荐的Linux发行版是Ubuntu。 该 `tzdata` 软件包应安装在系统中。
 
-ClickHouse也可以在其他操作系统系列中工作。 查看详细信息 [开始](../getting_started/index.md) 文档的部分。
+ClickHouse也可以在其他操作系统系列中工作。 查看详细信息 [开始](../getting-started/index.md) 文档的部分。

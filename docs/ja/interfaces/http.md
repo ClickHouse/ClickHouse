@@ -11,7 +11,7 @@ toc_title: "HTTP\u30A4\u30F3\u30BF\u30FC"
 
 デフォルトでは、clickhouse-serverはポート8123でhttpをリッスンします（これは設定で変更できます）。
 
-パラメータを指定せずにget/requestを実行すると、200個の応答コードと、以下で定義されている文字列が返されます [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) デフォルト値 “Ok.” （最後にラインフィード付き)
+パラメータを指定せずにget/requestを実行すると、200個の応答コードと、以下で定義されている文字列が返されます [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) デフォルト値 “Ok.” （最後にラインフィード付き)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -440,7 +440,7 @@ db.stats:  Absolute delay: 22. Relative delay: 22.
 
 `<method>` は、HTTPリクエストのメソッド部分のマッチングを担当します。 `<method>` 定義にの十分に合致します [方法](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) HTTPプロトコルで。 これはオプションの設定です。 構成ファイルで定義されていない場合は、HTTP要求のメソッド部分と一致しません
 
-`<url>` HTTPリクエストのurl部分を照合する責任があります。 それはと互換性があります [RE2](https://github.com/google/re2)'の正規表現。 これはオプションの設定です。 構成ファイルで定義されていない場合は、HTTP要求のurl部分と一致しません
+`<url>` HTTPリクエストのurl部分を照合する責任があります。 それはと互換性があります [RE2](https://github.com/google/re2)’の正規表現。 これはオプションの設定です。 構成ファイルで定義されていない場合は、HTTP要求のurl部分と一致しません
 
 `<headers>` HTTPリクエストのヘッダ部分に一致させる責任があります。 これはRE2の正規表現と互換性があります。 これはオプションの設定です。 構成ファイルで定義されていない場合は、HTTP要求のヘッダー部分と一致しません
 

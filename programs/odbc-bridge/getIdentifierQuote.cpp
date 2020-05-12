@@ -1,22 +1,17 @@
 #include "getIdentifierQuote.h"
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
-#if USE_POCO_SQLODBC
-#include <Poco/SQL/ODBC/ODBCException.h>
-#include <Poco/SQL/ODBC/SessionImpl.h>
-#include <Poco/SQL/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
-#endif
-#if USE_POCO_DATAODBC
-#include <Poco/Data/ODBC/ODBCException.h>
-#include <Poco/Data/ODBC/SessionImpl.h>
-#include <Poco/Data/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
-#endif
+#if USE_ODBC
+
+#    include <Poco/Data/ODBC/ODBCException.h>
+#    include <Poco/Data/ODBC/SessionImpl.h>
+#    include <Poco/Data/ODBC/Utility.h>
+
+#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 
 namespace DB
 {
+
 std::string getIdentifierQuote(SQLHDBC hdbc)
 {
     std::string identifier;
@@ -40,5 +35,7 @@ std::string getIdentifierQuote(SQLHDBC hdbc)
     }
     return identifier;
 }
+
 }
+
 #endif

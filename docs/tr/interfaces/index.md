@@ -8,7 +8,7 @@ toc_title: "Giri\u015F"
 
 # Arabirimler {#interfaces}
 
-ClickHouse iki ağ arabirimi sağlar (Her ikisi de isteğe bağlı olarak ek güvenlik için TLS'YE sarılabilir):
+ClickHouse iki ağ arabirimi sağlar (Her ikisi de isteğe bağlı olarak ek güvenlik için TLS’YE sarılabilir):
 
 -   [HTTP](http.md), belgelenmiş ve doğrudan kullanımı kolay olan.
 -   [Yerel TCP](tcp.md) daha az yükü olan.
@@ -22,7 +22,7 @@ ClickHouse iki ağ arabirimi sağlar (Her ikisi de isteğe bağlı olarak ek gü
 
 ClickHouse ile çalışmak için çok çeşitli üçüncü taraf kütüphaneleri de vardır:
 
--   [İstemci kitaplıkları](third-party/client_libraries.md)
+-   [İstemci kitaplıkları](third-party/client-libraries.md)
 -   [Entegrasyonlar](third-party/integrations.md)
 -   [Görsel arayüzler](third-party/gui.md)
 

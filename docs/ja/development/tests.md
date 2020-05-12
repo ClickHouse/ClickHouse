@@ -30,7 +30,7 @@ toc_title: "ClickHouse\u30C6\u30B9\u30C8\u3092\u5B9F\u884C\u3059\u308B\u65B9\u6C
 いくつかのテストは `zookeeper`, `shard` または `long` 彼らの名前で。
 `zookeeper` ZooKeeperを使用しているテストのためのものです。 `shard` そのテストのためです
 サーバーのリッスンが必要 `127.0.0.*`; `distributed` または `global` 同じを持っている
-意味は... `long` 少し長く走るテストのためのものです。 あなたはできる
+意味は… `long` 少し長く走るテストのためのものです。 あなたはできる
 次のテストグループを無効にする `--no-zookeeper`, `--no-shard` と
 `--no-long` オプション、それぞれ。
 

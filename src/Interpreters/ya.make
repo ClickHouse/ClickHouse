@@ -124,6 +124,7 @@ SRCS(
     Set.cpp
     SetVariants.cpp
     sortBlock.cpp
+    SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
     SyntaxAnalyzer.cpp
