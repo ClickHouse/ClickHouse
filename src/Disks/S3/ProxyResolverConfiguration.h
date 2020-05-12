@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ProxyConfiguration.h"
-#include <IO/HTTPCommon.h>
 
 namespace DB::S3
 {
