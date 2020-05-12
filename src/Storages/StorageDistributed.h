@@ -19,8 +19,8 @@ namespace DB
 class Context;
 class StorageDistributedDirectoryMonitor;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -61,9 +61,6 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
-
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
 
     bool isRemote() const override { return true; }
 
@@ -115,6 +112,7 @@ public:
 
     ClusterPtr getCluster() const;
 
+    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
@@ -122,6 +120,8 @@ public:
     ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+
+    NamesAndTypesList getVirtuals() const override;
 
     String remote_database;
     String remote_table;
@@ -176,7 +176,7 @@ protected:
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumePtr volume;
+    VolumeJBODPtr volume;
 
     struct ClusterNodeData
     {

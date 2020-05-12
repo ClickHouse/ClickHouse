@@ -75,7 +75,7 @@ public:
     /// For Parallel aggregating.
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_,
                          ManyAggregatedDataPtr many_data, size_t current_variant,
-                         size_t temporary_data_merge_threads, size_t max_threads);
+                         size_t max_threads, size_t temporary_data_merge_threads);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }

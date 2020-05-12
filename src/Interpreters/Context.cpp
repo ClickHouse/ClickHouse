@@ -68,9 +68,17 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
-    extern const Metric MemoryTrackingForMerges;
     extern const Metric BackgroundMovePoolTask;
     extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
+
+    extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundSchedulePool;
+
+    extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundBufferFlushSchedulePool;
+
+    extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
 }
 
 
@@ -303,7 +311,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumeJBODPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -530,7 +538,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumePtr Context::getTemporaryVolume() const
+VolumeJBODPtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -555,7 +563,7 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
     auto lock = getLock();
 
@@ -566,7 +574,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<Volume>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+        shared->tmp_volume = std::make_shared<VolumeJBOD>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
     }
     else
     {
@@ -1352,7 +1360,11 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
-        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+        shared->buffer_flush_schedule_pool.emplace(
+            settings.background_buffer_flush_schedule_pool_size,
+            CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundBufferFlushSchedulePool,
+            "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
 }
 
@@ -1360,7 +1372,11 @@ BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
-        shared->schedule_pool.emplace(settings.background_schedule_pool_size);
+        shared->schedule_pool.emplace(
+            settings.background_schedule_pool_size,
+            CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundSchedulePool,
+            "BgSchPool");
     return *shared->schedule_pool;
 }
 
@@ -1368,7 +1384,11 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
-        shared->distributed_schedule_pool.emplace(settings.background_distributed_schedule_pool_size);
+        shared->distributed_schedule_pool.emplace(
+            settings.background_distributed_schedule_pool_size,
+            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundDistributedSchedulePool,
+            "BgDistSchPool");
     return *shared->distributed_schedule_pool;
 }
 

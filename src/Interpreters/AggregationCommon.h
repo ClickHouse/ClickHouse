@@ -107,20 +107,31 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index, 1);
-                offset += 1;
+                {
+                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index, 1);
+                    offset += 1;
+                }
                 break;
             case 2:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
-                offset += 2;
+                if constexpr (sizeof(T) >= 2)   /// To avoid warning about memcpy exceeding object size.
+                {
+                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
+                    offset += 2;
+                }
                 break;
             case 4:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
-                offset += 4;
+                if constexpr (sizeof(T) >= 4)
+                {
+                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
+                    offset += 4;
+                }
                 break;
             case 8:
-                memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
-                offset += 8;
+                if constexpr (sizeof(T) >= 8)
+                {
+                    memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
+                    offset += 8;
+                }
                 break;
             default:
                 memcpy(bytes + offset, static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);

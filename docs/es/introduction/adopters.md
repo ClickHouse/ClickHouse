@@ -5,7 +5,7 @@ toc_priority: 8
 toc_title: Adoptante
 ---
 
-# Adoptadores de ClickHouse {#clickhouse-adopters}
+# Adoptadores De ClickHouse {#clickhouse-adopters}
 
 !!! warning "Descargo"
     La siguiente lista de empresas que utilizan ClickHouse y sus historias de éxito se recopila a partir de fuentes públicas, por lo que podría diferir de la realidad actual. Le agradeceríamos que compartiera la historia de adoptar ClickHouse en su empresa y [agregarlo a la lista](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/introduction/adopters.md), pero por favor asegúrese de que usted no tendrá ningunos problemas de NDA haciendo así. Proporcionar actualizaciones con publicaciones de otras compañías también es útil.

@@ -34,6 +34,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
 #include <Dictionaries/PolygonDictionary.h>
+#include <Dictionaries/DirectDictionary.h>
 
 #include <ext/range.h>
 
@@ -138,7 +139,8 @@ private:
 #if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
 #endif
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -304,6 +306,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -488,6 +491,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -828,6 +832,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1090,6 +1095,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1665,6 +1671,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -1829,6 +1836,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
+            && !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};

@@ -86,7 +86,7 @@ public:
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
+    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
 
     void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 

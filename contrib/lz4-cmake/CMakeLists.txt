@@ -12,5 +12,6 @@ add_library (lz4
     ${LIBRARY_DIR}/lz4hc.h)
 
 target_compile_definitions(lz4 PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS=1)
+target_compile_options(lz4 PRIVATE -fno-sanitize=undefined)
 
 target_include_directories(lz4 PUBLIC ${LIBRARY_DIR})

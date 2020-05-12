@@ -5,7 +5,7 @@ toc_priority: 7
 toc_title: Historia
 ---
 
-# Historial de ClickHouse {#clickhouse-history}
+# Historial De ClickHouse {#clickhouse-history}
 
 ClickHouse se ha desarrollado inicialmente para alimentar [El Yandex.Métrica](https://metrica.yandex.com/), [la segunda plataforma de análisis web más grande del mundo](http://w3techs.com/technologies/overview/traffic_analysis/all), y sigue siendo el componente central de este sistema. Con más de 13 billones de registros en la base de datos y más de 20 mil millones de eventos diarios, ClickHouse permite generar informes personalizados sobre la marcha directamente a partir de datos no agregados. Este artículo cubre brevemente los objetivos de ClickHouse en las primeras etapas de su desarrollo.
 
@@ -13,7 +13,7 @@ El Yandex.Metrica construye informes personalizados sobre la marcha basados en h
 
 A partir de abril de 2014, Yandex.Metrica estaba rastreando alrededor de 12 mil millones de eventos (vistas de páginas y clics) diariamente. Todos estos eventos deben almacenarse para crear informes personalizados. Una sola consulta puede requerir escanear millones de filas en unos pocos cientos de milisegundos, o cientos de millones de filas en solo unos segundos.
 
-## Uso en Yandex.Metrica y otros servicios de Yandex {#usage-in-yandex-metrica-and-other-yandex-services}
+## Uso En Yandex.Metrica y Otros Servicios De Yandex {#usage-in-yandex-metrica-and-other-yandex-services}
 
 ClickHouse sirve para múltiples propósitos en Yandex.Métrica.
 Su tarea principal es crear informes en modo en línea utilizando datos no agregados. Utiliza un clúster de 374 servidores, que almacenan más de 20,3 billones de filas en la base de datos. El volumen de datos comprimidos es de aproximadamente 2 PB, sin tener en cuenta duplicados y réplicas. El volumen de datos sin comprimir (en formato TSV) sería de aproximadamente 17 PB.
@@ -28,7 +28,7 @@ ClickHouse también juega un papel clave en los siguientes procesos:
 
 Hoy en día, hay varias docenas de instalaciones de ClickHouse en otros servicios y departamentos de Yandex: verticales de búsqueda, comercio electrónico, publicidad, análisis de negocios, desarrollo móvil, servicios personales y otros.
 
-## Datos agregados y no agregados {#aggregated-and-non-aggregated-data}
+## Datos Agregados y No Agregados {#aggregated-and-non-aggregated-data}
 
 Existe una opinión generalizada de que para calcular las estadísticas de manera efectiva, debe agregar datos ya que esto reduce el volumen de datos.
 

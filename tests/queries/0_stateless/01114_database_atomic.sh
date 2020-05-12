@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_3.mt_tmp"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_3"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_2.mt UUID '00001114-0000-4000-8000-000000000002' (n UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY (n % 5)"
-$CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_2.mt"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt"
 $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='test_01114_2'"
 
 
@@ -47,8 +47,8 @@ $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES test_01114_1.mt AND test_01114_2.mt"
 # Check that nothing changed
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"
 uuid_mt1=`$CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database='test_01114_1' AND name='mt'"`
-$CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_1.mt" | sed "s/$uuid_mt1/00001114-0000-4000-8000-000000000001/g"
-$CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_2.mt"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_1.mt" | sed "s/$uuid_mt1/00001114-0000-4000-8000-000000000001/g"
+$CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE test_01114_2.mt"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_01114_1.mt"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_1.mt (s String) ENGINE=Log()"

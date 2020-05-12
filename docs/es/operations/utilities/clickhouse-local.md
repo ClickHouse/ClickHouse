@@ -2,14 +2,14 @@
 machine_translated: true
 machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 60
-toc_title: Sistema abierto
+toc_title: clickhouse-local
 ---
 
-# Sistema abierto. {#clickhouse-local}
+# Sistema Abierto {#clickhouse-local}
 
 El `clickhouse-local` El programa le permite realizar un procesamiento rápido en archivos locales, sin tener que implementar y configurar el servidor ClickHouse.
 
-Acepta datos que representan tablas y las consulta usando [Nombre de la red inalámbrica (SSID):](../../sql_reference/index.md).
+Acepta datos que representan tablas y las consulta usando [Nombre de la red inalámbrica (SSID):](../../sql-reference/index.md).
 
 `clickhouse-local` utiliza el mismo núcleo que el servidor ClickHouse, por lo que es compatible con la mayoría de las características y el mismo conjunto de formatos y motores de tabla.
 

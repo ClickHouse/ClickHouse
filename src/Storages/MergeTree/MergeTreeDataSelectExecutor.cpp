@@ -1046,6 +1046,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             /// NOTE: It may lead to double computation of expression.
             auto projection = createProjection(pipes.back(), data);
 
+            /// Project input columns to drop columns from sorting_key_prefix_expr
+            /// to allow execute the same expression later.
+            /// NOTE: It may lead to double computation of expression.
+            auto projection = createProjection(pipes.back(), data);
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
 

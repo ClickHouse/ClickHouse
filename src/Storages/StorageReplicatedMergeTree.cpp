@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
 
@@ -126,9 +126,10 @@ namespace ActionLocks
 }
 
 
-static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
-static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
-static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
+static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
+static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
+static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
+static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
@@ -2284,7 +2285,18 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
     }
 
     if (needs_reschedule)
+    {
         mutations_finalizing_task->scheduleAfter(MUTATIONS_FINALIZING_SLEEP_MS);
+    }
+    else
+    {
+        /// Even if no mutations seems to be done or appeared we are trying to
+        /// finalize them in background because manual control the launch of
+        /// this function is error prone. This can lead to mutations that
+        /// processed all the parts but have is_done=0 state for a long time. Or
+        /// killed mutations, which are also considered as undone.
+        mutations_finalizing_task->scheduleAfter(MUTATIONS_FINALIZING_IDLE_SLEEP_MS);
+    }
 }
 
 
@@ -2942,6 +2954,7 @@ void StorageReplicatedMergeTree::startup()
     /// If we don't separate create/start steps, race condition will happen
     /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
     {
+        auto lock = queue.lockQueue();
         auto & pool = global_context.getBackgroundPool();
         queue_task_handle = pool.createTask([this] { return queueTask(); });
         pool.startTask(queue_task_handle);
@@ -2980,7 +2993,6 @@ void StorageReplicatedMergeTree::shutdown()
         auto lock = queue.lockQueue();
         queue_task_handle.reset();
     }
-
 
     if (move_parts_task_handle)
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
