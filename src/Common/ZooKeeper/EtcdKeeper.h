@@ -42,7 +42,7 @@ namespace Coordination
 {
     struct EtcdKey;
     struct EtcdKeeperRequest;
-    using EtcdKeeperRequestPtr = std::shared_ptr<EtcdKeeperRequest>; 
+    using EtcdKeeperRequestPtr = std::shared_ptr<EtcdKeeperRequest>;
 
 class EtcdKeeper : public IKeeper
 {
@@ -112,7 +112,7 @@ public:
     };
 
     struct Call
-    { 
+    {
         Call() = default;
         Call(const Call &) = default;
         Call & operator=(const Call &) = default;
@@ -120,7 +120,7 @@ public:
     };
 
     struct AsyncCall : virtual Call
-    { 
+    {
         Status status;
         XID xid;
         int responses;
