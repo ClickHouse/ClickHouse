@@ -63,7 +63,7 @@ struct SortCursorImpl
         for (auto & column_desc : desc)
         {
             if (!column_desc.column_name.empty())
-                throw Exception("SortDesctiption should contain column position if SortCursor was used without header.",
+                throw Exception("SortDescription should contain column position if SortCursor was used without header.",
                         ErrorCodes::LOGICAL_ERROR);
         }
         reset(columns, {});

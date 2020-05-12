@@ -98,6 +98,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
 
 
 namespace DB
@@ -1746,17 +1747,60 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     {
         auto & query = getSelectQuery();
         SortDescription group_by_descr = getSortDescriptionFromGroupBy(query, *context);
+        bool need_finish_sorting = (group_by_info->order_key_prefix_descr.size() < group_by_descr.size());
 
-        executeOrderOptimized(pipeline, group_by_info, 0, group_by_descr);
-
-        pipeline.resize(1);
-        pipeline.addSimpleTransform([&](const Block & header)
+        if (need_finish_sorting)
         {
-            return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, group_by_descr, settings.max_block_size);
-        });
+            /// TOO SLOW
+        }
+        else
+        {
+            if (pipeline.getNumStreams() > 1)
+            {
+                auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
+                size_t counter = 0;
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, settings.max_block_size, many_data, counter++);
+                });
 
-        pipeline.enableQuotaForCurrentStreams();
-        return;
+                /// TODO remove code duplication
+                for (auto & column_description : group_by_descr)
+                {
+                    if (!column_description.column_name.empty())
+                    {
+                        column_description.column_number = pipeline.getHeader().getPositionByName(column_description.column_name);
+                        column_description.column_name.clear();
+                    }
+                }
+
+                auto transform = std::make_shared<AggregatingSortedTransform>(
+                    pipeline.getHeader(),
+                    pipeline.getNumStreams(),
+                    group_by_descr,
+                    settings.max_block_size);
+
+                pipeline.addPipe({ std::move(transform) });
+            }
+            else
+            {
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, settings.max_block_size);
+                });
+            }
+
+            if (final)
+            {
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<FinalizingInOrderTransform>(header, transform_params);
+                });
+            }
+
+            pipeline.enableQuotaForCurrentStreams();
+            return;
+        }
     }
 
     /// If there are several sources, then we perform parallel aggregation

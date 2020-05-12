@@ -61,7 +61,7 @@ struct SortColumnDescription
     std::string dump() const
     {
         std::stringstream ss;
-        ss << column_name << ":" << column_number << ":dir " << direction;
+        ss << column_name << ":" << column_number << ":dir " << direction << "nulls " << nulls_direction;
         return ss.str();
     }
 };
