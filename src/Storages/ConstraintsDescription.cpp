@@ -33,7 +33,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & constraint : list->children)
-        res.constraints.push_back(std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint));
+        res.constraints.push_back(constraint);
 
     return res;
 }
@@ -46,9 +46,10 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::Context 
     for (const auto & constraint : constraints)
     {
         // SyntaxAnalyzer::analyze has query as non-const argument so to avoid accidental query changes we clone it
-        ASTPtr expr = constraint->expr->clone();
+        auto constraint_ptr = constraint->as<ASTConstraintDeclaration>();
+        ASTPtr expr = constraint_ptr->expr->clone();
         auto syntax_result = SyntaxAnalyzer(context).analyze(expr, source_columns_);
-        res.push_back(ExpressionAnalyzer(constraint->expr->clone(), syntax_result, context).getActions(false));
+        res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false));
     }
     return res;
 }
