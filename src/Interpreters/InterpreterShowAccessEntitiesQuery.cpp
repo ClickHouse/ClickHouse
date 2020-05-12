@@ -70,6 +70,10 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             origin = "quotas";
         }
     }
+    else if (query.type == EntityType::SETTINGS_PROFILE)
+    {
+        origin = "settings_profiles";
+    }
     else
         throw Exception(toString(query.type) + ": type is not supported by SHOW query", ErrorCodes::NOT_IMPLEMENTED);
 

@@ -150,32 +150,34 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
 
 void SettingsProfilesCache::substituteProfiles(SettingsProfileElements & elements) const
 {
-    bool stop_substituting = false;
     boost::container::flat_set<UUID> already_substituted;
-    while (!stop_substituting)
+    for (size_t i = 0; i != elements.size();)
     {
-        stop_substituting = true;
-        for (size_t i = 0; i != elements.size(); ++i)
+        auto & element = elements[i];
+        if (!element.parent_profile)
         {
-            auto & element = elements[i];
-            if (!element.parent_profile)
-                continue;
-
-            auto parent_profile_id = *element.parent_profile;
-            element.parent_profile.reset();
-            if (already_substituted.count(parent_profile_id))
-                continue;
-
-            already_substituted.insert(parent_profile_id);
-            auto parent_profile = all_profiles.find(parent_profile_id);
-            if (parent_profile == all_profiles.end())
-                continue;
-
-            const auto & parent_profile_elements = parent_profile->second->elements;
-            elements.insert(elements.begin() + i + 1, parent_profile_elements.begin(), parent_profile_elements.end());
-            i += parent_profile_elements.size();
-            stop_substituting = false;
+            ++i;
+            continue;
         }
+
+        auto parent_profile_id = *element.parent_profile;
+        element.parent_profile.reset();
+        if (already_substituted.count(parent_profile_id))
+        {
+            ++i;
+            continue;
+        }
+
+        already_substituted.insert(parent_profile_id);
+        auto parent_profile = all_profiles.find(parent_profile_id);
+        if (parent_profile == all_profiles.end())
+        {
+            ++i;
+            continue;
+        }
+
+        const auto & parent_profile_elements = parent_profile->second->elements;
+        elements.insert(elements.begin() + i, parent_profile_elements.begin(), parent_profile_elements.end());
     }
 }
 

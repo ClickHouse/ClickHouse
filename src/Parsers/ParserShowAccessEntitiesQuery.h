@@ -9,6 +9,7 @@ namespace DB
   * SHOW [ROW] POLICIES [ON [database.]table]
     SHOW QUOTAS
     SHOW [CURRENT] QUOTA
+    SHOW [SETTINGS] PROFILES
   */
 class ParserShowAccessEntitiesQuery : public IParserBase
 {
