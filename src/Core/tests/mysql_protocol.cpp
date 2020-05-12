@@ -181,7 +181,7 @@ int main(int, char **)
                 {
                     case MYSQL_QUERY_EVENT: {
                         auto binlogEvent = std::static_pointer_cast<QueryEvent>(event);
-                        binlogEvent->print();
+                        binlogEvent->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
@@ -189,7 +189,7 @@ int main(int, char **)
                     }
                     case MYSQL_WRITE_ROWS_EVENT: {
                         auto binlogEvent = std::static_pointer_cast<WriteRowsEvent>(event);
-                        binlogEvent->print();
+                        binlogEvent->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
@@ -197,7 +197,7 @@ int main(int, char **)
                     }
                     case MYSQL_UPDATE_ROWS_EVENT: {
                         auto binlogEvent = std::static_pointer_cast<UpdateRowsEvent>(event);
-                        binlogEvent->print();
+                        binlogEvent->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
@@ -205,7 +205,7 @@ int main(int, char **)
                     }
                     case MYSQL_DELETE_ROWS_EVENT: {
                         auto binlogEvent = std::static_pointer_cast<DeleteRowsEvent>(event);
-                        binlogEvent->print();
+                        binlogEvent->dump();
 
                         Position pos = slave.getPosition();
                         std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
