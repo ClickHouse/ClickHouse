@@ -61,10 +61,11 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
                 std::stringstream exception_message;
 
-                exception_message << "Constraint " << backQuote(constraints.constraints[i]->name)
+                auto constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
+                exception_message << "Constraint " << backQuote(constraint_ptr->name)
                     << " for table " << table_id.getNameForLogs()
                     << " is violated at row " << (rows_written + row_idx + 1)
-                    << ". Expression: (" << serializeAST(*(constraints.constraints[i]->expr), true) << ")"
+                    << ". Expression: (" << serializeAST(*(constraint_ptr->expr), true) << ")"
                     << ". Column values";
 
                 bool first = true;
