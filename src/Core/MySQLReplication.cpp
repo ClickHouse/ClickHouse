@@ -96,6 +96,15 @@ namespace MySQLReplication
             = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
+
+        if (query == "BEGIN")
+        {
+            typ = BEGIN;
+        }
+        else if (query == "SAVEPOINT")
+        {
+            typ = SAVEPOINT;
+        }
     }
 
     void QueryEvent::print() const
@@ -267,7 +276,6 @@ namespace MySQLReplication
     void RowsEvent::parseRow(ReadBuffer & payload, Bitmap & bitmap)
     {
         Tuple row;
-        UInt32 field_type = 0;
         UInt32 field_len = 0;
         UInt32 null_index = 0;
 
@@ -293,8 +301,8 @@ namespace MySQLReplication
             }
             else
             {
-                field_type = table_map->column_type[i];
                 auto meta = table_map->column_meta[i];
+                auto field_type = table_map->column_type[i];
                 if (field_type == MYSQL_TYPE_STRING)
                 {
                     if (meta >= 256)
@@ -374,12 +382,7 @@ namespace MySQLReplication
                     case MYSQL_TYPE_TIMESTAMP: {
                         UInt32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-
-                        time_t time = time_t(val);
-                        std::tm * gtm = std::gmtime(&time);
-                        char buffer[32];
-                        std::strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", gtm);
-                        row.push_back(Field{String{buffer}});
+                        row.push_back(Field{UInt64{val}});
                         break;
                     }
                     case MYSQL_TYPE_TIME: {
@@ -415,17 +418,19 @@ namespace MySQLReplication
                     case MYSQL_TYPE_YEAR: {
                         Int32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{Int32{val + 1900}});
+
+                        String time_buff;
+                        time_buff.resize(4);
+                        sprintf(time_buff.data(), "%04d", (val + 1900));
+                        row.push_back(Field{String{time_buff}});
                         break;
                     }
                     case MYSQL_TYPE_TIME2: {
                         UInt32 val = 0, frac_part = 0;
-                        char sign = 0x22;
 
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 3);
                         if (readBits(val, 0, 1, 24) == 0)
                         {
-                            sign = '-';
                             val = ~val + 1;
                         }
                         UInt32 hour = readBits(val, 2, 10, 24);
@@ -436,11 +441,10 @@ namespace MySQLReplication
                         if (frac_part != 0)
                         {
                             String time_buff;
-                            time_buff.resize(16);
+                            time_buff.resize(15);
                             sprintf(
                                 time_buff.data(),
-                                "%c%02d:%02d:%02d.%06d",
-                                static_cast<char>(sign),
+                                "%02d:%02d:%02d.%06d",
                                 static_cast<int>(hour),
                                 static_cast<int>(minute),
                                 static_cast<int>(second),
@@ -450,11 +454,10 @@ namespace MySQLReplication
                         else
                         {
                             String time_buff;
-                            time_buff.resize(9);
+                            time_buff.resize(8);
                             sprintf(
                                 time_buff.data(),
-                                "%c%02d:%02d:%02d",
-                                static_cast<char>(sign),
+                                "%02d:%02d:%02d",
                                 static_cast<int>(hour),
                                 static_cast<int>(minute),
                                 static_cast<int>(second));
@@ -469,31 +472,22 @@ namespace MySQLReplication
 
                         struct tm timeinfo;
                         UInt32 year_month = readBits(val, 1, 17, 40);
-                        timeinfo.tm_year = year_month / 13 - 1900;
-                        timeinfo.tm_mon = year_month % 13;
+                        timeinfo.tm_year = (year_month / 13) - 1900;
+                        timeinfo.tm_mon = (year_month % 13) - 1;
                         timeinfo.tm_mday = readBits(val, 18, 5, 40);
                         timeinfo.tm_hour = readBits(val, 23, 5, 40);
                         timeinfo.tm_min = readBits(val, 28, 6, 40);
                         timeinfo.tm_sec = readBits(val, 34, 6, 40);
 
                         time_t time = mktime(&timeinfo);
-                        std::tm * gtm = std::gmtime(&time);
-                        char buffer[32];
-                        std::strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", gtm);
-                        row.push_back(Field{String{buffer}});
+                        row.push_back(Field{UInt64{static_cast<UInt32>(time)}});
                         break;
                     }
                     case MYSQL_TYPE_TIMESTAMP2: {
-                        UInt32 sec = 0, subsec = 0, whole_part = 0;
+                        UInt64 sec = 0, fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
-                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&sec), meta);
-
-                        whole_part = (sec + subsec / 1e6);
-                        time_t time = time_t(whole_part);
-                        std::tm * gtm = std::gmtime(&time);
-                        char buffer[32];
-                        std::strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", gtm);
-                        row.push_back(Field{String{buffer}});
+                        readTimeFractionalPart(payload, reinterpret_cast<char *>(&fsp), meta);
+                        row.push_back(Field{UInt64{sec}});
                         break;
                     }
                     case MYSQL_TYPE_ENUM: {
@@ -668,10 +662,18 @@ namespace MySQLReplication
                 event = std::make_shared<QueryEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                if (event->header.event_size > QUERY_EVENT_BEGIN_LENGTH)
-                    position.updateLogPos(event->header.log_pos);
-                else
-                    event = std::make_shared<DryRunEvent>();
+
+                auto query = std::dynamic_pointer_cast<QueryEvent>(event);
+                switch (query->typ)
+                {
+                    case BEGIN:
+                    case SAVEPOINT: {
+                        event = std::make_shared<DryRunEvent>();
+                        break;
+                    }
+                    default:
+                        position.updateLogPos(event->header.log_pos);
+                }
                 break;
             }
             case XID_EVENT: {

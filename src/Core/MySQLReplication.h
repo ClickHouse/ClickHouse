@@ -18,14 +18,14 @@ namespace MySQLReplication
     static const int EVENT_VERSION_V4 = 4;
     static const int EVENT_HEADER_LENGTH = 19;
     static const int CHECKSUM_CRC32_SIGNATURE_LENGTH = 4;
-    static const int QUERY_EVENT_BEGIN_LENGTH = 74;
 
     using Bitmap = boost::dynamic_bitset<>;
 
     inline UInt64 readBits(UInt64 val, UInt8 start, UInt8 size, UInt8 length)
     {
+        UInt64 mask = 1;
         val = val >> (length - (start + size));
-        return val & (UInt64(1 << size) - 1);
+        return val & ((mask << size) - 1);
     }
 
     inline void readBigEndianStrict(ReadBuffer & payload, char * to, size_t n)
@@ -336,6 +336,13 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
     };
 
+    enum QueryType
+    {
+        DDL = 0,
+        BEGIN = 1,
+        SAVEPOINT = 2
+    };
+
     class QueryEvent : public EventBase
     {
     public:
@@ -347,6 +354,7 @@ namespace MySQLReplication
         String status;
         String schema;
         String query;
+        QueryType typ = DDL;
 
         void print() const override;
         MySQLEventType type() const override { return MYSQL_QUERY_EVENT; }
