@@ -1203,7 +1203,6 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     Processors processors;
     for (auto & pipe : pipes)
     {
-        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), projection));
         auto pipe_processors = std::move(pipe).detachProcessors();
         processors.insert(processors.end(), pipe_processors.begin(), pipe_processors.end());
     }
@@ -1217,6 +1216,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     pipes.front().addProcessors(selectors);
     pipes.front().addProcessors(copiers);
     pipes.front().addProcessors(merges);
+
+    for (auto & pipe : pipes)
+        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), projection));
 
     return pipes;
 }
