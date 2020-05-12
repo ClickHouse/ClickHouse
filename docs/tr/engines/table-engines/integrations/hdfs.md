@@ -8,7 +8,7 @@ toc_title: HDFS
 # HDFS {#table_engines-hdfs}
 
 Bu motor ile entegrasyon sağlar [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) üzerinde veri Yönet allowingilmesine izin vererek ekosist dataem [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)ClickHouse aracılığıyla. Bu motor benzer
-to the [Dosya](../special/file.md) ve [URL](../special/url.md) motorlar, ancak hadoop özgü özellikleri sağlar.
+to the [Dosya](../special/file.md#table_engines-file) ve [URL](../special/url.md#table_engines-url) motorlar, ancak hadoop özgü özellikleri sağlar.
 
 ## Kullanma {#usage}
 

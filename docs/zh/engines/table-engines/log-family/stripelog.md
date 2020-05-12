@@ -1,4 +1,4 @@
-# StripeLog {#table_engines-stripelog}
+# StripeLog {#stripelog}
 
 该引擎属于日志引擎系列。请在[日志引擎系列](log-family.md)文章中查看引擎的共同属性和差异。
 

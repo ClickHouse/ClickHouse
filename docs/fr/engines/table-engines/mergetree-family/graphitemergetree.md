@@ -81,7 +81,7 @@ Tous les paramètres excepté `config_section` ont la même signification que da
 
 ## Configuration De Cumul {#rollup-configuration}
 
-Les paramètres de cumul sont définis par [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) paramètre dans la configuration du serveur. Le nom du paramètre pourrait être tout. Vous pouvez créer plusieurs configurations et les utiliser pour différentes tables.
+Les paramètres de cumul sont définis par [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) paramètre dans la configuration du serveur. Le nom du paramètre pourrait être tout. Vous pouvez créer plusieurs configurations et les utiliser pour différentes tables.
 
 Structure de configuration de cumul:
 

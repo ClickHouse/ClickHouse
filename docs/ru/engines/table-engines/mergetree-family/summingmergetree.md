@@ -105,7 +105,7 @@ ClickHouse может слить куски данных таким образо
 
 ### Суммирование в столбцах AggregateFunction {#summirovanie-v-stolbtsakh-aggregatefunction}
 
-Для столбцов типа [AggregateFunction](../../../engines/table-engines/mergetree-family/summingmergetree.md#data_type-aggregatefunction) ClickHouse выполняет агрегацию согласно заданной функции, повторяя поведение движка [AggregatingMergeTree](aggregatingmergetree.md).
+Для столбцов типа [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) ClickHouse выполняет агрегацию согласно заданной функции, повторяя поведение движка [AggregatingMergeTree](aggregatingmergetree.md).
 
 ### Вложенные структуры {#vlozhennye-struktury}
 

@@ -300,6 +300,15 @@ class ClickHouseCluster:
         handle = self.docker_client.containers.get(docker_id)
         return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
 
+    def get_container_id(self, instance_name):
+        docker_id = self.get_instance_docker_id(instance_name)
+        handle = self.docker_client.containers.get(docker_id)
+        return handle.attrs['Id']
+
+    def get_container_logs(self, instance_name):
+        container_id = self.get_container_id(instance_name)
+        return self.docker_client.api.logs(container_id)
+
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
         while time.time() - start < timeout:
