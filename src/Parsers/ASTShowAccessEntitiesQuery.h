@@ -11,6 +11,8 @@ namespace DB
 /// SHOW QUOTAS
 /// SHOW [CURRENT] QUOTA
 /// SHOW [SETTINGS] PROFILES
+/// SHOW USERS
+/// SHOW [CURRENT|ENABLED] ROLES
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput
 {
 public:
@@ -20,6 +22,8 @@ public:
     String database;
     String table_name;
     bool current_quota = false;
+    bool current_roles = false;
+    bool enabled_roles = false;
 
     String getID(char) const override;
     ASTPtr clone() const override { return std::make_shared<ASTShowAccessEntitiesQuery>(*this); }

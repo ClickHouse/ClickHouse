@@ -86,6 +86,7 @@ SRCS(
     System/StorageSystemAsynchronousMetrics.cpp
     System/StorageSystemBuildOptions.cpp
     System/StorageSystemClusters.cpp
+    System/StorageSystemCurrentRoles.cpp
     System/StorageSystemCollations.cpp
     System/StorageSystemColumns.cpp
     System/StorageSystemContributors.cpp
@@ -95,9 +96,11 @@ SRCS(
     System/StorageSystemDetachedParts.cpp
     System/StorageSystemDictionaries.cpp
     System/StorageSystemDisks.cpp
+    System/StorageSystemEnabledRoles.cpp
     System/StorageSystemEvents.cpp
     System/StorageSystemFormats.cpp
     System/StorageSystemFunctions.cpp
+    System/StorageSystemGrants.cpp
     System/StorageSystemGraphite.cpp
     System/StorageSystemMacros.cpp
     System/StorageSystemMerges.cpp
@@ -118,6 +121,8 @@ SRCS(
     System/StorageSystemQuotasUsage.cpp
     System/StorageSystemReplicas.cpp
     System/StorageSystemReplicationQueue.cpp
+    System/StorageSystemRoleGrants.cpp
+    System/StorageSystemRoles.cpp
     System/StorageSystemRowPolicies.cpp
     System/StorageSystemSettings.cpp
     System/StorageSystemSettingsProfileElements.cpp
@@ -127,6 +132,7 @@ SRCS(
     System/StorageSystemTableEngines.cpp
     System/StorageSystemTableFunctions.cpp
     System/StorageSystemTables.cpp
+    System/StorageSystemUsers.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
     AlterCommands.cpp
