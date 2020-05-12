@@ -90,7 +90,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         else
             out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
+        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr});
     }
 
     /// Do not push to destination table if the flag is set
