@@ -3,7 +3,7 @@
 #include <limits.h>
 #include <cstring>
 #include <iomanip>
-//#include <Core/Types.h>
+#include <Core/Types.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
@@ -210,6 +210,53 @@ struct Float16 {
         return Float16(resultValue);
     }
 
+    Float16 inline operator/(const Float16 fl) const {
+        if (isNull()) {
+            return Float16((unsigned short) 0);
+        }
+        if (fl.isNull()) {
+            return Float16((unsigned short) FLOAT16_NAN_HEX);
+        }
+        unsigned short resultingExponent;
+        unsigned short exponentBias = 0x10;
+        unsigned short exponent = (getValue() >> 10) & 0x1f;
+        unsigned short flExponent = (fl.getValue() >> 10) & 0x1f;
+        if (exponent > flExponent) {
+            resultingExponent = exponent - flExponent + exponentBias;
+            if (resultingExponent - exponentBias != exponent - flExponent) {
+                // report overflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+        } else if (exponentBias > flExponent) {
+            resultingExponent = exponentBias - flExponent + exponent;
+            if (resultingExponent - exponent != exponentBias - flExponent) {
+                // report overflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+        } else {
+            resultingExponent = exponent + exponentBias - flExponent;
+            if (resultingExponent + flExponent != exponent + exponentBias) {
+                // report underflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+        }
+        unsigned short resultingMantissa = (getValue() & 0x3ff) / (fl.getValue() & 0x3ff);
+        unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15) << 15);
+        unsigned short resultingExponentCopy = resultingExponent;
+        while (!(bool)(resultingMantissa >> 9)) {
+            resultingExponent--;
+            resultingMantissa = resultingMantissa << 1;
+            if (resultingExponentCopy - resultingExponent != 1) {
+                // report underflow
+                return Float16((unsigned short) FLOAT16_NAN_HEX);
+            }
+            resultingExponentCopy--;
+        }
+        unsigned short resultValue = signMask | (resultingExponent << 10) | resultingMantissa;
+        return Float16(resultValue);
+    }
+
+
     template <typename T> bool inline operator== (const T rhs) const { return *this == Float16(rhs); }
     template <typename T> bool inline operator!= (const T rhs) const { return *this != Float16(rhs); }
     template <typename T> bool inline operator>= (const T rhs) const { return *this >= Float16(rhs); }
@@ -225,6 +272,10 @@ template <typename T> bool inline operator>= (T a, const Float16 b) { return Flo
 template <typename T> bool inline operator>  (T a, const Float16 b) { return Float16(a) > b; }
 template <typename T> bool inline operator<= (T a, const Float16 b) { return Float16(a) <= b; }
 template <typename T> bool inline operator<  (T a, const Float16 b) { return Float16(a) < b; }
+template <typename T> Float16 inline operator+ (T a, const Float16 b) { return Float16(a) + b; }
+template <typename T> Float16 inline operator- (T a, const Float16 b) { return Float16(a) - b; }
+template <typename T> Float16 inline operator* (T a, const Float16 b) { return Float16(a) * b; }
+template <typename T> Float16 inline operator/ (T a, const Float16 b) { return Float16(a) / b; }
 
 template <> inline constexpr bool IsNumber<Float16> = true;
 template <> struct TypeName<Float16> { static const char * get() { return "Float16"; } };
