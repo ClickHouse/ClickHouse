@@ -7,8 +7,37 @@ import sys
 
 import bs4
 
+import logging
+import os
+import subprocess
+
+import bs4
+
+
+def test_amp(paths, lang):
+    try:
+        # Get latest amp validator version
+        subprocess.check_call('amphtml-validator --help',
+                              stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              shell=True)
+    except subprocess.CalledProcessError:
+        subprocess.check_call('npm i -g amphtml-validator', stderr=subprocess.DEVNULL, shell=True)
+
+    paths = ' '.join(paths)
+    command = f'amphtml-validator {paths}'
+    try:
+        subprocess.check_output(command, shell=True).decode('utf-8')
+    except subprocess.CalledProcessError:
+        logging.error(f'Invalid AMP for {lang}')
+        raise
+
 
 def test_template(template_path):
+    if template_path.endswith('amp.html'):
+        # Inline CSS/JS is ok for AMP pages
+        return
+
     logging.debug(f'Running tests for {template_path} template')
     with open(template_path, 'r') as f:
         soup = bs4.BeautifulSoup(
@@ -20,6 +49,8 @@ def test_template(template_path):
             assert not style_attr, f'Inline CSS is prohibited, found {style_attr} in {template_path}'
 
             if tag.name == 'script':
+                if tag.attrs.get('type') == 'application/ld+json':
+                    continue
                 for content in tag.contents:
                     assert not content, f'Inline JavaScript is prohibited, found "{content}" in {template_path}'
 

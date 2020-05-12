@@ -77,7 +77,6 @@ namespace mysqlxx
         size_t max_tries;
         /// Mutex for set of replicas.
         std::mutex mutex;
-        std::string config_name;
 
         /// Can the Pool be shared
         bool shareable;
@@ -91,16 +90,16 @@ namespace mysqlxx
          * max_connections       Maximum number of connections in pool to each replica.
          * max_tries_            Max number of connection tries.
          */
-        PoolWithFailover(const std::string & config_name,
-            unsigned default_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            unsigned max_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-            size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+        PoolWithFailover(const std::string & config_name_,
+            unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+            unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+            size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
-        PoolWithFailover(const Poco::Util::AbstractConfiguration & config,
-            const std::string & config_name,
-            unsigned default_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            unsigned max_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-            size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+        PoolWithFailover(const Poco::Util::AbstractConfiguration & config_,
+            const std::string & config_name_,
+            unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+            unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+            size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
         PoolWithFailover(const PoolWithFailover & other);
 

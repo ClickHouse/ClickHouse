@@ -37,9 +37,9 @@ Debido a que las CPU modernas no admiten enteros de 128 bits de forma nativa, la
 
 Las operaciones binarias en Decimal dan como resultado un tipo de resultado más amplio (con cualquier orden de argumentos).
 
--   Decimal64(S1) <op> Decimal32(S2) -\> Decimal64(S)
--   Decimal128(S1) <op> Decimal32(S2) -\> Decimal128(S)
--   Decimal128(S1) <op> ¿Cómo puedo hacerlo?)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 Reglas para la escala:
 

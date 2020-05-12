@@ -23,4 +23,4 @@ ClickHouse operations manual consists of the following major sections:
 -   [Settings](settings/index.md)
 -   [Utilities](utilities/index.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/operations/) ##}
