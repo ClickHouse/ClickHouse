@@ -148,7 +148,7 @@ public:
 
 private:
     T dec{};
-    UInt32 scale{};
+    UInt32 scale;
 };
 
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
@@ -289,7 +289,10 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
-    static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal128; }
+    static bool IsDecimal(Types::Which which)
+    {
+        return (which >= Types::Decimal32 && which <= Types::Decimal128) || which == Types::Decimal256;
+    }
 
     Field()
         : which(Types::Null)
@@ -569,14 +572,7 @@ public:
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::Int128:
                 // TODO: investigate where we need Int128 Fields. There are no
