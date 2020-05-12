@@ -9,6 +9,9 @@
 #include <nmmintrin.h>
 #endif
 
+/**
+ * Represents IEEE754 Brain Floating Point floating-point format (or bfloat16)
+ */
 namespace DB
 {
 

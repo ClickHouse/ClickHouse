@@ -9,6 +9,9 @@
 #include <nmmintrin.h>
 #endif
 
+/**
+ * Represents IEEE754-2008 Half-precision floating-point format (or float16)
+ */
 namespace DB
 {
 
