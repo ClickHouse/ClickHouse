@@ -166,18 +166,14 @@ int main(int, char **)
         {
             UInt32 slave_id = 9004;
             MySQLClient slave("127.0.0.1", 9001, "default", "123");
-            if (!slave.connect())
-            {
-                std::cerr << "Connect Error: " << slave.error() << std::endl;
-                return 1;
-            }
 
-            if (!slave.startBinlogDump(slave_id, "", "", 4))
-            {
-                std::cerr << "Connect Error: " << slave.error() << std::endl;
-                return 1;
-            }
+            /// Connect to the master.
+            slave.connect();
 
+            ///  start to dump binlog.
+            slave.startBinlogDump(slave_id, "", "", 4);
+
+            /// Read one binlog event on by one.
             while (true)
             {
                 auto event = slave.readOneBinlogEvent();
