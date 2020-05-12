@@ -154,6 +154,3 @@
 [submodule "contrib/msgpack-c"]
 	path = contrib/msgpack-c
 	url = https://github.com/msgpack/msgpack-c
-[submodule "contrib/openldap"]
-	path = contrib/openldap
-	url = https://github.com/openldap/openldap.git
