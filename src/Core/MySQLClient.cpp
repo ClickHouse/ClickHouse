@@ -75,9 +75,7 @@ void MySQLClient::handshake()
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
-    {
         throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-    }
 }
 
 void MySQLClient::writeCommand(char command, String query)
