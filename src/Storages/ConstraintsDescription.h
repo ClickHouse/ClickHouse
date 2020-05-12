@@ -6,12 +6,11 @@
 namespace DB
 {
 
-using ConstraintsASTs = std::vector<ASTPtr>;
 using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
 
 struct ConstraintsDescription
 {
-    ConstraintsASTs constraints;
+    std::vector<ASTPtr> constraints;
 
     ConstraintsDescription() = default;
 
