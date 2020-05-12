@@ -74,6 +74,7 @@ public:
         : context(context_)
         , subquery_depth(select_options.subquery_depth)
         , remove_duplicates(select_options.remove_duplicates)
+        , only_analyze(select_options.only_analyze)
     {}
 
     SyntaxAnalyzerResultPtr analyze(
@@ -87,6 +88,7 @@ private:
     const Context & context;
     size_t subquery_depth;
     bool remove_duplicates;
+    bool only_analyze = false;
 };
 
 }
