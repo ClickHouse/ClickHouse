@@ -855,7 +855,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    if (allow_aggregates) 
+    if (allow_aggregates)
     {
         GetAggregatesVisitor::Data data;
         GetAggregatesVisitor(data).visit(query);
@@ -866,7 +866,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
                 assertNoAggregates(arg, "inside another aggregate function");
         result.aggregates = data.aggregates;
     }
-    else 
+    else
         assertNoAggregates(query, "in wrong place");
 
     result.collectUsedColumns(query);

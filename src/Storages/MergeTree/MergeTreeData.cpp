@@ -635,16 +635,16 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         auto result = create_ttl_entry(ttl_element->ttl());
         result.mode = ttl_element->mode;
 
-        if (ttl_element->mode == TTLMode::DELETE)         
+        if (ttl_element->mode == TTLMode::DELETE)
         {
-            if (ASTPtr where_expr_ast = ttl_element->where()) 
+            if (ASTPtr where_expr_ast = ttl_element->where())
             {
                 auto where_syntax_result = SyntaxAnalyzer(global_context).analyze(where_expr_ast, new_columns.getAllPhysical());
                 result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, global_context).getActions(false);
                 result.where_result_column = where_expr_ast->getColumnName();
             }
         }
-        else if (ttl_element->mode == TTLMode::GROUP_BY) 
+        else if (ttl_element->mode == TTLMode::GROUP_BY)
         {
             if (ttl_element->group_by_key_columns.size() > this->primary_key_columns.size())
                 throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);

@@ -21,7 +21,7 @@ public:
     std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     ASTTTLElement(TTLMode mode_, PartDestinationType destination_type_, const String & destination_name_)
-        : mode(mode_) 
+        : mode(mode_)
         , destination_type(destination_type_)
         , destination_name(destination_name_)
         , ttl_expr_pos(-1)
@@ -42,12 +42,12 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-private: 
+private:
     int ttl_expr_pos;
     int where_expr_pos;
 
 private:
-    void setExpression(int & pos, ASTPtr && ast);    
+    void setExpression(int & pos, ASTPtr && ast);
     ASTPtr getExpression(int pos, bool clone = false) const;
 };
 
