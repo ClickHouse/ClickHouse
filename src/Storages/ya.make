@@ -110,6 +110,7 @@ SRCS(
     System/StorageSystemParts.cpp
     System/StorageSystemPartsBase.cpp
     System/StorageSystemPartsColumns.cpp
+    System/StorageSystemPrivileges.cpp
     System/StorageSystemProcesses.cpp
     System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
