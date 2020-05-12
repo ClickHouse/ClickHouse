@@ -710,8 +710,6 @@ namespace MySQLReplication
         std::cerr << "[DryRun Event]" << std::endl;
     }
 
-    void MySQLFlavor::setReplicateDatabase(String db) { replicate_do_db = std::move(db); }
-
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
     {
         UInt16 header = static_cast<unsigned char>(*payload.position());
@@ -783,30 +781,21 @@ namespace MySQLReplication
             }
             case WRITE_ROWS_EVENT_V1:
             case WRITE_ROWS_EVENT_V2: {
-                if (do_replicate())
-                    event = std::make_shared<WriteRowsEvent>(table_map);
-                else
-                    event = std::make_shared<DryRunEvent>();
+                event = std::make_shared<WriteRowsEvent>(table_map);
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
             case DELETE_ROWS_EVENT_V1:
             case DELETE_ROWS_EVENT_V2: {
-                if (do_replicate())
-                    event = std::make_shared<DeleteRowsEvent>(table_map);
-                else
-                    event = std::make_shared<DryRunEvent>();
+                event = std::make_shared<DeleteRowsEvent>(table_map);
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2: {
-                if (do_replicate())
-                    event = std::make_shared<UpdateRowsEvent>(table_map);
-                else
-                    event = std::make_shared<DryRunEvent>();
+                event = std::make_shared<UpdateRowsEvent>(table_map);
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
