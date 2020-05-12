@@ -1,11 +1,10 @@
 #include <Parsers/MySQL/ASTDeclareTableOptions.h>
 
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
 
 namespace DB
@@ -68,6 +67,8 @@ bool ParserDeclareTableOptions::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         {
             OptionDescribe("AUTO_INCREMENT", "auto_increment", std::make_shared<ParserLiteral>()),
             OptionDescribe("AVG_ROW_LENGTH", "avg_row_length", std::make_shared<ParserLiteral>()),
+            OptionDescribe("CHARSET", "character_set", std::make_shared<ParserCharsetName>()),
+            OptionDescribe("DEFAULT CHARSET", "character_set", std::make_shared<ParserCharsetName>()),
             OptionDescribe("CHARACTER SET", "character_set", std::make_shared<ParserCharsetName>()),
             OptionDescribe("DEFAULT CHARACTER SET", "character_set", std::make_shared<ParserIdentifier>()),
             OptionDescribe("CHECKSUM", "checksum", std::make_shared<ParserBoolOption<false>>()),
