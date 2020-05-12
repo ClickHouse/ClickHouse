@@ -17,7 +17,7 @@ MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user
     client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }
 
-bool MySQLClient::connect()
+void MySQLClient::connect()
 {
     if (connected)
     {
@@ -39,7 +39,7 @@ bool MySQLClient::connect()
     in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
     out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
     packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
-    return handshake();
+    handshake();
 }
 
 void MySQLClient::disconnect()
@@ -53,7 +53,7 @@ void MySQLClient::disconnect()
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
-bool MySQLClient::handshake()
+void MySQLClient::handshake()
 {
     Handshake handshake;
     packet_sender->receivePacket(handshake);
@@ -76,15 +76,12 @@ bool MySQLClient::handshake()
     packet_sender->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
     {
-        last_error = packet_response.err.error_message;
+        throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
-    return (packet_response.getType() != PACKET_ERR);
 }
 
-bool MySQLClient::writeCommand(char command, String query)
+void MySQLClient::writeCommand(char command, String query)
 {
-    bool ret = false;
-
     WriteCommand write_command(command, query);
     packet_sender->sendPacket<WriteCommand>(write_command, true);
 
@@ -93,19 +90,16 @@ bool MySQLClient::writeCommand(char command, String query)
     switch (packet_response.getType())
     {
         case PACKET_ERR:
-            last_error = packet_response.err.error_message;
-            break;
+            throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         case PACKET_OK:
-            ret = true;
             break;
         default:
             break;
     }
     packet_sender->resetSequenceId();
-    return ret;
 }
 
-bool MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
+void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
 {
     RegisterSlave register_slave(slave_id);
     packet_sender->sendPacket<RegisterSlave>(register_slave, true);
@@ -114,33 +108,23 @@ bool MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
-    {
-        last_error = packet_response.err.error_message;
-        return false;
-    }
-    return true;
+        throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
-bool MySQLClient::ping()
+void MySQLClient::ping()
 {
-    return writeCommand(Command::COM_PING, "");
+    writeCommand(Command::COM_PING, "");
 }
 
-bool MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos)
+void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos)
 {
     /// Set binlog checksum to CRC32.
     String checksum = "CRC32";
-    if (!writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'"))
-    {
-        return false;
-    }
+    writeCommand(Command::COM_QUERY, "SET @master_binlog_checksum = '" + checksum + "'");
 
     /// Set heartbeat 30s.
     UInt64 period_ns = (30 * 1e9);
-    if (!writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns)))
-    {
-        return false;
-    }
+    writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns));
 
     /// Set replication filter to master
     /// This requires MySQL version >=5.6, so results are not checked here.
@@ -150,15 +134,11 @@ bool MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     replication.setReplicateDatabase(replicate_db);
 
     // Register slave.
-    if (!registerSlaveOnMaster(slave_id))
-    {
-        return false;
-    }
+    registerSlaveOnMaster(slave_id);
 
     binlog_pos = binlog_pos < 4 ? 4 : binlog_pos;
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
     packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
-    return true;
 }
 
 BinlogEventPtr MySQLClient::readOneBinlogEvent()
@@ -168,11 +148,6 @@ BinlogEventPtr MySQLClient::readOneBinlogEvent()
         packet_sender->receivePacket(replication);
         return replication.readOneEvent();
     }
-}
-
-String MySQLClient::error()
-{
-    return last_error;
 }
 
 }
