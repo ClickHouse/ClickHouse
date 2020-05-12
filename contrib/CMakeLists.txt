@@ -107,6 +107,10 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
+if (ENABLE_LDAP AND USE_INTERNAL_LDAP_LIBRARY)
+    add_subdirectory (openldap-cmake)
+endif ()
+
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
     set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
