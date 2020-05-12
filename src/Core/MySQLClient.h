@@ -28,12 +28,11 @@ class MySQLClient
 {
 public:
     MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_);
-    bool connect();
+    void connect();
     void disconnect();
-    bool ping();
-    String error();
+    void ping();
 
-    bool startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos);
+    void startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos);
     BinlogEventPtr readOneBinlogEvent();
     Position getPosition() const { return replication.getPosition(); }
 
@@ -44,7 +43,6 @@ private:
     String password;
 
     bool connected = false;
-    String last_error;
     UInt32 client_capability_flags = 0;
 
     uint8_t seq = 0;
@@ -59,9 +57,9 @@ private:
     std::optional<Poco::Net::SocketAddress> address;
     std::shared_ptr<PacketSender> packet_sender;
 
-    bool handshake();
-    bool registerSlaveOnMaster(UInt32 slave_id);
-    bool writeCommand(char command, String query);
+    void handshake();
+    void registerSlaveOnMaster(UInt32 slave_id);
+    void writeCommand(char command, String query);
 };
 
 class WriteCommand : public WritePacket
