@@ -61,7 +61,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
 
                 std::stringstream exception_message;
 
-                auto constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
+                auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
                 exception_message << "Constraint " << backQuote(constraint_ptr->name)
                     << " for table " << table_id.getNameForLogs()
                     << " is violated at row " << (rows_written + row_idx + 1)
