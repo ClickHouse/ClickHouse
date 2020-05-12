@@ -34,7 +34,6 @@ private:
     
     void executeLog(size_t n);
 
-    Context & context; // is it overkiill?
     std::unique_ptr<Context> current_context; // to run executeQuery
 
     std::atomic<size_t> current_log_entry_n = 0;
