@@ -1044,6 +1044,12 @@ void Context::setCurrentDatabase(const String & name)
 }
 
 
+void Context::setHyperscanBrowserBase(MultiRegexps::Regexps * regexps)
+{
+    hyperscan_browser_base = regexps;
+}
+
+
 void Context::setCurrentQueryId(const String & query_id)
 {
     if (!client_info.current_query_id.empty())

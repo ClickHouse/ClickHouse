@@ -60,6 +60,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
+#include <Functions/Regexps.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <common/config_common.h>
@@ -678,6 +679,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
+
+    std::vector<StringRef> regex = {R"(Chrome(?!book)(?:/(\d+[\.\d]+))?)", R"(Chromium(?:/(\d+[\.\d]+))?)"};
+    auto * hyperscan_browser_base = MultiRegexps::get<true, false>(regex, 0);
+    global_context->setHyperscanBrowserBase(hyperscan_browser_base);
 
 #if defined(OS_LINUX)
     if (!TasksStatsCounters::checkIfAvailable())
