@@ -43,14 +43,13 @@ header_template = """
 }}
 
 body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
-h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 td {{ white-space: pre; font-family: Monospace, Courier New; }}
 border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 a {{ color: #06F; text-decoration: none; }}
 a:hover, a:active {{ color: #F40; text-decoration: underline; }}
 table {{ border: 0; }}
-.main {{ margin-left: 10%; }}
+.main {{ margin: auto; max-width: 95%; }}
 p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 
 .cancela,.cancela:link,.cancela:visited,.cancela:hover,.cancela:focus,.cancela:active{{
@@ -189,9 +188,9 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s',                                          # 0
-            'New, s',                                          # 1
-            'Relative difference (new&nbsp;-&nbsp;old)/old',   # 2
+            'Old, s.',                                         # 0
+            'New, s.',                                         # 1
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
             'Test',                                            # 5
@@ -206,10 +205,10 @@ if args.report == 'main':
             if int(row[4]):
                 if float(row[2]) < 0.:
                     faster_queries += 1
-                    attrs[2] = 'style="background: #adbdff"'
+                    attrs[2] = 'style="background: #00ff00"'
                 else:
                     slower_queries += 1
-                    attrs[2] = 'style="background: #ffb0a0"'
+                    attrs[2] = 'style="background: #ff0000"'
             else:
                 attrs[2] = ''
 
@@ -222,7 +221,7 @@ if args.report == 'main':
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
-        ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
+        ['Client time, s.', 'Server time, s.', 'Ratio', 'Query'],
         slow_on_client_rows)
 
     def print_unstable_queries():
@@ -282,18 +281,18 @@ if args.report == 'main':
 
         columns = [
             'Test',                                          #0
-            'Wall clock time, s',                            #1
-            'Total client time, s',                          #2
+            'Wall clock time, s.',                           #1
+            'Total client time, s.',                         #2
             'Total queries',                                 #3
             'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs), s',        #5
-            'Avg wall clock time<br>(sum for all runs), s',  #6
-            'Shortest query<br>(sum for all runs), s',       #7
+            'Longest query<br>(sum for all runs), s.',       #5
+            'Avg wall clock time<br>(sum for all runs), s.', #6
+            'Shortest query<br>(sum for all runs), s.',      #7
             ]
 
         print(tableStart('Test times'))
         print(tableHeader(columns))
-        
+
         nominal_runs = 13  # FIXME pass this as an argument
         total_runs = (nominal_runs + 1) * 2  # one prewarm run, two servers
         attrs = ['' for c in columns]
@@ -347,8 +346,9 @@ if args.report == 'main':
     if unstable_queries:
         message_array.append(str(unstable_queries) + ' unstable')
 
-    if very_unstable_queries:
-        status = 'failure'
+#    Disabled before fix.
+#    if very_unstable_queries:
+#        status = 'failure'
 
     error_tests += slow_average_tests
     if error_tests:
@@ -381,10 +381,10 @@ elif args.report == 'all-queries':
         columns = [
             # Changed #0
             # Unstable #1
-            'Old, s', #2
-            'New, s', #3
-            'Relative difference (new&nbsp;-&nbsp;old)/old', #4
-            'Times speedup/slowdown',                 #5
+            'Old, s.', #2
+            'New, s.', #3
+            'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
+            'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
             'Test',                                   #7
             'Query',                                  #8
