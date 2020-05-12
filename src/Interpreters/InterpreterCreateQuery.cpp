@@ -601,6 +601,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = setProperties(create);
 
+    // testing
+    if (context.from_replicated_log) {
+        create.database = current_database;
+    }
+
     /// Actually creates table
     bool created = doCreateTable(create, properties);
     if (!created)   /// Table already exists
