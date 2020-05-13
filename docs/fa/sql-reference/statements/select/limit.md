@@ -1,1 +1,14 @@
-../../../../en/sql-reference/statements/select/limit.md
+---
+machine_translated: true
+machine_translated_rev: e74b62fcb409cdf9bb9bb7c5681f8ef07337dd74
+---
+
+# بند محدود {#limit-clause}
+
+`LIMIT m` اجازه می دهد برای انتخاب اولین `m` ردیف از نتیجه.
+
+`LIMIT n, m` اجازه می دهد تا انتخاب کنید `m` ردیف از نتیجه پس از پرش برای اولین بار `n` ردیف این `LIMIT m OFFSET n` نحو معادل است.
+
+`n` و `m` باید اعداد صحیح غیر منفی باشد.
+
+اگر وجود ندارد [ORDER BY](order-by.md) بند که به صراحت انواع نتایج, انتخاب ردیف برای نتیجه ممکن است خودسرانه و غیر قطعی.

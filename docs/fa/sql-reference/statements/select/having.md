@@ -1,1 +1,14 @@
-../../../../en/sql-reference/statements/select/having.md
+---
+machine_translated: true
+machine_translated_rev: e74b62fcb409cdf9bb9bb7c5681f8ef07337dd74
+---
+
+# داشتن بند {#having-clause}
+
+اجازه می دهد تا فیلتر کردن نتایج تجمع تولید شده توسط [GROUP BY](group-by.md). این شبیه به [WHERE](where.md) بند, اما تفاوت این است که `WHERE` قبل از تجمع انجام, در حالی که `HAVING` بعد از اون انجام میشه
+
+ممکن است که به مرجع نتایج تجمع از `SELECT` بند در `HAVING` بند با نام مستعار خود. متناوبا, `HAVING` بند می تواند بر روی نتایج مصالح اضافی است که در نتایج پرس و جو بازگشت فیلتر کنید.
+
+## محدودیت ها {#limitations}
+
+`HAVING` نمی توان مورد استفاده قرار گیرد اگر تجمع انجام نشده است. استفاده `WHERE` در عوض
