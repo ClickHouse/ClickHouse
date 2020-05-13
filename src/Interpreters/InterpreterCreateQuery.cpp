@@ -627,13 +627,18 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (need_add_to_database)
     {
         database = DatabaseCatalog::instance().getDatabase(create.database);
-        if (database->getEngineName() == "Atomic") // || database->getEngineName() == "Replicated")
+        if (database->getEngineName() == "Atomic" || (database->getEngineName() == "Replicated" && !context.from_replicated_log))
         {
             /// TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
             if (create.attach && create.uuid == UUIDHelpers::Nil)
                 throw Exception("UUID must be specified in ATTACH TABLE query for Atomic database engine", ErrorCodes::INCORRECT_QUERY);
             if (!create.attach && create.uuid == UUIDHelpers::Nil)
                 create.uuid = UUIDHelpers::generateV4();
+        }
+        else if (database->getEngineName() == "Replicated" && context.from_replicated_log) {
+            if (create.uuid == UUIDHelpers::Nil)
+                // change error to incorrect log or something
+                throw Exception("Table UUID is not specified in the replicated log", ErrorCodes::INCORRECT_QUERY);
         }
         else
         {
@@ -703,16 +708,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     
     if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
-        // propose
-        // try to 
         database->propose(query_ptr);
-        database->createTable(context, table_name, res, query_ptr);
-        // catch
-        // throw and remove proposal
-        // otherwise 
-        // proceed (commit to zk)
-    } else
-        database->createTable(context, table_name, res, query_ptr);
+    }
+    database->createTable(context, table_name, res, query_ptr);
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup

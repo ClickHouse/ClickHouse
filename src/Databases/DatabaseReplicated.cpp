@@ -81,7 +81,7 @@ DatabaseReplicated::DatabaseReplicated(
 //    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseReplicated (" + name_ + ")", context_)
     // TODO add constructor to Atomic and call it here with path and logger name specification
     // TODO ask why const and & are ommited in Atomic
-    : DatabaseOrdinary(name_, metadata_path_, context_)
+    : DatabaseAtomic(name_, metadata_path_, context_)
     , zookeeper_path(zookeeper_path_)
     , replica_name(replica_name_)
 {
@@ -122,8 +122,7 @@ void DatabaseReplicated::runMainThread() {
 
     while (!stop_flag) {
         attachToThreadGroup();
-
-        sleepForSeconds(2);
+        sleepForSeconds(1);// BURN CPU
         current_zookeeper = getZooKeeper();
         String last_n;
         if (!current_zookeeper->tryGet(zookeeper_path + "/last_entry", last_n, {}, NULL)) {
@@ -136,7 +135,6 @@ void DatabaseReplicated::runMainThread() {
             current_log_entry_n++;
             executeLog(current_log_entry_n);
         }
-        // break; // debug purpose 
     }
 }
 

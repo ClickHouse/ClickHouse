@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -14,7 +14,7 @@ namespace DB
   *  that contain declaration of table represented by SQL ATTACH TABLE query
   *  and operation log in zookeeper
   */
-class DatabaseReplicated : public DatabaseOrdinary
+class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, const String & zookeeper_path_, const String & replica_name_, Context & context);
