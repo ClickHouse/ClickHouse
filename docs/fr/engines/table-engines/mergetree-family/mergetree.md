@@ -30,7 +30,7 @@ Principales caractéristiques:
     Si nécessaire, vous pouvez définir la méthode d’échantillonnage des données dans le tableau.
 
 !!! info "Info"
-    Le [Fusionner](../special/merge.md) le moteur n’appartient pas à la `*MergeTree` famille.
+    Le [Fusionner](../special/merge.md#merge) le moteur n’appartient pas à la `*MergeTree` famille.
 
 ## Création d’une Table {#table_engine-mergetree-creating-a-table}
 
@@ -476,7 +476,7 @@ ALTER TABLE example_table
 
 Les données avec un TTL expiré sont supprimées lorsque ClickHouse fusionne des parties de données.
 
-Lorsque ClickHouse voit que les données sont expirées, il effectue une fusion hors calendrier. Pour contrôler la fréquence de ces fusions, vous pouvez définir [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout). Si la valeur est trop faible, il effectuera de nombreuses fusions hors calendrier qui peuvent consommer beaucoup de ressources.
+Lorsque ClickHouse voit que les données sont expirées, il effectue une fusion hors calendrier. Pour contrôler la fréquence de ces fusions, vous pouvez définir `merge_with_ttl_timeout`. Si la valeur est trop faible, il effectuera de nombreuses fusions hors calendrier qui peuvent consommer beaucoup de ressources.
 
 Si vous effectuez la `SELECT` requête entre les fusionne, vous pouvez obtenir des données expirées. Pour éviter cela, utilisez la [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) requête avant de l’ `SELECT`.
 
@@ -497,7 +497,7 @@ La partie de données est l’unité mobile minimum pour `MergeTree`-tables de m
 
 Les noms donnés aux entités décrites peuvent être trouvés dans les tables système, [système.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) et [système.disque](../../../operations/system-tables.md#system_tables-disks). Pour appliquer l’une des stratégies de stockage configurées pour une table, utilisez `storage_policy` réglage de `MergeTree`-moteur de table de famille.
 
-### Configuration {#table_engine-mergetree-multiple-volumes-configure}
+### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
 Les disques, les volumes et les stratégies de stockage doivent être déclarés `<storage_configuration>` étiquette, soit dans le fichier principal `config.xml` ou dans un fichier distinct dans le `config.d` répertoire.
 

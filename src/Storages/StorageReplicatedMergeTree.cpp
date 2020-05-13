@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <Databases/IDatabase.h>
 
@@ -2954,6 +2954,7 @@ void StorageReplicatedMergeTree::startup()
     /// If we don't separate create/start steps, race condition will happen
     /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
     {
+        auto lock = queue.lockQueue();
         auto & pool = global_context.getBackgroundPool();
         queue_task_handle = pool.createTask([this] { return queueTask(); });
         pool.startTask(queue_task_handle);
@@ -2979,7 +2980,6 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
-    queue.pull_log_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
@@ -2991,8 +2991,12 @@ void StorageReplicatedMergeTree::shutdown()
         /// queue processes finished and after that reset queue_task_handle.
         auto lock = queue.lockQueue();
         queue_task_handle.reset();
-    }
 
+        /// Cancel logs pulling after background task were cancelled. It's still
+        /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
+        /// MUTATE, etc. query.
+        queue.pull_log_blocker.cancelForever();
+    }
 
     if (move_parts_task_handle)
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);

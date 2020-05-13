@@ -683,7 +683,7 @@ TCPプロトコル経由でクライアントと通信するポート。
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp\_port\_secure {#server_configuration_parameters-tcp_port_secure}
 
 クライアン それを使用する [OpenSSL](#server_configuration_parameters-openssl) 設定。
 

@@ -49,7 +49,7 @@ Accepts a numeric argument and returns a Float64 number close to the cubic root 
 
 ## erf(x) {#erfx}
 
-If ‘x’ is non-negative, then erf(x / σ√2)<g> is the probability that a random variable having a normal distribution with standard deviation ‘σ’ takes the value that is separated from the expected value by more than ‘x’.
+If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a random variable having a normal distribution with standard deviation ‘σ’ takes the value that is separated from the expected value by more than ‘x’.
 
 Example (three sigma rule):
 

@@ -16,7 +16,7 @@ for (r in results) {
 }
 
 var runs = ["first (cold cache)", "second", "third"];
-var current_runs = ['0', '1'];
+var current_runs = ['1', '2'];
 
 try {
     var state = JSON.parse(decodeURIComponent(window.location.hash.substring(1)));

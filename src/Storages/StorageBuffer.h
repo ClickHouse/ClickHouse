@@ -94,8 +94,6 @@ public:
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalBytes() const override;
 
-    ~StorageBuffer() override;
-
 private:
     Context global_context;
 

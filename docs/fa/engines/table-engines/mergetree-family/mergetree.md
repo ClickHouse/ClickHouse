@@ -30,7 +30,7 @@ toc_title: "\u0627\u062F\u063A\u0627\u0645"
     در صورت لزوم می توانید روش نمونه گیری داده ها را در جدول تنظیم کنید.
 
 !!! info "اطلاعات"
-    این [ادغام](../special/merge.md) موتور به تعلق ندارد `*MergeTree` خانواده
+    این [ادغام](../special/merge.md#merge) موتور به تعلق ندارد `*MergeTree` خانواده
 
 ## ایجاد یک جدول {#table_engine-mergetree-creating-a-table}
 
@@ -497,7 +497,7 @@ ALTER TABLE example_table
 
 اسامی داده شده به اشخاص توصیف شده را می توان در جداول سیستم یافت می شود, [سیستم.داستان\_یابی](../../../operations/system-tables.md#system_tables-storage_policies) و [سیستم.دیسکها](../../../operations/system-tables.md#system_tables-disks). برای اعمال یکی از سیاست های ذخیره سازی پیکربندی شده برای یک جدول از `storage_policy` تنظیم از `MergeTree`- جداول خانواده موتور .
 
-### پیکربندی {#table_engine-mergetree-multiple-volumes-configure}
+### پیکربندی {#table_engine-mergetree-multiple-volumes_configure}
 
 دیسک, حجم و سیاست های ذخیره سازی باید در داخل اعلام `<storage_configuration>` برچسب یا در فایل اصلی `config.xml` یا در یک فایل مجزا در `config.d` فهرست راهنما.
 

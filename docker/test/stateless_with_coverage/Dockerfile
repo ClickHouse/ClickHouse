@@ -4,8 +4,6 @@ FROM yandex/clickhouse-deb-builder
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 main" >> /etc/apt/sources.list
-
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
@@ -31,7 +29,6 @@ RUN apt-get update -y \
             brotli \
             gdb \
             lsof \
-            llvm-9 \
             unixodbc \
             wget \
             qemu-user-static
