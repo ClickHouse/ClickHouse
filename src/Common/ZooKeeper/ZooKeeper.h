@@ -187,6 +187,8 @@ public:
 
     using WaitCondition = std::function<bool()>;
     /// Wait for the node to disappear or return immediately if it doesn't exist.
+    /// If condition is speficied, it is used to return early (when condition returns false)
+    /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
     /// Async interface (a small subset of operations is implemented).
