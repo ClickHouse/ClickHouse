@@ -1,0 +1,30 @@
+<test>
+    <tags>
+        <tag>long</tag>
+    </tags>
+
+
+
+    <substitutions>
+       <substitution>
+           <name>table</name>
+           <values>
+               <value>zeros(10000000)</value>
+               <value>zeros_mt(100000000)</value>
+           </values>
+       </substitution>
+       <substitution>
+           <name>size</name>
+           <values>
+               <value>1</value>
+               <value>16</value>
+               <value>1024</value>
+               <value>16384</value>
+               <value>1048576</value>
+               <value>10000000</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM {table} WHERE rand64() IN (SELECT number FROM system.numbers LIMIT {size})</query>
+</test>

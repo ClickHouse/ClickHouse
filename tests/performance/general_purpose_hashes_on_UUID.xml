@@ -1,0 +1,50 @@
+<test max_ignored_relative_change="0.2">
+    <substitutions>
+        <substitution>
+           <name>hash_func</name>
+           <values>
+               <value>cityHash64</value>
+               <value>farmHash64</value>
+               <value>metroHash64</value>
+               <value>murmurHash2_32</value>
+               <value>murmurHash2_64</value>
+               <value>murmurHash3_32</value>
+               <value>murmurHash3_64</value>
+               <value>javaHash</value>
+               <value>hiveHash</value>
+               <value>xxHash32</value>
+               <value>xxHash64</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>value</name>
+           <values>
+               <value>materialize(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))</value>
+               <value>generateUUIDv4()</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>value_slow</name>
+           <values>
+               <value>toDecimal128(number, 23)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>zeros(100000000)</value>
+               <value>zeros_mt(1000000000)</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>table_slow</name>
+           <values>
+               <value>numbers(1000000)</value>
+               <value>numbers_mt(100000000)</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() from {table} where not ignore({hash_func}({value}))</query>
+    <query>SELECT count() from {table_slow} where not ignore({hash_func}({value_slow}))</query>
+</test>

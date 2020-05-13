@@ -1,4 +1,11 @@
-# Solución de problemas {#troubleshooting}
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 46
+toc_title: "Soluci\xF3n de problemas"
+---
+
+# Solución De Problemas {#troubleshooting}
 
 -   [Instalación](#troubleshooting-installation-errors)
 -   [Conexión al servidor](#troubleshooting-accepts-no-connections)
@@ -7,19 +14,19 @@
 
 ## Instalación {#troubleshooting-installation-errors}
 
-### No puede obtener paquetes Deb del repositorio ClickHouse con apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### No Puede Obtener Paquetes Deb Del Repositorio De Clickhouse Con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Compruebe la configuración del firewall.
--   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting_started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
+-   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting-started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
 
-## Conexión al servidor {#troubleshooting-accepts-no-connections}
+## Conexión Al Servidor {#troubleshooting-accepts-no-connections}
 
 Posibles problemas:
 
 -   El servidor no se está ejecutando.
 -   Parámetros de configuración inesperados o incorrectos.
 
-### El servidor no se está ejecutando {#server-is-not-running}
+### El Servidor No Se está Ejecutando {#server-is-not-running}
 
 **Compruebe si el servidor está ejecutado**
 
@@ -41,8 +48,8 @@ El registro principal de `clickhouse-server` está en `/var/log/clickhouse-serve
 
 Si el servidor se inició correctamente, debería ver las cadenas:
 
--   `<Information> Application: starting up.` — Servidor iniciado.
--   `<Information> Application: Ready for connections.` — El servidor se está ejecutando y listo para las conexiones.
+-   `<Information> Application: starting up.` — Server started.
+-   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
 Si `clickhouse-server` error de inicio con un error de configuración, debería ver el `<Error>` cadena con una descripción de error. Por ejemplo:
 
@@ -74,7 +81,7 @@ Revision: 54413
 
 **Ver sistema.d registros**
 
-Si no encuentra ninguna información útil en `clickhouse-server` registros o no hay ningún registro, puede ver `system.d` comando el comando:
+Si no encuentra ninguna información útil en `clickhouse-server` registros o no hay registros, puede ver `system.d` registros usando el comando:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
@@ -88,7 +95,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 Este comando inicia el servidor como una aplicación interactiva con parámetros estándar del script de inicio automático. En este modo `clickhouse-server` imprime todos los mensajes de eventos en la consola.
 
-### Parámetros de configuración {#configuration-parameters}
+### Parámetros De configuración {#configuration-parameters}
 
 Comprobar:
 
@@ -98,7 +105,7 @@ Comprobar:
 
 -   Configuración del punto final.
 
-    Comprobar [listen\_host](server_settings/settings.md#server_settings-listen_host) y [Tcp\_port](server_settings/settings.md#server_settings-tcp_port) configuración.
+    Comprobar [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) y [Tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) configuración.
 
     El servidor ClickHouse acepta conexiones localhost solo de forma predeterminada.
 
@@ -110,8 +117,8 @@ Comprobar:
 
     Comprobar:
 
-    -   El [Tcp\_port\_secure](server_settings/settings.md#server_settings-tcp_port_secure) configuración.
-    -   Ajustes para [Sertificados SSL](server_settings/settings.md#server_settings-openssl).
+    -   El [Tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) configuración.
+    -   Ajustes para [Sertificados SSL](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
     Utilice los parámetros adecuados mientras se conecta. Por ejemplo, utilice el `port_secure` parámetro con `clickhouse_client`.
 
@@ -119,7 +126,7 @@ Comprobar:
 
     Es posible que esté utilizando el nombre de usuario o la contraseña incorrectos.
 
-## Procesamiento de consultas {#troubleshooting-does-not-process-queries}
+## Procesamiento De Consultas {#troubleshooting-does-not-process-queries}
 
 Si ClickHouse no puede procesar la consulta, envía una descripción de error al cliente. En el `clickhouse-client` obtienes una descripción del error en la consola. Si está utilizando la interfaz HTTP, ClickHouse envía la descripción del error en el cuerpo de la respuesta. Por ejemplo:
 
@@ -132,7 +139,7 @@ Si empiezas `clickhouse-client` con el `stack-trace` parámetro, ClickHouse devu
 
 Es posible que vea un mensaje sobre una conexión rota. En este caso, puede repetir la consulta. Si la conexión se rompe cada vez que realiza la consulta, compruebe si hay errores en los registros del servidor.
 
-## Eficiencia del procesamiento de consultas {#troubleshooting-too-slow}
+## Eficiencia Del Procesamiento De Consultas {#troubleshooting-too-slow}
 
 Si ve que ClickHouse funciona demasiado lentamente, debe perfilar la carga en los recursos del servidor y la red para sus consultas.
 

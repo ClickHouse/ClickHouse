@@ -1,7 +1,16 @@
-# Guías de ClickHouse {#clickhouse-guides}
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_folder_title: Guides
+toc_priority: 38
+toc_title: "Descripci\xF3n"
+---
 
-Instrucciones detalladas paso a paso que lo ayudarán a resolver varias tareas usando ClickHouse.
+# Guías De ClickHouse {#clickhouse-guides}
 
--   [Aplicación de un modelo CatBoost en ClickHouse](apply_catboost_model.md)
+Lista de instrucciones detalladas paso a paso que ayudan a resolver varias tareas usando ClickHouse:
 
-[Artículo Original](https://clickhouse.tech/docs/es/guides/) <!--hide-->
+-   [Tutorial sobre la configuración simple del clúster](../getting-started/tutorial.md)
+-   [Aplicación de un modelo CatBoost en ClickHouse](apply-catboost-model.md)
+
+[Artículo Original](https://clickhouse.tech/docs/en/guides/) <!--hide-->

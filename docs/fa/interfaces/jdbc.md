@@ -1,13 +1,15 @@
-<div markdown="1" markdown="1" dir="rtl">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 22
+toc_title: JDBC Driver
+---
 
-# درایور JDBC {#drywr-jdbc}
+# JDBC Driver {#jdbc-driver}
 
-درایور رسمی JDBC برای ClickHouse وجود دارد. برای اطلاعات بیشتر [اینجا](https://github.com/ClickHouse/clickhouse-jdbc) را ببینید.
+-   **[راننده رسمی](https://github.com/ClickHouse/clickhouse-jdbc)**
+-   رانندگان شخص ثالث:
+    -   [جستجو](https://github.com/housepower/ClickHouse-Native-JDBC)
+    -   [کلیک کنیدهوش4ج](https://github.com/blynkkk/clickhouse4j)
 
-درایور JDBC توسط سازمان های دیگر اجرا می شوند.
-
--   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
-
-</div>
-
-[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/jdbc/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/jdbc/) <!--hide-->

@@ -1,3 +1,11 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: "Implantaci\xF3n"
+---
+
 # Configuración {#settings}
 
 Hay varias formas de realizar todos los ajustes que se describen a continuación.
@@ -21,4 +29,4 @@ Formas de configurar los ajustes, por orden de prioridad:
 
 Los ajustes que solo se pueden realizar en el archivo de configuración del servidor no se tratan en esta sección.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/settings/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->
