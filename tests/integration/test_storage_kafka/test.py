@@ -198,7 +198,6 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.skip(reason="https://github.com/edenhill/librdkafka/issues/2077")
 @pytest.mark.timeout(180)
 def test_kafka_consumer_hang(kafka_cluster):
 
