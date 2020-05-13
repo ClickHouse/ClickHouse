@@ -676,7 +676,6 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         if (state->event_type == Coordination::DELETED)
             return true;
     }
-
     return false;
 }
 
