@@ -39,7 +39,7 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
     foreign_arenas.push_back(arena_);
 }
 
-static MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
+MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.

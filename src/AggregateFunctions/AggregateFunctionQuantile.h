@@ -141,7 +141,7 @@ public:
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
-        auto & data = this->data(const_cast<AggregateDataPtr>(place));
+        auto & data = this->data(place);
 
         if constexpr (returns_many)
         {

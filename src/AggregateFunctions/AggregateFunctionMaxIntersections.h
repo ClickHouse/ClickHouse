@@ -136,7 +136,7 @@ public:
         PointType position_of_max_intersections = 0;
 
         /// const_cast because we will sort the array
-        auto & array = const_cast<typename MaxIntersectionsData<PointType>::Array &>(this->data(place).value);
+        auto & array = this->data(place).value;
 
         /// Sort by position; for equal position, sort by weight to get deterministic result.
         std::sort(array.begin(), array.end());

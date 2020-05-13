@@ -82,7 +82,7 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        assert_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
+        assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
     }
 
     /// Aggregate function or aggregate function state.

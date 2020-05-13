@@ -562,7 +562,7 @@ public:
 
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        const_cast<Data &>(this->data(place)).sort();
+        this->data(place).sort();
 
         const auto & data_ref = this->data(place);
 
