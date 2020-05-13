@@ -317,7 +317,7 @@ void DatabaseWithDictionaries::shutdown()
 
 
 DatabaseWithDictionaries::DatabaseWithDictionaries(
-    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
+    const String & name, const String & metadata_path_, const String & data_path_, const String & logger, Context & context)
     : DatabaseOnDisk(name, metadata_path_, data_path_, logger, context)
     , external_loader(context.getExternalDictionariesLoader())
 {

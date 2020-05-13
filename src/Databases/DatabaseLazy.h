@@ -18,7 +18,7 @@ class Context;
 class DatabaseLazy final : public DatabaseOnDisk
 {
 public:
-    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_);
+    DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, Context & context_);
 
     String getEngineName() const override { return "Lazy"; }
 

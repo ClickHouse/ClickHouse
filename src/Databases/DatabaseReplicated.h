@@ -3,6 +3,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <atomic>
 #include <thread>
@@ -25,25 +26,26 @@ public:
 
     void propose(const ASTPtr & query) override;
 
+    String zookeeper_path;
+    String replica_name;
+
 private:
 
     void runMainThread();
-    void runCleanupThread();
 
-    void attachToThreadGroup();
-    
     void executeLog(size_t n);
+
+    void saveState();
+
+    void createSnapshot();
 
     std::unique_ptr<Context> current_context; // to run executeQuery
 
     std::atomic<size_t> current_log_entry_n = 0;
     std::atomic<bool> stop_flag{false};
 
-    ThreadFromGlobalPool main_thread;
-    ThreadGroupStatusPtr thread_group;
+    BackgroundSchedulePool::TaskHolder backgroundLogExecutor;
 
-    String zookeeper_path;
-    String replica_name;
     String replica_path;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
