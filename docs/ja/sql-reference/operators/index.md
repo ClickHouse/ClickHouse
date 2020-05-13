@@ -1,22 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: "\u6F14\u7B97\u5B50"
 ---
 
 # 演算子 {#operators}
 
-すべての演算子は、優先順位と結合性に従って、クエリの解析段階で対応する関数に変換されます。
-演算子のグループは優先順位の順にリストされます（リスト内の高いほど、演算子はその引数に接続されています）。
+ClickHouseは、優先順位、優先順位、および連想に従って、クエリ解析段階で演算子を対応する関数に変換します。
 
-## アクセス事業者 {#access-operators}
+## アクセス演算子 {#access-operators}
 
 `a[N]` – Access to an element of an array. The `arrayElement(a, N)` 機能。
 
 `a.N` – Access to a tuple element. The `tupleElement(a, N)` 機能。
 
-## 数値の否定の演算子 {#numeric-negation-operator}
+## 数値否定演算子 {#numeric-negation-operator}
 
 `-a` – The `negate (a)` 機能。
 
@@ -28,7 +27,7 @@ toc_title: "\u6F14\u7B97\u5B50"
 
 `a % b` – The `modulo(a, b)` 機能。
 
-## 加算および減算演算子 {#addition-and-subtraction-operators}
+## 加算演算子と減算演算子 {#addition-and-subtraction-operators}
 
 `a + b` – The `plus(a, b)` 機能。
 
@@ -62,7 +61,7 @@ toc_title: "\u6F14\u7B97\u5B50"
 
 ## データセットを操作する演算子 {#operators-for-working-with-data-sets}
 
-*見る [演算子の場合](statements/select.md#select-in-operators).*
+*見る [演算子で](in.md).*
 
 `a IN ...` – The `in(a, b)` 機能。
 
@@ -80,9 +79,9 @@ toc_title: "\u6F14\u7B97\u5B50"
 EXTRACT(part FROM date);
 ```
 
-指定した日付からパートを抽出します。 たとえば、指定した日付から月、または時刻から秒を取得できます。
+特定の日付から部品を抽出します。 たとえば、特定の日付から月、または時間から秒を取得できます。
 
-その `part` パラメーター取得する日付の部分を指定します。 次の値を使用できます:
+その `part` パラメータ取得する日付のどの部分を指定します。 使用可能な値は次のとおりです:
 
 -   `DAY` — The day of the month. Possible values: 1–31.
 -   `MONTH` — The number of a month. Possible values: 1–12.
@@ -91,9 +90,9 @@ EXTRACT(part FROM date);
 -   `MINUTE` — The minute. Possible values: 0–59.
 -   `HOUR` — The hour. Possible values: 0–23.
 
-その `part` パラ
+その `part` パラメータは大文字と小文字を区別する.
 
-その `date` パラメーター処理する日付または時刻を指定します。 どちらか [日付](../sql-reference/data-types/date.md) または [DateTime](../sql-reference/data-types/datetime.md) タイプに対応しています。
+その `date` パラメータ処理する日付または時刻を指定します。 どちらか [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md) タイプに対応しています。
 
 例:
 
@@ -103,7 +102,7 @@ SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 ```
 
-次の例では、テーブルを作成し、その中に値を挿入します `DateTime` タイプ。
+次の例では、テーブルを作成し、そこに値を挿入します `DateTime` タイプ。
 
 ``` sql
 CREATE TABLE test.Orders
@@ -136,11 +135,11 @@ FROM test.Orders;
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-より多くの例を見ることができる [テスト](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
+以下の例を見ることができます [テスト](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
 ### INTERVAL {#operator-interval}
 
-を作成します。 [間隔](../sql-reference/data-types/special-data-types/interval.md)-との算術演算で使用されるべきであるタイプ値 [日付](../sql-reference/data-types/date.md) と [DateTime](../sql-reference/data-types/datetime.md)-タイプの値。
+を作成します。 [間隔](../../sql-reference/data-types/special-data-types/interval.md)-算術演算で使用されるべき型の値 [日付](../../sql-reference/data-types/date.md) と [DateTime](../../sql-reference/data-types/datetime.md)-値を入力します。
 
 間隔のタイプ:
 - `SECOND`
@@ -153,9 +152,9 @@ FROM test.Orders;
 - `YEAR`
 
 !!! warning "警告"
-    間隔の異なる種類できない。 次のような式は使用できません `INTERVAL 4 DAY 1 HOUR`. たとえば、区間の最小単位が小さいか等しい単位で区間を表します `INTERVAL 25 HOUR`. 以下の例のように、結果としての操作を使用できます。
+    異なるタイプの間隔は結合できません。 次のような式は使用できません `INTERVAL 4 DAY 1 HOUR`. 間隔は、間隔の最小単位より小さい単位または等しい単位で指定します。, `INTERVAL 25 HOUR`. 次の例のように、連続した操作を使用できます。
 
-例えば:
+例:
 
 ``` sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
@@ -167,20 +166,20 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
--   [間隔](../sql-reference/data-types/special-data-types/interval.md) データ型
--   [toInterval](../sql-reference/functions/type-conversion-functions.md#function-tointerval) 型変換関数
+-   [間隔](../../sql-reference/data-types/special-data-types/interval.md) データ型
+-   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) 型変換関数
 
 ## 論理否定演算子 {#logical-negation-operator}
 
 `NOT a` – The `not(a)` 機能。
 
-## 論理and演算子 {#logical-and-operator}
+## 論理And演算子 {#logical-and-operator}
 
 `a AND b` – The`and(a, b)` 機能。
 
-## 論理or演算子 {#logical-or-operator}
+## 論理OR演算子 {#logical-or-operator}
 
 `a OR b` – The `or(a, b)` 機能。
 
@@ -188,9 +187,9 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 `a ? b : c` – The `if(a, b, c)` 機能。
 
-メモ:
+注:
 
-条件演算子は、bとcの値を計算し、条件aが満たされているかどうかをチェックし、対応する値を返します。 もし `b` または `C` は [arrayJoin()](../sql-reference/functions/array-join.md#functions_arrayjoin) この関数は、各行は関係なくレプリケートされます。 “a” 条件。
+条件演算子は、bとcの値を計算し、条件aが満たされているかどうかをチェックし、対応する値を返します。 もし `b` または `C` は [アレイジョイン()](../../sql-reference/functions/array-join.md#functions_arrayjoin) 関数は、各行は関係なく、レプリケートされます “a” 条件だ
 
 ## 条件式 {#operator_case}
 
@@ -202,11 +201,11 @@ CASE [x]
 END
 ```
 
-もし `x` が指定されたら、 `transform(x, [a, ...], [b, ...], c)` function is used. Otherwise – `multiIf(a, b, ..., c)`.
+もし `x` が指定される。 `transform(x, [a, ...], [b, ...], c)` function is used. Otherwise – `multiIf(a, b, ..., c)`.
 
-がない場合 `ELSE c` 式中の句は、デフォルト値は次のとおりです `NULL`.
+がない場合 `ELSE c` 句式のデフォルト値は次のとおりです `NULL`.
 
-その `transform` 機能は動作しません `NULL`.
+その `transform` 関数は動作しません `NULL`.
 
 ## 連結演算子 {#concatenation-operator}
 
@@ -216,7 +215,7 @@ END
 
 `x -> expr` – The `lambda(x, expr) function.`
 
-次の演算子は、角かっこであるため、優先順位がありません:
+次の演算子は角かっこであるため、優先順位はありません:
 
 ## 配列作成演算子 {#array-creation-operator}
 
@@ -226,23 +225,23 @@ END
 
 `(x1, x2, ...)` – The `tuple(x2, x2, ...) function.`
 
-## 結合性 {#associativity}
+## 連想性 {#associativity}
 
-すべての二項演算子は結合性を残しています。 例えば, `1 + 2 + 3` に変換される。 `plus(plus(1, 2), 3)`.
+すべての二項演算子は連想性を残しています。 例えば, `1 + 2 + 3` に変換されます `plus(plus(1, 2), 3)`.
 時にはこれはあなたが期待するように動作しません。 例えば, `SELECT 4 > 2 > 3` 結果は0になります。
 
-効率のため、 `and` と `or` 関数は任意の数の引数を受け取ります。 対応する鎖の `AND` と `OR` 演算子は、これらの関数の単一の呼び出しに変換されます。
+効率のために、 `and` と `or` 関数は任意の数の引数を受け入れます。 の対応する鎖 `AND` と `OR` 演算子は、これらの関数の単一の呼び出しに変換されます。
 
-## のチェック `NULL` {#checking-for-null}
+## チェック `NULL` {#checking-for-null}
 
 クリックハウスは `IS NULL` と `IS NOT NULL` 演算子。
 
 ### IS NULL {#operator-is-null}
 
--   のために [Nullable](../sql-reference/data-types/nullable.md) タイプ値は、 `IS NULL` 演算子の戻り値:
+-   のために [Null可能](../../sql-reference/data-types/nullable.md) 型の値は、 `IS NULL` 演算子の戻り値:
     -   `1` 値が `NULL`.
     -   `0` そうでなければ
--   その他の値については、 `IS NULL` 演算子は常に戻ります `0`.
+-   その他の値については、 `IS NULL` 演算子は常に返します `0`.
 
 <!-- -->
 
@@ -258,10 +257,10 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is-not-null}
 
--   のために [Nullable](../sql-reference/data-types/nullable.md) タイプ値は、 `IS NOT NULL` 演算子の戻り値:
+-   のために [Null可能](../../sql-reference/data-types/nullable.md) 型の値は、 `IS NOT NULL` 演算子の戻り値:
     -   `0` 値が `NULL`.
     -   `1` そうでなければ
--   その他の値については、 `IS NOT NULL` 演算子は常に戻ります `1`.
+-   その他の値については、 `IS NOT NULL` 演算子は常に返します `1`.
 
 <!-- -->
 

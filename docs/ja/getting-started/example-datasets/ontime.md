@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 15
 toc_title: "\u30AA\u30F3\u30BF\u30A4\u30E0"
 ---
@@ -14,7 +14,7 @@ toc_title: "\u30AA\u30F3\u30BF\u30A4\u30E0"
 
 ## 生データからインポート {#import-from-raw-data}
 
-データ:
+デー:
 
 ``` bash
 for s in `seq 1987 2018`
@@ -180,7 +180,7 @@ FROM
 );
 ```
 
-Q1. 2000年から2008年までの一日あたりの便数
+Q1. 2000年から2008年までの一日あたりのフライト数
 
 ``` sql
 SELECT DayOfWeek, count(*) AS c
@@ -190,7 +190,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q2. 10分以上遅れたフライトの数は、2000年から2008年まで、曜日ごとにグループ化されています
+Q2。 10分以上遅延したフライトの数は、2000年から2008年の曜日でグループ化されています
 
 ``` sql
 SELECT DayOfWeek, count(*) AS c
@@ -200,7 +200,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-Q3. 2000-2008のための空港による遅延数
+Q3. 2000年から2008年の空港による遅延の数
 
 ``` sql
 SELECT Origin, count(*) AS c
@@ -211,7 +211,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-Q4 2007年のキャリアによる遅延の数
+Q4 2007年のキャリア別の遅延の数
 
 ``` sql
 SELECT Carrier, count(*)
@@ -221,7 +221,7 @@ GROUP BY Carrier
 ORDER BY count(*) DESC;
 ```
 
-Q5 2007年のキャリアによる遅延の割合
+Q5 2007年のキャリア別遅延の割合
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -257,7 +257,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC
 ```
 
-Q6 年のより広い範囲のための以前の要求,2000-2008
+Q6 年のより広い範囲のための前の要求、2000-2008
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -293,7 +293,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC;
 ```
 
-Q7 年間で10分以上遅れたフライトの割合
+Q7 年ごとに10分以上遅延したフライトの割合
 
 ``` sql
 SELECT Year, c1/c2
@@ -326,7 +326,7 @@ GROUP BY Year
 ORDER BY Year;
 ```
 
-Q8 様々な年の範囲のための直接接続された都市の数によって最も人気のある目的地
+Q8 さまざまな年の範囲のための直接接続された都市の数によって最も人気のある目的地
 
 ``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u
@@ -400,7 +400,7 @@ ORDER BY c DESC
 LIMIT 10;
 ```
 
-この性能試験はvadim tkachenkoによって作成されました。 見る:
+この性能試験はVadim Tkachenkoによって作成されました。 見る:
 
 -   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
 -   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/

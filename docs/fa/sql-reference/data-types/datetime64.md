@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: "\u0637\u0648\u0644 \u062A\u0627\u0631\u06CC\u062E 64"
 ---
@@ -92,7 +92,7 @@ FROM dt
 └─────────────────────────┴─────────────────────────┘
 ```
 
-## همچنین نگاه کنید {#see-also}
+## همچنین نگاه کنید به {#see-also}
 
 -   [توابع تبدیل نوع](../../sql-reference/functions/type-conversion-functions.md)
 -   [توابع برای کار با تاریخ و زمان](../../sql-reference/functions/date-time-functions.md)

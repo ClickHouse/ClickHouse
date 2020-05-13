@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e74b62fcb409cdf9bb9bb7c5681f8ef07337dd74
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # با بند {#with-clause}

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "\u06A9\u0644\u06CC\u06A9-\u0645\u0639\u06CC\u0627\u0631"
 ---
@@ -38,7 +38,7 @@ clickhouse-benchmark [keys] < queries_file
 
 -   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` می فرستد به طور همزمان. مقدار پیش فرض: 1.
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
--   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. برای [مقایسه حالت](#clickhouse-benchmark-comparison-mode) شما می توانید چند استفاده کنید `-h` کلیدا
+-   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. برای [حالت مقایسه](#clickhouse-benchmark-comparison-mode) شما می توانید چند استفاده کنید `-h` کلیدا
 -   `-p N`, `--port=N` — Server port. Default value: 9000. For the [حالت مقایسه](#clickhouse-benchmark-comparison-mode) شما می توانید چند استفاده کنید `-p` کلیدا
 -   `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
 -   `-r`, `--randomize` — Random order of queries execution if there is more then one input query.

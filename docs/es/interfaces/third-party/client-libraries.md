@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 26
 toc_title: Bibliotecas de clientes
 ---
 
-# Bibliotecas De Clientes De Desarrolladores De Terceros {#client-libraries-from-third-party-developers}
+# Bibliotecas de clientes de desarrolladores de terceros {#client-libraries-from-third-party-developers}
 
 !!! warning "Descargo"
     Yandex hace **ni** mantenga las bibliotecas enumeradas a continuación y no haya realizado ninguna prueba extensa para garantizar su calidad.
@@ -36,10 +36,10 @@ toc_title: Bibliotecas de clientes
     -   [Cualquier evento-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Rubí
     -   [Haga clic en Casa (Ruby)](https://github.com/shlima/click_house)
-    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
+    -   [Sistema abierto.](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [Sistema abierto.](https://github.com/hannesmuehleisen/clickhouse-r)
-    -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse)
+    -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [Casa de clic-cliente-java](https://github.com/VirtusAI/clickhouse-client-java)
     -   [Casa de clics-cliente](https://github.com/Ecwid/clickhouse-client)
@@ -53,6 +53,7 @@ toc_title: Bibliotecas de clientes
     -   [Sistema abierto.](https://github.com/ilyabreev/ClickHouse.Net)
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
+    -   [pilar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/leonardoce/nim-clickhouse)
 

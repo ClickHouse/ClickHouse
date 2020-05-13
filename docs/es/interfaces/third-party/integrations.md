@@ -1,16 +1,16 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 27
 toc_title: "Integraci\xF3n"
 ---
 
-# Bibliotecas De integración De Desarrolladores Externos {#integration-libraries-from-third-party-developers}
+# Bibliotecas de integración de desarrolladores externos {#integration-libraries-from-third-party-developers}
 
 !!! warning "Descargo"
     Yandex hace **ni** mantenga las herramientas y bibliotecas que se enumeran a continuación y no haya realizado ninguna prueba extensa para garantizar su calidad.
 
-## Productos De Infraestructura {#infrastructure-products}
+## Productos de infraestructura {#infrastructure-products}
 
 -   Sistemas de gestión de bases de datos relacionales
     -   [MySQL](https://www.mysql.com)
@@ -26,10 +26,10 @@ toc_title: "Integraci\xF3n"
         -   [Método de codificación de datos:](https://github.com/zlzforever/ClickHouseMigrator)
 -   Colas de mensajes
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (usos [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [Método de codificación de datos:](https://github.com/housepower/clickhouse_sinker) (utilizar [Ir cliente](https://github.com/ClickHouse/clickhouse-go/))
 -   Procesamiento de flujo
-    -   [Flink](https://flink.apache.org)
-        -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
+    -   [Parpadeo](https://flink.apache.org)
+        -   [Sistema abierto.](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Almacenamiento de objetos
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [Haga clic en el botón de copia de seguridad](https://github.com/AlexAkulov/clickhouse-backup)
@@ -70,7 +70,7 @@ toc_title: "Integraci\xF3n"
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [Para que usted pueda encontrar](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
-## Programación De Ecosistemas De Lenguaje {#programming-language-ecosystems}
+## Programación de ecosistemas de lenguaje {#programming-language-ecosystems}
 
 -   Película
     -   [SQLAlchemy](https://www.sqlalchemy.org)
@@ -78,11 +78,11 @@ toc_title: "Integraci\xF3n"
     -   [pandas](https://pandas.pydata.org)
         -   [Pandahouse](https://github.com/kszucs/pandahouse)
 -   PHP
-    -   [Doctrine](https://www.doctrine-project.org/)
-        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
+    -   [Doctrina](https://www.doctrine-project.org/)
+        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [Dplyr](https://db.rstudio.com/dplyr/)
-        -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse) (utilizar [Bienvenidos](https://github.com/artpaul/clickhouse-cpp))
+        -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (utilizar [Bienvenidos](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
         -   [Sistema abierto.](https://github.com/jaykelin/clickhouse-hdfs-loader) (utilizar [JDBC](../../sql-reference/table-functions/jdbc.md))

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 0599e81e515299d82b33200a524aa46669a984e0
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: SHOW
 ---
@@ -13,7 +13,7 @@ toc_title: SHOW
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` requête utilisée pour créer l'objet spécifié.
+Renvoie un seul `String`-type ‘statement’ column, which contains a single value – the `CREATE` requête utilisée pour créer l'objet spécifié.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -30,9 +30,9 @@ Cette requête est identique à `SELECT name FROM system.databases [INTO OUTFILE
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Sorties le contenu de la [system.processes](../../operations/system-tables.md#system_tables-processes) table, qui contient une liste de requêtes en cours de traitement en ce moment, à l'exception `SHOW PROCESSLIST` queries.
+Sorties le contenu de la [système.processus](../../operations/system-tables.md#system_tables-processes) table, qui contient une liste de requêtes en cours de traitement en ce moment, à l'exception `SHOW PROCESSLIST` requête.
 
-The `SELECT * FROM system.processes` query returns data about all the current queries.
+Le `SELECT * FROM system.processes` requête renvoie des données sur toutes les requêtes en cours.
 
 Astuce (exécuter dans la console):
 

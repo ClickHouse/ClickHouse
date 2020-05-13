@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: cd0b14513c82d14dec07cb60cd8aabfc98681875
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Clause ORDER BY {#select-order-by}

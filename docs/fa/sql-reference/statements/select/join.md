@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e74b62fcb409cdf9bb9bb7c5681f8ef07337dd74
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # پیوستن بند {#select-join}
@@ -12,7 +12,7 @@ machine_translated_rev: e74b62fcb409cdf9bb9bb7c5681f8ef07337dd74
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_table>
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -32,8 +32,8 @@ FROM <left_table>
 
 پیوستن به انواع اضافی موجود در کلیک:
 
--   `SEMI JOIN`, یک لیست سفید در “join keys”, بدون تولید محصول دکارتی.
--   `ANTI JOIN`, لیست سیاه در “join keys”, بدون تولید محصول دکارتی.
+-   `LEFT SEMI JOIN` و `RIGHT SEMI JOIN`, یک لیست سفید در “join keys”, بدون تولید محصول دکارتی.
+-   `LEFT ANTI JOIN` و `RIGHT ANTI JOIN`, لیست سیاه در “join keys”, بدون تولید محصول دکارتی.
 
 ## سختی {#select-join-strictness}
 
@@ -136,9 +136,11 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 اگر شما نیاز به یک `JOIN` برای پیوستن به جداول بعد (این جداول نسبتا کوچک است که شامل خواص ابعاد هستند, مانند نام برای کمپین های تبلیغاتی), یک `JOIN` ممکن است بسیار مناسب با توجه به این واقعیت است که جدول سمت راست برای هر پرس و جو دوباره قابل دسترسی است. برای چنین مواردی وجود دارد “external dictionaries” ویژگی است که شما باید به جای استفاده از `JOIN`. برای کسب اطلاعات بیشتر, دیدن [واژهنامهها خارجی](../../dictionaries/external-dictionaries/external-dicts.md) بخش.
 
-**محدودیت حافظه**
+### محدودیت حافظه {#memory-limitations}
 
-تاتر با استفاده از [هش پیوستن](https://en.wikipedia.org/wiki/Hash_join) الگوریتم. تاتر طول می کشد `<right_subquery>` و یک جدول هش را در رم ایجاد می کند. اگر شما نیاز به محدود کردن پیوستن به مصرف حافظه عملیات استفاده از تنظیمات زیر:
+به طور پیش فرض, تاتر با استفاده از [هش پیوستن](https://en.wikipedia.org/wiki/Hash_join) الگوریتم. تاتر طول می کشد `<right_table>` و یک جدول هش را در رم ایجاد می کند. پس از برخی از حد مصرف حافظه, خانه رعیتی می افتد به ادغام پیوستن الگوریتم.
+
+اگر شما نیاز به محدود کردن پیوستن به مصرف حافظه عملیات استفاده از تنظیمات زیر:
 
 -   [\_پاک کردن \_روشن گرافیک](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [\_پویش همیشگی](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.

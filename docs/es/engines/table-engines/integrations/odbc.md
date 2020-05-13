@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: ODBC
 ---
@@ -13,7 +13,7 @@ Para implementar con seguridad conexiones ODBC, ClickHouse usa un programa separ
 
 Este motor soporta el [NULL](../../../sql-reference/data-types/nullable.md) tipo de datos.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -38,7 +38,7 @@ La estructura de la tabla puede diferir de la estructura de la tabla de origen:
 -   `external_database` — Name of a database in an external DBMS.
 -   `external_table` — Name of a table in the `external_database`.
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 **Recuperación de datos de la instalación local de MySQL a través de ODBC**
 

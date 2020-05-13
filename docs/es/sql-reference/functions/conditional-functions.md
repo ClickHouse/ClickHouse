@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: 'Condicional '
 ---
 
-# Funciones Condicionales {#conditional-functions}
+# Funciones condicionales {#conditional-functions}
 
 ## si {#if}
 
@@ -97,7 +97,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 Nota: `NULL` los valores no se utilizan en este ejemplo, compruebe [Valores NULL en condicionales](#null-values-in-conditionals) apartado.
 
-## Operador Ternario {#ternary-operator}
+## Operador ternario {#ternary-operator}
 
 Funciona igual que `if` función.
 
@@ -151,7 +151,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Usar Resultados Condicionales Directamente {#using-conditional-results-directly}
+## Uso directo de resultados condicionales {#using-conditional-results-directly}
 
 Los condicionales siempre dan como resultado `0`, `1` o `NULL`. Entonces puedes usar resultados condicionales directamente como este:
 
@@ -168,7 +168,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## Valores NULL En Condicionales {#null-values-in-conditionals}
+## Valores NULL en condicionales {#null-values-in-conditionals}
 
 Cuando `NULL` están involucrados en condicionales, el resultado también será `NULL`.
 
