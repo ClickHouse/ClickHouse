@@ -176,7 +176,7 @@ def rename_column_on_cluster(node, table_name, name, new_name, iterations=1, ign
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
     for i in range(iterations):
         move_part = random.randint(0, 99)
-        move_volume = 'external'# if random.randint(0, 1) > 0 else 'default'
+        move_volume = 'external'
         try:
             node.query("ALTER TABLE {table_name} MOVE PARTITION '{move_part}' TO VOLUME '{move_volume}'"
                 .format(table_name=table_name, move_part=move_part, move_volume=move_volume))
