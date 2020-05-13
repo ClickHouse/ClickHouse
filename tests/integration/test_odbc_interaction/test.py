@@ -200,6 +200,13 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
 
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))") == "xxx\n"
 
+def test_postgres_insert(started_cluster):
+    conn = get_postgres_conn()
+    conn.cursor().execute("truncate table clickhouse.test_table")
+    node1.query("create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;', 'clickhouse', 'test_table')")
+    node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
+    assert node1.query("select * from pg_insert") == '1\thello\n2\tworld\n'
+
 def test_bridge_dies_with_parent(started_cluster):
     node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")
 
