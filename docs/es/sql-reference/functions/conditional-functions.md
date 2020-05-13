@@ -115,7 +115,7 @@ Devoluciones `then` si el `cond` evalúa que es verdadero (mayor que cero), de l
 
 ## MultiIf {#multiif}
 
-Le permite escribir el [CASE](../operators.md#operator_case) operador más compacto en la consulta.
+Le permite escribir el [CASE](../operators/index.md#operator_case) operador más compacto en la consulta.
 
 Sintaxis: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 

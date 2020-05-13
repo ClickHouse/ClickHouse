@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-Definir `interval`, utilizar [intervalo de tiempo](../../../sql-reference/operators.md#operators-datetime) operador.
+Definir `interval`, utilizar [intervalo de tiempo](../../../sql-reference/operators/index.md#operators-datetime) operador.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH

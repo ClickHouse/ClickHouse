@@ -7,7 +7,7 @@ toc_title: Intervalo
 
 # Intervalo {#data-type-interval}
 
-La familia de tipos de datos que representan intervalos de fecha y hora. Los tipos resultantes del [INTERVAL](../../../sql-reference/operators.md#operator-interval) operador.
+La familia de tipos de datos que representan intervalos de fecha y hora. Los tipos resultantes del [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operador.
 
 !!! warning "Advertencia"
     `Interval` los valores de tipo de datos no se pueden almacenar en tablas.
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Ver también {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) operador
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operador
 -   [ToInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) funciones de conversión de tipo

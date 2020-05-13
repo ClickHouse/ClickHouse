@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-Tanımlamak `interval`, kullanma [zaman aralığı](../../../sql-reference/operators.md#operators-datetime) operatörler.
+Tanımlamak `interval`, kullanma [zaman aralığı](../../../sql-reference/operators/index.md#operators-datetime) operatörler.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH

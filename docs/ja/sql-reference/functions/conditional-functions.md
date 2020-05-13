@@ -115,7 +115,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 ## multif {#multiif}
 
-あなたが書くことができます [CASE](../operators.md#operator_case) クエリでよりコンパクトに演算子。
+あなたが書くことができます [CASE](../operators/index.md#operator_case) クエリでよりコンパクトに演算子。
 
 構文: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 

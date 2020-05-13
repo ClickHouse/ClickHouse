@@ -115,7 +115,7 @@ Dönüşler `then` eğer… `cond` true (sıfırdan büyük) olarak değerlendir
 
 ## multiİf {#multiif}
 
-Yaz allowsmanızı sağlar [CASE](../operators.md#operator_case) operatör sorguda daha kompakt.
+Yaz allowsmanızı sağlar [CASE](../operators/index.md#operator_case) operatör sorguda daha kompakt.
 
 Sözdizimi: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 

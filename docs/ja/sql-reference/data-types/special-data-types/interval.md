@@ -7,7 +7,7 @@ toc_title: "\u9593\u9694"
 
 # 間隔 {#data-type-interval}
 
-時刻と日付の間隔を表すデータ型のファミリ。 結果のタイプ [INTERVAL](../../../sql-reference/operators.md#operator-interval) オペレーター
+時刻と日付の間隔を表すデータ型のファミリ。 結果のタイプ [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) オペレーター
 
 !!! warning "警告"
     `Interval` データ型の値はテーブルに格納できません。
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## また見なさい {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) 演算子
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) 演算子
 -   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) 型変換関数

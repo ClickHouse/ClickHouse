@@ -103,7 +103,7 @@ Dependiendo del formato de datos (entrada o salida), `NULL` puede tener una repr
 
 Hay muchos matices para el procesamiento `NULL`. Por ejemplo, si al menos uno de los argumentos de una operación de comparación es `NULL` el resultado de esta operación también se `NULL`. Lo mismo es cierto para la multiplicación, la suma y otras operaciones. Para obtener más información, lea la documentación de cada operación.
 
-En las consultas, puede verificar `NULL` utilizando el [IS NULL](operators.md#operator-is-null) y [IS NOT NULL](operators.md) operadores y las funciones relacionadas `isNull` y `isNotNull`.
+En las consultas, puede verificar `NULL` utilizando el [IS NULL](operators/index.md#operator-is-null) y [IS NOT NULL](operators/index.md) operadores y las funciones relacionadas `isNull` y `isNotNull`.
 
 ## Función {#functions}
 

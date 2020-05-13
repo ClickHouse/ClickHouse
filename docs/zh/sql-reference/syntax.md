@@ -103,7 +103,7 @@ C风格的评论：来自 `/*` 到 `*/`. 这些注释可以是多行。 这里�
 
 处理有许多细微差别 `NULL`. 例如，如果比较操作的至少一个参数是 `NULL`，此操作的结果也将是 `NULL`. 对于乘法，加法和其他操作也是如此。 有关详细信息，请阅读每个操作的文档。
 
-在查询中，您可以检查 `NULL` 使用 [IS NULL](operators.md#operator-is-null) 和 [IS NOT NULL](operators.md) 运算符及相关功能 `isNull` 和 `isNotNull`.
+在查询中，您可以检查 `NULL` 使用 [IS NULL](operators/index.md#operator-is-null) 和 [IS NOT NULL](operators/index.md) 运算符及相关功能 `isNull` 和 `isNotNull`.
 
 ## 功能 {#functions}
 

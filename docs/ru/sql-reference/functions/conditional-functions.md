@@ -70,7 +70,7 @@ SELECT if(0, plus(2, 2), plus(2, 6))
 
 ## multiIf {#multiif}
 
-Позволяет более компактно записать оператор [CASE](../operators.md#operator_case) в запросе.
+Позволяет более компактно записать оператор [CASE](../operators/index.md#operator_case) в запросе.
 
     multiIf(cond_1, then_1, cond_2, then_2...else)
 

@@ -99,6 +99,6 @@ FROM dt
 -   [配列を操作するための関数](../../sql-reference/functions/array-functions.md)
 -   [その `date_time_input_format` 設定](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [その `timezone` サーバ設定パラメータ](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [日付と時刻を操作する演算子](../../sql-reference/operators.md#operators-datetime)
+-   [日付と時刻を操作する演算子](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` データ型](date.md)
 -   [`DateTime` データ型](datetime.md)

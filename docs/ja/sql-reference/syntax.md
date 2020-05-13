@@ -103,7 +103,7 @@ Cスタイルのコメント：from `/*` に `*/`. これらのコメントは�
 
 処理には多くの微妙な違いがあります `NULL`. たとえば、比較操作の引数のうちの少なくとも一つが `NULL` この操作の結果も次のようになります `NULL`. 乗算、加算、およびその他の演算についても同様です。 詳細については、各操作のドキュメントを参照してください。
 
-クエリでは、以下を確認できます `NULL` を使用して [IS NULL](operators.md#operator-is-null) と [IS NOT NULL](operators.md) 演算子と関連する関数 `isNull` と `isNotNull`.
+クエリでは、以下を確認できます `NULL` を使用して [IS NULL](operators/index.md#operator-is-null) と [IS NOT NULL](operators/index.md) 演算子と関連する関数 `isNull` と `isNotNull`.
 
 ## 機能 {#functions}
 

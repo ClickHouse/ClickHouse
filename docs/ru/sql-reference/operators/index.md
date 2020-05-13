@@ -133,7 +133,7 @@ FROM test.Orders;
 
 ### INTERVAL {#operator-interval}
 
-Создаёт значение типа [Interval](../sql-reference/operators.md) которое должно использоваться в арифметических операциях со значениями типов [Date](../sql-reference/operators.md) и [DateTime](../sql-reference/operators.md).
+Создаёт значение типа [Interval](../sql-reference/operators/index.md) которое должно использоваться в арифметических операциях со значениями типов [Date](../sql-reference/operators/index.md) и [DateTime](../sql-reference/operators/index.md).
 
 Типы интервалов:
 - `SECOND`
@@ -162,8 +162,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **Смотрите также**
 
--   Тип данных [Interval](../sql-reference/operators.md)
--   Функции преобразования типов [toInterval](../sql-reference/operators.md#function-tointerval)
+-   Тип данных [Interval](../sql-reference/operators/index.md)
+-   Функции преобразования типов [toInterval](../sql-reference/operators/index.md#function-tointerval)
 
 ## Оператор логического отрицания {#operator-logicheskogo-otritsaniia}
 
@@ -183,7 +183,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 Примечание:
 
-Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](../sql-reference/operators.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
+Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](../sql-reference/operators/index.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
 
 ## Условное выражение {#operator_case}
 
@@ -232,7 +232,7 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
 
 ### IS NULL {#operator-is-null}
 
--   Для значений типа [Nullable](../sql-reference/operators.md) оператор `IS NULL` возвращает:
+-   Для значений типа [Nullable](../sql-reference/operators/index.md) оператор `IS NULL` возвращает:
     -   `1`, если значение — `NULL`.
     -   `0` в обратном случае.
 -   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
@@ -251,7 +251,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is-not-null}
 
--   Для значений типа [Nullable](../sql-reference/operators.md) оператор `IS NOT NULL` возвращает:
+-   Для значений типа [Nullable](../sql-reference/operators/index.md) оператор `IS NOT NULL` возвращает:
     -   `0`, если значение — `NULL`.
     -   `1`, в обратном случае.
 -   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.

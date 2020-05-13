@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-برای تعریف `interval` استفاده [فاصله زمانی](../../../sql-reference/operators.md#operators-datetime) اپراتورها.
+برای تعریف `interval` استفاده [فاصله زمانی](../../../sql-reference/operators/index.md#operators-datetime) اپراتورها.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH

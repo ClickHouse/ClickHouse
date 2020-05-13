@@ -730,7 +730,7 @@ ClickHouse использует алгоритм [hash join](https://en.wikipedi
 
 ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../../sql-reference/statements/select.md).
 
-Если в секции необходимо проверить [NULL](../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](../operators.md#operator-is-null) и [IS NOT NULL](../operators.md#is-not-null), а также соответствующие функции `isNull` и `isNotNull`. В противном случае выражение будет считаться всегда не выполненным.
+Если в секции необходимо проверить [NULL](../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](../operators/index.md#operator-is-null) и [IS NOT NULL](../operators/index.md#is-not-null), а также соответствующие функции `isNull` и `isNotNull`. В противном случае выражение будет считаться всегда не выполненным.
 
 Пример проверки на `NULL`:
 

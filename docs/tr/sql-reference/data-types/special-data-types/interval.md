@@ -7,7 +7,7 @@ toc_title: "Aral\u0131kl\u0131"
 
 # Aralıklı {#data-type-interval}
 
-Zaman ve Tarih aralıklarını temsil eden veri türleri ailesi. Ortaya çıkan türleri [INTERVAL](../../../sql-reference/operators.md#operator-interval) operatör.
+Zaman ve Tarih aralıklarını temsil eden veri türleri ailesi. Ortaya çıkan türleri [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operatör.
 
 !!! warning "Uyarıcı"
     `Interval` veri türü değerleri tablolarda saklanamaz.
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Ayrıca Bakınız {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) operatör
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operatör
 -   [toİnterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) tip dönüştürme işlevleri

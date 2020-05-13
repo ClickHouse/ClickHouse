@@ -103,7 +103,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 بسیاری از تفاوت های ظریف برای پردازش وجود دارد `NULL`. مثلا, اگر حداقل یکی از استدلال از یک عملیات مقایسه است `NULL` نتیجه این عملیات نیز خواهد بود `NULL`. همان درست است برای ضرب است, بعلاوه, و عملیات دیگر. برای کسب اطلاعات بیشتر, خواندن اسناد و مدارک برای هر عملیات.
 
-در نمایش داده شد, شما می توانید بررسی کنید `NULL` با استفاده از [IS NULL](operators.md#operator-is-null) و [IS NOT NULL](operators.md) اپراتورها و توابع مرتبط `isNull` و `isNotNull`.
+در نمایش داده شد, شما می توانید بررسی کنید `NULL` با استفاده از [IS NULL](operators/index.md#operator-is-null) و [IS NOT NULL](operators/index.md) اپراتورها و توابع مرتبط `isNull` و `isNotNull`.
 
 ## توابع {#functions}
 

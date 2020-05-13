@@ -115,7 +115,7 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 ## چندف {#multiif}
 
-اجازه می دهد تا شما را به نوشتن [CASE](../operators.md#operator_case) اپراتور فشرده تر در پرس و جو.
+اجازه می دهد تا شما را به نوشتن [CASE](../operators/index.md#operator_case) اپراتور فشرده تر در پرس و جو.
 
 نحو: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 

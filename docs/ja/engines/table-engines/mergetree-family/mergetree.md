@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-定義する `interval`、使用 [時間間隔](../../../sql-reference/operators.md#operators-datetime) 演算子。
+定義する `interval`、使用 [時間間隔](../../../sql-reference/operators/index.md#operators-datetime) 演算子。
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH

@@ -123,7 +123,7 @@ FROM dt
 -   [توابع کار با آرایه ها](../../sql-reference/functions/array-functions.md)
 -   [این `date_time_input_format` تنظیم](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [این `timezone` پارامتر پیکربندی سرور](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [اپراتورها برای کار با تاریخ و زمان](../../sql-reference/operators.md#operators-datetime)
+-   [اپراتورها برای کار با تاریخ و زمان](../../sql-reference/operators/index.md#operators-datetime)
 -   [این `Date` نوع داده](date.md)
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

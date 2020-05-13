@@ -123,7 +123,7 @@ FROM dt
 -   [Dizilerle çalışmak için işlevler](../../sql-reference/functions/array-functions.md)
 -   [Bu `date_time_input_format` ayar](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [Bu `timezone` sunucu yapılandırma parametresi](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Tarih ve saatlerle çalışmak için operatörler](../../sql-reference/operators.md#operators-datetime)
+-   [Tarih ve saatlerle çalışmak için operatörler](../../sql-reference/operators/index.md#operators-datetime)
 -   [Bu `Date` veri türü](date.md)
 
 [Orijinal makale](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

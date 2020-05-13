@@ -99,6 +99,6 @@ FROM dt
 -   [Funciones para trabajar con matrices](../../sql-reference/functions/array-functions.md)
 -   [El `date_time_input_format` configuración](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [El `timezone` parámetro de configuración del servidor](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Operadores para trabajar con fechas y horas](../../sql-reference/operators.md#operators-datetime)
+-   [Operadores para trabajar con fechas y horas](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` tipo de datos](date.md)
 -   [`DateTime` tipo de datos](datetime.md)

@@ -115,7 +115,7 @@ Retourner `then` si l’ `cond` renvoie la valeur vrai (supérieur à zéro), si
 
 ## multiIf {#multiif}
 
-Permet d’écrire le [CASE](../operators.md#operator_case) opérateur plus compacte dans la requête.
+Permet d’écrire le [CASE](../operators/index.md#operator_case) opérateur plus compacte dans la requête.
 
 Syntaxe: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 

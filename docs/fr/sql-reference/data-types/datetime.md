@@ -123,7 +123,7 @@ FROM dt
 -   [Fonctions pour travailler avec des tableaux](../../sql-reference/functions/array-functions.md)
 -   [Le `date_time_input_format` paramètre](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [Le `timezone` paramètre de configuration du serveur](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Opérateurs pour travailler avec des dates et des heures](../../sql-reference/operators.md#operators-datetime)
+-   [Opérateurs pour travailler avec des dates et des heures](../../sql-reference/operators/index.md#operators-datetime)
 -   [Le `Date` type de données](date.md)
 
 [Article Original](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

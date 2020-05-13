@@ -7,7 +7,7 @@ toc_title: "\u0641\u0627\u0635\u0644\u0647"
 
 # فاصله {#data-type-interval}
 
-خانواده از انواع داده ها به نمایندگی از فواصل زمان و تاریخ. انواع حاصل از [INTERVAL](../../../sql-reference/operators.md#operator-interval) اپراتور
+خانواده از انواع داده ها به نمایندگی از فواصل زمان و تاریخ. انواع حاصل از [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) اپراتور
 
 !!! warning "اخطار"
     `Interval` مقادیر نوع داده را نمی توان در جداول ذخیره کرد.
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## همچنین نگاه کنید به {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) اپراتور
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) اپراتور
 -   [توینتروال](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) توابع تبدیل نوع

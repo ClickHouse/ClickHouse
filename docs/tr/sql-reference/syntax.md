@@ -103,7 +103,7 @@ Veri formatına bağlı olarak (giriş veya çıkış), `NULL` farklı bir temsi
 
 İşleme için birçok nüans var `NULL`. Örneğin, bir karşılaştırma işleminin argümanlarından en az biri ise `NULL`, bu işlemin sonucu da `NULL`. Aynı şey çarpma, toplama ve diğer işlemler için de geçerlidir. Daha fazla bilgi için her işlem için belgeleri okuyun.
 
-Sorgularda, kontrol edebilirsiniz `NULL` kullanarak [IS NULL](operators.md#operator-is-null) ve [IS NOT NULL](operators.md) operatörler ve ilgili fonksiyonlar `isNull` ve `isNotNull`.
+Sorgularda, kontrol edebilirsiniz `NULL` kullanarak [IS NULL](operators/index.md#operator-is-null) ve [IS NOT NULL](operators/index.md) operatörler ve ilgili fonksiyonlar `isNull` ve `isNotNull`.
 
 ## İşlevler {#functions}
 
