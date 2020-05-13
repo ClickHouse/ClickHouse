@@ -112,7 +112,7 @@ Cекция `FROM` определяет источник данных:
 
 -   Таблица
 -   Подзапрос
--   [Табличная функция](../../sql-reference/statements/select.md)
+-   [Табличная функция](../../sql-reference/statements/select/index.md)
 
 Также могут присутствовать `ARRAY JOIN` и обычный `JOIN` (смотрите ниже).
 
@@ -257,7 +257,7 @@ SAMPLE 1/10 OFFSET 1/2
 
 ### Секция ARRAY JOIN {#select-array-join-clause}
 
-Позволяет выполнить `JOIN` с массивом или вложенной структурой данных. Смысл похож на функцию [arrayJoin](../../sql-reference/statements/select.md#functions_arrayjoin), но функциональность более широкая.
+Позволяет выполнить `JOIN` с массивом или вложенной структурой данных. Смысл похож на функцию [arrayJoin](../../sql-reference/statements/select/index.md#functions_arrayjoin), но функциональность более широкая.
 
 ``` sql
 SELECT <expr_list>
@@ -276,7 +276,7 @@ FROM <left_subquery>
 -   `ARRAY JOIN` — в этом случае результат `JOIN` не будет содержать пустые массивы;
 -   `LEFT ARRAY JOIN` — пустые массивы попадут в результат выполнения `JOIN`. В качестве значения для пустых массивов устанавливается значение по умолчанию. Обычно это 0, пустая строка или NULL, в зависимости от типа элементов массива.
 
-Рассмотрим примеры использования `ARRAY JOIN` и `LEFT ARRAY JOIN`. Для начала создадим таблицу, содержащую столбец с типом [Array](../../sql-reference/statements/select.md), и добавим в него значение:
+Рассмотрим примеры использования `ARRAY JOIN` и `LEFT ARRAY JOIN`. Для начала создадим таблицу, содержащую столбец с типом [Array](../../sql-reference/data-types/array.md), и добавим в него значение:
 
 ``` sql
 CREATE TABLE arrays_test
@@ -394,7 +394,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-В примере ниже используется функция [arrayEnumerate](../../sql-reference/statements/select.md#array_functions-arrayenumerate):
+В примере ниже используется функция [arrayEnumerate](../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate):
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -414,7 +414,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 
 #### ARRAY JOIN с вложенными структурами данных {#array-join-s-vlozhennymi-strukturami-dannykh}
 
-`ARRAY JOIN` также работает с [вложенными структурами данных](../../sql-reference/statements/select.md). Пример:
+`ARRAY JOIN` также работает с [вложенными структурами данных](../../sql-reference/data-types/nested-data-structures/index.md). Пример:
 
 ``` sql
 CREATE TABLE nested_test
@@ -507,7 +507,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Пример использования функции [arrayEnumerate](../../sql-reference/statements/select.md#array_functions-arrayenumerate):
+Пример использования функции [arrayEnumerate](../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate):
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -539,7 +539,7 @@ FROM <left_subquery>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-Вместо `<left_subquery>` и `<right_subquery>` можно указать имена таблиц. Это эквивалентно подзапросу `SELECT * FROM table`, за исключением особого случая таблицы с движком [Join](../../sql-reference/statements/select.md) – массива, подготовленного для присоединения.
+Вместо `<left_subquery>` и `<right_subquery>` можно указать имена таблиц. Это эквивалентно подзапросу `SELECT * FROM table`, за исключением особого случая таблицы с движком [Join](../../engines/table-engines/special/join.md) – массива, подготовленного для присоединения.
 
 #### Поддерживаемые типы `JOIN` {#select-join-types}
 
@@ -623,7 +623,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 `ASOF JOIN` принимает метку времени пользовательского события из `table_1` и находит такое событие в `table_2` метка времени которого наиболее близка к метке времени события из `table_1` в соответствии с условием на ближайшее совпадение. При этом столбец `user_id` используется для объединения по равенству, а столбец `ev_time` для объединения по ближайшему совпадению. В нашем примере `event_1_1` может быть объединено с `event_2_1`, `event_1_2` может быть объединено с `event_2_3`, а `event_2_2` не объединяется.
 
 !!! note "Примечание"
-    `ASOF JOIN` не поддержан для движка таблиц [Join](../../sql-reference/statements/select.md).
+    `ASOF JOIN` не поддержан для движка таблиц [Join](../../engines/table-engines/special/join.md).
 
 Чтобы задать значение строгости по умолчанию, используйте сессионный параметр [join\_default\_strictness](../../operations/settings/settings.md#settings-join_default_strictness).
 
@@ -694,7 +694,7 @@ LIMIT 10
 В некоторых случаях более эффективно использовать `IN` вместо `JOIN`.
 Среди разных типов `JOIN`, наиболее эффективен `ANY LEFT JOIN`, следующий по эффективности `ANY INNER JOIN`. Наименее эффективны `ALL LEFT JOIN` и `ALL INNER JOIN`.
 
-Если `JOIN` необходим для соединения с таблицами измерений (dimension tables - сравнительно небольшие таблицы, которые содержат свойства измерений - например, имена для рекламных кампаний), то использование `JOIN` может быть не очень удобным из-за громоздкости синтаксиса, а также из-за того, что правая таблица читается заново при каждом запросе. Специально для таких случаев существует функциональность «Внешние словари», которую следует использовать вместо `JOIN`. Дополнительные сведения смотрите в разделе [Внешние словари](../../sql-reference/statements/select.md).
+Если `JOIN` необходим для соединения с таблицами измерений (dimension tables - сравнительно небольшие таблицы, которые содержат свойства измерений - например, имена для рекламных кампаний), то использование `JOIN` может быть не очень удобным из-за громоздкости синтаксиса, а также из-за того, что правая таблица читается заново при каждом запросе. Специально для таких случаев существует функциональность «Внешние словари», которую следует использовать вместо `JOIN`. Дополнительные сведения смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/index.md).
 
 **Ограничения по памяти**
 
@@ -709,7 +709,7 @@ ClickHouse использует алгоритм [hash join](https://en.wikipedi
 
 При слиянии таблиц могут появляться пустые ячейки. То, каким образом ClickHouse заполняет эти ячейки, определяется настройкой [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls).
 
-Если ключами `JOIN` выступают поля типа [Nullable](../../sql-reference/statements/select.md), то строки, где хотя бы один из ключей имеет значение [NULL](../../sql-reference/syntax.md#null-literal), не соединяются.
+Если ключами `JOIN` выступают поля типа [Nullable](../../sql-reference/data-types/nullable.md), то строки, где хотя бы один из ключей имеет значение [NULL](../../sql-reference/syntax.md#null-literal), не соединяются.
 
 #### Ограничения синтаксиса {#ogranicheniia-sintaksisa}
 
@@ -728,7 +728,7 @@ ClickHouse использует алгоритм [hash join](https://en.wikipedi
 
 Результат выражения должен иметь тип `UInt8`.
 
-ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../../sql-reference/statements/select.md).
+ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../../engines/table-engines/index.md).
 
 Если в секции необходимо проверить [NULL](../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](../operators/index.md#operator-is-null) и [IS NOT NULL](../operators/index.md#is-not-null), а также соответствующие функции `isNull` и `isNotNull`. В противном случае выражение будет считаться всегда не выполненным.
 

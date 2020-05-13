@@ -55,7 +55,7 @@
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-*Смотрите раздел [Операторы IN](../sql-reference/statements/select.md#select-in-operators).*
+*Смотрите раздел [Операторы IN](../sql-reference/operators/in.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 
