@@ -14,4 +14,3 @@ SELECT sleep(2);
 SHOW TABLES WHERE database=currentDatabase() and name LIKE 'lv';
 
 DROP TABLE mt;
-DROP TABLE lv;
