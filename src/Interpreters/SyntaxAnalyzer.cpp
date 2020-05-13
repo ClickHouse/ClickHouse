@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/SyntaxAnalyzer.h>
@@ -28,9 +29,9 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+
+#include <Functions/FunctionFactory.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -208,34 +209,12 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
-
-/** Calls to these functions in the GROUP BY statement would be
-  * replaced by their immediate argument.
-  */
-const std::unordered_set<String> injective_function_names
-{
-        "negate",
-        "bitNot",
-        "reverse",
-        "reverseUTF8",
-        "toString",
-        "toFixedString",
-        "IPv4NumToString",
-        "IPv4StringToNum",
-        "hex",
-        "unhex",
-        "bitmaskToList",
-        "bitmaskToArray",
-        "tuple",
-        "regionToName",
-        "concatAssumeInjective",
-};
 
 const std::unordered_set<String> possibly_injective_function_names
 {
@@ -277,6 +256,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
+    const FunctionFactory & function_factory = FunctionFactory::instance();
+
     if (!select_query->groupBy())
     {
         // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
@@ -326,7 +307,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
             }
-            else if (!injective_function_names.count(function->name))
+            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
             {
                 ++i;
                 continue;
@@ -564,34 +545,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     }
 }
 
-void replaceJoinedTable(const ASTSelectQuery & select_query)
-{
-    const ASTTablesInSelectQueryElement * join = select_query.join();
-    if (!join || !join->table_expression)
-        return;
-
-    /// TODO: Push down for CROSS JOIN is not OK [disabled]
-    const auto & table_join = join->table_join->as<ASTTableJoin &>();
-    if (table_join.kind == ASTTableJoin::Kind::Cross)
-        return;
-
-    auto & table_expr = join->table_expression->as<ASTTableExpression &>();
-    if (table_expr.database_and_table_name)
-    {
-        const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
-        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
-
-        // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
-        //        we can't replace aliased tables.
-        // FIXME: long table names include database name, which we can't save within alias.
-        if (table_id.alias.empty() && table_id.isShort())
-        {
-            ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0)->as<ASTTableExpression &>();
-        }
-    }
-}
-
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -613,13 +566,14 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
+/// Special columns are non physical columns, for example ALIAS
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
         const ColumnsDescription & columns = storage->getColumns();
 
-        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
+        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -656,7 +610,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
-            auto & name = joined_column.name;
+            const auto & name = joined_column.name;
             if (available_columns.count(name))
                 continue;
 
@@ -740,11 +694,13 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
+        const auto storage_virtuals = storage->getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (storage->hasColumn(*it))
+            auto column = storage_virtuals.tryGetByName(*it);
+            if (column)
             {
-                source_columns.push_back(storage->getColumn(*it));
+                source_columns.push_back(*column);
                 unknown_required_source_columns.erase(it++);
             }
             else
@@ -798,7 +754,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     SyntaxAnalyzerResult && result,
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-    const Names & required_result_columns) const
+    const Names & required_result_columns,
+    std::shared_ptr<TableJoin> table_join) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -810,13 +767,12 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
+    result.analyzed_join = table_join;
+    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+        result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
-
-    if (settings.enable_optimize_predicate_expression)
-        replaceJoinedTable(*select_query);
 
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;
@@ -845,7 +801,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
@@ -890,7 +846,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     normalize(query, result.aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, context, 0, result.scalars);
+    executeScalarSubqueries(query, context, 0, result.scalars, false);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 

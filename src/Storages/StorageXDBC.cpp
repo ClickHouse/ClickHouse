@@ -60,7 +60,7 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(c
     NamesAndTypesList cols;
     for (const String & name : column_names)
     {
-        auto column_data = getColumn(name);
+        auto column_data = getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     return bridge_helper->getURLParams(cols.toString(), max_block_size);
@@ -104,7 +104,7 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const Context 
     request_uri.setPath("/write");
     for (const String & name : getSampleBlock().getNames())
     {
-        auto column_data = getColumn(name);
+        auto column_data = getColumns().getPhysical(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
     auto url_params = bridge_helper->getURLParams(cols.toString(), 65536);

@@ -113,7 +113,7 @@ public:
 private:
     size_t getElementNum(const ColumnPtr & index_column, const DataTypeTuple & tuple) const
     {
-        if (auto index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
+        if (const auto * index_col = checkAndGetColumnConst<ColumnUInt8>(index_column.get()))
         {
             size_t index = index_col->getValue<UInt8>();
 
@@ -125,7 +125,7 @@ private:
 
             return index - 1;
         }
-        else if (auto name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
+        else if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
         {
             return tuple.getPositionByName(name_col->getValue<String>());
         }

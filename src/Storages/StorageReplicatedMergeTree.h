@@ -113,11 +113,11 @@ public:
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
-    void drop(TableStructureWriteLockHolder &) override;
+    void drop() override;
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     bool supportsIndexForIn() const override { return true; }
 
@@ -287,6 +287,8 @@ private:
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
+
+    std::atomic_bool need_shutdown{false};
 
     template <class Func>
     void foreachCommittedParts(const Func & func) const;
@@ -463,6 +465,9 @@ private:
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
+
+    /// Deletes info from quorum/last_part node for particular partition_id.
+    void cleanLastPartNode(const String & partition_id);
 
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(

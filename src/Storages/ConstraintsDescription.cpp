@@ -5,6 +5,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <Core/Defines.h>
+
 
 namespace DB
 {
@@ -28,7 +30,7 @@ ConstraintsDescription ConstraintsDescription::parse(const String & str)
 
     ConstraintsDescription res;
     ParserConstraintDeclarationList parser;
-    ASTPtr list = parseQuery(parser, str, 0);
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & constraint : list->children)
         res.constraints.push_back(std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint));

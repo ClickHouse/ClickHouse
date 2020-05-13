@@ -41,12 +41,26 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_rename_table("RENAME TABLE");
     ParserKeyword s_to("TO");
+    ParserKeyword s_exchange_tables("EXCHANGE TABLES");
+    ParserKeyword s_and("AND");
     ParserToken s_comma(TokenType::Comma);
 
+    bool exchange = false;
+
     if (!s_rename_table.ignore(pos, expected))
-        return false;
+    {
+        if (s_exchange_tables.ignore(pos, expected))
+            exchange = true;
+        else
+            return false;
+    }
 
     ASTRenameQuery::Elements elements;
+
+    auto ignore_delim = [&]()
+    {
+        return exchange ? s_and.ignore(pos) : s_to.ignore(pos);
+    };
 
     while (true)
     {
@@ -56,7 +70,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         elements.push_back(ASTRenameQuery::Element());
 
         if (!parseDatabaseAndTable(elements.back().from, pos, expected)
-            || !s_to.ignore(pos)
+            || !ignore_delim()
             || !parseDatabaseAndTable(elements.back().to, pos, expected))
             return false;
     }
@@ -73,6 +87,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     query->elements = elements;
+    query->exchange = exchange;
     return true;
 }
 

@@ -319,7 +319,7 @@ ASTPtr parseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    auto pos = begin;
+    const char * pos = begin;
     return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size, max_parser_depth);
 }
 
@@ -328,19 +328,28 @@ ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
     const std::string & query_description,
-    size_t max_query_size)
+    size_t max_query_size,
+    size_t max_parser_depth)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size);
+    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth);
 }
 
 
-ASTPtr parseQuery(IParser & parser, const std::string & query, size_t max_query_size)
+ASTPtr parseQuery(
+    IParser & parser,
+    const std::string & query,
+    size_t max_query_size,
+    size_t max_parser_depth)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size);
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth);
 }
 
 
-std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list)
+std::pair<const char *, bool> splitMultipartQuery(
+    const std::string & queries,
+    std::vector<std::string> & queries_list,
+    size_t max_query_size,
+    size_t max_parser_depth)
 {
     ASTPtr ast;
 
@@ -356,7 +365,7 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
     {
         begin = pos;
 
-        ast = parseQueryAndMovePosition(parser, pos, end, "", true, 0);
+        ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth);
 
         auto * insert = ast->as<ASTInsertQuery>();
 

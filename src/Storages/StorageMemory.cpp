@@ -124,7 +124,7 @@ BlockOutputStreamPtr StorageMemory::write(
 }
 
 
-void StorageMemory::drop(TableStructureWriteLockHolder &)
+void StorageMemory::drop()
 {
     std::lock_guard lock(mutex);
     data.clear();
@@ -140,7 +140,7 @@ std::optional<UInt64> StorageMemory::totalRows() const
 {
     UInt64 rows = 0;
     std::lock_guard lock(mutex);
-    for (auto & buffer : data)
+    for (const auto & buffer : data)
         rows += buffer.rows();
     return rows;
 }
@@ -149,7 +149,7 @@ std::optional<UInt64> StorageMemory::totalBytes() const
 {
     UInt64 bytes = 0;
     std::lock_guard lock(mutex);
-    for (auto & buffer : data)
+    for (const auto & buffer : data)
         bytes += buffer.bytes();
     return bytes;
 }

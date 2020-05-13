@@ -550,6 +550,12 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGU
 IMPLEMENT_SETTING_ENUM(QueryLogElementType, LOG_QUERIES_TYPE_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
 
 
+#define DEFAULT_DATABASE_ENGINE_LIST_OF_NAMES(M) \
+    M(Ordinary, "Ordinary") \
+    M(Atomic, "Atomic")
+IMPLEMENT_SETTING_ENUM(DefaultDatabaseEngine , DEFAULT_DATABASE_ENGINE_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
+
+
 namespace details
 {
     void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf)

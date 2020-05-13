@@ -38,7 +38,7 @@ public:
             LOG_TRACE(log, "TCP Request. Address: " << socket.peerAddress().toString());
             return new TCPHandler(server, socket);
         }
-        catch (const Poco::Net::NetException & e)
+        catch (const Poco::Net::NetException &)
         {
             LOG_TRACE(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
             return new DummyTCPHandler(socket);
