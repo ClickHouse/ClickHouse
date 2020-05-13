@@ -749,7 +749,7 @@ If in one query several values are inserted into the same position, the function
 - `x` — Value to be inserted. [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md).
 - `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
 - `default_x`— Default value for substituting in empty positions. Optional parameter. [Expression](../syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../sql-reference/statements/create.md#create-default-values) are used.
-- `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value must be specified. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Returned value**
 
@@ -809,42 +809,13 @@ Query:
 SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
 ```
 
-Result:
-
-```text
-┌─groupArrayInsertAt(number, 0)─┐
-│ [0]                           │
-└───────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
-```
-
-Result:
-
-```text
-┌─groupArrayInsertAt(number, 0)─┐
-│ [2]                           │
-└───────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
-```
-
-Result:
+As a result of this query you get random integer in the `[0,9]` range. For example:
 
 ```text
 ┌─groupArrayInsertAt(number, 0)─┐
 │ [7]                           │
 └───────────────────────────────┘
 ```
-
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
