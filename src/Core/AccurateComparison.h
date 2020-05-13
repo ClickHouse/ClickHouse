@@ -6,6 +6,8 @@
 #include "Types.h"
 #include <Common/NaNUtils.h>
 #include <Common/UInt128.h>
+#include <Common/Floats/Float16.h>
+#include <Common/Floats/BFloat16.h>
 
 /** Preceptually-correct number comparisons.
   * Example: Int8(-1) != UInt8(255)
@@ -230,6 +232,54 @@ inline bool greaterOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 }
 
 template <>
+inline bool greaterOp<DB::Float16, DB::Int64>(DB::Float16 f, DB::Int64 i)
+{
+    return greaterOp(static_cast<DB::Float32>(f), i);
+}
+
+template <>
+inline bool greaterOp<DB::Int64, DB::Float16>(DB::Int64 i, DB::Float16 f)
+{
+    return greaterOp(i, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool greaterOp<DB::Float16, DB::UInt64>(DB::Float16 f, DB::UInt64 u)
+{
+    return greaterOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool greaterOp(DB::UInt64, DB::Float16)(DB::UInt64 u, DB::Float16 f)
+{
+    return greaterOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool greaterOp<DB::BFloat16, DB::Int64>(DB::BFloat16 f, DB::Int64 i)
+{
+    return greaterOp(static_cast<DB::Float32>(f), i);
+}
+
+template <>
+inline bool greaterOp<DB::Int64, DB::BFloat16>(DB::Int64 i, DB::BFloat16 f)
+{
+    return greaterOp(i, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool greaterOp<DB::BFloat16, DB::UInt64>(DB::BFloat16 f, DB::UInt64 u)
+{
+    return greaterOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool greaterOp(DB::UInt64, DB::BFloat16)(DB::UInt64 u, DB::BFloat16 f)
+{
+    return greaterOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
 inline bool greaterOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
 {
     return u.low == 0 && greaterOp(f, u.high);
@@ -251,6 +301,30 @@ template <>
 inline bool greaterOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
 {
     return greaterOp(u, static_cast<DB::Float64>(f));
+}
+
+template <>
+inline bool greaterOp<DB::Float16, DB::UInt128>(DB::Float16 f, DB::UInt128 u)
+{
+    return greaterOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool greaterOp<DB::UInt128, DB::Float16>(DB::UInt128 u, DB::Float16 f)
+{
+    return greaterOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool greaterOp<DB::BFloat16, DB::UInt128>(DB::BFloat16 f, DB::UInt128 u)
+{
+    return greaterOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool greaterOp<DB::UInt128, DB::BFloat16>(DB::UInt128 u, DB::BFloat16 f)
+{
+    return greaterOp(u, static_cast<DB::Float32>(f));
 }
 
 template <typename A, typename B>
@@ -315,6 +389,53 @@ inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, 
 }
 
 template <>
+inline bool equalsOp<DB::Float16, DB::UInt64>(DB::Float16 f, DB::UInt64 u)
+{
+    return equalsOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool equalsOp<DB::UInt64, DB::Float16>(DB::UInt64 u, DB::Float16 f)
+{
+    return equalsOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool equalsOp<DB::Float16, DB::Int64>(DB::Float16 f, DB::Int64 u)
+{
+    return equalsOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool equalsOp<DB::Int64, DB::Float16>(DB::Int64 u, DB::Float16 f)
+{
+    return equalsOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool equalsOp<DB::BFloat16, DB::UInt64>(DB::BFloat16 f, DB::UInt64 u)
+{
+    return equalsOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool equalsOp<DB::UInt64, DB::BFloat16>(DB::UInt64 u, DB::BFloat16 f)
+{
+    return equalsOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool equalsOp<DB::BFloat16, DB::Int64>(DB::BFloat16 f, DB::Int64 u)
+{
+    return equalsOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool equalsOp<DB::Int64, DB::BFloat16>(DB::Int64 u, DB::BFloat16 f)
+{
+    return equalsOp(u, static_cast<DB::Float32>(f));
+}
+template <>
 inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
     return u.low == 0 && equalsOp(static_cast<UInt64>(u.high), f);
@@ -327,6 +448,18 @@ inline bool equalsOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
 }
 
 template <>
+inline bool equalsOp<DB::UInt128, DB::Float16>(DB::UInt128 u, DB::Float16 f)
+{
+    return equalsOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
+inline bool equalsOp<DB::UInt128, DB::BFloat16>(DB::UInt128 u, DB::Float16 f)
+{
+    return equalsOp(u, static_cast<DB::Float32>(f));
+}
+
+template <>
 inline bool equalsOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
 {
     return equalsOp(u, f);
@@ -336,6 +469,18 @@ template <>
 inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 {
     return equalsOp(static_cast<DB::Float64>(f), u);
+}
+
+template <>
+inline bool equalsOp<DB::Float16, DB::UInt128>(DB::Float16 f, DB::UInt128 u)
+{
+    return equalsOp(static_cast<DB::Float32>(f), u);
+}
+
+template <>
+inline bool equalsOp<DB::BFloat16, DB::UInt128>(DB::BFloat16 f, DB::UInt128 u)
+{
+    return equalsOp(static_cast<DB::Float32>(f), u);
 }
 
 inline bool NO_SANITIZE_UNDEFINED greaterOp(DB::Int128 i, DB::Float64 f)
@@ -367,8 +512,14 @@ inline bool greaterOp(DB::Float32 f, DB::Int128 i) { return greaterOp(static_cas
 
 inline bool NO_SANITIZE_UNDEFINED equalsOp(DB::Int128 i, DB::Float64 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float64>(i) == f; }
 inline bool NO_SANITIZE_UNDEFINED equalsOp(DB::Int128 i, DB::Float32 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float32>(i) == f; }
+inline bool equalsOp(DB::Int128 i, DB::Float16 f) { return equalsOp(i, static_cast<DB::Float32>(f)); }
+inline bool equalsOp(DB::Int128 i, DB::BFloat16 f) { return equalsOp(i, static_cast<DB::Float32>(f)); }
 inline bool equalsOp(DB::Float64 f, DB::Int128 i) { return equalsOp(i, f); }
 inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
+inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
+inline bool equalsOp(DB::BFloat16 f, DB::Int128 i) { return equalsOp(i, f); }
+
+inline bool 
 
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> notEqualsOp(A a, B b)
