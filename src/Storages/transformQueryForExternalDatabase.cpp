@@ -194,8 +194,8 @@ String transformQueryForExternalDatabase(
 
     std::stringstream out;
     IAST::FormatSettings settings(out, true);
-    settings.always_quote_identifiers = true;
     settings.identifier_quoting_style = identifier_quoting_style;
+    settings.always_quote_identifiers = identifier_quoting_style != IdentifierQuotingStyle::None;
 
     select->format(settings);
 

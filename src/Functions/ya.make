@@ -1,5 +1,9 @@
 LIBRARY()
 
+CFLAGS(
+    -DUSE_SSL -DUSE_XXHASH
+)
+
 ADDINCL(
     library/consistent_hashing
     contrib/libs/farmhash
@@ -281,6 +285,7 @@ SRCS(
     randConstant.cpp
     rand.cpp
     randomPrintableASCII.cpp
+    randomString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -375,6 +380,7 @@ SRCS(
     toStartOfMinute.cpp
     toStartOfMonth.cpp
     toStartOfQuarter.cpp
+    toStartOfSecond.cpp
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
