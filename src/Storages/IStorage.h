@@ -452,22 +452,23 @@ public:
     /// Returns sampling expression AST for storage or nullptr if there is none.
     virtual ASTPtr getSamplingKeyAST() const { return nullptr; }
 
-    /// Returns additional columns that need to be read to calculate partition key.
+    /// Returns column names that need to be read to calculate partition key.
     virtual Names getColumnsRequiredForPartitionKey() const { return {}; }
 
-    /// Returns additional columns that need to be read to calculate sorting key.
+    /// Returns column names that need to be read to calculate sorting key.
     virtual Names getColumnsRequiredForSortingKey() const { return {}; }
 
-    /// Returns additional columns that need to be read to calculate primary key.
+    /// Returns column names that need to be read to calculate primary key.
     virtual Names getColumnsRequiredForPrimaryKey() const { return {}; }
 
-    /// Returns additional columns that need to be read to calculate sampling key.
+    /// Returns column names that need to be read to calculate sampling key.
     virtual Names getColumnsRequiredForSampling() const { return {}; }
 
-    /// Returns additional columns that need to be read for FINAL to work.
+    /// Returns column names that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
-    /// Returns names of primary key + secondary sorting columns
+    /// Returns columns names in sorting key specified by user in ORDER BY
+    /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     virtual Names getSortingKeyColumns() const { return {}; }
 
     /// Returns columns, which will be needed to calculate dependencies
