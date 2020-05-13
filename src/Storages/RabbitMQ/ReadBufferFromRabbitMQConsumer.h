@@ -30,19 +30,16 @@ public:
             Poco::Logger * log_,
             char row_delimiter_,
             const bool hash_exchange_,
+            const size_t num_queues_,
             const std::atomic<bool> & stopped_);
+
     ~ReadBufferFromRabbitMQConsumer() override;
 
-    void initExchange();
-    void initQueueBindings();
-    void subscribe();
-    void unsubscribe();
-
-    void startNonBlockEventLoop();
-    void stopEventLoop();
+    void subscribeConsumer();
 
 private:
     using Messages = std::vector<String>;
+    using Queues = std::vector<String>;
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & eventHandler;
@@ -54,11 +51,14 @@ private:
     const bool hash_exchange;
     bool stalled = false;
     const std::atomic<bool> & stopped;
-    std::atomic<bool> consumer_ok = false, consumer_error = false;
     std::atomic<bool> exchange_declared = false;
 
+    const size_t num_queues;
     String consumerTag; // ID for the consumer
-    String queue_name;
+    Queues queues;
+    bool bindings_created = false;
+    bool subscribed = false;
+    //Queues::iterator queue_name;
     String hash_exchange_name;
 
     Messages received;
@@ -66,5 +66,12 @@ private:
     Messages::iterator current;
 
     bool nextImpl() override;
+    void initExchange();
+    void initQueueBindings();
+    void subscribe(const String & queue_name);
+    void unsubscribe();
+
+    void startNonBlockEventLoop();
+    void stopEventLoop();
 };
 }

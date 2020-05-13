@@ -16,9 +16,7 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
         , column_names(columns)
         , log(log_)
         , non_virtual_header(storage.getSampleBlockNonMaterialized())
-        , virtual_header(storage.getSampleBlockForColumns(
-            {"_exchange", "_routingKey"}) 
-        )
+        , virtual_header(storage.getSampleBlockForColumns({"_exchange", "_routingKey"}))
 {
 }
 
@@ -48,7 +46,7 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     if (!buffer || finished)
         return;
 
-    buffer->subscribe();
+    buffer->subscribeConsumer();
 }
 
 

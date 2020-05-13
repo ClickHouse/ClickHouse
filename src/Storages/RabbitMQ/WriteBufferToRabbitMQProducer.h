@@ -44,9 +44,12 @@ private:
     const size_t max_rows;
     const size_t chunk_size;
 
+    String channel_id;
+
     void startNonBlockEventLoop();
 
     size_t rows = 0;
     std::list<std::string> chunks;
+
 };
 }

@@ -57,7 +57,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & format_name_,
         char row_delimiter_,
         size_t num_consumers_,
-        size_t hash_exchange_)
+        bool hash_exchange_,
+        size_t num_queues_)
         : IStorage(table_id_)
         , global_context(context_.getGlobalContext())
         , rabbitmq_context(Context(global_context))
@@ -67,6 +68,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
         , hash_exchange(hash_exchange_)
+        , num_queues(num_queues_)
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
@@ -87,7 +89,8 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     /* There are several reasons for making separate connections: to limit the number of channels per connection, to make
      * event loops more deterministic and not shared between publishers and consumers. 
-     * And it is simply recommended to use separate connections to publish and consume. */
+     * And it is simply recommended to use separate connections to publish and consume.
+     */
     while (!consumersConnection.ready())
     {
         event_base_loop(consumersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
@@ -97,6 +100,18 @@ StorageRabbitMQ::StorageRabbitMQ(
     {
         event_base_loop(producersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
     }
+
+     /* Firstly, the routing key of the message published - should be the same as the routing_key parameter of the
+     * CREATE TABLE query (it is important in order to be able to make queue bindings: messages are published to exchange 
+     * and, before they are published, queues should be initialized and bound to that exchange with the binding 
+     * key - otherwise messages will be routed nowhere). In simple cases with one queue and one consumer direct 
+     * exchange type is used.
+     *
+     * In case when many queues (~ consumers) are potential recievers of one message - consistent-hash exchange is used.
+     * As only consistent-hash exchange type enables a proper rebalance of messages between queues (and therefore between consumers)
+     * - use hash_exchange flag to enable rebalance (the chosen scheme for rebalance is explained in consumer class).
+     */
+    hash_exchange = hash_exchange || num_consumers > 1 || num_queues > 1;
 }
 
 
@@ -203,26 +218,15 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(std::make_shared<AMQP::TcpChannel>(&producersConnection),
-            producersEventHandler, routing_key, exchange_name, log, hash_exchange || num_consumers > 1 ? 1 : 0,
+            producersEventHandler, routing_key, exchange_name, log, hash_exchange,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    //if (set_consumer_channel)
-    //{
-    //    set_consumer_channel = false;
-    //    consumer_channel = std::make_shared<AMQP::TcpChannel>(&consumersConnection);
-    //}
-
-    //return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, 
-    //        consumersEventHandler, exchange_name, routing_key, log, row_delimiter, num_consumers > 1 ? 1 : 0, stream_cancelled);
-
-    consumersConnection.heartbeat();
-
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&consumersConnection), 
-            consumersEventHandler, exchange_name, routing_key, log, row_delimiter, hash_exchange || num_consumers > 1 ? 1 : 0, stream_cancelled);
+            consumersEventHandler, exchange_name, routing_key, log, row_delimiter, hash_exchange, num_queues, stream_cancelled);
 }
 
 
@@ -269,8 +273,6 @@ void StorageRabbitMQ::threadFunc()
             {
                 if (!checkDependencies(table_id))
                     break;
-
-                MV = true;
 
                 LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
 
@@ -467,8 +469,22 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
+        UInt64 num_queues = rabbitmq_settings.rabbitmq_num_queues;
+        if (args_count >= 8)
+        {
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                num_consumers = safeGet<UInt64>(ast->value);
+            }
+            else
+            {
+                throw Exception("Number of queues must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+
         return StorageRabbitMQ::create(args.table_id, args.context, args.columns, host_port, routing_key, exchange, 
-                format, row_delimiter, num_consumers, hash_exchange);
+                format, row_delimiter, num_consumers, hash_exchange, num_queues);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

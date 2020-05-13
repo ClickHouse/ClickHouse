@@ -32,6 +32,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , chunk_size(chunk_size_)
 {
     initExchange();
+
+    channel_id = std::to_string(producer_channel->id());
 }
 
 
@@ -50,7 +52,8 @@ void WriteBufferToRabbitMQProducer::initExchange()
     {
         /* The AMQP::passive flag indicates that it should only be checked if such exchange already exists.
          * If it doesn't - then no queue bindings happened and publishing to an exchange, without any queue
-         * bound to it, will lead to messages being routed nowhere. */
+         * bound to it, will lead to messages being routed nowhere.
+         */
         producer_channel->declareExchange(exchange_name, AMQP::fanout, AMQP::passive)
         .onSuccess([&]()
         {
@@ -103,10 +106,11 @@ void WriteBufferToRabbitMQProducer::count_row()
         payload.append(last_chunk, 0, last_chunk_size);
 
         /* If hash exchange is used - it distributes messages among queues based on hash of a routing key.
-         * To make it unique - use current channel id. */
+         * To make it unique - use current channel id.
+         */
         if (hash_exchange)
         {
-            producer_channel->publish(exchange_name, std::to_string(producer_channel->id()), payload);
+            producer_channel->publish(exchange_name, channel_id, payload);
         }
         else
         {
