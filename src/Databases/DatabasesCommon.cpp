@@ -98,7 +98,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     auto table_id = table->getStorageID();
     if (table_id.hasUUID())
     {
-        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic");
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getEngineName() == "Atomic" || getEngineName() == "Replicated");
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 }
