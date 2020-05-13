@@ -45,7 +45,6 @@
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
-    -   [pillar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
