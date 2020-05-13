@@ -469,7 +469,7 @@ namespace Coordination
             CompletionQueue & kv_cq)
         {
             retry++;
-            if (retry > 10)
+            if (retry > 3)
             {
                 response->error = Error::ZNONODE;
                 return;
@@ -478,7 +478,7 @@ namespace Coordination
             pre_call_called = true;
             txn_requests.clear();
         }
-        EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields) const
+        EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
         {
             std::vector<ResponseOp> responseOps;
             for (auto field : fields)
@@ -487,7 +487,7 @@ namespace Coordination
             }
             return makeResponseFromResponses(compare_result, responseOps);
         }
-        EtcdKeeperResponsePtr makeResponseFromTag(void* got_tag) const
+        EtcdKeeperResponsePtr makeResponseFromTag(void* got_tag)
         {
             if (response->error != Error::ZOK)
             {
