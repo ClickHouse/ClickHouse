@@ -882,39 +882,40 @@ inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(),
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
-    if (value < Decimal<T>(0))
+    if constexpr (!std::is_same_v<T, bInt256>)
     {
-        value *= Decimal<T>(-1);
-        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
+        if (value < Decimal<T>(0))
+        {
+            value *= Decimal<T>(-1);
+            writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
+        }
+
+        const T whole_part = DecimalUtils::getWholePart(value, scale);
+
+        writeIntText(whole_part, ostr);
+        if (scale)
+        {
+            writeChar('.', ostr);
+            String str_fractional(scale, '0');
+            for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
+                str_fractional[pos] += value % Decimal<T>(10);
+            ostr.write(str_fractional.data(), scale);
+        }
     }
-
-    const T whole_part = DecimalUtils::getWholePart(value, scale);
-
-    writeIntText(whole_part, ostr);
-    if (scale)
+    else
     {
-        writeChar('.', ostr);
-        String str_fractional(scale, '0');
-        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
-            str_fractional[pos] += value % Decimal<T>(10);
-        ostr.write(str_fractional.data(), scale);
-    }
-}
+        const auto& value_str = value.value.str();
 
-template <>
-void writeText(Decimal<bInt256> value, UInt32 scale, WriteBuffer & ostr)
-{
-    const auto& value_str = value.value.str();
-
-    size_t i = 0;
-    for (; i < value_str.size() - scale; i++)
-        writeChar(value_str[i], ostr);
-
-    if (scale)
-    {
-        writeChar('.', ostr);
-        for (; i < value_str.size(); i++)
+        size_t i = 0;
+        for (; i < value_str.size() - scale; i++)
             writeChar(value_str[i], ostr);
+
+        if (scale)
+        {
+            writeChar('.', ostr);
+            for (; i < value_str.size(); i++)
+                writeChar(value_str[i], ostr);
+        }
     }
 }
 

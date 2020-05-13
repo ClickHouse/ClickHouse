@@ -175,10 +175,22 @@ To convertTo(const DecimalType & decimal, size_t scale)
         // big integers can not be build from uint8_t
         const NativeType whole = getWholePart(decimal, scale);
 
-        // static constexpr NativeType max_to{255};
         if (whole > 255)
             throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return static_cast<UInt8>(static_cast<UInt32>(whole));
+    }
+    else if constexpr (IsDecimalNumber<To>)
+    {
+        using ToNativeType = typename To::NativeType;
+
+        const NativeType whole = getWholePart(decimal, scale);
+
+        static const NativeType min_to = static_cast<NativeType>(std::numeric_limits<ToNativeType>::min());
+        static const NativeType max_to = static_cast<NativeType>(std::numeric_limits<ToNativeType>::max());
+
+        if (whole < min_to || whole > max_to)
+            throw Exception("Convert overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return static_cast<To>(static_cast<ToNativeType>(whole));
     }
     else
     {

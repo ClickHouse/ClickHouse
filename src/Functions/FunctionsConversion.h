@@ -150,6 +150,12 @@ struct ConvertImpl
                 {
                     if constexpr (is_big_int_v<ToFieldType> && std::is_same_v<FromFieldType, UInt8>)
                         vec_to[i] = static_cast<ToFieldType>(static_cast<UInt16>(vec_from[i]));
+                    else if constexpr (std::is_same_v<ToFieldType, UInt128> && is_big_int_v<FromFieldType>)
+                    {
+                        // This should probably be removed after final big int integration
+                        static constexpr FromFieldType mask64 = (1ull << 63) + ((1ull << 63) - 1);
+                        vec_to[i] = UInt128(static_cast<UInt64>(vec_from[i] & mask64), static_cast<UInt64>((vec_from[i] >> 64) & mask64));
+                    }
                     else
                         vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                 }

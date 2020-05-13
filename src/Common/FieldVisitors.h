@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
 #include <common/demangle.h>
@@ -150,7 +151,10 @@ public:
         throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <typename U> T operator() (const DecimalField<U> & x) const;
+    template <typename U> T operator() (const DecimalField<U> & x) const
+    {
+        return DecimalUtils::convertTo<T>(x.getValue(), x.getScale());
+    }
 
     T operator() (const AggregateFunctionStateData &) const
     {

@@ -1,4 +1,3 @@
-#include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -106,13 +105,6 @@ String FieldVisitorDump::operator() (const bUInt128 & x) const { return formatQu
 String FieldVisitorDump::operator() (const bInt128 & x) const { return formatQuotedWithPrefix(x, "Int128_"); }
 String FieldVisitorDump::operator() (const bUInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
 String FieldVisitorDump::operator() (const bInt256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
-
-template <typename T>
-template <typename U>
-T FieldVisitorConvertToNumber<T>::operator() (const DecimalField<U> & x) const
-{
-    return DecimalUtils::convertTo<T>(x.getValue(), x.getScale());
-}
 
 /** In contrast to writeFloatText (and writeQuoted),
   *  even if number looks like integer after formatting, prints decimal point nevertheless (for example, Float64(1) is printed as 1.).
