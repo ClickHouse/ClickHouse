@@ -3,7 +3,7 @@
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
 -   `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a “grouping key”, while each individual expression will be referred to as a “key expressions”.
--   All the expressions in the [SELECT](index.md), [HAVING](having.md), and [ORDER BY](order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
+-   All the expressions in the [SELECT](index.md), [HAVING](having.md), and [ORDER BY](order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
 -   Result of aggregating `SELECT` query will contain as many rows as there were unique values of “grouping key” in source table. Usually this signficantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all “grouping key” values were distinct.   
 
 !!! note "Note"

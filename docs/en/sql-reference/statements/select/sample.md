@@ -1,6 +1,6 @@
 # SAMPLE Clause {#select-sample-clause}
 
-The `SAMPLE` clause allows for approximated query processing.
+The `SAMPLE` clause allows for approximated `SELECT` query processing.
 
 When data sampling is enabled, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10.
 
@@ -8,7 +8,7 @@ Approximated query processing can be useful in the following cases:
 
 -   When you have strict timing requirements (like \<100ms) but you can’t justify the cost of additional hardware resources to meet them.
 -   When your raw data is not accurate, so approximation doesn’t noticeably degrade the quality.
--   Business requirements target approximate results (for cost-effectiveness, or in order to market exact results to premium users).
+-   Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
 !!! note "Note"
     You can only use sampling with the tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table)).
