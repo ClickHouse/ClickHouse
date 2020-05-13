@@ -119,7 +119,7 @@ protected:
 
         /// Static pointer cast for mutable ptr.
         template <typename U>
-        mutable_ptr<U> assertCast() && { return assert_cast<U>(Base::get()); }
+        mutable_ptr<U> assertCast() && { return assert_cast<U*>(Base::get()); }
     };
 
 public:
