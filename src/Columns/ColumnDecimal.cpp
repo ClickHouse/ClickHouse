@@ -47,6 +47,12 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
     return StringRef(pos, sizeof(T));
 }
 
+template <>
+StringRef ColumnDecimal<Decimal256>::serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const
+{
+    throw Exception("Method serializeValueIntoArena is not supported for Decimal256", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
@@ -54,12 +60,19 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
     return pos + sizeof(T);
 }
 
+template <>
+const char * ColumnDecimal<Decimal256>::deserializeAndInsertFromArena(const char * /*pos*/)
+{
+    throw Exception("Method deserializeAndInsertFromArena is not supported for Decimal256", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 template <typename T>
-UInt64 ColumnDecimal<T>::get64(size_t n) const
+UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
         throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
-    return static_cast<typename T::NativeType>(data[n]);
+    else
+        return static_cast<typename T::NativeType>(data[n]);
 }
 
 template <typename T>
@@ -135,12 +148,24 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
-
-        if (size > count)
+        if constexpr (!std::is_same_v<T, Decimal256>)
         {
-            void * tail = &new_col.data[count];
-            memset(tail, 0, (size - count) * sizeof(T));
+            memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
+
+            if (size > count)
+            {
+                void * tail = &new_col.data[count];
+                memset(tail, 0, (size - count) * sizeof(T));
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < count; i++)
+                new_col.data[i] = data[i];
+
+            if (size > count)
+                for (size_t i = count; i < size; i++)
+                    new_col.data[i] = T{};
         }
     }
 
@@ -155,6 +180,12 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
     data.emplace_back(tmp);
 }
 
+template <>
+void ColumnDecimal<Decimal256>::insertData(const char * /*src*/, size_t /*length*/)
+{
+    throw Exception(String("Method insertData is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 template <typename T>
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
@@ -167,7 +198,13 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+    if constexpr (!std::is_same_v<T, Decimal256>)
+        memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+    else
+    {
+        for (size_t i = 0; i < length; i++)
+            data[old_size + i] = src_vec.data[start + i];
+    }
 }
 
 template <typename T>
@@ -243,8 +280,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.empty())
     {
-        min = NearestFieldType<T>(0, scale);
-        max = NearestFieldType<T>(0, scale);
+        min = NearestFieldType<T>(T(0), scale);
+        max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
@@ -266,4 +303,5 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
+template class ColumnDecimal<Decimal256>;
 }
