@@ -469,14 +469,18 @@ namespace Coordination
             CompletionQueue & kv_cq)
         {
             retry++;
-            if (retry > 3)
+            if (retry > 7)
             {
-                response->error = Error::ZNONODE;
+                response->error = Error::ZSYSTEMERROR;
                 return;
             }
             callRequest(call, kv_stub, kv_cq, txn_requests);
             pre_call_called = true;
             txn_requests.clear();
+        }
+        EtcdKeeperResponsePtr makeResponseFromExisted()
+        {
+            return response;
         }
         EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
         {
@@ -954,7 +958,14 @@ namespace Coordination
                 request->preparePostCall();
                 if (request->response->error != Error::ZOK)
                 {
-                    response->error = request->response->error;
+                    EtcdKeeperMultiResponse multi_response;
+                    multi_response.error = request->response->error;
+                    for (auto request : etcd_requests)
+                    {
+                        multi_response.responses.push_back(request->makeResponseFromExisted());
+                    }
+                    response = std::make_shared<EtcdKeeperMultiResponse>(multi_response);
+                    return;
                 }
                 txn_requests += request->txn_requests;
             }
@@ -1498,27 +1509,21 @@ namespace Coordination
             {
                 if (ok)
                 {
-                    LOG_DEBUG(log, "**** Processing completion queue tag ");
                     switch (static_cast<WatchBiDiTag>(reinterpret_cast<long>(got_tag)))
                     {
                     case WatchBiDiTag::READ:
-                        LOG_DEBUG(log, "Read a new message.");
                         readWatchResponse();
                         break;
                     case WatchBiDiTag::WRITE:
-                        LOG_DEBUG(log, "Sending message (async).");
                         break;
                     case WatchBiDiTag::CONNECT:
-                        LOG_DEBUG(log, "Server connected.");
                         break;
                     case WatchBiDiTag::WRITES_DONE:
-                        LOG_DEBUG(log, "Server disconnecting.");
                         break;
                     case WatchBiDiTag::FINISH:
                         stream = watch_stub->AsyncWatch(&context, &watch_cq, (void*)WatchBiDiTag::CONNECT);
                         break;
                     default:
-                        LOG_ERROR(log, "Unexpected tag ");
                         GPR_ASSERT(false);
                     }
                 }
