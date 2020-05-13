@@ -17,6 +17,7 @@ namespace Nested
     std::string extractTableName(const std::string & nested_name);
 
     /// Replace Array(Tuple(...)) columns to a multiple of Array columns in a form of `column_name.element_name`.
+    /// only for named tuples that actually represent Nested structures.
     Block flatten(const Block & block);
 
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.

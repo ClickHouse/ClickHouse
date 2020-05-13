@@ -265,17 +265,7 @@ public:
     }
 
 private:
-    Node * tryGetChild(const std::string_view & name)
-    {
-        if (!children)
-            return nullptr;
-        auto it = children->find(name);
-        if (it == children->end())
-            return nullptr;
-        return &it->second;
-    }
-
-    const Node * tryGetChild(const std::string_view & name) const
+    Node * tryGetChild(const std::string_view & name) const
     {
         if (!children)
             return nullptr;

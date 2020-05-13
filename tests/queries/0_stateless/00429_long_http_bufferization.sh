@@ -5,16 +5,13 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-max_block_size=100
-URL="${CLICKHOUSE_URL}"
-
 function query {
     # bash isn't able to store \0 bytes, so use [1; 255] random range
     echo "SELECT greatest(toUInt8(1), toUInt8(intHash64(number))) FROM system.numbers LIMIT $1 FORMAT RowBinary"
 }
 
 function ch_url() {
-    ${CLICKHOUSE_CURL_COMMAND} -sS "$URL&max_block_size=$max_block_size&$1" -d "`query $2`"
+    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "`query $2`"
 }
 
 

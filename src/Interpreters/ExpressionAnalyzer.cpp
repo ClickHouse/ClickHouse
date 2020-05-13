@@ -31,17 +31,20 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/DictionaryReader.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
 #include <DataStreams/copyData.h>
 #include <DataStreams/IBlockInputStream.h>
 
 #include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -85,7 +88,7 @@ bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings
     if (!settings.enable_early_constant_folding)
         return false;
 
-    for (auto & action : actions.getActions())
+    for (const auto & action : actions.getActions())
     {
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
@@ -406,7 +409,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            getRootActions(arguments[i], true, actions);
+            getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
             types[i] = actions->getSampleBlock().getByName(name).type;
             aggregate.argument_names[i] = name;
@@ -502,25 +505,11 @@ bool SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, b
     return true;
 }
 
-static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_element, std::shared_ptr<TableJoin> analyzed_join,
-                                 const Context & context)
+static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
 {
-    const auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
-
-    /// TODO This syntax does not support specifying a database name.
-    if (table_to_join.database_and_table_name)
-    {
-        auto table_id = context.resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
-
-        if (table)
-        {
-            auto * storage_join = dynamic_cast<StorageJoin *>(table.get());
-            if (storage_join)
-                return storage_join->getJoin(analyzed_join);
-        }
-    }
-
+    if (auto * table = analyzed_join->joined_storage.get())
+        if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
+            return storage_join->getJoin(analyzed_join);
     return {};
 }
 
@@ -531,9 +520,43 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
-static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block)
+static bool allowDictJoin(StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
+{
+    const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
+    if (!dict)
+        return false;
+
+    dict_name = dict->dictionaryName();
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name);
+    if (!dictionary)
+        return false;
+
+    const DictionaryStructure & structure = dictionary->getStructure();
+    if (structure.id)
+    {
+        key_name = structure.id->name;
+        return true;
+    }
+    return false;
+}
+
+static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, const Context & context)
 {
     bool allow_merge_join = analyzed_join->allowMergeJoin();
+
+    /// HashJoin with Dictionary optimisation
+    String dict_name;
+    String key_name;
+    if (analyzed_join->joined_storage && allowDictJoin(analyzed_join->joined_storage, context, dict_name, key_name))
+    {
+        Names original_names;
+        NamesAndTypesList result_columns;
+        if (analyzed_join->allowDictJoin(key_name, sample_block, original_names, result_columns))
+        {
+            analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(dict_name, original_names, result_columns, context);
+            return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        }
+    }
 
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
         return std::make_shared<HashJoin>(analyzed_join, sample_block);
@@ -550,46 +573,47 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
     SubqueryForSet & subquery_for_join = subqueries_for_sets[join_subquery_id];
 
-    /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
+    /// Use StorageJoin if any.
     if (!subquery_for_join.join)
-        subquery_for_join.join = tryGetStorageJoin(join_element, syntax->analyzed_join, context);
+        subquery_for_join.join = tryGetStorageJoin(syntax->analyzed_join);
 
     if (!subquery_for_join.join)
     {
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
 
+        Names original_right_columns;
         if (!subquery_for_join.source)
         {
-            NamesWithAliases required_columns_with_aliases =
-                analyzedJoin().getRequiredColumns(joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
-            makeSubqueryForJoin(join_element, std::move(required_columns_with_aliases), subquery_for_join);
+            NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
+                joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
+            for (auto & pr : required_columns_with_aliases)
+                original_right_columns.push_back(pr.first);
+
+            /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
+                * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
+                *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
+                * - this function shows the expression JOIN _data1.
+                */
+            auto interpreter = interpretSubquery(join_element.table_expression, context, original_right_columns, query_options);
+
+            subquery_for_join.makeSource(interpreter, std::move(required_columns_with_aliases));
         }
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block);
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
+
+        /// Do not make subquery for join over dictionary.
+        if (syntax->analyzed_join->dictionary_reader)
+        {
+            JoinPtr join = subquery_for_join.join;
+            subqueries_for_sets.erase(join_subquery_id);
+            return join;
+        }
     }
 
     return subquery_for_join.join;
-}
-
-void SelectQueryExpressionAnalyzer::makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element,
-                                                        NamesWithAliases && required_columns_with_aliases,
-                                                        SubqueryForSet & subquery_for_set) const
-{
-    /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
-        * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
-        *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
-        * - this function shows the expression JOIN _data1.
-        */
-    Names original_columns;
-    for (auto & pr : required_columns_with_aliases)
-        original_columns.push_back(pr.first);
-
-    auto interpreter = interpretSubquery(join_element.table_expression, context, original_columns, query_options);
-
-    subquery_for_set.makeSource(interpreter, std::move(required_columns_with_aliases));
 }
 
 bool SelectQueryExpressionAnalyzer::appendPrewhere(
@@ -854,7 +878,34 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
-            result_columns.emplace_back(ast->getColumnName(), result_name);
+            std::string source_name = ast->getColumnName();
+
+            /*
+             * For temporary columns created by ExpressionAnalyzer for literals,
+             * use the correct source column. Using the default display name
+             * returned by getColumnName is not enough, and we have to use the
+             * column id set by EA. In principle, this logic applies to all kinds
+             * of columns, not only literals. Literals are especially problematic
+             * for two reasons:
+             * 1) confusing different literal columns leads to weird side
+             *    effects (see 01101_literal_columns_clash);
+             * 2) the disambiguation mechanism in SyntaxAnalyzer, that, among
+             *    other things, creates unique aliases for columns with same
+             *    names from different tables, is applied before these temporary
+             *    columns are created by ExpressionAnalyzer.
+             * Similar problems should also manifest for function columns, which
+             * are likewise created at a later stage by EA.
+             * In general, we need to have explicit separation between display
+             * names and identifiers for columns. This code is a workaround for
+             * a particular subclass of problems, and not a proper solution.
+             */
+            if (const auto * as_literal = ast->as<ASTLiteral>())
+            {
+                source_name = as_literal->unique_column_name;
+                assert(!source_name.empty());
+            }
+
+            result_columns.emplace_back(source_name, result_name);
             step.required_output.push_back(result_columns.back().second);
         }
     }
@@ -963,13 +1014,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
+        chain.finalize();
+
         if (!finalized)
         {
-            chain.finalize();
             finalize(chain, context, where_step_num);
-            chain.clear();
+            finalized = true;
         }
-        finalized = true;
+
+        chain.clear();
     };
 
     {
@@ -1133,7 +1186,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, co
         remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
 }
 
-void ExpressionAnalysisResult::removeExtraColumns()
+void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
         filter_info->actions->prependProjectInput();
@@ -1143,7 +1196,7 @@ void ExpressionAnalysisResult::removeExtraColumns()
         before_having->prependProjectInput();
 }
 
-void ExpressionAnalysisResult::checkActions()
+void ExpressionAnalysisResult::checkActions() const
 {
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (hasPrewhere())

@@ -1,33 +1,26 @@
 #include "ColumnInfoHandler.h"
-#include "getIdentifierQuote.h"
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
-#if USE_POCO_SQLODBC
-#include <Poco/SQL/ODBC/ODBCException.h>
-#include <Poco/SQL/ODBC/SessionImpl.h>
-#include <Poco/SQL/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
-#endif
-#if USE_POCO_DATAODBC
-#include <Poco/Data/ODBC/ODBCException.h>
-#include <Poco/Data/ODBC/SessionImpl.h>
-#include <Poco/Data/ODBC/Utility.h>
-#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
-#endif
+#if USE_ODBC
 
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
-#include <Poco/NumberParser.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/parseQuery.h>
-#include <common/logger_useful.h>
-#include <ext/scope_guard.h>
-#include "validateODBCConnectionString.h"
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <IO/WriteBufferFromHTTPServerResponse.h>
+#    include <IO/WriteHelpers.h>
+#    include <Parsers/ParserQueryWithOutput.h>
+#    include <Parsers/parseQuery.h>
+#    include <Poco/Data/ODBC/ODBCException.h>
+#    include <Poco/Data/ODBC/SessionImpl.h>
+#    include <Poco/Data/ODBC/Utility.h>
+#    include <Poco/Net/HTMLForm.h>
+#    include <Poco/Net/HTTPServerRequest.h>
+#    include <Poco/Net/HTTPServerResponse.h>
+#    include <Poco/NumberParser.h>
+#    include <common/logger_useful.h>
+#    include <ext/scope_guard.h>
+#    include "getIdentifierQuote.h"
+#    include "validateODBCConnectionString.h"
+
+#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 namespace DB
 {
@@ -120,12 +113,14 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
 
+        const auto & context_settings = context.getSettingsRef();
+
         /// TODO Why not do SQLColumns instead?
         std::string name = schema_name.empty() ? table_name : schema_name + "." + table_name;
         std::stringstream ss;
         std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
         ParserQueryWithOutput parser;
-        ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+        ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", context_settings.max_query_size, context_settings.max_parser_depth);
 
         IAST::FormatSettings settings(ss, true);
         settings.always_quote_identifiers = true;
@@ -187,5 +182,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         tryLogCurrentException(log);
     }
 }
+
 }
+
 #endif

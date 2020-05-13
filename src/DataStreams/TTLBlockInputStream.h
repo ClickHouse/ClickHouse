@@ -45,8 +45,9 @@ private:
 
     size_t rows_removed = 0;
     Logger * log;
-    DateLUTImpl date_lut;
+    const DateLUTImpl & date_lut;
 
+    /// TODO rewrite defaults logic to evaluteMissingDefaults
     std::unordered_map<String, String> defaults_result_column;
     ExpressionActionsPtr defaults_expression;
 
@@ -62,7 +63,7 @@ private:
     void updateMovesTTL(Block & block);
 
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
-    bool isTTLExpired(time_t ttl);
+    bool isTTLExpired(time_t ttl) const;
 };
 
 }

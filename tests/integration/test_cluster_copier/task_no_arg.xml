@@ -32,7 +32,7 @@
         <cluster_push>default_cluster</cluster_push>
         <database_push>default</database_push>
         <table_push>copier_test1_1</table_push>
-        <engine>ENGINE = MergeTree PARTITION BY date ORDER BY date</engine>
+        <engine>ENGINE = MergeTree PARTITION BY date ORDER BY (date, sipHash64(date)) SAMPLE BY sipHash64(date)</engine>
         <sharding_key>rand()</sharding_key>
       </table_crm_fin_account>
     </tables>

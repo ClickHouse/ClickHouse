@@ -27,7 +27,7 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
@@ -194,7 +194,7 @@ try
 
     auto cur_path = Poco::Path().absolute().toString();
     auto disk = std::make_shared<DiskLocal>("tmp", cur_path, 0);
-    auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
+    auto tmp_volume = std::make_shared<VolumeJBOD>("tmp", std::vector<DiskPtr>{disk}, 0);
 
     auto execute_one_stream = [&](String msg, size_t num_threads, bool two_level, bool external)
     {

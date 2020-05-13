@@ -462,7 +462,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens);
+    IParser::Pos token_iterator(tokens, 0);
 
     Expected expected;
     ASTPtr codec_ast;
@@ -470,7 +470,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 
     parser.parse(token_iterator, codec_ast, expected);
 
-    return CompressionCodecFactory::instance().get(codec_ast, data_type);
+    return CompressionCodecFactory::instance().get(codec_ast, data_type, false);
 }
 
 template <typename Timer>

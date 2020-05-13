@@ -5,7 +5,7 @@ toc_priority: 29
 toc_title: Vekiller
 ---
 
-# Üçüncü taraf geliştiricilerin Proxy sunucuları {#proxy-servers-from-third-party-developers}
+# Üçüncü Taraf geliştiricilerin Proxy sunucuları {#proxy-servers-from-third-party-developers}
 
 ## chproxy {#chproxy}
 

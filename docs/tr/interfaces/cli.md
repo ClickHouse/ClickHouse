@@ -5,11 +5,11 @@ toc_priority: 17
 toc_title: "Komut Sat\u0131r\u0131 \u0130stemcisi"
 ---
 
-# Komut satırı istemcisi {#command-line-client}
+# Komut satırı Istemcisi {#command-line-client}
 
 ClickHouse yerel bir komut satırı istemcisi sağlar: `clickhouse-client`. İstemci komut satırı seçeneklerini ve yapılandırma dosyalarını destekler. Daha fazla bilgi için, bkz. [Yapılandırma](#interfaces_cli_configuration).
 
-[Yüklemek](../getting_started/index.md) ıt from the `clickhouse-client` paketleyin ve komutla çalıştırın `clickhouse-client`.
+[Yüklemek](../getting-started/index.md) ıt from the `clickhouse-client` paketleyin ve komutla çalıştırın `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -43,7 +43,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 
 Toplu iş modunda, varsayılan veri biçimi TabSeparated. Sorgunun biçim yan tümcesinde biçimi ayarlayabilirsiniz.
 
-Varsayılan olarak, yalnızca tek bir sorguyu toplu iş modunda işleyebilirsiniz. Birden çok sorgu yapmak için bir “script,” kullan... `--multiquery` parametre. Bu, INSERT dışındaki tüm sorgular için çalışır. Sorgu sonuçları, ek ayırıcılar olmadan ardışık olarak çıktılanır. Benzer şekilde, çok sayıda sorgu işlemek için, çalıştırabilirsiniz ‘clickhouse-client’ her sorgu için. Başlatmak için onlarca milisaniye sürebilir unutmayın ‘clickhouse-client’ program.
+Varsayılan olarak, yalnızca tek bir sorguyu toplu iş modunda işleyebilirsiniz. Birden çok sorgu yapmak için bir “script,” kullan… `--multiquery` parametre. Bu, INSERT dışındaki tüm sorgular için çalışır. Sorgu sonuçları, ek ayırıcılar olmadan ardışık olarak çıktılanır. Benzer şekilde, çok sayıda sorgu işlemek için, çalıştırabilirsiniz ‘clickhouse-client’ her sorgu için. Başlatmak için onlarca milisaniye sürebilir unutmayın ‘clickhouse-client’ program.
 
 Etkileşimli modda, sorguları girebileceğiniz bir komut satırı alırsınız.
 
@@ -72,7 +72,7 @@ Ctrl + C tuşlarına basarak uzun bir sorguyu iptal edebilirsiniz. ancak, sunucu
 
 Komut satırı istemcisi, sorgulamak için dış verileri (dış geçici tablolar) geçirmenize izin verir. Daha fazla bilgi için bölüme bakın “External data for query processing”.
 
-### Parametrelerle sorgular {#cli-queries-with-parameters}
+### Parametrelerle Sorgular {#cli-queries-with-parameters}
 
 Parametrelerle bir sorgu oluşturabilir ve istemci uygulamasından onlara değerler aktarabilirsiniz. Bu, istemci tarafında belirli dinamik değerlerle biçimlendirme sorgusunu önlemeye izin verir. Mesela:
 
@@ -89,7 +89,7 @@ Bir sorguyu her zamanki gibi biçimlendirin, ardından uygulama parametrelerinde
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Veri türü](../sql_reference/data_types/index.md) app parametre değeri. Örneğin, aşağıdaki gibi bir veri yapısı `(integer, ('string', integer))` olabilir var `Tuple(UInt8, Tuple(String, UInt8))` veri türü (başka birini de kullanabilirsiniz [tamsayı](../sql_reference/data_types/int_uint.md) türler).
+-   `data type` — [Veri türü](../sql-reference/data-types/index.md) app parametre değeri. Örneğin, aşağıdaki gibi bir veri yapısı `(integer, ('string', integer))` olabilir var `Tuple(UInt8, Tuple(String, UInt8))` veri türü (başka birini de kullanabilirsiniz [tamsayı](../sql-reference/data-types/int-uint.md) türler).
 
 #### Örnek {#example}
 

@@ -12,7 +12,7 @@ machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 
 [سرویس مدیریت یاندکس برای کلیک](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) ویژگی های کلیدی زیر را فراهم می کند:
 
--   خدمات باغ وحش به طور کامل مدیریت برای [تکرار کلیک](../engines/table_engines/mergetree_family/replication.md)
+-   خدمات باغ وحش به طور کامل مدیریت برای [تکرار کلیک](../engines/table-engines/mergetree-family/replication.md)
 -   های متعدد ذخیره سازی انتخاب نوع
 -   کپی در مناطق مختلف در دسترس بودن
 -   رمزگذاری و جداسازی

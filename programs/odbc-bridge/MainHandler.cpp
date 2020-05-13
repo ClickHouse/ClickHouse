@@ -144,7 +144,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
             auto pool = getPool(connection_string);
             ReadBufferFromIStream read_buf(request.stream());
-            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block, *context, max_block_size);
+            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
             ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
@@ -171,7 +171,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
         try
         {
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, *context);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);

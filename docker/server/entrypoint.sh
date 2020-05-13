@@ -35,7 +35,10 @@ LOG_DIR="$(dirname $LOG_PATH || true)"
 ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=logger.errorlog || true)"
 ERROR_LOG_DIR="$(dirname $ERROR_LOG_PATH || true)"
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=format_schema_path || true)"
+
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
+CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
+CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
@@ -61,9 +64,31 @@ do
     fi
 done
 
+# if clickhouse user is defined - create it (user "default" already exists out of box)
+if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
+    echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
+    cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
+    <yandex>
+      <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
+      <users>
+        <!-- Remove default user -->
+        <default remove="remove">
+        </default>
 
+        <${CLICKHOUSE_USER}>
+          <profile>default</profile>
+          <networks>
+            <ip>::/0</ip>
+          </networks>
+          <password>${CLICKHOUSE_PASSWORD}</password>
+          <quota>default</quota>
+        </${CLICKHOUSE_USER}>
+      </users>
+    </yandex>
+EOT
+fi
 
-if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
+if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
     pid="$!"
 
@@ -81,6 +106,13 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
     clickhouseclient=( clickhouse-client --multiquery -u $CLICKHOUSE_USER $WITH_PASSWORD )
 
     echo
+
+    # create default database, if defined
+    if [ -n "$CLICKHOUSE_DB" ]; then
+        echo "$0: create database '$CLICKHOUSE_DB'"
+        "${clickhouseclient[@]}" "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
+    fi
+
     for f in /docker-entrypoint-initdb.d/*; do
         case "$f" in
             *.sh)

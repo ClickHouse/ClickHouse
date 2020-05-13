@@ -35,7 +35,6 @@ public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionMultiIf>(); }
 
-public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }

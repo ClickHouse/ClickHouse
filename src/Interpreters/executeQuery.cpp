@@ -80,7 +80,7 @@ static String prepareQueryForLogging(const String & query, Context & context)
 
     // wiping sensitive data before cropping query by log_queries_cut_to_length,
     // otherwise something like credit card without last digit can go to log
-    if (auto masker = SensitiveDataMasker::getInstance())
+    if (auto * masker = SensitiveDataMasker::getInstance())
     {
         auto matches = masker->wipeSensitiveData(res);
         if (matches > 0)
@@ -180,6 +180,14 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
             query_log->add(elem);
 }
 
+static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
+{
+    if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
+    {
+        if (ast_insert_into->watch)
+            context.setSetting("output_format_enable_streaming", 1);
+    }
+}
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
@@ -245,6 +253,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         throw;
     }
+
+    setQuerySpecificSettings(ast, context);
 
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
@@ -332,7 +342,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else
             res = interpreter->execute();
 
-        if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+        if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
             auto table_id = insert_interpreter->getDatabaseTable();
@@ -389,7 +399,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             if (res.out)
             {
-                if (auto stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+                if (auto * stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
                 {
                     stream->setProcessListElement(context.getProcessListElement());
                 }
@@ -464,7 +474,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
-                    if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
+                    if (const auto * counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().read_rows;
@@ -689,19 +699,7 @@ void executeQuery(
             if (set_result_details)
                 set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
-            if (ast->as<ASTWatchQuery>())
-            {
-                /// For Watch query, flush data if block is empty (to send data to client).
-                auto flush_callback = [&out](const Block & block)
-                {
-                    if (block.rows() == 0)
-                        out->flush();
-                };
-
-                copyData(*streams.in, *out, [](){ return false; }, std::move(flush_callback));
-            }
-            else
-                copyData(*streams.in, *out);
+            copyData(*streams.in, *out, [](){ return false; }, [&out](const Block &) { out->flush(); });
         }
 
         if (pipeline.initialized())
@@ -733,6 +731,7 @@ void executeQuery(
             });
 
             auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+            out->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();

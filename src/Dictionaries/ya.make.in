@@ -1,0 +1,18 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/poco/Data
+    contrib/libs/poco/Data/ODBC
+    contrib/libs/poco/MongoDB
+    contrib/libs/poco/Redis
+    contrib/libs/sparsehash
+)
+
+NO_COMPILER_WARNINGS()
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F Trie | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

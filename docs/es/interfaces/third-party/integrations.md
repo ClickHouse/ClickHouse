@@ -5,12 +5,12 @@ toc_priority: 27
 toc_title: "Integraci\xF3n"
 ---
 
-# Bibliotecas de integración de desarrolladores externos {#integration-libraries-from-third-party-developers}
+# Bibliotecas De integración De Desarrolladores Externos {#integration-libraries-from-third-party-developers}
 
 !!! warning "Descargo"
     Yandex hace **ni** mantenga las herramientas y bibliotecas que se enumeran a continuación y no haya realizado ninguna prueba extensa para garantizar su calidad.
 
-## Productos de infraestructura {#infrastructure-products}
+## Productos De Infraestructura {#infrastructure-products}
 
 -   Sistemas de gestión de bases de datos relacionales
     -   [MySQL](https://www.mysql.com)
@@ -26,7 +26,10 @@ toc_title: "Integraci\xF3n"
         -   [Método de codificación de datos:](https://github.com/zlzforever/ClickHouseMigrator)
 -   Colas de mensajes
     -   [Kafka](https://kafka.apache.org)
-        -   [Método de codificación de datos:](https://github.com/housepower/clickhouse_sinker) (utilizar [Ir cliente](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (usos [Go client](https://github.com/ClickHouse/clickhouse-go/))
+-   Procesamiento de flujo
+    -   [Flink](https://flink.apache.org)
+        -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Almacenamiento de objetos
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [Haga clic en el botón de copia de seguridad](https://github.com/AlexAkulov/clickhouse-backup)
@@ -42,7 +45,7 @@ toc_title: "Integraci\xF3n"
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [de carbono-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [Sistema abierto.](https://github.com/lomik/graphite-clickhouse)
-        -   [Grafito-ch-optimizador](https://github.com/innogames/graphite-ch-optimizer) - optimiza las particiones [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) reglas de [Configuración de rollup](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) podría ser aplicado
+        -   [Grafito-ch-optimizador](https://github.com/innogames/graphite-ch-optimizer) - optimiza las particiones [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) reglas de [Configuración de rollup](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) podría ser aplicado
     -   [Grafana](https://grafana.com/)
         -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometeo](https://prometheus.io/)
@@ -67,19 +70,22 @@ toc_title: "Integraci\xF3n"
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [Para que usted pueda encontrar](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
-## Programación de ecosistemas de lenguaje {#programming-language-ecosystems}
+## Programación De Ecosistemas De Lenguaje {#programming-language-ecosystems}
 
 -   Película
     -   [SQLAlchemy](https://www.sqlalchemy.org)
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (utilizar [InformaciónSistema abierto.](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [Pandahouse](https://github.com/kszucs/pandahouse)
+-   PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [Dplyr](https://db.rstudio.com/dplyr/)
         -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse) (utilizar [Bienvenidos](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [Sistema abierto.](https://github.com/jaykelin/clickhouse-hdfs-loader) (utilizar [JDBC](../../sql_reference/table_functions/jdbc.md))
+        -   [Sistema abierto.](https://github.com/jaykelin/clickhouse-hdfs-loader) (utilizar [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Ciudad
     -   [Akka](https://akka.io)
         -   [Sistema abierto.](https://github.com/crobox/clickhouse-scala-client)

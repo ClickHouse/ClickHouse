@@ -13,7 +13,7 @@
             </hdd>
         </disks>
         <policies>
-            <default>
+            <s3>
                 <volumes>
                     <main>
                         <disk>s3</disk>
@@ -22,7 +22,7 @@
                         <disk>hdd</disk>
                     </external>
                 </volumes>
-            </default>
+            </s3>
         </policies>
     </storage_configuration>
 </yandex>

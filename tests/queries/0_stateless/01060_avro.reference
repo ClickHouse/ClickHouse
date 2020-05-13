@@ -19,6 +19,26 @@
 = references
 "a1","c1"
 "a2","c2"
+= nested
+1,"b1",2.2,2.3,"c3"
+2.3,"b1",1,"c3"
+not compatible
+= nested_complex
+\N
+"b2_str"
+"b2_str"
+"default"
+"b2_str"
+"b2_str"
+\N
+"b2_str"
+"b2_str"
+"b3_str",\N
+\N,\N
+\N,3.1
+\N
+"level2_b2_str"
+\N
 = compression
 1000
 1000

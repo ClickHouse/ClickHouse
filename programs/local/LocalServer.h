@@ -41,6 +41,7 @@ private:
     void setupUsers();
 
 protected:
+    SharedContextHolder shared_context;
     std::unique_ptr<Context> context;
 
     /// Settings specified via command line args

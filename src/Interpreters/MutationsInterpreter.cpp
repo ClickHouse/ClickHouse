@@ -46,7 +46,6 @@ public:
         std::optional<String> nondeterministic_function_name;
     };
 
-public:
     static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & child)
     {
         return child != nullptr;
