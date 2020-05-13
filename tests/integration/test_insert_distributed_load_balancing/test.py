@@ -51,6 +51,11 @@ def test_prefer_localhost_replica_1_load_balancing_in_order():
     assert int(n1.query('SELECT count() FROM data')) == 10
     assert int(n2.query('SELECT count() FROM data')) == 0
 
+def test_prefer_localhost_replica_0_load_balancing_nearest_hostname():
+    insert_data(load_balancing='nearest_hostname', prefer_localhost_replica=0)
+    assert int(n1.query('SELECT count() FROM data')) == 10
+    assert int(n2.query('SELECT count() FROM data')) == 0
+
 def test_prefer_localhost_replica_0_load_balancing_in_order():
     insert_data(load_balancing='in_order', prefer_localhost_replica=0)
     assert int(n1.query('SELECT count() FROM data')) == 0
