@@ -128,6 +128,9 @@ void StorageMergeTree::shutdown()
     if (merging_mutating_task_handle)
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
+    if (recompressing_task_handle)
+        global_context.getBackgroundLowPriorityPool().removeTask(recompressing_task_handle);
+
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 }
@@ -799,6 +802,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::recompressMutateTask()
     try
     {
         {
+            auto lock_structure = lockStructureForShare(false, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
             if (recompressOldParts())
             {
                 return BackgroundProcessingPoolTaskResult::SUCCESS;

@@ -1158,7 +1158,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
 {
     DataPartsVector parts;
 
-    std::unique_lock lock(grab_old_parts_mutex, std::defer_lock);
+    std::unique_lock lock(grab_old_modified_parts_mutex, std::defer_lock);
     if (!lock.try_lock())
         return parts;
 

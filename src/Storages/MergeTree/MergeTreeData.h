@@ -854,6 +854,8 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
+    /// grabOldModifiedParts
+    std::mutex grab_old_modified_parts_mutex;
 
     void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
