@@ -10,29 +10,28 @@
 #endif
 
 /**
- * Represents IEEE754-2008 Half-precision floating-point format (or float16)
+ * Represents IEEE754 Brain Floating Point floating-point format (or bfloat16)
  */
 namespace DB
 {
 
-static constexpr const unsigned short FLOAT16_NAN = 0x7c01;
+static constexpr const unsigned short BFLOAT16_NAN = 0x7c01;
 
-struct Float16 {
+struct BFloat16 {
     unsigned short value;
 
-    Float16() = default;
-    explicit Float16(const unsigned short value_) : value(value_) { }
+    BFloat16() = default;
+    explicit BFloat16(const unsigned short value_) : value(value_) { }
 
-    explicit Float16(const float fl) {
+    explicit BFloat16(const float fl) {
         unsigned int fl32;
         unsigned short fl16;
 
         std::memcpy(&fl32, &fl, sizeof(unsigned int));
-        fl16 = (fl32 >> 31) << 5;
+        fl16 = (fl32 >> 31) << 8;
         unsigned short exponent = (fl32 >> 23) & 0xff;
-        exponent = (exponent - 0x70) & ((unsigned int)((int)(0x70 - exponent) >> 4) >> 27);
         fl16 = (fl16 | exponent) << 10;
-        fl16 |= (fl32 >> 13) & 0x3ff;
+        fl16 |= (fl32 >> 16) & 0x7f;
         value = fl16;
     }
 
@@ -53,11 +52,11 @@ struct Float16 {
     }
 
     bool isInfinity() const {
-        return !((bool)(value << 6)) && (((value >> 10) & 0x1f) == 0x1f);
+        return !((bool)(value << 9)) && (((value >> 7) & 0xff) == 0xff);
     }
 
     bool isNan() const {
-        return ((bool)(value << 6)) && (((value >> 10) & 0x1f) == 0x1f);
+        return ((bool)(value << 9)) && (((value >> 7) & 0xff) == 0xff);
     }
 
 
@@ -66,56 +65,51 @@ struct Float16 {
     float asFloat() const {
         float fl;
         unsigned int fl32 = (value >> 15) << 8;
-        unsigned int exponent = (unsigned int)((value >> 11) & 0x1f);
-        if (exponent == (unsigned short) 0x1f) {
-            exponent = (unsigned int) 0x100;
-        } else {
-            exponent = (0x7f - (exponent - 0xf));
-        }
+        unsigned int exponent = (unsigned int)((value >> 7) & 0xff);
         fl32 = (fl32 | exponent) << 22;
-        fl32 |= (value & 0x3ff) << 13;
+        fl32 |= (value & 0x7f) << 16;
         std::memcpy( &fl, &fl32, sizeof( float ) );
         return fl;
     }
 
-    bool inline operator== (const Float16 fl) const { return (sign() == fl.sign()) && (withoutSign() == fl.withoutSign()); }
-    bool inline operator!= (const Float16 fl) const { return (sign() != fl.sign()) || (withoutSign() != fl.withoutSign()); }
-    bool inline operator<  (const Float16 fl) const {
+    bool inline operator== (const BFloat16 fl) const { return (sign() == fl.sign()) && (withoutSign() == fl.withoutSign()); }
+    bool inline operator!= (const BFloat16 fl) const { return (sign() != fl.sign()) || (withoutSign() != fl.withoutSign()); }
+    bool inline operator<  (const BFloat16 fl) const {
         return asFloat() < fl.asFloat();
     }
-    bool inline operator<= (const Float16 fl) const {
+    bool inline operator<= (const BFloat16 fl) const {
         return asFloat() <= fl.asFloat();
     }
-    bool inline operator>  (const Float16 fl) const {
+    bool inline operator>  (const BFloat16 fl) const {
         return asFloat() > fl.asFloat();
     }
-    bool inline operator>= (const Float16 fl) const {
+    bool inline operator>= (const BFloat16 fl) const {
         return asFloat() >= fl.asFloat();
     }
 
-    Float16 inline operator+(const Float16 fl) const {
+    BFloat16 inline operator+(const BFloat16 fl) const {
         if (isNull()) {
-            return Float16(fl.getValue());
+            return BFloat16(fl.getValue());
         }
         if (fl.isNull()) {
-            return Float16(getValue());
+            return BFloat16(getValue());
         }
-        unsigned short mantissa = value & 0x3ff;
-        unsigned short flMantissa = fl.getValue() & 0x3ff;
-        unsigned short exponent = (value >> 10) & 0x1f;
-        unsigned short flExponent = (fl.getValue() >> 10) & 0x1f;
+        unsigned short mantissa = value & 0x7f;
+        unsigned short flMantissa = fl.getValue() & 0x7f;
+        unsigned short exponent = (value >> 7) & 0xff;
+        unsigned short flExponent = (fl.getValue() >> 7) & 0xff;
         while (exponent != flExponent) {
             if (exponent < flExponent) {
                 exponent++;
                 mantissa = mantissa >> 1;
                 if (!mantissa) {
-                    return Float16(fl.getValue());
+                    return BFloat16(fl.getValue());
                 }
             } else {
                 flExponent++;
                 flMantissa = flMantissa >> 1;
                 if (!flMantissa) {
-                    return Float16(getValue());
+                    return BFloat16(getValue());
                 }
             }
         }
@@ -146,162 +140,166 @@ struct Float16 {
             exponent++;
             if (flExponent - exponent != 1) {
                 // report overflow
-                return Float16(FLOAT16_NAN); 
+                return BFloat16(BFLOAT16_NAN); 
             }
         }
         flExponent = exponent;
-        while (!(bool)(resultingMantissa >> 9)) {
+        while (!(bool)(resultingMantissa >> 6)) {
             exponent--;
             resultingMantissa = resultingMantissa << 1;
             if (flExponent - exponent != 1) {
                 // report underflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
             flExponent--;
         }
-        exponent = (exponent << 10) | resultingMantissa;
+        exponent = (exponent << 7) | resultingMantissa;
         if (resultingSign) {
             exponent |= (0x1 << 16);
         }
-        return Float16(exponent);
+        return BFloat16(exponent);
     }
 
-    Float16 inline operator-(const Float16 fl) const {
-        return Float16(getValue()) + Float16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
+    BFloat16 inline operator-(const BFloat16 fl) const {
+        return BFloat16(getValue()) + BFloat16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
     }
 
-    Float16 inline operator*(const Float16 fl) const {
+    BFloat16 inline operator*(const BFloat16 fl) const {
         if (isNull() || fl.isNull()) {
-            return Float16((unsigned short) 0);
+            return BFloat16((unsigned short) 0);
         }
         unsigned short resultingExponent;
-        unsigned short exponentBias = 0x10;
-        unsigned short exponent = (getValue() >> 10) & 0x1f;
-        unsigned short flExponent = (fl.getValue() >> 10) & 0x1f;
+        unsigned short exponentBias = 0x100;
+        unsigned short exponent = (getValue() >> 7) & 0xff;
+        unsigned short flExponent = (fl.getValue() >> 7) & 0xff;
         if (exponent > exponentBias) {
             resultingExponent = exponent - exponentBias + flExponent;
             if (resultingExponent - flExponent != exponent - exponentBias) {
                 // report overflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
         } else if (flExponent > exponentBias) {
             resultingExponent = flExponent - exponentBias + exponent;
             if (resultingExponent - exponent != flExponent - exponentBias) {
                 // report overflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
         } else {
             resultingExponent = exponent + flExponent - exponentBias;
             if (resultingExponent + exponentBias != exponent + flExponent) {
                 // report underflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
         }
-        unsigned short resultingMantissa = (getValue() & 0x3ff) * (fl.getValue() & 0x3ff);
+        unsigned short resultingMantissa = (getValue() & 0x7f) * (fl.getValue() & 0x7f);
         unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
-        while (!(bool)(resultingMantissa >> 9)) {
+        while (!(bool)(resultingMantissa >> 6)) {
             resultingExponent--;
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
                 // report underflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
             resultingExponentCopy--;
         }
-        unsigned short resultValue = signMask | (resultingExponent << 10) | resultingMantissa;
-        return Float16(resultValue);
+        unsigned short resultValue = signMask | (resultingExponent << 7) | resultingMantissa;
+        return BFloat16(resultValue);
     }
 
-    Float16 inline operator/(const Float16 fl) const {
+    BFloat16 inline operator/(const BFloat16 fl) const {
         if (isNull()) {
-            return Float16((unsigned short) 0);
+            return BFloat16((unsigned short) 0);
         }
         if (fl.isNull()) {
-            return Float16(FLOAT16_NAN);
+            return BFloat16(BFLOAT16_NAN);
         }
         unsigned short resultingExponent;
-        unsigned short exponentBias = 0x10;
-        unsigned short exponent = (getValue() >> 10) & 0x1f;
-        unsigned short flExponent = (fl.getValue() >> 10) & 0x1f;
+        unsigned short exponentBias = 0x100;
+        unsigned short exponent = (getValue() >> 7) & 0xff;
+        unsigned short flExponent = (fl.getValue() >> 7) & 0xff;
         if (exponent > flExponent) {
             resultingExponent = exponent - flExponent + exponentBias;
             if (resultingExponent - exponentBias != exponent - flExponent) {
                 // report overflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
         } else if (exponentBias > flExponent) {
             resultingExponent = exponentBias - flExponent + exponent;
             if (resultingExponent - exponent != exponentBias - flExponent) {
                 // report overflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
         } else {
             resultingExponent = exponent + exponentBias - flExponent;
             if (resultingExponent + flExponent != exponent + exponentBias) {
                 // report underflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
         }
-        unsigned short resultingMantissa = (getValue() & 0x3ff) / (fl.getValue() & 0x3ff);
+        unsigned short resultingMantissa = (getValue() & 0x7f) / (fl.getValue() & 0x7f);
         unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
-        while (!(bool)(resultingMantissa >> 9)) {
+        while (!(bool)(resultingMantissa >> 6)) {
             resultingExponent--;
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
                 // report underflow
-                return Float16(FLOAT16_NAN);
+                return BFloat16(bFLOAT16_NAN);
             }
             resultingExponentCopy--;
         }
-        unsigned short resultValue = signMask | (resultingExponent << 10) | resultingMantissa;
-        return Float16(resultValue);
+        unsigned short resultValue = signMask | (resultingExponent << 7) | resultingMantissa;
+        return BFloat16(resultValue);
     }
 
 
-    template <typename T> bool inline operator== (const T rhs) const { return *this == Float16(rhs); }
-    template <typename T> bool inline operator!= (const T rhs) const { return *this != Float16(rhs); }
-    template <typename T> bool inline operator>= (const T rhs) const { return *this >= Float16(rhs); }
-    template <typename T> bool inline operator>  (const T rhs) const { return *this > Float16(rhs); }
-    template <typename T> bool inline operator<= (const T rhs) const { return *this <= Float16(rhs); }
-    template <typename T> bool inline operator<  (const T rhs) const { return *this <  Float16(rhs); }
+    template <typename T> bool inline operator== (const T rhs) const { return *this == BFloat16(rhs); }
+    template <typename T> bool inline operator!= (const T rhs) const { return *this != BFloat16(rhs); }
+    template <typename T> bool inline operator>= (const T rhs) const { return *this >= BFloat16(rhs); }
+    template <typename T> bool inline operator>  (const T rhs) const { return *this > BFloat16(rhs); }
+    template <typename T> bool inline operator<= (const T rhs) const { return *this <= BFloat16(rhs); }
+    template <typename T> bool inline operator<  (const T rhs) const { return *this <  BFloat16(rhs); }
     template <typename T> explicit operator T() const { return static_cast<T>(value); }
 };
 
-template <typename T> bool inline operator== (T a, const Float16 b) { return Float16(a) == b; }
-template <typename T> bool inline operator!= (T a, const Float16 b) { return Float16(a) != b; }
-template <typename T> bool inline operator>= (T a, const Float16 b) { return Float16(a) >= b; }
-template <typename T> bool inline operator>  (T a, const Float16 b) { return Float16(a) > b; }
-template <typename T> bool inline operator<= (T a, const Float16 b) { return Float16(a) <= b; }
-template <typename T> bool inline operator<  (T a, const Float16 b) { return Float16(a) < b; }
-template <typename T> Float16 inline operator+ (T a, const Float16 b) { return Float16(a) + b; }
-template <typename T> Float16 inline operator- (T a, const Float16 b) { return Float16(a) - b; }
-template <typename T> Float16 inline operator* (T a, const Float16 b) { return Float16(a) * b; }
-template <typename T> Float16 inline operator/ (T a, const Float16 b) { return Float16(a) / b; }
+template <typename T> bool inline operator== (T a, const BFloat16 b) { return BFloat16(a) == b; }
+template <typename T> bool inline operator!= (T a, const BFloat16 b) { return BFloat16(a) != b; }
+template <typename T> bool inline operator>= (T a, const BFloat16 b) { return BFloat16(a) >= b; }
+template <typename T> bool inline operator>  (T a, const BFloat16 b) { return BFloat16(a) > b; }
+template <typename T> bool inline operator<= (T a, const BFloat16 b) { return BFloat16(a) <= b; }
+template <typename T> bool inline operator<  (T a, const BFloat16 b) { return BFloat16(a) < b; }
+template <typename T> BFloat16 inline operator+ (T a, const BFloat16 b) { return BFloat16(a) + b; }
+template <typename T> BFloat16 inline operator- (T a, const BFloat16 b) { return BFloat16(a) - b; }
+template <typename T> BFloat16 inline operator* (T a, const BFloat16 b) { return BFloat16(a) * b; }
+template <typename T> BFloat16 inline operator/ (T a, const BFloat16 b) { return BFloat16(a) / b; }
 
-template <> inline constexpr bool IsNumber<Float16> = true;
-template <> struct TypeName<Float16> { static const char * get() { return "Float16"; } };
-template <> struct TypeId<Float16> { static constexpr const TypeIndex value = TypeIndex::Float16; };
+template <> inline constexpr bool IsNumber<BFloat16> = true;
+template <> struct TypeName<BFloat16> { static const char * get() { return "BFloat16"; } };
+template <> struct TypeId<BFloat16> { static constexpr const TypeIndex value = TypeIndex::BFloat16; };
 
 }
 
-template <> struct is_signed<DB::Float16>
+namespace std
+{
+
+template <> struct is_signed<DB::BFloat16>
 {
     static constexpr bool value = false;
 };
 
-template <> struct is_unsigned<DB::Float16>
+template <> struct is_unsigned<DB::BFloat16>
 {
     static constexpr bool value = true;
 };
 
-template <> struct is_integral<DB::Float16>
+template <> struct is_integral<DB::BFloat16>
 {
     static constexpr bool value = true;
 };
 
-template <> struct is_arithmetic<DB::Float16>
+template <> struct is_arithmetic<DB::BFloat16>
 {
     static constexpr bool value = false;
 };
+}
