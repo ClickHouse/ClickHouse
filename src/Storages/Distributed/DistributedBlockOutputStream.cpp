@@ -167,6 +167,7 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 
 void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
+    const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
     size_t num_shards = shards_info.size();
@@ -180,14 +181,14 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
 
-        /// If hasInternalReplication, than prefer local replica
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
+        /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings.prefer_localhost_replica)
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
             for (size_t replica_index : ext::range(0, replicas.size()))
             {
-                if (!replicas[replica_index].is_local)
+                if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
                 {
                     shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
@@ -198,7 +199,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
             }
         }
 
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
         {
             shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
@@ -531,7 +532,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
-            if (!address.is_local)
+            if (!address.is_local || !settings.prefer_localhost_replica)
                 dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
