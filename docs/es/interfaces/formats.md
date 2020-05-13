@@ -1063,7 +1063,7 @@ Lo mismo que [Avro](#data-format-avro)
 
 ### Uso {#usage}
 
-Para verificar rápidamente la resolución del esquema, puede usar [Método de codificación de datos:](https://github.com/edenhill/kafkacat) con [Sistema abierto.](../operations/utilities/clickhouse-local.md):
+Para verificar rápidamente la resolución del esquema, puede usar [Método de codificación de datos:](https://github.com/edenhill/kafkacat) con [Sistema abierto.](../operations/utilities/clickhouse-local.md#clickhouse-local):
 
 ``` bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'

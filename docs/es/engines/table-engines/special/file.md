@@ -69,7 +69,7 @@ SELECT * FROM file_engine_table
 
 ## Uso en ClickHouse-local {#usage-in-clickhouse-local}
 
-En [Sistema abierto.](../../../operations/utilities/clickhouse-local.md) El motor de archivos acepta la ruta del archivo además de `Format`. Los flujos de entrada / salida predeterminados se pueden especificar utilizando nombres numéricos o legibles por humanos como `0` o `stdin`, `1` o `stdout`.
+En [Sistema abierto.](../../../operations/utilities/clickhouse-local.md#clickhouse-local) El motor de archivos acepta la ruta del archivo además de `Format`. Los flujos de entrada / salida predeterminados se pueden especificar utilizando nombres numéricos o legibles por humanos como `0` o `stdin`, `1` o `stdout`.
 **Ejemplo:**
 
 ``` bash
