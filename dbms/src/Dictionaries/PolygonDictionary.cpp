@@ -528,7 +528,7 @@ struct Data
         ids.push_back((ids.empty() ? 0 : ids.back() + new_multi_polygon));
     }
 
-    void addPoint(Float64 x, Float64 y)
+    void addPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y)
     {
         auto & last_polygon = dest.back();
         auto & last_ring = (last_polygon.inners().empty() ? last_polygon.outer() : last_polygon.inners().back());
@@ -536,7 +536,7 @@ struct Data
     }
 };
 
-void addNewPoint(Float64 x, Float64 y, Data & data, Offset & offset)
+void addNewPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y, Data & data, Offset & offset)
 {
     if (offset.atLastPointOfRing())
     {

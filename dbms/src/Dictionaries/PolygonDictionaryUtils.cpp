@@ -22,14 +22,14 @@ polygon_ids(std::move(polygon_ids_))
     });
 }
 
-const FinalCell * FinalCell::find(Float64, Float64) const
+const FinalCell * FinalCell::find(Coord, Coord) const
 {
     return this;
 }
 
 DividedCell::DividedCell(std::vector<std::unique_ptr<ICell>> children_): children(std::move(children_)) {}
 
-const FinalCell * DividedCell::find(Float64 x, Float64 y) const
+const FinalCell * DividedCell::find(Coord x, Coord y) const
 {
     auto x_ratio = x * GridRoot::kSplit;
     auto y_ratio = y * GridRoot::kSplit;
@@ -47,7 +47,7 @@ kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_
     root = makeCell(min_x, min_y, max_x, max_y, order);
 }
 
-const FinalCell * GridRoot::find(Float64 x, Float64 y) const
+const FinalCell * GridRoot::find(Coord x, Coord y) const
 {
     if (x < min_x || x >= max_x)
         return nullptr;
@@ -56,7 +56,7 @@ const FinalCell * GridRoot::find(Float64 x, Float64 y) const
     return root->find((x - min_x) / (max_x - min_x), (y - min_y) / (max_y - min_y));
 }
 
-std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current_min_y, Float64 current_max_x, Float64 current_max_y, std::vector<size_t> possible_ids, size_t depth)
+std::unique_ptr<ICell> GridRoot::makeCell(Coord current_min_x, Coord current_min_y, Coord current_max_x, Coord current_max_y, std::vector<size_t> possible_ids, size_t depth)
 {
     auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
     possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
@@ -72,7 +72,7 @@ std::unique_ptr<ICell> GridRoot::makeCell(Float64 current_min_x, Float64 current
     std::vector<ThreadFromGlobalPool> threads;
     for (size_t i = 0; i < kSplit; current_min_x += x_shift, ++i)
     {
-        auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Float64 x, Float64 y)
+        auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Coord x, Coord y)
         {
             for (size_t j = 0; j < kSplit; y += y_shift, ++j)
             {
@@ -114,7 +114,7 @@ void GridRoot::setBoundingBox()
 
 BucketsPolygonIndex::BucketsPolygonIndex(
     const std::vector<Polygon> & polygons,
-    const std::vector<Float64> & splits)
+    const std::vector<Coord> & splits)
     : log(&Logger::get("BucketsPolygonIndex")),
       sorted_x(splits)
 {
@@ -129,9 +129,9 @@ BucketsPolygonIndex::BucketsPolygonIndex(
     indexBuild(polygons);
 }
 
-std::vector<Float64> BucketsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
+std::vector<Coord> BucketsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
 {
-    std::vector<Float64> all_x;
+    std::vector<Coord> all_x;
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         for (auto & point : polygons[i].outer())
@@ -203,8 +203,8 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     size_t edges_it = 0;
     for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
     {
-        const Float64 lx = this->sorted_x[l];
-        const Float64 rx = this->sorted_x[r];
+        const Coord lx = this->sorted_x[l];
+        const Coord rx = this->sorted_x[r];
 
         /** removing edges where right_point.x < lx */
         while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
@@ -347,8 +347,8 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
         return false;
     }
 
-    Float64 x = point.x();
-    Float64 y = point.y();
+    Coord x = point.x();
+    Coord y = point.y();
 
     if (x < this->sorted_x[0] || x > this->sorted_x.back())
     {
@@ -391,7 +391,7 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
                 continue;
             }
 
-            Float64 edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
+            Coord edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
             if (edge_y > y)
             {
                 continue;
@@ -427,9 +427,9 @@ BucketsSinglePolygonIndex::BucketsSinglePolygonIndex(
     indexBuild(polygon);
 }
 
-std::vector<Float64> BucketsSinglePolygonIndex::uniqueX(const Polygon & polygon)
+std::vector<Coord> BucketsSinglePolygonIndex::uniqueX(const Polygon & polygon)
 {
-    std::vector<Float64> all_x;
+    std::vector<Coord> all_x;
 
     for (auto & point : polygon.outer())
     {
@@ -492,8 +492,8 @@ void BucketsSinglePolygonIndex::indexBuild(const Polygon & polygon)
     size_t edges_it = 0;
     for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
     {
-        const Float64 lx = this->sorted_x[l];
-        const Float64 rx = this->sorted_x[r];
+        const Coord lx = this->sorted_x[l];
+        const Coord rx = this->sorted_x[r];
 
         /** removing edges where right_point.x < lx */
         while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
@@ -607,8 +607,8 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
         return false;
     }
 
-    Float64 x = point.x();
-    Float64 y = point.y();
+    Coord x = point.x();
+    Coord y = point.y();
 
     if (x < this->sorted_x[0] || x > this->sorted_x.back())
     {
@@ -644,7 +644,7 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
                 continue;
             }
 
-            Float64 edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
+            Coord edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
             if (edge_y > y)
             {
                 continue;

@@ -15,8 +15,10 @@ namespace DB
 
 namespace bg = boost::geometry;
 
+using Coord = IPolygonDictionary::Coord;
 using Point = IPolygonDictionary::Point;
 using Polygon = IPolygonDictionary::Polygon;
+using Ring = IPolygonDictionary::Ring;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
 class FinalCell;
@@ -25,14 +27,14 @@ class ICell
 {
 public:
     virtual ~ICell() = default;
-    [[nodiscard]] virtual const FinalCell * find(Float64 x, Float64 y) const = 0;
+    [[nodiscard]] virtual const FinalCell * find(Coord x, Coord y) const = 0;
 };
 
 class DividedCell : public ICell
 {
 public:
     explicit DividedCell(std::vector<std::unique_ptr<ICell>> children_);
-    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
+    [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
 
 private:
     std::vector<std::unique_ptr<ICell>> children;
@@ -46,7 +48,7 @@ public:
     std::vector<uint8_t> is_covered_by;
 
 private:
-    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
+    [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
 };
 
 /** A recursively built grid containing information about polygons intersecting each cell.
@@ -63,7 +65,7 @@ public:
     /** Retrieves the cell containing a given point.
      *  A null pointer is returned when the point falls outside the grid.
      */
-    [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
+    [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kSplit = 4;
@@ -71,14 +73,14 @@ public:
 
 private:
     std::unique_ptr<ICell> root = nullptr;
-    Float64 min_x = 0, min_y = 0;
-    Float64 max_x = 0, max_y = 0;
+    Coord min_x = 0, min_y = 0;
+    Coord max_x = 0, max_y = 0;
     const size_t kMinIntersections;
     const size_t kMaxDepth;
 
     const std::vector<Polygon> & polygons;
 
-    std::unique_ptr<ICell> makeCell(Float64 min_x, Float64 min_y, Float64 max_x, Float64 max_y, std::vector<size_t> intersecting_ids, size_t depth = 0);
+    std::unique_ptr<ICell> makeCell(Coord min_x, Coord min_y, Coord max_x, Coord max_y, std::vector<size_t> intersecting_ids, size_t depth = 0);
 
     void setBoundingBox();
 };
@@ -99,7 +101,7 @@ public:
     using Ring = IPolygonDictionary::Ring;
 
     /** Builds an index by splitting all edges with provided sorted x coordinates. */
-    BucketsPolygonIndex(const std::vector<Polygon> & polygons, const std::vector<Float64> & splits);
+    BucketsPolygonIndex(const std::vector<Polygon> & polygons, const std::vector<Coord> & splits);
 
     /** Builds an index by splitting all edges with all points x coordinates. */
     BucketsPolygonIndex(const std::vector<Polygon> & polygons);
@@ -109,7 +111,7 @@ public:
 
 private:
     /** Returns unique x coordinates among all points. */
-    std::vector<Float64> uniqueX(const std::vector<Polygon> & polygons);
+    std::vector<Coord> uniqueX(const std::vector<Polygon> & polygons);
 
     /** Builds indexes described above. */
     void indexBuild(const std::vector<Polygon> & polygons);
@@ -134,7 +136,7 @@ private:
     Poco::Logger * log;
 
     /** Sorted distinct coordinates of all vertexes. */
-    std::vector<Float64> sorted_x;
+    std::vector<Coord> sorted_x;
     std::vector<Edge> all_edges;
 
     /** Edges from all polygons, classified by sorted_x borders.
@@ -163,13 +165,6 @@ private:
 class BucketsSinglePolygonIndex
 {
 public:
-    /** A two-dimensional point in Euclidean coordinates. */
-    using Point = IPolygonDictionary::Point;
-    /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
-    using Polygon = IPolygonDictionary::Polygon;
-    /** A ring in boost used for describing the polygons. */
-    using Ring = IPolygonDictionary::Ring;
-
     /** Builds an index by splitting all edges with all points x coordinates. */
     BucketsSinglePolygonIndex(const Polygon & polygon);
 
@@ -178,7 +173,7 @@ public:
 
 private:
     /** Returns unique x coordinates among all points. */
-    std::vector<Float64> uniqueX(const Polygon & polygon);
+    std::vector<Coord> uniqueX(const Polygon & polygon);
 
     /** Builds indexes described above. */
     void indexBuild(const Polygon & polygon);
@@ -207,7 +202,7 @@ private:
     };
 
     /** Sorted distinct coordinates of all vertexes. */
-    std::vector<Float64> sorted_x;
+    std::vector<Coord> sorted_x;
     std::vector<Edge> all_edges;
 
     /** Edges from all polygons, classified by sorted_x borders.
