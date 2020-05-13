@@ -467,6 +467,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         }
         if (metadata.ttl_for_table_ast)
             rename_visitor.visit(metadata.ttl_for_table_ast);
+
+        for (auto & constraint : metadata.constraints.constraints)
+            rename_visitor.visit(constraint);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
