@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b29e72533c161967b8b0b5a3b0391347dadd5679
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # FORMAT Cláusula {#format-clause}

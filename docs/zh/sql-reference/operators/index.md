@@ -52,7 +52,7 @@
 
 ## 集合关系运算符 {#ji-he-guan-xi-yun-suan-fu}
 
-*详见此节 [IN 相关操作符](statements/select.md#select-in-operators) 。*
+*详见此节 [IN 相关操作符](in.md#select-in-operators) 。*
 
 `a IN ...` – 对应函数 `in(a, b)`
 

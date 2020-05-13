@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 0f63b451914f9e4e6d77497f45d13eff85023b72
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: "Control de acceso y gesti\xF3n de cuentas"
 ---

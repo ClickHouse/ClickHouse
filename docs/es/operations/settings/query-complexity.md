@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: Restricciones en la complejidad de consultas
 ---
 
-# Restricciones En La Complejidad De Consultas {#restrictions-on-query-complexity}
+# Restricciones en la complejidad de consultas {#restrictions-on-query-complexity}
 
 Las restricciones en la complejidad de la consulta forman parte de la configuración.
 Se utilizan para proporcionar una ejecución más segura desde la interfaz de usuario.
@@ -21,9 +21,9 @@ Puede tomar uno de dos valores: `throw` o `break`. Las restricciones en la agreg
 
 `break` – Stop executing the query and return the partial result, as if the source data ran out.
 
-`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
+`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
-## Método De codificación De Datos: {#settings_max_memory_usage}
+## Método de codificación de datos: {#settings_max_memory_usage}
 
 La cantidad máxima de RAM que se utiliza para ejecutar una consulta en un único servidor.
 
@@ -48,7 +48,7 @@ Los valores predeterminados se definen en [Configuración.h](https://github.com/
 
 Ver también la descripción de [Método de codificación de datos:](#settings_max_memory_usage).
 
-## Todos Los Derechos Reservados {#max-memory-usage-for-all-queries}
+## Todos los derechos reservados {#max-memory-usage-for-all-queries}
 
 La cantidad máxima de RAM que se utilizará para ejecutar todas las consultas en un único servidor.
 
@@ -67,11 +67,11 @@ Un número máximo de filas que se pueden leer de una tabla al ejecutar una cons
 
 Un número máximo de bytes (datos sin comprimir) que se pueden leer de una tabla al ejecutar una consulta.
 
-## Método De codificación De Datos: {#read-overflow-mode}
+## Método de codificación de datos: {#read-overflow-mode}
 
 Qué hacer cuando el volumen de datos leídos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
-## Método De codificación De Datos: {#settings-max-rows-to-group-by}
+## Método de codificación de datos: {#settings-max-rows-to-group-by}
 
 Un número máximo de claves únicas recibidas de la agregación. Esta configuración le permite limitar el consumo de memoria al agregar.
 
@@ -91,11 +91,11 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Método De codificación De Datos: {#max-rows-to-sort}
+## Método de codificación de datos: {#max-rows-to-sort}
 
 Un número máximo de filas antes de ordenar. Esto le permite limitar el consumo de memoria al ordenar.
 
-## Método De codificación De Datos: {#max-bytes-to-sort}
+## Método de codificación de datos: {#max-bytes-to-sort}
 
 Un número máximo de bytes antes de ordenar.
 
@@ -143,11 +143,11 @@ En este momento, no se comprueba una de las etapas de clasificación, o al fusio
 
 Qué hacer si la consulta se ejecuta más de ‘max\_execution\_time’: ‘throw’ o ‘break’. Por defecto, throw.
 
-## Método De codificación De Datos: {#min-execution-speed}
+## Método de codificación de datos: {#min-execution-speed}
 
 Velocidad de ejecución mínima en filas por segundo. Comprobado en cada bloque de datos cuando ‘timeout\_before\_checking\_execution\_speed’ expirar. Si la velocidad de ejecución es menor, se produce una excepción.
 
-## Todos Los Derechos Reservados {#min-execution-speed-bytes}
+## Todos los derechos reservados {#min-execution-speed-bytes}
 
 Un número mínimo de bytes de ejecución por segundo. Comprobado en cada bloque de datos cuando ‘timeout\_before\_checking\_execution\_speed’ expirar. Si la velocidad de ejecución es menor, se produce una excepción.
 
@@ -159,7 +159,7 @@ Un número máximo de filas de ejecución por segundo. Comprobado en cada bloque
 
 Un número máximo de bytes de ejecución por segundo. Comprobado en cada bloque de datos cuando ‘timeout\_before\_checking\_execution\_speed’ expirar. Si la velocidad de ejecución es alta, la velocidad de ejecución se reducirá.
 
-## Tiempo De Espera Antes De comprobar\_ejecución\_velocidad {#timeout-before-checking-execution-speed}
+## Tiempo de espera antes de comprobar\_ejecución\_velocidad {#timeout-before-checking-execution-speed}
 
 Comprueba que la velocidad de ejecución no sea demasiado lenta (no menos de ‘min\_execution\_speed’), después de que el tiempo especificado en segundos haya expirado.
 
@@ -194,11 +194,11 @@ En este momento, no se verifica durante el análisis, sino solo después de anal
 Un número máximo de elementos en un árbol sintáctico de consulta. Si se supera, se produce una excepción.
 De la misma manera que la configuración anterior, se verifica solo después de analizar la consulta. De forma predeterminada, 50.000.
 
-## Método De codificación De Datos: {#max-rows-in-set}
+## Método de codificación de datos: {#max-rows-in-set}
 
 Un número máximo de filas para un conjunto de datos en la cláusula IN creada a partir de una subconsulta.
 
-## Método De codificación De Datos: {#max-bytes-in-set}
+## Método de codificación de datos: {#max-bytes-in-set}
 
 Número máximo de bytes (datos sin comprimir) utilizados por un conjunto en la cláusula IN creada a partir de una subconsulta.
 
@@ -206,11 +206,11 @@ Número máximo de bytes (datos sin comprimir) utilizados por un conjunto en la 
 
 Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
-## Método De codificación De Datos: {#max-rows-in-distinct}
+## Método de codificación de datos: {#max-rows-in-distinct}
 
 Un número máximo de filas diferentes al usar DISTINCT.
 
-## Método De codificación De Datos: {#max-bytes-in-distinct}
+## Método de codificación de datos: {#max-bytes-in-distinct}
 
 Un número máximo de bytes utilizados por una tabla hash cuando se utiliza DISTINCT.
 
@@ -230,7 +230,7 @@ Un número máximo de bytes (datos sin comprimir) que se pueden pasar a un servi
 
 Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
-## Método De codificación De Datos: {#settings-max_rows_in_join}
+## Método de codificación de datos: {#settings-max_rows_in_join}
 
 Limita el número de filas de la tabla hash que se utiliza al unir tablas.
 
@@ -247,7 +247,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Método De codificación De Datos: {#settings-max_bytes_in_join}
+## Método de codificación de datos: {#settings-max_bytes_in_join}
 
 Limita el tamaño en bytes de la tabla hash utilizada al unir tablas.
 
@@ -274,7 +274,7 @@ Define qué acción realiza ClickHouse cuando se alcanza cualquiera de los sigui
 Valores posibles:
 
 -   `THROW` — ClickHouse throws an exception and breaks operation.
--   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+-   `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
 
 Valor predeterminado: `THROW`.
 

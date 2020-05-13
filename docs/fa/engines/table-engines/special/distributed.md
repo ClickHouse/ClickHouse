@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: "\u062A\u0648\u0632\u06CC\u0639 \u0634\u062F\u0647"
 ---
@@ -39,7 +39,7 @@ Distributed(logs, default, hits[, sharding_key[, policy_name]])
 
 به جای نام پایگاه داده, شما می توانید یک عبارت ثابت است که یک رشته را برمی گرداند استفاده. در حال بارگذاری
 
-logs – The cluster name in the server’s config file.
+logs – The cluster name in the server's config file.
 
 خوشه ها مانند این تنظیم می شوند:
 
@@ -84,7 +84,7 @@ logs – The cluster name in the server’s config file.
 نام خوشه باید حاوی نقطه نیست.
 
 پارامترها `host`, `port` و در صورت تمایل `user`, `password`, `secure`, `compression` برای هر سرور مشخص شده است:
-- `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn’t start. If you change the DNS record, restart the server.
+- `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
 - `port` – The TCP port for messenger activity (‘tcp\_port’ در پیکربندی, معمولا به مجموعه 9000). نه اشتباه آن را با http\_port.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [حقوق دسترسی](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
@@ -103,7 +103,7 @@ When specifying replicas, one of the available replicas will be selected for eac
 
 موتور توزیع اجازه می دهد تا کار با یک خوشه مانند یک سرور محلی. با این حال, خوشه غیر قابل اجتنابناپذیری است: شما باید پیکربندی خود را در فایل پیکربندی سرور ارسال (حتی بهتر, برای تمام سرورهای خوشه).
 
-The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don’t need to create a Distributed table – use the ‘remote’ تابع جدول به جای. بخش را ببینید [توابع جدول](../../../sql-reference/table-functions/index.md).
+The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don't need to create a Distributed table – use the ‘remote’ تابع جدول به جای. بخش را ببینید [توابع جدول](../../../sql-reference/table-functions/index.md).
 
 دو روش برای نوشتن داده ها به یک خوشه وجود دارد:
 
@@ -125,7 +125,7 @@ The Distributed engine requires writing clusters to the config file. Clusters fr
 
 یک یادآوری ساده از این بخش محدود است راه حل برای sharding و نیست همیشه مناسب است. این برای حجم متوسط و زیادی از داده ها کار می کند (ده ها تن از سرور), اما نه برای حجم بسیار زیادی از داده ها (صدها سرور یا بیشتر). در مورد دوم با استفاده از sharding طرح های مورد نیاز منطقه موضوع را به جای استفاده از مطالب موجود در توزیع جداول.
 
-SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don’t have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
+SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don't have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
 شما باید نگران sharding طرح در موارد زیر:
 
@@ -145,7 +145,7 @@ SELECT queries are sent to all the shards and work regardless of how data is dis
 !!! note "یادداشت"
     از [`remote`](../../../sql-reference/table-functions/remote.md)/`cluster` توابع جدول داخلی ایجاد نمونه موقت از همان توزیع موتور, `_shard_num` در دسترس وجود دارد بیش از حد.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [ستونهای مجازی](index.md#table_engines-virtual_columns)
 

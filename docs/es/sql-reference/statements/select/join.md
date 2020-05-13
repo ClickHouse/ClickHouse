@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b29e72533c161967b8b0b5a3b0391347dadd5679
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Cláusula JOIN {#select-join}
@@ -12,7 +12,7 @@ Sintaxis:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_table>
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -32,8 +32,8 @@ Todo estándar [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) tipos son co
 
 Tipos de unión adicionales disponibles en ClickHouse:
 
--   `SEMI JOIN`, una lista blanca en “join keys”, sin producir un producto cartesiano.
--   `ANTI JOIN`, una lista negra sobre “join keys”, sin producir un producto cartesiano.
+-   `LEFT SEMI JOIN` y `RIGHT SEMI JOIN`, una lista blanca en “join keys”, sin producir un producto cartesiano.
+-   `LEFT ANTI JOIN` y `RIGHT ANTI JOIN`, una lista negra sobre “join keys”, sin producir un producto cartesiano.
 
 ## Rigor {#select-join-strictness}
 
@@ -136,9 +136,11 @@ En algunos casos, es más eficiente de usar [IN](../../operators/in.md) en lugar
 
 Si necesita un `JOIN` para unirse a tablas de dimensión (son tablas relativamente pequeñas que contienen propiedades de dimensión, como nombres para campañas publicitarias), un `JOIN` podría no ser muy conveniente debido al hecho de que se vuelve a acceder a la tabla correcta para cada consulta. Para tales casos, hay un “external dictionaries” característica que debe utilizar en lugar de `JOIN`. Para obtener más información, consulte [Diccionarios externos](../../dictionaries/external-dictionaries/external-dicts.md) apartado.
 
-**Limitaciones de memoria**
+### Limitaciones de memoria {#memory-limitations}
 
-ClickHouse utiliza el [hash unirse](https://en.wikipedia.org/wiki/Hash_join) algoritmo. ClickHouse toma el `<right_subquery>` y crea una tabla hash para ello en RAM. Si necesita restringir el consumo de memoria de la operación de unión, use la siguiente configuración:
+De forma predeterminada, ClickHouse usa el [hash unirse](https://en.wikipedia.org/wiki/Hash_join) algoritmo. ClickHouse toma el `<right_table>` y crea una tabla hash para ello en RAM. Después de algún umbral de consumo de memoria, ClickHouse vuelve a fusionar el algoritmo de unión.
+
+Si necesita restringir el consumo de memoria de la operación de unión, use la siguiente configuración:
 
 -   [Método de codificación de datos:](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [Método de codificación de datos:](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: Nullable
 ---
@@ -9,7 +9,7 @@ toc_title: Nullable
 
 Özel işaretleyici saklamak için izin verir ([NULL](../../sql-reference/syntax.md)) bu ifade eder “missing value” tarafından izin verilen normal değerlerin yanında `TypeName`. Örneğin, bir `Nullable(Int8)` tipi sütun saklayabilirsiniz `Int8` değerleri yazın ve değeri olmayan satırlar depolayacaktır `NULL`.
 
-İçin… `TypeName`, bileşik veri türlerini kullanamazsınız [Dizi](array.md) ve [Demet](tuple.md). Bileşik veri türleri şunları içerebilir `Nullable` gibi tür değerleri `Array(Nullable(Int8))`.
+İçin... `TypeName`, bileşik veri türlerini kullanamazsınız [Dizi](array.md) ve [Demet](tuple.md). Bileşik veri türleri şunları içerebilir `Nullable` gibi tür değerleri `Array(Nullable(Int8))`.
 
 A `Nullable` tür alanı tablo dizinlerine dahil edilemez.
 

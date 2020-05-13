@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: cd0b14513c82d14dec07cb60cd8aabfc98681875
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Clause de JOINTURE {#select-join}
@@ -12,7 +12,7 @@ Syntaxe:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_table>
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -32,8 +32,8 @@ Tous les standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) les types
 
 Autres types de jointure disponibles dans ClickHouse:
 
--   `SEMI JOIN` une liste blanche sur “join keys”, sans produire un produit cartésien.
--   `ANTI JOIN` une liste noire sur “join keys”, sans produire un produit cartésien.
+-   `LEFT SEMI JOIN` et `RIGHT SEMI JOIN` une liste blanche sur “join keys”, sans produire un produit cartésien.
+-   `LEFT ANTI JOIN` et `RIGHT ANTI JOIN` une liste noire sur “join keys”, sans produire un produit cartésien.
 
 ## Rigueur {#select-join-strictness}
 
@@ -136,9 +136,11 @@ Dans certains cas, il est plus efficace d'utiliser [IN](../../operators/in.md) p
 
 Si vous avez besoin d'un `JOIN` pour se joindre à des tables de dimension (ce sont des tables relativement petites qui contiennent des propriétés de dimension, telles que des noms pour des campagnes publicitaires), un `JOIN` peut-être pas très pratique en raison du fait que la bonne table est ré-accédée pour chaque requête. Pour de tels cas, il y a un “external dictionaries” la fonctionnalité que vous devez utiliser à la place de `JOIN`. Pour plus d'informations, voir le [Dictionnaires externes](../../dictionaries/external-dictionaries/external-dicts.md) section.
 
-**Limitations De Mémoire**
+### Limitations De Mémoire {#memory-limitations}
 
-ClickHouse utilise le [jointure de hachage](https://en.wikipedia.org/wiki/Hash_join) algorithme. ClickHouse prend le `<right_subquery>` et crée une table de hachage pour cela dans la RAM. Si vous devez restreindre la consommation de mémoire de l'opération join utilisez les paramètres suivants:
+Par défaut, ClickHouse utilise [jointure de hachage](https://en.wikipedia.org/wiki/Hash_join) algorithme. ClickHouse prend le `<right_table>` et crée une table de hachage pour cela dans la RAM. Après un certain seuil de consommation de mémoire, ClickHouse revient à fusionner l'algorithme de jointure.
+
+Si vous devez restreindre la consommation de mémoire de l'opération join utilisez les paramètres suivants:
 
 -   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.

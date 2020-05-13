@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: Intervalo
 ---
@@ -40,7 +40,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Observaciones De Uso {#data-type-interval-usage-remarks}
+## Observaciones de uso {#data-type-interval-usage-remarks}
 
 Usted puede utilizar `Interval`-type valores en operaciones aritméticas con [Fecha](../../../sql-reference/data-types/date.md) y [FechaHora](../../../sql-reference/data-types/datetime.md)-type valores. Por ejemplo, puede agregar 4 días a la hora actual:
 

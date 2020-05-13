@@ -1,34 +1,34 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: URL
 ---
 
-# URL(URL,フォーマット) {#table_engines-url}
+# URL(URL,形式) {#table_engines-url}
 
-リモートhttp/httpsサーバー上のデータを管理します。 このエンジンは同様です
-に [ファイル](file.md) エンジン。
+リモートHTTP/HTTPSサーバー上のデータを管理します。 このエンジンは同様です
+に [ファイル](file.md) エンジン
 
-## Clickhouseサーバーでのエンジンの使用 {#using-the-engine-in-the-clickhouse-server}
+## ClickHouseサーバーでのエンジンの使用 {#using-the-engine-in-the-clickhouse-server}
 
 その `format` ClickHouseが使用できるものでなければなりません
-`SELECT` クエリと、必要に応じて、 `INSERTs`. サポートさ
+`SELECT` クエリと、必要に応じて、 `INSERTs`. サポートされている形式の完全な一覧については、
 [形式](../../../interfaces/formats.md#formats).
 
-その `URL` 統一リソースロケータの構造に準拠する必要があります。 指定されたURLはサーバーを指す必要があります
-HTTPまたはHTTPSを使用します。 これには何も必要ありません
-サーバーからの応答を取得するための追加のヘッダー。
+その `URL` Uniform Resource Locatorの構造に準拠している必要があります。 指定したURLはサーバーを指す必要があります
+HTTPまたはHTTPSを使用します。 これは必要ありません
+サーバーからの応答を取得するための追加ヘッダー。
 
-`INSERT` と `SELECT` 質問への `POST` と `GET` リクエスト,
-それぞれ。 処理のため `POST` ご要望遠隔のサーバをサポートする必要があ
+`INSERT` と `SELECT` 質問への `POST` と `GET` 要求,
+それぞれ。 処理のため `POST` 要求は、リモートサーバーが
 [チャンク転送エンコード](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-HTTP GETリダイレクトホップの最大数を制限するには、次のコマンドを使用します [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) 設定。
+HTTP GETリダイレクトホップの最大数を制限するには [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) 設定。
 
-**例えば:**
+**例:**
 
-**1.** 作成する `url_engine_table` サーバー上の表 :
+**1.** 作成 `url_engine_table` サーバー上のテーブル :
 
 ``` sql
 CREATE TABLE url_engine_table (word String, value UInt64)
@@ -71,12 +71,12 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## 実装の詳細 {#details-of-implementation}
+## 実施内容 {#details-of-implementation}
 
 -   読み書きできる並列
--   サポートなし:
-    -   `ALTER` と `SELECT...SAMPLE` オペレーション
+-   対応していません:
+    -   `ALTER` と `SELECT...SAMPLE` 作戦だ
     -   インデックス。
-    -   複製だ
+    -   複製。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/table_engines/url/) <!--hide-->

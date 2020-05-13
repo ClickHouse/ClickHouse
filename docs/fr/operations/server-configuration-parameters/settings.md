@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 0599e81e515299d82b33200a524aa46669a984e0
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: "Les Param\xE8tres Du Serveur"
 ---

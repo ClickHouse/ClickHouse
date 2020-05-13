@@ -1,21 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: fichier
 ---
 
 # fichier {#file}
 
-Crée un tableau à partir d’un fichier. Cette fonction de table est similaire à [URL](url.md) et [hdfs](hdfs.md) ceux.
+Crée un tableau à partir d'un fichier. Cette fonction de table est similaire à [URL](url.md) et [hdfs](hdfs.md) ceux.
 
 ``` sql
 file(path, format, structure)
 ```
 
-**Les paramètres d’entrée**
+**Les paramètres d'entrée**
 
--   `path` — The relative path to the file from [user\_files\_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Chemin d’accès à la prise en charge des fichiers suivant les globs en mode Lecture seule: `*`, `?`, `{abc,def}` et `{N..M}` où `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `path` — The relative path to the file from [user\_files\_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Chemin d'accès à la prise en charge des fichiers suivant les globs en mode Lecture seule: `*`, `?`, `{abc,def}` et `{N..M}` où `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [format](../../interfaces/formats.md#formats) de le fichier.
 -   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -59,14 +59,14 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 **Globs dans le chemin**
 
-Plusieurs composants de chemin peuvent avoir des globs. Pour être traité, le fichier doit exister et correspondre à l’ensemble du modèle de chemin (pas seulement le suffixe ou le préfixe).
+Plusieurs composants de chemin peuvent avoir des globs. Pour être traité, le fichier doit exister et correspondre à l'ensemble du modèle de chemin (pas seulement le suffixe ou le préfixe).
 
 -   `*` — Substitutes any number of any characters except `/` y compris la chaîne vide.
 -   `?` — Substitutes any single character.
 -   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Les Constructions avec `{}` sont similaires à l’ [fonction de table à distance](../../sql-reference/table-functions/remote.md)).
+Les Constructions avec `{}` sont similaires à l' [fonction de table à distance](../../sql-reference/table-functions/remote.md)).
 
 **Exemple**
 

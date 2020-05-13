@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: Hash
 ---
 
-# Funciones Hash {#hash-functions}
+# Funciones de Hash {#hash-functions}
 
 Las funciones Hash se pueden usar para la barajada pseudoaleatoria determinista de elementos.
 
@@ -148,14 +148,14 @@ La función funciona bastante lentamente (SHA-1 procesa alrededor de 5 millones 
 Recomendamos usar esta función solo en los casos en que necesite una función hash específica y no pueda seleccionarla.
 Incluso en estos casos, recomendamos aplicar la función offline y precalcular valores al insertarlos en la tabla, en lugar de aplicarlo en SELECTS.
 
-## Nombre De La Red inalámbrica (SSID):\]) {#urlhashurl-n}
+## Nombre de la red inalámbrica (SSID):\]) {#urlhashurl-n}
 
 Una función hash no criptográfica rápida y de calidad decente para una cadena obtenida de una URL utilizando algún tipo de normalización.
 `URLHash(s)` – Calculates a hash from a string without one of the trailing symbols `/`,`?` o `#` al final, si está presente.
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` o `#` al final, si está presente.
 Los niveles son los mismos que en URLHierarchy. Esta función es específica de Yandex.Métrica.
 
-## Método De codificación De Datos: {#farmhash64}
+## Método de codificación de datos: {#farmhash64}
 
 Produce un [Método de codificación de datos:](https://github.com/google/farmhash) valor hash.
 
@@ -185,7 +185,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 └──────────────────────┴────────┘
 ```
 
-## Nombre De La Red inalámbrica (SSID): {#hash_functions-javahash}
+## Nombre de la red inalámbrica (SSID): {#hash_functions-javahash}
 
 Calcular [Nivel de Cifrado WEP](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) de una cuerda. Esta función hash no es rápida ni tiene una buena calidad. La única razón para usarlo es cuando este algoritmo ya se usa en otro sistema y debe calcular exactamente el mismo resultado.
 
@@ -283,7 +283,7 @@ Resultado:
 └───────────────────────────┘
 ```
 
-## Método De codificación De Datos: {#metrohash64}
+## Método de codificación de datos: {#metrohash64}
 
 Produce un [Método de codificación de datos:](http://www.jandrewrogers.com/2015/05/27/metrohash/) valor hash.
 
@@ -345,6 +345,44 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 ┌──────────MurmurHash2─┬─type───┐
 │ 11832096901709403633 │ UInt64 │
 └──────────────────────┴────────┘
+```
+
+## GccMurmurHash {#gccmurmurhash}
+
+Calcula un valor de 64 bits [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash usando la misma semilla de hash que [Gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). Es portátil entre las compilaciones CLang y GCC.
+
+**Sintaxis**
+
+``` sql
+gccMurmurHash(par1, ...);
+```
+
+**Parámetros**
+
+-   `par1, ...` — A variable number of parameters that can be any of the [tipos de datos compatibles](../../sql-reference/data-types/index.md#data_types).
+
+**Valor devuelto**
+
+-   Valor hash calculado.
+
+Tipo: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Ejemplo**
+
+Consulta:
+
+``` sql
+SELECT
+    gccMurmurHash(1, 2, 3) AS res1,
+    gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
+```
+
+Resultado:
+
+``` text
+┌─────────────────res1─┬────────────────res2─┐
+│ 12384823029245979431 │ 1188926775431157506 │
+└──────────────────────┴─────────────────────┘
 ```
 
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}

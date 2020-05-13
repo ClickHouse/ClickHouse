@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "\u6D4B\u8BD5\u786C\u4EF6"
 ---
@@ -65,7 +65,7 @@ toc_title: "\u6D4B\u8BD5\u786C\u4EF6"
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  编辑benchmark-new.sh，改变 “clickhouse-client” 到 “./clickhouse client” 并添加 “–max\_memory\_usage 100000000000” 参数。
+1.  编辑benchmark-new.sh，改变 `clickhouse-client` 到 `./clickhouse client` 并添加 `–-max_memory_usage 100000000000` 参数。
 
 <!-- -->
 
@@ -79,4 +79,4 @@ toc_title: "\u6D4B\u8BD5\u786C\u4EF6"
 
 1.  将有关硬件配置的编号和信息发送到clickhouse-feedback@yandex-team.com
 
-所有结果都在这里公布：https://clickhouse.技术/benchmark\_hardware.html
+所有结果都在这里公布：https://clickhouse.技术/基准/硬件/

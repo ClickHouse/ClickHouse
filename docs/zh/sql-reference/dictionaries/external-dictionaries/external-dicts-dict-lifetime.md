@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: "\u5B57\u5178\u66F4\u65B0"
 ---
@@ -50,6 +50,11 @@ LIFETIME(300)
 ``` sql
 LIFETIME(MIN 300 MAX 360)
 ```
+
+如果 `<min>0</min>` 和 `<max>0</max>`，ClickHouse不会按超时重新加载字典。
+在这种情况下，如果字典配置文件已更改，ClickHouse可以更早地重新加载字典 `SYSTEM RELOAD DICTIONARY` 命令被执行。
+
+升级字典时，ClickHouse服务器根据字典的类型应用不同的逻辑 [来源](external-dicts-dict-sources.md):
 
 升级字典时，ClickHouse服务器根据字典的类型应用不同的逻辑 [来源](external-dicts-dict-sources.md):
 

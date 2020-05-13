@@ -1,20 +1,20 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: "\u30AF\u30A9\u30FC\u30BF"
 ---
 
 # クォータ {#quotas}
 
-クォータを使用すると、一定期間にわたってリソースの使用を制限したり、単にリソースの使用を追跡したりできます。
-クォータは、ユーザー設定で設定されます。 これは通常 ‘users.xml’.
+クォータを使用すると、一定期間のリソース使用量を制限したり、リソースの使用を追跡したりできます。
+クォータはユーザー設定で設定されます。 ‘users.xml’.
 
-システムには、単一のクエリの複雑さを制限する機能もあります。 セクションを見る “Restrictions on query complexity”).
+このシステムには、単一のクエリの複雑さを制限する機能もあります。 セクションを参照 “Restrictions on query complexity”).
 
 クエリの複雑さの制限とは対照的に、クォータ:
 
--   単一のクエリを制限するのではなく、ある期間にわたって実行できるクエリのセットに制限を設定します。
+-   単一のクエリを制限するのではなく、一定期間にわたって実行できるクエリのセットに制限を設定します。
 -   口座のために費やすべてのリモートサーバーのための分散クエリ処となります。
 
 のセクションを見てみましょう ‘users.xml’ クォータを定義するファイル。
@@ -39,8 +39,8 @@ toc_title: "\u30AF\u30A9\u30FC\u30BF"
     </default>
 ```
 
-デフォルトでは、クォータだけでトラック資源の消費のそれぞれの時間を狭く限定することなく、利用
-各間隔で計算されたリソース消費は、各要求の後にサーバーログに出力されます。
+既定では、クォータは、使用量を制限することなく、各時間のリソース消費量を追跡します。
+各間隔ごとに計算されたリソース消費量は、各要求の後にサーバーログに出力されます。
 
 ``` xml
 <statbox>
@@ -68,9 +68,9 @@ toc_title: "\u30AF\u30A9\u30FC\u30BF"
 </statbox>
 ```
 
-のための ‘statbox’ クォータ、制限は、毎時および24時間（86,400秒）ごとに設定されます。 時間間隔は、実装定義の固定moment間から開始してカウントされます。 言い換えれば、24時間の間隔は必ずしも真夜中に始まるとは限りません。
+のために ‘statbox’ クォータ、制限は、時間ごとおよび24時間ごと(86,400秒)に設定されます。 時間間隔は、実装定義の固定モーメントから開始してカウントされます。 つまり、24時間の間隔は必ずしも深夜に開始されるわけではありません。
 
-間隔が終了すると、収集された値はすべてクリアされます。 次の時間には、クォータの計算が最初からやり直されます。
+間隔が終了すると、収集された値はすべてクリアされます。 次の時間は、クォータの計算がやり直されます。
 
 制限できる金額は次のとおりです:
 
@@ -78,15 +78,15 @@ toc_title: "\u30AF\u30A9\u30FC\u30BF"
 
 `errors` – The number of queries that threw an exception.
 
-`result_rows` – The total number of rows given as the result.
+`result_rows` – The total number of rows given as a result.
 
-`read_rows` – The total number of source rows read from tables for running the query, on all remote servers.
+`read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
-制限を少なくとも一回の間隔で超えた場合は、制限を超過したテキスト、間隔、および新しい間隔の開始時(クエリを再度送信できる場合)についての
+制限を超えた場合は、どの制限を超えたか、どの間隔を超えたか、および新しい間隔が開始されたとき(クエリを再度送信できるとき)に関するテキス
 
-クォータは以下を使用できます “quota key” 複数のキーのリソースを個別に報告する機能。 これの例は次のとおりです:
+クォータは、 “quota key” 複数のキーのリソースを個別に報告する機能。 これの例を次に示します:
 
 ``` xml
 <!-- For the global reports designer. -->
@@ -97,15 +97,15 @@ toc_title: "\u30AF\u30A9\u30FC\u30BF"
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
-        You can also write <keyed_by_ip /> so the IP address is used as the quota key.
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
     -->
     <keyed />
 ```
 
-クォータはユーザーに割り当てられます。 ‘users’ 設定のセクション。 セクションを見る “Access rights”.
+クォータは ‘users’ 設定のセクション。 セクションを参照 “Access rights”.
 
-分散クエリ処理では、累積金額がリクエスタサーバに格納されます。 ここでは、ユーザーが別のサーバーの定員がありま “start over”.
+分散クエリ処理の場合、累積金額は要求元サーバーに格納されます。 ここでは、ユーザーが別のサーバーの定員がありま “start over”.
 
 サーバーを再起動すると、クォータがリセットされます。
 
