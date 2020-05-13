@@ -476,8 +476,6 @@ namespace MySQLReplication
     class MySQLFlavor : public IFlavor
     {
     public:
-        BinlogEventPtr event;
-
         void readPayloadImpl(ReadBuffer & payload) override;
         String getName() const override { return "MySQL"; }
         Position getPosition() const override { return position; }
@@ -485,6 +483,7 @@ namespace MySQLReplication
 
     private:
         Position position;
+        BinlogEventPtr event;
         std::shared_ptr<TableMapEvent> table_map;
     };
 }
