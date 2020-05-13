@@ -143,10 +143,9 @@ private:
         MutationCommands & for_interpreter,
         MutationCommands & for_file_renames);
 
-
     /// Apply commands to source_part i.e. remove some columns in source_part
     /// and return set of files, that have to be removed from filesystem and checksums
-    static NameToNameMap collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
+    static NameToNameVector collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
