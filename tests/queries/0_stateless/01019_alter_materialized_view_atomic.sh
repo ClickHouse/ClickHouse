@@ -9,8 +9,8 @@ $CLICKHOUSE_CLIENT --multiquery <<EOF
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 
-CREATE TABLE src(v UInt64) ENGINE = Null;
-CREATE MATERIALIZED VIEW mv(v UInt8) Engine = MergeTree() ORDER BY v AS SELECT v FROM src;
+CREATE TABLE src (v UInt64) ENGINE = Null;
+CREATE MATERIALIZED VIEW mv (v UInt8) Engine = MergeTree() ORDER BY v AS SELECT v FROM src;
 EOF
 
 # Test that ALTER doesn't cause data loss or duplication.
@@ -28,33 +28,26 @@ EOF
 
 function alter_thread()
 {
-  trap 'exit' INT
+    trap 'exit' INT
 
-  ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
-  ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
+    ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
+    ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
 
-  while true; do
-    $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
-    sleep `echo 0.$RANDOM`;
-  done
+    while true; do
+        $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
+        sleep `echo 0.$RANDOM`;
+    done
 }
 
-alter_thread &
-alter_pid=$!
+export -f alter_thread;
+timeout 10 bash -c alter_thread &
 
-for i in $(seq 1 100); do
-  (
+for i in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.
-    until false; do
+    while true; do
       $CLICKHOUSE_CLIENT -q "INSERT INTO src VALUES (1);" 2>/dev/null && break
     done
-  )
 done
 
-# Enough alters.
-kill -INT $alter_pid
-
-wait
-
-# This was a fun ride.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM mv;"
+wait
