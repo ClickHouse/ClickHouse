@@ -115,7 +115,8 @@ public:
     void addArena(ConstArenaPtr arena_);
 
     /// Transform column with states of aggregate functions to column with final result values.
-    /// It expects ColumnAggregateFunction as an argument.
+    /// It expects ColumnAggregateFunction as an argument, this column will be destroyed.
+    /// This method is made static and receive MutableColumnPtr object to explicitly destroy it.
     static MutableColumnPtr convertToValues(MutableColumnPtr column);
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
