@@ -144,7 +144,7 @@ public:
     T scaleFactorFor(const DataTypeNumber<U> & , bool is_multiply_or_divisor) const
     {
         if (is_multiply_or_divisor)
-            return 1;
+            return T(1);
         return getScaleMultiplier();
     }
 

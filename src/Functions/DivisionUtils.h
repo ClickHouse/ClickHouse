@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
-    extern const int NOT_IMPLEMENTED;
 }
 
 #pragma GCC diagnostic push
@@ -51,15 +50,14 @@ inline bool divisionLeadsToFPE(A a, B b)
 namespace
 {
 template <typename Result, typename A, typename B>
-inline Result applyBigInteger(A /*a*/, B /*b*/)
+inline Result applyBigInteger(A a, B b)
 {
-    throw Exception("Division is not implemented for big integers", ErrorCodes::NOT_IMPLEMENTED);
-    // if constexpr (std::is_same_v<A, UInt8>)
-    //     return static_cast<Result>(static_cast<UInt16>(a) / b);
-    // else if constexpr (std::is_same_v<B, UInt8>)
-    //     return static_cast<Result>(a / static_cast<UInt16>(b));
-    // else
-    //     return static_cast<Result>(a / b);
+    if constexpr (std::is_same_v<A, UInt8>)
+        return static_cast<Result>(static_cast<UInt16>(a)) / static_cast<Result>(b);
+    else if constexpr (std::is_same_v<B, UInt8>)
+        return static_cast<Result>(a) / static_cast<Result>(static_cast<UInt16>(b));
+    else
+        return static_cast<Result>(a) / static_cast<Result>(b);
 }
 }
 

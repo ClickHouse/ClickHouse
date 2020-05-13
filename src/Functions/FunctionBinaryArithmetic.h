@@ -247,29 +247,29 @@ struct DecimalBinaryOperation
         size_t size = a.size();
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != 1)
+            if (scale_a != ResultType(1))
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(a[i], b[i], scale_a);
+                    c[i] = applyScaled<true>(castToResultType(a[i]), castToResultType(b[i]), scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            else if (scale_b != ResultType(1))
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(a[i], b[i], scale_b);
+                    c[i] = applyScaled<false>(castToResultType(a[i]), castToResultType(b[i]), scale_b);
                 return;
             }
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = applyScaledDiv(a[i], b[i], scale_a);
+                c[i] = applyScaledDiv(castToResultType(a[i]), castToResultType(b[i]), scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = apply(a[i], b[i]);
+            c[i] = apply(castToResultType(a[i]), castToResultType(b[i]));
     }
 
     static void NO_INLINE vectorConstant(const ArrayA & a, B b, ArrayC & c,
@@ -278,29 +278,29 @@ struct DecimalBinaryOperation
         size_t size = a.size();
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != 1)
+            if (scale_a != ResultType(1))
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(a[i], b, scale_a);
+                    c[i] = applyScaled<true>(castToResultType(a[i]), castToResultType(b), scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            else if (scale_b != ResultType(1))
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(a[i], b, scale_b);
+                    c[i] = applyScaled<false>(castToResultType(a[i]), castToResultType(b), scale_b);
                 return;
             }
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = applyScaledDiv(a[i], b, scale_a);
+                c[i] = applyScaledDiv(castToResultType(a[i]), castToResultType(b), scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = apply(a[i], b);
+            c[i] = apply(castToResultType(a[i]), castToResultType(b));
     }
 
     static void NO_INLINE constantVector(A a, const ArrayB & b, ArrayC & c,
@@ -309,46 +309,58 @@ struct DecimalBinaryOperation
         size_t size = b.size();
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != 1)
+            if (scale_a != ResultType(1))
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<true>(a, b[i], scale_a);
+                    c[i] = applyScaled<true>(castToResultType(a), castToResultType(b[i]), scale_a);
                 return;
             }
-            else if (scale_b != 1)
+            else if (scale_b != ResultType(1))
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = applyScaled<false>(a, b[i], scale_b);
+                    c[i] = applyScaled<false>(castToResultType(a), castToResultType(b[i]), scale_b);
                 return;
             }
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = applyScaledDiv(a, b[i], scale_a);
+                c[i] = applyScaledDiv(castToResultType(a), castToResultType(b[i]), scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = apply(a, b[i]);
+            c[i] = apply(castToResultType(a), castToResultType(b[i]));
     }
 
     static ResultType constantConstant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         if constexpr (is_plus_minus_compare)
         {
-            if (scale_a != 1)
-                return applyScaled<true>(a, b, scale_a);
-            else if (scale_b != 1)
-                return applyScaled<false>(a, b, scale_b);
+            if (scale_a != ResultType(1))
+                return applyScaled<true>(castToResultType(a), castToResultType(b), scale_a);
+            else if (scale_b != ResultType(1))
+                return applyScaled<false>(castToResultType(a), castToResultType(b), scale_b);
         }
         else if constexpr (is_division && IsDecimalNumber<B>)
-            return applyScaledDiv(a, b, scale_a);
-        return apply(a, b);
+            return applyScaledDiv(castToResultType(a), castToResultType(b), scale_a);
+        return apply(castToResultType(a), castToResultType(b));
     }
 
 private:
+    // Big integers have troubles with implicit casts, anything better?
+    template <typename CastedType>
+    static NativeResultType castToResultType(CastedType x)
+    {
+        if constexpr (is_big_int_v<NativeResultType> && std::is_same_v<CastedType, UInt8>)
+            return static_cast<NativeResultType>(static_cast<UInt16>(x));
+        else if constexpr (is_big_int_v<NativeResultType> && IsDecimalNumber<CastedType>)
+            return static_cast<NativeResultType>(x.value);
+        else
+            return static_cast<NativeResultType>(x);
+    }
+
     /// there's implicit type convertion here
     static NativeResultType apply(NativeResultType a, NativeResultType b)
     {
@@ -452,6 +464,9 @@ template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal64>> = true;
+template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal32>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
@@ -542,6 +557,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeDecimal<Decimal32>,
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
+            DataTypeDecimal<Decimal256>,
             DataTypeFixedString
         >(type, std::forward<F>(f));
     }
