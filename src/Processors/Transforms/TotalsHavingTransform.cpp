@@ -24,8 +24,8 @@ void finalizeChunk(Chunk & chunk)
     {
         if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
         {
-            auto mut_column = (*std::move(column)).mutate().assertCast<ColumnAggregateFunction>();
-            column = (*std::move(mut_column)).convertToValues();
+            auto mut_column = (*std::move(column)).mutate();
+            column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
         }
     }
 

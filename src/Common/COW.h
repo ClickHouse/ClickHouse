@@ -3,7 +3,7 @@
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
 #include <initializer_list>
-#include <Common/assert_cast.h>
+
 
 /** Copy-on-write shared ptr.
   * Allows to work with shared immutable objects and sometimes unshare and mutate you own unique copy.
@@ -116,10 +116,6 @@ protected:
         mutable_ptr() = default;
 
         mutable_ptr(std::nullptr_t) {}
-
-        /// Static pointer cast for mutable ptr.
-        template <typename U>
-        typename COW<U>::MutablePtr assertCast() && { return typename COW<U>::MutablePtr(assert_cast<U*>(Base::get())); }
     };
 
 public:
