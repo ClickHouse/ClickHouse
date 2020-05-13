@@ -133,6 +133,7 @@ add_library(ldap ${_libs_type}
 )
 
 target_link_libraries(ldap
+    PRIVATE lber
     PRIVATE ${OPENSSL_LIBRARIES}
 )
 
@@ -169,6 +170,7 @@ add_library(ldap_r ${_libs_type}
 )
 
 target_link_libraries(ldap_r
+    PRIVATE lber
     PRIVATE ${OPENSSL_LIBRARIES}
 )
 
