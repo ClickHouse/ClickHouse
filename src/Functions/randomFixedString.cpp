@@ -39,7 +39,7 @@ public:
         if (!isUnsignedInteger(arguments[0].type))
             throw Exception("First argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[0].column)
+        if (!arguments[0].column || !isColumnConst(*arguments[0].column))
             throw Exception("First argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
         const size_t n = arguments[0].column->getUInt(0);
