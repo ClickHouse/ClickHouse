@@ -2,7 +2,9 @@
 
 #include <Core/SortDescription.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
 
 namespace DB
 {
@@ -58,24 +60,19 @@ private:
 };
 
 
-class FinalizingInOrderTransform : public IProcessor
+class FinalizingSimpleTransform : public ISimpleTransform
 {
 public:
-    FinalizingInOrderTransform(Block header, AggregatingTransformParamsPtr params);
+    FinalizingSimpleTransform(Block header, AggregatingTransformParamsPtr params)
+        : ISimpleTransform({std::move(header)}, {params->getHeader(true)}, true) {}
 
-    ~FinalizingInOrderTransform() override;
+    void transform(Chunk & chunk) override
+    {
+        finalizeChunk(chunk);
+    }
 
-    String getName() const override { return "FinalizingInOrderTransform"; }
-
-    /// TODO Simplify prepare
-    Status prepare() override;
-
-    void work() override;
-
-    void consume(Chunk chunk);
-
-private:
-    Chunk current_chunk;
-    Logger * log = &Logger::get("FinalizingInOrderTransform");
+    String getName() const override { return "FinalizingSimpleTransform"; }
 };
+
+
 }

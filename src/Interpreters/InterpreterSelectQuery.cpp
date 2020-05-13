@@ -831,7 +831,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline, query_info.input_sorting_info);
+                    executeOrder(pipeline, query_info.input_order_info);
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -1025,7 +1025,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline, query_info.input_sorting_info);
+                    executeOrder(pipeline, query_info.input_order_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -1424,25 +1424,21 @@ void InterpreterSelectQuery::executeFetchColumns(
         query_info.prewhere_info = prewhere_info;
 
         /// Create optimizer with prepared actions.
-        /// Maybe we will need to calc input_sorting_info later, e.g. while reading from StorageMerge.
-        if (analysis_result.optimize_read_in_order)
+        /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
+        if (analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order)
         {
-            query_info.order_by_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                analysis_result.order_by_elements_actions,
-                getSortDescription(query, *context),
-                query_info.syntax_analyzer_result);
-
-            query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
-        }
-
-        if (analysis_result.optimize_aggregation_in_order)
-        {
-            query_info.group_by_optimizer = std::make_shared<ReadInOrderOptimizer>(
+            if (analysis_result.optimize_read_in_order)
+                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                    analysis_result.order_by_elements_actions,
+                    getSortDescription(query, *context),
+                    query_info.syntax_analyzer_result);
+            else
+                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                     analysis_result.group_by_elements_actions,
                     getSortDescriptionFromGroupBy(query, *context),
                     query_info.syntax_analyzer_result);
 
-            query_info.group_by_info = query_info.group_by_optimizer->getInputOrder(storage);
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
         }
 
 
@@ -1647,7 +1643,7 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
     });
 }
 
-void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr /*group_by_info*/)
+void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr /*group_by_info*/)
 {
     pipeline.transform([&](auto & stream)
     {
@@ -1711,7 +1707,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 }
 
 
-void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr group_by_info)
+void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -1801,7 +1797,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
             {
                 pipeline.addSimpleTransform([&](const Block & header)
                 {
-                    return std::make_shared<FinalizingInOrderTransform>(header, transform_params);
+                    return std::make_shared<FinalizingSimpleTransform>(header, transform_params);
                 });
             }
 
@@ -2075,7 +2071,7 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
     });
 }
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoPtr input_sorting_info)
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
@@ -2138,7 +2134,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
     }
 }
 
-void InterpreterSelectQuery::executeOrderOptimized(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
+void InterpreterSelectQuery::executeOrderOptimized(QueryPipeline & pipeline, InputOrderInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -2176,7 +2172,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPipeline & pipeline, Inp
     }
 }
 
-void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info)
+void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputOrderInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
@@ -2649,11 +2645,11 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
     /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
-    if (query_info.input_sorting_info)
+    if (query_info.input_order_info)
     {
         if (pipeline.stream_with_non_joined_data)
             throw Exception("Using read in order optimization, but has stream with non-joined data in pipeline", ErrorCodes::LOGICAL_ERROR);
-        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
+        executeMergeSorted(pipeline, query_info.input_order_info->order_key_prefix_descr, 0);
     }
     else
         executeUnion(pipeline, {});
@@ -2664,8 +2660,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
-    if (query_info.input_sorting_info)
-        executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
+    if (query_info.input_order_info)
+        executeMergeSorted(pipeline, query_info.input_order_info->order_key_prefix_descr, 0);
 
     const Settings & settings = context->getSettingsRef();
 

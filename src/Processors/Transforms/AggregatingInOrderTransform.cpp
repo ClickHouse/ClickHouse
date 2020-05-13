@@ -1,7 +1,5 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
 
 namespace DB
 {
@@ -250,65 +248,5 @@ void AggregatingInOrderTransform::generate()
     need_generate = false;
 }
 
-FinalizingInOrderTransform::FinalizingInOrderTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IProcessor({std::move(header)}, {params_->getHeader(true)})
-{
-}
-
-
-FinalizingInOrderTransform::~FinalizingInOrderTransform() = default;
-
-
-void FinalizingInOrderTransform::consume(Chunk chunk)
-{
-    finalizeChunk(chunk);
-    current_chunk = std::move(chunk);
-}
-
-void FinalizingInOrderTransform::work()
-{
-    consume(std::move(current_chunk));
-}
-
-IProcessor::Status FinalizingInOrderTransform::prepare()
-{
-    auto & output = outputs.front();
-    auto & input = inputs.back();
-
-    /// Check can output.
-    if (output.isFinished())
-    {
-        input.close();
-        return Status::Finished;
-    }
-
-    if (!output.canPush())
-    {
-        input.setNotNeeded();
-        return Status::PortFull;
-    }
-
-    if (input.isFinished())
-    {
-        output.push(std::move(current_chunk));
-        output.finish();
-        return Status::Finished;
-    }
-
-    if (!current_chunk.empty())
-    {
-        output.push(std::move(current_chunk));
-        current_chunk.clear();
-        return Status::Ready;
-    }
-
-    if (!input.hasData())
-    {
-        input.setNeeded();
-        return Status::NeedData;
-    }
-    current_chunk = input.pull(true);
-    return Status::Ready;
-}
 
 }

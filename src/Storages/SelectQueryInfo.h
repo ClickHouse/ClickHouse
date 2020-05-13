@@ -36,25 +36,25 @@ struct FilterInfo
     bool do_remove_column = false;
 };
 
-struct InputSortingInfo
+struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
 
-    InputSortingInfo(const SortDescription & order_key_prefix_descr_, int direction_)
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
         : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
 
-    bool operator ==(const InputSortingInfo & other) const
+    bool operator ==(const InputOrderInfo & other) const
     {
         return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
 
-    bool operator !=(const InputSortingInfo & other) const { return !(*this == other); }
+    bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-using InputSortingInfoPtr = std::shared_ptr<const InputSortingInfo>;
+using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -75,12 +75,9 @@ struct SelectQueryInfo
 
     PrewhereInfoPtr prewhere_info;
 
-    ReadInOrderOptimizerPtr order_by_optimizer;
-    ReadInOrderOptimizerPtr group_by_optimizer;
-
+    ReadInOrderOptimizerPtr order_optimizer;
     /// We can modify it while reading from storage
-    mutable InputSortingInfoPtr input_sorting_info;
-    InputSortingInfoPtr group_by_info;
+    mutable InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
