@@ -9,7 +9,7 @@ toc_title: "Param\xE8tre"
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Modifie le comportement de [distribués sous-requêtes](../../sql-reference/statements/select.md).
+Modifie le comportement de [distribués sous-requêtes](../../sql-reference/statements/select/index.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -354,7 +354,7 @@ Voir aussi:
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-Définit la rigueur par défaut pour [JOIN clauses](../../sql-reference/statements/select.md#select-join).
+Définit la rigueur par défaut pour [JOIN clauses](../../sql-reference/statements/select/join.md#select-join).
 
 Valeurs possibles:
 
@@ -381,13 +381,13 @@ Valeur par défaut: 0.
 
 Voir aussi:
 
--   [Clause de JOINTURE](../../sql-reference/statements/select.md#select-join)
+-   [Clause de JOINTURE](../../sql-reference/statements/select/join.md#select-join)
 -   [Rejoindre le moteur de table](../../engines/table-engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Définit le type de [JOIN](../../sql-reference/statements/select.md) comportement. Lors de la fusion de tables, des cellules vides peuvent apparaître. ClickHouse les remplit différemment en fonction de ce paramètre.
+Définit le type de [JOIN](../../sql-reference/statements/select/join.md) comportement. Lors de la fusion de tables, des cellules vides peuvent apparaître. ClickHouse les remplit différemment en fonction de ce paramètre.
 
 Valeurs possibles:
 

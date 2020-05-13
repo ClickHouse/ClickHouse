@@ -12,7 +12,7 @@ Les fonctions de Table sont des méthodes pour construire des tables.
 
 Vous pouvez utiliser les fonctions de table dans:
 
--   [FROM](../statements/select.md#select-from) la clause de la `SELECT` requête.
+-   [FROM](../statements/select/from.md#select-from) la clause de la `SELECT` requête.
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 

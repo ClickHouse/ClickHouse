@@ -106,7 +106,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 Dans l’exemple, nous définissons le partitionnement par mois.
 
-Nous définissons également une expression pour l’échantillonnage en tant que hachage par l’ID utilisateur. Cela vous permet de pseudorandomiser les données dans la table pour chaque `CounterID` et `EventDate`. Si vous définissez un [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) clause lors de la sélection des données, ClickHouse retournera un échantillon de données uniformément pseudo-aléatoire pour un sous-ensemble d’utilisateurs.
+Nous définissons également une expression pour l’échantillonnage en tant que hachage par l’ID utilisateur. Cela vous permet de pseudorandomiser les données dans la table pour chaque `CounterID` et `EventDate`. Si vous définissez un [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) clause lors de la sélection des données, ClickHouse retournera un échantillon de données uniformément pseudo-aléatoire pour un sous-ensemble d’utilisateurs.
 
 Le `index_granularity` paramètre peut être omis, car 8192 est la valeur par défaut.
 

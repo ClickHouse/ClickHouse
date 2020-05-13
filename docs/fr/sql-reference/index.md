@@ -9,7 +9,7 @@ toc_title: "cach\xE9s"
 
 # Référence SQL {#sql-reference}
 
--   [SELECT](statements/select.md)
+-   [SELECT](statements/select/index.md)
 -   [INSERT INTO](statements/insert-into.md)
 -   [CREATE](statements/create.md)
 -   [ALTER](statements/alter.md#query_language_queries_alter)

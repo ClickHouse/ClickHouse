@@ -316,7 +316,7 @@ Résultat:
 ## rétention {#retention}
 
 La fonction prend comme arguments un ensemble de conditions de 1 à 32 arguments de type `UInt8` qui indiquent si une certaine condition est remplie pour l’événement.
-Toute condition peut être spécifiée comme argument (comme dans [WHERE](../../sql-reference/statements/select.md#select-where)).
+Toute condition peut être spécifiée comme argument (comme dans [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 Les conditions, à l’exception de la première, s’appliquent par paires: le résultat de la seconde sera vrai si la première et la deuxième sont remplies, le troisième si la première et la fird sont vraies, etc.
 

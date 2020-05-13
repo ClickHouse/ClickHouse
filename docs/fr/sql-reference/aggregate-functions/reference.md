@@ -1142,7 +1142,7 @@ Sinon, le résultat du calcul est arrondi au plus proche multiple de 16 ms.
 Type: `Float32`.
 
 !!! note "Note"
-    Si aucune valeur n’est transmise à la fonction (lors de l’utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select.md#select-order-by) pour des notes sur le tri `NaN` valeur.
+    Si aucune valeur n’est transmise à la fonction (lors de l’utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select/order-by.md#select-order-by) pour des notes sur le tri `NaN` valeur.
 
 **Exemple**
 
@@ -1227,7 +1227,7 @@ Sinon, le résultat du calcul est arrondi au plus proche multiple de 16 ms.
 Type: `Float32`.
 
 !!! note "Note"
-    Si aucune valeur n’est transmise à la fonction (lors de l’utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select.md#select-order-by) pour des notes sur le tri `NaN` valeur.
+    Si aucune valeur n’est transmise à la fonction (lors de l’utilisation de `quantileTimingIf`), [Nan](../../sql-reference/data-types/float.md#data_type-float-nan-inf) est retourné. Le but est de différencier ces cas de cas qui aboutissent à zéro. Voir [Clause ORDER BY](../statements/select/order-by.md#select-order-by) pour des notes sur le tri `NaN` valeur.
 
 **Exemple**
 

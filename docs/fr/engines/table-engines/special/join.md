@@ -7,7 +7,7 @@ toc_title: Rejoindre
 
 # Rejoindre {#join}
 
-Structure de données préparée pour l’utilisation dans [JOIN](../../../sql-reference/statements/select.md#select-join) opérations.
+Structure de données préparée pour l’utilisation dans [JOIN](../../../sql-reference/statements/select/join.md#select-join) opérations.
 
 ## Création d’une Table {#creating-a-table}
 
@@ -23,8 +23,8 @@ Voir la description détaillée de la [CREATE TABLE](../../../sql-reference/stat
 
 **Les Paramètres Du Moteur**
 
--   `join_strictness` – [ADHÉRER à la rigueur](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [Type de jointure](../../../sql-reference/statements/select.md#select-join-types).
+-   `join_strictness` – [ADHÉRER à la rigueur](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_type` – [Type de jointure](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` la clause que l’ `JOIN` l’opération est faite avec de la.
 
 Entrer `join_strictness` et `join_type` paramètres sans guillemets, par exemple, `Join(ANY, LEFT, col1)`. Ils doivent correspondre à la `JOIN` fonctionnement que le tableau sera utilisé pour. Si les paramètres ne correspondent pas, ClickHouse ne lance pas d’exception et peut renvoyer des données incorrectes.
@@ -100,7 +100,7 @@ Lors de la création d’un tableau, les paramètres suivants sont appliqués:
 
 Le `Join`- les tables de moteur ne peuvent pas être utilisées dans `GLOBAL JOIN` opérations.
 
-Le `Join`-moteur permet d’utiliser [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) réglage de la `CREATE TABLE` déclaration. Et [SELECT](../../../sql-reference/statements/select.md) requête permet d’utiliser `join_use_nulls` trop. Si vous avez différents `join_use_nulls` paramètres, vous pouvez obtenir une table de jointure d’erreur. Il dépend de type de JOINTURE. Lorsque vous utilisez [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonction, vous devez utiliser le même `join_use_nulls` réglage en `CRATE TABLE` et `SELECT` déclaration.
+Le `Join`-moteur permet d’utiliser [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) réglage de la `CREATE TABLE` déclaration. Et [SELECT](../../../sql-reference/statements/select/join.md) requête permet d’utiliser `join_use_nulls` trop. Si vous avez différents `join_use_nulls` paramètres, vous pouvez obtenir une table de jointure d’erreur. Il dépend de type de JOINTURE. Lorsque vous utilisez [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonction, vous devez utiliser le même `join_use_nulls` réglage en `CRATE TABLE` et `SELECT` déclaration.
 
 ## Le Stockage De Données {#data-storage}
 

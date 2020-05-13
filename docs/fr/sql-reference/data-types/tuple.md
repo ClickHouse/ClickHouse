@@ -9,7 +9,7 @@ toc_title: Tuple (T1, T2,...)
 
 Un n-uplet d’éléments, chacun ayant une personne [type](index.md#data_types).
 
-Les Tuples sont utilisés pour le regroupement temporaire de colonnes. Les colonnes peuvent être regroupées lorsqu’une expression IN est utilisée dans une requête et pour spécifier certains paramètres formels des fonctions lambda. Pour plus d’informations, voir les sections [Dans les opérateurs](../../sql-reference/statements/select.md) et [Des fonctions d’ordre supérieur](../../sql-reference/functions/higher-order-functions.md).
+Les Tuples sont utilisés pour le regroupement temporaire de colonnes. Les colonnes peuvent être regroupées lorsqu’une expression IN est utilisée dans une requête et pour spécifier certains paramètres formels des fonctions lambda. Pour plus d’informations, voir les sections [Dans les opérateurs](../../sql-reference/operators/in.md) et [Des fonctions d’ordre supérieur](../../sql-reference/functions/higher-order-functions.md).
 
 Les Tuples peuvent être le résultat d’une requête. Dans ce cas, pour les formats de texte autres que JSON, les valeurs sont séparées par des virgules entre parenthèses. Dans les formats JSON, les tuples sont sortis sous forme de tableaux (entre crochets).
 

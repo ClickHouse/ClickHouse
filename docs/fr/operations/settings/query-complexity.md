@@ -82,11 +82,11 @@ Que faire lorsque le nombre de clés uniques pour l’agrégation dépasse la li
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Active ou désactive l’exécution de `GROUP BY` clauses dans la mémoire externe. Voir [Groupe par dans la mémoire externe](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+Active ou désactive l’exécution de `GROUP BY` clauses dans la mémoire externe. Voir [Groupe par dans la mémoire externe](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 Valeurs possibles:
 
--   Volume maximal de RAM (en octets) pouvant être utilisé par le [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause) opération.
+-   Volume maximal de RAM (en octets) pouvant être utilisé par le [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) opération.
 -   0 — `GROUP BY` dans la mémoire externe désactivé.
 
 Valeur par défaut: 0.
@@ -234,7 +234,7 @@ Que faire lorsque la quantité de données dépasse l’une des limites: ‘thro
 
 Limite le nombre de lignes dans la table de hachage utilisée lors de la jonction de tables.
 
-Ce réglage s’applique à [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) les opérations et les [Rejoindre](../../engines/table-engines/special/join.md) tableau moteur.
+Ce réglage s’applique à [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) les opérations et les [Rejoindre](../../engines/table-engines/special/join.md) tableau moteur.
 
 Si une requête contient plusieurs jointures, ClickHouse vérifie ce paramètre pour chaque résultat intermédiaire.
 
@@ -251,7 +251,7 @@ Valeur par défaut: 0.
 
 Limite la taille en octets de la table de hachage utilisée lors de l’assemblage de tables.
 
-Ce réglage s’applique à [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) les opérations et les [Rejoindre le moteur de table](../../engines/table-engines/special/join.md).
+Ce réglage s’applique à [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) les opérations et les [Rejoindre le moteur de table](../../engines/table-engines/special/join.md).
 
 Si la requête contient des jointures, ClickHouse vérifie ce paramètre pour chaque résultat intermédiaire.
 
@@ -280,7 +280,7 @@ Valeur par défaut: `THROW`.
 
 **Voir Aussi**
 
--   [Clause de JOINTURE](../../sql-reference/statements/select.md#select-join)
+-   [Clause de JOINTURE](../../sql-reference/statements/select/join.md#select-join)
 -   [Rejoindre le moteur de table](../../engines/table-engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}

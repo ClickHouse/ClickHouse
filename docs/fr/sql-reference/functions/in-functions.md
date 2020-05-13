@@ -9,7 +9,7 @@ toc_title: "Mise en \u0153uvre de L'op\xE9rateur IN"
 
 ## in, notin, globalIn, globalNotIn {#in-functions}
 
-Voir la section [Dans les opérateurs](../statements/select.md#select-in-operators).
+Voir la section [Dans les opérateurs](../operators/in.md#select-in-operators).
 
 ## tuple(x, y, …), operator (x, y, …) {#tuplex-y-operator-x-y}
 
