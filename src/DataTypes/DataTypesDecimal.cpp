@@ -181,6 +181,7 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("NUMERIC", "Decimal", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("FIXED", "Decimal", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("REAL", "Decimal32", DataTypeFactory::CaseInsensitive);
 }
 
 /// Explicit template instantiations.
