@@ -278,7 +278,7 @@ namespace Coordination
         {
             zk_path = new_zk_path;
         }
-        String generateFullPathFromParts(EtcdKeyPrefix prefix_type, int32_t level, const String & path)
+        String generateFullPathFromParts(EtcdKeyPrefix prefix_type, int32_t level, const String & path) const
         {
             String prefix;
             if (prefix_type == EtcdKeyPrefix::VALUE)
@@ -303,47 +303,47 @@ namespace Coordination
             }
             return "/zk" + prefix + std::to_string(level) + path;
         }
-        String getSequentialCounterKey()
+        String getSequentialCounterKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::SEQUENTIAL, level, zk_path);
         }
-        String getFullEtcdKey()
+        String getFullEtcdKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::VALUE, level, zk_path);
         }
-        String getChildsFlagKey()
+        String getChildsFlagKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::CHILDS, level, zk_path);
         }
-        String getEphimeralFlagKey()
+        String getEphimeralFlagKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::IS_EPHEMERAL, level, zk_path);
         }
-        String getSequentialFlagKey()
+        String getSequentialFlagKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::IS_SEQUENTIAL, level, zk_path);
         }
-        std::vector<String> getRelatedKeys()
+        std::vector<String> getRelatedKeys() const
         {
             return std::vector<String> {getFullEtcdKey(), getSequentialCounterKey(), getChildsFlagKey(), getEphimeralFlagKey(), getSequentialFlagKey()};
         }
-        String getChildsPrefix()
+        String getChildsPrefix() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::VALUE, level + 1, zk_path);
         }
-        String getParentChildsFlagKey()
+        String getParentChildsFlagKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::CHILDS, level - 1, parent_zk_path);
         }
-        String getParentKey()
+        String getParentKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::VALUE, level - 1, parent_zk_path);
         }
-        String getParentEphimeralFlagKey()
+        String getParentEphimeralFlagKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::IS_EPHEMERAL, level - 1, parent_zk_path);
         }
-        String getParentSequentialCounterKey()
+        String getParentSequentialCounterKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::SEQUENTIAL, level - 1, parent_zk_path);
         }
@@ -441,7 +441,7 @@ namespace Coordination
         EtcdKeeperResponsePtr response;
 
         virtual EtcdKeeperResponsePtr makeResponse() const = 0;
-        virtual void preparePostCall() const = 0;
+        virtual void preparePostCall() = 0;
         virtual EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) = 0;
         virtual void preparePreCall() {}
         virtual void checkRequestForComposite() {}
@@ -464,30 +464,18 @@ namespace Coordination
             txn_requests.clear();
             pre_call_responses.clear();
         }
-        void setPreCall()
-        {
-            pre_call_called = true;
-        }
-        bool tooMachRetry()
+        virtual void call(EtcdKeeper::AsyncCall & call,
+            std::unique_ptr<KV::Stub> & kv_stub,
+            CompletionQueue & kv_cq)
         {
             retry++;
             if (retry > 10)
             {
                 response->error = Error::ZNONODE;
-                return true;
-            }
-            return false;
-        }
-        virtual void call(EtcdKeeper::AsyncCall & call,
-            std::unique_ptr<KV::Stub> & kv_stub,
-            CompletionQueue & kv_cq) const
-        {
-            if (tooMachRetry())
-            {
                 return;
             }
             callRequest(call, kv_stub, kv_cq, txn_requests);
-            setPreCall();
+            pre_call_called = true;
             txn_requests.clear();
         }
         EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields) const
@@ -616,7 +604,7 @@ namespace Coordination
                 }
             }
         }
-        void preparePostCall() const
+        void preparePostCall()
         {
             parsePreResponses();
             LOG_DEBUG(log, "CREATE " << process_path);
@@ -682,7 +670,7 @@ namespace Coordination
                         if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                         {
                             response->error = Error::ZNOTEMPTY;
-                            return response;
+                            return;
                         }
                         else if (kv.key() == etcd_key.getChildsFlagKey())
                         {
@@ -694,14 +682,14 @@ namespace Coordination
                             if (version != -1 && kv.version() != version)
                             {
                                 response->error = Error::ZBADVERSION;
-                                return response;
+                                return;
                             }
                         }
                     }
                 }
             }
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             parsePreResponses();
             txn_requests.compares.push_back(prepareCompare(etcd_key.getChildsFlagKey(), "version", "equal", child_flag_version));
@@ -728,7 +716,7 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             txn_requests.success_ranges.push_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
         }
@@ -743,7 +731,7 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             txn_requests.success_ranges.push_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
             txn_requests.success_ranges.push_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
@@ -761,7 +749,7 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             LOG_DEBUG(log, "SET " << path);
             txn_requests.compares.push_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", version == -1 ? "not_equal" : "equal", version));
@@ -778,7 +766,7 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             LOG_DEBUG(log, "LIST " << path);
             txn_requests.compares.push_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", "not_equal", -1));
@@ -798,7 +786,7 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             LOG_DEBUG(log, "CHECK " << path << "    " << version);
             txn_requests.compares.push_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", version == -1 ? "not_equal" : "equal", version));
@@ -971,7 +959,7 @@ namespace Coordination
                 txn_requests += request->txn_requests;
             }
         }
-        void preparePostCall() const override
+        void preparePostCall() override
         {
             parsePreResponses();
             txn_requests.take_last_create_request_with_prefix("/zk/childs");
