@@ -1022,6 +1022,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 sort_description.emplace_back(data.sorting_key_columns[j],
                     input_sorting_info->direction, 1);
 
+            /// Drop temporary columns, added by 'sorting_key_prefix_expr'
             out_projection = createProjection(pipes.back(), data);
             for (auto & pipe : pipes)
                 pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), sorting_key_prefix_expr));
@@ -1086,6 +1087,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             virt_columns, part.part_index_in_query);
 
         Pipe pipe(std::move(source_processor));
+        /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
             out_projection = createProjection(pipe, data);
 
