@@ -1,6 +1,6 @@
 ---
 toc_priority: 38
-toc_title: Parametric aggregate functions
+toc_title: Parametric
 ---
 
 # Parametric Aggregate Functions {#aggregate_functions_parametric}
