@@ -57,6 +57,9 @@ RUN apt-get --allow-unauthenticated update -y \
             libre2-dev \
             libjemalloc-dev \
             libmsgpack-dev \
+            opencl-headers \
+            ocl-icd-libopencl1 \
+            intel-opencl-icd \
             unixodbc-dev \
             odbcinst \
             tzdata \
