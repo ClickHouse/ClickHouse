@@ -28,9 +28,21 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; } /// @TODO Igr
 
-    void executeImpl(Block & /* block */, const ColumnNumbers & /* arguments */, size_t /* result */, size_t /* input_rows_count */) override
+    void executeImpl(Block & block, const ColumnNumbers & /* arguments */, size_t result, size_t input_rows_count) override
     {
         connector.execCall(name); /// @TODO Igr
+
+        auto column = block.getByPosition(result).column->cloneResized(input_rows_count);
+
+        if (column->isFixedAndContiguous())
+        {
+            auto to_alloc = column->getRawData().size;
+            ++to_alloc;
+            /// SharedMemory.alloc(to_alloc)
+        }
+
+        block.getByPosition(result).column = std::move(column);
+
         throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 

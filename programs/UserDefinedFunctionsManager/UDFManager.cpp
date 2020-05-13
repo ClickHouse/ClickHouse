@@ -30,7 +30,11 @@ int mainEntryClickHouseUDFManager(int argc, char ** argv)
 
         if (options.count("uid"))
         {
-            setuid(options["uid"].as<unsigned>());
+            if (setuid(options["uid"].as<unsigned>()) != 0)
+            {
+                std::cerr << "Can not sed uid " << options["uid"].as<unsigned>() << "\n";
+                return 1;
+            }
         }
 
         return UDFManager().run();
