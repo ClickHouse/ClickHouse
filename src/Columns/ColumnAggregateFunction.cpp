@@ -83,6 +83,8 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
         return res;
     }
 
+    column_aggregate_func.ensureOwnership();
+
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
