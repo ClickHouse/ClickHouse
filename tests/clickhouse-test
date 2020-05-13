@@ -51,8 +51,27 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     # print(client_options)
 
+    if args.database:
+        database = args.database
+        os.environ.setdefault("CLICKHOUSE_DATABASE", database)
+
+    else:
+        # If --database is not specified, we will create temporary database with unique name
+        # And we will recreate and drop it for each test
+        def random_str(length=6):
+            import random
+            import string
+            alphabet = string.ascii_lowercase + string.digits
+            return ''.join(random.choice(alphabet) for _ in range(length))
+        database = 'test_{suffix}'.format(suffix=random_str())
+
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("CREATE DATABASE " + database)
+
+        os.environ["CLICKHOUSE_DATABASE"] = database
+
     params = {
-        'client': args.client_with_database,
+        'client': args.client + ' --database=' + database,
         'logs_level': server_logs_level,
         'options': client_options,
         'test': case_file,
@@ -68,24 +87,20 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     command = pattern.format(**params)
     #print(command)
 
-    if args.is_temporary_database:
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
-
     proc = Popen(command, shell=True, env=os.environ)
     start_time = datetime.now()
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
-    if args.is_temporary_database:
+    if not args.database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("DROP DATABASE " + args.database)
+        clickhouse_proc_create.communicate("DROP DATABASE " + database)
 
     total_time = (datetime.now() - start_time).total_seconds()
 
     # Normalize randomized database names in stdout, stderr files.
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
     stdout = unicode(stdout, errors='replace', encoding='utf-8')
@@ -216,7 +231,7 @@ def run_tests_array(all_tests_with_params):
                 else:
 
                     if args.testname:
-                        clickhouse_proc = Popen(shlex.split(args.client_with_database), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                         clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
                     reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -339,7 +354,6 @@ def main(args):
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
-    os.environ.setdefault("CLICKHOUSE_DATABASE", args.database)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
@@ -362,12 +376,12 @@ def main(args):
         else:
             args.shard = False
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
-
-    if args.database != "test":
+    if args.database and args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
@@ -470,7 +484,7 @@ def main(args):
             total_tests_run += tests_n
 
     if args.hung_check:
-        processlist = get_processlist(args.client_with_database)
+        processlist = get_processlist(args.client)
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
@@ -621,23 +635,6 @@ if __name__ == '__main__':
            os.environ['CLICKHOUSE_URL_PARAMS'] = ''
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
-
-    args.client_with_database = args.client
-
-    # If --database is not specified, we will create temporary database with unique name
-    # And we will recreate and drop it for each test
-    args.is_temporary_database = 0
-
-    if not args.database:
-        def random_str(length=6):
-            import random
-            import string
-            alphabet = string.ascii_lowercase + string.digits
-            return ''.join(random.choice(alphabet) for _ in range(length))
-        args.database = 'test_{suffix}'.format(suffix=random_str())
-        args.is_temporary_database = 1
-
-    args.client_with_database += ' --database=' + args.database
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
