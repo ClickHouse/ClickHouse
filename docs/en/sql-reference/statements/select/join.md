@@ -6,7 +6,7 @@ Syntax:
 ``` sql
 SELECT <expr_list>
 FROM <left_table>
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_table>
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN <right_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -26,8 +26,8 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 
 Additional join types available in ClickHouse:
 
--   `SEMI JOIN`, a whitelist on "join keys", without producing a cartesian product.
--   `ANTI JOIN`, a blacklist on "join keys", without producing a cartesian product. 
+-   `LEFT SEMI JOIN` and `RIGHT SEMI JOIN`, a whitelist on "join keys", without producing a cartesian product.
+-   `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on "join keys", without producing a cartesian product. 
 
 ## Strictness {#select-join-strictness}
 
@@ -131,9 +131,11 @@ In some cases, it is more efficient to use [IN](../../operators/in.md) instead o
 
 If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is an “external dictionaries” feature that you should use instead of `JOIN`. For more information, see the [External dictionaries](../../dictionaries/external-dictionaries/external-dicts.md) section.
 
-**Memory Limitations**
+### Memory Limitations
 
-ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_subquery>` and creates a hash table for it in RAM. If you need to restrict join operation memory consumption use the following settings:
+By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_table>` and creates a hash table for it in RAM. After some threshold of memory consumption, ClickHouse falls back to merge join algorithm.
+
+If you need to restrict join operation memory consumption use the following settings:
 
 -   [max\_rows\_in\_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [max\_bytes\_in\_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
