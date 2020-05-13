@@ -1469,7 +1469,8 @@ It represents an unbiased estimate of the variance of a random variable if passe
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
-Function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower, but provides lower computational error.
+!!! note "Note"
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower, but provides lower computational error.
 
 ## varPop(x) {#varpopx}
 
@@ -1477,19 +1478,22 @@ Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
-Function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower, but provides lower computational error.
+!!! note "Note"
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower, but provides lower computational error.
 
 ## stddevSamp(x) {#stddevsampx}
 
 The result is equal to the square root of `varSamp(x)`.
 
-Function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevSampStable` function. It works slower, but provides lower computational error.
+!!! note "Note"
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevSampStable` function. It works slower, but provides lower computational error.
 
 ## stddevPop(x) {#stddevpopx}
 
 The result is equal to the square root of `varPop(x)`.
 
-Function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower, but provides lower computational error.
+!!! note "Note"
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower, but provides lower computational error.
 
 ## topK(N)(x) {#topknx}
 
@@ -1575,20 +1579,22 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Returns Float64. When `n <= 1`, returns +∞.
 
-Function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarSampStable` function. It works slower, but provides lower computational error.
+!!! note "Note"
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarSampStable` function. It works slower, but provides lower computational error.
 
 ## covarPop(x, y) {#covarpopx-y}
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 !!! note "Note"
-    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarPopStable` function. It works slower but provides a lower computational error.
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarPopStable` function. It works slower but provides a lower computational error.
 
 ## corr(x, y) {#corrx-y}
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
-Function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `corrStable` function. It works slower, but provides lower computational error.
+!!! note "Note"
+    This function uses numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `corrStable` function. It works slower, but provides lower computational error.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 
