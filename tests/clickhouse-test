@@ -68,10 +68,18 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     command = pattern.format(**params)
     #print(command)
 
+    if args.is_temporary_database:
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+
     proc = Popen(command, shell=True, env=os.environ)
     start_time = datetime.now()
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
+
+    if args.is_temporary_database:
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("DROP DATABASE " + args.database)
 
     total_time = (datetime.now() - start_time).total_seconds()
 
@@ -108,6 +116,7 @@ def get_stacktraces_from_gdb(server_pid):
 
 
 # collect server stacktraces from system.stack_trace table
+# it does not work in Sandbox
 def get_stacktraces_from_clickhouse(client):
     try:
         return subprocess.check_output("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
@@ -355,6 +364,7 @@ def main(args):
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+
     if args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
@@ -469,8 +479,11 @@ def main(args):
             server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
-                print("\nCollecting stacktraces from system.stacktraces table:")
-                print(get_stacktraces_from_clickhouse(args.client))
+
+                # It does not work in Sandbox
+                #print("\nCollecting stacktraces from system.stacktraces table:")
+                #print(get_stacktraces_from_clickhouse(args.client))
+
                 print("\nCollecting stacktraces from all running threads with gdb:")
                 print(get_stacktraces_from_gdb(server_pid))
             else:
@@ -609,8 +622,12 @@ if __name__ == '__main__':
 
         os.environ['CLICKHOUSE_URL_PARAMS'] += get_additional_client_options_url(args)
 
-
     args.client_with_database = args.client
+
+    # If --database is not specified, we will create temporary database with unique name
+    # And we will recreate and drop it for each test
+    args.is_temporary_database = 0
+
     if not args.database:
         def random_str(length=6):
             import random
@@ -618,6 +635,8 @@ if __name__ == '__main__':
             alphabet = string.ascii_lowercase + string.digits
             return ''.join(random.choice(alphabet) for _ in range(length))
         args.database = 'test_{suffix}'.format(suffix=random_str())
+        args.is_temporary_database = 1
+
     args.client_with_database += ' --database=' + args.database
 
     if args.extract_from_config is None:
