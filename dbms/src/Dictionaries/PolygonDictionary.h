@@ -178,8 +178,10 @@ public:
     // TODO: Refactor the whole dictionary design to perform stronger checks, i.e. make this an override.
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    /** Single coordinate type. */
+    using Coord = Float32;
     /** A two-dimensional point in Euclidean coordinates. */
-    using Point = bg::model::d2::point_xy<Float64, bg::cs::cartesian>;
+    using Point = bg::model::d2::point_xy<Coord, bg::cs::cartesian>;
     /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
     using Polygon = bg::model::polygon<Point>;
     /** A ring in boost used for describing the polygons. */
