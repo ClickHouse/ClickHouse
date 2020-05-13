@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.5.1)
 
-
 set(GRPC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc)
 set(GRPC_INCLUDE_DIR ${GRPC_SOURCE_DIR}/include/)
 set(GRPC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/grpc)
@@ -38,6 +37,34 @@ else()
 endif()
 set(_gRPC_CARES_LIBRARIES c-ares)
 add_subdirectory(${CARES_ROOT_DIR} ${CARES_BINARY_DIR})
+if(TARGET c-ares)
+  set(_gRPC_CARES_LIBRARIES c-ares)
+endif()
+
+# protobuf.cmake
+set(PROTOBUF_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
+
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
+if(NOT protobuf_WITH_ZLIB)
+  set(protobuf_WITH_ZLIB OFF CACHE BOOL "Build protobuf with zlib.")
+endif()
+set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Link static runtime libraries")
+
+set(_gRPC_PROTOBUF_LIBRARIES libprotobuf)
+set(_gRPC_PROTOBUF_PROTOC_LIBRARIES libprotoc)
+set(_gRPC_PROTOBUF_PROTOC protoc)
+set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
+set(_gRPC_PROTOBUF_INCLUDE_DIR "${PROTOBUF_ROOT_DIR}/src")
+
+if(gRPC_INSTALL)
+  message(WARNING "gRPC_INSTALL will be forced to FALSE because gRPC_PROTOBUF_PROVIDER is \"module\"")
+  set(gRPC_INSTALL FALSE)
+endif()
+
+# ssl.cmake
+set(BORINGSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../openssl)
+set(_gRPC_SSL_LIBRARIES ssl)
+set(_gRPC_SSL_INCLUDE_DIR ${BORINGSSL_ROOT_DIR}/include)
 
 # upb.cmake
 set(UPB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/upb)
@@ -45,11 +72,14 @@ set(_gRPC_UPB_INCLUDE_DIR "${UPB_ROOT_DIR}")
 set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated")
 set(_gRPC_UPB_LIBRARIES upb)
 
-# protobuf.cmake
-set(_gRPC_PROTOBUF_INCLUDE_DIR ${Protobuf_INCLUDE_DIR})
-set(_gRPC_PROTOBUF_LIBRARIES ${Protobuf_LIBRARY})
-set(_gRPC_PROTOBUF_PROTOC_LIBRARIES ${Protobuf_PROTOC_LIBRARY})
-set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
+# zlib.cmake
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
+include_directories("${ZLIB_ROOT_DIR}")
+## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
+if(TARGET zlibstatic)
+  set(_gRPC_ZLIB_LIBRARIES zlibstatic)
+  set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${GRPC_SOURCE_DIR}/third_party/zlib")
+endif()
 
 # ssl.cmake
 set(_gRPC_SSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR})
@@ -957,6 +987,7 @@ target_link_libraries(grpc++
   ${_gRPC_SSL_LIBRARIES}
   ${_gRPC_PROTOBUF_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_ZLIB_LIBRARIES}
   grpc
   gpr
 )
