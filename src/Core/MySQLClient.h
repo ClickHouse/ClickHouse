@@ -33,6 +33,7 @@ public:
     void ping();
 
     void startBinlogDump(UInt32 slave_id, String replicate_db, String binlog_file_name, UInt64 binlog_pos);
+    void startBinlogDumpGTID(UInt32 slave_id, String replicate_db, String gtid);
     BinlogEventPtr readOneBinlogEvent();
     Position getPosition() const { return replication.getPosition(); }
 

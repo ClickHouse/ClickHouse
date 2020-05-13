@@ -1517,14 +1517,10 @@ namespace Replication
         UInt16 flags;
         UInt32 server_id;
         String binlog_file_name;
-        String gtid_sets;
+        String gtid_datas;
 
-        BinlogDumpGTID(UInt64 binlog_pos_, String binlog_file_name_, UInt32 server_id_, String gtid_sets_)
-            : binlog_pos(binlog_pos_)
-            , flags(0x00)
-            , server_id(server_id_)
-            , binlog_file_name(std::move(binlog_file_name_))
-            , gtid_sets(std::move(gtid_sets_))
+        BinlogDumpGTID(UInt32 server_id_, String gtid_datas_)
+            : binlog_pos(4), flags(0x00), server_id(server_id_), binlog_file_name(""), gtid_datas(std::move(gtid_datas_))
         {
         }
 
@@ -1533,15 +1529,20 @@ namespace Replication
             buffer.write(header);
             buffer.write(reinterpret_cast<const char *>(&flags), 2);
             buffer.write(reinterpret_cast<const char *>(&server_id), 4);
-            buffer.write(reinterpret_cast<const char *>(binlog_file_name.size()), 4);
+
+            UInt32 file_size = binlog_file_name.size();
+            buffer.write(reinterpret_cast<const char *>(&file_size), 4);
+
             buffer.write(binlog_file_name.data(), binlog_file_name.size());
             buffer.write(reinterpret_cast<const char *>(&binlog_pos), 8);
-            buffer.write(reinterpret_cast<const char *>(gtid_sets.size()), 4);
-            buffer.write(gtid_sets.data(), gtid_sets.size());
+
+            UInt32 gtid_size = gtid_datas.size();
+            buffer.write(reinterpret_cast<const char *>(&gtid_size), 4);
+            buffer.write(gtid_datas.data(), gtid_datas.size());
         }
 
     protected:
-        size_t getPayloadSize() const override { return 1 + 2 + 4 + 4 + binlog_file_name.size() + 8 + 4 + gtid_sets.size(); }
+        size_t getPayloadSize() const override { return 1 + 2 + 4 + 4 + binlog_file_name.size() + 8 + 4 + gtid_datas.size(); }
     };
 }
 }

@@ -480,7 +480,13 @@ namespace MySQLReplication
     {
     public:
         std::vector<GTIDSet> sets;
-        void parseFromString(String gtid);
+
+        GTID(const String gtid_format_) : gtid_format(std::move(gtid_format_)) {}
+        void parse();
+        String encode() ;
+
+    private:
+        String gtid_format;
     };
 
     class IFlavor : public MySQLProtocol::ReadPacket

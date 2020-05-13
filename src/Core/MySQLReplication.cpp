@@ -2,8 +2,8 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
-#include <Common/FieldVisitors.h>
 #include <boost/algorithm/string.hpp>
+#include <Common/FieldVisitors.h>
 
 namespace DB
 {
@@ -713,12 +713,12 @@ namespace MySQLReplication
         std::cerr << "[DryRun Event]" << std::endl;
     }
 
-    void GTID::parseFromString(String format)
+    void GTID::parse()
     {
         std::vector<String> ssets;
-        boost::split(ssets, format, [](char c) { return c == ','; });
+        boost::split(ssets, gtid_format, boost::is_any_of(","));
 
-        for (size_t i= 0; i < ssets.size(); i++)
+        for (size_t i = 0; i < ssets.size(); i++)
         {
             std::vector<String> gtids;
             boost::split(gtids, ssets[i], [](char c) { return c == ':'; });
@@ -726,12 +726,38 @@ namespace MySQLReplication
             GTIDSet set;
             set.UUID = gtids[0];
 
-            std::vector<String> inters;
-            boost::split(inters, gtids[1], [](char c) { return c == '-'; });
+            for (size_t k = 1; k < gtids.size(); k++)
+            {
+                std::vector<String> inters;
+                boost::split(inters, gtids[k], [](char c) { return c == '-'; });
 
-            GTIDSet::Interval val{std::stol(inters[0]), std::stol(inters[1])};
-            set.intervals.emplace_back(val);
+                GTIDSet::Interval val{std::stol(inters[0]), std::stol(inters[1])};
+                set.intervals.emplace_back(val);
+            }
+            sets.emplace_back(set);
         }
+    }
+
+    String GTID::encode()
+    {
+        WriteBufferFromOwnString buffer;
+
+        UInt64 sets_size = sets.size();
+        buffer.write(reinterpret_cast<const char *>(&sets_size), 8);
+        for (size_t i = 0; i < sets.size(); i++)
+        {
+            GTIDSet set = sets[i];
+            buffer.write(set.UUID.data(), 16);
+
+            UInt64 intervals_size = set.intervals.size();
+            buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);
+            for (size_t k = 0; k < set.intervals.size(); k++)
+            {
+                buffer.write(reinterpret_cast<const char *>(&set.intervals[k].start), 8);
+                buffer.write(reinterpret_cast<const char *>(&set.intervals[k].end), 8);
+            }
+        }
+        return buffer.str();
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
