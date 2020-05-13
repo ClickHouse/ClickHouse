@@ -471,7 +471,8 @@ namespace Coordination
         bool tooMachRetry()
         {
             retry++;
-            if (retry > 10) {
+            if (retry > 10)
+            {
                 response->error = Error::ZNONODE;
                 return true;
             }
