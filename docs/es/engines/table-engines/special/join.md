@@ -7,7 +7,7 @@ toc_title: Unir
 
 # Unir {#join}
 
-Estructura de datos preparada para usar en [JOIN](../../../sql-reference/statements/select.md#select-join) operación.
+Estructura de datos preparada para usar en [JOIN](../../../sql-reference/statements/select/join.md#select-join) operación.
 
 ## Creación De Una Tabla {#creating-a-table}
 
@@ -23,8 +23,8 @@ Vea la descripción detallada del [CREATE TABLE](../../../sql-reference/statemen
 
 **Parámetros del motor**
 
--   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [Tipo de unión](../../../sql-reference/statements/select.md#select-join-types).
+-   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_type` – [Tipo de unión](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` cláusula que el `JOIN` operación se hace con.
 
 Entrar `join_strictness` y `join_type` parámetros sin comillas, por ejemplo, `Join(ANY, LEFT, col1)`. Deben coincidir con el `JOIN` operación para la que se utilizará la tabla. Si los parámetros no coinciden, ClickHouse no lanza una excepción y puede devolver datos incorrectos.
@@ -100,7 +100,7 @@ Al crear una tabla, se aplican los siguientes valores:
 
 El `Join`-las tablas del motor no se pueden usar en `GLOBAL JOIN` operación.
 
-El `Join`-motor permite el uso [Sistema abierto.](../../../operations/settings/settings.md#join_use_nulls) ajuste en el `CREATE TABLE` instrucción. Y [SELECT](../../../sql-reference/statements/select.md) consulta permite el uso `join_use_nulls` demasiado. Si tienes diferentes `join_use_nulls` configuración, puede obtener un error al unirse a la tabla. Depende del tipo de JOIN. Cuando se utiliza [joinGet](../../../sql-reference/functions/other-functions.md#joinget) función, usted tiene que utilizar el mismo `join_use_nulls` ajuste en `CRATE TABLE` y `SELECT` instrucción.
+El `Join`-motor permite el uso [Sistema abierto.](../../../operations/settings/settings.md#join_use_nulls) ajuste en el `CREATE TABLE` instrucción. Y [SELECT](../../../sql-reference/statements/select/index.md) consulta permite el uso `join_use_nulls` demasiado. Si tienes diferentes `join_use_nulls` configuración, puede obtener un error al unirse a la tabla. Depende del tipo de JOIN. Cuando se utiliza [joinGet](../../../sql-reference/functions/other-functions.md#joinget) función, usted tiene que utilizar el mismo `join_use_nulls` ajuste en `CRATE TABLE` y `SELECT` instrucción.
 
 ## Almacenamiento De Datos {#data-storage}
 

@@ -24,9 +24,9 @@ El volumen requerido de RAM depende de:
 -   La complejidad de las consultas.
 -   La cantidad de datos que se procesan en las consultas.
 
-Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql-reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select.md#select-distinct), [JOIN](../sql-reference/statements/select.md#select-join) y otras operaciones que utilice.
+Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) y otras operaciones que utilice.
 
-ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql-reference/statements/select.md#select-group-by-in-external-memory) para más detalles.
+ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) para más detalles.
 
 ## Archivo De Intercambio {#swap-file}
 

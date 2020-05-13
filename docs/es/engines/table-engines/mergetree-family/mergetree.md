@@ -106,7 +106,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 En el ejemplo, configuramos la partición por mes.
 
-También establecemos una expresión para el muestreo como un hash por el ID de usuario. Esto le permite pseudoaleatorizar los datos en la tabla para cada `CounterID` y `EventDate`. Si define un [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) cláusula al seleccionar los datos, ClickHouse devolverá una muestra de datos pseudoaleatoria uniforme para un subconjunto de usuarios.
+También establecemos una expresión para el muestreo como un hash por el ID de usuario. Esto le permite pseudoaleatorizar los datos en la tabla para cada `CounterID` y `EventDate`. Si define un [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) cláusula al seleccionar los datos, ClickHouse devolverá una muestra de datos pseudoaleatoria uniforme para un subconjunto de usuarios.
 
 El `index_granularity` se puede omitir porque 8192 es el valor predeterminado.
 

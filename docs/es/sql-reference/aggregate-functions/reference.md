@@ -1142,7 +1142,7 @@ De lo contrario, el resultado del cálculo se redondea al múltiplo más cercano
 Tipo: `Float32`.
 
 !!! note "Nota"
-    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select.md#select-order-by) para notas sobre la clasificación `NaN` valor.
+    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select/order-by.md#select-order-by) para notas sobre la clasificación `NaN` valor.
 
 **Ejemplo**
 
@@ -1227,7 +1227,7 @@ De lo contrario, el resultado del cálculo se redondea al múltiplo más cercano
 Tipo: `Float32`.
 
 !!! note "Nota"
-    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select.md#select-order-by) para notas sobre la clasificación `NaN` valor.
+    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select/order-by.md#select-order-by) para notas sobre la clasificación `NaN` valor.
 
 **Ejemplo**
 

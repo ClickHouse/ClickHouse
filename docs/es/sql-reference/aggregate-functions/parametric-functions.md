@@ -316,7 +316,7 @@ Resultado:
 ## retención {#retention}
 
 La función toma como argumentos un conjunto de condiciones de 1 a 32 argumentos de tipo `UInt8` que indican si se cumplió una determinada condición para el evento.
-Cualquier condición se puede especificar como un argumento (como en [WHERE](../../sql-reference/statements/select.md#select-where)).
+Cualquier condición se puede especificar como un argumento (como en [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 Las condiciones, excepto la primera, se aplican en pares: el resultado del segundo será verdadero si el primero y el segundo son verdaderos, del tercero si el primero y el fird son verdaderos, etc.
 

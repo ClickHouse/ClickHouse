@@ -82,6 +82,6 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select.md).
+    See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select/order-by.md).
 
 [Artículo Original](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->

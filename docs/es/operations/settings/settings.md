@@ -9,7 +9,7 @@ toc_title: "Configuraci\xF3n"
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Cambia el comportamiento de [subconsultas distribuidas](../../sql-reference/statements/select.md).
+Cambia el comportamiento de [subconsultas distribuidas](../../sql-reference/statements/select/index.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -354,7 +354,7 @@ Ver también:
 
 ## Por Favor, Introduzca Su dirección De Correo electrónico {#settings-join_default_strictness}
 
-Establece el rigor predeterminado para [Cláusulas JOIN](../../sql-reference/statements/select.md#select-join).
+Establece el rigor predeterminado para [Cláusulas JOIN](../../sql-reference/statements/select/join.md#select-join).
 
 Valores posibles:
 
@@ -381,13 +381,13 @@ Valor predeterminado: 0.
 
 Ver también:
 
--   [Cláusula JOIN](../../sql-reference/statements/select.md#select-join)
+-   [Cláusula JOIN](../../sql-reference/statements/select/join.md#select-join)
 -   [Unirse al motor de tabla](../../engines/table-engines/special/join.md)
 -   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
 
 ## Sistema Abierto {#join_use_nulls}
 
-Establece el tipo de [JOIN](../../sql-reference/statements/select.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
+Establece el tipo de [JOIN](../../sql-reference/statements/select/join.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
 
 Valores posibles:
 

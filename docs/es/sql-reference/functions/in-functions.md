@@ -9,7 +9,7 @@ toc_title: "Implementaci\xF3n del operador IN"
 
 ## Información De Uso {#in-functions}
 
-Vea la sección [IN operadores](../statements/select.md#select-in-operators).
+Vea la sección [IN operadores](../operators/in.md#select-in-operators).
 
 ## tuple(x, y, …), operator (x, y, …) {#tuplex-y-operator-x-y}
 

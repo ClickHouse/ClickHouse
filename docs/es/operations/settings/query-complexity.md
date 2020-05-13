@@ -82,11 +82,11 @@ Uso de la ‘any’ valor le permite ejecutar una aproximación de GROUP BY. La 
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GROUP BY en memoria externa](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GROUP BY en memoria externa](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 Valores posibles:
 
--   Volumen máximo de RAM (en bytes) que puede ser utilizado por el único [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause) operación.
+-   Volumen máximo de RAM (en bytes) que puede ser utilizado por el único [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operación.
 -   0 — `GROUP BY` en la memoria externa deshabilitada.
 
 Valor predeterminado: 0.
@@ -234,7 +234,7 @@ Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o
 
 Limita el número de filas de la tabla hash que se utiliza al unir tablas.
 
-Esta configuración se aplica a [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) operaciones y la [Unir](../../engines/table-engines/special/join.md) motor de mesa.
+Esta configuración se aplica a [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operaciones y la [Unir](../../engines/table-engines/special/join.md) motor de mesa.
 
 Si una consulta contiene varias combinaciones, ClickHouse comprueba esta configuración para cada resultado intermedio.
 
@@ -251,7 +251,7 @@ Valor predeterminado: 0.
 
 Limita el tamaño en bytes de la tabla hash utilizada al unir tablas.
 
-Esta configuración se aplica a [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) operaciones y [Unirse al motor de tabla](../../engines/table-engines/special/join.md).
+Esta configuración se aplica a [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operaciones y [Unirse al motor de tabla](../../engines/table-engines/special/join.md).
 
 Si la consulta contiene combinaciones, ClickHouse comprueba esta configuración para cada resultado intermedio.
 
@@ -280,7 +280,7 @@ Valor predeterminado: `THROW`.
 
 **Ver también**
 
--   [Cláusula JOIN](../../sql-reference/statements/select.md#select-join)
+-   [Cláusula JOIN](../../sql-reference/statements/select/join.md#select-join)
 -   [Unirse al motor de tabla](../../engines/table-engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}

@@ -7,6 +7,6 @@ toc_title: Establecer
 
 # Establecer {#set}
 
-Utilizado para la mitad derecha de un [IN](../../../sql-reference/statements/select.md#select-in-operators) expresion.
+Utilizado para la mitad derecha de un [IN](../../../sql-reference/operators/in.md#select-in-operators) expresion.
 
 [Artículo Original](https://clickhouse.tech/docs/en/data_types/special_data_types/set/) <!--hide-->
