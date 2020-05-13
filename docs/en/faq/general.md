@@ -27,7 +27,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Using INTO OUTFILE Clause {#using-into-outfile-clause}
 
-Add an [INTO OUTFILE](../sql-reference/statements/into-outfile.md#into-outfile-clause) clause to your query.
+Add an [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) clause to your query.
 
 For example:
 
