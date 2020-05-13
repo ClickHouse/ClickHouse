@@ -30,9 +30,9 @@
 
 对Decimal的二进制运算导致更宽的结果类型（无论参数的顺序如何）。
 
--   Decimal64(S1) <op> Decimal32(S2)-\>Decimal64(S)
--   Decimal128(S1) <op> Decimal32(S2)-\>Decimal128(S)
--   Decimal128(S1) <op> Decimal64(S2)-\>Decimal128(S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 精度变化的规则：
 

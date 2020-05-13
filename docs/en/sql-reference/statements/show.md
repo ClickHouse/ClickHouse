@@ -100,4 +100,78 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
+
+
+## SHOW GRANTS {#show-grants-statement}
+
+Shows privileges for a user.
+
+### Syntax {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+If user is not specified, the query returns privileges for the current user.
+
+
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+Shows parameters that were used at a [user creation](create.md#create-user-statement).
+
+`SHOW CREATE USER` doesn't output user passwords.
+
+### Syntax {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+Shows parameters that were used at a [role creation](create.md#create-role-statement)
+
+### Syntax {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+Shows parameters that were used at a [row policy creation](create.md#create-row-policy-statement)
+
+### Syntax {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+Shows parameters that were used at a [quota creation](create.md#create-quota-statement)
+
+### Syntax {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+Shows parameters that were used at a [settings profile creation](create.md#create-settings-profile-statement)
+
+### Syntax {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE [SETTINGS] PROFILE name
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

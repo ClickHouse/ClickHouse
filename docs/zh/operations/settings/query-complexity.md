@@ -190,4 +190,69 @@ Restrictions on the «maximum amount of something» can take the value 0, which 
 
 当数据量超过其中一个限制时该怎么办: ‘throw’ 或 ‘break’. 默认情况下，扔。
 
+## max\_rows\_in\_join {#settings-max_rows_in_join}
+
+Limits the number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
+
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the [join\_overflow\_mode](#settings-join_overflow_mode) setting to choose the action.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited number of rows.
+
+Default value: 0.
+
+## max\_bytes\_in\_join {#settings-max_bytes_in_join}
+
+Limits the size in bytes of the hash table used when joining tables.
+
+This settings applies to [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+
+If the query contains joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use [join\_overflow\_mode](#settings-join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Memory control is disabled.
+
+Default value: 0.
+
+## join\_overflow\_mode {#settings-join_overflow_mode}
+
+Defines what action ClickHouse performs when any of the following join limits is reached:
+
+-   [max\_bytes\_in\_join](#settings-max_bytes_in_join)
+-   [max\_rows\_in\_join](#settings-max_rows_in_join)
+
+Possible values:
+
+-   `THROW` — ClickHouse throws an exception and breaks operation.
+-   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+-   [JOIN clause](../../sql-reference/statements/select.md#select-join)
+-   [Join table engine](../../engines/table-engines/special/join.md)
+
+## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
+
+Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+
+Possible values:
+
+-   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause) operation.
+-   0 — `GROUP BY` in external memory disabled.
+
+Default value: 0.
+
+
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->

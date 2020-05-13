@@ -2,7 +2,7 @@
 machine_translated: true
 machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 60
-toc_title: "\u8BBE\u7F6E"
+toc_title: Settings
 ---
 
 # 设置 {#settings}
@@ -827,7 +827,7 @@ ClickHouse生成异常
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 写入仲裁超时以秒为单位。 如果超时已经过去，并且还没有发生写入，ClickHouse将生成异常，客户端必须重复查询以将相同的块写入相同的副本或任何其他副本。
 
@@ -1198,5 +1198,10 @@ ClickHouse生成异常
 类型：网址
 
 默认值：空
+
+## max\_result\_rows {#setting-max_result_rows}
+
+Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+
 
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

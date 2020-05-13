@@ -84,9 +84,15 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         query_id = query_context->getCurrentQueryId();
         initQueryProfiler();
 
+        const Settings & settings = query_context->getSettingsRef();
+
+        untracked_memory_limit = settings.max_untracked_memory;
+        if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+            untracked_memory_limit = settings.memory_profiler_step;
+
 #if defined(OS_LINUX)
         /// Set "nice" value if required.
-        Int32 new_os_thread_priority = query_context->getSettingsRef().os_thread_priority;
+        Int32 new_os_thread_priority = settings.os_thread_priority;
         if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
         {
             LOG_TRACE(log, "Setting nice to " << new_os_thread_priority);

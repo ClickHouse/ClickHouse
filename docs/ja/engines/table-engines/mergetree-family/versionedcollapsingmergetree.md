@@ -79,7 +79,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## 折りたたみ {#table_engines-versionedcollapsingmergetree}
+## 折りたたみ {#table_engines_versionedcollapsingmergetree}
 
 ### データ {#data}
 

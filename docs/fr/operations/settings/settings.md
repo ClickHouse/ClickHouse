@@ -827,7 +827,7 @@ Voir aussi:
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 Ecrire dans quorum timeout en secondes. Si le délai d’attente est passé et qu’aucune écriture n’a encore eu lieu, ClickHouse génère une exception et le client doit répéter la requête pour écrire le même bloc dans le même réplica ou tout autre réplica.
 

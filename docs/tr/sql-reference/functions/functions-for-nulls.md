@@ -9,7 +9,7 @@ toc_title: "Null arg\xFCmanlarla \xE7al\u0131\u015Fma"
 
 ## isNull {#isnull}
 
-Bağımsız değişken olup olmadığını denetler [NULL](../syntax.md#null).
+Bağımsız değişken olup olmadığını denetler [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -49,7 +49,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-Bağımsız değişken olup olmadığını denetler [NULL](../syntax.md#null).
+Bağımsız değişken olup olmadığını denetler [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)

@@ -13,7 +13,7 @@
 namespace DB
 {
 
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumeJBODPtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)

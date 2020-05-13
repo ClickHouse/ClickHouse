@@ -27,5 +27,16 @@ services:
       - SERVER_REDIRECT_CODE=307
       - SERVER_ACCESS_LOG=/nginx/access.log
 
+# HTTP proxies for Minio.
+  proxy1:
+    image: vimagick/tinyproxy
+    ports:
+      - "4081:8888"
+
+  proxy2:
+    image: vimagick/tinyproxy
+    ports:
+      - "4082:8888"
+
 volumes:
   data1-1:

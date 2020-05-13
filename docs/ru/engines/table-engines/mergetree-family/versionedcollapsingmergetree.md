@@ -72,7 +72,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## Сворачивание (удаление) строк {#table_engines-versionedcollapsingmergetree}
+## Сворачивание (удаление) строк {#table_engines_versionedcollapsingmergetree}
 
 ### Данные {#dannye}
 
