@@ -60,6 +60,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
+-   [complex\_key\_direct](#complex-key-direct)
 -   [ip\_trie](#ip-trie)
 
 ### plat {#flat}
@@ -318,6 +319,11 @@ ou
 ``` sql
 LAYOUT(DIRECT())
 ```
+
+### complex\_key\_cache {#complex-key-cache}
+
+Ce type de stockage est pour une utilisation avec composite [touches](external-dicts-dict-structure.md). Semblable à `direct`.
+
 
 ### ip\_trie {#ip-trie}
 
