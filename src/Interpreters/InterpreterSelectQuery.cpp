@@ -959,7 +959,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
-                executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.group_by_info);
+                executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
             else
             {
                 executeExpression(pipeline, expressions.before_order_and_select);
