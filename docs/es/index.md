@@ -40,7 +40,7 @@ Different orders for storing data are better suited to different scenarios. The 
 
 Cuanto mayor sea la carga en el sistema, más importante es personalizar el sistema configurado para que coincida con los requisitos del escenario de uso, y más fino será esta personalización. No existe un sistema que sea igualmente adecuado para escenarios significativamente diferentes. Si un sistema es adaptable a un amplio conjunto de escenarios, bajo una carga alta, el sistema manejará todos los escenarios igualmente mal, o funcionará bien para solo uno o algunos de los escenarios posibles.
 
-## Propiedades clave del escenario OLAP {#key-properties-of-olap-scenario}
+## Propiedades Clave Del Escenario OLAP {#key-properties-of-olap-scenario}
 
 -   La gran mayoría de las solicitudes son para acceso de lectura.
 -   Los datos se actualizan en lotes bastante grandes (\> 1000 filas), no por filas individuales; o no se actualiza en absoluto.
@@ -58,17 +58,17 @@ Cuanto mayor sea la carga en el sistema, más importante es personalizar el sist
 
 Es fácil ver que el escenario OLAP es muy diferente de otros escenarios populares (como el acceso OLTP o Key-Value). Por lo tanto, no tiene sentido intentar usar OLTP o una base de datos de valor clave para procesar consultas analíticas si desea obtener un rendimiento decente. Por ejemplo, si intenta usar MongoDB o Redis para análisis, obtendrá un rendimiento muy bajo en comparación con las bases de datos OLAP.
 
-## Por qué las bases de datos orientadas a columnas funcionan mejor en el escenario OLAP {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+## Por qué Las Bases De Datos Orientadas a Columnas Funcionan Mejor En El Escenario OLAP {#why-column-oriented-databases-work-better-in-the-olap-scenario}
 
 Las bases de datos orientadas a columnas son más adecuadas para los escenarios OLAP: son al menos 100 veces más rápidas en el procesamiento de la mayoría de las consultas. Las razones se explican en detalle a continuación, pero el hecho es más fácil de demostrar visualmente:
 
 **DBMS orientado a filas**
 
-![Row-oriented](images/row_oriented.gif#)
+![Row-oriented](images/row-oriented.gif#)
 
 **DBMS orientado a columnas**
 
-![Column-oriented](images/column_oriented.gif#)
+![Column-oriented](images/column-oriented.gif#)
 
 Ver la diferencia?
 

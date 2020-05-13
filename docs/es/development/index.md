@@ -7,6 +7,6 @@ toc_priority: 58
 toc_title: oculto
 ---
 
-# Desarrollo de ClickHouse {#clickhouse-development}
+# Desarrollo De ClickHouse {#clickhouse-development}
 
 [Artículo Original](https://clickhouse.tech/docs/en/development/) <!--hide-->

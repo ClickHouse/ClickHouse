@@ -29,7 +29,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
-#include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
@@ -62,7 +62,6 @@
 #include "MySQLHandlerFactory.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <common/config_common.h>
 #    include "config_core.h"
 #    include "Common/config_version.h"
 #endif
@@ -72,7 +71,7 @@
 #    include <Common/hasLinuxCapability.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -630,6 +629,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
             total_memory_tracker.setProfilerStep(total_memory_profiler_step);
         }
+
+        double total_memory_tracker_sample_probability = config().getDouble("total_memory_tracker_sample_probability", 0);
+        if (total_memory_tracker_sample_probability)
+        {
+            total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
+        }
     }
 #endif
 
@@ -674,11 +679,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
 #if defined(OS_LINUX)
-    if (!TaskStatsInfoGetter::checkPermissions())
+    if (!TasksStatsCounters::checkIfAvailable())
     {
-        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
+            " neither clickhouse-server process has CAP_NET_ADMIN capability."
+            " 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
+            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -816,7 +823,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// HTTPS
             create_server("https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -851,7 +858,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// TCP with SSL
             create_server("tcp_port_secure", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
@@ -884,7 +891,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("interserver_https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);

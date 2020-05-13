@@ -9,7 +9,7 @@ toc_title: "\uFF82\u3064\"\uFF82\u3065\u6309\u3064\uFF75\uFF82\uFF01"
 
 その `clickhouse-local` プログラムは、展開し、ClickHouseサーバーを構成することなく、ローカルファイルに高速処理を実行できます。
 
-データを受け入れを表すテーブル、クエリを利用して [クリックハウスsql方言](../../sql_reference/index.md).
+データを受け入れを表すテーブル、クエリを利用して [クリックハウスsql方言](../../sql-reference/index.md).
 
 `clickhouse-local` ClickHouse serverと同じコアを使用するため、ほとんどの機能と同じフォーマットとテーブルエンジンをサポートします。
 

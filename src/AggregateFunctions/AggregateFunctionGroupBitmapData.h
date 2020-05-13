@@ -11,10 +11,8 @@
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
 // TODO: find out what it is. On github, they have proper inteface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
-#pragma GCC diagnostic push
-#pragma GCC diagnostic warning "-Wold-style-cast"
 #include <roaring/roaring.h>
-#pragma GCC diagnostic pop
+
 
 namespace DB
 {

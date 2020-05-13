@@ -101,7 +101,7 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 
 ## 比較モード {#clickhouse-benchmark-comparison-mode}
 
-`clickhouse-benchmark` ﾂつｨﾂ姪"ﾂつ"ﾂ債ﾂづｭﾂつｹ
+`clickhouse-benchmark` ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ
 
 利用の比較モードを指定し端のサーバーによるペア `--host`, `--port` 鍵を キーは、最初の引数リスト内の位置によって一致します `--host` は最初のものと一致します `--port` というように。 `clickhouse-benchmark` 両方のサーバーへの接続を確立し、クエリを送信します。 各クエリは、ランダムに選択されたサーバー宛。 結果は、サーバーごとに個別に表示されます。
 

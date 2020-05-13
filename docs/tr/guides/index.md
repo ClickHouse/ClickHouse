@@ -10,7 +10,7 @@ toc_title: "Genel bak\u0131\u015F"
 
 ClickHouse kullanarak çeşitli görevleri çözmeye yardımcı olan ayrıntılı adım adım talimatların listesi:
 
--   [Basit küme kurulumu eğitimi](../getting_started/tutorial.md)
--   [Clickhouse'da bir CatBoost modeli uygulamak](apply_catboost_model.md)
+-   [Basit küme kurulumu eğitimi](../getting-started/tutorial.md)
+-   [Clickhouse’da bir CatBoost modeli uygulamak](apply-catboost-model.md)
 
 [Orijinal makale](https://clickhouse.tech/docs/en/guides/) <!--hide-->

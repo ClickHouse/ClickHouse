@@ -19,7 +19,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -331,7 +331,9 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 
+    /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
+
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
@@ -661,7 +663,8 @@ public:
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
-    /// Names of columns for primary key + secondary sorting columns.
+    /// Names of sorting key columns in ORDER BY expression. For example: 'a',
+    /// 'x * y', 'toStartOfMonth(date)', etc.
     Names sorting_key_columns;
     ASTPtr sorting_key_expr_ast;
     ExpressionActionsPtr sorting_key_expr;
@@ -848,7 +851,7 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
+    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
     void initPartitionKey();
 
