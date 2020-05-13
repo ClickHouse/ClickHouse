@@ -32,7 +32,6 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("INT4", "Int32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER", "Int32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT", "Int64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT8", "Int64", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("FLOAT", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
 }

@@ -2280,8 +2280,6 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header)
         pipeline.streams.push_back(pipeline.stream_with_non_joined_data);
         pipeline.stream_with_non_joined_data = nullptr;
     }
-
-
 }
 
 
