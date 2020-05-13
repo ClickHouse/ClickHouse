@@ -1,5 +1,6 @@
-#include <Processors/ISimpleTransform.h>
+#pragma once
 
+#include <Processors/ISimpleTransform.h>
 #include <Common/Arena.h>
 
 namespace DB
