@@ -278,7 +278,7 @@ private:
         if (node_type != GROUP)
             node->setFlag(next_flag++);
 
-        bool has_parent_group = (parent_group_name != "NONE");
+        bool has_parent_group = (parent_group_name != std::string_view{"NONE"});
         if (!has_parent_group)
         {
             std::string_view keyword_as_string_view = node->keyword;
