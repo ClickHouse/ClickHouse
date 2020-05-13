@@ -279,7 +279,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt8 &>(to).getData().push_back(getEventLevel(this->data(place)));
     }
