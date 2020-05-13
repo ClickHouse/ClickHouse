@@ -101,41 +101,56 @@ DatabaseReplicated::DatabaseReplicated(
             throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
     }
 
-    current_zookeeper->createAncestors(zookeeper_path);
-    current_zookeeper->createOrUpdate(zookeeper_path, String(), zkutil::CreateMode::Persistent);
+    if (!current_zookeeper->exists(zookeeper_path, {}, NULL)) {
+        current_zookeeper->createAncestors(zookeeper_path);
+        current_zookeeper->createOrUpdate(zookeeper_path, String(), zkutil::CreateMode::Persistent);
+        current_zookeeper->createOrUpdate(zookeeper_path + "/last_entry", "0", zkutil::CreateMode::Persistent);
+        current_zookeeper->createAncestors(replica_path);
+    } else {
+    }
+    current_zookeeper->createOrUpdate(replica_path, String(), zkutil::CreateMode::Persistent);
 
-    // TODO if no last_entry then make it equal to 0 in zk;
-
-    // TODO launch a worker here
-    main_thread = ThreadFromGlobalPool(&DatabaseReplicated::runMainThread, this);
+    backgroundLogExecutor = global_context.getReplicatedSchedulePool().createTask(database_name + "(DatabaseReplicated::the_threeeed)", [this]{ runMainThread();} );
+    backgroundLogExecutor->schedule();
 }
 
 DatabaseReplicated::~DatabaseReplicated()
 {
     stop_flag = true;
-    main_thread.join();
 }
 
 void DatabaseReplicated::runMainThread() {
-    setThreadName("ReplctdWorker"); // ok whatever. 15 bytes // + database_name);
     LOG_DEBUG(log, "Started " << database_name << " database worker thread\n Replica: " << replica_name);
-
-    while (!stop_flag) {
-        attachToThreadGroup();
-        sleepForSeconds(1);// BURN CPU
+    if (!stop_flag) { // TODO is there a need for the flag?
         current_zookeeper = getZooKeeper();
-        String last_n;
-        if (!current_zookeeper->tryGet(zookeeper_path + "/last_entry", last_n, {}, NULL)) {
-            continue;
-        }
+        String last_n = current_zookeeper->get(zookeeper_path + "/last_entry", {}, NULL);
         size_t last_n_parsed = parse<size_t>(last_n);
         LOG_DEBUG(log, "PARSED " << last_n_parsed);
         LOG_DEBUG(log, "LOCAL CURRENT " << current_log_entry_n);
+
+        bool newEntries = current_log_entry_n < last_n_parsed;
         while (current_log_entry_n < last_n_parsed) {
             current_log_entry_n++;
             executeLog(current_log_entry_n);
         }
+        if (newEntries) {
+            saveState();
+        }
+        backgroundLogExecutor->scheduleAfter(500);
     }
+}
+
+void DatabaseReplicated::saveState() {
+    current_zookeeper->createOrUpdate(replica_path + "/last_entry", std::to_string(current_log_entry_n), zkutil::CreateMode::Persistent);
+    // TODO rename vars
+    String statement = std::to_string(current_log_entry_n);
+    String metadatafile = getMetadataPath() + ".last_entry";
+    WriteBufferFromFile out(metadatafile, statement.size(), O_WRONLY | O_CREAT);
+    writeString(statement, out);
+    out.next();
+    if (global_context.getSettingsRef().fsync_metadata)
+        out.sync();
+    out.close();
 }
 
 void DatabaseReplicated::executeLog(size_t n) {
@@ -163,21 +178,7 @@ void DatabaseReplicated::executeLog(size_t n) {
         LOG_DEBUG(log, "Executed query: " << query_to_execute);
 }
 
-// TODO we might not need it here at all
-void DatabaseReplicated::attachToThreadGroup() {
-    if (thread_group)
-    {
-        /// Put all threads to one thread pool
-        CurrentThread::attachToIfDetached(thread_group);
-    }
-    else
-    {
-        CurrentThread::initializeQuery();
-        thread_group = CurrentThread::getGroup();
-    }
-}
-
-// taken from ddlworker
+// TODO Move to ZooKeeper/Lock and remove it from here and ddlworker
 static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
     const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
 {
@@ -188,15 +189,24 @@ static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
 
 
 void DatabaseReplicated::propose(const ASTPtr & query) {
-    // TODO if source is zk then omit propose. Throw?
-    
     // TODO remove that log message i think
     LOG_DEBUG(log, "PROPOSING\n" << queryToString(query));
 
     current_zookeeper = getZooKeeper();
-    auto lock = createSimpleZooKeeperLock(current_zookeeper, zookeeper_path, "lock", replica_name);
+    auto lock = createSimpleZooKeeperLock(current_zookeeper, zookeeper_path, "propose_lock", replica_name);
 
-    // TODO check that last_entry is the same as current_log_entry_n for the replica
+
+    // schedule and deactive combo 
+    // ensures that replica is up to date
+    // and since propose lock is acquired,
+    // no other propose can happen from
+    // different replicas during this call
+    backgroundLogExecutor->schedule();
+    backgroundLogExecutor->deactivate();
+
+    if (current_log_entry_n > 5) { // make a settings variable
+        createSnapshot();
+    }
 
     current_log_entry_n++; // starting from 1
     String log_entry = zookeeper_path + "/log." + std::to_string(current_log_entry_n);
@@ -205,7 +215,18 @@ void DatabaseReplicated::propose(const ASTPtr & query) {
     current_zookeeper->createOrUpdate(zookeeper_path + "/last_entry", std::to_string(current_log_entry_n), zkutil::CreateMode::Persistent);
 
     lock->unlock();
-    // write to metastore the last entry?
+    saveState();
+}
+
+void DatabaseReplicated::createSnapshot() {
+    current_zookeeper->createAncestors(zookeeper_path + "/snapshot");
+    current_zookeeper->createOrUpdate(zookeeper_path + "/snapshot", std::to_string(current_log_entry_n), zkutil::CreateMode::Persistent);
+    for (auto iterator = getTablesIterator({}); iterator->isValid(); iterator->next()) {
+        String table_name = iterator->name();
+        auto query = getCreateQueryFromMetadata(getObjectMetadataPath(table_name), true);
+        String statement = queryToString(query);
+        current_zookeeper->createOrUpdate(zookeeper_path + "/snapshot/" + table_name, statement, zkutil::CreateMode::Persistent);
+    }
 }
 
 }

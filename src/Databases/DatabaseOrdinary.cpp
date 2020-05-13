@@ -94,7 +94,7 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, Context & context_)
     : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }

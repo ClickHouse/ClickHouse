@@ -37,7 +37,7 @@ public:
     ~DatabaseWithDictionaries() override;
 
 protected:
-    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context);
+    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, Context & context);
 
     ASTPtr getCreateDictionaryQueryImpl(const String & dictionary_name, bool throw_on_error) const override;
 

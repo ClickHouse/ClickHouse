@@ -14,8 +14,8 @@ namespace DB
 class DatabaseOrdinary : public DatabaseWithDictionaries
 {
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context);
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_);
+    DatabaseOrdinary(const String & name_, const String & metadata_path_, Context & context);
+    DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, Context & context_);
 
     String getEngineName() const override { return "Ordinary"; }
 
