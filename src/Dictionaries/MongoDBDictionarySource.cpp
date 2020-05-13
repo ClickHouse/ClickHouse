@@ -5,32 +5,19 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
 
-void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
-{
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                 const Poco::Util::AbstractConfiguration & config,
-                                 const std::string & config_prefix,
-                                 Block & sample_block,
-                                 const Context & /* context */,
-                                 bool /* check_config */) -> DictionarySourcePtr {
-#if USE_POCO_MONGODB
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
-#else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
-        throw Exception{"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-    };
-    factory.registerSource("mongodb", create_table_source);
-}
+    void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
+    {
+        auto create_table_source = [=](const DictionaryStructure & dict_struct,
+                                       const Poco::Util::AbstractConfiguration & config,
+                                       const std::string & config_prefix,
+                                       Block & sample_block,
+                                       const Context & /* context */,
+                                       bool /* check_config */) -> DictionarySourcePtr {
+            return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+        };
+        factory.registerSource("mongodb", create_table_source);
+    }
 
 }
 
@@ -69,8 +56,7 @@ static const UInt64 max_block_size = 8192;
 
 #    if POCO_VERSION < 0x01070800
 /// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
-static void
-authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
+void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
 {
     Poco::MongoDB::Database db(database);
 
@@ -238,8 +224,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
 
-static std::unique_ptr<Poco::MongoDB::Cursor>
-createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
+std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select)
 {
     auto cursor = std::make_unique<Poco::MongoDB::Cursor>(database, collection);
 
@@ -249,7 +234,6 @@ createCursor(const std::string & database, const std::string & collection, const
 
     for (const auto & column : sample_block_to_select)
         cursor->query().returnFieldSelector().add(column.name, 1);
-
     return cursor;
 }
 
