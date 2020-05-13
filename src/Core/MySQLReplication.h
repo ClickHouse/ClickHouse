@@ -464,6 +464,25 @@ namespace MySQLReplication
         void updateLogName(String binlog) { binlog_name = std::move(binlog); }
     };
 
+    struct GTIDSet
+    {
+        struct Interval
+        {
+            Int64 start;
+            Int64 end;
+        };
+
+        String UUID;
+        std::vector<Interval> intervals;
+    };
+
+    class GTID
+    {
+    public:
+        std::vector<GTIDSet> sets;
+        void parseFromString(String gtid);
+    };
+
     class IFlavor : public MySQLProtocol::ReadPacket
     {
     public:
@@ -476,15 +495,14 @@ namespace MySQLReplication
     class MySQLFlavor : public IFlavor
     {
     public:
-        BinlogEventPtr event;
-
-        void readPayloadImpl(ReadBuffer & payload) override;
         String getName() const override { return "MySQL"; }
         Position getPosition() const override { return position; }
+        void readPayloadImpl(ReadBuffer & payload) override;
         BinlogEventPtr readOneEvent() override { return event; }
 
     private:
         Position position;
+        BinlogEventPtr event;
         std::shared_ptr<TableMapEvent> table_map;
     };
 }

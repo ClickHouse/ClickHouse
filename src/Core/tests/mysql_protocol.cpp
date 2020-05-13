@@ -2,6 +2,7 @@
 
 #include <Core/MySQLClient.h>
 #include <Core/MySQLProtocol.h>
+#include <Core/MySQLReplication.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -159,6 +160,12 @@ int main(int, char **)
         ASSERT(client.table == server.table)
         ASSERT(client.org_table == server.org_table)
         ASSERT(client.schema == server.schema)
+    }
+
+    {
+        String str = "3E11FA47-71CA-11E1-9E33-C80AA9429562:21-57,3E11FA47-71CA-11E1-9E33-C80AA9429562:21";
+        GTID gtid;
+        gtid.parseFromString(str);
     }
 
     {

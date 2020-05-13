@@ -104,8 +104,9 @@ enum Command
     COM_CHANGE_USER = 0x11,
     COM_BINLOG_DUMP = 0x12,
     COM_REGISTER_SLAVE = 0x15,
-    COM_RESET_CONNECTION = 0x1f,
-    COM_DAEMON = 0x1d
+    COM_DAEMON = 0x1d,
+    COM_BINLOG_DUMP_GTID = 0x1e,
+    COM_RESET_CONNECTION = 0x1f
 };
 
 enum ColumnType
@@ -1499,12 +1500,48 @@ namespace Replication
             buffer.write(reinterpret_cast<const char *>(&binlog_pos), 4);
             buffer.write(reinterpret_cast<const char *>(&flags), 2);
             buffer.write(reinterpret_cast<const char *>(&server_id), 4);
-            buffer.write(binlog_file_name.data(), binlog_file_name.length());
+            buffer.write(binlog_file_name.data(), binlog_file_name.size());
             buffer.write(0x00);
         }
 
     protected:
         size_t getPayloadSize() const override { return 1 + 4 + 2 + 4 + binlog_file_name.size() + 1; }
+    };
+
+    /// https://dev.mysql.com/doc/internals/en/com-binlog-dump-gtid.html
+    class BinlogDumpGTID : public WritePacket
+    {
+    public:
+        UInt8 header = COM_BINLOG_DUMP_GTID;
+        UInt64 binlog_pos;
+        UInt16 flags;
+        UInt32 server_id;
+        String binlog_file_name;
+        String gtid_sets;
+
+        BinlogDumpGTID(UInt64 binlog_pos_, String binlog_file_name_, UInt32 server_id_, String gtid_sets_)
+            : binlog_pos(binlog_pos_)
+            , flags(0x00)
+            , server_id(server_id_)
+            , binlog_file_name(std::move(binlog_file_name_))
+            , gtid_sets(std::move(gtid_sets_))
+        {
+        }
+
+        void writePayloadImpl(WriteBuffer & buffer) const override
+        {
+            buffer.write(header);
+            buffer.write(reinterpret_cast<const char *>(&flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&server_id), 4);
+            buffer.write(reinterpret_cast<const char *>(binlog_file_name.size()), 4);
+            buffer.write(binlog_file_name.data(), binlog_file_name.size());
+            buffer.write(reinterpret_cast<const char *>(&binlog_pos), 8);
+            buffer.write(reinterpret_cast<const char *>(gtid_sets.size()), 4);
+            buffer.write(gtid_sets.data(), gtid_sets.size());
+        }
+
+    protected:
+        size_t getPayloadSize() const override { return 1 + 2 + 4 + 4 + binlog_file_name.size() + 8 + 4 + gtid_sets.size(); }
     };
 }
 }

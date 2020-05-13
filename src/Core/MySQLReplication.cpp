@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/FieldVisitors.h>
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -710,6 +711,27 @@ namespace MySQLReplication
     {
         header.dump();
         std::cerr << "[DryRun Event]" << std::endl;
+    }
+
+    void GTID::parseFromString(String format)
+    {
+        std::vector<String> ssets;
+        boost::split(ssets, format, [](char c) { return c == ','; });
+
+        for (size_t i= 0; i < ssets.size(); i++)
+        {
+            std::vector<String> gtids;
+            boost::split(gtids, ssets[i], [](char c) { return c == ':'; });
+
+            GTIDSet set;
+            set.UUID = gtids[0];
+
+            std::vector<String> inters;
+            boost::split(inters, gtids[1], [](char c) { return c == '-'; });
+
+            GTIDSet::Interval val{std::stol(inters[0]), std::stol(inters[1])};
+            set.intervals.emplace_back(val);
+        }
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
