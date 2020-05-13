@@ -1,0 +1,25 @@
+<yandex>
+
+<storage_configuration>
+    <disks>
+        <default>
+        </default>
+        <external>
+            <path>/external/</path>
+        </external>
+    </disks>
+    <policies>
+        <default_with_external>
+            <volumes>
+                <default>
+                    <disk>default</disk>
+                </default>
+                <external>
+                    <disk>external</disk>
+                </external>
+            </volumes>
+        </default_with_external>
+    </policies>
+</storage_configuration>
+
+</yandex>
