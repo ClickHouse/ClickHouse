@@ -6,4 +6,4 @@ toc_priority: 74
 toc_title: '2020'
 ---
 
-{%含める “content/changelog.md” %}
+{% include "content/changelog.md" %}
