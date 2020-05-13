@@ -48,4 +48,4 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     && clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits" \
     && clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits" \
     && clickhouse-client --query "SHOW TABLES FROM test" \
-    && ./stress --output-folder test_output
+    && ./stress --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION"
