@@ -57,6 +57,7 @@ private:
         const Settings & settings,
         const MergeTreeReaderSettings & reader_settings) const;
 
+    /// out_projection - save projection only with columns, requested to read
     Pipes spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
