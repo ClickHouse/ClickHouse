@@ -4,7 +4,7 @@ import os
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
-from external_sources import SourceMongo, SourceHTTP, SourceHTTPS, SourceRedis
+from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis
 import math
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -117,6 +117,7 @@ LAYOUTS = [
 
 SOURCES = [
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
+    SourceMongoURI("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
     SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
     SourceClickHouse("LocalClickHouse", "localhost", "9000", "node", "9000", "default", ""),
