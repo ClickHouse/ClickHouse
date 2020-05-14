@@ -19,9 +19,9 @@ public:
 
     String getName() const override { return "LazyOutputFormat"; }
 
-    Block getBlock(UInt64 milliseconds = 0);
-    Block getTotals();
-    Block getExtremes();
+    Chunk getChunk(UInt64 milliseconds = 0);
+    Chunk getTotals();
+    Chunk getExtremes();
 
     bool isFinished() { return finished_processing && queue.size() == 0; }
 
