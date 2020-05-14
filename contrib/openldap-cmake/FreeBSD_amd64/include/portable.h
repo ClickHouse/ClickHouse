@@ -80,7 +80,7 @@
 #define GETHOSTBYNAME_R_NARGS 6
 
 /* Define to 1 if `TIOCGWINSZ' requires <sys/ioctl.h>. */
-#define GWINSZ_IN_SYS_IOCTL 1
+/* #undef GWINSZ_IN_SYS_IOCTL */
 
 /* define if you have AIX security lib */
 /* #undef HAVE_AIX_SECURITY */
@@ -98,7 +98,7 @@
 #define HAVE_BCOPY 1
 
 /* Define to 1 if you have the <bits/types.h> header file. */
-#define HAVE_BITS_TYPES_H 1
+/* #undef HAVE_BITS_TYPES_H */
 
 /* Define to 1 if you have the `chroot' function. */
 #define HAVE_CHROOT 1
@@ -150,7 +150,7 @@
 #define HAVE_ENDPWENT 1
 
 /* define if your system supports epoll */
-#define HAVE_EPOLL 1
+/* #undef HAVE_EPOLL */
 
 /* Define to 1 if you have the <errno.h> header file. */
 #define HAVE_ERRNO_H 1
@@ -210,7 +210,7 @@
 /* #undef HAVE_GETPASSPHRASE */
 
 /* Define to 1 if you have the `getpeereid' function. */
-/* #undef HAVE_GETPEEREID */
+#define HAVE_GETPEEREID 1
 
 /* Define to 1 if you have the `getpeerucred' function. */
 /* #undef HAVE_GETPEERUCRED */
@@ -222,7 +222,7 @@
 #define HAVE_GETPWUID 1
 
 /* Define to 1 if you have the `getspnam' function. */
-#define HAVE_GETSPNAM 1
+/* #undef HAVE_GETSPNAM */
 
 /* Define to 1 if you have the `gettimeofday' function. */
 #define HAVE_GETTIMEOFDAY 1
@@ -270,7 +270,7 @@
 /* #undef HAVE_IO_H */
 
 /* define if your system supports kqueue */
-/* #undef HAVE_KQUEUE */
+#define HAVE_KQUEUE 1
 
 /* Define to 1 if you have the `gen' library (-lgen). */
 /* #undef HAVE_LIBGEN */
@@ -297,7 +297,7 @@
 /* #undef HAVE_LIBSOCKET */
 
 /* Define to 1 if you have the <libutil.h> header file. */
-/* #undef HAVE_LIBUTIL_H */
+#define HAVE_LIBUTIL_H 1
 
 /* Define to 1 if you have the `V3' library (-lV3). */
 /* #undef HAVE_LIBV3 */
@@ -324,7 +324,7 @@
 /* #undef HAVE_LTDL_H */
 
 /* Define to 1 if you have the <malloc.h> header file. */
-#define HAVE_MALLOC_H 1
+/* #undef HAVE_MALLOC_H */
 
 /* Define to 1 if you have the `memcpy' function. */
 #define HAVE_MEMCPY 1
@@ -495,7 +495,7 @@
 #define HAVE_SETUID 1
 
 /* Define to 1 if you have the <sgtty.h> header file. */
-#define HAVE_SGTTY_H 1
+/* #undef HAVE_SGTTY_H */
 
 /* Define to 1 if you have the <shadow.h> header file. */
 /* #undef HAVE_SHADOW_H */
@@ -591,7 +591,7 @@
 /* #undef HAVE_STRUCT_MSGHDR_MSG_ACCRIGHTSLEN */
 
 /* Define to 1 if `msg_control' is a member of `struct msghdr'. */
-#define HAVE_STRUCT_MSGHDR_MSG_CONTROL 1
+/* #undef HAVE_STRUCT_MSGHDR_MSG_CONTROL */
 
 /* Define to 1 if `pw_gecos' is a member of `struct passwd'. */
 #define HAVE_STRUCT_PASSWD_PW_GECOS 1
@@ -634,7 +634,7 @@
 /* #undef HAVE_SYS_DIR_H */
 
 /* Define to 1 if you have the <sys/epoll.h> header file. */
-#define HAVE_SYS_EPOLL_H 1
+/* #undef HAVE_SYS_EPOLL_H */
 
 /* define if you actually have sys_errlist in your libs */
 #define HAVE_SYS_ERRLIST 1
@@ -643,13 +643,13 @@
 #define HAVE_SYS_ERRNO_H 1
 
 /* Define to 1 if you have the <sys/event.h> header file. */
-/* #undef HAVE_SYS_EVENT_H */
+#define HAVE_SYS_EVENT_H 1
 
 /* Define to 1 if you have the <sys/file.h> header file. */
 #define HAVE_SYS_FILE_H 1
 
 /* Define to 1 if you have the <sys/filio.h> header file. */
-/* #undef HAVE_SYS_FILIO_H */
+#define HAVE_SYS_FILIO_H 1
 
 /* Define to 1 if you have the <sys/fstyp.h> header file. */
 /* #undef HAVE_SYS_FSTYP_H */
@@ -692,7 +692,7 @@
 #define HAVE_SYS_TYPES_H 1
 
 /* Define to 1 if you have the <sys/ucred.h> header file. */
-/* #undef HAVE_SYS_UCRED_H */
+#define HAVE_SYS_UCRED_H 1
 
 /* Define to 1 if you have the <sys/uio.h> header file. */
 #define HAVE_SYS_UIO_H 1

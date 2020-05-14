@@ -1,5 +1,5 @@
-/* include/portable.h.  Generated from portable.hin by configure.  */
-/* include/portable.hin.  Generated from configure.in by autoheader.  */
+/* include/portable.h. Generated from portable.hin by configure. */
+/* include/portable.hin. Generated from configure.in by autoheader. */
 
 
 /* begin of portable.h.pre */
@@ -369,13 +369,13 @@
 #define HAVE_OPENSSL 1
 
 /* Define to 1 if you have the <openssl/bn.h> header file. */
-/* #undef HAVE_OPENSSL_BN_H */
+#define HAVE_OPENSSL_BN_H 1
 
 /* define if you have OpenSSL with CRL checking capability */
 #define HAVE_OPENSSL_CRL 1
 
 /* Define to 1 if you have the <openssl/crypto.h> header file. */
-/* #undef HAVE_OPENSSL_CRYPTO_H */
+#define HAVE_OPENSSL_CRYPTO_H 1
 
 /* Define to 1 if you have the <openssl/ssl.h> header file. */
 #define HAVE_OPENSSL_SSL_H 1
@@ -444,10 +444,10 @@
 #define HAVE_REGEX_H 1
 
 /* Define to 1 if you have the <resolv.h> header file. */
-#define HAVE_RESOLV_H 1
+/* #undef HAVE_RESOLV_H */
 
 /* define if you have res_query() */
-#define HAVE_RES_QUERY 1
+/* #undef HAVE_RES_QUERY */
 
 /* define if OpenSSL needs RSAref */
 /* #undef HAVE_RSAREF */
@@ -1121,8 +1121,8 @@
 /* begin of portable.h.post */
 
 #ifdef _WIN32
-	/* don't suck in all of the win32 api */
-#	define WIN32_LEAN_AND_MEAN 1
+/* don't suck in all of the win32 api */
+# define WIN32_LEAN_AND_MEAN 1
 #endif
 
 #ifndef LDAP_NEEDS_PROTOTYPES
@@ -1140,10 +1140,10 @@
 #endif
 
 #ifdef HAVE_STDDEF_H
-#	include <stddef.h>
+# include <stddef.h>
 #endif
 
-#ifdef HAVE_EBCDIC 
+#ifdef HAVE_EBCDIC
 /* ASCII/EBCDIC converting replacements for stdio funcs
  * vsnprintf and snprintf are used too, but they are already
  * checked by the configure script
