@@ -108,7 +108,9 @@ SmartPolygonDictionary::SmartPolygonDictionary(
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < polygons.size(); ++i)
     {
-        buckets.emplace_back(polygons[i]);
+        std::vector<Polygon> single;
+        single.emplace_back(polygons[i]);
+        buckets.emplace_back(single);
     }
 }
 
@@ -152,7 +154,8 @@ bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
         for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
         {
             const auto & candidate = (cell->polygon_ids)[i];
-            if ((cell->is_covered_by)[i] || buckets[candidate].find(point))
+            size_t unused;
+            if ((cell->is_covered_by)[i] || buckets[candidate].find(point, unused))
             {
                 found = true;
                 id = candidate;
