@@ -24,10 +24,18 @@ if (ENABLE_LDAP)
     endif ()
 
     if (NOT OPENLDAP_FOUND AND NOT MISSING_INTERNAL_LDAP_LIBRARY)
+        string (TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _system_processor)
         if (
-            ( "${CMAKE_SYSTEM_NAME}" STREQUAL "Linux"   AND "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64" ) OR
-            ( "${CMAKE_SYSTEM_NAME}" STREQUAL "FreeBSD" AND "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "amd64"  ) OR
-            ( "${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin"  AND "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64" )
+            "${_system_processor}" STREQUAL "amd64" OR
+            "${_system_processor}" STREQUAL "x64"
+        )
+            set (_system_processor "x86_64")
+        endif ()
+
+        if (
+            ( "${CMAKE_SYSTEM_NAME}" STREQUAL "Linux"   AND "${_system_processor}" STREQUAL "x86_64" ) OR
+            ( "${CMAKE_SYSTEM_NAME}" STREQUAL "FreeBSD" AND "${_system_processor}" STREQUAL "x86_64" ) OR
+            ( "${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin"  AND "${_system_processor}" STREQUAL "x86_64" )
         )
             set (_ldap_supported_platform TRUE)
         endif ()
