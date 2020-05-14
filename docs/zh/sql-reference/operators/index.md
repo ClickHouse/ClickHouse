@@ -80,7 +80,7 @@
 
 注意:
 
-条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](../sql-reference/functions/array-join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
+条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
 
 ## 使用日期和时间的操作员 {#operators-datetime}
 
@@ -103,7 +103,7 @@ EXTRACT(part FROM date);
 
 该 `part` 参数不区分大小写。
 
-该 `date` 参数指定要处理的日期或时间。 无论是 [日期](../sql-reference/data-types/date.md) 或 [日期时间](../sql-reference/data-types/datetime.md) 支持类型。
+该 `date` 参数指定要处理的日期或时间。 无论是 [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md) 支持类型。
 
 例:
 
@@ -150,7 +150,7 @@ FROM test.Orders;
 
 ### INTERVAL {#operator-interval}
 
-创建一个 [间隔](../sql-reference/operators/index.md)-应在算术运算中使用的类型值 [日期](../sql-reference/data-types/date.md) 和 [日期时间](../sql-reference/data-types/datetime.md)-类型值。
+创建一个 [间隔](../../sql-reference/operators/index.md)-应在算术运算中使用的类型值 [日期](../../sql-reference/data-types/date.md) 和 [日期时间](../../sql-reference/data-types/datetime.md)-类型值。
 
 示例:
 
@@ -166,8 +166,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **另请参阅**
 
--   [间隔](../sql-reference/operators/index.md) 数据类型
--   [toInterval](../sql-reference/operators/index.md#function-tointerval) 类型转换函数
+-   [间隔](../../sql-reference/operators/index.md) 数据类型
+-   [toInterval](../../sql-reference/operators/index.md#function-tointerval) 类型转换函数
 
 ## CASE条件表达式 {#operator_case}
 
@@ -216,7 +216,7 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
 ### IS NULL {#operator-is-null}
 
--   对于 [可为空](../sql-reference/operators/index.md) 类型的值， `IS NULL` 会返回：
+-   对于 [可为空](../../sql-reference/operators/index.md) 类型的值， `IS NULL` 会返回：
     -   `1` 值为 `NULL`
     -   `0` 否则
 -   对于其他类型的值， `IS NULL` 总会返回 `0`
@@ -239,7 +239,7 @@ WHERE isNull(y)
 
 ### IS NOT NULL {#is-not-null}
 
--   对于 [可为空](../sql-reference/operators/index.md) 类型的值， `IS NOT NULL` 会返回：
+-   对于 [可为空](../../sql-reference/operators/index.md) 类型的值， `IS NOT NULL` 会返回：
     -   `0` 值为 `NULL`
     -   `1` 否则
 -   对于其他类型的值，`IS NOT NULL` 总会返回 `1`
