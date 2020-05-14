@@ -198,7 +198,6 @@ def test_kafka_settings_new_syntax(kafka_cluster):
     kafka_check_result(result, True)
 
 
-@pytest.mark.skip(reason="https://github.com/edenhill/librdkafka/issues/2077")
 @pytest.mark.timeout(180)
 def test_kafka_consumer_hang(kafka_cluster):
 
@@ -219,7 +218,7 @@ def test_kafka_consumer_hang(kafka_cluster):
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
         ''')
 
-    time.sleep(12)
+    time.sleep(10)
     instance.query('SELECT * FROM test.view')
 
     # This should trigger heartbeat fail,
@@ -229,18 +228,25 @@ def test_kafka_consumer_hang(kafka_cluster):
     time.sleep(0.5)
     kafka_cluster.unpause_container('kafka1')
 
+    # print("Attempt to drop")
     instance.query('DROP TABLE test.kafka')
+
+    #kafka_cluster.open_bash_shell('instance')
 
     instance.query('''
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
 
-    log = '/var/log/clickhouse-server/stderr.log'
-    instance.exec_in_container(['grep', '-q', 'BROKERFAIL', log])
-    instance.exec_in_container(['grep', '-q', '|ASSIGN|', log])
-    instance.exec_in_container(['grep', '-q', 'Heartbeat failed: REBALANCE_IN_PROGRESS: group is rebalancing', log])
-    instance.exec_in_container(['grep', '-q', 'Group "consumer_hang": waiting for rebalance_cb', log])
+    # we expect no hanging drop queries
+    # 'dr'||'op' to avoid self matching
+    assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
+
+    # log = '/var/log/clickhouse-server/stderr.log'
+    # instance.exec_in_container(['grep', '-q', 'BROKERFAIL', log])
+    # instance.exec_in_container(['grep', '-q', '|ASSIGN|', log])
+    # instance.exec_in_container(['grep', '-q', 'Heartbeat failed: REBALANCE_IN_PROGRESS: group is rebalancing', log])
+    # instance.exec_in_container(['grep', '-q', 'Group "consumer_hang": waiting for rebalance_cb', log])
 
 
 @pytest.mark.timeout(180)
@@ -1234,7 +1240,7 @@ def test_exception_from_destructor(kafka_cluster):
         DROP TABLE test.kafka;
     ''')
 
-    kafka_cluster.open_bash_shell('instance')
+    #kafka_cluster.open_bash_shell('instance')
     assert TSV(instance.query('SELECT 1')) == TSV('1')
 
 
