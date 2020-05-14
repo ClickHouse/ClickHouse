@@ -238,16 +238,16 @@ def test_kafka_consumer_hang(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    # we expect no hanging drop queries
+    # original problem appearance was a sequence of the following messages in kafka logs:
+    # BROKERFAIL -> |ASSIGN| -> REBALANCE_IN_PROGRESS -> "waiting for rebalance_cb" (repeated forever)
+    # so it was waiting forever while the application will execute queued rebalance callback
+
+    # now we drain all queued callbacks (visible as 'Rebalance initiated' after 'Waiting for cleanup')
+    instance.exec_in_container(["bash", "-c", "tail -n 500 /var/log/clickhouse-server/clickhouse-server.log | grep 'Waiting for cleanup' -A 500 | grep -q 'Rebalance initiated. Revoking partitions'"])
+
+    # from a user perspective: we expect no hanging 'drop' queries
     # 'dr'||'op' to avoid self matching
     assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
-
-    # log = '/var/log/clickhouse-server/stderr.log'
-    # instance.exec_in_container(['grep', '-q', 'BROKERFAIL', log])
-    # instance.exec_in_container(['grep', '-q', '|ASSIGN|', log])
-    # instance.exec_in_container(['grep', '-q', 'Heartbeat failed: REBALANCE_IN_PROGRESS: group is rebalancing', log])
-    # instance.exec_in_container(['grep', '-q', 'Group "consumer_hang": waiting for rebalance_cb', log])
-
 
 @pytest.mark.timeout(180)
 def test_kafka_csv_with_delimiter(kafka_cluster):
