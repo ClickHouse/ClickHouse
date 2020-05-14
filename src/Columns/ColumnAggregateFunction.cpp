@@ -39,7 +39,7 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
     foreign_arenas.push_back(arena_);
 }
 
-MutableColumnPtr ColumnAggregateFunction::convertToValues() const
+MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.
@@ -65,19 +65,25 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
         * into `AggregateFunction(quantileTiming(0.5), UInt64)`
         * - in the same states.
-        *
+        *column_aggregate_func
         * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
         * And this converts a column of type
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
+    auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*column);
+    auto & func = column_aggregate_func.func;
+    auto & data = column_aggregate_func.data;
+
     if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
-        auto res = createView();
+        auto res = column_aggregate_func.createView();
         res->set(function_state->getNestedFunction());
         res->data.assign(data.begin(), data.end());
         return res;
     }
+
+    column_aggregate_func.ensureOwnership();
 
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());

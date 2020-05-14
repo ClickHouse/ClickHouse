@@ -445,7 +445,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();
