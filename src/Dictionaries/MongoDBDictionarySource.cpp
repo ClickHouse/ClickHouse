@@ -8,15 +8,27 @@ namespace DB
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                   const Poco::Util::AbstractConfiguration & config,
-                                   const std::string & config_prefix,
-                                   Block & sample_block,
-                                   const Context & /* context */,
-                                   bool /* check_config */) -> DictionarySourcePtr {
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+    auto createMongoDBDictionary = [](
+        const DictionaryStructure & dict_struct,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        Block & sample_block,
+        const Context &,
+        bool /* check_config */)
+    {
+        return std::make_unique<MongoDBDictionarySource>(dict_struct,
+            config.getString(config_prefix + ".uri"),
+            config.getString(config_prefix + ".host"),
+            config.getUInt(config_prefix + ".port"),
+            config.getString(config_prefix + ".user", ""),
+            config.getString(config_prefix + ".password", ""),
+            config.getString(config_prefix + ".method", ""),
+            config.getString(config_prefix + ".db", ""),
+            config.getString(config_prefix + ".collection"),
+            sample_block);
     };
-    factory.registerSource("mongodb", create_table_source);
+
+    factory.registerSource("mongodb", createMongoDBDictionary);
 }
 
 }
@@ -155,6 +167,7 @@ authenticate(Poco::MongoDB::Connection & connection, const std::string & databas
 
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct_,
+    const std::string & uri_,
     const std::string & host_,
     UInt16 port_,
     const std::string & user_,
@@ -164,6 +177,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     const std::string & collection_,
     const Block & sample_block_)
     : dict_struct{dict_struct_}
+    , uri{uri_}
     , host{host_}
     , port{port_}
     , user{user_}
@@ -174,41 +188,31 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , sample_block{sample_block_}
     , connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
 {
-    if (!user.empty())
+    if (!uri.empty())
     {
-#if POCO_VERSION >= 0x01070800
-        Poco::MongoDB::Database poco_db(db);
-        if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
-            throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
-#else
-        authenticate(*connection, db, user, password);
-#endif
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
+        connection->connect(uri, socket_factory);
     }
-}
-
-
-MongoDBDictionarySource::MongoDBDictionarySource(
-    const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    Block & sample_block_)
-    : MongoDBDictionarySource(
-        dict_struct_,
-        config.getString(config_prefix + ".host"),
-        config.getUInt(config_prefix + ".port"),
-        config.getString(config_prefix + ".user", ""),
-        config.getString(config_prefix + ".password", ""),
-        config.getString(config_prefix + ".method", ""),
-        config.getString(config_prefix + ".db", ""),
-        config.getString(config_prefix + ".collection"),
-        sample_block_)
-{
+    else
+    {
+        connection->connect(host, port);
+        if (!user.empty())
+        {
+#if POCO_VERSION >= 0x01070800
+            Poco::MongoDB::Database poco_db(db);
+            if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
+                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+#else
+            authenticate(*connection, db, user, password);
+#endif
+        }
+    }
 }
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource & other)
     : MongoDBDictionarySource{
-        other.dict_struct, other.host, other.port, other.user, other.password, other.method, other.db, other.collection, other.sample_block}
+        other.dict_struct, other.uri, other.host, other.port, other.user, other.password, other.method, other.db, other.collection, other.sample_block}
 {
 }
 
