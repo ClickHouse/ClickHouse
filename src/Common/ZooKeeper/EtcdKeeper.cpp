@@ -470,7 +470,7 @@ namespace Coordination
             CompletionQueue & kv_cq)
         {
             retry++;
-            if (retry > 7)
+            if (retry > 8)
             {
                 response->error = Error::ZSYSTEMERROR;
                 return;
@@ -507,7 +507,7 @@ namespace Coordination
             {
                 LOG_DEBUG(log, "SUCCESS");
             }
-            std::cout << "DEBUG" << call->response.DebugString() << std::endl;
+            // std::cout << "DEBUG" << call->response.DebugString() << std::endl;
             return makeResponseFromRepeatedPtrField(call->response.succeeded(), call->response.responses());
         }
         bool callRequired(void* got_tag)
@@ -515,6 +515,7 @@ namespace Coordination
             if (response->error == Error::ZOK && composite && !post_call_called)
             {
                 EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
+                // std::cout << "PREDEBUG" << call->response.DebugString() << std::endl;
                 for (auto field : call->response.responses())
                 {
                     pre_call_responses.push_back(field);
@@ -585,7 +586,6 @@ namespace Coordination
             {
                 response->error = Error::ZNONODE;
             }
-            process_path = path;
             for (auto resp : pre_call_responses)
             {
                 if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
@@ -617,7 +617,11 @@ namespace Coordination
         }
         void preparePostCall()
         {
-            parsePreResponses();
+            process_path = path;
+            if (composite)
+            {
+                parsePreResponses();
+            }
             LOG_DEBUG(log, "CREATE " << process_path);
             if (is_sequential)
             {
@@ -859,6 +863,7 @@ namespace Coordination
                 }
             }
 
+            LOG_DEBUG(log, "REQUIRED KEY" << required_key);
             for (const auto & generic_request : generic_requests)
             {
                 if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
@@ -884,16 +889,17 @@ namespace Coordination
                     {
                         current_create_request->parent_exists = true;
                     }
+                    LOG_DEBUG(log, "concrete_request_create push" << concrete_request_create->path);
                     etcd_requests.push_back(current_create_request);
                 }
                 else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
                 {
+                    LOG_DEBUG(log, "concrete_request_remove" << concrete_request_remove->path);
                     if (rr && concrete_request_remove->path == required_key)
                     {
                         rr = false;
                         continue;
                     }
-                    LOG_DEBUG(log, "concrete_request_remove" << concrete_request_remove->path);
                     etcd_requests.push_back(std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove));
                 }
                 else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
@@ -1423,12 +1429,12 @@ namespace Coordination
                         std::lock_guard lock(watches_mutex);
                         if (list_watch)
                         {
-                            list_watches[info.request->getEtcdKey()].push_back(info.watch);
+                            list_watches[info.request->getEtcdKey()].emplace_back(std::move(info.watch));
                             callWatchRequest(info.request->getChildsPrefix(), true, watch_stub, watch_cq);
                         }
                         else
                         {
-                            watches[info.request->getEtcdKey()].push_back(info.watch);
+                            watches[info.request->getEtcdKey()].emplace_back(std::move(info.watch));
                             callWatchRequest(info.request->getEtcdKey(), false, watch_stub, watch_cq);
                         }
                     }
