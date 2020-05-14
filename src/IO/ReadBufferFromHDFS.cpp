@@ -11,6 +11,8 @@ namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int CANNOT_TELL_THROUGH_FILE;
 }
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
@@ -45,6 +47,24 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         return bytes_read;
     }
 
+    int seek(off_t off) const
+    {
+        int seek_status = hdfsSeek(fs.get(), fin, off);
+        if (seek_status != 0)
+            throw Exception("Fail to seek HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
+        return seek_status;
+    }
+    
+    int tell() const
+    {
+        int bytes_offset = hdfsTell(fs.get(), fin);
+        if (bytes_offset == -1)
+            throw Exception("Fail to tell HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
+        return bytes_offset;
+    }
+
     ~ReadBufferFromHDFSImpl()
     {
         hdfsCloseFile(fs.get(), fin);
@@ -52,7 +72,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 };
 
 ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size)
+    : BufferWithOwnMemory<SeekableReadBuffer>(buf_size)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_))
 {
 }
@@ -67,6 +87,19 @@ bool ReadBufferFromHDFS::nextImpl()
     else
         return false;
     return true;
+}
+
+off_t ReadBufferFromHDFS::seek(off_t off, int whence)
+{
+    if (whence != SEEK_SET)
+        throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+    impl->seek(off);
+    return off;
+}
+
+off_t ReadBufferFromHDFS::getPosition()
+{
+    return impl->tell();
 }
 
 }

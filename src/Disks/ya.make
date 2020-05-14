@@ -7,6 +7,7 @@ PEERDIR(
 SRCS(
     DiskFactory.cpp
     DiskLocal.cpp
+    DiskHDFS.cpp
     DiskMemory.cpp
     DiskSelector.cpp
     IDisk.cpp

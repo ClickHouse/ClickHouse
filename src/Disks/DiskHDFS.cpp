@@ -1,33 +1,37 @@
-#include "DiskS3.h"
+#include "DiskHDFS.h"
 
-#include "Disks/DiskFactory.h"
+#include "DiskFactory.h"
 
 #include <random>
-#include <utility>  
+#include <utility>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromS3.h>
+#include <IO/ReadBufferFromHDFS.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromS3.h>
+#include <IO/WriteBufferFromHDFS.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
+#include <Interpreters/Context.h>
 #include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
+#include <Common/filesystemHelpers.h>
+
 #include <Common/thread_local_rng.h>
 
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int PATH_ACCESS_DENIED;
     extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
+    extern const int CANNOT_REMOVE_FILE;
 }
 
 namespace
@@ -41,6 +45,7 @@ namespace
         return res;
     }
 
+    /*
     template <typename Result, typename Error>
     void throwIfError(Aws::Utils::Outcome<Result, Error> && response)
     {
@@ -50,12 +55,8 @@ namespace
             throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
         }
     }
-
-    /**
-     * S3 metadata file layout:
-     * Number of S3 objects, Total size of all S3 objects.
-     * Each S3 object represents path where object located in S3 and size of object.
-     */
+    */
+    
     struct Metadata
     {
         /// Metadata file version.
@@ -67,9 +68,9 @@ namespace
         const String & disk_path;
         /// Relative path to metadata file on local FS.
         String metadata_file_path;
-        /// Total size of all S3 objects.
+        /// Total size of all HDFS objects.
         size_t total_size;
-        /// S3 objects paths and their sizes.
+        /// HDFS objects paths and their sizes.
         std::vector<PathAndSize> s3_objects;
         /// Number of references (hardlinks) to this metadata file.
         UInt32 ref_count;
@@ -82,7 +83,7 @@ namespace
                 return;
 
             ReadBufferFromFile buf(disk_path + metadata_file_path, 1024); /* reasonable buffer size for small file */
-
+            
             UInt32 version;
             readIntText(version, buf);
 
@@ -150,13 +151,13 @@ namespace
         }
     };
 
-    /// Reads data from S3 using stored paths in metadata.
-    class ReadIndirectBufferFromS3 final : public ReadBufferFromFileBase
+    /// Reads data from HDFS using stored paths in metadata.
+    class ReadIndirectBufferFromHDFS final : public ReadBufferFromFileBase
     {
     public:
-        ReadIndirectBufferFromS3(
-            std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, Metadata metadata_, size_t buf_size_)
-            : client_ptr(std::move(client_ptr_)), bucket(bucket_), metadata(std::move(metadata_)), buf_size(buf_size_)
+        ReadIndirectBufferFromHDFS(
+            const String& hdfs_name_, const String & bucket_, Metadata metadata_, size_t buf_size_)
+            : hdfs_name(hdfs_name_), bucket(bucket_), metadata(std::move(metadata_)), buf_size(buf_size_)
         {
         }
 
@@ -203,21 +204,25 @@ namespace
         std::string getFileName() const override { return metadata.metadata_file_path; }
 
     private:
-        std::unique_ptr<ReadBufferFromS3> initialize()
+        std::unique_ptr<ReadBufferFromHDFS> initialize()
         {
             size_t offset = absolute_position;
             for (size_t i = 0; i < metadata.s3_objects.size(); ++i)
             {
                 current_buf_idx = i;
                 const auto & [path, size] = metadata.s3_objects[i];
+                std::cerr << "MetaData path and size " << path << " " << size << std::endl;
                 if (size > offset)
                 {
-                    auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
+                    auto buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path);
+                    std::cerr << "Make offset " << offset << std::endl;
                     buf->seek(offset, SEEK_SET);
                     return buf;
                 }
                 offset -= size;
+
             }
+            std::cerr << "We return nullptr\n";
             return nullptr;
         }
 
@@ -241,7 +246,7 @@ namespace
 
             ++current_buf_idx;
             const auto & path = metadata.s3_objects[current_buf_idx].first;
-            current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
+            current_buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + "/" + path);
             current_buf->next();
             working_buffer = current_buf->buffer();
             absolute_position += working_buffer.size();
@@ -249,35 +254,33 @@ namespace
             return true;
         }
 
-        std::shared_ptr<Aws::S3::S3Client> client_ptr;
+        const String & hdfs_name;
         const String & bucket;
         Metadata metadata;
         size_t buf_size;
 
         size_t absolute_position = 0;
         size_t current_buf_idx = 0;
-        std::unique_ptr<ReadBufferFromS3> current_buf;
+        std::unique_ptr<ReadBufferFromHDFS> current_buf;
     };
 
-    /// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.
-    class WriteIndirectBufferFromS3 final : public WriteBufferFromFileBase
+    /// Stores data in HDFS and adds the object key (HDFS path) and object size to metadata file on local FS.
+    class WriteIndirectBufferFromHDFS final : public WriteBufferFromFileBase
     {
     public:
-        WriteIndirectBufferFromS3(
-            std::shared_ptr<Aws::S3::S3Client> & client_ptr_,
-            const String & bucket_,
+        WriteIndirectBufferFromHDFS(
+            const String & hdfs_name_,
+            const String & hdfs_path_,
             Metadata metadata_,
-            const String & s3_path_,
-            size_t min_upload_part_size,
             size_t buf_size_)
             : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-            , impl(WriteBufferFromS3(client_ptr_, bucket_, s3_path_, min_upload_part_size, buf_size_))
+            , impl(WriteBufferFromHDFS(hdfs_name_))
             , metadata(std::move(metadata_))
-            , s3_path(s3_path_)
+            , s3_path(hdfs_path_)
         {
         }
 
-        ~WriteIndirectBufferFromS3() override
+        ~WriteIndirectBufferFromHDFS() override
         {
             try
             {
@@ -314,17 +317,17 @@ namespace
     private:
         void nextImpl() override
         {
-            /// Transfer current working buffer to WriteBufferFromS3.
+            /// Transfer current working buffer to WriteBufferFromHDFS.
             impl.swap(*this);
 
-            /// Write actual data to S3.
+            /// Write actual data to HDFS.
             impl.next();
 
             /// Return back working buffer.
             impl.swap(*this);
         }
 
-        WriteBufferFromS3 impl;
+        WriteBufferFromHDFS impl;
         bool finalized = false;
         Metadata metadata;
         String s3_path;
@@ -332,10 +335,10 @@ namespace
 }
 
 
-class DiskS3DirectoryIterator final : public IDiskDirectoryIterator
+class DiskHDFSDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    DiskS3DirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
+    DiskHDFSDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
 
     void next() override { ++iter; }
 
@@ -357,12 +360,12 @@ private:
 };
 
 
-using DiskS3Ptr = std::shared_ptr<DiskS3>;
+using DiskHDFSPtr = std::shared_ptr<DiskHDFS>;
 
-class DiskS3Reservation final : public IReservation
+class DiskHDFSReservation final : public IReservation
 {
 public:
-    DiskS3Reservation(const DiskS3Ptr & disk_, UInt64 size_)
+    DiskHDFSReservation(const DiskHDFSPtr & disk_, UInt64 size_)
         : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {
     }
@@ -379,91 +382,85 @@ public:
         disk->reserved_bytes += size;
     }
 
-    ~DiskS3Reservation() override;
+    ~DiskHDFSReservation() override;
 
 private:
-    DiskS3Ptr disk;
+    DiskHDFSPtr disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
 };
 
 
-DiskS3::DiskS3(
+DiskHDFS::DiskHDFS(
     String name_,
-    std::shared_ptr<Aws::S3::S3Client> client_,
-    std::shared_ptr<S3::DynamicProxyConfiguration> proxy_configuration_,
-    String bucket_,
-    String s3_root_path_,
-    String metadata_path_,
-    size_t min_upload_part_size_)
+    String hdfs_name_,
+    String metadata_path_)
     : name(std::move(name_))
-    , client(std::move(client_))
-    , proxy_configuration(std::move(proxy_configuration_))
-    , bucket(std::move(bucket_))
-    , s3_root_path(std::move(s3_root_path_))
+    , hdfs_name(std::move(hdfs_name_))
     , metadata_path(std::move(metadata_path_))
-    , min_upload_part_size(min_upload_part_size_)
+    , builder(createHDFSBuilder(hdfs_name))
+    , fs(createHDFSFS(builder.get()))
 {
 }
 
-ReservationPtr DiskS3::reserve(UInt64 bytes)
+ReservationPtr DiskHDFS::reserve(UInt64 bytes)
 {
     if (!tryReserve(bytes))
         return {};
-    return std::make_unique<DiskS3Reservation>(std::static_pointer_cast<DiskS3>(shared_from_this()), bytes);
+    return std::make_unique<DiskHDFSReservation>(std::static_pointer_cast<DiskHDFS>(shared_from_this()), bytes);
 }
 
-bool DiskS3::exists(const String & path) const
+bool DiskHDFS::exists(const String & path) const
 {
     return Poco::File(metadata_path + path).exists();
 }
 
-bool DiskS3::isFile(const String & path) const
+bool DiskHDFS::isFile(const String & path) const
 {
     return Poco::File(metadata_path + path).isFile();
 }
 
-bool DiskS3::isDirectory(const String & path) const
+bool DiskHDFS::isDirectory(const String & path) const
 {
     return Poco::File(metadata_path + path).isDirectory();
 }
 
-size_t DiskS3::getFileSize(const String & path) const
+size_t DiskHDFS::getFileSize(const String & path) const
 {
     Metadata metadata(metadata_path, path);
     return metadata.total_size;
 }
 
-void DiskS3::createDirectory(const String & path)
+void DiskHDFS::createDirectory(const String & path)
 {
     Poco::File(metadata_path + path).createDirectory();
 }
 
-void DiskS3::createDirectories(const String & path)
+void DiskHDFS::createDirectories(const String & path)
 {
     Poco::File(metadata_path + path).createDirectories();
 }
 
-DiskDirectoryIteratorPtr DiskS3::iterateDirectory(const String & path)
+DiskDirectoryIteratorPtr DiskHDFS::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskS3DirectoryIterator>(metadata_path + path, path);
+    return std::make_unique<DiskHDFSDirectoryIterator>(metadata_path + path, path);
 }
 
-void DiskS3::clearDirectory(const String & path)
+void DiskHDFS::clearDirectory(const String & path)
 {
     for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
         if (isFile(it->path()))
             remove(it->path());
 }
 
-void DiskS3::moveFile(const String & from_path, const String & to_path)
+void DiskHDFS::moveFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))
         throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
     Poco::File(metadata_path + from_path).renameTo(metadata_path + to_path);
 }
 
-void DiskS3::replaceFile(const String & from_path, const String & to_path)
+void DiskHDFS::replaceFile(const String & from_path, const String & to_path)
 {
     Poco::File from_file(metadata_path + from_path);
     Poco::File to_file(metadata_path + to_path);
@@ -478,7 +475,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
         from_file.renameTo(to_file.path());
 }
 
-void DiskS3::copyFile(const String & from_path, const String & to_path)
+void DiskHDFS::copyFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))
         remove(to_path);
@@ -488,82 +485,90 @@ void DiskS3::copyFile(const String & from_path, const String & to_path)
 
     for (const auto & [path, size] : from.s3_objects)
     {
-        auto new_path = s3_root_path + getRandomName();
-        Aws::S3::Model::CopyObjectRequest req;
+        auto new_path = hdfs_name + getRandomName();
+        /// TODO:: hdfs copy semantics
+        /*
+        Aws::HDFS::Model::CopyObjectRequest req;
         req.SetCopySource(bucket + "/" + path);
         req.SetBucket(bucket);
         req.SetKey(new_path);
         throwIfError(client->CopyObject(req));
-
+        */
+        throw Exception("is not implemented yet", 1);
         to.addObject(new_path, size);
     }
 
     to.save();
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, size_t buf_size, size_t, size_t, size_t) const
 {
     Metadata metadata(metadata_path, path);
 
+    std::cerr << "Read Metadata: objects size " << metadata.s3_objects.size() << " "
+              << "files: " << metadata.total_size << " "
+              << "file path: " << metadata.metadata_file_path << " "
+              << "disk path: " << metadata.disk_path << std::endl;
+    
     LOG_DEBUG(
-        &Logger::get("DiskS3"),
-        "Read from file by path: " << backQuote(metadata_path + path) << " Existing S3 objects: " << metadata.s3_objects.size());
+        &Logger::get("DiskHDFS"),
+        "Read from file by path: " << backQuote(metadata_path + path) << " Existing HDFS objects: " << metadata.s3_objects.size());
 
-    return std::make_unique<ReadIndirectBufferFromS3>(client, bucket, metadata, buf_size);
+    return std::make_unique<ReadIndirectBufferFromHDFS>(hdfs_name + path, "", metadata, buf_size);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
+std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t, size_t)
 {
     bool exist = exists(path);
-    /// Path to store new S3 object.
-    auto s3_path = s3_root_path + getRandomName();
+    /// Path to store new HDFS object.
+    auto file_name = getRandomName();
+    auto HDFS_path = hdfs_name + file_name;
     if (!exist || mode == WriteMode::Rewrite)
     {
-        /// If metadata file exists - remove and create new.
+        /// If metadata file exists - remove and new.
         if (exist)
             remove(path);
-
+        std::cerr << metadata_path << std::endl;
         Metadata metadata(metadata_path, path, true);
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
         metadata.save();
 
-        LOG_DEBUG(&Logger::get("DiskS3"), "Write to file by path: " << backQuote(metadata_path + path) << " New S3 path: " << s3_path);
+        LOG_DEBUG(&Logger::get("DiskHDFS"), "Write to file by path: " << backQuote(metadata_path + path) << " New HDFS path: " << HDFS_path);
 
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, min_upload_part_size, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(HDFS_path, file_name, metadata, buf_size);
     }
     else
     {
         Metadata metadata(metadata_path, path);
 
         LOG_DEBUG(
-            &Logger::get("DiskS3"),
-            "Append to file by path: " << backQuote(metadata_path + path) << " New S3 path: " << s3_path
-                                       << " Existing S3 objects: " << metadata.s3_objects.size());
+            &Logger::get("DiskHDFS"),
+            "Append to file by path: " << backQuote(metadata_path + path) << " New HDFS path: " << HDFS_path
+                                       << " Existing HDFS objects: " << metadata.s3_objects.size());
 
-        return std::make_unique<WriteIndirectBufferFromS3>(client, bucket, metadata, s3_path, min_upload_part_size, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(HDFS_path, file_name, metadata, buf_size);
     }
 }
 
-void DiskS3::remove(const String & path)
+void DiskHDFS::remove(const String & path)
 {
-    LOG_DEBUG(&Logger::get("DiskS3"), "Remove file by path: " << backQuote(metadata_path + path));
+    LOG_DEBUG(&Logger::get("DiskHDFS"), "Remove file by path: " << backQuote(metadata_path + path));
 
     Poco::File file(metadata_path + path);
     if (file.isFile())
     {
         Metadata metadata(metadata_path, path);
 
-        /// If there is no references - delete content from S3.
+        /// If there is no references - delete content from HDFS.
         if (metadata.ref_count == 0)
         {
             file.remove();
             for (const auto & [s3_object_path, _] : metadata.s3_objects)
             {
-                /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
-                Aws::S3::Model::DeleteObjectRequest request;
-                request.SetBucket(bucket);
-                request.SetKey(s3_object_path);
-                throwIfError(client->DeleteObject(request));
+                auto hdfs_path = "gtest/" + s3_object_path;
+                int res = hdfsDelete(fs.get(), hdfs_path.c_str(), 0);
+                if (res == -1)
+                    throw Exception("fuck " + hdfs_path, 1);
             }
         }
         else /// In other case decrement number of references, save metadata and delete file.
@@ -577,7 +582,7 @@ void DiskS3::remove(const String & path)
         file.remove();
 }
 
-void DiskS3::removeRecursive(const String & path)
+void DiskHDFS::removeRecursive(const String & path)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
@@ -595,12 +600,12 @@ void DiskS3::removeRecursive(const String & path)
 }
 
 
-bool DiskS3::tryReserve(UInt64 bytes)
+bool DiskHDFS::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk " << backQuote(name));
+        LOG_DEBUG(&Logger::get("DiskHDFS"), "Reserving 0 bytes on HDFS disk " << backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -610,7 +615,7 @@ bool DiskS3::tryReserve(UInt64 bytes)
     if (unreserved_space >= bytes)
     {
         LOG_DEBUG(
-            &Logger::get("DiskS3"),
+            &Logger::get("DiskHDFS"),
             "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name) << ", having unreserved "
                          << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
         ++reservation_count;
@@ -620,23 +625,23 @@ bool DiskS3::tryReserve(UInt64 bytes)
     return false;
 }
 
-void DiskS3::listFiles(const String & path, std::vector<String> & file_names)
+void DiskHDFS::listFiles(const String & path, std::vector<String> & file_names)
 {
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         file_names.push_back(it->name());
 }
 
-void DiskS3::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+void DiskHDFS::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
     Poco::File(metadata_path + path).setLastModified(timestamp);
 }
 
-Poco::Timestamp DiskS3::getLastModified(const String & path)
+Poco::Timestamp DiskHDFS::getLastModified(const String & path)
 {
     return Poco::File(metadata_path + path).getLastModified();
 }
 
-void DiskS3::createHardLink(const String & src_path, const String & dst_path)
+void DiskHDFS::createHardLink(const String & src_path, const String & dst_path)
 {
     /// Increment number of references.
     Metadata src(metadata_path, src_path);
@@ -647,19 +652,19 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path)
     DB::createHardLink(metadata_path + src_path, metadata_path + dst_path);
 }
 
-void DiskS3::createFile(const String & path)
+void DiskHDFS::createFile(const String & path)
 {
     /// Create empty metadata file.
     Metadata metadata(metadata_path, path, true);
     metadata.save();
 }
 
-void DiskS3::setReadOnly(const String & path)
+void DiskHDFS::setReadOnly(const String & path)
 {
     Poco::File(metadata_path + path).setReadOnly(true);
 }
 
-DiskS3Reservation::~DiskS3Reservation()
+DiskHDFSReservation::~DiskHDFSReservation()
 {
     try
     {
@@ -683,6 +688,18 @@ DiskS3Reservation::~DiskS3Reservation()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+void registerDiskHDFS(DiskFactory & factory)
+{
+    auto creator = [](const String & name,
+                      const Poco::Util::AbstractConfiguration & config,
+                      const String & config_prefix,
+                      const Context & context) -> DiskPtr {
+        String path = config.getString(config_prefix + ".path", "");
+        return std::make_shared<DiskHDFS>(name, path, "");
+    };
+    factory.registerDiskType("hdfs", creator);
 }
 
 }
