@@ -377,11 +377,6 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             /** check for vertical edge, seem like never happens */
             if (l.x() == r.x())
             {
-                if (l.x() == x && y >= l.y() && y <= r.y())
-                {
-                    /** point is on the edge */
-                    update_result(found, id, polygon_id);
-                }
                 continue;
             }
 
@@ -396,12 +391,6 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             {
                 continue;
             }
-            if (edge_y == y)
-            {
-                /** point is on the edge */
-                update_result(found, id, polygon_id);
-            }
-
             intersections.emplace_back(polygon_id);
         }
         pos >>= 1;
