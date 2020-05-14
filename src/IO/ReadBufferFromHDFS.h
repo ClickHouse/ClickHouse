@@ -4,6 +4,7 @@
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
+#include "SeekableReadBuffer.h"
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
@@ -13,7 +14,7 @@ namespace DB
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromHDFS : public BufferWithOwnMemory<ReadBuffer>
+class ReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>
 {
     struct ReadBufferFromHDFSImpl;
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
@@ -23,6 +24,10 @@ public:
     ~ReadBufferFromHDFS() override;
 
     bool nextImpl() override;
+
+    off_t seek(off_t off, int whence) override;
+    off_t getPosition() override;
+
 };
 }
 #endif

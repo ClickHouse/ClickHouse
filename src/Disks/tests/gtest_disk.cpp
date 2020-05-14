@@ -144,3 +144,14 @@ TYPED_TEST(DiskTest, iterateDirectory)
         EXPECT_FALSE(iter->isValid());
     }
 }
+
+TEST(DiskHdfsTest, testHdfsCreation)
+{
+    auto disk = DB::DiskHDFS("gtesthdfs", "hdfs://localhost:9010/gtest/", "/home/ershov-ov/metadata/");
+    auto out = disk.writeFile("keek", 1024, DB::WriteMode::Rewrite, 1024, 1024);
+    writeString("test data", *out);
+    DB::String d;
+    auto in = disk.readFile("keek", 1024, 1024, 1024, 1024);
+    readString(d, *in);
+    EXPECT_EQ("test_data", d);
+}
