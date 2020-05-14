@@ -50,7 +50,9 @@ public:
     template <class SizeFunc, class InitFunc>
     ValuePtr getOrSet(const Key & key, SizeFunc && size_func, InitFunc && init_func)
     {
-        auto&& [ptr, produced] = MarkCacheBase::getOrSet(key, size_func, init_func);
+        auto&& [ptr, produced] = MarkCacheBase::getOrSet(key,
+                std::forward<SizeFunc>(size_func),
+                std::forward<InitFunc>(init_func));
 
         if (produced)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);

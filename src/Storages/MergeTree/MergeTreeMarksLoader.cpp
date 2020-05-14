@@ -37,7 +37,7 @@ void MergeTreeMarksLoader::loadMarks()
     {
         auto key = mark_cache->hash(mrk_path);
 
-        if (save_marks_in_cache)
+        if (save_new_marks_in_cache)
         {
             const size_t marks_overall_size = marks_count * columns_in_mark;
 
@@ -45,12 +45,12 @@ void MergeTreeMarksLoader::loadMarks()
                 return sizeof(CacheMarksInCompressedFile) * marks_overall_size;
             };
 
-            constexpr auto init_func = [marks_overall_size](void * heap_storage) {
-                return MarksInCompressedFile{marks_overall_size, heap_storage};
+            auto init_func = [marks_overall_size](void * heap_storage) {
+                return MarksInCompressedFile(marks_overall_size, heap_storage);
             };
 
             /// The cache is active, insert the initial object there and get it reference back.
-            marks_cache = mark_cache->getOrSet(key, std::move(size_func), std::move(init_func);
+            marks_cache = mark_cache->getOrSet(key, std::move(size_func), std::move(init_func));
         }
         else
         {
@@ -62,14 +62,22 @@ void MergeTreeMarksLoader::loadMarks()
         }
     }
 
-    if (!marks)
+    if (cached_marks() ? !marks_cache : !marks_non_cache)
         throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
 
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
         auto buffer = disk->readFile(mrk_path, file_size);
-        buffer->readStrict(reinterpret_cast<char *>(marks->data()), file_size);
+
+        MarkInCompressedFile * data;
+
+        if (cached_marks())
+            data = marks_cache->data();
+        else
+            data = marks_non_cache->data();
+
+        buffer->readStrict(reinterpret_cast<char *>(data), file_size);
 
         if (!buffer->eof())
             throw Exception(
@@ -84,7 +92,11 @@ void MergeTreeMarksLoader::loadMarks()
 
         while (!buffer->eof()) /// propagating while not supported.
         {
-            marks->read(*buffer, i * columns_in_mark, columns_in_mark);
+            if (cached_marks())
+                marks_cache->read(*buffer, i * columns_in_mark, columns_in_mark);
+            else
+                marks_non_cache->read(*buffer, i * columns_in_mark, columns_in_mark);
+
             buffer->seek(sizeof(size_t), SEEK_CUR);
             ++i;
         }
@@ -93,7 +105,10 @@ void MergeTreeMarksLoader::loadMarks()
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
-    marks->protect();
+    if (cached_marks())
+        marks_cache->protect();
+    else
+        marks_non_cache->protect();
 }
 }
 

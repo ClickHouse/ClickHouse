@@ -65,8 +65,8 @@ struct DefaultASLR
 
 /// Not in std for some sake.
 template<class T, class... Args>
-constexpr T* construct_at(T* p, Args&&... args ) {
-    return ::new (const_cast<void*>(static_cast<const volatile void*>(p))) T(std::forward<Args>(args)...);
+constexpr T* construct_at(void* p, Args&&... args ) {
+    return ::new (p) T(std::forward<Args>(args)...);
 }
 
 struct Stats
@@ -835,7 +835,7 @@ private:
         constexpr void init_key(const Key& key)
         {
             /// TODO Replace with std version
-            ga::construct_at(std::launder(reinterpret_cast<Key*>(&key_storage)), key);
+            ga::construct_at(&key_storage, key);
         }
 
         /// Exceptions will be propagated to the caller.
@@ -843,7 +843,7 @@ private:
         constexpr void init_value(Init&& init_func)
         {
             /// TODO Replace with std version
-            ga::construct_at(std::launder(reinterpret_cast<Value*>(&value_storage)), init_func(ptr));
+            ga::construct_at(&value_storage, init_func(ptr));
         }
 
         constexpr const Key& key() const noexcept

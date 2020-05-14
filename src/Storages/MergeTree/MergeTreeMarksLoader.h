@@ -41,10 +41,15 @@ public:
                 ErrorCodes::LOGICAL_ERROR);
 #endif
 
-        return (cached_marks() ? marks_cache : marks_non_cache)[row_index * columns_in_mark + column_index];
+        if (cached_marks())
+            return (*marks_cache)[row_index * columns_in_mark + column_index];
+        else
+            return (*marks_non_cache)[row_index * columns_in_mark + column_index];
     }
 
-    bool initialized() const noexcept { return cached_marks() ? marks_cache : marks_non_cache; }
+    bool initialized() const noexcept {
+        return cached_marks() ? marks_cache != nullptr : marks_non_cache != nullptr;
+    }
 
     constexpr bool cached_marks() const noexcept
     {
