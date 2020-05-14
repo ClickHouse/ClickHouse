@@ -1,10 +1,9 @@
 #pragma once
 
 #include <Storages/StorageDistributed.h>
-#include <Common/ThreadPool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <atomic>
-#include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <IO/ReadBufferFromFile.h>
@@ -20,7 +19,7 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_);
+        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_);
 
     ~StorageDistributedDirectoryMonitor();
 
@@ -33,6 +32,9 @@ public:
     void shutdownAndDropAllData();
 
     static BlockInputStreamPtr createStreamFromFile(const String & file_name);
+
+    /// For scheduling via DistributedBlockOutputStream
+    bool scheduleAfter(size_t ms);
 private:
     void run();
     bool processFiles();
@@ -64,10 +66,11 @@ private:
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;
-    std::condition_variable cond;
     Logger * log;
     ActionBlocker & monitor_blocker;
-    ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
+
+    BackgroundSchedulePool & bg_pool;
+    BackgroundSchedulePoolTaskHolder task_handle;
 
     /// Read insert query and insert settings for backward compatible.
     static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log);

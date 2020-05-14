@@ -37,7 +37,7 @@ static void validateTree(
 {
     std::unordered_map<IProcessor *, size_t> index;
 
-    for (auto & processor : processors)
+    for (const auto & processor : processors)
     {
         bool is_inserted = index.try_emplace(processor.get(), index.size()).second;
 
@@ -164,7 +164,7 @@ void TreeExecutorBlockInputStream::execute(bool on_totals, bool on_extremes)
         }
     };
 
-    while (!stack.empty())
+    while (!stack.empty() && !is_cancelled)
     {
         IProcessor * node = stack.top();
 
@@ -242,7 +242,7 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
 
     while (!stack.empty())
     {
-        auto processor = stack.top().processor;
+        auto * processor = stack.top().processor;
         bool visited_limit = stack.top().visited_limit;
         stack.pop();
 
@@ -295,7 +295,7 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
 
 Block TreeExecutorBlockInputStream::readImpl()
 {
-    while (true)
+    while (!is_cancelled)
     {
         if (input_port->isFinished())
         {
@@ -324,9 +324,9 @@ Block TreeExecutorBlockInputStream::readImpl()
             auto chunk = input_port->pull();
             Block block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-            if (auto & chunk_info = chunk.getChunkInfo())
+            if (const auto & chunk_info = chunk.getChunkInfo())
             {
-                if (auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
+                if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
                 {
                     block.info.bucket_num = agg_info->bucket_num;
                     block.info.is_overflows = agg_info->is_overflows;
@@ -338,6 +338,8 @@ Block TreeExecutorBlockInputStream::readImpl()
 
         execute(false, false);
     }
+
+    return {};
 }
 
 void TreeExecutorBlockInputStream::setProgressCallback(const ProgressCallback & callback)
@@ -371,6 +373,14 @@ void TreeExecutorBlockInputStream::addTotalRowsApprox(size_t value)
     /// Add only for one source.
     if (!sources_with_progress.empty())
         sources_with_progress.front()->addTotalRowsApprox(value);
+}
+
+void TreeExecutorBlockInputStream::cancel(bool kill)
+{
+    IBlockInputStream::cancel(kill);
+
+    for (auto & processor : processors)
+        processor->cancel();
 }
 
 }

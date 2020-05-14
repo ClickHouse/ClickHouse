@@ -15,7 +15,7 @@ struct ExtractRaw
         ExpectChars expects_end;
         UInt8 current_expect_end = 0;
 
-        for (auto extract_begin = pos; pos != end; ++pos)
+        for (const auto * extract_begin = pos; pos != end; ++pos)
         {
             if (current_expect_end && *pos == current_expect_end)
             {

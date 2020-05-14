@@ -37,6 +37,9 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Storages/System/StorageSystemLicenses.h>
+#endif
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
@@ -49,6 +52,7 @@
 namespace DB
 {
 
+///TODO allow store system tables in DatabaseAtomic
 void attachSystemTablesLocal(IDatabase & system_database)
 {
     system_database.attachTable("one", StorageSystemOne::create("one"));
@@ -74,6 +78,9 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
     system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
     system_database.attachTable("contributors", StorageSystemContributors::create("contributors"));
+#if !defined(ARCADIA_BUILD)
+    system_database.attachTable("licenses", StorageSystemLicenses::create("licenses"));
+#endif
 #ifdef OS_LINUX
     system_database.attachTable("stack_trace", StorageSystemStackTrace::create("stack_trace"));
 #endif

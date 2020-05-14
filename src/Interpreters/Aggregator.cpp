@@ -25,10 +25,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <common/demangle.h>
-#include <common/config_common.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 
 namespace ProfileEvents
@@ -147,8 +146,8 @@ Aggregator::Aggregator(const Params & params_)
     isCancelled([]() { return false; })
 {
     /// Use query-level memory tracker
-    if (auto memory_tracker_child = CurrentThread::getMemoryTracker())
-        if (auto memory_tracker = memory_tracker_child->getParent())
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
             memory_usage_before_aggregation = memory_tracker->get();
 
     aggregate_functions.resize(params.aggregates_size);
@@ -604,18 +603,18 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
 
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
-        auto that = aggregate_functions[i];
+        auto * that = aggregate_functions[i];
         /// Unnest consecutive trailing -State combinators
-        while (auto func = typeid_cast<const AggregateFunctionState *>(that))
+        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
         aggregate_functions_instructions[i].that = that;
         aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
 
-        if (auto func = typeid_cast<const AggregateFunctionArray *>(that))
+        if (const auto * func = typeid_cast<const AggregateFunctionArray *>(that))
         {
             /// Unnest consecutive -State combinators before -Array
             that = func->getNestedFunction().get();
-            while (auto nested_func = typeid_cast<const AggregateFunctionState *>(that))
+            while (const auto * nested_func = typeid_cast<const AggregateFunctionState *>(that))
                 that = nested_func->getNestedFunction().get();
             auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
             nested_columns_holder.push_back(std::move(nested_columns));
@@ -662,8 +661,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
-    if (auto memory_tracker_child = CurrentThread::getMemoryTracker())
-        if (auto memory_tracker = memory_tracker_child->getParent())
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
             current_memory_usage = memory_tracker->get();
 
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
@@ -691,11 +690,20 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        auto reservation = params.tmp_volume->reserve(size);
-        if (!reservation)
-            throw Exception("Not enough space for external aggregation in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
+        const std::string tmp_path = params.tmp_volume->getNextDisk()->getPath();
 
-        const std::string tmp_path(reservation->getDisk()->getPath());
+        // enoughSpaceInDirectory() is not enough to make it right, since
+        // another process (or another thread of aggregator) can consume all
+        // space.
+        //
+        // But true reservation (IVolume::reserve()) cannot be used here since
+        // current_memory_usage does not takes compression into account and
+        // will reserve way more that actually will be used.
+        //
+        // Hence let's do a simple check.
+        if (!enoughSpaceInDirectory(tmp_path, size))
+            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+
         writeToTemporaryFile(result, tmp_path);
     }
 
@@ -1208,7 +1216,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (method.data.impls[bucket].empty())
                 continue;
 
-            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::getGroup()));
+            tasks[bucket] = std::packaged_task<Block()>([group = CurrentThread::getGroup(), bucket, &converter]{ return converter(bucket, group); });
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError([bucket, &tasks] { tasks[bucket](); });
@@ -1498,6 +1506,11 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     }
 }
 
+#define M(NAME) \
+    template void NO_INLINE Aggregator::mergeSingleLevelDataImpl<decltype(AggregatedDataVariants::NAME)::element_type>( \
+        ManyAggregatedDataVariants & non_empty_data) const;
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
@@ -1670,8 +1683,9 @@ private:
         if (max_scheduled_bucket_num >= NUM_BUCKETS)
             return;
 
-        parallel_merge_data->pool.scheduleOrThrowOnError(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
-            max_scheduled_bucket_num, CurrentThread::getGroup()));
+        parallel_merge_data->pool.scheduleOrThrowOnError(
+            [this, max_scheduled_bucket_num = max_scheduled_bucket_num, group = CurrentThread::getGroup()]
+            { return thread(max_scheduled_bucket_num, group); });
     }
 
     void thread(Int32 bucket_num, ThreadGroupStatusPtr thread_group)
@@ -2021,7 +2035,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::getGroup());
+            auto task = [group = CurrentThread::getGroup(), bucket, &merge_bucket, aggregates_pool]{ return merge_bucket(bucket, aggregates_pool, group); };
 
             if (thread_pool)
                 thread_pool->scheduleOrThrowOnError(task);

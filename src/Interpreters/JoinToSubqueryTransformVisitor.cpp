@@ -9,10 +9,12 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteHelpers.h>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -34,7 +36,7 @@ namespace
 ASTPtr makeSubqueryTemplate()
 {
     ParserTablesInSelectQueryElement parser(true);
-    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--.s`", 0);
+    ASTPtr subquery_template = parseQuery(parser, "(select * from _t) as `--.s`", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (!subquery_template)
         throw Exception("Cannot parse subquery template", ErrorCodes::LOGICAL_ERROR);
     return subquery_template;
@@ -96,7 +98,7 @@ private:
         data.new_select_expression_list = std::make_shared<ASTExpressionList>();
         data.new_select_expression_list->children.reserve(node.children.size());
 
-        for (auto & child : node.children)
+        for (const auto & child : node.children)
         {
             if (child->as<ASTAsterisk>())
             {
@@ -129,6 +131,8 @@ private:
 /// Make aliases maps (alias -> column_name, column_name -> alias)
 struct ColumnAliasesMatcher
 {
+    using Visitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
+
     struct Data
     {
         const std::vector<DatabaseAndTableWithAlias> tables;
@@ -137,6 +141,7 @@ struct ColumnAliasesMatcher
         std::unordered_map<String, String> aliases;     /// alias -> long_name
         std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
         std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
+        bool inside_function = false;
 
         explicit Data(const std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
@@ -192,6 +197,10 @@ struct ColumnAliasesMatcher
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
+        /// Do not go into subqueries. Function visits children itself.
+        if (node->as<ASTSubquery>() ||
+            node->as<ASTFunction>())
+            return false;
         return !node->as<ASTQualifiedAsterisk>();
     }
 
@@ -199,9 +208,22 @@ struct ColumnAliasesMatcher
     {
         if (auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
+        else if (auto * f = ast->as<ASTFunction>())
+            visit(*f, ast, data);
 
-        if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
+        /// Do not allow asterisks but ignore them inside functions. I.e. allow 'count(*)'.
+        if (!data.inside_function && (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>()))
             throw Exception("Multiple JOIN do not support asterisks for complex queries yet", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static void visit(const ASTFunction &, const ASTPtr & ast, Data & data)
+    {
+        /// Grandchild case: Function -> (ExpressionList) -> Asterisk
+        data.inside_function = true;
+        Visitor visitor(data);
+        for (auto & child : ast->children)
+            visitor.visit(child);
+        data.inside_function = false;
     }
 
     static void visit(const ASTIdentifier & const_node, const ASTPtr &, Data & data)
@@ -215,7 +237,7 @@ struct ColumnAliasesMatcher
 
         if (auto table_pos = IdentifierSemantic::chooseTable(node, data.tables))
         {
-            auto & table = data.tables[*table_pos];
+            const auto & table = data.tables[*table_pos];
             IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
             long_name = node.name;
             if (&table == &data.tables.back())
@@ -348,7 +370,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 using ExtractAsterisksVisitor = ConstInDepthNodeVisitor<ExtractAsterisksMatcher, true>;
-using ColumnAliasesVisitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
+using ColumnAliasesVisitor = ColumnAliasesMatcher::Visitor;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
@@ -461,13 +483,13 @@ struct TableNeededColumns
 
         String table_name = table.getQualifiedNamePrefix(false);
 
-        for (auto & column : no_clashes)
+        for (const auto & column : no_clashes)
             addShortName(column, expression_list);
 
-        for (auto & column : alias_clashes)
+        for (const auto & column : alias_clashes)
             addShortName(column, expression_list);
 
-        for (auto & [column, alias] : column_clashes)
+        for (const auto & [column, alias] : column_clashes)
             addAliasedName(table_name, column, alias, expression_list);
     }
 
@@ -516,7 +538,7 @@ private:
 size_t countTablesWithColumn(const std::vector<TableWithColumnNamesAndTypes> & tables, const String & short_name)
 {
     size_t count = 0;
-    for (auto & table : tables)
+    for (const auto & table : tables)
         if (table.hasColumn(short_name))
             ++count;
     return count;
@@ -557,7 +579,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     NameSet restored_names;
     std::vector<TableNeededColumns> needed_columns;
     needed_columns.reserve(tables.size());
-    for (auto & table : tables)
+    for (const auto & table : tables)
         needed_columns.push_back(TableNeededColumns{table.table});
 
     for (ASTIdentifier * ident : identifiers)
@@ -580,7 +602,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
                 if (count > 1 || aliases.count(short_name))
                 {
-                    auto & table = tables[*table_pos];
+                    const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     auto & unique_long_name = ident->name;
 
@@ -630,7 +652,7 @@ std::shared_ptr<ASTExpressionList> subqueryExpressionList(
     /// Add needed right table columns
     needed_columns[table_pos].fillExpressionList(*expression_list);
 
-    for (auto & expr : alias_pushdown[table_pos])
+    for (const auto & expr : alias_pushdown[table_pos])
         expression_list->children.emplace_back(std::move(expr));
 
     return expression_list;

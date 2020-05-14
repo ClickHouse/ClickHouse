@@ -138,7 +138,8 @@ private:
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
@@ -619,11 +620,19 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
-                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
+            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+
+            if (client_version_tuple < server_version_tuple)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
+            else if (client_version_tuple > server_version_tuple)
+            {
+                std::cout << "ClickHouse server version is older than ClickHouse client. "
+                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -684,7 +693,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        IParser::Pos token_iterator(tokens);
+                        IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;
@@ -812,7 +821,7 @@ private:
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function))
+            if (insert && (!insert->select || input_function) && !insert->watch)
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -958,10 +967,15 @@ private:
         ParserQuery parser(end, true);
         ASTPtr res;
 
+        const auto & settings = context.getSettingsRef();
+        size_t max_length = 0;
+        if (!allow_multi_statements)
+            max_length = settings.max_query_size;
+
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, 0);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
             if (!res)
             {
@@ -970,7 +984,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, 0);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (is_interactive)
         {

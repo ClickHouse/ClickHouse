@@ -6,10 +6,9 @@
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
 
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-// It doesn't make much sense to build this bridge without ODBC, but we
-// still do this.
-#include <Poco/Data/ODBC/Connector.h>
+#if USE_ODBC
+// It doesn't make much sense to build this bridge without ODBC, but we still do this.
+#    include <Poco/Data/ODBC/Connector.h>
 #endif
 
 #include <Poco/Net/HTTPServer.h>
@@ -147,7 +146,7 @@ void ODBCBridge::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
 
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+#if USE_ODBC
     // It doesn't make much sense to build this bridge without ODBC, but we
     // still do this.
     Poco::Data::ODBC::Connector::registerConnector();
@@ -176,8 +175,9 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     http_params->setTimeout(http_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-    context = std::make_shared<Context>(Context::createGlobal());
-    context->makeGlobalContext();
+    auto shared_context = Context::createShared();
+    Context context(Context::createGlobal(shared_context.get()));
+    context.makeGlobalContext();
 
     if (config().has("query_masking_rules"))
     {

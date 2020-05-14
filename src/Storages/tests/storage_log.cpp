@@ -26,7 +26,8 @@ try
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
     names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
-    auto context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    auto context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
     context.setPath("./");
 
@@ -42,7 +43,7 @@ try
         {
             ColumnWithTypeAndName column;
             column.name = "a";
-            column.type = table->getColumn("a").type;
+            column.type = table->getColumns().getPhysical("a").type;
             auto col = column.type->createColumn();
             ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 
@@ -57,7 +58,7 @@ try
         {
             ColumnWithTypeAndName column;
             column.name = "b";
-            column.type = table->getColumn("b").type;
+            column.type = table->getColumns().getPhysical("b").type;
             auto col = column.type->createColumn();
             ColumnUInt8::Container & vec = typeid_cast<ColumnUInt8 &>(*col).getData();
 

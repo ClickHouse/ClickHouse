@@ -30,7 +30,7 @@ namespace ErrorCodes
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-        for (auto val : data)
+        for (auto * val : data)
             func->destroy(val);
 }
 
@@ -39,7 +39,7 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
     foreign_arenas.push_back(arena_);
 }
 
-MutableColumnPtr ColumnAggregateFunction::convertToValues() const
+MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr column)
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.
@@ -65,24 +65,30 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   `AggregateFunction(quantileTimingState(0.5), UInt64)`
         * into `AggregateFunction(quantileTiming(0.5), UInt64)`
         * - in the same states.
-        *
+        *column_aggregate_func
         * Then `finalizeAggregation` function will be calculated, which will call `convertToValues` already on the result.
         * And this converts a column of type
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
+    auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*column);
+    auto & func = column_aggregate_func.func;
+    auto & data = column_aggregate_func.data;
+
     if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
-        auto res = createView();
+        auto res = column_aggregate_func.createView();
         res->set(function_state->getNestedFunction());
         res->data.assign(data.begin(), data.end());
         return res;
     }
 
+    column_aggregate_func.ensureOwnership();
+
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
-    for (auto val : data)
+    for (auto * val : data)
         func->insertResultInto(val, *res);
 
     return res;
@@ -93,7 +99,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto machine_learning_function = func.get();
+    auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -105,7 +111,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         {
             /// Case for non-constant column. Use different aggregate function for each row.
             size_t row_num = 0;
-            for (auto val : data)
+            for (auto * val : data)
             {
                 machine_learning_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
@@ -425,7 +431,7 @@ void ColumnAggregateFunction::insert(const Field & x)
         throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
                         "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
 
-    auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

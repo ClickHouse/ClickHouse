@@ -1,3 +1,8 @@
+---
+toc_priority: 1
+toc_title: Cloud
+---
+
 # ClickHouse Cloud Service Providers {#clickhouse-cloud-service-providers}
 
 !!! info "Info"
@@ -7,7 +12,7 @@
 
 [Yandex Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) provides the following key features:
 
--   Fully managed ZooKeeper service for [ClickHouse replication](../engines/table_engines/mergetree_family/replication.md)
+-   Fully managed ZooKeeper service for [ClickHouse replication](../engines/table-engines/mergetree-family/replication.md)
 -   Multiple storage type choices
 -   Replicas in different availability zones
 -   Encryption and isolation

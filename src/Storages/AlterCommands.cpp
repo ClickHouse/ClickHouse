@@ -44,7 +44,7 @@ namespace ErrorCodes
 }
 
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
     const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
@@ -75,7 +75,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -131,7 +131,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         command.if_exists = command_ast->if_exists;
 
@@ -257,7 +257,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 {
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type, false);
+        ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
             column.default_desc.kind = default_kind;
@@ -455,7 +455,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
-        for (auto & column : metadata.columns)
+        for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
             {
@@ -467,16 +467,29 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         }
         if (metadata.ttl_for_table_ast)
             rename_visitor.visit(metadata.ttl_for_table_ast);
+
+        for (auto & constraint : metadata.constraints.constraints)
+            rename_visitor.visit(constraint);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::isModifyingData() const
+bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     /// Possible change data representation on disk
     if (type == MODIFY_COLUMN)
-        return data_type != nullptr;
+    {
+        if (data_type == nullptr)
+            return false;
+
+        /// It is allowed to ALTER data type to the same type as before.
+        for (const auto & column : metadata.columns.getAllPhysical())
+            if (column.name == column_name)
+                return !column.type->equals(*data_type);
+
+        return true;
+    }
 
     return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
         || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
@@ -496,7 +509,7 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->getName() == to->getName())
+    if (from->equals(*to))
         return true;
 
     static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
@@ -723,7 +736,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     NameToNameMap renames_map;
     for (size_t i = 0; i < size(); ++i)
     {
-        auto & command = (*this)[i];
+        const auto & command = (*this)[i];
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -741,7 +754,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            all_columns.add(ColumnDescription(column_name, command.data_type, false));
+            all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -888,11 +901,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::isModifyingData() const
+bool AlterCommands::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     for (const auto & param : *this)
     {
-        if (param.isModifyingData())
+        if (param.isModifyingData(metadata))
             return true;
     }
 

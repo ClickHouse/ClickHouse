@@ -34,6 +34,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/TrieDictionary.h>
 #include <Dictionaries/PolygonDictionary.h>
+#include <Dictionaries/DirectDictionary.h>
 
 #include <ext/range.h>
 
@@ -135,8 +136,11 @@ private:
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchSimple<DirectDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -241,7 +245,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -302,11 +306,14 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -484,12 +491,15 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
+#if !defined(ARCADIA_BUILD)
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -763,7 +773,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -822,11 +832,14 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -1082,12 +1095,15 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
+#if !defined(ARCADIA_BUILD)
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -1328,7 +1344,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1476,7 +1492,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1617,7 +1633,7 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block & /*sample_block*/) override { return true; }
+    bool isInjective(const Block & /*sample_block*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
@@ -1655,6 +1671,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -1819,6 +1836,7 @@ private:
         context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
+            && !executeDispatch<DirectDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
