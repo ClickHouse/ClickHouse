@@ -1520,7 +1520,7 @@ namespace Replication
         String gtid_datas;
 
         BinlogDumpGTID(UInt32 server_id_, String gtid_datas_)
-            : binlog_pos(4), flags(0x00), server_id(server_id_), binlog_file_name(""), gtid_datas(std::move(gtid_datas_))
+            : binlog_pos(4), flags(0x04), server_id(server_id_), binlog_file_name(""), gtid_datas(std::move(gtid_datas_))
         {
         }
 

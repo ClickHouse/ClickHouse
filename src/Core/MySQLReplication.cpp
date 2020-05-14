@@ -725,9 +725,8 @@ namespace MySQLReplication
             boost::split(gtids, ssets[i], [](char c) { return c == ':'; });
 
             GTIDSet set;
-            set.UUID = gtids[0];
             set.UUID.resize(16);
-
+            parseUUID(reinterpret_cast<const UInt8 *>(gtids[0].data()), reinterpret_cast<UInt8 *>(set.UUID.data()));
             for (size_t k = 1; k < gtids.size(); k++)
             {
                 std::vector<String> inters;
@@ -764,7 +763,7 @@ namespace MySQLReplication
         for (size_t i = 0; i < sets.size(); i++)
         {
             GTIDSet set = sets[i];
-            buffer.write(set.UUID.data(), 16);
+            buffer.write(reinterpret_cast<const char *>(&set.UUID), 16);
 
             UInt64 intervals_size = set.intervals.size();
             buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);
