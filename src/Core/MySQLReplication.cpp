@@ -2,8 +2,9 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
-#include <boost/algorithm/string.hpp>
 #include <Common/FieldVisitors.h>
+
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -725,6 +726,7 @@ namespace MySQLReplication
 
             GTIDSet set;
             set.UUID = gtids[0];
+            set.UUID.resize(16);
 
             for (size_t k = 1; k < gtids.size(); k++)
             {
@@ -732,6 +734,21 @@ namespace MySQLReplication
                 boost::split(inters, gtids[k], [](char c) { return c == '-'; });
 
                 GTIDSet::Interval val{std::stol(inters[0]), std::stol(inters[1])};
+                switch (inters.size())
+                {
+                    case 1: {
+                        val.start = std::stol(inters[0]);
+                        val.end = val.start + 1;
+                        break;
+                    }
+                    case 2: {
+                        val.start = std::stol(inters[0]);
+                        val.end = std::stol(inters[1]) + 1;
+                        break;
+                    }
+                    default:
+                        throw ReplicationError("GTIDParse: Invalid GTID interval: " + gtids[k], ErrorCodes::UNKNOWN_EXCEPTION);
+                }
                 set.intervals.emplace_back(val);
             }
             sets.emplace_back(set);
