@@ -273,8 +273,32 @@ void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
             std::swap(a, b);
         }
 
-        this->all_edges.emplace_back(Edge{a, b, polygon_id, 0});
+        if (a.x() == b.x())
+        {
+            /** vertical edge found, skipping for now */
+            continue;
+        }
+
+        this->all_edges.emplace_back(a, b, polygon_id, 0);
     }
+}
+
+BucketsPolygonIndex::Edge::Edge(
+    const Point & l_,
+    const Point & r_,
+    size_t polygon_id_,
+    size_t edge_id_)
+    : l(l_),
+      r(r_),
+      polygon_id(polygon_id_),
+      edge_id(edge_id_)
+{
+    /** Calculating arguments of line equation.
+     * Original equation is:
+     * f(x) = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x())
+     */
+    k = (r.y() - l.y()) / (r.x() - l.x());
+    b = l.y() - k * l.x();
 }
 
 bool BucketsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
@@ -374,19 +398,13 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             const Point & r = edge.r;
             size_t polygon_id = edge.polygon_id;
 
-            /** check for vertical edge, seem like never happens */
-            if (l.x() == r.x())
-            {
-                continue;
-            }
-
             /** check if point outside of edge's x bounds */
             if (x < l.x() || x >= r.x())
             {
                 continue;
             }
 
-            Coord edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
+            Coord edge_y = x * edge.k + edge.b;
             if (edge_y <= y)
             {
                 intersections.emplace_back(polygon_id);
@@ -543,48 +561,14 @@ void BucketsSinglePolygonIndex::indexAddRing(const Ring & ring)
             std::swap(a, b);
         }
 
-        this->all_edges.emplace_back(Edge{a, b, 0});
-    }
-}
+        if (a.x() == b.x())
+        {
+            /** vertical edge found, skipping for now */
+            continue;
+        }
 
-bool BucketsSinglePolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
-{
-    /** comparing left point */
-    if (a.l.x() != b.l.x())
-    {
-        return a.l.x() < b.l.x();
+        this->all_edges.emplace_back(a, b, 0, 0);
     }
-    if (a.l.y() != b.l.y())
-    {
-        return a.l.y() < b.l.y();
-    }
-
-    /** comparing right point */
-    if (a.r.x() != b.r.x())
-    {
-        return a.r.x() < b.r.x();
-    }
-    return a.r.y() < b.r.y();
-}
-
-bool BucketsSinglePolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
-{
-    /** comparing right point */
-    if (a.r.x() != b.r.x())
-    {
-        return a.r.x() < b.r.x();
-    }
-    if (a.r.y() != b.r.y())
-    {
-        return a.r.y() < b.r.y();
-    }
-
-    /** comparing left point */
-    if (a.l.x() != b.l.x())
-    {
-        return a.l.x() < b.l.x();
-    }
-    return a.l.y() < b.l.y();
 }
 
 bool BucketsSinglePolygonIndex::find(const Point & point) const
@@ -613,22 +597,13 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
         /** iterating over interesting edges */
         for (const auto & edge : this->edges_index_tree[pos])
         {
-            const Point & l = edge.l;
-            const Point & r = edge.r;
-
-            /** check for vertical edge, seem like never happens */
-            if (l.x() == r.x())
-            {
-                continue;
-            }
-
             /** check if point outside of edge's x bounds */
-            if (x < l.x() || x >= r.x())
+            if (x < edge.l_x || x >= edge.r_x)
             {
                 continue;
             }
 
-            Coord edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
+            Coord edge_y = x * edge.k + edge.b;
             if (edge_y <= y)
             {
                 ++cnt;

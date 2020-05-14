@@ -109,16 +109,6 @@ public:
     /** Finds polygon id the same way as IPolygonIndex. */
     bool find(const Point & point, size_t & id) const;
 
-private:
-    /** Returns unique x coordinates among all points. */
-    std::vector<Coord> uniqueX(const std::vector<Polygon> & polygons);
-
-    /** Builds indexes described above. */
-    void indexBuild(const std::vector<Polygon> & polygons);
-
-    /** Auxiliary function for adding ring to index */
-    void indexAddRing(const Ring & ring, size_t polygon_id);
-
     /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
      *  Invariant here is first point has x not greater than second point.
      */
@@ -129,9 +119,24 @@ private:
         size_t polygon_id;
         size_t edge_id;
 
+        Coord k;
+        Coord b;
+
+        Edge(const Point & l, const Point & r, size_t polygon_id, size_t edge_id);
+
         static bool compare1(const Edge & a, const Edge & b);
         static bool compare2(const Edge & a, const Edge & b);
     };
+
+private:
+    /** Returns unique x coordinates among all points. */
+    std::vector<Coord> uniqueX(const std::vector<Polygon> & polygons);
+
+    /** Builds indexes described above. */
+    void indexBuild(const std::vector<Polygon> & polygons);
+
+    /** Auxiliary function for adding ring to index */
+    void indexAddRing(const Ring & ring, size_t polygon_id);
 
     Poco::Logger * log;
 
@@ -181,24 +186,15 @@ private:
     /** Auxiliary function for adding ring to index */
     void indexAddRing(const Ring & ring);
 
-    /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
-     *  Invariant here is first point has x not greater than second point.
-     */
-    struct Edge
-    {
-        Point l;
-        Point r;
-        size_t edge_id;
-
-        static bool compare1(const Edge & a, const Edge & b);
-        static bool compare2(const Edge & a, const Edge & b);
-    };
+    using Edge = BucketsPolygonIndex::Edge;
 
     struct EdgeNoId
     {
-        explicit EdgeNoId(const Edge & e): l(e.l), r(e.r) {}
-        Point l;
-        Point r;
+        explicit EdgeNoId(const Edge & e): l_x(e.l.x()), r_x(e.r.x()), k(e.k), b(e.b) {}
+        Coord l_x;
+        Coord r_x;
+        Coord k;
+        Coord b;
     };
 
     /** Sorted distinct coordinates of all vertexes. */
