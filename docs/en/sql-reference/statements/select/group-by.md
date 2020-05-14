@@ -52,7 +52,7 @@ This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` forma
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
 -   In the other formats it is not available.
 
-`WITH TOTALS` can be run in different ways when HAVING is present. The behavior depends on the ‘totals\_mode’ setting.
+`WITH TOTALS` can be run in different ways when [HAVING](having.md) is present. The behavior depends on the `totals_mode` setting.
 
 ### Configuring Totals Processing
 
@@ -70,7 +70,7 @@ The other alternatives include only the rows that pass through HAVING in ‘tota
 
 If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all variations of `after_having` are the same, and you can use any of them (for example, `after_having_auto`).
 
-You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause (in this case, the respective total values are combined).
+You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](join.md) clause (in this case, the respective total values are combined).
 
 ## Examples
 
@@ -99,11 +99,11 @@ FROM hits
 GROUP BY domain
 ```
 
-For every different key value encountered, GROUP BY calculates a set of aggregate function values.
+For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
 
-GROUP BY is not supported for array columns.
+`GROUP BY` is not supported for array columns.
 
-A constant can’t be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: `count()`.
+A constant can’t be specified as arguments for aggregate functions. Example: `sum(1)`. Instead of this, you can get rid of the constant. Example: `count()`.
 
 ## Implementation Details
 

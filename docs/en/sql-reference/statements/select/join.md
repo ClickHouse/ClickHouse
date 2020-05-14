@@ -18,7 +18,7 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 
 -   `INNER JOIN`, only matching rows are returned.
 -   `LEFT OUTER JOIN`, non-matching rows from left table are returned in addition to matching rows.
--   `RIGHT OUTER JOIN`, non-matching rows from left table are returned in addition to matching rows.
+-   `RIGHT OUTER JOIN`, non-matching rows from right table are returned in addition to matching rows.
 -   `FULL OUTER JOIN`, non-matching rows from both tables are returned in addition to matching rows.
 -   `CROSS JOIN`, produces cartesian product of whole tables, "join keys" are **not** specified.
 

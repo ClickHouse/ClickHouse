@@ -31,7 +31,6 @@ All clauses are optional, except for the required list of expressions immediatel
 Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
 
 -   [WITH clause](with.md)
--   [DISTINCT clause](distinct.md)
 -   [FROM clause](from.md)
 -   [SAMPLE clause](sample.md)
 -   [JOIN clause](join.md)
@@ -41,8 +40,11 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [LIMIT BY clause](limit-by.md)
 -   [HAVING clause](having.md)
 -   [SELECT clause](#select-clause)
+-   [DISTINCT clause](distinct.md)
 -   [LIMIT clause](limit.md)
 -   [UNION ALL clause](union-all.md)
+-   [INTO OUTFILE clause](into-outfile.md)
+-   [FORMAT clause](format.md)
 
 ## SELECT Clause {#select-clause}
 
