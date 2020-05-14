@@ -21,6 +21,7 @@ RUN apt-get update \
             locales \
             ca-certificates \
             wget \
+            tzdata \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
