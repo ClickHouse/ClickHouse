@@ -340,7 +340,7 @@ namespace MySQLReplication
     {
         DDL = 0,
         BEGIN = 1,
-        SAVEPOINT = 2
+        XA = 2
     };
 
     class QueryEvent : public EventBase
