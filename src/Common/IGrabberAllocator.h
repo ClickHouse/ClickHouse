@@ -495,7 +495,7 @@ public:
 
             try
             {
-                region->init_value(initialize);
+                region->init_value(std::forward<InitFunction>(initialize));
             }
             catch (...)
             {
@@ -835,7 +835,7 @@ private:
         constexpr void init_key(const Key& key)
         {
             /// TODO Replace with std version
-            ga::construct_at(&key_storage, key);
+            ga::construct_at<Key>(&key_storage, key);
         }
 
         /// Exceptions will be propagated to the caller.
@@ -843,7 +843,7 @@ private:
         constexpr void init_value(Init&& init_func)
         {
             /// TODO Replace with std version
-            ga::construct_at(&value_storage, init_func(ptr));
+            ga::construct_at<Value>(&value_storage, init_func(ptr));
         }
 
         constexpr const Key& key() const noexcept
