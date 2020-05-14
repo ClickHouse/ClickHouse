@@ -18,7 +18,10 @@
 #include <Poco/ThreadPool.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
+#include "getIdentifierQuote.h"
+
+#include <Poco/Data/ODBC/SessionImpl.h>
+#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 namespace DB
 {
@@ -81,6 +84,12 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         params.read(request.stream());
     LOG_TRACE(log, "Request URI: " + request.getURI());
 
+    if (mode == "read" && !params.has("query"))
+    {
+        processError(response, "No 'query' in request body");
+        return;
+    }
+
     if (!params.has("columns"))
     {
         processError(response, "No 'columns' in request URL");
@@ -91,6 +100,18 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     {
         processError(response, "No 'connection_string' in request URL");
         return;
+    }
+
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+    if (params.has("max_block_size"))
+    {
+        std::string max_block_size_str = params.get("max_block_size", "");
+        if (max_block_size_str.empty())
+        {
+            processError(response, "Empty max_block_size specified");
+            return;
+        }
+        max_block_size = parse<size_t>(max_block_size_str);
     }
 
     std::string columns = params.get("columns");
@@ -111,22 +132,11 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     std::string connection_string = params.get("connection_string");
     LOG_TRACE(log, "Connection string: '" << connection_string << "'");
 
-    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
-    if (params.has("max_block_size"))
-    {
-        std::string max_block_size_str = params.get("max_block_size", "");
-        if (max_block_size_str.empty())
-        {
-            processError(response, "Empty max_block_size specified");
-            return;
-        }
-        max_block_size = parse<size_t>(max_block_size_str);
-    }
-
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
-    if (mode == "write")
+
+    try
     {
-        try
+        if (mode == "write")
         {
             if (!params.has("db_name"))
             {
@@ -140,51 +150,38 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             }
             std::string db_name = params.get("db_name");
             std::string table_name = params.get("table_name");
-            LOG_TRACE(log, "DB name: '" << db_name << "', table name: '"  << table_name << "'");
+            LOG_TRACE(log, "DB name: '" << db_name << "', table name: '" << table_name << "'");
+
+            POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
+            auto quoting_style = getQuotingStyle(session.dbc().handle());
 
             auto pool = getPool(connection_string);
             ReadBufferFromIStream read_buf(request.stream());
-            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
-            ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block);
+            BlockInputStreamPtr input_stream = FormatFactory::instance().getInput(format, read_buf, *sample_block,
+                                                                                  context, max_block_size);
+            ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
-        catch (...)
+        else
         {
-            auto message = getCurrentExceptionMessage(true);
-            response.setStatusAndReason(
-                    Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-            writeStringBinary(message, out);
-            tryLogCurrentException(log);
-        }
-    }
-    else
-    {
-        if (!params.has("query"))
-        {
-            processError(response, "No 'query' in request body");
-            return;
-        }
+            std::string query = params.get("query");
+            LOG_TRACE(log, "Query: " << query);
 
-        std::string query = params.get("query");
-        LOG_TRACE(log, "Query: " << query);
-
-        try
-        {
             BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }
-        catch (...)
-        {
-            auto message = getCurrentExceptionMessage(true);
-            response.setStatusAndReason(
-                    Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
-            writeStringBinary(message, out);
-            tryLogCurrentException(log);
+    }
+    catch (...)
+    {
+        auto message = getCurrentExceptionMessage(true);
+        response.setStatusAndReason(
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
+        writeStringBinary(message, out);
+        tryLogCurrentException(log);
 
-        }
     }
 }
 

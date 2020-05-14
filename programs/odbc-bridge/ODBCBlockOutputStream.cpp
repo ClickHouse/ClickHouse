@@ -4,6 +4,11 @@
 #include <Core/Field.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include "getIdentifierQuote.h"
+
 
 namespace DB
 {
@@ -12,16 +17,22 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    std::string commaSeparateColumnNames(const ColumnsWithTypeAndName & columns)
+    std::string getInsertQuery(const std::string & db_name, const std::string & table_name, const ColumnsWithTypeAndName & columns, IdentifierQuotingStyle quoting)
     {
-        std::string result = "(";
+        ASTInsertQuery query;
+        query.table_id.database_name = db_name;
+        query.table_id.table_name = table_name;
+        query.columns = std::make_shared<ASTExpressionList>(',');
+        query.children.push_back(query.columns);
         for (size_t i = 0; i < columns.size(); ++i)
-        {
-            if (i > 0)
-                result += ",";
-            result += columns[i].name;
-        }
-        return result + ")";
+            query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(columns[i].name));
+
+        std::stringstream ss;
+        IAST::FormatSettings settings(ss, true);
+        settings.always_quote_identifiers = true;
+        settings.identifier_quoting_style = quoting;
+        query.IAST::format(settings);
+        return ss.str();
     }
 
     std::string getQuestionMarks(size_t n)
@@ -69,18 +80,19 @@ namespace
             case ValueType::vtUUID:
                 return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
         }
-        return Poco::Dynamic::Var(); // Throw smth here?
     }
 }
 
 ODBCBlockOutputStream::ODBCBlockOutputStream(Poco::Data::Session && session_,
                                              const std::string & remote_database_name_,
                                              const std::string & remote_table_name_,
-                                             const Block & sample_block_)
+                                             const Block & sample_block_,
+                                             IdentifierQuotingStyle quoting_)
     : session(session_)
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
+    , quoting(quoting_)
     , log(&Logger::get("ODBCBlockOutputStream"))
 {
     description.init(sample_block);
@@ -98,11 +110,11 @@ void ODBCBlockOutputStream::write(const Block & block)
         columns.push_back({block.getColumns()[i], sample_block.getDataTypes()[i], sample_block.getNames()[i]});
 
     std::vector<Poco::Dynamic::Var> row_to_insert(block.columns());
-    Poco::Data::Statement statement(session << "INSERT INTO " + db_name + "." + table_name + " " +
-                                               commaSeparateColumnNames(columns) +
-                                               " VALUES " + getQuestionMarks(block.columns()));
+    Poco::Data::Statement statement(session << getInsertQuery(db_name, table_name, columns, quoting) + getQuestionMarks(block.columns()));
     for (size_t i = 0; i < block.columns(); ++i)
+    {
         statement, Poco::Data::Keywords::use(row_to_insert[i]);
+    }
 
     for (size_t i = 0; i < block.rows(); ++i)
     {
@@ -110,7 +122,10 @@ void ODBCBlockOutputStream::write(const Block & block)
         {
             Field val;
             columns[col_idx].column->get(i, val);
-            row_to_insert[col_idx] = getVarFromField(val, description.types[col_idx].first);
+            if (val.isNull())
+                row_to_insert[col_idx] = Poco::Dynamic::Var();
+            else
+                row_to_insert[col_idx] = getVarFromField(val, description.types[col_idx].first);
         }
         statement.execute();
     }
