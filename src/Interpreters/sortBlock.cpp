@@ -140,8 +140,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             /// will be passed to `getPermutation` method with value 42.
             if (description[0].special_sort == SpecialSort::OPENCL_BITONIC)
             {
+#ifdef USE_OPENCL
                 nan_direction_hint = 42;
-#ifndef BITONIC_SORT_PREFERRED
+#else
                 throw DB::Exception("Bitonic sort specified as preferred, but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
 #endif
             }

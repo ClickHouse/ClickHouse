@@ -61,7 +61,7 @@
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
-#ifdef BITONIC_SORT_PREFERRED
+#ifdef USE_OPENCL
 #include "Common/BitonicSort.h"
 #endif
 
@@ -225,9 +225,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
 
-    #if defined (BITONIC_SORT_PREFERRED)
+#if defined (USE_OPENCL)
         BitonicSort::getInstance().configure();
-    #endif
+#endif
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
