@@ -128,7 +128,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Выражение для TTL {#vyrazhenie-dlia-ttl}
 
-Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../../sql-reference/statements/create.md#table_engine-mergetree-ttl).
+Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
 ### Кодеки сжатия столбцов {#codecs}
 

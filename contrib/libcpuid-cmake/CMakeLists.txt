@@ -20,11 +20,11 @@ if (ENABLE_CPUID)
 
     add_library (cpuid ${SRCS})
 
-    target_include_directories (cpuid PUBLIC ${LIBRARY_DIR})
+    target_include_directories (cpuid SYSTEM PUBLIC ${LIBRARY_DIR})
     target_compile_definitions (cpuid PUBLIC USE_CPUID=1)
     target_compile_definitions (cpuid PRIVATE VERSION="v0.4.1")
     if (COMPILER_CLANG)
-        target_compile_options (cpuid PUBLIC -Wno-reserved-id-macro)
+        target_compile_options (cpuid PRIVATE -Wno-reserved-id-macro)
     endif ()
 
     message (STATUS "Using cpuid")
