@@ -361,10 +361,6 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         Generator generator;
@@ -434,11 +430,13 @@ public:
             Pos token_begin = nullptr;
             Pos token_end = nullptr;
 
-            // while (generator.get(token_begin, token_end))
-            //     dst.push_back(String(token_begin, token_end - token_begin));
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
+            while (generator.get(token_begin, token_end))
+            {
+                // Somehow Decimal is getting here
+                auto x = String(token_begin, token_end - token_begin);
+                dst.push_back(x);
+            }
+
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_const_str->size(), dst);
         }
         else
