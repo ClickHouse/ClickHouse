@@ -1511,7 +1511,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ASTPtr ast_group_by_key_columns;
         if (!parser_identifier_list.parse(pos, ast_group_by_key_columns, expected))
             return false;
-        for (const auto identifier : ast_group_by_key_columns->children)
+        for (const auto & identifier : ast_group_by_key_columns->children)
         {
             String identifier_str;
             if (!tryGetIdentifierNameInto(identifier, identifier_str))
