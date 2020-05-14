@@ -16,7 +16,7 @@ RUN apt-get update \
         apt-get install --allow-unauthenticated --yes --no-install-recommends \
             clickhouse-client=$version \
             clickhouse-common-static=$version \
-            locales
+            locales \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf \
     && apt-get clean
 
