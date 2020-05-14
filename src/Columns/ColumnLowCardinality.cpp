@@ -316,7 +316,8 @@ void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_di
 
 void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const
 {
-    if (limit >= size() || limit >= equal_range.back().second) {
+    if (limit >= size() || limit >= equal_range.back().second)
+    {
         limit = 0;
     }
     size_t n = equal_range.size();
@@ -325,52 +326,66 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
         --n;
     }
     EqualRanges new_ranges;
-    for (size_t i = 0; i < n; ++i) {
+    for (size_t i = 0; i < n; ++i)
+    {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b) {
+            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
+                      {
                 return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
         else
-            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b) {
+            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
+                      {
                 return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
         auto new_first = first;
-        for (auto j = first + 1; j < last; ++j) {
-            if (compareAt(new_first, j, *this, nan_direction_hint) != 0) {
-                if (j - new_first > 1) {
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (compareAt(new_first, j, *this, nan_direction_hint) != 0)
+            {
+                if (j - new_first > 1)
+                {
                     new_ranges.emplace_back(new_first, j);
                 }
                 new_first = j;
             }
         }
-        if (last - new_first > 1) {
+        if (last - new_first > 1)
+        {
             new_ranges.emplace_back(new_first, last);
         }
     }
-    if (limit) {
+    if (limit)
+    {
         const auto& [first, last] = equal_range.back();
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b) {
-                return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
+                              {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b) {
-                return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
+                              {return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
         auto new_first = first;
-        for (auto j = first + 1; j < limit; ++j) {
-            if (getDictionary().compareAt(getIndexes().getUInt(new_first), getIndexes().getUInt(j), getDictionary(), nan_direction_hint) != 0) {
-                if (j - new_first > 1) {
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (getDictionary().compareAt(getIndexes().getUInt(new_first), getIndexes().getUInt(j), getDictionary(), nan_direction_hint) != 0)
+            {
+                if (j - new_first > 1)
+                {
                     new_ranges.emplace_back(new_first, j);
                 }
                 new_first = j;
             }
         }
         auto new_last = limit;
-        for (auto j = limit; j < last; ++j) {
-            if (getDictionary().compareAt(getIndexes().getUInt(new_first), getIndexes().getUInt(j), getDictionary(), nan_direction_hint) == 0) {
+        for (auto j = limit; j < last; ++j)
+        {
+            if (getDictionary().compareAt(getIndexes().getUInt(new_first), getIndexes().getUInt(j), getDictionary(), nan_direction_hint) == 0)
+            {
                 std::swap(res[new_last], res[j]);
                 ++new_last;
             }
         }
-        if (new_last - new_first > 1) {
+        if (new_last - new_first > 1)
+        {
             new_ranges.emplace_back(new_first, new_last);
         }
     }

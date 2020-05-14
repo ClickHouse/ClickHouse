@@ -376,20 +376,28 @@ int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs,
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const {
+void ColumnUnique<ColumnType>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const
+{
     bool found_null_value_index = false;
-    for (size_t i = 0; i < equal_range.size() && !found_null_value_index; ++i){
+    for (size_t i = 0; i < equal_range.size() && !found_null_value_index; ++i)
+    {
         auto& [first, last] = equal_range[i];
-        for (auto j = first; j < last; ++j) {
-            if (res[j] == getNullValueIndex()) {
-                if ((nan_direction_hint > 0) != reverse) {
+        for (auto j = first; j < last; ++j)
+        {
+            if (res[j] == getNullValueIndex())
+            {
+                if ((nan_direction_hint > 0) != reverse)
+                {
                     std::swap(res[j], res[last - 1]);
                     --last;
-                } else {
+                }
+                else
+                {
                     std::swap(res[j], res[first]);
                     ++first;
                 }
-                if (last - first <= 1) {
+                if (last - first <= 1)
+                {
                     equal_range.erase(equal_range.begin() + i);
                 }
                 found_null_value_index = true;

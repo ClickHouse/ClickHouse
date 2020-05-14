@@ -192,14 +192,17 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             ranges.emplace_back(0, perm.size());
             for (const auto& column : columns_with_sort_desc)
             {
-                while (!ranges.empty() && limit && limit <= ranges.back().first) {
+                while (!ranges.empty() && limit && limit <= ranges.back().first)
+                {
                     ranges.pop_back();
                 }
-                if (ranges.empty()) {
+                if (ranges.empty())
+                {
                     break;
                 }
 
-                if (isCollationRequired(column.description)) {
+                if (isCollationRequired(column.description))
+                {
                     const ColumnString & column_string = assert_cast<const ColumnString &>(*column.column);
                     column_string.updatePermutationWithCollation(*column.description.collator, column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
                 }
@@ -216,12 +219,16 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             ranges.emplace_back(0, perm.size());
             for (const auto& column : columns_with_sort_desc)
             {
-                while (!ranges.empty() && limit && limit <= ranges.back().first) {
+                while (!ranges.empty() && limit && limit <= ranges.back().first)
+                {
                     ranges.pop_back();
                 }
-                if (ranges.empty()) {
+                if (ranges.empty())
+                {
                     break;
                 }
+                column.column->updatePermutation(
+                    column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
             }
         }
 
