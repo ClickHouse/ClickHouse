@@ -198,7 +198,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
                 for (size_t i = 0; i < num_columns; ++i)
                 {
                     auto & column = merged_columns[i];
-                    column = (*column->cut(0, merged_rows)).mutate();
+                    column = IColumn::mutate(column->cut(0, merged_rows));
                 }
 
                 cancel(false);
