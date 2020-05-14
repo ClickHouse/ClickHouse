@@ -212,6 +212,7 @@ int main(int, char **)
                         break;
                     }
                     default:
+                        event->dump();
                         break;
                 }
             }
