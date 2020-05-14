@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/Set.h>
@@ -77,7 +78,7 @@ public:
     {
         if constexpr (ignore_set)
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+            block.getByPosition(result).column = ColumnUInt8::create(input_rows_count, 0u);
             return;
         }
 
