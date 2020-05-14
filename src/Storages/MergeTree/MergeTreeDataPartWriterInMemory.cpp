@@ -27,21 +27,22 @@ void MergeTreeDataPartWriterInMemory::write(
     Block result_block;
     if (permutation)
     {
-        for (const auto & it : columns_list)
+        for (const auto & col : columns_list)
         {
-            if (primary_key_block.has(it.name))
-                result_block.insert(primary_key_block.getByName(it.name));
+            if (primary_key_block.has(col.name))
+                result_block.insert(primary_key_block.getByName(col.name));
             else
             {
-                auto column = block.getByName(it.name);
-                column.column = column.column->permute(*permutation, 0);
-                result_block.insert(column);
+                auto permuted = block.getByName(col.name);
+                permuted.column = permuted.column->permute(*permutation, 0);
+                result_block.insert(permuted);
             }
         }
     }
     else
     {
-        result_block = block;
+        for (const auto & col : columns_list)
+            result_block.insert(block.getByName(col.name));
     }
 
     part->block = std::move(result_block);
@@ -55,7 +56,8 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
         return;
 
     index_granularity.appendMark(rows);
-    index_granularity.appendMark(0);
+    if (with_final_mark)
+        index_granularity.appendMark(0);
 
     size_t primary_columns_num = primary_index_block.columns();
     index_columns.resize(primary_columns_num);
@@ -64,7 +66,8 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
         const auto & primary_column = *primary_index_block.getByPosition(i).column;
         index_columns[i] = primary_column.cloneEmpty();
         index_columns[i]->insertFrom(primary_column, 0);
-        index_columns[i]->insertFrom(primary_column, rows - 1);
+        if (with_final_mark)
+            index_columns[i]->insertFrom(primary_column, rows - 1);
     }
 }
 
@@ -78,31 +81,9 @@ static MergeTreeDataPartChecksum createUncompressedChecksum(size_t size, SipHash
 
 void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
-    UNUSED(checksums);
     SipHash hash;
     part->block.updateHash(hash);
     checksums.files["data.bin"] = createUncompressedChecksum(part->block.bytes(), hash);
-}
-
-void MergeTreeDataPartWriterInMemory::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
-{
-    UNUSED(checksums);
-    if (index_columns.empty())
-        return;
-
-    SipHash hash;
-    size_t index_size = 0;
-    size_t rows = index_columns[0]->size();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        for (const auto & col : index_columns)
-        {
-            col->updateHashWithValue(i, hash);
-            index_size += col->byteSize();
-        }
-    }
-
-    checksums.files["primary.idx"] = createUncompressedChecksum(index_size, hash);
 }
 
 }

@@ -9,7 +9,8 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeWriterSettings & settings_)
     : storage(storage_)
     , columns_list(columns_list_)
-    , settings(settings_) {}
+    , settings(settings_)
+    , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity){}
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData & storage_,
@@ -21,7 +22,8 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , columns_list(columns_list_)
     , skip_indices(skip_indices_)
     , index_granularity(index_granularity_)
-    , settings(settings_) {}
+    , settings(settings_)
+    , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity) {}
 
 Columns IMergeTreeDataPartWriter::releaseIndexColumns()
 {

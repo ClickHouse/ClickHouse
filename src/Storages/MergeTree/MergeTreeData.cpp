@@ -245,12 +245,6 @@ MergeTreeData::MergeTreeData(
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
-
-    if (settings->in_memory_parts_enable_wal)
-    {
-        auto disk = makeEmptyReservationOnLargestDisk()->getDisk();
-        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, std::move(disk));
-    }
 }
 
 
@@ -1119,6 +1113,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 ++curr_jt;
             }
         }
+    }
+
+    if (settings->in_memory_parts_enable_wal)
+    {
+        auto disk = makeEmptyReservationOnLargestDisk()->getDisk();
+        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, std::move(disk));
     }
 
     calculateColumnSizesImpl();

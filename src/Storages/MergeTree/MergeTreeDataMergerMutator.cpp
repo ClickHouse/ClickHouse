@@ -231,12 +231,14 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     {
         /// Check predicate only for first part in each partition.
         if (!prev_part)
+        {
             /* Parts can be merged with themselves for TTL needs for example.
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
             if (!can_merge_callback(nullptr, part, nullptr))
                 continue;
+        }
 
         const String & partition_id = part->info.partition_id;
         if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))

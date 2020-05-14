@@ -8,6 +8,7 @@ import struct
 from helpers.test_tools import TSV
 from helpers.test_tools import assert_eq_with_retry
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
@@ -69,8 +70,8 @@ node6 = cluster.add_instance('node6', config_dir='configs', main_configs=['confi
 
 settings_in_memory = {'index_granularity_bytes' : 10485760, 'min_rows_for_wide_part' : 512, 'min_rows_for_compact_part' : 256}
 
-node9 = cluster.add_instance('node9', config_dir="configs", with_zookeeper=True, stay_alive=True)
-node10 = cluster.add_instance('node10', config_dir="configs", with_zookeeper=True, stay_alive=True)
+node9 = cluster.add_instance('node9', config_dir="configs", main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
+node10 = cluster.add_instance('node10', config_dir="configs", main_configs=['configs/do_not_merge.xml'], with_zookeeper=True, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -317,37 +318,65 @@ def test_in_memory(start_cluster):
         "WHERE table = 'in_memory_table' AND active GROUP BY part_type ORDER BY part_type")) == TSV(expected)
 
 def test_in_memory_wal(start_cluster):
-    node9.query("SYSTEM STOP MERGES")
-    node10.query("SYSTEM STOP MERGES")
+    # Merges are disabled in config
 
     for i in range(5):
         insert_random_data('wal_table', node9, 50)
     node10.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
 
-    assert node9.query("SELECT count() FROM wal_table") == "250\n"
-    assert node10.query("SELECT count() FROM wal_table") == "250\n"
+    def check(node, rows, parts):
+        node.query("SELECT count() FROM wal_table") == "{}\n".format(rows)
+        node.query("SELECT count() FROM system.parts WHERE table = 'wal_table' AND part_type = 'InMemory'") == "{}\n".format(parts)
 
-    assert node9.query("SELECT count() FROM system.parts WHERE table = 'wal_table' AND part_type = 'InMemory'") == '5\n'
-    assert node10.query("SELECT count() FROM system.parts WHERE table = 'wal_table' AND part_type = 'InMemory'") == '5\n'
+    check(node9, 250, 5)
+    check(node10, 250, 5)
 
     # WAL works at inserts
     node9.restart_clickhouse(kill=True)
-    time.sleep(5)
-    assert node9.query("SELECT count() FROM wal_table") == "250\n"
+    check(node9, 250, 5)
 
     # WAL works at fetches
     node10.restart_clickhouse(kill=True)
-    time.sleep(5)
-    assert node10.query("SELECT count() FROM wal_table") == "250\n"
+    check(node10, 250, 5)
 
-    node9.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
     insert_random_data('wal_table', node9, 50)
-    assert node9.query("SELECT count() FROM wal_table") == "300\n"
+    node10.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
+
+    # Disable replication
+    with PartitionManager() as pm:
+        pm.partition_instances(node9, node10)
+        check(node9, 300, 6)
+
+        wal_file = os.path.join(node9.path, "database/data/default/wal_table/wal.bin")
+        # Corrupt wal file
+        open(wal_file, 'rw+').truncate(os.path.getsize(wal_file) - 10)
+        node9.restart_clickhouse(kill=True)
+
+        # Broken part is lost, but other restored successfully
+        check(node9, 250, 5)
+        # WAL with blocks from 0 to 4
+        broken_wal_file = os.path.join(node9.path, "database/data/default/wal_table/wal_0_4.bin")
+        assert os.path.exists(broken_wal_file)
+
+    # Fetch lost part from replica
+    node9.query("SYSTEM SYNC REPLICA wal_table", timeout=20)
+    check(node9, 300, 6)
+
+    #Check that new data is written to new wal, but old is still exists for restoring
+    assert os.path.getsize(wal_file) > 0
+    assert os.path.getsize(broken_wal_file)
 
     # Data is lost without WAL
-    node9.restart_clickhouse(kill=True)
-    time.sleep(5)
-    assert node9.query("SELECT count() FROM wal_table") == "250\n"
+    node9.query("ALTER TABLE wal_table MODIFY SETTING in_memory_parts_enable_wal = 0")
+    with PartitionManager() as pm:
+        pm.partition_instances(node9, node10)
+
+        insert_random_data('wal_table', node9, 50)
+        check(node9, 350, 7)
+
+        node9.restart_clickhouse(kill=True)
+        check(node9, 300, 6)
+
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query('''
