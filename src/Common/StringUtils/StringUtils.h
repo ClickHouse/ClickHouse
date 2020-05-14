@@ -3,8 +3,8 @@
 #include <string>
 #include <cstring>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
-#include <common/types.h>
 
 
 namespace detail
@@ -167,7 +167,7 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
         }
         else
         {
-            const char8_t * upos = reinterpret_cast<const char8_t *>(pos);
+            const uint8_t * upos = reinterpret_cast<const uint8_t *>(pos);
 
             if (pos + 1 < end && upos[0] == 0xC2 && (upos[1] == 0x85 || upos[1] == 0xA0))
             {
