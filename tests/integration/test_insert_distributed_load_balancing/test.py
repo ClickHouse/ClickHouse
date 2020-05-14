@@ -19,8 +19,7 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-@pytest.fixture(scope='function', autouse=True)
-def create_tables():
+def create_tables(**dist_settings):
     n1.query('DROP TABLE IF EXISTS data')
     n2.query('DROP TABLE IF EXISTS data')
     n1.query('DROP TABLE IF EXISTS dist')
@@ -35,9 +34,10 @@ def create_tables():
         data,
         rand()
     )
-    """)
+    """, settings=dist_settings)
 
 def insert_data(**settings):
+    create_tables(**settings)
     n1.query('INSERT INTO dist SELECT * FROM numbers(10)', settings=settings)
     n1.query('SYSTEM FLUSH DISTRIBUTED dist')
 
