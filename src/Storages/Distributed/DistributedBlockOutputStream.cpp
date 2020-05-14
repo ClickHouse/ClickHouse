@@ -512,22 +512,15 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 
     if (shard_info.hasInternalReplication())
     {
-        if (shard_info.getLocalNodeCount() > 0 && settings.prefer_localhost_replica)
-        {
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
-        }
         else
-        {
-            if (shard_info.dir_name_for_internal_replication.empty())
-                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
-
-            writeToShard(block, {shard_info.dir_name_for_internal_replication});
-        }
+            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
     }
     else
     {
-        if (shard_info.getLocalNodeCount() > 0)
+        if (shard_info.isLocal())
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
