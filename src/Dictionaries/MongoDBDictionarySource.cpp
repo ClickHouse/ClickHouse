@@ -17,9 +17,9 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         bool /* check_config */)
     {
         return std::make_unique<MongoDBDictionarySource>(dict_struct,
-            config.getString(config_prefix + ".uri"),
-            config.getString(config_prefix + ".host"),
-            config.getUInt(config_prefix + ".port"),
+            config.getString(config_prefix + ".uri", ""),
+            config.getString(config_prefix + ".host", ""),
+            config.getUInt(config_prefix + ".port", 0),
             config.getString(config_prefix + ".user", ""),
             config.getString(config_prefix + ".password", ""),
             config.getString(config_prefix + ".method", ""),
