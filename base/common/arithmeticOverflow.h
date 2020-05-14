@@ -1,6 +1,6 @@
 #pragma once
 
-#include <boost/multiprecision/integer.hpp>
+#include <boost/multiprecision/cpp_int.hpp>
 
 namespace common
 {
