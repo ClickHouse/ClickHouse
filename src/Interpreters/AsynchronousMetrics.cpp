@@ -123,8 +123,8 @@ void AsynchronousMetrics::update()
     {
         if (auto uncompressed_cache = context.getUncompressedCache())
         {
-            set("UncompressedCacheBytes", uncompressed_cache->weight());
-            set("UncompressedCacheCells", uncompressed_cache->count());
+            set("UncompressedCacheBytes", uncompressed_cache->getSizeInUse());
+            set("UncompressedCacheCells", uncompressed_cache->getUsedRegionsCount());
         }
     }
 

@@ -32,26 +32,34 @@ void MergeTreeMarksLoader::loadMarks()
 
     if (!mark_cache)
         /// The cache is off, store this object somewhere in the heap.
-        marks = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
+        marks_non_cache = std::make_unique<MarksInCompressedFile>(marks_count * columns_in_mark);
     else
     {
         auto key = mark_cache->hash(mrk_path);
 
         if (save_marks_in_cache)
         {
+            const size_t marks_overall_size = marks_count * columns_in_mark;
+
+            constexpr auto size_func = [marks_overall_size] {
+                return sizeof(CacheMarksInCompressedFile) * marks_overall_size;
+            };
+
+            constexpr auto init_func = [marks_overall_size](void * heap_storage) {
+                return MarksInCompressedFile{marks_overall_size, heap_storage};
+            };
+
             /// The cache is active, insert the initial object there and get it reference back.
-            marks = mark_cache->getOrSet(key, [this] {
-                    return MarksInCompressedFile{marks_count * columns_in_mark};
-            });
+            marks_cache = mark_cache->getOrSet(key, std::move(size_func), std::move(init_func);
         }
         else
         {
-            if (marks = mark_cache->get(key); !marks) /// No more other marks, current element not found, store here.
-                marks = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark); /// Same as line 34.
+            if (marks_cache = mark_cache->get(key); !marks_cache)
+                /// No more other marks, current element not found, store here.
+                marks_non_cache = std::make_unique<MarksInCompressedFile>(marks_count * columns_in_mark);
 
             /// Else new marks will not be stored in the cache, but #marks got right from there.
         }
-
     }
 
     if (!marks)

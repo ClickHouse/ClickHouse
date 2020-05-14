@@ -19,25 +19,17 @@ namespace DB
 {
 struct UncompressedCacheCell
 {
-    Memory<> data;
+    Memory<FakeMemoryAllocForIG> data;
     size_t compressed_size;
     UInt32 additional_bytes;
 };
 
-struct UncompressedSizeWeightFunction
-{
-    size_t operator()(const UncompressedCacheCell & x) const
-    {
-        return x.data.size();
-    }
-};
+///return x.data.size();
 
-using UncompressedCacheBase =
-    IGrabberAllocator<
+using UncompressedCacheBase = IGrabberAllocator<
         UInt128,
         UncompressedCacheCell,
-        UInt128TrivialHash,
-        UncompressedSizeWeightFunction>;
+        UInt128TrivialHash>;
 
 /**
  * Cache of decompressed blocks for implementation of CachedCompressedReadBuffer.

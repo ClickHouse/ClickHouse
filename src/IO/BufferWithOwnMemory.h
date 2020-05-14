@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <boost/noncopyable.hpp>
 
 #include <Common/ProfileEvents.h>
@@ -8,22 +9,19 @@
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
-
 namespace ProfileEvents
 {
     extern const Event IOBufferAllocs;
     extern const Event IOBufferAllocBytes;
 }
 
-
 namespace DB
 {
-
-
-/** Replacement for std::vector<char> to use in buffers.
-  * Differs in that is doesn't do unneeded memset. (And also tries to do as little as possible.)
-  * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
-  */
+/**
+ * Replacement for std::vector<char> to use in buffers.
+ * Differs in that is doesn't do unneeded memset. (And also tries to do as little as possible.)
+ * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
+ */
 template <typename Allocator = Allocator<false>>
 struct Memory : boost::noncopyable, Allocator
 {
@@ -69,7 +67,8 @@ struct Memory : boost::noncopyable, Allocator
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
-    void resize(size_t new_size)
+    template <typename ...TAllocatorParams >
+    void resize(size_t new_size, TAllocatorParams&& ...params)
     {
         if (0 == m_capacity)
         {
@@ -85,7 +84,12 @@ struct Memory : boost::noncopyable, Allocator
         else
         {
             size_t new_capacity = align(new_size + pad_right, alignment);
-            m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
+
+            m_data = static_cast<char *>(
+                    Allocator::realloc(
+                        m_data, m_capacity, new_capacity, alignment,
+                        std::forward<TAllocatorParams>(params)...));
+
             m_capacity = new_capacity;
             m_size = m_capacity - pad_right;
         }

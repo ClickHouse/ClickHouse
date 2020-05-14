@@ -33,6 +33,7 @@ namespace DB::ErrorCodes
 {
 extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int CANNOT_MUNMAP;
+extern const int SYSTEM_ERROR;
 }
 
 namespace ga {
@@ -60,6 +61,12 @@ struct DefaultASLR
 [[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding) noexcept
 {
     return (x + (rounding - 1)) / rounding * rounding;
+}
+
+/// Not in std for some sake.
+template<class T, class... Args>
+constexpr T* construct_at(T* p, Args&&... args ) {
+    return ::new (const_cast<void*>(static_cast<const volatile void*>(p))) T(std::forward<Args>(args)...);
 }
 
 struct Stats
@@ -167,9 +174,6 @@ class IGrabberAllocator : private boost::noncopyable
 private:
     static_assert(std::is_copy_constructible_v<TKey>,
             "Key should be copy-constructible, see IGrabberAllocator::RegionMetadata::init_key for motivation");
-
-    static_assert(std::is_copy_constructible_v<TValue>,
-            "Value should be copy-constructible, see IGrabberAllocator::RegionMetadata::init_value for motivation");
 
     static constexpr const size_t page_size = 4096;
 
@@ -514,7 +518,7 @@ public:
 
             // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>(
-                    &region->value,
+                    region->value(),
                     /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
                     /// see also line 619.
                     /// std::bind_front(&IGrabberAllocator::onValueDelete, this));
@@ -830,14 +834,16 @@ private:
         /// Exceptions will be propagated to the caller.
         constexpr void init_key(const Key& key)
         {
-            std::construct_at(std::launder(reinterpret_cast<Key*>(&key_storage)), key);
+            /// TODO Replace with std version
+            ga::construct_at(std::launder(reinterpret_cast<Key*>(&key_storage)), key);
         }
 
         /// Exceptions will be propagated to the caller.
         template <class Init>
         constexpr void init_value(Init&& init_func)
         {
-            std::construct_at(std::launder(reinterpret_cast<Value*>(&value_storage)), init_func(ptr));
+            /// TODO Replace with std version
+            ga::construct_at(std::launder(reinterpret_cast<Value*>(&value_storage)), init_func(ptr));
         }
 
         constexpr const Key& key() const noexcept
@@ -845,9 +851,9 @@ private:
             return *std::launder(reinterpret_cast<const Key*>(&key_storage));
         }
 
-        constexpr const Value * value() const noexcept
+        constexpr Value * value() noexcept
         {
-            return std::launder(reinterpret_cast<const Value*>(&value_storage));
+            return std::launder(reinterpret_cast<Value*>(&value_storage));
         }
 
         [[nodiscard, gnu::pure]] constexpr bool operator< (const RegionMetadata & other) const noexcept { return size < other.size; }
@@ -1085,7 +1091,7 @@ private:
  * @see IGrabberAllocator::MemoryChunk
  * @see IGrabberAllocator::getOrSet
  */
-class FakePODAllocForIG
+struct FakePODAllocForIG
 {
     /**
      * Intended to be called in PODArray constructor.
@@ -1103,8 +1109,18 @@ class FakePODAllocForIG
     constexpr static void free(char *, size_t) noexcept {}
 
     ///If called, something went wrong, so abort the program.
-    constexpr static void realloc(char *, size_t, size_t) {
-        throw Exception("Object using FakePODAllocForIG must not call realloc()");
+    static void realloc(char *, size_t, size_t) {
+        throw Exception("Object using FakePODAllocForIG must not call realloc()",
+                        ErrorCodes::SYSTEM_ERROR);
     }
+};
+
+struct FakeMemoryAllocForIG
+{
+    /// @see DB::CachedCompressedReadBuffer::nextImpl().
+    /// @see FakeMemoryAllocForIG
+    constexpr static void * alloc(size_t, size_t) noexcept { return nullptr; }
+    constexpr static void * realloc(char *, size_t, size_t, size_t, void * start) noexcept { return start; }
+    constexpr static void free(char *, size_t) noexcept {}
 };
 }

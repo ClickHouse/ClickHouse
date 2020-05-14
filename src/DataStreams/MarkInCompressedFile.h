@@ -45,11 +45,23 @@ struct MarkInCompressedFile
     }
 };
 
-class MarksInCompressedFile : public PODArray<MarkInCompressedFile, /* initial_bytes */ 0, FakePODAllocForIG>
+class MarksInCompressedFile : public PODArray<MarkInCompressedFile>
+{
+public:
+    MarksInCompressedFile(size_t n) : PODArray(n) {}
+
+    void read(ReadBuffer & buffer, size_t from, size_t count)
+    {
+        buffer.readStrict(reinterpret_cast<char *>(data() + from), count * sizeof(MarkInCompressedFile));
+    }
+};
+
+/// Suitable for storing in IGrabberAllocator.
+class CacheMarksInCompressedFile : public PODArray<MarkInCompressedFile, /* initial_bytes */ 0, FakePODAllocForIG>
 {
 public:
     /// @param storage_pointer See IGrabberAllocator::getOrSet and FakePODAllocForIG for detail.
-    MarksInCompressedFile(size_t n, void* storage_pointer) : PODArray(n, storage_pointer) {}
+    CacheMarksInCompressedFile(size_t n, void* storage_pointer) : PODArray(n, storage_pointer) {}
 
     void read(ReadBuffer & buffer, size_t from, size_t count)
     {

@@ -17,19 +17,9 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Estimate of number of bytes in cache for marks.
-struct MarksWeightFunction
-{
-    size_t operator()(const MarksInCompressedFile & marks) const
-    {
-        /// NOTE Could add extra 100 bytes for overhead of std::vector, cache structures and allocator.
-        return marks.size() * sizeof(MarkInCompressedFile);
-    }
-};
-
 using MarkCacheBase = IGrabberAllocator<
     /* Key */ UInt128,
-    /* Value */ MarksInCompressedFile,
+    /* Value */ CacheMarksInCompressedFile,
     /* Key hash */ UInt128TrivialHash>;
 
 /**
@@ -57,10 +47,10 @@ public:
     }
 
     //ValuePtr getOrSet(const Key & key, GAInitFunction auto && init_func)
-    template <class InitFunc>
-    ValuePtr getOrSet(const Key & key, InitFunc && init_func)
+    template <class SizeFunc, class InitFunc>
+    ValuePtr getOrSet(const Key & key, SizeFunc && size_func, InitFunc && init_func)
     {
-        auto&& [ptr, produced] = MarkCacheBase::getOrSet(key, init_func);
+        auto&& [ptr, produced] = MarkCacheBase::getOrSet(key, size_func, init_func);
 
         if (produced)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
