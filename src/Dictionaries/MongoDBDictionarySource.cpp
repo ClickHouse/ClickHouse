@@ -8,7 +8,7 @@ namespace DB
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
-    auto createMongoDBDictionary = [](
+    auto create_mongo_db_dictionary = [](
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -28,7 +28,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             sample_block);
     };
 
-    factory.registerSource("mongodb", createMongoDBDictionary);
+    factory.registerSource("mongodb", create_mongo_db_dictionary);
 }
 
 }
