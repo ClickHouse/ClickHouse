@@ -959,7 +959,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
+            {
                 executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
+                /// We need to reset input order info, so that executeOrder can't use  it
+                query_info.input_order_info.reset();
+            }
             else
             {
                 executeExpression(pipeline, expressions.before_order_and_select);
