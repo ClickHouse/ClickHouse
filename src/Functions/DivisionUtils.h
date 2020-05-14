@@ -53,9 +53,9 @@ template <typename Result, typename A, typename B>
 inline Result applyBigInteger(A a, B b)
 {
     if constexpr (std::is_same_v<A, UInt8>)
-        return static_cast<Result>(static_cast<UInt16>(a)) / static_cast<Result>(b);
+        return static_cast<Result>(static_cast<Int16>(a) / static_cast<Int16>(b));
     else if constexpr (std::is_same_v<B, UInt8>)
-        return static_cast<Result>(a) / static_cast<Result>(static_cast<UInt16>(b));
+        return static_cast<Result>(a) / static_cast<Result>(static_cast<Int16>(b));
     else
         return static_cast<Result>(a) / static_cast<Result>(b);
 }
