@@ -91,6 +91,7 @@ private:
 
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
+    AtomicStopwatch time_after_previous_recompress;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.

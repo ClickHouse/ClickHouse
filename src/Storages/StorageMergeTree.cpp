@@ -94,6 +94,7 @@ void StorageMergeTree::startup()
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
     merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+    time_after_previous_recompress.restart();
     recompressing_task_handle = global_context.getBackgroundLowPriorityPool().addTask([this] { return recompressMutateTask(); });
     if (areBackgroundMovesNeeded())
         moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
@@ -801,14 +802,18 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::recompressMutateTask()
 
     try
     {
+        if (auto lock = time_after_previous_recompress.compareAndRestartDeferred(1))
         {
-            auto lock_structure = lockStructureForShare(false, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-            if (recompressOldParts())
             {
-                return BackgroundProcessingPoolTaskResult::SUCCESS;
+                auto lock_structure = lockStructureForShare(false, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+                if (recompressOldParts())
+                {
+                    return BackgroundProcessingPoolTaskResult::SUCCESS;
+                }
             }
+            return BackgroundProcessingPoolTaskResult::ERROR;
         }
-        return BackgroundProcessingPoolTaskResult::ERROR;
+        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
     }
     catch (const Exception & e)
     {
