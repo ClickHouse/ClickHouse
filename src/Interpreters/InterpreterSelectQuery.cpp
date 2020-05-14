@@ -657,7 +657,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
     return order_descr;
 }
 
-static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query, const Context & /*context*/)
+static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
 {
     SortDescription order_descr;
     order_descr.reserve(query.groupBy()->children.size());
@@ -1439,7 +1439,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             else
                 query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                     analysis_result.group_by_elements_actions,
-                    getSortDescriptionFromGroupBy(query, *context),
+                    getSortDescriptionFromGroupBy(query),
                     query_info.syntax_analyzer_result);
 
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(storage);
@@ -1753,7 +1753,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     if (group_by_info && settings.optimize_aggregation_in_order)
     {
         auto & query = getSelectQuery();
-        SortDescription group_by_descr = getSortDescriptionFromGroupBy(query, *context);
+        SortDescription group_by_descr = getSortDescriptionFromGroupBy(query);
         bool need_finish_sorting = (group_by_info->order_key_prefix_descr.size() < group_by_descr.size());
 
         if (need_finish_sorting)

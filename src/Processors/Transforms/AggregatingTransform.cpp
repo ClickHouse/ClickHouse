@@ -20,23 +20,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Convert block to chunk.
+/// Adds additional info about aggregation.
+Chunk convertToChunk(const Block & block)
+{
+    auto info = std::make_shared<AggregatedChunkInfo>();
+    info->bucket_num = block.info.bucket_num;
+    info->is_overflows = block.info.is_overflows;
+
+    UInt64 num_rows = block.rows();
+    Chunk chunk(block.getColumns(), num_rows);
+    chunk.setChunkInfo(std::move(info));
+
+    return chunk;
+}
+
 namespace
 {
-    /// Convert block to chunk.
-    /// Adds additional info about aggregation.
-    Chunk convertToChunk(const Block & block)
-    {
-        auto info = std::make_shared<AggregatedChunkInfo>();
-        info->bucket_num = block.info.bucket_num;
-        info->is_overflows = block.info.is_overflows;
-
-        UInt64 num_rows = block.rows();
-        Chunk chunk(block.getColumns(), num_rows);
-        chunk.setChunkInfo(std::move(info));
-
-        return chunk;
-    }
-
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
         const auto & info = chunk.getChunkInfo();
