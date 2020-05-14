@@ -82,18 +82,27 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
 
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 {
-    /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
     try
     {
         if (!consumer->get_subscription().empty())
             consumer->unsubscribe();
-        if (!assignment.empty())
-            consumer->unassign();
-        while (consumer->get_consumer_queue().next_event(100ms));
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor: " << e.what());
+        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor (unsubscribe): " << e.what());
+    }
+
+    try
+    {
+        // we need to drain rest of the messages / queued callback calls from the consumer
+        // after unsubscribe, otherwise consumer will hang on destruction
+        // see https://github.com/edenhill/librdkafka/issues/2077
+        //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+        while (consumer->poll(100ms));
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor (drain): " << e.what());
     }
 }
 
