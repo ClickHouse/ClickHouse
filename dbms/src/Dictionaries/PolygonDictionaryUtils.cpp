@@ -206,15 +206,15 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         const Coord lx = this->sorted_x[l];
         const Coord rx = this->sorted_x[r];
 
-        /** removing edges where right_point.x < lx */
-        while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
+        /** removing edges where right_point.x <= lx */
+        while (!interesting_edges.empty() && interesting_edges.begin()->r.x() <= lx)
         {
             edge_right[interesting_edges.begin()->edge_id] = l;
             interesting_edges.erase(interesting_edges.begin());
         }
 
-        /** adding edges where left_point.x <= rx */
-        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() <= rx; ++edges_it)
+        /** adding edges where left_point.x < rx */
+        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() < rx; ++edges_it)
         {
             interesting_edges.insert(this->all_edges[edges_it]);
             edge_left[this->all_edges[edges_it].edge_id] = l;
@@ -262,7 +262,7 @@ void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
         Point a = ring[prev];
         Point b = ring[i];
 
-        // making a.x <= b.x
+        /** making a.x <= b.x */
         if (a.x() > b.x())
         {
             std::swap(a, b);
@@ -397,12 +397,6 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             const Point & l = edge.l;
             const Point & r = edge.r;
             size_t polygon_id = edge.polygon_id;
-
-            /** check if point outside of edge's x bounds */
-            if (x < l.x() || x >= r.x())
-            {
-                continue;
-            }
 
             Coord edge_y = x * edge.k + edge.b;
             if (edge_y <= y)
