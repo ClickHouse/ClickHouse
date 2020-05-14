@@ -20,7 +20,9 @@ macro(mkversion _lib_name)
     )
 endmacro()
 
+string(TOLOWER "${CMAKE_SYSTEM_NAME}" _system_name)
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _system_processor)
+
 if(
     "${_system_processor}" STREQUAL "amd64" OR
     "${_system_processor}" STREQUAL "x64"
@@ -28,7 +30,7 @@ if(
     set(_system_processor "x86_64")
 endif()
 
-set(_extra_build_dir "${CMAKE_CURRENT_SOURCE_DIR}/${CMAKE_SYSTEM_NAME}_${_system_processor}")
+set(_extra_build_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_system_name}_${_system_processor}")
 
 set(_lber_srcs
     ${OPENLDAP_SOURCE_DIR}/libraries/liblber/assert.c
