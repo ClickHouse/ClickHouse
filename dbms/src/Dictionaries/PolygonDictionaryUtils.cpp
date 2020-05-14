@@ -241,12 +241,12 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         {
             if (l & 1)
             {
-                this->edges_index_tree[l++].push_back(all_edges[i]);
+                this->edges_index_tree[l++].emplace_back(all_edges[i]);
                 ++total_index_edges;
             }
             if (r & 1)
             {
-                this->edges_index_tree[--r].push_back(all_edges[i]);
+                this->edges_index_tree[--r].emplace_back(all_edges[i]);
                 ++total_index_edges;
             }
         }
@@ -394,14 +394,9 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
         /** iterating over interesting edges */
         for (const auto & edge : this->edges_index_tree[pos])
         {
-            const Point & l = edge.l;
-            const Point & r = edge.r;
-            size_t polygon_id = edge.polygon_id;
-
-            Coord edge_y = x * edge.k + edge.b;
-            if (edge_y <= y)
+            if (x * edge.k + edge.b <= y)
             {
-                intersections.emplace_back(polygon_id);
+                intersections.emplace_back(edge.polygon_id);
             }
         }
         pos >>= 1;
@@ -418,195 +413,6 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
     }
 
     return found;
-}
-
-BucketsSinglePolygonIndex::BucketsSinglePolygonIndex(
-        const Polygon & polygon)
-        : sorted_x(uniqueX(polygon))
-{
-    indexBuild(polygon);
-}
-
-std::vector<Coord> BucketsSinglePolygonIndex::uniqueX(const Polygon & polygon)
-{
-    std::vector<Coord> all_x;
-
-    for (auto & point : polygon.outer())
-    {
-        all_x.push_back(point.x());
-    }
-
-    for (auto & inner : polygon.inners())
-    {
-        for (auto & point : inner)
-        {
-            all_x.push_back(point.x());
-        }
-    }
-
-    /** making all_x sorted and distinct */
-    std::sort(all_x.begin(), all_x.end());
-    all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
-
-    return all_x;
-}
-
-void BucketsSinglePolygonIndex::indexBuild(const Polygon & polygon)
-{
-    indexAddRing(polygon.outer());
-
-    for (auto & inner : polygon.inners())
-    {
-        indexAddRing(inner);
-    }
-
-    /** sorting edges consisting of (left_point, right_point, polygon_id) in that order */
-    std::sort(this->all_edges.begin(), this->all_edges.end(), Edge::compare1);
-    for (size_t i = 0; i != this->all_edges.size(); ++i)
-    {
-        this->all_edges[i].edge_id = i;
-    }
-
-    /** total number of edges */
-    size_t m = this->all_edges.size();
-
-    /** using custom comparator for fetching edges in right_point order, like in scanline */
-    auto cmp = [](const Edge & a, const Edge & b)
-    {
-        return Edge::compare2(a, b);
-    };
-    std::set<Edge, decltype(cmp)> interesting_edges(cmp);
-
-    /** size of index (number of different x coordinates) */
-    size_t n = 0;
-    if (!this->sorted_x.empty())
-    {
-        n = this->sorted_x.size() - 1;
-    }
-    this->edges_index_tree.resize(2 * n);
-
-    /** Map of interesting edge ids to the index of left x, the index of right x */
-    std::vector<size_t> edge_left(m, n), edge_right(m, n);
-
-    size_t total_index_edges = 0;
-    size_t edges_it = 0;
-    for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
-    {
-        const Coord lx = this->sorted_x[l];
-        const Coord rx = this->sorted_x[r];
-
-        /** removing edges where right_point.x < lx */
-        while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
-        {
-            edge_right[interesting_edges.begin()->edge_id] = l;
-            interesting_edges.erase(interesting_edges.begin());
-        }
-
-        /** adding edges where left_point.x <= rx */
-        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() <= rx; ++edges_it)
-        {
-            interesting_edges.insert(this->all_edges[edges_it]);
-            edge_left[this->all_edges[edges_it].edge_id] = l;
-        }
-    }
-
-    for (size_t i = 0; i != this->all_edges.size(); i++)
-    {
-        size_t l = edge_left[i];
-        size_t r = edge_right[i];
-        if (l == n)
-        {
-            continue;
-        }
-
-        /** adding [l, r) to the segment tree */
-        for (l += n, r += n; l < r; l >>= 1, r >>= 1)
-        {
-            if (l & 1)
-            {
-                this->edges_index_tree[l++].emplace_back(all_edges[i]);
-                ++total_index_edges;
-            }
-            if (r & 1)
-            {
-                this->edges_index_tree[--r].emplace_back(all_edges[i]);
-                ++total_index_edges;
-            }
-        }
-    }
-
-}
-
-void BucketsSinglePolygonIndex::indexAddRing(const Ring & ring)
-{
-    for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
-    {
-        Point a = ring[prev];
-        Point b = ring[i];
-
-        // making a.x <= b.x
-        if (a.x() > b.x())
-        {
-            std::swap(a, b);
-        }
-
-        if (a.x() == b.x() && a.y() > b.y())
-        {
-            std::swap(a, b);
-        }
-
-        if (a.x() == b.x())
-        {
-            /** vertical edge found, skipping for now */
-            continue;
-        }
-
-        this->all_edges.emplace_back(a, b, 0, 0);
-    }
-}
-
-bool BucketsSinglePolygonIndex::find(const Point & point) const
-{
-    /** TODO: maybe we should check for vertical line? */
-    if (this->sorted_x.size() < 2)
-    {
-        return false;
-    }
-
-    Coord x = point.x();
-    Coord y = point.y();
-
-    if (x < this->sorted_x[0] || x > this->sorted_x.back())
-    {
-        return false;
-    }
-
-    size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
-
-    size_t cnt = 0;
-    /** Here we doing: pos += n */
-    pos += this->edges_index_tree.size() / 2;
-    do
-    {
-        /** iterating over interesting edges */
-        for (const auto & edge : this->edges_index_tree[pos])
-        {
-            /** check if point outside of edge's x bounds */
-            if (x < edge.l_x || x >= edge.r_x)
-            {
-                continue;
-            }
-
-            Coord edge_y = x * edge.k + edge.b;
-            if (edge_y <= y)
-            {
-                ++cnt;
-            }
-        }
-        pos >>= 1;
-    } while (pos != 0);
-
-    return cnt % 2 == 1;
 }
 
 }
