@@ -309,9 +309,10 @@ struct FloatRoundingImpl
 private:
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
+    using Container = typename ColumnDecimal<T>::Container;
 
 public:
-    static NO_INLINE void apply(const ColumnVector<T>::Container & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
         auto mm_scale = Op::prepare(scale);
 
@@ -349,10 +350,11 @@ struct IntegerRoundingImpl
 {
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode, tie_breaking_mode>;
+    using Container = typename ColumnDecimal<T>::Container;
 
 public:
     template <size_t scale>
-    static NO_INLINE void applyImpl(const ColumnVector<T>::Container & in, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void applyImpl(const Container & in, Container & out)
     {
         const T * end_in = in.data() + in.size();
 
@@ -367,7 +369,7 @@ public:
         }
     }
 
-    static NO_INLINE void apply(const ColumnVector<T>::Container & in, size_t scale, typename ColumnVector<T>::Container & out)
+    static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
     {
         /// Manual function cloning for compiler to generate integer division by constant.
         switch (scale)
