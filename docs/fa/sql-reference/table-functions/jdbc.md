@@ -2,7 +2,7 @@
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
-toc_title: "\u062C\u0633\u062A\u062C\u0648"
+toc_title: "jdbc"
 ---
 
 # جستجو {#table-function-jdbc}
