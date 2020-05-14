@@ -136,6 +136,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     elif with_binaries == "tests":
         result.append('BINARY_OUTPUT=tests')
         cmake_flags.append('-DENABLE_TESTS=1')
+        cmake_flags.append('-DUSE_GTEST=1')
 
     if unbundled:
         # TODO: fix build with ENABLE_RDKAFKA
