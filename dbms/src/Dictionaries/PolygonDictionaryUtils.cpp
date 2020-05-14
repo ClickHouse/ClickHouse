@@ -387,11 +387,10 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
             }
 
             Coord edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
-            if (edge_y > y)
+            if (edge_y <= y)
             {
-                continue;
+                intersections.emplace_back(polygon_id);
             }
-            intersections.emplace_back(polygon_id);
         }
         pos >>= 1;
     } while (pos != 0);
@@ -620,10 +619,6 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
             /** check for vertical edge, seem like never happens */
             if (l.x() == r.x())
             {
-                if (l.x() == x && y >= l.y() && y <= r.y())
-                {
-                    return true;
-                }
                 continue;
             }
 
@@ -634,16 +629,10 @@ bool BucketsSinglePolygonIndex::find(const Point & point) const
             }
 
             Coord edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
-            if (edge_y > y)
+            if (edge_y <= y)
             {
-                continue;
+                ++cnt;
             }
-            if (edge_y == y)
-            {
-                return true;
-            }
-
-            ++cnt;
         }
         pos >>= 1;
     } while (pos != 0);
