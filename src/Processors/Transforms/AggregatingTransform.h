@@ -120,4 +120,6 @@ private:
     void initGenerate();
 };
 
+Chunk convertToChunk(const Block & block);
+
 }

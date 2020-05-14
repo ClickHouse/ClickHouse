@@ -1139,7 +1139,6 @@ void Aggregator::fillAggregateColumnsWithSingleKey(
     MutableColumns & final_aggregate_columns)
 {
     AggregatedDataWithoutKey & data = data_variants.without_key;
-    AggregateColumnsData aggregate_columns_data(params.aggregates_size);
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
@@ -1148,8 +1147,7 @@ void Aggregator::fillAggregateColumnsWithSingleKey(
         {
             column_aggregate_func.addArena(pool);
         }
-        aggregate_columns_data[i] = &column_aggregate_func.getData();
-        aggregate_columns_data[i]->push_back(data + offsets_of_aggregate_states[i]);
+        column_aggregate_func.getData().push_back(data + offsets_of_aggregate_states[i]);
     }
     data = nullptr;
 }
