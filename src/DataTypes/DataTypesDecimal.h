@@ -111,7 +111,7 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
                             ErrorCodes::DECIMAL_OVERFLOW);
     }
 
-    return static_cast<ToFieldType>(converted_value);
+    return static_cast<typename ToFieldType::NativeType>(converted_value);
 }
 
 template <typename FromDataType, typename ToDataType>

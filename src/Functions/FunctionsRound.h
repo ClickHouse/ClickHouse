@@ -350,7 +350,7 @@ struct IntegerRoundingImpl
 {
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode, tie_breaking_mode>;
-    using Container = typename ColumnDecimal<T>::Container;
+    using Container = typename ColumnVector<T>::Container;
 
 public:
     template <size_t scale>
