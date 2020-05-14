@@ -40,6 +40,8 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
             sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i]);
         else if constexpr (std::is_same_v<T, Decimal256> && std::is_same_v<U, UInt8>)
             sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i].value));
+        else if constexpr (std::is_same_v<T, Decimal256> && IsDecimalNumber<U>)
+            sink.elements[sink.current_offset] = static_cast<typename U::NativeType>(slice.data[i].value);
         else if constexpr (std::is_same_v<T, Decimal256>)
             sink.elements[sink.current_offset] = static_cast<U>(slice.data[i].value);
         else if constexpr (std::is_floating_point_v<T> && std::is_same_v<U, Decimal256>)

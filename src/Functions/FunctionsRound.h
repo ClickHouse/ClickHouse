@@ -307,9 +307,12 @@ template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FloatRoundingImpl
 {
 private:
+    static_assert(!IsDecimalNumber<T>);
+
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
-    using Container = typename ColumnDecimal<T>::Container;
+    using ColumnType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using Container = typename ColumnType::Container;
 
 public:
     static NO_INLINE void apply(const Container & in, size_t scale, Container & out)
@@ -406,6 +409,8 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 class DecimalRoundingImpl
 {
 private:
+    static_assert(IsDecimalNumber<T>);
+
     using NativeType = typename T::NativeType;
     using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative, tie_breaking_mode>;
     using Container = typename ColumnDecimal<T>::Container;

@@ -21,13 +21,14 @@ namespace DB
         static const constexpr bool allow_fixed_string = false;
 
         template <typename Result = ResultType>
-        static inline Result apply(A left, B right)
+        static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
         {
             if constexpr (!std::is_same_v<A, ResultType> || !std::is_same_v<B, ResultType>)
                 throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitBoolMaskAnd.", ErrorCodes::BAD_CAST);
-            return static_cast<ResultType>(
-                    ((static_cast<ResultType>(left) & static_cast<ResultType>(right)) & 1)
-                    | ((((static_cast<ResultType>(left) >> 1) | (static_cast<ResultType>(right) >> 1)) & 1) << 1));
+            else
+                return static_cast<ResultType>(
+                        ((static_cast<ResultType>(left) & static_cast<ResultType>(right)) & 1)
+                        | ((((static_cast<ResultType>(left) >> 1) | (static_cast<ResultType>(right) >> 1)) & 1) << 1));
         }
 
 #if USE_EMBEDDED_COMPILER
