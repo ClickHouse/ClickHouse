@@ -80,7 +80,7 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 -   `zoo_path` — путь к таблице в ZooKeeper.
 -   `replica_name` — имя реплики в ZooKeeper.
--   `other_parameters` — параметры движка, для которого создаётся реплицированная версия, например, `ver` для `ReplacingMergeTree`.
+-   `other_parameters` — параметры движка, для которого создаётся реплицированная версия, например, версия для `ReplacingMergeTree`.
 
 
 Пример:
@@ -90,8 +90,9 @@ CREATE TABLE table_name
 (
     EventDate DateTime,
     CounterID UInt32,
-    UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}')
+    UserID UInt32,
+    ver UInt16
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
