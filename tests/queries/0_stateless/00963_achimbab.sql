@@ -1,5 +1,4 @@
 SET output_format_write_statistics = 0;
-SET experimental_use_processors = 0;
 
 select 
     sum(cnt) > 0 as total,
