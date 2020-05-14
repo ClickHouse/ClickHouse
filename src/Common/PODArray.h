@@ -5,6 +5,7 @@
 #include <cassert>
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -83,7 +84,8 @@ protected:
     /// Empty array will point to this static memory as padding.
     static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
 
-    static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
+    static_assert(pad_left <= EmptyPODArraySize,
+            "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
 
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
@@ -95,9 +97,11 @@ protected:
     /// Minimum amount of memory to allocate for num_elements, including padding.
     static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
 
-    void alloc_for_num_elements(size_t num_elements)
+    template <typename ... TAllocatorParams>
+    void alloc_for_num_elements(size_t num_elements, TAllocatorParams&& ...params)
     {
-        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
+        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)),
+              std::forward<TAllocatorParams>(params)...);
     }
 
     template <typename ... TAllocatorParams>
@@ -141,7 +145,7 @@ protected:
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
     }
 
-    bool isInitialized() const
+    constexpr bool isInitialized() const
     {
         return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
     }
@@ -279,12 +283,12 @@ public:
     using iterator = T *;
     using const_iterator = const T *;
 
-
     PODArray() {}
 
-    PODArray(size_t n)
+    template <typename ...TAllocatorParams>
+    explicit(sizeof...(TAllocatorParams) == 0) PODArray(size_t n, TAllocatorParams&& ...params)
     {
-        this->alloc_for_num_elements(n);
+        this->alloc_for_num_elements(n, std::forward<TAllocatorParams>(params)...);
         this->c_end += this->byte_size(n);
     }
 

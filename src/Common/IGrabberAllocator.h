@@ -87,47 +87,20 @@ struct Stats
 };
 }
 
-/**
- * Constraints on allocator's template parameters.
- * Currently turned off, because gcc fails to compile contrib/re2 with -fconcepts.
- *
- * Linked bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91867
- */
-
-//template <class T> concept GAKey = GADefault; //TODO Form constraints
-//
-//template <class T> concept GAValue = requires(T x) { };
-//
-///// @anchor ga_key_hash
-//template <class Hash, class Value>
-//concept GAKeyHash = requires(const Value& v) {
-//    { Hash().operator()(v) } -> std::convertible_to<std::size_t>;
-//};
-//
-///// @anchor ga_size_func
-//template <class F, class Value>
-//concept GASizeFunction = std::is_same<F, ga::runtime> || requires(const Value& v) {
-//    {F().operator()(v)} -> std::convertible_to<std::size_t>;
-//};
-//
-///// @anchor ga_init_func
-//template <class F, class Value>
-//concept GAInitFunction = std::is_same<F, ga::runtime> || requires(void * address_hint) {
-//    F(address_hint, Value*);
-//};
-//
-///// @anchor ga_aslr_func
-//template <class T> concept GAAslrFunction = requires(const pcg64& rng) {
-//    {T().operator()(rng)} -> std::is_same<void *>;
-//};
+namespace DB
+{
 
 /**
  * @brief This class represents a tool combining a reference-counted memory block cache integrated with a mmap-backed
  *        memory allocator. Overall memory limit, begin set by the user, is constant, so this tool also performs
  *        cache entries eviction if needed.
  *
+ * @warning This allocator is meant to be used with dynamic data structures as #TValue (those of small sizeof referring
+ *          to memory allocated somewhere in the heap, e.g. std::vector).
+ *          DO NOT USE IT WITH STACK ALLOCATED STRUCTURES, THE PROGRAM WILL NOT WORK AS INTENDED.
+ *          See IGrabberAllocator::RegionMetadata for detail.
+ *
  * @section motivation Motivation
- * @subsection general General
  *
  *   - Domain-specific cache has a memory usage limit (and we want it to include allocator fragmentation overhead).
  *   - Memory fragmentation can be bridged over using cache eviction.
@@ -136,13 +109,31 @@ struct Stats
  *   - Direct memory allocation serves for debugging purposes: placing mmap'd memory far from malloc'd facilitates
  *     revealing memory stomping bugs.
  *
- * @subsection size_and_init #SizeFunction and #InitFunction
+ * @section overview Overview
+ * @subsection size_func #SizeFunction
  *
- * If one is specified, interface is thought to have a @e compile-time function (e.g. @c sizeof(#Value) or so for
- * #SizeFunction, etc).
- * As opposed to that, the default value is ga::runtime which indicates that such a function needs to access the
- * object's state, so it should be passed as a parameter to the routines.
+ * If specified, interface is thought to have a @e run-time function which needs to access the object's state
+ * to measure its size.
  *
+ * Target's @c operator() is thought to have a signature (void) -> @c T, @c T convertible to size_t.
+ *
+ * For example, consider the cache for some @c CacheItem : PODArray. The PODArray itself is just a few pointers and
+ * size_t's, but the size we want can be obtained only by examining the @c CacheItem object.
+ *
+ * As opposed to that, some objects (usually, of fixed size) do not need to be examined.
+ * Consider some @c OtherCacheItem representing some sort of a heap-allocated std::array (of compile-time known) fixed
+ * size. This knowledge greatly simplifies used algorithms (no need of coalescing and so on).
+ *
+ * @subsection init_func #InitFunction
+ *
+ * Function is supposed to produce a #Value and bind its data references (e.g. T* data in std::vector<T>)
+ * to a given pointer.
+ *
+ * Target's @c operator() is thought to have a signature (void * start) -> #Value.
+ *
+ * If specified as a function template parameter, the class should not change the global state. However, that isn't
+ * always possible, so IGrabberAllocator::getOrSet has an overload taking this functor. For example, on new item
+ * insertion (if not found) the code could do so metrics update.
  *
  *
  * @tparam TKey Object that will be used to @e quickly address #Value.
@@ -162,14 +153,6 @@ struct Stats
  * @note Cache is not NUMA friendly.
  */
 template <
-//    GAKey TKey,
-//    GAValue TValue,
-//
-//    GAKeyHash KeyHash = std::hash<Key>,
-//
-//    GASizeFunction SizeFunction = ga::runtime,
-//    GAInitFunction InitFunction = ga::runtime,
-//    GAAslrFunction ASLRFunction = ga::DefaultASLR,
     class TKey,
     class TValue,
     class KeyHash = std::hash<TKey>,
@@ -182,6 +165,12 @@ template <
 class IGrabberAllocator : private boost::noncopyable
 {
 private:
+    static_assert(std::is_copy_constructible_v<TKey>,
+            "Key should be copy-constructible, see IGrabberAllocator::RegionMetadata::init_key for motivation");
+
+    static_assert(std::is_copy_constructible_v<TValue>,
+            "Value should be copy-constructible, see IGrabberAllocator::RegionMetadata::init_value for motivation");
+
     static constexpr const size_t page_size = 4096;
 
     class RegionMetadata;
@@ -397,7 +386,7 @@ private:
      * Used to identify metadata associated with some #Value (needed while deleting #ValuePtr).
      * @see IGrabberAllocator::getImpl
      */
-    std::unordered_map<Value*, RegionMetadata*> value_to_region;
+    std::unordered_map<const Value*, RegionMetadata*> value_to_region;
 
     struct MemoryChunk;
     std::list<MemoryChunk> chunks;
@@ -473,7 +462,6 @@ public:
      * @return Bool indicating whether the value was produced during the call. <br>
      *      False on cache hit (including a concurrent cache hit), true on cache miss).
      */
-    //inline GetOrSetRet getOrSet(const Key & key, SizeFunction auto && get_size, InitFunction auto && initialize)
     template <class Init, class Size>
     inline GetOrSetRet getOrSet(const Key & key, Size && get_size, Init && initialize)
     {
@@ -496,15 +484,14 @@ public:
         /// Cannot allocate memory.
         if (!region) return {};
 
-        region->key = key;
+        region->init_key(key);
 
         {
             total_size_currently_initialized.fetch_add(size, std::memory_order_release);
-            SCOPE_EXIT({ total_size_currently_initialized.fetch_sub(size, std::memory_order_release); });
 
             try
             {
-                region->value = initialize();
+                region->init_value(initialize);
             }
             catch (...)
             {
@@ -512,6 +499,8 @@ public:
                     std::lock_guard cache_lock(mutex);
                     freeAndCoalesce(*region);
                 }
+
+                total_size_currently_initialized.fetch_sub(size, std::memory_order_release);
 
                 throw;
             }
@@ -566,7 +555,7 @@ private:
 
         if (metadata.refcount == 1 && metadata.TUnusedRegionHook::is_linked())
         {
-            value_to_region.emplace(&metadata.value, &metadata);
+            value_to_region.emplace(metadata.value(), &metadata);
             unused_allocated_regions.erase(unused_allocated_regions.iterator_to(metadata));
         }
 
@@ -594,7 +583,7 @@ private:
 
         total_size_in_use -= metadata.size;
 
-        delete value;
+        // No delete value here because we do not need to (it will be unmmap'd on MemoreChunk disposal).
     }
 
     class InsertionAttemptDisposer;
@@ -616,7 +605,7 @@ private:
 
                 // can't use std::make_shared due to custom deleter.
                 return std::shared_ptr<Value>(
-                        &metadata.value,
+                        metadata.value(),
                         /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
                         /// see also line 530.
                         /// std::bind_front(&IGrabberAllocator::onValueDelete, this));
@@ -742,13 +731,18 @@ private:
  */
 private:
     /**
-     * @brief Most low-level primitive of this allocator, represents a sort of std::span of a certain memory part.
-     *        Can hold both free and occupied memory regions. mmaps space of desired size in ctor and frees it in dtor.
+     * @brief Holds a pointer to some allocated space.
+     *
+     *   - Most low-level primitive of this allocator, represents a sort of std::span of a certain memory part.
+     *   - Can hold both free and occupied memory regions.
+     *   - mmaps space of desired size in ctor and frees it in dtor.
+     *
+     * Can be viewed by many IGrabberAllocator::MemoryRegion s (many to one).
      */
     struct MemoryChunk : private boost::noncopyable
     {
-        void * ptr;
-        size_t size;
+        void * ptr;  /// Start of allocated memory.
+        size_t size; /// Size of allocated memory.
 
         constexpr MemoryChunk(size_t size_, void * address_hint) : size(size_)
         {
@@ -786,6 +780,16 @@ private:
 
     /**
      * @brief Element referenced in all intrusive containers here.
+     *        Includes a #Key-#Value pair and a pointer to some IGrabberAllocator::MemoryRegion part storage
+     *        holding some #Value's data.
+     *
+     * Consider #Value = std::vector of size 10.
+     * The memory layout is something like this:
+     *
+     * (Heap, allocated by ::new()) Region metadata { void *ptr, std::vector Value;}, ptr = value.data = 0xcafebabe.
+     * (Head, allocated by mmap()) MemoryChunk {void * ptr}, ptr = 0xcafebabe
+     * (0xcafebabe) [Area with std::vector data]
+
      */
     struct RegionMetadata :
         public TUnusedRegionHook,
@@ -793,30 +797,62 @@ private:
         public TFreeRegionHook,
         public TAllocatedRegionHook
     {
-        Key key;
-        Value value;
+        /// #Key and #Value needn't be default-constructible.
+
+        std::aligned_storage_t<sizeof(Key), alignof(Key)> key_storage;
+        std::aligned_storage_t<sizeof(Value), alignof(Value)> value_storage;
 
         union {
+            /// Pointer to a IGrabberAllocator::MemoryChunk part storage for a given region.
             void * ptr {nullptr};
 
             /// Used in IGrabberAllocator::freeAndCoalesce.
             char * char_ptr;
         };
 
+        /// Size of storage starting at #ptr.
         size_t size {0};
 
         /// How many outer users reference this object's #value?
         size_t refcount {0};
 
+        /// Used to compare regions, usually MemoryChunk.ptr @see IGrabberAllocator::evict
         void * chunk {nullptr};
+
+        [[nodiscard]] static RegionMetadata * create() { return new RegionMetadata(); }
+
+        constexpr void destroy() noexcept {
+            std::destroy_at(std::launder(reinterpret_cast<Key*>(&key_storage)));
+            std::destroy_at(std::launder(reinterpret_cast<Value*>(&value_storage)));
+            delete this;
+        }
+
+        /// Exceptions will be propagated to the caller.
+        constexpr void init_key(const Key& key)
+        {
+            std::construct_at(std::launder(reinterpret_cast<Key*>(&key_storage)), key);
+        }
+
+        /// Exceptions will be propagated to the caller.
+        template <class Init>
+        constexpr void init_value(Init&& init_func)
+        {
+            std::construct_at(std::launder(reinterpret_cast<Value*>(&value_storage)), init_func(ptr));
+        }
+
+        constexpr const Key& key() const noexcept
+        {
+            return *std::launder(reinterpret_cast<const Key*>(&key_storage));
+        }
+
+        constexpr const Value * value() const noexcept
+        {
+            return std::launder(reinterpret_cast<const Value*>(&value_storage));
+        }
 
         [[nodiscard, gnu::pure]] constexpr bool operator< (const RegionMetadata & other) const noexcept { return size < other.size; }
 
         [[nodiscard, gnu::pure]] constexpr bool isFree() const noexcept { return TFreeRegionHook::is_linked(); }
-
-        [[nodiscard]] static RegionMetadata * create() { return new RegionMetadata(); }
-
-        void destroy() { delete this; }
 
     private:
         RegionMetadata() {}
@@ -832,9 +868,9 @@ private:
 
     struct RegionCompareByKey
     {
-        constexpr bool operator() (const RegionMetadata & a, const RegionMetadata & b) const noexcept { return a.key < b.key; }
-        constexpr bool operator() (const RegionMetadata & a, Key key) const noexcept { return a.key < key; }
-        constexpr bool operator() (Key key, const RegionMetadata & b) const noexcept { return key < b.key; }
+        constexpr bool operator() (const RegionMetadata & a, const RegionMetadata & b) const noexcept { return a.key() < b.key(); }
+        constexpr bool operator() (const RegionMetadata & a, Key key) const noexcept { return a.key() < key; }
+        constexpr bool operator() (Key key, const RegionMetadata & b) const noexcept { return key < b.key(); }
     };
 
 /**
@@ -1030,3 +1066,45 @@ private:
     }
 };
 
+/**
+ * Use this class as a @c TAllocator template parameter if you want to use some DB::PODArray child (or the
+ * DB::PODArray itself) with IGrabberAllocator.
+ *
+ * The predicate for an object using this class: no changes. No realloc, no shrinking, just readonly mode.
+ *
+ * Example data flow:
+ *
+ *   - IGrabberAllocator::getOrSet calls initialize(void * ptr), ptr = address of storage allocated for PODArray data.
+ *   - The callback returns something like DB::PODArray(size, ptr)
+ *   - DB::PODArray::PODArray(size_t, void *) calls DB::PODArray::alloc_for_num_bytes(size_t, void *)
+ *   - DB::PODArray::alloc_for_num_bytes calls FakePODAllocForIG::alloc(size, ptr)
+ *   - Our method returns ptr.
+ *   - DB::PODArray.c_start = ptr, hooray, data placed where we want.
+ *
+ * @see IGrabberAllocator::RegionMetadata
+ * @see IGrabberAllocator::MemoryChunk
+ * @see IGrabberAllocator::getOrSet
+ */
+class FakePODAllocForIG
+{
+    /**
+     * Intended to be called in PODArray constructor.
+     *
+     * The first argument will be exactly the result of get_size() in IGrabberAllocator::getOrSet, so ignore it.
+     * The second argument (passed in DB::PODArray::TAllocatorParams) will be the start of allocated block (provided
+     * by IGrabberAllocator::RegionMetadata), so simply return it.
+     *
+     * @see DB::PODArray::PODArray
+     * @see DB::MarksInCompressedFile::MarksInCompressedFile
+     */
+    constexpr static void * alloc(size_t, void * start) noexcept { return start; }
+
+    /// The IGrabberAllocator::MemoryChunk will handle it.
+    constexpr static void free(char *, size_t) noexcept {}
+
+    ///If called, something went wrong, so abort the program.
+    constexpr static void realloc(char *, size_t, size_t) {
+        throw Exception("Object using FakePODAllocForIG must not call realloc()");
+    }
+};
+}

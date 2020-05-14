@@ -30,8 +30,7 @@ struct MarksWeightFunction
 using MarkCacheBase = IGrabberAllocator<
     /* Key */ UInt128,
     /* Value */ MarksInCompressedFile,
-    /* Key hash */ UInt128TrivialHash,
-    /* Value Size func */ MarksWeightFunction>;
+    /* Key hash */ UInt128TrivialHash>;
 
 /**
  * @brief Cache of marks for StorageMergeTree.
