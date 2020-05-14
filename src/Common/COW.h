@@ -79,22 +79,12 @@ private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
-    template <typename T>
-    class IntrusivePtr : public boost::intrusive_ptr<T>
-    {
-    public:
-        using boost::intrusive_ptr<T>::intrusive_ptr;
-
-        T & operator*() const & { return boost::intrusive_ptr<T>::operator*(); }
-        T && operator*() const && { return const_cast<typename std::remove_const<T>::type &&>(*boost::intrusive_ptr<T>::get()); }
-    };
-
 protected:
     template <typename T>
-    class mutable_ptr : public IntrusivePtr<T>
+    class mutable_ptr : public boost::intrusive_ptr<T>
     {
     private:
-        using Base = IntrusivePtr<T>;
+        using Base = boost::intrusive_ptr<T>;
 
         template <typename> friend class COW;
         template <typename, typename> friend class COWHelper;
@@ -123,10 +113,10 @@ public:
 
 protected:
     template <typename T>
-    class immutable_ptr : public IntrusivePtr<const T>
+    class immutable_ptr : public boost::intrusive_ptr<const T>
     {
     private:
-        using Base = IntrusivePtr<const T>;
+        using Base = boost::intrusive_ptr<const T>;
 
         template <typename> friend class COW;
         template <typename, typename> friend class COWHelper;
