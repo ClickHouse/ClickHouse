@@ -50,7 +50,7 @@
     /// Change value of x.
     {
         /// Creating mutable ptr. It can clone an object under the hood if it was shared.
-        Column::MutablePtr mutate_x = std::move(*x).mutate();
+        Column::MutablePtr mutate_x = IColumn::mutate(std::move(x));
         /// Using non-const methods of an object.
         mutate_x->set(2);
         /// Assigning pointer 'x' to mutated object.
@@ -185,9 +185,9 @@ protected:
     }
 
 public:
-    MutablePtr mutate() const &&
+    static MutablePtr mutate(Ptr ptr)
     {
-        return shallowMutate();
+        return ptr.shallowMutate();
     }
 
     MutablePtr assumeMutable() const
