@@ -104,7 +104,9 @@ public:
     }
 
     /// Inserts results into a column.
-    virtual void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const = 0;
+    /// This method must be called once, from single thread.
+    /// After this method was called for state, you can't do anything with state but destroy.
+    virtual void insertResultInto(AggregateDataPtr place, IColumn & to) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).

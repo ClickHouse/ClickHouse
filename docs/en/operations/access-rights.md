@@ -141,7 +141,7 @@ Management queries:
 
 - Enable SQL-driven access control and account management for at least one user account.
 
-    By default SQL-driven access control and account management is turned of for all users. You need to configure at least one user in the `users.xml` configuration file and assign 1 to the [access_management](settings/settings-users.md#access_management-user-setting) setting.
+    By default, SQL-driven access control and account management is turned off for all users. You need to configure at least one user in the `users.xml` configuration file and assign 1 to the [access_management](settings/settings-users.md#access_management-user-setting) setting.
 
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
