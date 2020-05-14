@@ -1,4 +1,4 @@
-/* include/ldap_features.h.  Generated from ldap_features.hin by configure.  */
+/* include/ldap_features.h. Generated from ldap_features.hin by configure. */
 /* $OpenLDAP$ */
 /* This work is part of OpenLDAP Software <http://www.openldap.org/>.
  *
@@ -14,7 +14,7 @@
  * <http://www.OpenLDAP.org/license.html>.
  */
 
-/* 
+/*
  * LDAP Features
  */
 
@@ -36,10 +36,10 @@
 ** The -lldap implementation is not thread-safe.
 **
 ** The -lldap_r implementation is:
-**		LDAP_API_FEATURE_THREAD_SAFE (basic thread safety)
+**     LDAP_API_FEATURE_THREAD_SAFE (basic thread safety)
 ** but also be:
-**		LDAP_API_FEATURE_SESSION_THREAD_SAFE
-**		LDAP_API_FEATURE_OPERATION_THREAD_SAFE
+**     LDAP_API_FEATURE_SESSION_THREAD_SAFE
+**     LDAP_API_FEATURE_OPERATION_THREAD_SAFE
 **
 ** The preprocessor flag LDAP_API_FEATURE_X_OPENLDAP_THREAD_SAFE
 ** can be used to determine if -lldap_r is available at compile
