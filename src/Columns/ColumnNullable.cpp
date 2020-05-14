@@ -321,14 +321,17 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
     }
 }
 
-void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const {
-    if (limit >= equal_range.back().second || limit >= size()) {
+void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const
+{
+    if (limit >= equal_range.back().second || limit >= size())
+    {
         limit = 0;
     }
 
     EqualRanges new_ranges, temp_ranges;
 
-    for (const auto &[first, last] : equal_range) {
+    for (const auto &[first, last] : equal_range)
+    {
         bool direction = ((null_direction_hint > 0) != reverse);
         /// Shift all NULL values to the end.
 
@@ -363,9 +366,12 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
         }
         if (write_idx - first > 1)
         {
-            if (direction) {
+            if (direction)
+            {
                 temp_ranges.emplace_back(first, write_idx);
-            } else {
+            }
+            else
+            {
                 new_ranges.emplace_back(first, write_idx);
             }
         }
@@ -380,7 +386,8 @@ void ColumnNullable::updatePermutation(bool reverse, size_t limit, int null_dire
             }
         }
     }
-    while (!new_ranges.empty() && limit && limit <= new_ranges.back().first) {
+    while (!new_ranges.empty() && limit && limit <= new_ranges.back().first)
+    {
         new_ranges.pop_back();
     }
     if (!temp_ranges.empty())

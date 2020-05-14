@@ -223,20 +223,24 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
         else
             pdqsort(res.begin() + first, res.begin() + last, less(*this, nan_direction_hint));
         size_t new_first = first;
-        for (size_t j = first + 1; j < last; ++j) {
+        for (size_t j = first + 1; j < last; ++j)
+        {
             if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
             {
-                if (j - new_first > 1) {
+                if (j - new_first > 1)
+                {
                     new_ranges.emplace_back(new_first, j);
                 }
                 new_first = j;
             }
         }
-        if (last - new_first > 1) {
+        if (last - new_first > 1)
+        {
             new_ranges.emplace_back(new_first, last);
         }
     }
-    if (limit) {
+    if (limit)
+    {
         const auto & [first, last] = equal_range.back();
         if (reverse)
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
@@ -244,9 +248,12 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
             std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
 
         size_t new_first = first;
-        for (size_t j = first + 1; j < limit; ++j) {
-            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first])) {
-                if (j - new_first > 1) {
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
                     new_ranges.emplace_back(new_first, j);
                 }
                 new_first = j;
@@ -254,13 +261,16 @@ void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_dire
         }
 
         size_t new_last = limit;
-        for (size_t j = limit; j < last; ++j) {
-            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first])) {
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
                 std::swap(res[j], res[new_last]);
                 ++new_last;
             }
         }
-        if (new_last - new_first > 1) {
+        if (new_last - new_first > 1)
+        {
             new_ranges.emplace_back(new_first, new_last);
         }
     }
