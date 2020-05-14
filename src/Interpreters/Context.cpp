@@ -1343,7 +1343,7 @@ BackgroundProcessingPool & Context::getBackgroundLowPriorityPool()
     if (!shared->background_low_priority_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.low_cpu_priority = true;
         pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
