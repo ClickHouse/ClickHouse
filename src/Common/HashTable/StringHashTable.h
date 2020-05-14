@@ -333,7 +333,11 @@ public:
         template <typename Submap, typename SubmapKey>
         auto ALWAYS_INLINE operator()(Submap & map, const SubmapKey & key, size_t hash)
         {
-            return &map.find(key, hash)->getMapped();
+            auto it = map.find(key, hash);
+            if (!it)
+                return decltype(&it->getMapped()){};
+            else
+                return &it->getMapped();
         }
     };
 
