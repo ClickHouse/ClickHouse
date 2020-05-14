@@ -11,13 +11,12 @@ namespace ErrorCodes
 }
 
 template <typename A, typename B>
-inline UInt8 applySpecial(A /*a*/, B /*b*/)
+inline UInt8 applySpecial([[maybe_unused]] A a, [[maybe_unused]] B b)
 {
-    throw Exception("Bit test is not implemented for big integers", ErrorCodes::LOGICAL_ERROR);
-    // if constexpr (std::is_same_v<A, UInt8>)
-    //     return (UInt16(a) >> b) & 1;
-    // else
-    //     return (a >> UInt16(b)) & 1;
+    if constexpr (!std::is_same_v<B, UInt32>)
+        throw Exception("Bit test for big integers is implemented only with UInt32 as second argument", ErrorCodes::LOGICAL_ERROR);
+    else
+        return bit_test(a, b);
 }
 
 template <typename A, typename B>

@@ -52,25 +52,39 @@ template <> struct BigIntPayload<bInt256> { static constexpr size_t size = 32; }
 template <typename T>
 StringRef serializeBigIntIntoArena(const T & x, Arena & arena, char const *& begin)
 {
-    // TODO: fix signedness
-    size_t bytesize = BigIntPayload<T>::size;
-
-    auto pos = arena.allocContinue(bytesize, begin);
-    export_bits(x, pos, 8, false);
-
-    return StringRef(pos, bytesize);
+    if constexpr (is_signed_v<T>)
+    {
+        size_t bytesize = BigIntPayload<T>::size;
+        char * pos = arena.allocContinue(bytesize + 1, begin);
+        if (x < 0)
+            *pos = 1;
+        export_bits(x, pos + 1, 8, false);
+        return StringRef(pos, bytesize + 1);
+    }
+    else
+    {
+        size_t bytesize = BigIntPayload<T>::size;
+        char * pos = arena.allocContinue(bytesize, begin);
+        export_bits(x, pos, 8, false);
+        return StringRef(pos, bytesize);
+    }
 }
 
 template <typename T>
 T deserializeBigInt(const char * pos)
 {
     T x{};
-    size_t bytesize = BigIntPayload<T>::size;
-
-    // TODO: fix signedness
-    import_bits(x, pos, pos + bytesize, false);
-
-    return x;
+    if constexpr (is_signed_v<T>)
+    {
+        char is_negative = *pos;
+        import_bits(x, pos + 1, pos + 1 + BigIntPayload<T>::size, false);
+        return is_negative ? -x : x;
+    }
+    else
+    {
+        import_bits(x, pos, pos + BigIntPayload<T>::size, false);
+        return x;
+    }
 }
 }
 
@@ -120,7 +134,10 @@ const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
     if constexpr (is_big_int_v<T>)
     {
         data.push_back(deserializeBigInt<T>(pos));
-        return pos + BigIntPayload<T>::size;
+        if constexpr (is_signed_v<T>)
+            return pos + BigIntPayload<T>::size + 1;
+        else
+            return pos + BigIntPayload<T>::size;
     }
     else
     {
