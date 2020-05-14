@@ -23,16 +23,9 @@ namespace DB
                 throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix",
                                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-//            return DataTypes(arguments.begin(), std::prev(arguments.end()));
             DataTypes nested_arguments;
-            for (const auto & type : arguments)
-            {
+            for (const auto & type : arguments) {
                 nested_arguments.push_back(type);
-//                if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(type.get()))
-//                    nested_arguments.push_back(array->getNestedType());
-//                else
-//                    throw Exception("Illegal type " + type->getName() + " of argument"
-//                                                                        " for aggregate function with " + getName() + " suffix. Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
             return nested_arguments;
