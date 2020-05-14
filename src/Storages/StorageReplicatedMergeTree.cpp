@@ -1409,8 +1409,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
         try
         {
             String part_name = entry.actual_new_part_name.empty() ? entry.new_part_name : entry.actual_new_part_name;
-            String part_type = entry.new_part_type.toString();
-            if (!fetchPart(part_name, part_type, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
+            if (!fetchPart(part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum))
                 return false;
         }
         catch (Exception & e)
@@ -1754,7 +1753,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
-            part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, "Wide", source_replica_path, // TODO: fix part type
+            part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
@@ -2766,7 +2765,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 }
 
 
-bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & part_type,
+bool StorageReplicatedMergeTree::fetchPart(const String & part_name,
     const String & source_replica_path, bool to_detached, size_t quorum)
 {
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
@@ -2872,7 +2871,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
                     ErrorCodes::LOGICAL_ERROR);
 
             return fetcher.fetchPart(
-                part_name, part_type, source_replica_path,
+                part_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
         };
@@ -4384,7 +4383,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
         {
             try
             {
-                fetchPart(part, "Wide", best_replica_path, true, 0); // TODO: fix part type
+                fetchPart(part, best_replica_path, true, 0);
             }
             catch (const DB::Exception & e)
             {

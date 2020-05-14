@@ -19,7 +19,6 @@ public:
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
 
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block) override;
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) override;
 
 private:
     DataPartInMemoryPtr part;

@@ -65,6 +65,7 @@ protected:
     MergeTreeIndices skip_indices;
     MergeTreeIndexGranularity index_granularity;
     MergeTreeWriterSettings settings;
+    bool with_final_mark;
 
     size_t next_mark = 0;
     size_t next_index_offset = 0;

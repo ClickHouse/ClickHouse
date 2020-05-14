@@ -82,8 +82,8 @@ public:
     void initSkipIndices() final;
     void initPrimaryIndex() final;
 
-    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
-    virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
+    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
+    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
@@ -100,7 +100,6 @@ protected:
     CompressionCodecPtr default_codec;
 
     bool compute_granularity;
-    bool with_final_mark;
     bool need_finish_last_granule;
 
     /// Number of marsk in data from which skip indices have to start
