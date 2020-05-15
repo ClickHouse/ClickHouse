@@ -26,7 +26,7 @@ def _files_in_dist_mon(node, root, table):
         'bash',
         '-c',
         # `-maxdepth 1` to avoid /tmp/ subdirectory
-        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f | wc -l'.format(root=root, table=table)
+        'find /{root}/data/test/{table}/default@127%2E0%2E0%2E2:9000 -maxdepth 1 -type f 2>/dev/null | wc -l'.format(root=root, table=table)
     ]).split('\n')[0])
 
 def test_different_versions(start_cluster):
@@ -41,7 +41,7 @@ def test_different_versions(start_cluster):
         'default'
     )
     """)
-    # manual only
+    # manual only (but only for remote node)
     node.query('SYSTEM STOP DISTRIBUTED SENDS test.dist_foo')
 
     node.query('INSERT INTO test.dist_foo SELECT * FROM numbers(100)')

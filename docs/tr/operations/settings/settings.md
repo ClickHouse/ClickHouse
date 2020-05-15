@@ -1,15 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
-toc_priority: 60
-toc_title: Ayarlar
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Ayarlar {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Davranışını değiştirir [dağıtılmış alt sorgular](../../sql-reference/statements/select.md).
+Davranışını değiştirir [dağıtılmış alt sorgular](../../sql-reference/operators/in.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -18,7 +16,7 @@ Kısıtlama:
 -   Yalnızca ın ve JOIN alt sorguları için uygulanır.
 -   Yalnızca FROM bölümü birden fazla parça içeren dağıtılmış bir tablo kullanıyorsa.
 -   Alt sorgu birden fazla parça içeren dağıtılmış bir tablo ile ilgiliyse.
--   Bir tablo için kullanılmaz-değerli [uzak](../../sql-reference/table-functions/remote.md) işlev.
+-   Bir tablo için kullanılmaz-değerli [uzak](../../sql-reference/table-functions/remote.md) İşlev.
 
 Olası değerler:
 
@@ -79,7 +77,7 @@ Eğer `force_primary_key=1`, ClickHouse, sorgunun veri aralıklarını kısıtla
 
 ## format\_schema {#format-schema}
 
-Bu parametre, aşağıdaki gibi bir şema tanımı gerektiren biçimler kullanırken kullanışlıdır [Cap’n Proto](https://capnproto.org/) veya [Protobuf](https://developers.google.com/protocol-buffers/). Değer biçime bağlıdır.
+Bu parametre, aşağıdaki gibi bir şema tanımı gerektiren biçimler kullanırken kullanışlıdır [Cap'n Proto](https://capnproto.org/) veya [Protobuf](https://developers.google.com/protocol-buffers/). Değer biçime bağlıdır.
 
 ## fsync\_metadata {#fsync-metadata}
 
@@ -104,7 +102,7 @@ Varsayılan değer: 0.
 
 Eğer bir HTTP isteğine yanıt veri sıkıştırma düzeyini ayarlar [enable\_http\_compression = 1](#settings-enable_http_compression).
 
-Olası değerler: 1’den 9’a kadar olan sayılar.
+Olası değerler: 1'den 9'a kadar olan sayılar.
 
 Varsayılan değer: 3.
 
@@ -149,7 +147,7 @@ Varsayılan değer: 0.
 
 Metin biçimlerinden (CSV, TSV, vb.) okurken kabul edilebilir hataların maksimum sayısını ayarlar.).
 
-Varsayılan değer 0’dır.
+Varsayılan değer 0'dır.
 
 Her zaman ile eşleştirmek `input_format_allow_errors_ratio`.
 
@@ -162,7 +160,7 @@ Eğer her ikisi de `input_format_allow_errors_num` ve `input_format_allow_errors
 Metin biçimlerinden (CSV, TSV, vb.) okurken izin verilen maksimum hata yüzdesini ayarlar.).
 Hataların yüzdesi 0 ile 1 arasında kayan nokta sayısı olarak ayarlanır.
 
-Varsayılan değer 0’dır.
+Varsayılan değer 0'dır.
 
 Her zaman ile eşleştirmek `input_format_allow_errors_num`.
 
@@ -279,7 +277,7 @@ Varsayılan değer: 1.
 
 ## ınput\_format\_tsv\_empty\_as\_default {#settings-input-format-tsv-empty-as-default}
 
-Etkinleştirildiğinde, TSV’DEKİ boş giriş alanlarını varsayılan değerlerle değiştirin. Karmaşık varsayılan ifadeler için `input_format_defaults_for_omitted_fields` de etkin olmalıdır.
+Etkinleştirildiğinde, TSV'DEKİ boş giriş alanlarını varsayılan değerlerle değiştirin. Karmaşık varsayılan ifadeler için `input_format_defaults_for_omitted_fields` de etkin olmalıdır.
 
 Varsayılan olarak devre dışı.
 
@@ -324,7 +322,7 @@ Varsayılan değer: 0.
 
 Ayrıca bakınız:
 
--   [İç içe yapıların kullanımı](../../interfaces/formats.md#jsoneachrow-nested) ile… `JSONEachRow` biçimli.
+-   [İç içe yapıların kullanımı](../../interfaces/formats.md#jsoneachrow-nested) ile... `JSONEachRow` biçimli.
 
 ## ınput\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
 
@@ -369,11 +367,11 @@ Ayrıca bakınız:
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-Ayarlar varsayılan strictness için [Maddeleri KATILIN](../../sql-reference/statements/select.md#select-join).
+Ayarlar varsayılan strictness için [Maddeleri KATILIN ](../../sql-reference/statements/select/join.md#select-join).
 
 Olası değerler:
 
--   `ALL` — If the right table has several matching rows, ClickHouse creates a [Kartezyen ürün](https://en.wikipedia.org/wiki/Cartesian_product) eşleşen satırlardan. Bu normaldir `JOIN` standart SQL’DEN davranış.
+-   `ALL` — If the right table has several matching rows, ClickHouse creates a [Kartezyen ürün](https://en.wikipedia.org/wiki/Cartesian_product) eşleşen satırlardan. Bu normaldir `JOIN` standart SQL'DEN davranış.
 -   `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` ve `ALL` aynı.
 -   `ASOF` — For joining sequences with an uncertain match.
 -   `Empty string` — If `ALL` veya `ANY` sorguda belirtilmezse, ClickHouse bir özel durum atar.
@@ -396,13 +394,13 @@ Varsayılan değer: 0.
 
 Ayrıca bakınız:
 
--   [Jo](../../sql-reference/statements/select.md#select-join)
+-   [Jo](../../sql-reference/statements/select/join.md#select-join)
 -   [Jo tablein table engine](../../engines/table-engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Türünü ayarlar [JOIN](../../sql-reference/statements/select.md) davranış. Tabloları birleştirirken boş hücreler görünebilir. ClickHouse bu ayara göre onları farklı şekilde doldurur.
+Türünü ayarlar [JOIN](../../sql-reference/statements/select/join.md) davranış. Tabloları birleştirirken boş hücreler görünebilir. ClickHouse bu ayara göre onları farklı şekilde doldurur.
 
 Olası değerler:
 
@@ -413,7 +411,7 @@ Varsayılan değer: 0.
 
 ## max\_block\_size {#setting-max_block_size}
 
-Clickhouse’da, veriler bloklarla (sütun parçaları kümeleri) işlenir. Tek bir blok için dahili işlem döngüleri yeterince verimlidir, ancak her blokta gözle görülür harcamalar vardır. Bu `max_block_size` ayar, blokun boyutunun (satır sayımında) tablolardan yükleneceği bir öneridir. Blok boyutu çok küçük olmamalı, böylece her bloktaki harcamalar hala fark edilebilir, ancak çok büyük olmamalı, böylece ilk blok hızla işlendikten sonra tamamlanan limitli sorgu çok büyük olmamalıdır. Amaç, birden çok iş parçacığında çok sayıda sütun ayıklarken çok fazla bellek tüketmekten kaçınmak ve en azından bazı önbellek konumlarını korumaktır.
+Clickhouse'da, veriler bloklarla (sütun parçaları kümeleri) işlenir. Tek bir blok için dahili işlem döngüleri yeterince verimlidir, ancak her blokta gözle görülür harcamalar vardır. Bu `max_block_size` ayar, blokun boyutunun (satır sayımında) tablolardan yükleneceği bir öneridir. Blok boyutu çok küçük olmamalı, böylece her bloktaki harcamalar hala fark edilebilir, ancak çok büyük olmamalı, böylece ilk blok hızla işlendikten sonra tamamlanan limitli sorgu çok büyük olmamalıdır. Amaç, birden çok iş parçacığında çok sayıda sütun ayıklarken çok fazla bellek tüketmekten kaçınmak ve en azından bazı önbellek konumlarını korumaktır.
 
 Varsayılan değer: 65,536.
 
@@ -516,7 +514,7 @@ Varsayılan değer: 0.
 
 Sorgu günlüğü ayarlama.
 
-Bu kurulum ile Clickhouse’a gönderilen sorgular, [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu yapılandırma parametresi.
+Bu kurulum ile Clickhouse'a gönderilen sorgular, [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu yapılandırma parametresi.
 
 Örnek:
 
@@ -564,7 +562,29 @@ Veri SELECT sonra oluşturulan aynı blokları kullanarak eklendiğinden, INSERT
 
 Varsayılan değer: 1.048,576.
 
-Varsayılan biraz daha fazla `max_block_size`. Bunun nedeni, bazı tablo motorlarının (`*MergeTree`) oldukça büyük bir varlık olan eklenen her blok için diskte bir veri parçası oluşturun. Benzer bir şekilde, `*MergeTree` tablolar ekleme sırasında verileri sıralar ve yeterince büyük bir blok boyutu RAM’de daha fazla veriyi sıralamaya izin verir.
+Varsayılan biraz daha fazla `max_block_size`. Bunun nedeni, bazı tablo motorlarının (`*MergeTree`) oldukça büyük bir varlık olan eklenen her blok için diskte bir veri parçası oluşturun. Benzer bir şekilde, `*MergeTree` tablolar ekleme sırasında verileri sıralar ve yeterince büyük bir blok boyutu RAM'de daha fazla veriyi sıralamaya izin verir.
+
+## min\_insert\_block\_size\_rows {#min-insert-block-size-rows}
+
+Bir tabloya eklenebilen blok içindeki minimum satır sayısını ayarlar. `INSERT` sorgu. Daha küçük boyutlu bloklar daha büyük olanlara ezilir.
+
+Olası değerler:
+
+-   Pozitif tamsayı.
+-   0 — Squashing disabled.
+
+Varsayılan değer: 1048576.
+
+## min\_insert\_block\_size\_bytes {#min-insert-block-size-bytes}
+
+Bir tabloya eklenebilen blok içindeki minimum bayt sayısını ayarlar. `INSERT` sorgu. Daha küçük boyutlu bloklar daha büyük olanlara ezilir.
+
+Olası değerler:
+
+-   Pozitif tamsayı.
+-   0 — Squashing disabled.
+
+Varsayılan değer: 268435456.
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -587,7 +607,7 @@ Varsayılan değer: fiziksel CPU çekirdeği sayısı.
 
 Bir kerede bir sunucuda normal olarak birden az SELECT sorgusu çalıştırılırsa, bu parametreyi gerçek işlemci çekirdeği sayısından biraz daha küçük bir değere ayarlayın.
 
-Bir sınır nedeniyle hızlı bir şekilde tamamlanan sorgular için, daha düşük bir ‘max\_threads’. Örneğin, gerekli sayıda giriş her blokta ve max\_threads = 8’de bulunuyorsa, sadece bir tane okumak için yeterli olsa da, 8 blok alınır.
+Bir sınır nedeniyle hızlı bir şekilde tamamlanan sorgular için, daha düşük bir ‘max\_threads’. Örneğin, gerekli sayıda giriş her blokta ve max\_threads = 8'de bulunuyorsa, sadece bir tane okumak için yeterli olsa da, 8 blok alınır.
 
 Daha küçük `max_threads` değer, daha az bellek tüketilir.
 
@@ -598,7 +618,7 @@ Daha küçük `max_threads` değer, daha az bellek tüketilir.
 Olası değerler:
 
 -   0 (or 1) — `INSERT SELECT` paralel infaz yok.
--   Pozitif tamsayı. 1’den büyük.
+-   Pozitif tamsayı. 1'den büyük.
 
 Varsayılan değer: 0.
 
@@ -621,13 +641,13 @@ Bir örneğe bakalım. Varsaymak ‘index\_granularity’ tablo oluşturma sıra
 
 Bir uint32 tipi sütun yazıyoruz (değer başına 4 bayt). 8192 satır yazarken, toplam 32 KB veri olacaktır. Min\_compress\_block\_size = 65.536 olduğundan, her iki işaret için sıkıştırılmış bir blok oluşturulacaktır.
 
-Dize türüne sahip bir URL sütunu yazıyoruz (değer başına ortalama 60 bayt boyutu). 8192 satır yazarken, ortalama 500 KB veri biraz daha az olacaktır. Bu 65,536’dan fazla olduğu için, her işaret için sıkıştırılmış bir blok oluşturulacaktır. Bu durumda, diskteki verileri tek bir işaret aralığında okurken, ekstra veriler sıkıştırılmaz.
+Dize türüne sahip bir URL sütunu yazıyoruz (değer başına ortalama 60 bayt boyutu). 8192 satır yazarken, ortalama 500 KB veri biraz daha az olacaktır. Bu 65,536'dan fazla olduğu için, her işaret için sıkıştırılmış bir blok oluşturulacaktır. Bu durumda, diskteki verileri tek bir işaret aralığında okurken, ekstra veriler sıkıştırılmaz.
 
 Bu ayarı değiştirmek için genellikle herhangi bir neden yoktur.
 
 ## max\_query\_size {#settings-max_query_size}
 
-SQL ayrıştırıcısı ile ayrıştırmak için RAM’e alınabilecek bir sorgunun en büyük kısmı.
+SQL ayrıştırıcısı ile ayrıştırmak için RAM'e alınabilecek bir sorgunun en büyük kısmı.
 INSERT sorgusu, bu kısıtlamaya dahil olmayan ayrı bir akış ayrıştırıcısı (o(1) RAM tüketir) tarafından işlenen INSERT için veri de içerir.
 
 Varsayılan değer: 256 KiB.
@@ -700,7 +720,7 @@ En azından biraz büyük bir veri hacmi (bir milyon satır veya daha fazla) oku
 HTTP arayüzünü kullanırken, ‘query\_id’ parametre geçirilebilir. Bu, sorgu tanımlayıcısı olarak hizmet veren herhangi bir dizedir.
 Aynı kullanıcıdan aynı sorgu varsa ‘query\_id’ zaten şu anda var, davranış bağlıdır ‘replace\_running\_query’ parametre.
 
-`0` (default) – Throw an exception (don’t allow the query to run if a query with the same ‘query\_id’ zaten çalışan) var.
+`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ zaten çalışan) var.
 
 `1` – Cancel the old query and start running the new one.
 
@@ -710,7 +730,7 @@ Aynı kullanıcıdan aynı sorgu varsa ‘query\_id’ zaten şu anda var, davra
 
 Bir zaman aşımı durumunda akışlı tablolar için çalışır veya bir iş parçacığı oluşturduğunda [max\_ınsert\_block\_size](#settings-max_insert_block_size) satırlar.
 
-Varsayılan değer 7500’dür.
+Varsayılan değer 7500'dür.
 
 Küçük değer, daha sık veri tablosuna temizlendi. Değeri çok düşük ayarlamak, düşük performansa yol açar.
 
@@ -725,7 +745,7 @@ ClickHouse kopyaları seçme aşağıdaki algoritmaları destekler:
 -   [Sıralı](#load_balancing-in_order)
 -   [İlk veya rastgele](#load_balancing-first_or_random)
 
-### Rastgele (varsayılan Olarak) {#load_balancing-random}
+### Rastgele (varsayılan olarak) {#load_balancing-random}
 
 ``` sql
 load_balancing = random
@@ -740,7 +760,7 @@ Dezavantajları: sunucu yakınlık hesaba değil; kopyaları farklı veri varsa,
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 Örneğin, example01-01-1 ve example01-01-2.yandex.ru bir pozisyonda farklıdır, örneği01-01-1 ve örneği01-02-2 iki yerde farklılık gösterir.
 Bu yöntem ilkel görünebilir, ancak ağ topolojisi hakkında harici veri gerektirmez ve IPv6 adreslerimiz için karmaşık olan IP adreslerini karşılaştırmaz.
@@ -757,7 +777,7 @@ load_balancing = in_order
 Yapılandırmada belirtilen hataları aynı sayıda yinelemeler aynı sırayla erişilir.
 Bu yöntem, tam olarak hangi kopyanın tercih edildiğini bildiğinizde uygundur.
 
-### İlk Veya Rastgele {#load_balancing-first_or_random}
+### İlk veya rastgele {#load_balancing-first_or_random}
 
 ``` sql
 load_balancing = first_or_random
@@ -811,7 +831,7 @@ For testing, the value can be set to 0: compilation runs synchronously and the q
 Değer 1 veya daha fazla ise, derleme zaman uyumsuz olarak ayrı bir iş parçacığında oluşur. Sonuç, şu anda çalışmakta olan sorgular da dahil olmak üzere hazır olduğu anda kullanılacaktır.
 
 Derlenmiş kod, sorguda kullanılan toplama işlevlerinin her farklı birleşimi ve GROUP BY yan tümcesindeki anahtarların türü için gereklidir.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don’t use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -827,11 +847,11 @@ CSV giriş biçimi sağlar veya unquoted ayrıştırma devre dışı bırakır i
 
 ## output\_format\_csv\_crlf\_end\_of\_line {#settings-output-format-csv-crlf-end-of-line}
 
-Unix stili (LF) yerine CSV’DE DOS/Windows stili çizgi ayırıcı (CRLF) kullanın.
+Unix stili (LF) yerine CSV'DE DOS/Windows stili çizgi ayırıcı (CRLF) kullanın.
 
 ## output\_format\_tsv\_crlf\_end\_of\_line {#settings-output-format-tsv-crlf-end-of-line}
 
-Unıx stili (LF) yerine TSV’DE DOC/Windows stili çizgi ayırıcı (CRLF) kullanın.
+Unıx stili (LF) yerine TSV'DE DOC/Windows stili çizgi ayırıcı (CRLF) kullanın.
 
 ## insert\_quorum {#settings-insert_quorum}
 
@@ -902,7 +922,7 @@ Olası değerler:
 
 Varsayılan değer: 1.
 
-Varsayılan olarak, çoğaltılmış tablolara eklenen bloklar `INSERT` deyim tekilleştirilir (bkz. \[Data Replication\] (../engines/table\_engines/mergetree\_family/replication.md).
+Varsayılan olarak, çoğaltılmış tablolara eklenen bloklar `INSERT` açıklama tekilleştirilmiştir (bkz [Veri Çoğaltma](../../engines/table-engines/mergetree-family/replication.md)).
 
 ## deduplicate\_blocks\_ın\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -919,7 +939,7 @@ Kullanma
 
 Varsayılan olarak, tekilleştirme materialized görünümler için gerçekleştirilmez, ancak kaynak tabloda, Yukarı akış yapılır.
 Eklenen bir blok, kaynak tablodaki tekilleştirme nedeniyle atlanırsa, ekli materialized görünümlerine ekleme olmaz. Bu davranış, eklenen blokların materialized görünüm toplamasından sonra aynı olduğu, ancak kaynak tabloya farklı eklerden türetildiği durumlar için, yüksek oranda toplanmış verilerin materialized görünümlere eklenmesini sağlamak için vardır.
-Aynı zamanda, bu davranış “breaks” `INSERT` idempotency. Eğer bir `INSERT` ana tabloya başarılı oldu ve `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` bu davranışı değiştirmeye izin verir. Yeniden denemede, somutlaştırılmış bir görünüm tekrar ekleme işlemini alacak ve tekilleştirme kontrolünü kendi başına gerçekleştirecektir,
+Aynı zamanda, bu davranış “breaks” `INSERT` idempotency. Eğer bir `INSERT` ana tabloya başarılı oldu ve `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` bu davranışı değiştirmeye izin verir. Yeniden denemede, somutlaştırılmış bir görünüm tekrar ekleme işlemini alacak ve tekilleştirme kontrolünü kendi başına gerçekleştirecektir,
 kaynak tablo için onay sonucunu yoksayar ve ilk hata nedeniyle kaybedilen satırları ekler.
 
 ## max\_network\_bytes {#settings-max-network-bytes}
@@ -968,7 +988,7 @@ Varsayılan değer: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Aşağıdakilerden hang theisinin `uniq*` işlevleri gerçekleştirmek için kullanılmalıdır [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) yapma.
+Aşağıdakilerden hang theisinin `uniq*` işlevleri gerçekleştirmek için kullanılmalıdır [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) yapı.
 
 Olası değerler:
 
@@ -994,7 +1014,7 @@ Tüm kopyaları kullanılamıyorsa, Shard kullanılamaz olarak kabul edilir. Aş
 
     Çoğaltmanın ana bilgisayar adı DNS aracılığıyla çözümlenemezse, aşağıdaki durumları gösterebilir:
 
-    -   Çoğaltma ana bilgisayar DNS kaydı yok. Dinamik DNS’YE sahip sistemlerde oluşabilir, örneğin, [Kubernetes](https://kubernetes.io), burada düğümler kesinti sırasında çözülmez olabilir ve bu bir hata değildir.
+    -   Çoğaltma ana bilgisayar DNS kaydı yok. Dinamik DNS'YE sahip sistemlerde oluşabilir, örneğin, [Kubernetes](https://kubernetes.io), burada düğümler kesinti sırasında çözülmez olabilir ve bu bir hata değildir.
 
     -   Yapılandırma hatası. ClickHouse yapılandırma dosyası yanlış bir ana bilgisayar adı içerir.
 
@@ -1231,5 +1251,15 @@ Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/
 Type: URL
 
 Varsayılan değer: boş
+
+## background\_pool\_size {#background_pool_size}
+
+Tablo altyapılarında arka plan işlemlerini gerçekleştiren iş parçacıklarının sayısını ayarlar (örneğin, [MergeTree motoru](../../engines/table-engines/mergetree-family/index.md) Tablolar). Bu ayar ClickHouse sunucu başlangıcında uygulanır ve bir kullanıcı oturumunda değiştirilemez. Bu ayarı ayarlayarak, CPU ve disk yükünü yönetirsiniz. Daha küçük havuz boyutu daha az CPU ve disk kaynağı kullanır, ancak arka plan işlemleri daha yavaş ilerler ve bu da sorgu performansını etkileyebilir.
+
+Olası değerler:
+
+-   Herhangi bir pozitif tamsayı.
+
+Varsayılan değer: 16.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

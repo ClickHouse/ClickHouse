@@ -1,13 +1,16 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: "Configuraci\xF3n del usuario"
 ---
 
-# Configuración Del Usuario {#user-settings}
+# Configuración del usuario {#user-settings}
 
 El `users` sección de la `user.xml` el archivo de configuración contiene la configuración del usuario.
+
+!!! note "Información"
+    ClickHouse también es compatible [Flujo de trabajo controlado por SQL](../access-rights.md#access-control) para la gestión de usuarios. Recomendamos usarlo.
 
 Estructura del `users` apartado:
 
@@ -18,6 +21,8 @@ Estructura del `users` apartado:
         <password></password>
         <!-- Or -->
         <password_sha256_hex></password_sha256_hex>
+
+        <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -69,6 +74,17 @@ La contraseña se puede especificar en texto sin formato o en SHA256 (formato he
           PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
     La primera línea del resultado es la contraseña. La segunda línea es el hash SHA1 doble correspondiente.
+
+### access\_management {#access_management-user-setting}
+
+Esta configuración habilita deshabilita el uso de [control de acceso y gestión de cuentas](../access-rights.md#access-control) para el usuario.
+
+Valores posibles:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Valor predeterminado: 0.
 
 ### user\_name/redes {#user-namenetworks}
 

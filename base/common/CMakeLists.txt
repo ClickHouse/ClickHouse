@@ -77,6 +77,7 @@ target_link_libraries (common
         Poco::Net
         Poco::Net::SSL
         Poco::Util
+        Poco::Foundation
         replxx
 
     PRIVATE

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_priority: 39
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 41
 toc_title: "\u063A\u06CC\u0631\u0647"
 ---
 
-# متفرقه نمایش داده شد {#miscellaneous-queries}
+# نمایش داده شد دیگر {#miscellaneous-queries}
 
 ## ATTACH {#attach}
 
@@ -13,7 +13,7 @@ toc_title: "\u063A\u06CC\u0631\u0647"
 
 -   به جای کلمه `CREATE` با استفاده از این کلمه `ATTACH`.
 -   پرس و جو می کند داده ها بر روی دیسک ایجاد کنید, اما فرض می شود که داده ها در حال حاضر در مکان های مناسب, و فقط می افزاید: اطلاعات در مورد جدول به سرور.
-    پس از اجرای یک ضمیمه پرس و جو در سرور خواهد شد در مورد وجود جدول.
+    پس از اجرای پرس و جو ضمیمه, سرور در مورد وجود جدول می دانم.
 
 اگر جدول قبلا جدا شد (`DETACH`), به این معنی که ساختار خود شناخته شده است, شما می توانید مختصر بدون تعریف ساختار استفاده.
 
@@ -86,7 +86,7 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 این داده ها و یا ابرداده جدول را حذف کنید. در راه اندازی سرور بعدی, سرور خواهد ابرداده به عنوان خوانده شده و پیدا کردن در مورد جدول دوباره.
-به طور مشابه “detached” جدول را می توان دوباره متصل با استفاده از `ATTACH` پرس و جو (به غیر از جداول سیستم که لازم نیست metadata ذخیره شده برای آنها).
+به طور مشابه “detached” جدول را می توان دوباره متصل با استفاده از `ATTACH` پرس و جو (به غیر از جداول سیستم, که ابرداده ذخیره شده برای ندارد).
 
 وجود ندارد `DETACH DATABASE` پرس و جو.
 
@@ -113,7 +113,65 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 دلس فرهنگ لغت.
 اگر `IF EXISTS` مشخص شده است, این خطا را نمی گرداند اگر جدول وجود ندارد و یا پایگاه داده وجود ندارد.
 
-## EXISTS {#exists}
+## DROP USER {#drop-user-statement}
+
+حذف یک کاربر.
+
+### نحو {#drop-user-syntax}
+
+``` sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROLE {#drop-role-statement}
+
+نقش را حذف می کند.
+
+نقش حذف شده از تمام نهادهایی که اعطا شد لغو می شود.
+
+### نحو {#drop-role-syntax}
+
+``` sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROW POLICY {#drop-row-policy-statement}
+
+حذف یک سیاست ردیف.
+
+سیاست ردیف حذف شده است از تمام اشخاص لغو جایی که اختصاص داده شد.
+
+### نحو {#drop-row-policy-syntax}
+
+``` sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP QUOTA {#drop-quota-statement}
+
+حذف سهمیه.
+
+سهمیه حذف شده است از تمام اشخاص لغو جایی که اختصاص داده شد.
+
+### نحو {#drop-quota-syntax}
+
+``` sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
+
+حذف سهمیه.
+
+سهمیه حذف شده است از تمام اشخاص لغو جایی که اختصاص داده شد.
+
+### نحو {#drop-settings-profile-syntax}
+
+``` sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## EXISTS {#exists-statement}
 
 ``` sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -121,7 +179,7 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT 
 
 بازگرداندن یک `UInt8`- نوع ستون, که شامل ارزش واحد `0` اگر جدول یا پایگاه داده وجود ندارد, یا `1` اگر جدول در پایگاه داده مشخص شده وجود دارد.
 
-## KILL QUERY {#kill-query}
+## KILL QUERY {#kill-query-statement}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -152,7 +210,7 @@ KILL QUERY WHERE user='username' SYNC
 
 1.  ‘finished’ – The query was terminated successfully.
 2.  ‘waiting’ – Waiting for the query to end after sending it a signal to terminate.
-3.  The other values ​​explain why the query can’t be stopped.
+3.  The other values ​​explain why the query can't be stopped.
 
 پرسوجوی تست (`TEST`) فقط چک حقوق کاربر و نمایش یک لیست از نمایش داده شد برای متوقف کردن.
 
@@ -167,7 +225,7 @@ KILL MUTATION [ON CLUSTER cluster]
 
 تلاش برای لغو و حذف [جهشها](alter.md#alter-mutations) که در حال حاضر اجرای. جهش به لغو از انتخاب [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) جدول با استفاده از فیلتر مشخص شده توسط `WHERE` بند از `KILL` پرس و جو.
 
-آزمون پرس و جو (`TEST`) فقط چک حقوق کاربر و نمایش یک لیست از نمایش داده شد برای متوقف کردن.
+پرسوجوی تست (`TEST`) فقط چک حقوق کاربر و نمایش یک لیست از نمایش داده شد برای متوقف کردن.
 
 مثالها:
 
@@ -193,7 +251,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 این `OPTMIZE` پرس و جو نیز برای پشتیبانی [ماده بینی](../../engines/table-engines/special/materializedview.md) و [بافر](../../engines/table-engines/special/buffer.md) موتورها. دیگر موتورهای جدول پشتیبانی نمی شوند.
 
-زمانی که `OPTIMIZE` با استفاده از [تکرار غذای اصلی](../../engines/table-engines/mergetree-family/replication.md) خانواده از موتورهای جدول, تاتر ایجاد یک کار برای ادغام و منتظر اعدام در تمام گره (در صورتی که `replication_alter_partitions_sync` تنظیم فعال است).
+چه زمانی `OPTIMIZE` با استفاده از [تکرار غذای اصلی](../../engines/table-engines/mergetree-family/replication.md) خانواده از موتورهای جدول, تاتر ایجاد یک کار برای ادغام و منتظر اعدام در تمام گره (در صورتی که `replication_alter_partitions_sync` تنظیم فعال است).
 
 -   اگر `OPTIMIZE` یک ادغام به هر دلیلی انجام نمی, این کار مشتری اطلاع نیست. برای فعال کردن اعلان ها از [ا\_فزون\_ف\_کوپ](../../operations/settings/settings.md#setting-optimize_throw_if_noop) تنظیمات.
 -   اگر شما یک مشخص `PARTITION` فقط پارتیشن مشخص شده بهینه شده است. [نحوه تنظیم بیان پارتیشن](alter.md#alter-how-to-specify-part-expr).
@@ -219,7 +277,7 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 SET param = value
 ```
 
-انتساب `value` به `param` [تنظیم](../../operations/settings/index.md) برای جلسه فعلی. شما نمی توانید تغییر دهید [تنظیمات سرور](../../operations/server-configuration-parameters/index.md) از این طرف
+انتساب `value` به `param` [تنظیم](../../operations/settings/index.md) برای جلسه فعلی. شما نمی توانید تغییر دهید [تنظیمات کارگزار](../../operations/server-configuration-parameters/index.md) از این طرف
 
 شما همچنین می توانید تمام مقادیر را از مشخصات تنظیمات مشخص شده در یک پرس و جو واحد تنظیم کنید.
 
@@ -229,7 +287,55 @@ SET profile = 'profile-name-from-the-settings-file'
 
 برای کسب اطلاعات بیشتر, دیدن [تنظیمات](../../operations/settings/settings.md).
 
-## TRUNCATE {#truncate}
+## SET ROLE {#set-role-statement}
+
+فعال نقش برای کاربر فعلی.
+
+### نحو {#set-role-syntax}
+
+``` sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+## SET DEFAULT ROLE {#set-default-role-statement}
+
+مجموعه نقش به طور پیش فرض به یک کاربر.
+
+نقش پیش فرض به طور خودکار در ورود کاربر فعال می شود. شما می توانید به عنوان پیش فرض تنها نقش قبلا اعطا تنظیم شده است. اگر نقش به یک کاربر اعطا نمی, خانه عروسکی می اندازد یک استثنا.
+
+### نحو {#set-default-role-syntax}
+
+``` sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+### مثالها {#set-default-role-examples}
+
+تنظیم نقش های پیش فرض چندگانه به یک کاربر:
+
+``` sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+تنظیم تمام نقش های اعطا شده به عنوان پیش فرض به یک کاربر:
+
+``` sql
+SET DEFAULT ROLE ALL TO user
+```
+
+خالی کردن نقش پیشفرض از یک کاربر:
+
+``` sql
+SET DEFAULT ROLE NONE TO user
+```
+
+مجموعه ای از تمام نقش های اعطا شده به عنوان پیش فرض به استثنای برخی از:
+
+``` sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```
+
+## TRUNCATE {#truncate-statement}
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
@@ -237,7 +343,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 حذف تمام داده ها را از یک جدول. هنگامی که بند `IF EXISTS` حذف شده است, پرس و جو یک خطا می گرداند اگر جدول وجود ندارد.
 
-این `TRUNCATE` پرسوجو برای پشتیبانی نمیشود [مشاهده](../../engines/table-engines/special/view.md), [پرونده](../../engines/table-engines/special/file.md), [URL](../../engines/table-engines/special/url.md) و [خالی](../../engines/table-engines/special/null.md) موتورهای جدول.
+این `TRUNCATE` پرسوجو برای پشتیبانی نمیشود [نما](../../engines/table-engines/special/view.md), [پرونده](../../engines/table-engines/special/file.md), [URL](../../engines/table-engines/special/url.md) و [خالی](../../engines/table-engines/special/null.md) موتورهای جدول.
 
 ## USE {#use}
 

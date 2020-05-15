@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: "D\u0131\u015F S\xF6zl\xFCklerin kaynaklar\u0131"
 ---
 
-# Dış Sözlüklerin Kaynakları {#dicts-external-dicts-dict-sources}
+# Dış Sözlüklerin kaynakları {#dicts-external-dicts-dict-sources}
 
 Harici bir sözlük birçok farklı kaynaktan bağlanabilir.
 
@@ -36,6 +36,28 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 ```
 
 Kaynak yapılandırılmış `source` bölme.
+
+Kaynak türleri için [Yerel dosya](#dicts-external_dicts_dict_sources-local_file), [Yürütülebilir dosya](#dicts-external_dicts_dict_sources-executable), [HTTP (s)](#dicts-external_dicts_dict_sources-http), [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+isteğe bağlı ayarlar mevcuttur:
+
+``` xml
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+  <settings>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+  </settings>
+</source>
+```
+
+veya
+
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 0)
+```
 
 Kaynak türleri (`source_type`):
 
@@ -75,7 +97,7 @@ Ayar alanları:
 
 ## Yürütülebilir Dosya {#dicts-external_dicts_dict_sources-executable}
 
-Yürütülebilir dosyalarla çalışmak Aşağıdakilere bağlıdır [sözlük bellekte nasıl saklanır](external-dicts-dict-layout.md). Sözlük kullanılarak saklan theıyorsa `cache` ve `complex_key_cache` ClickHouse, yürütülebilir dosyanın STDIN’SİNE bir istek göndererek gerekli anahtarları ister. Aksi takdirde, clickhouse yürütülebilir dosyayı başlatır ve çıktısını sözlük verileri olarak değerlendirir.
+Yürütülebilir dosyalarla çalışmak Aşağıdakilere bağlıdır [sözlük bellekte nasıl saklanır](external-dicts-dict-layout.md). Sözlük kullanılarak saklan theıyorsa `cache` ve `complex_key_cache` ClickHouse, yürütülebilir dosyanın STDIN'SİNE bir istek göndererek gerekli anahtarları ister. Aksi takdirde, clickhouse yürütülebilir dosyayı başlatır ve çıktısını sözlük verileri olarak değerlendirir.
 
 Ayarlar örneği:
 
@@ -135,7 +157,7 @@ SOURCE(HTTP(
 ))
 ```
 
-Clickhouse’un bir HTTPS kaynağına erişebilmesi için şunları yapmanız gerekir [openssl’yi yapılandırma](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) sunucu yapılandırmasında.
+Clickhouse'un bir HTTPS kaynağına erişebilmesi için şunları yapmanız gerekir [openssl'yi yapılandırma](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl) sunucu yapılandırmasında.
 
 Ayar alanları:
 
@@ -186,16 +208,16 @@ Ayar alanları:
 
 ClickHouse, ODBC sürücüsünden alıntı sembolleri alır ve sorgulardaki tüm ayarları sürücüye aktarır, bu nedenle tablo adını veritabanındaki tablo adı durumuna göre ayarlamak gerekir.
 
-Oracle kullanırken kodlamalarla ilgili bir sorununuz varsa, ilgili [FAQ](../../../faq/general.md#oracle-odbc-encodings) makale.
+Oracle kullanırken kodlamalarla ilgili bir sorununuz varsa, ilgili [FAQ](../../../faq/general.md#oracle-odbc-encodings) Makale.
 
-### ODBC Sözlük işlevselliği Bilinen güvenlik açığı {#known-vulnerability-of-the-odbc-dictionary-functionality}
+### ODBC Sözlük işlevselliği bilinen güvenlik açığı {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 !!! attention "Dikkat"
     ODBC sürücüsü bağlantı parametresi aracılığıyla veritabanına bağlanırken `Servername` yerine. Bu durumda değerler `USERNAME` ve `PASSWORD` itibaren `odbc.ini` uzak sunucuya gönderilir ve tehlikeye girebilir.
 
 **Güvensiz kullanım örneği**
 
-PostgreSQL için unixodbc’yi yapılandıralım. İçeriği `/etc/odbc.ini`:
+PostgreSQL için unixodbc'yi yapılandıralım. İçeriği `/etc/odbc.ini`:
 
 ``` text
 [gregtest]
@@ -216,7 +238,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC sürücüsü değerleri gönderir `USERNAME` ve `PASSWORD` itibaren `odbc.ini` -e doğru `some-server.com`.
 
-### PostgreSQL Bağlanma Örneği {#example-of-connecting-postgresql}
+### PostgreSQL bağlanma örneği {#example-of-connecting-postgresql}
 
 UB .untu OS.
 
@@ -247,7 +269,7 @@ Yapılandırma `/etc/odbc.ini` (veya `~/.odbc.ini`):
     ConnSettings        =
 ```
 
-Clickhouse’da sözlük yapılandırması:
+Clickhouse'da sözlük yapılandırması:
 
 ``` xml
 <yandex>
@@ -342,7 +364,7 @@ Sürücüyü yapılandırma:
     Port            = 1433
 ```
 
-Clickhouse’da sözlüğü yapılandırma:
+Clickhouse'da sözlüğü yapılandırma:
 
 ``` xml
 <yandex>

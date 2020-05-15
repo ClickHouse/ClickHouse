@@ -1,27 +1,27 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "Stockage des dictionnaires en m\xE9moire"
 ---
 
-# Stockage Des Dictionnaires En Mémoire {#dicts-external-dicts-dict-layout}
+# Stockage des dictionnaires en mémoire {#dicts-external-dicts-dict-layout}
 
 Il existe une variété de façons de stocker les dictionnaires en mémoire.
 
 Nous vous recommandons [plat](#flat), [haché](#dicts-external_dicts_dict_layout-hashed) et [complex\_key\_hashed](#complex-key-hashed). qui fournissent la vitesse de traitement optimale.
 
-La mise en cache n’est pas recommandée en raison de performances potentiellement médiocres et de difficultés à sélectionner les paramètres optimaux. En savoir plus dans la section “[cache](#cache)”.
+La mise en cache n'est pas recommandée en raison de performances potentiellement médiocres et de difficultés à sélectionner les paramètres optimaux. En savoir plus dans la section “[cache](#cache)”.
 
-Il existe plusieurs façons d’améliorer les performances du dictionnaire:
+Il existe plusieurs façons d'améliorer les performances du dictionnaire:
 
 -   Appelez la fonction pour travailler avec le dictionnaire après `GROUP BY`.
--   Marquer les attributs à extraire comme injectifs. Un attribut est appelé injectif si différentes valeurs d’attribut correspondent à différentes clés. Alors, quand `GROUP BY` utilise une fonction qui récupère une valeur d’attribut par la clé, cette fonction est automatiquement retirée de `GROUP BY`.
+-   Marquer les attributs à extraire comme injectifs. Un attribut est appelé injectif si différentes valeurs d'attribut correspondent à différentes clés. Alors, quand `GROUP BY` utilise une fonction qui récupère une valeur d'attribut par la clé, cette fonction est automatiquement retirée de `GROUP BY`.
 
-ClickHouse génère une exception pour les erreurs avec les dictionnaires. Des exemples d’erreurs:
+ClickHouse génère une exception pour les erreurs avec les dictionnaires. Des exemples d'erreurs:
 
--   Le dictionnaire accessible n’a pas pu être chargé.
--   Erreur de la requête d’une `cached` dictionnaire.
+-   Le dictionnaire accessible n'a pas pu être chargé.
+-   Erreur de la requête d'une `cached` dictionnaire.
 
 Vous pouvez afficher la liste des dictionnaires externes et leurs statuts dans le `system.dictionaries` table.
 
@@ -50,7 +50,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Façons De Stocker Des Dictionnaires En Mémoire {#ways-to-store-dictionaries-in-memory}
+## Façons de stocker des dictionnaires en mémoire {#ways-to-store-dictionaries-in-memory}
 
 -   [plat](#flat)
 -   [haché](#dicts-external_dicts_dict_layout-hashed)
@@ -65,11 +65,11 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 ### plat {#flat}
 
-Le dictionnaire est complètement stocké en mémoire sous la forme de tableaux plats. Combien de mémoire le dictionnaire utilise-t-il? Le montant est proportionnel à la taille de la plus grande clé (dans l’espace).
+Le dictionnaire est complètement stocké en mémoire sous la forme de tableaux plats. Combien de mémoire le dictionnaire utilise-t-il? Le montant est proportionnel à la taille de la plus grande clé (dans l'espace).
 
 La clé du dictionnaire a le `UInt64` type et la valeur est limitée à 500 000. Si une clé plus grande est découverte lors de la création du dictionnaire, ClickHouse lève une exception et ne crée pas le dictionnaire.
 
-Tous les types de sources sont pris en charge. Lors de la mise à jour, les données (à partir d’un fichier ou d’une table) sont lues dans leur intégralité.
+Tous les types de sources sont pris en charge. Lors de la mise à jour, les données (à partir d'un fichier ou d'une table) sont lues dans leur intégralité.
 
 Cette méthode fournit les meilleures performances parmi toutes les méthodes disponibles de stockage du dictionnaire.
 
@@ -89,9 +89,9 @@ LAYOUT(FLAT())
 
 ### haché {#dicts-external_dicts_dict_layout-hashed}
 
-Le dictionnaire est entièrement stockée en mémoire sous la forme d’une table de hachage. Le dictionnaire peut contenir n’importe quel nombre d’éléments avec tous les identificateurs Dans la pratique, le nombre de clés peut atteindre des dizaines de millions d’articles.
+Le dictionnaire est entièrement stockée en mémoire sous la forme d'une table de hachage. Le dictionnaire peut contenir n'importe quel nombre d'éléments avec tous les identificateurs Dans la pratique, le nombre de clés peut atteindre des dizaines de millions d'articles.
 
-Tous les types de sources sont pris en charge. Lors de la mise à jour, les données (à partir d’un fichier ou d’une table) sont lues dans leur intégralité.
+Tous les types de sources sont pris en charge. Lors de la mise à jour, les données (à partir d'un fichier ou d'une table) sont lues dans leur intégralité.
 
 Exemple de Configuration:
 
@@ -109,7 +109,7 @@ LAYOUT(HASHED())
 
 ### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
-Semblable à `hashed`, mais utilise moins de mémoire en faveur de plus D’utilisation du processeur.
+Semblable à `hashed`, mais utilise moins de mémoire en faveur de plus D'utilisation du processeur.
 
 Exemple de Configuration:
 
@@ -141,9 +141,9 @@ LAYOUT(COMPLEX_KEY_HASHED())
 
 ### range\_hashed {#range-hashed}
 
-Le dictionnaire est stocké en mémoire sous la forme d’une table de hachage avec un tableau ordonné de gammes et leurs valeurs correspondantes.
+Le dictionnaire est stocké en mémoire sous la forme d'une table de hachage avec un tableau ordonné de gammes et leurs valeurs correspondantes.
 
-Cette méthode de stockage fonctionne de la même manière que hachée et permet d’utiliser des plages de date / heure (Type numérique arbitraire) en plus de la clé.
+Cette méthode de stockage fonctionne de la même manière que hachée et permet d'utiliser des plages de date / heure (Type numérique arbitraire) en plus de la clé.
 
 Exemple: Le tableau contient des réductions pour chaque annonceur dans le format:
 
@@ -159,7 +159,7 @@ Exemple: Le tableau contient des réductions pour chaque annonceur dans le forma
 +---------|-------------|-------------|------+
 ```
 
-Pour utiliser un échantillon pour les plages de dates, définissez `range_min` et `range_max` éléments dans le [structure](external-dicts-dict-structure.md). Ces éléments doivent contenir des éléments `name` et`type` (si `type` n’est pas spécifié, le type par défaut sera utilisé-Date). `type` peut être n’importe quel type numérique (Date / DateTime / UInt64 / Int32 / autres).
+Pour utiliser un échantillon pour les plages de dates, définissez `range_min` et `range_max` éléments dans le [structure](external-dicts-dict-structure.md). Ces éléments doivent contenir des éléments `name` et`type` (si `type` n'est pas spécifié, le type par défaut sera utilisé-Date). `type` peut être n'importe quel type numérique (Date / DateTime / UInt64 / Int32 / autres).
 
 Exemple:
 
@@ -192,18 +192,18 @@ LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-Pour travailler avec ces dictionnaires, vous devez passer un argument supplémentaire à l’ `dictGetT` fonction, pour laquelle une plage est sélectionnée:
+Pour travailler avec ces dictionnaires, vous devez passer un argument supplémentaire à l' `dictGetT` fonction, pour laquelle une plage est sélectionnée:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', id, date)
 ```
 
-Cette fonction retourne la valeur pour l’ `id`s et la plage de dates qui inclut la date passée.
+Cette fonction retourne la valeur pour l' `id`s et la plage de dates qui inclut la date passée.
 
-Détails de l’algorithme:
+Détails de l'algorithme:
 
--   Si l’ `id` est introuvable ou une plage n’est pas trouvé pour l’ `id` il retourne la valeur par défaut pour le dictionnaire.
--   S’il y a des plages qui se chevauchent, vous pouvez en utiliser.
+-   Si l' `id` est introuvable ou une plage n'est pas trouvé pour l' `id` il retourne la valeur par défaut pour le dictionnaire.
+-   S'il y a des plages qui se chevauchent, vous pouvez en utiliser.
 -   Si le délimiteur est `NULL` ou une date non valide (telle que 1900-01-01 ou 2039-01-01), la plage est laissée ouverte. La gamme peut être ouverte des deux côtés.
 
 Exemple de Configuration:
@@ -258,10 +258,10 @@ RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 
 Le dictionnaire est stocké dans un cache qui a un nombre fixe de cellules. Ces cellules contiennent des éléments fréquemment utilisés.
 
-Lors de la recherche d’un dictionnaire, le cache est recherché en premier. Pour chaque bloc de données, toutes les clés qui ne sont pas trouvées dans le cache ou qui sont obsolètes sont demandées à la source en utilisant `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Les données reçues sont ensuite écrites dans le cache.
+Lors de la recherche d'un dictionnaire, le cache est recherché en premier. Pour chaque bloc de données, toutes les clés qui ne sont pas trouvées dans le cache ou qui sont obsolètes sont demandées à la source en utilisant `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Les données reçues sont ensuite écrites dans le cache.
 
-Pour les dictionnaires de cache, l’expiration [vie](external-dicts-dict-lifetime.md) des données dans le cache peuvent être définies. Si plus de temps que `lifetime` passé depuis le chargement des données dans une cellule, la valeur de la cellule n’est pas utilisée et elle est demandée à nouveau la prochaine fois qu’elle doit être utilisée.
-C’est la moins efficace de toutes les façons de stocker les dictionnaires. La vitesse du cache dépend fortement des paramètres corrects et que le scénario d’utilisation. Un dictionnaire de type de cache fonctionne bien uniquement lorsque les taux de réussite sont suffisamment élevés (recommandé 99% et plus). Vous pouvez afficher le taux de réussite moyen dans le `system.dictionaries` table.
+Pour les dictionnaires de cache, l'expiration [vie](external-dicts-dict-lifetime.md) des données dans le cache peuvent être définies. Si plus de temps que `lifetime` passé depuis le chargement des données dans une cellule, la valeur de la cellule n'est pas utilisée et elle est demandée à nouveau la prochaine fois qu'elle doit être utilisée.
+C'est la moins efficace de toutes les façons de stocker les dictionnaires. La vitesse du cache dépend fortement des paramètres corrects et que le scénario d'utilisation. Un dictionnaire de type de cache fonctionne bien uniquement lorsque les taux de réussite sont suffisamment élevés (recommandé 99% et plus). Vous pouvez afficher le taux de réussite moyen dans le `system.dictionaries` table.
 
 Pour améliorer les performances du cache, utilisez une sous-requête avec `LIMIT`, et appelez la fonction avec le dictionnaire en externe.
 
@@ -287,12 +287,12 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 Définissez une taille de cache suffisamment grande. Vous devez expérimenter pour sélectionner le nombre de cellules:
 
 1.  Définissez une valeur.
-2.  Exécutez les requêtes jusqu’à ce que le cache soit complètement plein.
+2.  Exécutez les requêtes jusqu'à ce que le cache soit complètement plein.
 3.  Évaluer la consommation de mémoire en utilisant le `system.dictionaries` table.
-4.  Augmentez ou diminuez le nombre de cellules jusqu’à ce que la consommation de mémoire requise soit atteinte.
+4.  Augmentez ou diminuez le nombre de cellules jusqu'à ce que la consommation de mémoire requise soit atteinte.
 
 !!! warning "Avertissement"
-    N’utilisez pas ClickHouse comme source, car le traitement des requêtes avec des lectures aléatoires est lent.
+    N'utilisez pas ClickHouse comme source, car le traitement des requêtes avec des lectures aléatoires est lent.
 
 ### complex\_key\_cache {#complex-key-cache}
 
@@ -300,13 +300,13 @@ Ce type de stockage est pour une utilisation avec composite [touches](external-d
 
 ### direct {#direct}
 
-Le dictionnaire n'est pas stocké en mémoire et interagit directement avec la source lors du traitement de la requête.
+Le dictionnaire n'est pas stocké dans la mémoire et va directement à la source, pendant le traitement d'une demande.
 
 La clé du dictionnaire a le `UInt64` type.
 
-Tous les types de [sources](external-dicts-dict-sources.md), sauf les fichiers locals, sont pris en charge.
+Tous les types de [source](external-dicts-dict-sources.md), sauf les fichiers locaux, sont pris en charge.
 
-L'exemple de configuration:
+Exemple de Configuration:
 
 ``` xml
 <layout>
@@ -381,7 +381,7 @@ CREATE DICTIONARY somedict (
 PRIMARY KEY prefix
 ```
 
-La clé ne doit avoir qu’un seul attribut de type chaîne contenant un préfixe IP autorisé. Les autres types ne sont pas encore pris en charge.
+La clé ne doit avoir qu'un seul attribut de type chaîne contenant un préfixe IP autorisé. Les autres types ne sont pas encore pris en charge.
 
 Pour les requêtes, vous devez utiliser les mêmes fonctions (`dictGetT` avec un n-uplet) comme pour les dictionnaires avec des clés composites:
 
@@ -395,8 +395,8 @@ La fonction prend soit `UInt32` pour IPv4, ou `FixedString(16)` pour IPv6:
 dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 
-Les autres types ne sont pas encore pris en charge. La fonction renvoie l’attribut du préfixe correspondant à cette adresse IP. S’il y a chevauchement des préfixes, le plus spécifique est retourné.
+Les autres types ne sont pas encore pris en charge. La fonction renvoie l'attribut du préfixe correspondant à cette adresse IP. S'il y a chevauchement des préfixes, le plus spécifique est retourné.
 
-Les données sont stockées dans une `trie`. Il doit complètement s’intégrer dans la RAM.
+Les données sont stockées dans une `trie`. Il doit complètement s'intégrer dans la RAM.
 
 [Article Original](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

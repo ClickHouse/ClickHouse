@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: "M\xE9todo de codificaci\xF3n de datos:"
 ---
 
-# Mergetree {#table_engines-mergetree}
+# Método de codificación de datos: {#table_engines-mergetree}
 
 El `MergeTree` motor y otros motores de esta familia (`*MergeTree`) son los motores de mesa ClickHouse más robustos.
 
@@ -32,7 +32,7 @@ Principales características:
 !!! info "INFO"
     El [Fusionar](../special/merge.md#merge) el motor no pertenece al `*MergeTree` familia.
 
-## Creación De Una Tabla {#table_engine-mergetree-creating-a-table}
+## Creación de una tabla {#table_engine-mergetree-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ Para obtener una descripción de los parámetros, consulte [Descripción de la c
 !!! note "Nota"
     `INDEX` es una característica experimental, ver [Índices de saltos de datos](#table_engine-mergetree-data_skipping-indexes).
 
-### Cláusulas De Consulta {#mergetree-query-clauses}
+### Cláusulas de consulta {#mergetree-query-clauses}
 
 -   `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. El `MergeTree` el motor no tiene parámetros.
 
@@ -94,7 +94,7 @@ Para obtener una descripción de los parámetros, consulte [Descripción de la c
     -   `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los datos en el disco de almacenamiento utilizando la interfaz de E / S directa (`O_DIRECT` opcion). Si `min_merge_bytes_to_use_direct_io = 0`, entonces la E/S directa está deshabilitada. Valor predeterminado: `10 * 1024 * 1024 * 1024` byte.
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
-    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
+    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don't turn it off.
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Uso de varios dispositivos de bloque para el almacenamiento de datos](#table_engine-mergetree-multiple-volumes).
 
@@ -106,7 +106,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 En el ejemplo, configuramos la partición por mes.
 
-También establecemos una expresión para el muestreo como un hash por el ID de usuario. Esto le permite pseudoaleatorizar los datos en la tabla para cada `CounterID` y `EventDate`. Si define un [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) cláusula al seleccionar los datos, ClickHouse devolverá una muestra de datos pseudoaleatoria uniforme para un subconjunto de usuarios.
+También establecemos una expresión para el muestreo como un hash por el ID de usuario. Esto le permite pseudoaleatorizar los datos en la tabla para cada `CounterID` y `EventDate`. Si define un [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) cláusula al seleccionar los datos, ClickHouse devolverá una muestra de datos pseudoaleatoria uniforme para un subconjunto de usuarios.
 
 El `index_granularity` se puede omitir porque 8192 es el valor predeterminado.
 
@@ -142,7 +142,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 El `MergeTree` engine se configura de la misma manera que en el ejemplo anterior para el método de configuración del motor principal.
 </details>
 
-## Almacenamiento De Datos {#mergetree-data-storage}
+## Almacenamiento de datos {#mergetree-data-storage}
 
 Una tabla consta de partes de datos ordenadas por clave principal.
 
@@ -154,7 +154,7 @@ Cada parte de datos se divide lógicamente en gránulos. Un gránulo es el conju
 
 El tamaño del gránulo es restringido por `index_granularity` y `index_granularity_bytes` configuración del motor de tabla. El número de filas en un gránulo se encuentra en el `[1, index_granularity]` rango, dependiendo del tamaño de las filas. El tamaño de un gránulo puede exceder `index_granularity_bytes` si el tamaño de una sola fila es mayor que el valor de la configuración. En este caso, el tamaño del gránulo es igual al tamaño de la fila.
 
-## Claves e índices Principales En Consultas {#primary-keys-and-indexes-in-queries}
+## Claves e índices principales en consultas {#primary-keys-and-indexes-in-queries}
 
 Tome el `(CounterID, Date)` clave primaria como ejemplo. En este caso, la clasificación y el índice se pueden ilustrar de la siguiente manera:
 
@@ -179,7 +179,7 @@ Los índices dispersos le permiten trabajar con una gran cantidad de filas de ta
 
 ClickHouse no requiere una clave principal única. Puede insertar varias filas con la misma clave principal.
 
-### Selección De La Clave Principal {#selecting-the-primary-key}
+### Selección de la clave principal {#selecting-the-primary-key}
 
 El número de columnas en la clave principal no está explícitamente limitado. Dependiendo de la estructura de datos, puede incluir más o menos columnas en la clave principal. Esto puede:
 
@@ -200,7 +200,7 @@ El número de columnas en la clave principal no está explícitamente limitado. 
 
 Una clave principal larga afectará negativamente al rendimiento de la inserción y al consumo de memoria, pero las columnas adicionales de la clave principal no afectarán al rendimiento de ClickHouse durante `SELECT` consulta.
 
-### Elegir Una Clave Principal Que Difiere De La Clave De ordenación {#choosing-a-primary-key-that-differs-from-the-sorting-key}
+### Elegir una clave principal que difiere de la clave de ordenación {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 Es posible especificar una clave principal (una expresión con valores que se escriben en el archivo de índice para cada marca) que es diferente de la clave de ordenación (una expresión para ordenar las filas en partes de datos). En este caso, la tupla de expresión de clave primaria debe ser un prefijo de la tupla de expresión de clave de ordenación.
 
@@ -211,7 +211,7 @@ En este caso, tiene sentido dejar solo unas pocas columnas en la clave principal
 
 [ALTER](../../../sql-reference/statements/alter.md) de la clave de ordenación es una operación ligera porque cuando se agrega una nueva columna simultáneamente a la tabla y a la clave de ordenación, las partes de datos existentes no necesitan ser cambiadas. Dado que la clave de ordenación anterior es un prefijo de la nueva clave de ordenación y no hay datos en la columna recién agregada, los datos se ordenan tanto por las claves de ordenación antiguas como por las nuevas en el momento de la modificación de la tabla.
 
-### Uso De índices y Particiones En Consultas {#use-of-indexes-and-partitions-in-queries}
+### Uso de índices y particiones en consultas {#use-of-indexes-and-partitions-in-queries}
 
 Para `SELECT` consultas, ClickHouse analiza si se puede usar un índice. Se puede usar un índice si el `WHERE/PREWHERE` clause tiene una expresión (como uno de los elementos de conjunción, o enteramente) que representa una operación de comparación de igualdad o desigualdad, o si tiene `IN` o `LIKE` con un prefijo fijo en columnas o expresiones que están en la clave principal o clave de partición, o en ciertas funciones parcialmente repetitivas de estas columnas, o relaciones lógicas de estas expresiones.
 
@@ -243,7 +243,7 @@ Para comprobar si ClickHouse puede usar el índice al ejecutar una consulta, use
 
 La clave para particionar por mes permite leer solo aquellos bloques de datos que contienen fechas del rango adecuado. En este caso, el bloque de datos puede contener datos para muchas fechas (hasta un mes). Dentro de un bloque, los datos se ordenan por clave principal, que puede no contener la fecha como la primera columna. Debido a esto, el uso de una consulta con solo una condición de fecha que no especifica el prefijo de clave principal hará que se lean más datos que para una sola fecha.
 
-### Uso Del índice Para Claves Primarias Parcialmente monotónicas {#use-of-index-for-partially-monotonic-primary-keys}
+### Uso del índice para claves primarias parcialmente monótonas {#use-of-index-for-partially-monotonic-primary-keys}
 
 Considere, por ejemplo, los días del mes. Ellos forman un [monótona secuencia](https://en.wikipedia.org/wiki/Monotonic_function) durante un mes, pero no monótono durante períodos más prolongados. Esta es una secuencia parcialmente monotónica. Si un usuario crea la tabla con clave primaria parcialmente monótona, ClickHouse crea un índice disperso como de costumbre. Cuando un usuario selecciona datos de este tipo de tabla, ClickHouse analiza las condiciones de consulta. Si el usuario desea obtener datos entre dos marcas del índice y ambas marcas caen dentro de un mes, ClickHouse puede usar el índice en este caso particular porque puede calcular la distancia entre los parámetros de una consulta y las marcas de índice.
 
@@ -251,7 +251,7 @@ ClickHouse no puede usar un índice si los valores de la clave principal en el r
 
 ClickHouse usa esta lógica no solo para secuencias de días del mes, sino para cualquier clave principal que represente una secuencia parcialmente monotónica.
 
-### Índices De Saltos De Datos (experimental) {#table_engine-mergetree-data_skipping-indexes}
+### Índices de saltos de datos (experimental) {#table_engine-mergetree-data_skipping-indexes}
 
 La declaración de índice se encuentra en la sección de columnas del `CREATE` consulta.
 
@@ -285,7 +285,7 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-#### Tipos De índices Disponibles {#available-types-of-indices}
+#### Tipos de índices disponibles {#available-types-of-indices}
 
 -   `minmax`
 
@@ -297,7 +297,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 -   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    Tiendas a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) que contiene todos los ngrams de un bloque de datos. Funciona solo con cadenas. Puede ser utilizado para la optimización de `equals`, `like` y `in` expresiones.
+    Tiendas a [Filtro de floración](https://en.wikipedia.org/wiki/Bloom_filter) que contiene todos los ngrams de un bloque de datos. Funciona solo con cadenas. Puede ser utilizado para la optimización de `equals`, `like` y `in` expresiones.
 
     -   `n` — ngram size,
     -   `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
@@ -324,7 +324,7 @@ INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100
 INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
-#### Funciones De Apoyo {#functions-support}
+#### Funciones de apoyo {#functions-support}
 
 Condiciones en el `WHERE` cláusula contiene llamadas de las funciones que operan con columnas. Si la columna forma parte de un índice, ClickHouse intenta usar este índice al realizar las funciones. ClickHouse admite diferentes subconjuntos de funciones para usar índices.
 
@@ -366,13 +366,13 @@ Los filtros Bloom pueden tener coincidencias falsas positivas, por lo que `ngram
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
 
-## Acceso a Datos simultáneos {#concurrent-data-access}
+## Acceso a datos simultáneos {#concurrent-data-access}
 
 Para el acceso simultáneo a tablas, usamos versiones múltiples. En otras palabras, cuando una tabla se lee y actualiza simultáneamente, los datos se leen de un conjunto de partes que está actualizado en el momento de la consulta. No hay cerraduras largas. Las inserciones no se interponen en el camino de las operaciones de lectura.
 
 La lectura de una tabla se paralela automáticamente.
 
-## TTL Para Columnas y Tablas {#table_engine-mergetree-ttl}
+## TTL para columnas y tablas {#table_engine-mergetree-ttl}
 
 Determina la duración de los valores.
 
@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-Definir `interval`, utilizar [intervalo de tiempo](../../../sql-reference/operators.md#operators-datetime) operador.
+Definir `interval`, utilizar [intervalo de tiempo](../../../sql-reference/operators/index.md#operators-datetime) operador.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -476,11 +476,11 @@ ALTER TABLE example_table
 
 Los datos con un TTL caducado se eliminan cuando ClickHouse fusiona partes de datos.
 
-Cuando ClickHouse ve que los datos han caducado, realiza una combinación fuera de programación. Para controlar la frecuencia de tales fusiones, puede establecer [Método de codificación de datos:](#mergetree_setting-merge_with_ttl_timeout). Si el valor es demasiado bajo, realizará muchas fusiones fuera de horario que pueden consumir muchos recursos.
+Cuando ClickHouse ve que los datos han caducado, realiza una combinación fuera de programación. Para controlar la frecuencia de tales fusiones, puede establecer `merge_with_ttl_timeout`. Si el valor es demasiado bajo, realizará muchas fusiones fuera de horario que pueden consumir muchos recursos.
 
 Si realiza el `SELECT` consulta entre fusiones, puede obtener datos caducados. Para evitarlo, use el [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) consulta antes `SELECT`.
 
-## Uso De múltiples Dispositivos De Bloque Para El Almacenamiento De Datos {#table_engine-mergetree-multiple-volumes}
+## Uso de varios dispositivos de bloque para el almacenamiento de datos {#table_engine-mergetree-multiple-volumes}
 
 ### Implantación {#introduction}
 
@@ -495,13 +495,13 @@ La parte de datos es la unidad móvil mínima para `MergeTree`-mesas de motor. L
 -   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 -   Storage policy — Set of volumes and the rules for moving data between them.
 
-Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../../../operations/system-tables.md#system_tables-storage_policies) y [sistema.disco](../../../operations/system-tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-motor de la familia de las tablas.
+Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../../../operations/system-tables.md#system_tables-storage_policies) y [sistema.disco](../../../operations/system-tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-mesas de la familia del motor.
 
 ### Configuración {#table_engine-mergetree-multiple-volumes_configure}
 
-Discos, volúmenes y políticas de almacenamiento deben ser declaradas dentro de la `<storage_configuration>` etiqueta ya sea en el archivo principal `config.xml` o en un archivo distinto en el `config.d` directorio.
+Los discos, los volúmenes y las políticas de almacenamiento deben declararse `<storage_configuration>` etiqueta ya sea en el archivo principal `config.xml` o en un archivo distinto en el `config.d` directorio.
 
-Configuración de la estructura:
+Estructura de configuración:
 
 ``` xml
 <storage_configuration>
@@ -567,7 +567,7 @@ Tags:
 -   `policy_name_N` — Policy name. Policy names must be unique.
 -   `volume_name_N` — Volume name. Volume names must be unique.
 -   `disk` — a disk within a volume.
--   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
+-   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
 
 Cofiguration ejemplos:
@@ -602,9 +602,9 @@ Cofiguration ejemplos:
 </storage_configuration>
 ```
 
-En un ejemplo dado, el `hdd_in_order` implementa la política de [Ronda-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) enfoque. Por lo tanto esta política define un sólo volumen (`single`), las partes de datos se almacenan en todos sus discos en orden circular. Dicha política puede ser bastante útil si hay varios discos similares montados en el sistema, pero RAID no está configurado. Tenga en cuenta que cada unidad de disco individual no es confiable y es posible que desee compensarlo con un factor de replicación de 3 o más.
+En un ejemplo dado, el `hdd_in_order` la política implementa el [Ronda-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling) enfoque. Por lo tanto, esta política define solo un volumen (`single`), las partes de datos se almacenan en todos sus discos en orden circular. Dicha política puede ser bastante útil si hay varios discos similares montados en el sistema, pero RAID no está configurado. Tenga en cuenta que cada unidad de disco individual no es confiable y es posible que desee compensarlo con un factor de replicación de 3 o más.
 
-Si hay diferentes tipos de discos disponibles en el sistema, `moving_from_ssd_to_hdd` la política puede ser utilizado en su lugar. Volumen `hot` consta de un disco SSD (`fast_ssd`), y el tamaño máximo de una parte que puede ser almacenado en este volumen es de 1GB. Todas las piezas con el tamaño de más de 1GB se almacenan directamente en el `cold` volumen, que contiene un disco duro `disk1`.
+Si hay diferentes tipos de discos disponibles en el sistema, `moving_from_ssd_to_hdd` política se puede utilizar en su lugar. Volumen `hot` consta de un disco SSD (`fast_ssd`), y el tamaño máximo de una pieza que se puede almacenar en este volumen es de 1 GB. Todas las piezas con el tamaño más grande que 1GB serán almacenadas directamente en `cold` volumen, que contiene un disco duro `disk1`.
 Además, una vez que el disco `fast_ssd` se llena en más del 80%, los datos se transferirán al `disk1` por un proceso en segundo plano.
 
 El orden de enumeración de volúmenes dentro de una directiva de almacenamiento es importante. Una vez que un volumen está sobrellenado, los datos se mueven al siguiente. El orden de la enumeración del disco también es importante porque los datos se almacenan en ellos por turnos.
@@ -642,13 +642,13 @@ En todos estos casos, excepto las mutaciones y la congelación de particiones, u
 Bajo el capó, las mutaciones y la congelación de particiones hacen uso de [enlaces duros](https://en.wikipedia.org/wiki/Hard_link). Los enlaces duros entre diferentes discos no son compatibles, por lo tanto, en tales casos las partes resultantes se almacenan en los mismos discos que los iniciales.
 
 En el fondo, las partes se mueven entre volúmenes en función de la cantidad de espacio libre (`move_factor` parámetro) según el orden en que se declaran los volúmenes en el archivo de configuración.
-Los datos nunca se transfieren desde el último y al primero. Uno puede usar tablas del sistema [sistema.part\_log](../../../operations/system-tables.md#system_tables-part-log) (campo `type = MOVE_PART`) y [sistema.parte](../../../operations/system-tables.md#system_tables-parts) (campo `path` y `disk`) para monitorear el fondo se mueve. Además, la información detallada se puede encontrar en los registros del servidor.
+Los datos nunca se transfieren desde el último y al primero. Uno puede usar tablas del sistema [sistema.part\_log](../../../operations/system-tables.md#system_tables-part-log) (campo `type = MOVE_PART`) y [sistema.parte](../../../operations/system-tables.md#system_tables-parts) (campo `path` y `disk`) para monitorear movimientos de fondo. Además, la información detallada se puede encontrar en los registros del servidor.
 
 El usuario puede forzar el movimiento de una pieza o una partición de un volumen a otro mediante la consulta [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition), todas las restricciones para las operaciones en segundo plano se tienen en cuenta. La consulta inicia un movimiento por sí misma y no espera a que se completen las operaciones en segundo plano. El usuario recibirá un mensaje de error si no hay suficiente espacio libre disponible o si no se cumple alguna de las condiciones requeridas.
 
 Mover datos no interfiere con la replicación de datos. Por lo tanto, se pueden especificar diferentes directivas de almacenamiento para la misma tabla en diferentes réplicas.
 
 Después de la finalización de las fusiones y mutaciones de fondo, las partes viejas se eliminan solo después de un cierto período de tiempo (`old_parts_lifetime`).
-Durante este tiempo, no se mueven a otros volúmenes o discos. Por lo tanto, hasta que finalmente se retira, se tomará en cuenta para la evaluación de los ocupados de espacio en disco.
+Durante este tiempo, no se mueven a otros volúmenes o discos. Por lo tanto, hasta que las partes finalmente se eliminen, aún se tienen en cuenta para la evaluación del espacio en disco ocupado.
 
 [Artículo Original](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->

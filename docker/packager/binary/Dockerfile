@@ -41,6 +41,9 @@ RUN apt-get update -y \
             ninja-build \
             gperf \
             git \
+            opencl-headers \
+            ocl-icd-libopencl1 \
+            intel-opencl-icd \
             tzdata \
             gperf \
             cmake \
