@@ -46,7 +46,7 @@ public:
 
     /// Sorts given array in specified order. Returns `true` if given sequence was sorted, `false` otherwise.
     template <typename T>
-    bool sort(const DB::PaddedPODArray<T> & data, DB::IColumn::Permutation & res, cl_uint sort_ascending) const
+    bool sort(const DB::PaddedPODArray<T> & data, DB::IColumn::Permutation & res, cl_uint sort_ascending [[maybe_unused]]) const
     {
         if constexpr (
             std::is_same_v<T, Int8> ||
