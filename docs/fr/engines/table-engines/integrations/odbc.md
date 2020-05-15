@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: ODBC
 ---
@@ -13,7 +13,7 @@ Pour implémenter en toute sécurité les connexions ODBC, ClickHouse utilise un
 
 Ce moteur prend en charge le [Nullable](../../../sql-reference/data-types/nullable.md) type de données.
 
-## Création d’une Table {#creating-a-table}
+## Création d'une Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -29,7 +29,7 @@ Voir une description détaillée de la [CREATE TABLE](../../../sql-reference/sta
 
 La structure de la table peut différer de la structure de la table source:
 
--   Les noms de colonnes doivent être les mêmes que dans la table source, mais vous pouvez utiliser quelques-unes de ces colonnes et dans n’importe quel ordre.
+-   Les noms de colonnes doivent être les mêmes que dans la table source, mais vous pouvez utiliser quelques-unes de ces colonnes et dans n'importe quel ordre.
 -   Les types de colonnes peuvent différer de ceux de la table source. ClickHouse essaie de [jeter](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) valeurs des types de données ClickHouse.
 
 **Les Paramètres Du Moteur**
@@ -38,15 +38,15 @@ La structure de la table peut différer de la structure de la table source:
 -   `external_database` — Name of a database in an external DBMS.
 -   `external_table` — Name of a table in the `external_database`.
 
-## Exemple D’Utilisation {#usage-example}
+## Exemple D'Utilisation {#usage-example}
 
-**Récupération des données de L’installation MySQL locale via ODBC**
+**Récupération des données de L'installation MySQL locale via ODBC**
 
 Cet exemple est vérifié pour Ubuntu Linux 18.04 et MySQL server 5.7.
 
 Assurez-vous que unixODBC et MySQL Connector sont installés.
 
-Par défaut (si installé à partir de paquets), ClickHouse démarre en tant qu’utilisateur `clickhouse`. Ainsi, vous devez créer et configurer cet utilisateur dans le serveur MySQL.
+Par défaut (si installé à partir de paquets), ClickHouse démarre en tant qu'utilisateur `clickhouse`. Ainsi, vous devez créer et configurer cet utilisateur dans le serveur MySQL.
 
 ``` bash
 $ sudo mysql
@@ -70,7 +70,7 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-Vous pouvez vérifier la connexion en utilisant le `isql` utilitaire de l’installation unixODBC.
+Vous pouvez vérifier la connexion en utilisant le `isql` utilitaire de l'installation unixODBC.
 
 ``` bash
 $ isql -v mysqlconn

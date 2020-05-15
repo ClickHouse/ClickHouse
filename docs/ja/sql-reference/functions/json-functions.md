@@ -1,44 +1,44 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 56
-toc_title: "JSON\u3067\u306E\u4F5C\u696D."
+toc_title: "JSON\u3067\u306E\u4F5C\u696D"
 ---
 
 # JSONを操作するための関数 {#functions-for-working-with-json}
 
-Yandexの中。Metrica、JSONで送信したユーザーとしてセッションパラメータ。 このJSONを操作するための特別な関数がいくつかあります。 （ほとんどの場合、JSONsはさらに前処理され、結果の値は処理された形式で別々の列に格納されます。）これらの関数はすべて、JSONができることについての強い前提に基づいていますが、仕事を終わらせるためにできるだけ少なくしようとします。
+Yandexので。Metrica、JSONで送信したユーザーとしてセッションパラメータ。 このJSONを操作するための特別な関数がいくつかあります。 （ほとんどの場合、Jsonはさらに前処理され、結果の値は処理された形式で別々の列に入れられます。）これらの関数はすべて、JSONが何であるかについての強い前提に基づいていますが、できるだけ少なくして仕事を終わらせようとします。
 
 以下の仮定が行われます:
 
 1.  フィールド名(関数の引数)は定数でなければなりません。
-2.  フィールド名は何とかcanonicallyで符号化されたjson. 例えば: `visitParamHas('{"abc":"def"}', 'abc') = 1`、しかし `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
-3.  フィールドは、任意の入れ子レベルで無差別に検索されます。 一致するフィールドが複数ある場合は、最初のオカレンスが使用されます。
-4.  JSONには、文字列リテラルの外側にスペース文字はありません。
+2.  フィールド名は何らかの形でjsonでエンコードされます。 例えば: `visitParamHas('{"abc":"def"}', 'abc') = 1` でも `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+3.  フィールドは、任意の入れ子レベルで無差別に検索されます。 複数の一致するフィールドがある場合は、最初の出現が使用されます。
+4.  JSONには文字列リテラルの外側に空白文字はありません。
 
-## visitParamHas(パラメータ,名前) {#visitparamhasparams-name}
+## visitParamHas(パラムス、名前) {#visitparamhasparams-name}
 
-フィールドがあるかどうかをチェック ‘name’ 名前だ
+があるかどうかをチェックします。 ‘name’ 名前
 
-## visitParamExtractUInt(パラメータ,名前) {#visitparamextractuintparams-name}
+## ビジットパラメクストラクチュイント(params,name) {#visitparamextractuintparams-name}
 
-指定されたフィールドの値からuint64を解析します ‘name’. これが文字列フィールドの場合、文字列の先頭から数値を解析しようとします。 フィールドが存在しないか、存在するが数値が含まれていない場合は、0を返します。
+名前のフィールドの値からUInt64を解析します ‘name’. これが文字列フィールドの場合、文字列の先頭から数値を解析しようとします。 フィールドが存在しない場合、または存在するが数値が含まれていない場合は、0を返します。
 
-## visitParamExtractInt(パラメータ,名前) {#visitparamextractintparams-name}
+## ビジットパラメクストラクチント(params,name) {#visitparamextractintparams-name}
 
-Int64の場合と同じです。
+Int64と同じです。
 
-## visitParamExtractFloat(パラメーター,名前) {#visitparamextractfloatparams-name}
+## パラメーター) {#visitparamextractfloatparams-name}
 
-Float64の場合と同じです。
+Float64と同じです。
 
-## visitParamExtractBool(パラメーター,名前) {#visitparamextractboolparams-name}
+## ビジットパラメクストラクトブール(params,name) {#visitparamextractboolparams-name}
 
-True/false値を解析します。 結果はUInt8です。
+真/偽の値を解析します。 結果はUInt8です。
 
-## visitParamExtractRaw(パラメータ,名前) {#visitparamextractrawparams-name}
+## ビジットパラメクストラクトロー(params,name) {#visitparamextractrawparams-name}
 
-セパレータを含むフィールドの値を返します。
+区切り文字を含むフィールドの値を返します。
 
 例:
 
@@ -47,9 +47,9 @@ visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
 
-## visitParamExtractString(パラメーター,名前) {#visitparamextractstringparams-name}
+## パラメーターを指定します) {#visitparamextractstringparams-name}
 
-文字列を二重引用符で解析します。 値はエスケープされません。 エスケープ解除に失敗した場合は、空の文字列を返します。
+二重引用符で文字列を解析します。 値はエスケープされていません。 エスケープ解除に失敗した場合は、空の文字列を返します。
 
 例:
 
@@ -60,9 +60,9 @@ visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
 visitParamExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-現在、この形式のコードポイントはサポートされていません `\uXXXX\uYYYY` これは、（彼らはCESU-8の代わりにUTF-8に変換されます）基本的な多言語面からではありません。
+現在、この形式のコードポイントはサポートされていません `\uXXXX\uYYYY` それは基本的な多言語面からではありません（UTF-8の代わりにCESU-8に変換されます）。
 
-次の関数は、以下に基づいています [simdjson](https://github.com/lemire/simdjson) より複雑なJSON解析要件のために設計。 上記の前提2は依然として適用されます。
+以下の機能は、次のとおりです [simdjson](https://github.com/lemire/simdjson) より複雑なJSON解析要件用に設計されています。 上記の仮定2はまだ適用されます。
 
 ## isValidJSON(json) {#isvalidjsonjson}
 
@@ -77,9 +77,9 @@ SELECT isValidJSON('not a json') = 0
 
 ## JSONHas(json\[, indices\_or\_keys\]…) {#jsonhasjson-indices-or-keys}
 
-JSONドキュメントに値が存在する場合, `1` は返却されます。
+値がJSONドキュメントに存在する場合, `1` 返されます。
 
-値が存在しない場合, `0` は返却されます。
+値が存在しない場合, `0` 返されます。
 
 例:
 
@@ -88,15 +88,15 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
 SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 ```
 
-`indices_or_keys` それぞれの引数は、文字列または整数のいずれかになります。
+`indices_or_keys` ゼロ以上の引数のリストは、それぞれ文字列または整数のいずれかになります。
 
--   文字列=アクセスオブジェクトにより、会員に対す。
+-   String=キ
 -   正の整数=最初からn番目のメンバー/キーにアクセスします。
 -   負の整数=最後からn番目のメンバー/キーにアクセスします。
 
 要素の最小インデックスは1です。 したがって、要素0は存在しません。
 
-整数を使用して、json配列とjsonオブジェクトの両方にアクセスできます。
+整数を使用してJSON配列とJSONオブジェクトの両方にアクセスできます。
 
 例えば:
 
@@ -112,7 +112,7 @@ SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 
 JSON配列またはJSONオブジェクトの長さを返します。
 
-値が存在しないか、間違った型を持っている場合, `0` は返却されます。
+値が存在しない場合、または型が間違っている場合, `0` 返されます。
 
 例:
 
@@ -125,7 +125,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 
 JSON値の型を返します。
 
-値が存在しない場合, `Null` は返却されます。
+値が存在しない場合, `Null` 返されます。
 
 例:
 
@@ -143,9 +143,9 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 
 ## JSONExtractBool(json\[, indices\_or\_keys\]…) {#jsonextractbooljson-indices-or-keys}
 
-JSONを解析し、値を抽出します。 これらの機能と類似 `visitParam` 機能。
+JSONを解析して値を抽出します。 これらの機能と類似 `visitParam` 機能。
 
-値が存在しないか、間違った型を持っている場合, `0` は返却されます。
+値が存在しない場合、または型が間違っている場合, `0` 返されます。
 
 例:
 
@@ -157,11 +157,11 @@ SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 
 ## JSONExtractString(json\[, indices\_or\_keys\]…) {#jsonextractstringjson-indices-or-keys}
 
-JSONを解析し、文字列を抽出します。 この関数は次のようになります `visitParamExtractString` 機能。
+JSONを解析して文字列を抽出します。 この関数は次のようになります `visitParamExtractString` 機能。
 
-値が存在しないか、間違った型を持っている場合は、空の文字列が返されます。
+値が存在しないか、型が間違っている場合は、空の文字列が返されます。
 
-値はエスケープされません。 エスケープ解除に失敗した場合は、空の文字列を返します。
+値はエスケープされていません。 エスケープ解除に失敗した場合は、空の文字列を返します。
 
 例:
 
@@ -177,8 +177,8 @@ SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 
 JSONを解析し、指定されたClickHouseデータ型の値を抽出します。
 
-これは以前の一般化です `JSONExtract<type>` 機能。
-これは
+これは以前のものの一般化です `JSONExtract<type>` 機能。
+つまり
 `JSONExtract(..., 'String')` とまったく同じを返します `JSONExtractString()`,
 `JSONExtract(..., 'Float64')` とまったく同じを返します `JSONExtractFloat()`.
 
@@ -196,36 +196,102 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 
 ## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], Value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
-値が指定されたclickhouseデータ型のjsonからキーと値のペアを解析します。
+値が指定されたClickHouseデータ型であるJSONからキーと値のペアを解析します。
 
-例えば:
+例:
 
 ``` sql
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)]
 ```
 
 ## JSONExtractRaw(json\[, indices\_or\_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
-JSONの一部を返します。
+JSONの一部を解析されていない文字列として返します。
 
-パートが存在しないか、間違った型を持っている場合は、空の文字列が返されます。
+パーツが存在しないか、型が間違っている場合は、空の文字列が返されます。
 
-例えば:
+例:
 
 ``` sql
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-## JSONExtractArrayRaw(json\[, indices\_or\_keys\]…) {#jsonextractarrayrawjson-indices-or-keys}
+## JSONExtractArrayRaw(json\[, indices\_or\_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
 
-それぞれが未解析の文字列として表されるjson配列の要素を持つ配列を返します。
+JSON配列の要素を持つ配列を返します。
 
-その部分が存在しない場合、または配列でない場合は、空の配列が返されます。
+パーツが存在しないか配列でない場合は、空の配列が返されます。
 
-例えば:
+例:
 
 ``` sql
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
+```
+
+## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}
+
+JSONオブジェクトから生データを抽出します。
+
+**構文**
+
+``` sql
+JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
+```
+
+**パラメータ**
+
+-   `json` — [文字列](../data-types/string.md) 有効なJSONで。
+-   `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [文字列](../data-types/string.md) キーまたはキーでフィールドを取得するには [整数](../data-types/int-uint.md) N番目のフィールドを取得するには（1からインデックス付けされ、負の整数は最後から数えます）。 設定されていない場合、JSON全体がトップレベルのオブジェクトとして解析されます。 任意パラメータ。
+
+**戻り値**
+
+-   との配列 `('key', 'value')` タプル 両方のタプルメンバーは文字列です。
+-   要求されたオブジェクトが存在しない場合、または入力JSONが無効な場合は空の配列。
+
+タイプ: [配列](../data-types/array.md)([タプル](../data-types/tuple.md)([文字列](../data-types/string.md), [文字列](../data-types/string.md)).
+
+**例**
+
+クエリ:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}')
+```
+
+結果:
+
+``` text
+┌─JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}')─┐
+│ [('a','[-100,200]'),('b','{"c":{"d":"hello","f":"world"}}')]                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+クエリ:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', 'b')
+```
+
+結果:
+
+``` text
+┌─JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', 'b')─┐
+│ [('c','{"d":"hello","f":"world"}')]                                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+クエリ:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', -1, 'c')
+```
+
+結果:
+
+``` text
+┌─JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', -1, 'c')─┐
+│ [('d','"hello"'),('f','"world"')]                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->

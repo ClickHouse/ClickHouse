@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "\u062A\u0648\u0635\u06CC\u0647 \u0647\u0627\u06CC \u0627\u0633\u062A\u0641\
   \u0627\u062F\u0647"
@@ -74,7 +74,7 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 شما می توانید حمله استفاده-0 در اس اس دی.
 صرف نظر از استفاده از حمله, همیشه تکرار برای امنیت داده ها استفاده.
 
-فعال کردن دفتر مرکزی اروپا با یک صف طولانی. برای hdd را انتخاب کنید cfq زمانبندی و برای ssd را انتخاب کنید noop. کاهش نمی دهد ‘readahead’ تنظیمات.
+فعال کردن دفتر مرکزی اروپا با یک صف طولانی. برای HDD را انتخاب کنید CFQ زمانبندی و برای SSD را انتخاب کنید noop. کاهش نمی دهد ‘readahead’ تنظیمات.
 برای هارد, فعال کردن کش نوشتن.
 
 ## سیستم پرونده {#file-system}
@@ -98,7 +98,7 @@ XFS نیز مناسب است اما از آن شده است به طور کامل
 
 شما احتمالا در حال حاضر با استفاده از باغ وحش برای مقاصد دیگر. شما می توانید نصب و راه اندازی همان باغ وحش استفاده, اگر در حال حاضر بیش از حد نیست.
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 شما هرگز نباید از اسکریپت های دستی نوشته شده برای انتقال داده ها بین خوشه های مختلف باغ وحش استفاده کنید زیرا نتیجه برای گره های متوالی نادرست خواهد بود. هرگز استفاده از “zkcopy” ابزار به همین دلیل: https://github.com/ksprojects/zkcopy/issues/15
 

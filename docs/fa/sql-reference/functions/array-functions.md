@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u0627\u0631\u0631\u06CC\u0633"
 ---
@@ -10,19 +10,19 @@ toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u0627\u0631\u0631\u06CC\u0633"
 ## خالی {#function-empty}
 
 بازده 1 برای یک مجموعه خالی, یا 0 برای یک مجموعه غیر خالی.
-نتیجه این نوع uint8.
+نتیجه این نوع UInt8.
 این تابع نیز برای رشته کار می کند.
 
 ## notEmpty {#function-notempty}
 
 بازده 0 برای یک مجموعه خالی, یا 1 برای یک مجموعه غیر خالی.
-نتیجه این نوع uint8.
+نتیجه این نوع UInt8.
 این تابع نیز برای رشته کار می کند.
 
 ## طول {#array_functions-length}
 
 بازگرداندن تعداد اقلام در مجموعه.
-نتیجه این نوع uint64.
+نتیجه این نوع UInt64.
 این تابع نیز برای رشته کار می کند.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
@@ -84,7 +84,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 عنصر را با شاخص دریافت کنید `n` از مجموعه `arr`. `n` باید هر نوع عدد صحیح باشد.
 شاخص ها در مجموعه ای از یک شروع می شوند.
-شاخص های منفی پشتیبانی می شوند. در این مورد آن را انتخاب می کند که عنصر مربوطه شماره از پایان. به عنوان مثال, `arr[-1]` اخرین وسیله ست
+شاخص های منفی پشتیبانی می شوند. در این مورد, این انتخاب عنصر مربوطه شماره از پایان. به عنوان مثال, `arr[-1]` اخرین وسیله ست
 
 اگر شاخص می افتد در خارج از مرزهای مجموعه, این گرداند برخی از مقدار پیش فرض (0 برای اعداد, یک رشته خالی برای رشته, و غیره.), به جز برای مورد با یک مجموعه غیر ثابت و یک شاخص ثابت 0 (در این مورد وجود خواهد داشت یک خطا `Array indices are 1-based`).
 
@@ -156,7 +156,7 @@ hasAny(array1, array2)
 -   `array1` – Array of any type with a set of elements.
 -   `array2` – Array of any type with a set of elements.
 
-**بازگشت ارزش**
+**مقادیر بازگشتی**
 
 -   `1` اگر `array1` و `array2` حداقل یک عنصر مشابه داشته باشید.
 -   `0` وگرنه
@@ -198,7 +198,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 ## هشدار داده می شود) {#countequalarr-x}
 
-بازده تعداد عناصر موجود در آرایه برابر با x. معادل arraycount (elem -\> elem = x arr).
+بازده تعداد عناصر موجود در آرایه برابر با x. معادل arrayCount (elem -\> elem = x arr).
 
 `NULL` عناصر به عنوان مقادیر جداگانه به کار گرفته.
 
@@ -294,7 +294,7 @@ LIMIT 10
 └─────────┴─────────┴────────┘
 ```
 
-در این مثال هر هدف شناسه محاسبه تعداد تبدیل (هر عنصر در اهداف تو در تو ساختار داده ها یک هدف است که رسیده بود که ما اشاره به عنوان یک تبدیل) و تعداد جلسات. بدون مجموعه ملحق, ما می خواهیم تعداد جلسات به عنوان مجموع شمارش (امضا کردن). اما در این مورد خاص ردیف شد ضرب در تو در تو در اهداف و ساختار آن در سفارش به تعداد هر جلسه یک بار بعد از این ما اعمال یک شرط به ارزش arrayenumerateuniq(اهداف است.id) تابع.
+در این مثال هر هدف شناسه محاسبه تعداد تبدیل (هر عنصر در اهداف تو در تو ساختار داده ها یک هدف است که رسیده بود که ما اشاره به عنوان یک تبدیل) و تعداد جلسات. بدون مجموعه ملحق, ما می خواهیم تعداد جلسات به عنوان مجموع شمارش (امضا کردن). اما در این مورد خاص ردیف شد ضرب در تو در تو در اهداف و ساختار آن در سفارش به تعداد هر جلسه یک بار بعد از این ما اعمال یک شرط به ارزش arrayEnumerateUniq(اهداف است.ID) تابع.
 
 تابع ارریینومراتونیک می تواند چندین بار از همان اندازه به عنوان استدلال استفاده کند. در این مورد, منحصر به فرد است برای تاپل از عناصر در موقعیت های مشابه در تمام ارریس در نظر گرفته.
 
@@ -369,7 +369,7 @@ arrayPushBack(array, single_value)
 **پارامترها**
 
 -   `array` – Array.
--   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` نوع داده مجموعه را تایپ کنید. برای کسب اطلاعات بیشتر در مورد انواع داده ها در خانه کلیک کنید “[انواع داده ها](../../sql-reference/data-types/index.md#data_types)”. می توان `NULL`. تابع می افزاید: `NULL` عنصر به مجموعه ای, و نوع عناصر مجموعه ای تبدیل به `Nullable`.
+-   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` نوع داده مجموعه را تایپ کنید. برای کسب اطلاعات بیشتر در مورد انواع داده ها در خانه کلیک کنید “[انواع داده ها](../../sql-reference/data-types/index.md#data_types)”. می تواند باشد `NULL`. تابع می افزاید: `NULL` عنصر به مجموعه ای, و نوع عناصر مجموعه ای تبدیل به `Nullable`.
 
 **مثال**
 
@@ -394,7 +394,7 @@ arrayPushFront(array, single_value)
 **پارامترها**
 
 -   `array` – Array.
--   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` نوع داده مجموعه را تایپ کنید. برای کسب اطلاعات بیشتر در مورد انواع داده ها در خانه کلیک کنید “[انواع داده ها](../../sql-reference/data-types/index.md#data_types)”. می تواند باشد `NULL`. این تابع می افزاید: `NULL` عنصر به مجموعه ای, و نوع عناصر مجموعه ای تبدیل به `Nullable`.
+-   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` نوع داده مجموعه را تایپ کنید. برای کسب اطلاعات بیشتر در مورد انواع داده ها در خانه کلیک کنید “[انواع داده ها](../../sql-reference/data-types/index.md#data_types)”. می تواند باشد `NULL`. تابع می افزاید: `NULL` عنصر به مجموعه ای, و نوع عناصر مجموعه ای تبدیل به `Nullable`.
 
 **مثال**
 
@@ -450,7 +450,7 @@ SELECT arrayResize([1], 3, NULL)
 └───────────────────────────┘
 ```
 
-## arraySlice {#arrayslice}
+## بند {#arrayslice}
 
 یک تکه از مجموعه را برمی گرداند.
 
@@ -523,7 +523,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 -   `NaN` مقادیر درست قبل هستند `NULL`.
 -   `Inf` مقادیر درست قبل هستند `NaN`.
 
-توجه داشته باشید که `arraySort` یک [عملکرد عالی مرتبه](higher-order-functions.md). شما می توانید یک تابع لامبدا را به عنوان اولین استدلال منتقل کنید. در این مورد مرتب سازی سفارش تعیین می شود در نتیجه از lambda تابع اعمال شده به عناصر آرایه است.
+توجه داشته باشید که `arraySort` یک [عملکرد عالی مرتبه](higher-order-functions.md). شما می توانید یک تابع لامبدا را به عنوان اولین استدلال منتقل کنید. در این مورد ترتیب مرتب سازی بر اساس نتیجه تابع لامبدا اعمال شده به عناصر مجموعه تعیین می شود.
 
 بیایید مثال زیر را در نظر بگیریم:
 
@@ -551,7 +551,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-در اینجا عناصر موجود در مجموعه دوم (\[2, 1\]) تعریف یک کلید مرتب سازی برای عنصر مربوطه از مجموعه منبع (\[‘hello’, ‘world’\]), به این معنا که, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x` مقادیر واقعی مجموعه منبع بر نظم در نتیجه تاثیر نمی گذارد. پس, ‘hello’ خواهد بود که عنصر دوم در نتیجه, و ‘world’ خواهد بود که برای اولین بار.
+در اینجا عناصر موجود در مجموعه دوم (\[2, 1\]) تعریف یک کلید مرتب سازی برای عنصر مربوطه از مجموعه منبع (\[‘hello’, ‘world’\]), به این معنا که, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn't use `x` مقادیر واقعی مجموعه منبع بر نظم در نتیجه تاثیر نمی گذارد. پس, ‘hello’ خواهد بود که عنصر دوم در نتیجه, و ‘world’ خواهد بود که برای اولین بار.
 
 نمونه های دیگر در زیر نشان داده شده.
 
@@ -990,7 +990,7 @@ SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
 
 ## ارریزیپ {#arrayzip}
 
-Combine multiple Array type columns into one Array\[Tuple(…)\] column
+ترکیبی از چندین ردیف به یک مجموعه واحد. مجموعه حاصل شامل عناصر مربوطه را از ارریس منبع به تاپل در جهت ذکر شده از استدلال گروه بندی می شوند.
 
 **نحو**
 
@@ -1000,31 +1000,35 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **پارامترها**
 
-`arr` — Any number of [& حذف](../../sql-reference/data-types/array.md) ستون نوع به ترکیب.
+-   `arrN` — [& حذف](../data-types/array.md).
+
+این تابع می تواند هر تعداد از مجموعه ای از انواع مختلف را. تمام ورودی های ورودی باید با اندازه یکسان باشند.
 
 **مقدار بازگشتی**
 
-The result of Array\[Tuple(…)\] type after the combination of these arrays
+-   مجموعه ای با عناصر از ارریس منبع به گروه بندی می شوند [توپلس](../data-types/tuple.md). انواع داده ها در تاپل همان نوع از بند ورودی هستند و در همان جهت به عنوان ارریس به تصویب می رسد.
+
+نوع: [& حذف](../data-types/array.md).
 
 **مثال**
 
 پرسوجو:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']);
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 ```
 
 نتیجه:
 
 ``` text
-┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
-│ [('a','d'),('b','e'),('c','f')]            │
-└────────────────────────────────────────────┘
+┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
+│ [('a',5),('b',2),('c',1)]            │
+└──────────────────────────────────────┘
 ```
 
 ## ارریایکو {#arrayauc}
 
-محاسبه حراج (منطقه تحت منحنی, که یک مفهوم در یادگیری ماشین است, مشاهده اطلاعات بیشتر: https://en.wikipedia.org/wiki/receiver\_operating\_characteristic\#area\_under\_the\_curve).
+محاسبه حراج (منطقه تحت منحنی, که یک مفهوم در یادگیری ماشین است, مشاهده اطلاعات بیشتر: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
 
 **نحو**
 

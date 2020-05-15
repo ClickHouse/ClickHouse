@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: MySQL
 ---
 
-# Mysql {#mysql}
+# MySQL {#mysql}
 
 اجازه می دهد تا برای اتصال به پایگاه داده بر روی یک سرور خروجی از راه دور و انجام `INSERT` و `SELECT` نمایش داده شد به تبادل اطلاعات بین کلیک و خروجی زیر.
 
@@ -21,7 +21,7 @@ toc_title: MySQL
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
 
 **پارامترهای موتور**

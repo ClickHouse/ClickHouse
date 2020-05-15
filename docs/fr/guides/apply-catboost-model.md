@@ -1,33 +1,33 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "Application Des Mod\xE8les CatBoost"
 ---
 
-# Application D’un modèle Catboost Dans ClickHouse {#applying-catboost-model-in-clickhouse}
+# Application D'un modèle Catboost dans ClickHouse {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) est une bibliothèque de dynamisation de gradient libre et open-source développée à [Yandex](https://yandex.com/company/) pour l’apprentissage automatique.
+[CatBoost](https://catboost.ai) est une bibliothèque de dynamisation de gradient libre et open-source développée à [Yandex](https://yandex.com/company/) pour l'apprentissage automatique.
 
-Avec cette instruction, vous apprendrez à appliquer des modèles pré-formés dans ClickHouse en exécutant l’inférence de modèle à partir de SQL.
+Avec cette instruction, vous apprendrez à appliquer des modèles pré-formés dans ClickHouse en exécutant l'inférence de modèle à partir de SQL.
 
 Pour appliquer un modèle CatBoost dans ClickHouse:
 
 1.  [Créer une Table](#create-table).
 2.  [Insérez les données dans la Table](#insert-data-to-table).
 3.  [Intégrer CatBoost dans ClickHouse](#integrate-catboost-into-clickhouse) (Étape facultative).
-4.  [Exécutez L’inférence du modèle à partir de SQL](#run-model-inference).
+4.  [Exécutez L'inférence du modèle à partir de SQL](#run-model-inference).
 
-Pour plus d’informations sur la formation des modèles CatBoost, voir [Formation et application de modèles](https://catboost.ai/docs/features/training.html#training).
+Pour plus d'informations sur la formation des modèles CatBoost, voir [Formation et application de modèles](https://catboost.ai/docs/features/training.html#training).
 
 ## Préalable {#prerequisites}
 
-Si vous n’avez pas le [Docker](https://docs.docker.com/install/) pourtant, l’installer.
+Si vous n'avez pas le [Docker](https://docs.docker.com/install/) pourtant, l'installer.
 
 !!! note "Note"
     [Docker](https://www.docker.com) est une plate-forme logicielle qui vous permet de créer des conteneurs qui isolent une installation CatBoost et ClickHouse du reste du système.
 
-Avant d’appliquer un modèle CatBoost:
+Avant d'appliquer un modèle CatBoost:
 
 **1.** Tirez la [Docker image](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) à partir du registre:
 
@@ -35,9 +35,9 @@ Avant d’appliquer un modèle CatBoost:
 $ docker pull yandex/tutorial-catboost-clickhouse
 ```
 
-Cette image Docker contient tout ce dont vous avez besoin pour exécuter CatBoost et ClickHouse: code, runtime, bibliothèques, variables d’environnement et fichiers de configuration.
+Cette image Docker contient tout ce dont vous avez besoin pour exécuter CatBoost et ClickHouse: code, runtime, bibliothèques, variables d'environnement et fichiers de configuration.
 
-**2.** Assurez-vous que l’image Docker a été tirée avec succès:
+**2.** Assurez-vous que l'image Docker a été tirée avec succès:
 
 ``` bash
 $ docker image ls
@@ -53,7 +53,7 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 ## 1. Créer une Table {#create-table}
 
-Pour créer une table ClickHouse pour l’exemple de formation:
+Pour créer une table ClickHouse pour l'exemple de formation:
 
 **1.** Démarrez clickhouse console client en mode interactif:
 
@@ -62,9 +62,9 @@ $ clickhouse client
 ```
 
 !!! note "Note"
-    Le serveur ClickHouse est déjà en cours d’exécution dans le conteneur Docker.
+    Le serveur ClickHouse est déjà en cours d'exécution dans le conteneur Docker.
 
-**2.** Créer la table à l’aide de la commande:
+**2.** Créer la table à l'aide de la commande:
 
 ``` sql
 :) CREATE TABLE amazon_train
@@ -122,19 +122,19 @@ FROM amazon_train
 ## 3. Intégrer CatBoost dans ClickHouse {#integrate-catboost-into-clickhouse}
 
 !!! note "Note"
-    **Étape facultative.** L’image Docker contient tout ce dont vous avez besoin pour exécuter CatBoost et ClickHouse.
+    **Étape facultative.** L'image Docker contient tout ce dont vous avez besoin pour exécuter CatBoost et ClickHouse.
 
 Pour intégrer CatBoost dans ClickHouse:
 
-**1.** Construire la bibliothèque d’évaluation.
+**1.** Construire la bibliothèque d'évaluation.
 
-Le moyen le plus rapide d’évaluer un modèle CatBoost est la compilation `libcatboostmodel.<so|dll|dylib>` bibliothèque. Pour plus d’informations sur la création de la bibliothèque, voir [Documentation CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+Le moyen le plus rapide d'évaluer un modèle CatBoost est la compilation `libcatboostmodel.<so|dll|dylib>` bibliothèque. Pour plus d'informations sur la création de la bibliothèque, voir [Documentation CatBoost](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**2.** Créez un nouveau répertoire n’importe où et avec n’importe quel nom, par exemple, `data` et mettez la bibliothèque créée dedans. L’image Docker contient déjà la bibliothèque `data/libcatboostmodel.so`.
+**2.** Créez un nouveau répertoire n'importe où et avec n'importe quel nom, par exemple, `data` et mettez la bibliothèque créée dedans. L'image Docker contient déjà la bibliothèque `data/libcatboostmodel.so`.
 
-**3.** Créez un nouveau répertoire pour le modèle de configuration n’importe où et avec n’importe quel nom, par exemple, `models`.
+**3.** Créez un nouveau répertoire pour le modèle de configuration n'importe où et avec n'importe quel nom, par exemple, `models`.
 
-**4.** Créez un fichier de configuration de modèle avec n’importe quel nom, par exemple, `models/amazon_model.xml`.
+**4.** Créez un fichier de configuration de modèle avec n'importe quel nom, par exemple, `models/amazon_model.xml`.
 
 **5.** Décrire la configuration du modèle:
 
@@ -153,7 +153,7 @@ Le moyen le plus rapide d’évaluer un modèle CatBoost est la compilation `lib
 </models>
 ```
 
-**6.** Ajoutez le chemin D’accès à CatBoost et la configuration du modèle à la configuration de ClickHouse:
+**6.** Ajoutez le chemin D'accès à CatBoost et la configuration du modèle à la configuration de ClickHouse:
 
 ``` xml
 <!-- File etc/clickhouse-server/config.d/models_config.xml. -->
@@ -161,7 +161,7 @@ Le moyen le plus rapide d’évaluer un modèle CatBoost est la compilation `lib
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-## 4. Exécutez L’inférence du modèle à partir de SQL {#run-model-inference}
+## 4. Exécutez L'inférence du modèle à partir de SQL {#run-model-inference}
 
 Pour le modèle de test exécutez le client ClickHouse `$ clickhouse client`.
 
@@ -208,9 +208,9 @@ LIMIT 10
 ```
 
 !!! note "Note"
-    Plus d’infos sur [exp()](../sql-reference/functions/math-functions.md) fonction.
+    Plus d'infos sur [exp()](../sql-reference/functions/math-functions.md) fonction.
 
-Calculons LogLoss sur l’échantillon:
+Calculons LogLoss sur l'échantillon:
 
 ``` sql
 :) SELECT -avg(tg * log(prob) + (1 - tg) * log(1 - prob)) AS logloss
@@ -234,6 +234,6 @@ FROM
 ```
 
 !!! note "Note"
-    Plus d’infos sur [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) et [journal()](../sql-reference/functions/math-functions.md) fonction.
+    Plus d'infos sur [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) et [journal()](../sql-reference/functions/math-functions.md) fonction.
 
 [Article Original](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

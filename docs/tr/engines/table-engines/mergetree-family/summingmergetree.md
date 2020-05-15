@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: SummingMergeTree
 ---
@@ -100,7 +100,7 @@ Veriler bir tabloya eklendiğinde, bunlar olduğu gibi kaydedilir. ClickHouse, v
 
 ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) bir toplama fonksiyonu [toplam()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) ve `GROUP BY` yukarıdaki örnekte açıklandığı gibi yan tümcesi bir sorguda kullanılmalıdır.
 
-### Toplama İçin Ortak Kurallar {#common-rules-for-summation}
+### Toplama için ortak kurallar {#common-rules-for-summation}
 
 Sayısal veri türüne sahip sütunlardaki değerler özetlenir. Sütun kümesi parametre tarafından tanımlanır `columns`.
 
@@ -110,7 +110,7 @@ Sütun birincil anahtarda değilse ve özetlenmezse, mevcut olanlardan rasgele b
 
 Değerler, birincil anahtardaki sütunlar için özetlenmez.
 
-### Aggregatefunction Sütunlarındaki Toplama {#the-summation-in-the-aggregatefunction-columns}
+### Aggregatefunction Sütunlarındaki toplama {#the-summation-in-the-aggregatefunction-columns}
 
 Sütunlar için [AggregateFunction türü](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse olarak davranır [AggregatingMergeTree](aggregatingmergetree.md) işleve göre motor toplama.
 

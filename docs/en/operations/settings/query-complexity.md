@@ -80,11 +80,11 @@ Using the ‘any’ value lets you run an approximation of GROUP BY. The quality
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 Possible values:
 
--   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause) operation.
+-   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
 -   0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
@@ -232,7 +232,7 @@ What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
+This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
@@ -249,7 +249,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
@@ -278,7 +278,7 @@ Default value: `THROW`.
 
 **See Also**
 
--   [JOIN clause](../../sql-reference/statements/select.md#select-join)
+-   [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
 -   [Join table engine](../../engines/table-engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}

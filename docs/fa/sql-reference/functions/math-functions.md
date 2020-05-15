@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: "\u0631\u06CC\u0627\u0636\u06CC"
 ---
@@ -51,7 +51,7 @@ Returns a Float64 number that is close to the number π.
 
 ## عارف) {#erfx}
 
-اگر ‘x’ is non-negative, then `erf(x / σ√2)` احتمال این که یک متغیر تصادفی داشتن یک توزیع نرمال با انحراف استاندارد است ‘σ’ طول می کشد ارزش است که از مقدار مورد انتظار توسط بیش از هم جدا ‘x’.
+اگر ‘x’ سپس غیر منفی است `erf(x / σ√2)` احتمال این که یک متغیر تصادفی داشتن یک توزیع نرمال با انحراف استاندارد است ‘σ’ طول می کشد ارزش است که از مقدار مورد انتظار توسط بیش از هم جدا ‘x’.
 
 مثال (قانون سه سیگما):
 

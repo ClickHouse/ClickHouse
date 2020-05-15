@@ -786,4 +786,4 @@
 #### Security Fix
 * Fixed the possibility of reading directories structure in tables with `File` table engine. This fixes [#8536](https://github.com/ClickHouse/ClickHouse/issues/8536). [#8537](https://github.com/ClickHouse/ClickHouse/pull/8537) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
-## [Changelog for 2019](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats_new/changelog/2019.md)
+## [Changelog for 2019](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2019.md)

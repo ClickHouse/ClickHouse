@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
 ---
@@ -16,7 +16,7 @@ toc_title: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
 有几种方法可以提高字典性能:
 
 -   调用该函数以使用后的字典 `GROUP BY`.
--   将要提取的属性标记为“注射”。 如果不同的属性值对应于不同的键，则称为注射属性。 所以当 `GROUP BY` 使用由键获取属性值的函数，此函数会自动取出 `GROUP BY`.
+-   将要提取的属性标记为"注射"。 如果不同的属性值对应于不同的键，则称为注射属性。 所以当 `GROUP BY` 使用由键获取属性值的函数，此函数会自动取出 `GROUP BY`.
 
 ClickHouse为字典中的错误生成异常。 错误示例:
 
@@ -56,6 +56,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [散列](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [缓存](#cache)
+-   [直接](#direct)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
@@ -295,6 +296,28 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ### complex\_key\_cache {#complex-key-cache}
 
 这种类型的存储是用于复合 [键](external-dicts-dict-structure.md). 类似于 `cache`.
+
+### 直接 {#direct}
+
+字典不存储在内存中，并且在处理请求期间直接转到源。
+
+字典键具有 `UInt64` 类型。
+
+所有类型的 [来源](external-dicts-dict-sources.md)，除了本地文件，支持。
+
+配置示例:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+或
+
+``` sql
+LAYOUT(DIRECT())
+```
 
 ### ip\_trie {#ip-trie}
 
