@@ -1,30 +1,24 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 12
 toc_title: "\xD6\u011Fretici"
 ---
 
 # ClickHouse Eğitimi {#clickhouse-tutorial}
 
-## Bu Öğreticiden Ne Beklenir? {#what-to-expect-from-this-tutorial}
+## Bu Öğreticiden ne beklenir? {#what-to-expect-from-this-tutorial}
 
 Bu öğreticiden geçerek, basit bir ClickHouse kümesinin nasıl kurulacağını öğreneceksiniz. Küçük ama hataya dayanıklı ve ölçeklenebilir olacak. Ardından, verilerle doldurmak ve bazı demo sorguları yürütmek için örnek veri kümelerinden birini kullanacağız.
 
 ## Tek Düğüm Kurulumu {#single-node-setup}
 
-Dağıtılmış bir ortamın karmaşıklığını ertelemek için, Clickhouse’u tek bir sunucu veya sanal makinede dağıtmaya başlayacağız. ClickHouse genellikle [deb](index.md#install-from-deb-packages) veya [rpm](index.md#from-rpm-packages) paketler, ama var [alternatifler](index.md#from-docker-image) onları desteklemeyen işletim sistemleri için.
+Dağıtılmış bir ortamın karmaşıklığını ertelemek için, Clickhouse'u tek bir sunucu veya sanal makinede dağıtmaya başlayacağız. ClickHouse genellikle [deb](install.md#install-from-deb-packages) veya [rpm](install.md#from-rpm-packages) paketler, ama var [alternatifler](install.md#from-docker-image) onları desteklemeyen işletim sistemleri için.
 
 Örneğin, seçtiğiniz `deb` paketler ve yürütülen:
 
 ``` bash
-sudo apt-get install apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb https://repo.clickhouse.tech/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
+{% include 'install/deb.sh' %}
 ```
 
 Yüklü olan paketlerde ne var:
@@ -54,6 +48,7 @@ Bir kez `clickhouse-server` yukarı ve çalışıyor, biz kullanabilirsiniz `cli
 <details markdown="1">
 
 <summary>Clickhouse-client için hızlı ipuçları</summary>
+
 İnteraktif mod:
 
 ``` bash
@@ -87,9 +82,9 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Örnek Veri Kümesini İçe Aktar {#import-sample-dataset}
 
-Şimdi ClickHouse sunucumuzu bazı örnek verilerle doldurmanın zamanı geldi. Bu eğitimde, yandex’in anonim verilerini kullanacağız.Metrica, açık kaynak olmadan önce Clickhouse’u üretim yolunda çalıştıran ilk hizmet (daha fazlası [tarih bölümü](../introduction/history.md)). Var [Yandex’i içe aktarmanın birden fazla yolu.Metrica veri kümesi](example-datasets/metrica.md) ve öğretici uğruna, en gerçekçi olanı ile gideceğiz.
+Şimdi ClickHouse sunucumuzu bazı örnek verilerle doldurmanın zamanı geldi. Bu eğitimde, yandex'in anonim verilerini kullanacağız.Metrica, açık kaynak olmadan önce Clickhouse'u üretim yolunda çalıştıran ilk hizmet (daha fazlası [tarih bölümü](../introduction/history.md)). Var [Yandex'i içe aktarmanın birden fazla yolu.Metrica veri kümesi](example-datasets/metrica.md) ve öğretici uğruna, en gerçekçi olanı ile gideceğiz.
 
-### Tablo Verilerini Indirin Ve ayıklayın {#download-and-extract-table-data}
+### Tablo verilerini indirin ve ayıklayın {#download-and-extract-table-data}
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -466,7 +461,7 @@ Gördüğümüz gibi, `hits_v1` kullanır [temel MergeTree motoru](../engines/ta
 
 ### Verileri İçe Aktar {#import-data}
 
-Clickhouse’a veri aktarımı yapılır [INSERT INTO](../sql-reference/statements/insert-into.md) diğer birçok SQL veritabanlarında olduğu gibi sorgu. Bununla birlikte, veriler genellikle [desteklenen seri hale getirme biçimleri](../interfaces/formats.md) yerine `VALUES` fıkra clausesı (ayrıca desteklenmektedir).
+Clickhouse'a veri aktarımı yapılır [INSERT INTO](../sql-reference/statements/insert-into.md) diğer birçok SQL veritabanlarında olduğu gibi sorgu. Bununla birlikte, veriler genellikle [desteklenen seri hale getirme biçimleri](../interfaces/formats.md) yerine `VALUES` fıkra clausesı (ayrıca desteklenmektedir).
 
 Onları almak için ne kadar daha önce indirdiğimiz dosyaları sekme ayrılmış biçimde, yani burada konsol istemci ile :
 
@@ -486,7 +481,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-İsteğe bağlı olarak şunları yapabilirsiniz [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) ithalattan sonra tablolar. MergeTree-family’den bir motorla yapılandırılmış tablolar, veri depolamayı en iyi duruma getirmek (veya en azından mantıklı olup olmadığını kontrol etmek) için her zaman arka planda veri parçalarının birleştirilmesini sağlar. Bu sorgular, tablo motorunu bir süre sonra yerine şu anda depolama optimizasyonu yapmaya zorlar:
+İsteğe bağlı olarak şunları yapabilirsiniz [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) ithalattan sonra tablolar. MergeTree-family'den bir motorla yapılandırılmış tablolar, veri depolamayı en iyi duruma getirmek (veya en azından mantıklı olup olmadığını kontrol etmek) için her zaman arka planda veri parçalarının birleştirilmesini sağlar. Bu sorgular, tablo motorunu bir süre sonra yerine şu anda depolama optimizasyonu yapmaya zorlar:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
@@ -528,7 +523,7 @@ WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartU
 
 ClickHouse kümesi homojen bir kümedir. Kurulum adımları:
 
-1.  Kümenin tüm makinelerine ClickHouse Server’ı yükleyin
+1.  Kümenin tüm makinelerine ClickHouse Server'ı yükleyin
 2.  Yapılandırma dosyalarında küme yapılandırmalarını ayarlama
 3.  Her örnekte yerel tablolar oluşturun
 4.  Create a [Dağıtılmış tablo](../engines/table-engines/special/distributed.md)

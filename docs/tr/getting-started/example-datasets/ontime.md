@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 15
 toc_title: OnTime
 ---
@@ -12,7 +12,7 @@ Bu veri kümesi iki şekilde elde edilebilir:
 -   ham verilerden içe aktarma
 -   hazırlanan bölüm downloadlerin indir downloadilmesi
 
-## Ham Verilerden İçe Aktarma {#import-from-raw-data}
+## Ham verilerden içe aktarma {#import-from-raw-data}
 
 Veri indirme:
 
@@ -153,7 +153,7 @@ Veri yükleme:
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Hazırlanan Bölüm Downloadlerin Indir Downloadilmesi {#download-of-prepared-partitions}
+## Hazırlanan Bölüm downloadlerin indir downloadilmesi {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar

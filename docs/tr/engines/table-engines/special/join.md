@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: Katmak
 ---
 
 # Katmak {#join}
 
-Kullanılmak üzere hazırlanmış veri yapısı [JOIN](../../../sql-reference/statements/select.md#select-join) harekat.
+Kullanılmak üzere hazırlanmış veri yapısı [JOIN](../../../sql-reference/statements/select/join.md#select-join) harekat.
 
 ## Tablo oluşturma {#creating-a-table}
 
@@ -23,8 +23,8 @@ Ayrıntılı açıklamasına bakın [CREATE TABLE](../../../sql-reference/statem
 
 **Motor Parametreleri**
 
--   `join_strictness` – [Katılık katılın](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [Birleştirme türü](../../../sql-reference/statements/select.md#select-join-types).
+-   `join_strictness` – [Katılık katılın](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_type` – [Birleştirme türü](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` fık thera: `JOIN` işlemi yapılmamaktadır.
 
 Girmek `join_strictness` ve `join_type` tırnak işaretleri olmadan parametreler, örneğin, `Join(ANY, LEFT, col1)`. Onlar eşleşmelidir `JOIN` tablo için kullanılacak işlem. Parametreler eşleşmezse, ClickHouse bir istisna atmaz ve yanlış veri döndürebilir.
@@ -79,16 +79,16 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 └────────────────────────────────────────────┘
 ```
 
-### Veri seçme Ve Ekleme {#selecting-and-inserting-data}
+### Veri seçme ve ekleme {#selecting-and-inserting-data}
 
-Kullanabilirsiniz `INSERT` veri eklemek için sorgular `Join`- motor masaları. Tablo ile oluşturulmuş ise `ANY` katılık, yinelenen anahtarlar için veriler göz ardı edilir. İle… `ALL` katılık, tüm satırlar eklenir.
+Kullanabilirsiniz `INSERT` veri eklemek için sorgular `Join`- motor masaları. Tablo ile oluşturulmuş ise `ANY` katılık, yinelenen anahtarlar için veriler göz ardı edilir. İle... `ALL` katılık, tüm satırlar eklenir.
 
 Gerçekleştir aemezsiniz `SELECT` doğrudan tablodan sorgulayın. Bunun yerine, aşağıdaki yöntemlerden birini kullanın:
 
 -   Tabloyu sağ tarafa yerleştirin. `JOIN` yan.
 -   Call the [joinGet](../../../sql-reference/functions/other-functions.md#joinget) tablodan bir sözlükten aynı şekilde veri ayıklamanızı sağlayan işlev.
 
-### Sınırlamalar Ve Ayarlar {#join-limitations-and-settings}
+### Sınırlamalar ve Ayarlar {#join-limitations-and-settings}
 
 Bir tablo oluştururken aşağıdaki ayarlar uygulanır:
 
@@ -100,11 +100,11 @@ Bir tablo oluştururken aşağıdaki ayarlar uygulanır:
 
 Bu `Join`- motor tabloları kullanılamaz `GLOBAL JOIN` harekat.
 
-Bu `Join`- motor kullanımına izin verir [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) ayarı `CREATE TABLE` deyim. Ve [SELECT](../../../sql-reference/statements/select.md) sorgu kullanımına izin verir `join_use_nulls` çok. Eğer farklı varsa `join_use_nulls` ayarlar, tablo birleştirme bir hata alabilirsiniz. Bu katılmak türüne bağlıdır. Kullandığınızda [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonksiyonu, aynı kullanmak zorunda `join_use_nulls` ayarı `CRATE TABLE` ve `SELECT` deyimler.
+Bu `Join`- motor kullanımına izin verir [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) ayarı `CREATE TABLE` deyim. Ve [SELECT](../../../sql-reference/statements/select/index.md) sorgu kullanımına izin verir `join_use_nulls` çok. Eğer farklı varsa `join_use_nulls` ayarlar, tablo birleştirme bir hata alabilirsiniz. Bu katılmak türüne bağlıdır. Kullandığınızda [joinGet](../../../sql-reference/functions/other-functions.md#joinget) fonksiyonu, aynı kullanmak zorunda `join_use_nulls` ayarı `CRATE TABLE` ve `SELECT` deyimler.
 
 ## Veri Depolama {#data-storage}
 
-`Join` tablo verileri her zaman RAM’de bulunur. Bir tabloya satır eklerken, sunucu yeniden başlatıldığında geri yüklenebilir, böylece ClickHouse disk üzerindeki dizine veri bloklarını yazar.
+`Join` tablo verileri her zaman RAM'de bulunur. Bir tabloya satır eklerken, sunucu yeniden başlatıldığında geri yüklenebilir, böylece ClickHouse disk üzerindeki dizine veri bloklarını yazar.
 
 Sunucu yanlış yeniden başlatılırsa, diskteki veri bloğu kaybolabilir veya zarar görebilir. Bu durumda, dosyayı hasarlı verilerle el ile silmeniz gerekebilir.
 

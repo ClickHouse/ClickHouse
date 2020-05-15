@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: "Giri\u015F ve \xE7\u0131k\u0131\u015F bi\xE7imleri"
 ---
 
-# Giriş Ve çıkış Verileri için biçimler {#formats}
+# Giriş ve çıkış verileri için biçimler {#formats}
 
 ClickHouse kabul ve çeşitli biçimlerde veri dönebilirsiniz. Giriş için desteklenen bir biçim, sağlanan verileri ayrıştırmak için kullanılabilir `INSERT`s, gerçekleştirmek için `SELECT`s dosya, URL veya HDFS gibi bir dosya destekli tablodan veya harici bir sözlük okumak için. Çıktı için desteklenen bir biçim düzenlemek için kullanılabilir
 sonuçları bir `SELECT` ve gerçekleştirmek için `INSERT`s dosya destekli bir tabloya.
@@ -42,7 +42,7 @@ Desteklenen formatlar şunlardır:
 | [ORC](#data-format-orc)                                         | ✔     | ✗     |
 | [RowBinary](#rowbinary)                                         | ✔     | ✔     |
 | [Rowbinarywithnames ve türleri](#rowbinarywithnamesandtypes)    | ✔     | ✔     |
-| [Yerel](#native)                                                | ✔     | ✔     |
+| [Yerli](#native)                                                | ✔     | ✔     |
 | [Boş](#null)                                                    | ✗     | ✔     |
 | [XML](#xml)                                                     | ✗     | ✔     |
 | [CapnProto](#capnproto)                                         | ✔     | ✗     |
@@ -55,7 +55,7 @@ Sekmede ayrı format, veri satır ile yazılır. Her satır sekmelerle ayrılmı
 
 Bu biçim adı altında da kullanılabilir `TSV`.
 
-Bu `TabSeparated` format, özel programlar ve komut dosyaları kullanarak verileri işlemek için uygundur. Varsayılan olarak HTTP arabiriminde ve komut satırı istemcisinin toplu iş modunda kullanılır. Bu format aynı zamanda farklı Dbms’ler arasında veri aktarımı sağlar. Örneğin, Mysql’den bir dökümü alabilir ve Clickhouse’a yükleyebilirsiniz veya tam tersi.
+Bu `TabSeparated` format, özel programlar ve komut dosyaları kullanarak verileri işlemek için uygundur. Varsayılan olarak HTTP arabiriminde ve komut satırı istemcisinin toplu iş modunda kullanılır. Bu format aynı zamanda farklı Dbms'ler arasında veri aktarımı sağlar. Örneğin, Mysql'den bir dökümü alabilir ve Clickhouse'a yükleyebilirsiniz veya tam tersi.
 
 Bu `TabSeparated` biçim, toplam değerleri (TOPLAMLARLA birlikte kullanıldığında) ve aşırı değerleri (ne zaman ‘extremes’ 1 olarak ayarlanır). Bu durumlarda, toplam değerler ve aşırılıklar ana veriden sonra çıkar. Ana sonuç, toplam değerler ve aşırılıklar birbirinden boş bir çizgi ile ayrılır. Örnek:
 
@@ -207,7 +207,7 @@ Ayar `format_template_resultset` resultset için bir biçim dizesi içeren dosya
 -   `bytes_read` bayt sayısı (sıkıştırılmamış) okundu mu
 
 Tutucu `data`, `totals`, `min` ve `max` kaç rulema kuralı belirtilm (em (elidir (veya `None` açıkça belirtilen) olmalıdır. Kalan yer tutucuları belirtilen kaçan herhangi bir kural olabilir.
-Eğer… `format_template_resultset` ayar boş bir dizedir, `${data}` varsayılan değer olarak kullanılır.
+Eğer... `format_template_resultset` ayar boş bir dizedir, `${data}` varsayılan değer olarak kullanılır.
 Insert sorguları biçimi için önek veya sonek varsa bazı sütunları veya bazı alanları atlamaya izin verir (örneğe bakın).
 
 Örnek seç:
@@ -342,7 +342,7 @@ SELECT * FROM t_null FORMAT TSKV
 x=1    y=\N
 ```
 
-Çok sayıda küçük sütun olduğunda, bu biçim etkisizdir ve genellikle kullanmak için hiçbir neden yoktur. Bununla birlikte, verimlilik açısından Jsoneachrow’dan daha kötü değildir.
+Çok sayıda küçük sütun olduğunda, bu biçim etkisizdir ve genellikle kullanmak için hiçbir neden yoktur. Bununla birlikte, verimlilik açısından Jsoneachrow'dan daha kötü değildir.
 
 Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
 
@@ -352,7 +352,7 @@ Ayrıştırma, ek alanın varlığına izin verir `tskv` eşit işareti veya bir
 
 Virgülle ayrılmış değerler biçimi ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-Biçimlendirme yaparken, satırlar çift tırnak içine alınır. Bir dizenin içindeki çift alıntı, bir satırda iki çift tırnak olarak çıktılanır. Karakterlerden kaçmak için başka kural yoktur. Tarih ve Tarih-Saat çift tırnak içine alınır. Sayılar tırnak işaretleri olmadan çıktı. Değerler, bir sınırlayıcı karakterle ayrılır; `,` varsayılan olarak. Sınırlayıcı karakteri ayarında tanımlanır [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Satırlar Unıx satır besleme (LF) kullanılarak ayrılır. Diziler CSV’DE aşağıdaki gibi serileştirilir: ilk olarak, dizi TabSeparated biçiminde olduğu gibi bir dizeye serileştirilir ve daha sonra ortaya çıkan dize çift tırnak içinde CSV’YE çıkarılır. CSV biçimindeki Tuples ayrı sütunlar olarak serileştirilir(yani, tuple’daki yuvalanmaları kaybolur).
+Biçimlendirme yaparken, satırlar çift tırnak içine alınır. Bir dizenin içindeki çift alıntı, bir satırda iki çift tırnak olarak çıktılanır. Karakterlerden kaçmak için başka kural yoktur. Tarih ve Tarih-Saat çift tırnak içine alınır. Sayılar tırnak işaretleri olmadan çıktı. Değerler, bir sınırlayıcı karakterle ayrılır; `,` varsayılan olarak. Sınırlayıcı karakteri ayarında tanımlanır [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Satırlar Unıx satır besleme (LF) kullanılarak ayrılır. Diziler CSV'DE aşağıdaki gibi serileştirilir: ilk olarak, dizi TabSeparated biçiminde olduğu gibi bir dizeye serileştirilir ve daha sonra ortaya çıkan dize çift tırnak içinde CSV'YE çıkarılır. CSV biçimindeki Tuples ayrı sütunlar olarak serileştirilir(yani, tuple'daki yuvalanmaları kaybolur).
 
 ``` bash
 $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
@@ -360,7 +360,7 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 \* Varsayılan olarak, sınırlayıcı `,`. Görmek [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) daha fazla bilgi için ayarlama.
 
-Ayrıştırma yaparken, tüm değerler tırnak işaretleri ile veya tırnak işaretleri olmadan ayrıştırılabilir. Hem çift hem de tek tırnak desteklenmektedir. Satırlar tırnak işaretleri olmadan da düzenlenebilir. Bu durumda, sınırlayıcı karaktere veya satır beslemesine (CR veya LF) ayrıştırılır. RFC’Yİ ihlal ederken, satırları tırnak işaretleri olmadan ayrıştırırken, önde gelen ve sondaki boşluklar ve sekmeler göz ardı edilir. Hat beslemesi için Unix (LF), Windows (CR LF) ve Mac OS Classic (CR LF) türleri desteklenir.
+Ayrıştırma yaparken, tüm değerler tırnak işaretleri ile veya tırnak işaretleri olmadan ayrıştırılabilir. Hem çift hem de tek tırnak desteklenmektedir. Satırlar tırnak işaretleri olmadan da düzenlenebilir. Bu durumda, sınırlayıcı karaktere veya satır beslemesine (CR veya LF) ayrıştırılır. RFC'Yİ ihlal ederken, satırları tırnak işaretleri olmadan ayrıştırırken, önde gelen ve sondaki boşluklar ve sekmeler göz ardı edilir. Hat beslemesi için Unix (LF), Windows (CR LF) ve Mac OS Classic (CR LF) türleri desteklenir.
 
 Boş unquoted giriş değerleri, ilgili sütunlar için varsayılan değerlerle değiştirilir
 [ınput\_format\_defaults\_for\_omitted\_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
@@ -451,7 +451,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-Json JavaScript ile uyumludur. Bunu sağlamak için, bazı karakterler ek olarak kaçar: eğik çizgi `/` olarak kaç İsar `\/`; alternatif Satır sonları `U+2028` ve `U+2029`, hangi bazı tarayıcılar kırmak, olarak kaçtı `\uXXXX`. ASCII denetim karakterleri kaçtı: backspace, form besleme, satır besleme, satır başı ve yatay sekme ile değiştirilir `\b`, `\f`, `\n`, `\r`, `\t` , 00-1f aralığında kalan baytların yanı sıra `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0’a.
+Json JavaScript ile uyumludur. Bunu sağlamak için, bazı karakterler ek olarak kaçar: eğik çizgi `/` olarak kaç İsar `\/`; alternatif Satır sonları `U+2028` ve `U+2029`, hangi bazı tarayıcılar kırmak, olarak kaçtı `\uXXXX`. ASCII denetim karakterleri kaçtı: backspace, form besleme, satır besleme, satır başı ve yatay sekme ile değiştirilir `\b`, `\f`, `\n`, `\r`, `\t` , 00-1f aralığında kalan baytların yanı sıra `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double-quotes by default. To remove the quotes, you can set the configuration parameter [output\_format\_json\_quote\_64bit\_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) 0'a.
 
 `rows` – The total number of output rows.
 
@@ -470,7 +470,7 @@ Ayrıca bakınız [JSONEachRow](#jsoneachrow) biçimli.
 
 ## JSONCompact {#jsoncompact}
 
-Yalnızca veri satırlarında json’dan farklıdır, nesnelerde değil, dizilerde çıktıdır.
+Yalnızca veri satırlarında json'dan farklıdır, nesnelerde değil, dizilerde çıktıdır.
 
 Örnek:
 
@@ -582,7 +582,7 @@ Sorgu `SELECT * FROM UserActivity FORMAT JSONEachRow` dönüşler:
 Aksine [JSON](#json) biçimi, geçersiz UTF-8 dizilerinin hiçbir ikame yoktur. Değerleri için olduğu gibi aynı şekilde kaçtı `JSON`.
 
 !!! note "Not"
-    Herhangi bir bayt kümesi dizelerde çıktı olabilir. Kullan… `JSONEachRow` tablodaki verilerin herhangi bir bilgi kaybetmeden JSON olarak biçimlendirilebileceğinden eminseniz biçimlendirin.
+    Herhangi bir bayt kümesi dizelerde çıktı olabilir. Kullan... `JSONEachRow` tablodaki verilerin herhangi bir bilgi kaybetmeden JSON olarak biçimlendirilebileceğinden eminseniz biçimlendirin.
 
 ### İç içe yapıların kullanımı {#jsoneachrow-nested}
 
@@ -643,9 +643,9 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Yerel {#native}
+## Yerli {#native}
 
-En verimli biçim. Veriler ikili formatta bloklar tarafından yazılır ve okunur. Her blok için satır sayısı, sütun sayısı, sütun adları ve türleri ve bu bloktaki sütunların parçaları birbiri ardına kaydedilir. Başka bir deyişle, bu format “columnar” – it doesn’t convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
+En verimli biçim. Veriler ikili formatta bloklar tarafından yazılır ve okunur. Her blok için satır sayısı, sütun sayısı, sütun adları ve türleri ve bu bloktaki sütunların parçaları birbiri ardına kaydedilir. Başka bir deyişle, bu format “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
 Bu biçimi, yalnızca ClickHouse DBMS tarafından okunabilen dökümleri hızlı bir şekilde oluşturmak için kullanabilirsiniz. Bu formatla kendiniz çalışmak mantıklı değil.
 
@@ -686,7 +686,7 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 └──────────────────────────────────────┘
 ```
 
-Terminale çok fazla veri boşaltmaktan kaçınmak için yalnızca ilk 10.000 satır yazdırılır. Satır sayısı 10.000’den büyük veya eşitse, ileti “Showed first 10 000” bas .ılmıştır.
+Terminale çok fazla veri boşaltmaktan kaçınmak için yalnızca ilk 10.000 satır yazdırılır. Satır sayısı 10.000'den büyük veya eşitse, ileti “Showed first 10 000” bas .ılmıştır.
 Bu biçim yalnızca bir sorgu sonucu çıktısı için uygundur, ancak ayrıştırma için değil (bir tabloya eklemek için veri alma).
 
 Güzel biçim, toplam değerleri (TOPLAMLARLA birlikte kullanıldığında) ve aşırılıkları (ne zaman ‘extremes’ 1 olarak ayarlanır). Bu durumlarda, toplam değerler ve aşırı değerler ana veriden sonra ayrı tablolarda çıktılanır. Örnek (gösterilen [PrettyCompact](#prettycompact) biçimli):
@@ -766,7 +766,7 @@ Dizi varint uzunluğu (imzasız) olarak temsil edilir [LEB128](https://en.wikipe
 
 İçin [NULL](../sql-reference/syntax.md#null-literal) destek, 1 veya 0 içeren ek bir bayt her önce eklenir [Nullable](../sql-reference/data-types/nullable.md) değer. 1 ise, o zaman değer `NULL` ve bu bayt ayrı bir değer olarak yorumlanır. 0 ise, bayttan sonraki değer değil `NULL`.
 
-## Rowbinarywithnames Ve türleri {#rowbinarywithnamesandtypes}
+## Rowbinarywithnames ve türleri {#rowbinarywithnamesandtypes}
 
 Benzer [RowBinary](#rowbinary), ancak eklenen Başlık ile:
 
@@ -897,9 +897,9 @@ Diziler olarak çıktı `<array><elem>Hello</elem><elem>World</elem>...</array>`
 
 ## CapnProto {#capnproto}
 
-Cap’n Proto, Protokol Tamponlarına ve tasarrufuna benzer, ancak JSON veya MessagePack gibi olmayan bir ikili mesaj biçimidir.
+Cap'n Proto, Protokol Tamponlarına ve tasarrufuna benzer, ancak JSON veya MessagePack gibi olmayan bir ikili mesaj biçimidir.
 
-Cap’n Proto mesajları kesinlikle yazılır ve kendi kendini tanımlamaz, yani harici bir şema açıklamasına ihtiyaç duyarlar. Şema anında uygulanır ve her sorgu için önbelleğe alınır.
+Cap'n Proto mesajları kesinlikle yazılır ve kendi kendini tanımlamaz, yani harici bir şema açıklamasına ihtiyaç duyarlar. Şema anında uygulanır ve her sorgu için önbelleğe alınır.
 
 ``` bash
 $ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
@@ -948,7 +948,7 @@ message MessageType {
 };
 ```
 
-İletişim kuralı arabellekleri’ ileti türü Tablo sütunları ve alanları arasındaki yazışmaları bulmak için clickhouse adlarını karşılaştırır.
+İletişim kuralı arabellekleri' ileti türü Tablo sütunları ve alanları arasındaki yazışmaları bulmak için clickhouse adlarını karşılaştırır.
 Bu karşılaştırma büyük / küçük harf duyarsız ve karakterler `_` (alt çizgi) ve `.` (nokta) eşit olarak kabul edilir.
 Bir sütun türleri ve protokol arabellekleri ileti alanı farklıysa, gerekli dönüştürme uygulanır.
 
@@ -987,13 +987,13 @@ Ayrıca bakınız [popüler dillerde uzunlukla ayrılmış protobuf mesajları n
 
 ## Avro {#data-format-avro}
 
-[Apache Avro](http://avro.apache.org/) Apache’nin Hadoop projesi kapsamında geliştirilen satır odaklı veri serileştirme çerçevesidir.
+[Apache Avro](http://avro.apache.org/) Apache'nin Hadoop projesi kapsamında geliştirilen satır odaklı veri serileştirme çerçevesidir.
 
 ClickHouse Avro biçimi okuma ve yazma destekler [Avro veri dosyaları](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
 ### Veri Türleri Eşleştirme {#data_types-matching}
 
-Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse’la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
 
 | Avro veri türü `INSERT`                     | ClickHouse veri türü                                                                                              | Avro veri türü `SELECT`      |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
@@ -1055,7 +1055,7 @@ Her Avro iletisi, şema Kayıt defterinin yardımıyla gerçek şemaya çözüle
 
 Şemalar çözüldükten sonra önbelleğe alınır.
 
-Şema kayıt defteri URL’si ile yapılandırılır [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+Şema kayıt defteri URL'si ile yapılandırılır [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
 ### Veri Türleri Eşleştirme {#data_types-matching-1}
 
@@ -1101,7 +1101,7 @@ SELECT * FROM topic1_stream;
 
 ### Veri Türleri Eşleştirme {#data_types-matching-2}
 
-Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse’la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
 
 | Parke veri türü (`INSERT`) | ClickHouse veri türü                                      | Parke veri türü (`SELECT`) |
 |----------------------------|-----------------------------------------------------------|----------------------------|
@@ -1127,7 +1127,7 @@ Desteklen datameyen veri türleri: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSO
 
 ClickHouse tablo sütunlarının veri türleri, eklenen parke verilerinin ilgili alanlarından farklı olabilir. Veri eklerken, ClickHouse veri türlerini yukarıdaki tabloya göre yorumlar ve sonra [döküm](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) ClickHouse tablo sütunu için ayarlanmış olan bu veri türüne ait veriler.
 
-### Veri Ekleme Ve seçme {#inserting-and-selecting-data}
+### Veri ekleme ve seçme {#inserting-and-selecting-data}
 
 Bir dosyadan parke verilerini ClickHouse tablosuna aşağıdaki komutla ekleyebilirsiniz:
 
@@ -1145,11 +1145,11 @@ Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tab
 
 ## ORC {#data-format-orc}
 
-[Apache ORCC](https://orc.apache.org/) hadoop ekosisteminde yaygın bir sütunlu depolama biçimidir. Bu formatta yalnızca Clickhouse’a veri ekleyebilirsiniz.
+[Apache ORCC](https://orc.apache.org/) hadoop ekosisteminde yaygın bir sütunlu depolama biçimidir. Bu formatta yalnızca Clickhouse'a veri ekleyebilirsiniz.
 
 ### Veri Türleri Eşleştirme {#data_types-matching-3}
 
-Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse’la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` sorgular.
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` sorgular.
 
 | Orc veri türü (`INSERT`) | ClickHouse veri türü                                |
 |--------------------------|-----------------------------------------------------|

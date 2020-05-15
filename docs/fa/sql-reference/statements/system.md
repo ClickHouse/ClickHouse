@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: SYSTEM
 ---
@@ -39,7 +39,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
-کش دی ان اس داخلی بازنشانی را کلیک کنید. گاهی اوقات (برای clickhouse نسخه) لازم است برای استفاده از این دستور هنگامی که در حال تغییر زیرساخت ها (تغییر آدرس ip دیگر clickhouse سرور یا سرور استفاده شده توسط لغت نامه).
+کش دی ان اس داخلی بازنشانی را کلیک کنید. گاهی اوقات (برای ClickHouse نسخه) لازم است برای استفاده از این دستور هنگامی که در حال تغییر زیرساخت ها (تغییر آدرس IP دیگر ClickHouse سرور یا سرور استفاده شده توسط لغت نامه).
 
 برای راحت تر (اتوماتیک) مدیریت کش دیدن disable\_internal\_dns\_cache, dns\_cache\_update\_period پارامترهای.
 

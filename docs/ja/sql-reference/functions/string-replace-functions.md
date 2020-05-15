@@ -1,30 +1,30 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: "\u6587\u5B57\u5217\u3067\u7F6E\u63DB\u3059\u308B\u5834\u5408"
 ---
 
 # 文字列の検索と置換のための関数 {#functions-for-searching-and-replacing-in-strings}
 
-## replaceOne(干し草の山,パターン,交換) {#replaceonehaystack-pattern-replacement}
+## replaceOne(干し草、パターン、置換) {#replaceonehaystack-pattern-replacement}
 
-が存在する場合は、その最初のオカレンスを置き換えます。 ‘pattern’ の部分文字列 ‘haystack’ と ‘replacement’ サブストリング。
-以後, ‘pattern’ と ‘replacement’ 定数である必要があります。
+それが存在する場合は、最初の出現を置き換えます。 ‘pattern’ サブストリング ‘haystack’ と ‘replacement’ 部分文字列。
+以降, ‘pattern’ と ‘replacement’ 定数である必要があります。
 
-## replaceAll(干し草の山、パターン、交換)、交換(干し草の山、パターン、交換) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
+## replaceAll(干し草,パターン,置換),replace(干し草,パターン,置換) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
 
-すべての出現を置き換えます。 ‘pattern’ の部分文字列 ‘haystack’ と ‘replacement’ サブストリング。
+すべての出現を置き換えます。 ‘pattern’ サブストリング ‘haystack’ と ‘replacement’ 部分文字列。
 
-## replaceRegexpOne(haystack,pattern,replacement) {#replaceregexponehaystack-pattern-replacement}
+## replaceRegexpOne(干し草、パターン、置換) {#replaceregexponehaystack-pattern-replacement}
 
 を使用して交換 ‘pattern’ 正規表現。 Re2正規表現。
-最初のオカレンスのみを置き換えます(存在する場合)。
-パターンは次のように指定できます ‘replacement’. このパタ `\0-\9`.
-置換 `\0` 正規表現全体を含みます。 置換 `\1-\9` サブパターンに対応しますnumbers.To を使用 `\` テンプレート内の文字をエスケープします `\`.
+存在する場合は、最初の出現のみを置き換えます。
+パターンは次のように指定できます ‘replacement’. このパター `\0-\9`.
+置換 `\0` 正規表現全体を含みます。 置換 `\1-\9` サブパターンに対応するnumbers.To 使用する `\` テンプレー `\`.
 また、文字列リテラルには余分なエスケープが必要です。
 
-例1. 日付をアメリカ形式に変換する:
+例1 日付をアメリカ形式に変換する:
 
 ``` sql
 SELECT DISTINCT
@@ -45,7 +45,7 @@ FORMAT TabSeparated
 2014-03-23      03/23/2014
 ```
 
-例2. 文字列を十回コピーする:
+例2。 文字列を十回コピーする:
 
 ``` sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
@@ -59,7 +59,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 
 ## replaceRegexpAll(干し草の山,パターン,置換) {#replaceregexpallhaystack-pattern-replacement}
 
-これは同じことをしますが、すべての出現を置き換えます。 例えば:
+これは同じことを行いますが、すべての出現を置き換えます。 例:
 
 ``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
@@ -71,8 +71,8 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 └────────────────────────────┘
 ```
 
-例外として、正規表現が空の部分文字列で処理された場合、置換は複数回行われません。
-例えば:
+例外として、正規表現が空の部分文字列に対して機能した場合、置換は複数回行われません。
+例:
 
 ``` sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
@@ -86,9 +86,9 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 
 ## regexpQuoteMeta(s) {#regexpquotemetas}
 
-この関数は、文字列内のいくつかの定義済み文字の前に円記号を追加します。
-定義済み文字: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, ‘\]’, ‘?’, ‘\*‘,’+‘,’{‘,’:‘,’-’.
-この実装はre2::re2::quotemetaとは若干異なります。 ゼロバイトを\\0の代わりに\\00としてエスケープし、必要な文字だけをエスケープします。
-詳細については、リンク: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
+関数は、文字列内のいくつかの定義済み文字の前に円記号を追加します。
+定義済み文字: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, '\]', ‘?’, '\*‘,’+‘,’{‘,’:‘,’-'.
+この実装はre2::RE2::QuoteMetaとは若干異なります。 ゼロバイトは00の代わりに\\0としてエスケープされ、必要な文字のみがエスケープされます。
+詳細は、リンクを参照してください: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/functions/string_replace_functions/) <!--hide-->

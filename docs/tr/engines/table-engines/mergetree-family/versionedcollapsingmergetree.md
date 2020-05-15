@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: VersionedCollapsingMergeTree
 ---
@@ -64,7 +64,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
+) ENGINE [=] VersionedCollapsingMergeTree(date-column [, samp#table_engines_versionedcollapsingmergetreeling_expression], (primary, key), index_granularity, sign, version)
 ```
 
 Dışındaki tüm parametreler `sign` ve `version` içinde olduğu gibi aynı anlama sahip `MergeTree`.
@@ -85,7 +85,7 @@ Dışındaki tüm parametreler `sign` ve `version` içinde olduğu gibi aynı an
 
 Bazı nesneler için sürekli değişen verileri kaydetmeniz gereken bir durumu düşünün. Bir nesne için bir satıra sahip olmak ve değişiklikler olduğunda satırı güncellemek mantıklıdır. Ancak, depolama alanındaki verileri yeniden yazmayı gerektirdiğinden, güncelleştirme işlemi bir DBMS için pahalı ve yavaştır. Verileri hızlı bir şekilde yazmanız gerekiyorsa güncelleştirme kabul edilemez, ancak değişiklikleri bir nesneye sırayla aşağıdaki gibi yazabilirsiniz.
 
-Kullan… `Sign` satır yazarken sütun. Eğer `Sign = 1` bu, satırın bir nesnenin durumu olduğu anlamına gelir (diyelim “state” satır). Eğer `Sign = -1` aynı özelliklere sahip bir nesnenin durumunun iptal edildiğini gösterir (buna “cancel” satır). Ayrıca kullanın `Version` bir nesnenin her durumunu ayrı bir sayı ile tanımlaması gereken sütun.
+Kullan... `Sign` satır yazarken sütun. Eğer `Sign = 1` bu, satırın bir nesnenin durumu olduğu anlamına gelir (diyelim “state” satır). Eğer `Sign = -1` aynı özelliklere sahip bir nesnenin durumunun iptal edildiğini gösterir (buna “cancel” satır). Ayrıca kullanın `Version` bir nesnenin her durumunu ayrı bir sayı ile tanımlaması gereken sütun.
 
 Örneğin, kullanıcıların bazı sitede kaç sayfa ziyaret ettiğini ve ne kadar süre orada olduklarını hesaplamak istiyoruz. Bir noktada, kullanıcı etkinliği durumu ile aşağıdaki satırı yazıyoruz:
 
@@ -131,7 +131,7 @@ Her değişiklik için neden iki satıra ihtiyacımız olduğunu bulmak için bk
 
 ClickHouse veri parçalarını birleştirdiğinde, aynı birincil anahtar ve sürüm ve farklı olan her satır çiftini siler `Sign`. Satırların sırası önemli değil.
 
-ClickHouse veri eklediğinde, satırları birincil anahtarla sipariş eder. Eğer… `Version` sütun birincil anahtarda değil, ClickHouse onu birincil anahtara örtük olarak son alan olarak ekler ve sipariş vermek için kullanır.
+ClickHouse veri eklediğinde, satırları birincil anahtarla sipariş eder. Eğer... `Version` sütun birincil anahtarda değil, ClickHouse onu birincil anahtara örtük olarak son alan olarak ekler ve sipariş vermek için kullanır.
 
 ## Veri Seçme {#selecting-data}
 
@@ -143,7 +143,7 @@ Toplanan `count`, `sum` ve `avg` bu şekilde hesaplanabilir. Toplanan `uniq` bir
 
 İle verileri ayıklamak gerekiyorsa “collapsing” ancak toplama olmadan (örneğin, en yeni değerleri belirli koşullarla eşleşen satırların mevcut olup olmadığını kontrol etmek için) `FINAL` değiştirici için `FROM` yan. Bu yaklaşım verimsizdir ve büyük tablolarla kullanılmamalıdır.
 
-## Kullanım Örneği {#example-of-use}
+## Kullanım örneği {#example-of-use}
 
 Örnek veriler:
 

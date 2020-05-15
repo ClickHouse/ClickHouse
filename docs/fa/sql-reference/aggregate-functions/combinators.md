@@ -1,9 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
-toc_title: "\u062A\u0631\u06A9\u06CC\u0628 \u06A9\u0646\u0646\u062F\u0647\u0647\u0627\
-  \u06CC \u062A\u0627\u0628\u0639 \u062C\u0645\u0639"
+toc_title: "\u062A\u0631\u06A9\u06CC\u0628 \u06A9\u0646\u0646\u062F\u0647\u0647\u0627"
 ---
 
 # ترکیب کنندههای تابع جمع {#aggregate_functions_combinators}
@@ -30,7 +29,7 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 
 ## - وضعیت {#agg-functions-combinator-state}
 
-اگر شما درخواست این ترکیب, تابع کل می کند مقدار حاصل بازگشت نیست (مانند تعدادی از ارزش های منحصر به فرد برای [uniq](reference.md#agg_function-uniq) تابع) , اما یک دولت متوسط از تجمع (برای `uniq`, این جدول هش برای محاسبه تعداد ارزش های منحصر به فرد است). این یک `AggregateFunction(...)` که می تواند برای پردازش بیشتر استفاده می شود و یا ذخیره شده در یک جدول را به پایان برساند جمع بعد.
+اگر شما درخواست این ترکیب, تابع کل می کند مقدار حاصل بازگشت نیست (مانند تعدادی از ارزش های منحصر به فرد برای [دانشگاه](reference.md#agg_function-uniq) تابع) , اما یک دولت متوسط از تجمع (برای `uniq`, این جدول هش برای محاسبه تعداد ارزش های منحصر به فرد است). این یک `AggregateFunction(...)` که می تواند برای پردازش بیشتر استفاده می شود و یا ذخیره شده در یک جدول را به پایان برساند جمع بعد.
 
 برای کار با این کشورها, استفاده:
 
@@ -54,11 +53,37 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 
 ## شناسه بسته: {#agg-functions-combinator-ordefault}
 
-پر مقدار پیش فرض از نوع بازگشت تابع جمع است اگر چیزی برای جمع وجود دارد.
+تغییر رفتار یک تابع جمع.
+
+اگر یک تابع جمع می کند ارزش های ورودی ندارد, با این ترکیب این مقدار پیش فرض برای نوع داده بازگشت خود را برمی گرداند. شامل توابع کل است که می تواند داده های ورودی خالی را.
+
+`-OrDefault` می توان با سایر ترکیب کننده ها استفاده کرد.
+
+**نحو**
+
+``` sql
+<aggFunction>OrDefault(x)
+```
+
+**پارامترها**
+
+-   `x` — Aggregate function parameters.
+
+**مقادیر بازگشتی**
+
+بازگرداندن مقدار پیش فرض از نوع بازگشت یک تابع جمع است اگر چیزی برای جمع وجود دارد.
+
+نوع بستگی به عملکرد کلی مورد استفاده دارد.
+
+**مثال**
+
+پرسوجو:
 
 ``` sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
+
+نتیجه:
 
 ``` text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
@@ -66,21 +91,72 @@ SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 └─────────────┴──────────────────────┘
 ```
 
-## اطلاعات دقیق {#agg-functions-combinator-ornull}
+همچنین `-OrDefault` می توان با یک ترکیب کننده دیگر استفاده کرد. این زمانی مفید است که تابع جمع می کند ورودی خالی را قبول نمی کند.
 
-پر `null` در صورتی که هیچ چیز به جمع وجود دارد. ستون بازگشت قابل ابطال خواهد بود.
+پرسوجو:
 
 ``` sql
-SELECT avg(number), avgOrNull(number) FROM numbers(0)
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
 ```
+
+نتیجه:
 
 ``` text
-┌─avg(number)─┬─avgOrNull(number)─┐
-│         nan │              ᴺᵁᴸᴸ │
-└─────────────┴───────────────────┘
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
 ```
 
--OrDefault و OrNull می تواند در ترکیب با دیگر combinators. این زمانی مفید است که تابع جمع می کند ورودی خالی را قبول نمی کند.
+## اطلاعات دقیق {#agg-functions-combinator-ornull}
+
+تغییر رفتار یک تابع جمع.
+
+این ترکیب تبدیل یک نتیجه از یک تابع جمع به [Nullable](../data-types/nullable.md) نوع داده. اگر تابع جمع می کند ارزش برای محاسبه بازده ندارد [NULL](../syntax.md#null-literal).
+
+`-OrNull` می توان با سایر ترکیب کننده ها استفاده کرد.
+
+**نحو**
+
+``` sql
+<aggFunction>OrNull(x)
+```
+
+**پارامترها**
+
+-   `x` — Aggregate function parameters.
+
+**مقادیر بازگشتی**
+
+-   نتیجه عملکرد کل, تبدیل به `Nullable` نوع داده.
+-   `NULL`, اگر چیزی برای جمع وجود دارد.
+
+نوع: `Nullable(aggregate function return type)`.
+
+**مثال**
+
+افزودن `-orNull` به پایان تابع جمع.
+
+پرسوجو:
+
+``` sql
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+نتیجه:
+
+``` text
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+همچنین `-OrNull` می توان با یک ترکیب کننده دیگر استفاده کرد. این زمانی مفید است که تابع جمع می کند ورودی خالی را قبول نمی کند.
+
+پرسوجو:
 
 ``` sql
 SELECT avgOrNullIf(x, x > 10)
@@ -89,6 +165,8 @@ FROM
     SELECT toDecimal32(1.23, 2) AS x
 )
 ```
+
+نتیجه:
 
 ``` text
 ┌─avgOrNullIf(x, greater(x, 10))─┐
@@ -114,7 +192,7 @@ FROM
 
 **مقادیر بازگشتی**
 
--   مجموعه ای از `aggFunction` نتایج جستجو برای هر subinterval.
+-   مجموعه ای از `aggFunction` نتایج برای هر زیر خدمات.
 
 **مثال**
 
@@ -145,7 +223,7 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 └───────────────────────────────────────────────┘
 ```
 
-در نظر گرفتن نتایج.
+نتایج را در نظر بگیرید.
 
 `Jonh` خارج از نمونه است چرا که او بیش از حد جوان است. افراد دیگر با توجه به فواصل زمانی مشخص شده توزیع می شوند.
 

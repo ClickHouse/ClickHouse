@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: Datos externos
 ---
 
-# Datos Externos Para El Procesamiento De Consultas {#external-data-for-query-processing}
+# Datos externos para el procesamiento de consultas {#external-data-for-query-processing}
 
 ClickHouse permite enviar a un servidor los datos necesarios para procesar una consulta, junto con una consulta SELECT. Estos datos se colocan en una tabla temporal (consulte la sección “Temporary tables”) y se puede utilizar en la consulta (por ejemplo, en operadores IN).
 

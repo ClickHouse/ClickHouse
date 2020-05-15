@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: DateTime64
 ---
@@ -99,6 +99,6 @@ FROM dt
 -   [Dizilerle çalışmak için işlevler](../../sql-reference/functions/array-functions.md)
 -   [Bu `date_time_input_format` ayar](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [Bu `timezone` sunucu yapılandırma parametresi](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Tarih ve saatlerle çalışmak için operatörler](../../sql-reference/operators.md#operators-datetime)
+-   [Tarih ve saatlerle çalışmak için operatörler](../../sql-reference/operators/index.md#operators-datetime)
 -   [`Date` veri türü](date.md)
 -   [`DateTime` veri türü](datetime.md)

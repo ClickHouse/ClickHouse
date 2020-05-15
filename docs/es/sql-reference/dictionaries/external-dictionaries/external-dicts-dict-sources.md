@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: Fuentes de diccionarios externos
 ---
 
-# Fuentes De Diccionarios Externos {#dicts-external-dicts-dict-sources}
+# Fuentes de diccionarios externos {#dicts-external-dicts-dict-sources}
 
 Un diccionario externo se puede conectar desde muchas fuentes diferentes.
 
@@ -36,6 +36,28 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 ```
 
 El origen está configurado en el `source` apartado.
+
+Para tipos de origen [Archivo Local](#dicts-external_dicts_dict_sources-local_file), [Archivo ejecutable](#dicts-external_dicts_dict_sources-executable), [HTTP(s))](#dicts-external_dicts_dict_sources-http), [Haga clic en Casa](#dicts-external_dicts_dict_sources-clickhouse)
+ajustes opcionales están disponibles:
+
+``` xml
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+  <settings>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+  </settings>
+</source>
+```
+
+o
+
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 0)
+```
 
 Tipos de fuentes (`source_type`):
 
@@ -73,7 +95,7 @@ Configuración de campos:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formato](../../../interfaces/formats.md#formats)” son compatibles.
 
-## Archivo Ejecutable {#dicts-external_dicts_dict_sources-executable}
+## Archivo ejecutable {#dicts-external_dicts_dict_sources-executable}
 
 Trabajar con archivos ejecutables depende de [cómo se almacena el diccionario en la memoria](external-dicts-dict-layout.md). Si el diccionario se almacena usando `cache` y `complex_key_cache`, ClickHouse solicita las claves necesarias enviando una solicitud al STDIN del archivo ejecutable. De lo contrario, ClickHouse inicia el archivo ejecutable y trata su salida como datos del diccionario.
 
@@ -188,7 +210,7 @@ ClickHouse recibe símbolos de cotización del controlador ODBC y cita todas las
 
 Si tiene problemas con las codificaciones al utilizar Oracle, consulte el [FAQ](../../../faq/general.md#oracle-odbc-encodings) artículo.
 
-### Vulnerabilidad Conocida De La Funcionalidad Del Diccionario ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
+### Vulnerabilidad conocida de la funcionalidad del diccionario ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 !!! attention "Atención"
     Cuando se conecta a la base de datos a través del parámetro de conexión del controlador ODBC `Servername` puede ser sustituido. En este caso los valores de `USERNAME` y `PASSWORD` de `odbc.ini` se envían al servidor remoto y pueden verse comprometidos.
@@ -216,7 +238,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 El controlador ODBC enviará valores de `USERNAME` y `PASSWORD` de `odbc.ini` a `some-server.com`.
 
-### Ejemplo De conexión Postgresql {#example-of-connecting-postgresql}
+### Ejemplo de Connecting Postgresql {#example-of-connecting-postgresql}
 
 Sistema operativo Ubuntu.
 
@@ -297,7 +319,7 @@ LIFETIME(MIN 300 MAX 360)
 
 Es posible que tenga que editar `odbc.ini` para especificar la ruta completa a la biblioteca con el controlador `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Ejemplo De conexión De MS SQL Server {#example-of-connecting-ms-sql-server}
+### Ejemplo de conexión de MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Sistema operativo Ubuntu.
 
@@ -490,7 +512,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### Inicio {#dicts-external_dicts_dict_sources-clickhouse}
+### Haga clic en Casa {#dicts-external_dicts_dict_sources-clickhouse}
 
 Ejemplo de configuración:
 
