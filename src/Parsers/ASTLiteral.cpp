@@ -2,6 +2,8 @@
 #include <Common/FieldVisitors.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -12,6 +14,35 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
     const char * prefix = "Literal_";
     hash_state.update(prefix, strlen(prefix));
     applyVisitor(FieldVisitorHash(hash_state), value);
+}
+
+/// Writes 'tuple' word before tuple literals for backward compatibility reasons.
+/// TODO: remove, when versions lower than 20.3 will be rearely used.
+class FieldVisitorToColumnName : public StaticVisitor<String>
+{
+public:
+    template<typename T>
+    String operator() (const T & x) const { return visitor(x); }
+
+private:
+    FieldVisitorToString visitor;
+};
+
+template<>
+String FieldVisitorToColumnName::operator() (const Tuple & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << "tuple(";
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
 }
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
@@ -33,7 +64,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
     else
     {
-        String column_name = applyVisitor(FieldVisitorToString(), value);
+        String column_name = applyVisitor(FieldVisitorToColumnName(), value);
         writeString(column_name, ostr);
     }
 }
