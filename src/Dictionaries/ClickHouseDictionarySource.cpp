@@ -206,7 +206,8 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (is_local)
     {
         Context query_context = context;
-        auto input_block = executeQuery(request, query_context, true, QueryProcessingStage::Complete, false, false).in;
+        auto input_block = executeQuery(request, query_context, true,
+                                        QueryProcessingStage::Complete, false, false).in;
         return readInvalidateQuery(*input_block);
     }
     else
