@@ -179,6 +179,7 @@ void DatabaseOrdinary::loadStoredObjects(
     startupTables(pool);
 
     /// Attach dictionaries.
+    attachToExternalDictionariesLoader(context);
     for (const auto & [name, query] : file_names)
     {
         auto create_query = query->as<const ASTCreateQuery &>();

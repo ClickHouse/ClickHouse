@@ -46,7 +46,9 @@ public:
     void writeSuffix() override;
 
 private:
-    IColumn::Selector createSelector(const Block & source_block) const;
+
+    IColumn::Selector createSelector(const Block & source_block);
+
 
     void writeAsync(const Block & block);
 

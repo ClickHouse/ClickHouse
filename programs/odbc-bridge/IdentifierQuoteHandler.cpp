@@ -1,24 +1,31 @@
 #include "IdentifierQuoteHandler.h"
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
-#if USE_ODBC
+#if USE_POCO_SQLODBC
+#include <Poco/SQL/ODBC/ODBCException.h>
+#include <Poco/SQL/ODBC/SessionImpl.h>
+#include <Poco/SQL/ODBC/Utility.h>
+#define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
+#endif
+#if USE_POCO_DATAODBC
+#include <Poco/Data/ODBC/ODBCException.h>
+#include <Poco/Data/ODBC/SessionImpl.h>
+#include <Poco/Data/ODBC/Utility.h>
+#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#endif
 
-#    include <DataTypes/DataTypeFactory.h>
-#    include <IO/WriteBufferFromHTTPServerResponse.h>
-#    include <IO/WriteHelpers.h>
-#    include <Parsers/ParserQueryWithOutput.h>
-#    include <Parsers/parseQuery.h>
-#    include <Poco/Data/ODBC/ODBCException.h>
-#    include <Poco/Data/ODBC/SessionImpl.h>
-#    include <Poco/Data/ODBC/Utility.h>
-#    include <Poco/Net/HTMLForm.h>
-#    include <Poco/Net/HTTPServerRequest.h>
-#    include <Poco/Net/HTTPServerResponse.h>
-#    include <common/logger_useful.h>
-#    include <ext/scope_guard.h>
-#    include "getIdentifierQuote.h"
-#    include "validateODBCConnectionString.h"
-
-#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#include <DataTypes/DataTypeFactory.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
+#include <Poco/Net/HTMLForm.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <common/logger_useful.h>
+#include <ext/scope_guard.h>
+#include "getIdentifierQuote.h"
+#include "validateODBCConnectionString.h"
 
 namespace DB
 {
@@ -58,7 +65,5 @@ void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         tryLogCurrentException(log);
     }
 }
-
 }
-
 #endif

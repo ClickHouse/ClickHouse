@@ -108,13 +108,13 @@ int main(int argc, char ** argv)
                 {
                     DB::ReadBufferFromString in(line);
 
-                    std::string path_ignored;
+                    std::string path;
                     std::string data;
                     std::string mode;
 
                     DB::assertString("create", in);
                     DB::skipWhitespaceIfAny(in);
-                    readMaybeQuoted(path_ignored, in);
+                    readMaybeQuoted(path, in);
                     DB::skipWhitespaceIfAny(in);
                     readMaybeQuoted(data, in);
                     DB::skipWhitespaceIfAny(in);

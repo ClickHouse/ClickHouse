@@ -47,13 +47,11 @@ FilterTransform::FilterTransform(
     const Block & header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
-    bool remove_filter_column_,
-    bool on_totals_)
+    bool remove_filter_column_)
     : ISimpleTransform(header_, transformHeader(header_, expression_, filter_column_name_, remove_filter_column_), true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
-    , on_totals(on_totals_)
 {
     transformed_header = getInputPort().getHeader();
     expression->execute(transformed_header);
@@ -66,12 +64,11 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (!on_totals
-        && (constant_filter_description.always_false
-            /// Optimization for `WHERE column in (empty set)`.
-            /// The result will not change after set was created, so we can skip this check.
-            /// It is implemented in prepare() stop pipeline before reading from input port.
-            || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name))))
+    if (constant_filter_description.always_false
+        /// Optimization for `WHERE column in (empty set)`.
+        /// The result will not change after set was created, so we can skip this check.
+        /// It is implemented in prepare() stop pipeline before reading from input port.
+        || (!are_prepared_sets_initialized && expression->checkColumnIsAlwaysFalse(filter_column_name)))
     {
         input.close();
         output.finish();
@@ -102,17 +99,12 @@ void FilterTransform::transform(Chunk & chunk)
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
-
-        if (on_totals)
-            expression->executeOnTotals(block);
-        else
-            expression->execute(block);
-
+        expression->execute(block);
         num_rows_before_filtration = block.rows();
         columns = block.getColumns();
     }
 
-    if (constant_filter_description.always_true || on_totals)
+    if (constant_filter_description.always_true)
     {
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);

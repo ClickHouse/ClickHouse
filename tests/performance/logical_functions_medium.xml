@@ -1,4 +1,7 @@
-<test max_ignored_relative_change="0.2">
+<test>
+    <times_to_run>1</times_to_run>
+
+
     <settings>
         <max_threads>1</max_threads>
     </settings>

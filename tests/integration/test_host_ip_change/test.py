@@ -76,8 +76,6 @@ node3 = cluster.add_instance('node3', main_configs=['configs/listen_host.xml'],
     with_zookeeper=True, ipv6_address='2001:3984:3989::1:1113')
 node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml', 'configs/listen_host.xml', 'configs/dns_update_short.xml'],
     with_zookeeper=True, ipv6_address='2001:3984:3989::1:1114')
-node5 = cluster.add_instance('node5', main_configs=['configs/listen_host.xml', 'configs/dns_update_short.xml'],
-                             user_configs=['configs/users_with_hostname.xml'], ipv6_address='2001:3984:3989::1:1115')
 
 @pytest.fixture(scope="module")
 def cluster_with_dns_cache_update():
@@ -119,12 +117,10 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     assert node3.query("SELECT count(*) from test_table_update") == "7\n"
     assert_eq_with_retry(node4, "SELECT count(*) from test_table_update", "7")
 
-def set_hosts(node, hosts):
-    new_content = '\\n'.join(['127.0.0.1 localhost', '::1 localhost'] + hosts)
-    node.exec_in_container(['bash', '-c', 'echo -e "{}" > /etc/hosts'.format(new_content)], privileged=True, user='root')
-
 def test_dns_cache_update(cluster_with_dns_cache_update):
-    set_hosts(node4, ['127.255.255.255 lost_host'])
+    node4.exec_in_container(['bash', '-c', 'echo 127.0.0.1 localhost > /etc/hosts'], privileged=True, user='root')
+    node4.exec_in_container(['bash', '-c', 'echo ::1 localhost >> /etc/hosts'], privileged=True, user='root')
+    node4.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host >> /etc/hosts'], privileged=True, user='root')
 
     with pytest.raises(QueryRuntimeException):
         node4.query("SELECT * FROM remote('lost_host', 'system', 'one')")
@@ -133,7 +129,9 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
     with pytest.raises(QueryRuntimeException):
         node4.query("SELECT * FROM distributed_lost_host")
 
-    set_hosts(node4, ['127.0.0.1 lost_host'])
+    node4.exec_in_container(['bash', '-c', 'echo 127.0.0.1 localhost > /etc/hosts'], privileged=True, user='root')
+    node4.exec_in_container(['bash', '-c', 'echo ::1 localhost >> /etc/hosts'], privileged=True, user='root')
+    node4.exec_in_container(['bash', '-c', 'echo 127.0.0.1 lost_host >> /etc/hosts'], privileged=True, user='root')
 
     # Wait a bit until dns cache will be updated
     assert_eq_with_retry(node4, "SELECT * FROM remote('lost_host', 'system', 'one')", "0")
@@ -141,25 +139,3 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
 
     assert TSV(node4.query("SELECT DISTINCT host_name, host_address FROM system.clusters WHERE cluster='lost_host_cluster'")) == TSV("lost_host\t127.0.0.1\n")
     assert TSV(node4.query("SELECT hostName()")) == TSV("node4")
-
-def test_user_access_ip_change(cluster_with_dns_cache_update):
-    assert node3.query("SELECT * FROM remote('node5', 'system', 'one')") == "0\n"
-    assert node4.query("SELECT * FROM remote('node5', 'system', 'one')") == "0\n"
-
-    set_hosts(node5, ['127.255.255.255 node3', '2001:3984:3989::1:8884 unknown_host'])
-
-    cluster.restart_instance_with_ip_change(node3, "2001:3984:3989::1:8883")
-    cluster.restart_instance_with_ip_change(node4, "2001:3984:3989::1:8884")
-
-    with pytest.raises(QueryRuntimeException):
-        node3.query("SELECT * FROM remote('node5', 'system', 'one')")
-    with pytest.raises(QueryRuntimeException):
-        node4.query("SELECT * FROM remote('node5', 'system', 'one')")
-    # now wrong addresses are cached
-
-    set_hosts(node5, [])
-    # client is not allowed to connect, so execute it directly in container to send query from localhost
-    node5.exec_in_container(['bash', '-c', 'clickhouse client -q "SYSTEM DROP DNS CACHE"'], privileged=True, user='root')
-
-    assert node3.query("SELECT * FROM remote('node5', 'system', 'one')") == "0\n"
-    assert node4.query("SELECT * FROM remote('node5', 'system', 'one')") == "0\n"

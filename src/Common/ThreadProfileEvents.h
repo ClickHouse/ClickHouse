@@ -6,12 +6,12 @@
 #include <sys/resource.h>
 #include <pthread.h>
 
-
 #if defined(__linux__)
 #include <linux/taskstats.h>
 #else
 struct taskstats {};
 #endif
+
 
 /** Implement ProfileEvents with statistics about resource consumption of the current thread.
   */
@@ -36,6 +36,7 @@ namespace ProfileEvents
     extern const Event OSWriteBytes;
 #endif
 }
+
 
 namespace DB
 {
@@ -116,48 +117,53 @@ struct RUsageCounters
     }
 };
 
+
 #if defined(__linux__)
 
-class TasksStatsCounters
+struct TasksStatsCounters
 {
-public:
-    static bool checkIfAvailable();
-    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
+    ::taskstats stat;
 
-    void reset();
-    void updateCounters(ProfileEvents::Counters & profile_events);
+    TasksStatsCounters() = default;
 
-private:
-    ::taskstats stats;  //-V730_NOINIT
-    std::function<::taskstats()> stats_getter;
+    static TasksStatsCounters current();
 
-    enum class MetricsProvider
+    static void incrementProfileEvents(const TasksStatsCounters & prev, const TasksStatsCounters & curr, ProfileEvents::Counters & profile_events)
     {
-        None,
-        Procfs,
-        Netlink
-    };
+        profile_events.increment(ProfileEvents::OSCPUWaitMicroseconds,
+                                 safeDiff(prev.stat.cpu_delay_total, curr.stat.cpu_delay_total) / 1000U);
+        profile_events.increment(ProfileEvents::OSIOWaitMicroseconds,
+                                 safeDiff(prev.stat.blkio_delay_total, curr.stat.blkio_delay_total) / 1000U);
+        profile_events.increment(ProfileEvents::OSCPUVirtualTimeMicroseconds,
+                                 safeDiff(prev.stat.cpu_run_virtual_total, curr.stat.cpu_run_virtual_total) / 1000U);
 
-private:
-    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
+        /// Since TASKSTATS_VERSION = 3 extended accounting and IO accounting is available.
+        if (curr.stat.version < 3)
+            return;
 
-    static MetricsProvider findBestAvailableProvider();
-    static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);
+        profile_events.increment(ProfileEvents::OSReadChars, safeDiff(prev.stat.read_char, curr.stat.read_char));
+        profile_events.increment(ProfileEvents::OSWriteChars, safeDiff(prev.stat.write_char, curr.stat.write_char));
+        profile_events.increment(ProfileEvents::OSReadBytes, safeDiff(prev.stat.read_bytes, curr.stat.read_bytes));
+        profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.stat.write_bytes, curr.stat.write_bytes));
+    }
+
+    static void updateProfileEvents(TasksStatsCounters & last_counters, ProfileEvents::Counters & profile_events)
+    {
+        auto current_counters = current();
+        incrementProfileEvents(last_counters, current_counters, profile_events);
+        last_counters = current_counters;
+    }
 };
 
 #else
 
-class TasksStatsCounters
+struct TasksStatsCounters
 {
-public:
-    static bool checkIfAvailable() { return false; }
-    static std::unique_ptr<TasksStatsCounters> create(const UInt64 /*tid*/) { return {}; }
+    ::taskstats stat;
 
-    void reset() {}
-    void updateCounters(ProfileEvents::Counters &) {}
-
-private:
-    TasksStatsCounters(const UInt64 /*tid*/) {}
+    static TasksStatsCounters current();
+    static void incrementProfileEvents(const TasksStatsCounters &, const TasksStatsCounters &, ProfileEvents::Counters &) {}
+    static void updateProfileEvents(TasksStatsCounters &, ProfileEvents::Counters &) {}
 };
 
 #endif

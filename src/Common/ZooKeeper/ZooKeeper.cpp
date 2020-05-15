@@ -629,54 +629,51 @@ namespace
 {
     struct WaitForDisappearState
     {
-        std::atomic_int32_t code = 0;
-        std::atomic_int32_t event_type = 0;
+        int32_t code = 0;
+        int32_t event_type = 0;
         Poco::Event event;
     };
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
+void ZooKeeper::waitForDisappear(const std::string & path)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
-    auto callback = [state](const Coordination::ExistsResponse & response)
+    while (true)
     {
-        state->code = response.error;
-        if (state->code)
-            state->event.set();
-    };
-
-    auto watch = [state](const Coordination::WatchResponse & response)
-    {
-        if (!state->code)
+        auto callback = [state](const Coordination::ExistsResponse & response)
         {
             state->code = response.error;
-            if (!state->code)
-                state->event_type = response.type;
-            state->event.set();
-        }
-    };
+            if (state->code)
+                state->event.set();
+        };
 
-    while (!condition || !condition())
-    {
+        auto watch = [state](const Coordination::WatchResponse & response)
+        {
+            if (!state->code)
+            {
+                state->code = response.error;
+                if (!state->code)
+                    state->event_type = response.type;
+                state->event.set();
+            }
+        };
+
         /// NOTE: if the node doesn't exist, the watch will leak.
+
         impl->exists(path, callback, watch);
-        if (!condition)
-            state->event.wait();
-        else if (!state->event.tryWait(1000))
-            continue;
+        state->event.wait();
 
         if (state->code == Coordination::ZNONODE)
-            return true;
+            return;
 
         if (state->code)
             throw KeeperException(state->code, path);
 
         if (state->event_type == Coordination::DELETED)
-            return true;
+            return;
     }
-    return false;
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const

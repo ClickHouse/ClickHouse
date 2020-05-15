@@ -10,7 +10,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_SSL
+#if USE_POCO_NETSSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
@@ -75,7 +75,7 @@ private:
     static const String show_table_status_replacement_query;
 };
 
-#if USE_SSL
+#if USE_SSL && USE_POCO_NETSSL
 class MySQLHandlerSSL : public MySQLHandler
 {
 public:

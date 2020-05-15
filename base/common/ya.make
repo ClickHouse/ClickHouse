@@ -7,9 +7,6 @@ ADDINCL(
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)
 
-CFLAGS (GLOBAL -DUSE_CPUID=1)
-CFLAGS (GLOBAL -DUSE_JEMALLOC=0)
-
 IF (OS_DARWIN)
     CFLAGS (GLOBAL -DOS_DARWIN)
 ELSEIF (OS_FREEBSD)
@@ -40,7 +37,7 @@ SRCS(
     LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
-    preciseExp10.cpp
+    preciseExp10.c
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp

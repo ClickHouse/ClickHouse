@@ -67,7 +67,7 @@ public:
     {
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to) const override
+    void insertResultInto(ConstAggregateDataPtr, IColumn & to) const override
     {
         to.insertDefault();
     }

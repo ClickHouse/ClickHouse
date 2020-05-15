@@ -21,13 +21,13 @@
 
     <div class="tab-content" id="install-tab-content">
         <div class="tab-pane show active" id="deb" role="tabpanel" aria-labelledby="deb-tab">
-            {% highlight "bash" %}{% include "install/deb.sh" %}{% endhighlight %}
+            {% include "templates/install/deb.html" %}
         </div>
         <div class="tab-pane" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
-            {% highlight "bash" %}{% include "install/rpm.sh" %}{% endhighlight %}
+            {% include "templates/install/rpm.html" %}
         </div>
         <div class="tab-pane" id="tgz" role="tabpanel" aria-labelledby="thz-tab">
-            {% highlight "bash" %}{% include "install/tgz.sh" %}{% endhighlight %}
+            {% include "templates/install/tgz.html" %}
         </div>
     </div>
 

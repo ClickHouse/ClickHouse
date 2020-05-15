@@ -48,9 +48,6 @@ protected:
         return uncompressed_size + MAX_COMPRESSED_BLOCK_SIZE + HEADER_SIZE;
     }
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-
 private:
     TypeIndex type_idx;
     Variant variant;

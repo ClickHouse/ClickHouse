@@ -71,7 +71,8 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
-    const MergeTreeIndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_,
+    bool need_finish_last_granule_)
     : disk(std::move(disk_))
     , part_path(part_path_)
     , storage(storage_)
@@ -83,6 +84,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , settings(settings_)
     , compute_granularity(index_granularity.empty())
     , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
+    , need_finish_last_granule(need_finish_last_granule_)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
@@ -93,15 +95,15 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 
-/// Implemetation is splitted into static functions for ability
-/// of making unit tests without creation instance of IMergeTreeDataPartWriter,
-/// which requires a lot of dependencies and access to filesystem.
-static size_t computeIndexGranularityImpl(
+static void fillIndexGranularityImpl(
     const Block & block,
     size_t index_granularity_bytes,
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
-    bool can_use_adaptive_index_granularity)
+    size_t index_offset,
+    MergeTreeIndexGranularity & index_granularity,
+    bool can_use_adaptive_index_granularity,
+    bool need_finish_last_granule = false)
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
@@ -128,37 +130,43 @@ static size_t computeIndexGranularityImpl(
 
     /// We should be less or equal than fixed index granularity
     index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
-    return index_granularity_for_block;
+
+    size_t current_row;
+    for (current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+    {
+        size_t rows_left_in_block = rows_in_block - current_row;
+
+        /// Try to extend last granule if it's needed and block is large enough
+        ///  or it shouldn't be first in granule (index_offset != 0).
+        if (need_finish_last_granule && rows_left_in_block < index_granularity_for_block
+            && (rows_in_block >= index_granularity_for_block || index_offset != 0))
+        {
+            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
+            // So, real size of granule differs from index_granularity_for_block not more than 50%.
+            if (rows_left_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_left_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_left_in_block);
+        }
+        else
+        {
+            index_granularity.appendMark(index_granularity_for_block);
+        }
+    }
 }
 
-static void fillIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
-    size_t index_granularity_for_block,
-    size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
-size_t IMergeTreeDataPartWriter::computeIndexGranularity(const Block & block)
+void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
 {
     const auto storage_settings = storage.getSettings();
-    return computeIndexGranularityImpl(
-            block,
-            storage_settings->index_granularity_bytes,
-            storage_settings->index_granularity,
-            settings.blocks_are_granules_size,
-            settings.can_use_adaptive_granularity);
-}
-
-void IMergeTreeDataPartWriter::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
-{
     fillIndexGranularityImpl(
-        index_granularity,
+        block,
+        storage_settings->index_granularity_bytes,
+        storage_settings->index_granularity,
+        settings.blocks_are_granules_size,
         index_offset,
-        index_granularity_for_block,
-        rows_in_block);
+        index_granularity,
+        settings.can_use_adaptive_granularity,
+        need_finish_last_granule);
 }
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()
@@ -217,22 +225,21 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
 
     /// Write index. The index contains Primary Key value for each `index_granularity` row.
 
-    size_t current_row = index_offset;
-    size_t total_marks = index_granularity.getMarksCount();
-
-    while (index_mark < total_marks && current_row < rows)
+    for (size_t i = index_offset; i < rows;)
     {
         if (storage.hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, current_row);
-                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
+                index_columns[j]->insertFrom(*primary_column.column, i);
+                primary_column.type->serializeBinary(*primary_column.column, i, *index_stream);
             }
         }
 
-        current_row += index_granularity.getMarkRows(index_mark++);
+        i += index_granularity.getMarkRows(current_mark++);
+        if (current_mark >= index_granularity.getMarksCount())
+            break;
     }
 
     /// store last index row to write final mark at the end of column

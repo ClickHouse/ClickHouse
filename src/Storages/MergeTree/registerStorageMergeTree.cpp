@@ -604,8 +604,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 
         if (args.query.columns_list && args.query.columns_list->indices)
-            for (auto & index : args.query.columns_list->indices->children)
-                indices_description.indices.push_back(std::dynamic_pointer_cast<ASTIndexDeclaration>(index));
+            for (const auto & index : args.query.columns_list->indices->children)
+                indices_description.indices.push_back(
+                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 
         storage_settings->loadFromQuery(*args.storage_def);
 

@@ -56,19 +56,16 @@ void buildLifetimeConfiguration(
     const ASTDictionaryLifetime * lifetime)
 {
 
-    if (lifetime)
-    {
-        AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
-        AutoPtr<Element> min_element(doc->createElement("min"));
-        AutoPtr<Element> max_element(doc->createElement("max"));
-        AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
-        min_element->appendChild(min_sec);
-        AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
-        max_element->appendChild(max_sec);
-        lifetime_element->appendChild(min_element);
-        lifetime_element->appendChild(max_element);
-        root->appendChild(lifetime_element);
-    }
+    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+    AutoPtr<Element> min_element(doc->createElement("min"));
+    AutoPtr<Element> max_element(doc->createElement("max"));
+    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
+    min_element->appendChild(min_sec);
+    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
+    max_element->appendChild(max_sec);
+    lifetime_element->appendChild(min_element);
+    lifetime_element->appendChild(max_element);
+    root->appendChild(lifetime_element);
 }
 
 /*
@@ -414,8 +411,7 @@ void checkAST(const ASTCreateQuery & query)
     if (query.dictionary->layout == nullptr)
         throw Exception("Cannot create dictionary with empty layout", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
-    const auto is_direct_layout = !strcasecmp(query.dictionary->layout->layout_type.data(), "direct");
-    if (query.dictionary->lifetime == nullptr && !is_direct_layout)
+    if (query.dictionary->lifetime == nullptr)
         throw Exception("Cannot create dictionary with empty lifetime", ErrorCodes::INCORRECT_DICTIONARY_DEFINITION);
 
     if (query.dictionary->primary_key == nullptr)

@@ -14,7 +14,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
-#include <Core/Defines.h>
 
 #include <Poco/Logger.h>
 
@@ -618,7 +617,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 
     while (*pos < len)
     {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calcualted mask
+#if defined(__SSE2__)
         // NOTE: we assume that `data` string is padded from the right with 15 bytes.
         const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
         const size_t haystack_length = 16;
@@ -692,7 +691,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 #endif
     }
 
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
+#if defined(__SSE2__)
     // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
     if (*token_start > len)
         return false;
@@ -749,8 +748,7 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context,
-    bool /*attach*/)
+    const Context & context)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);

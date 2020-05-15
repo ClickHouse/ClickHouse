@@ -52,12 +52,11 @@
 #include <Common/Config/ConfigProcessor.h>
 
 #if !defined(ARCADIA_BUILD)
-#   include <Common/config_version.h>
+#    include <Common/config_version.h>
 #endif
 
 #if defined(OS_DARWIN)
-#   pragma GCC diagnostic ignored "-Wunused-macros"
-#   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
+#    define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
 
@@ -77,7 +76,7 @@ static void call_default_signal_handler(int sig)
 
 static constexpr size_t max_query_id_size = 127;
 
-static const size_t signal_pipe_buf_size =
+static const size_t buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
     + sizeof(ucontext_t)
@@ -92,8 +91,8 @@ static void writeSignalIDtoSignalPipe(int sig)
 {
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    char buf[signal_pipe_buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    char buf[buf_size];
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
 
@@ -118,8 +117,8 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    char buf[signal_pipe_buf_size];
-    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    char buf[buf_size];
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
@@ -167,10 +166,10 @@ public:
     {
     }
 
-    void run() override
+    void run()
     {
-        char buf[signal_pipe_buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
+        char buf[buf_size];
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
 
         while (!in.eof())
         {
@@ -283,56 +282,19 @@ private:
 };
 
 
-#if defined(SANITIZER)
-extern "C" void __sanitizer_set_death_callback(void (*)());
-
-static void sanitizerDeathCallback()
-{
-    Logger * log = &Logger::get("BaseDaemon");
-
-    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
-
-    {
-        std::stringstream message;
-        message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
-        message << " (from thread " << getThreadId() << ")";
-        if (query_id.size == 0)
-            message << " (no query)";
-        else
-            message << " (query_id: " << query_id << ")";
-        message << " Sanitizer trap.";
-
-        LOG_FATAL(log, message.rdbuf());
-    }
-
-    /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
-    StackTrace stack_trace;
-    if (stack_trace.getSize())
-    {
-        std::stringstream bare_stacktrace;
-        bare_stacktrace << "Stack trace:";
-        for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-            bare_stacktrace << ' ' << stack_trace.getFrames()[i];
-
-        LOG_FATAL(log, bare_stacktrace.rdbuf());
-    }
-
-    /// Write symbolized stack trace line by line for better grep-ability.
-    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
-}
-#endif
-
-
 /** To use with std::set_terminate.
   * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
   *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
   * Look at libstdc++-v3/libsupc++/vterminate.cc for example.
   */
-[[noreturn]] static void terminate_handler()
+static void terminate_handler()
 {
     static thread_local bool terminating = false;
     if (terminating)
+    {
         abort();
+        return; /// Just for convenience.
+    }
 
     terminating = true;
 
@@ -562,12 +524,12 @@ void BaseDaemon::initialize(Application & self)
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
-        const std::string config_timezone = config().getString("timezone");
-        if (0 != setenv("TZ", config_timezone.data(), 1))
+        const std::string timezone = config().getString("timezone");
+        if (0 != setenv("TZ", timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
-        DateLUT::setDefaultTimezone(config_timezone);
+        DateLUT::setDefaultTimezone(timezone);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -585,9 +547,6 @@ void BaseDaemon::initialize(Application & self)
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
-
-        /// Disable buffering for stderr
-        setbuf(stderr, nullptr);
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
@@ -674,18 +633,12 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             sa.sa_flags = SA_SIGINFO;
 
             {
-#if defined(OS_DARWIN)
-                sigemptyset(&sa.sa_mask);
-                for (auto signal : signals)
-                    sigaddset(&sa.sa_mask, signal);
-#else
                 if (sigemptyset(&sa.sa_mask))
                     throw Poco::Exception("Cannot set signal handler.");
 
                 for (auto signal : signals)
                     if (sigaddset(&sa.sa_mask, signal))
                         throw Poco::Exception("Cannot set signal handler.");
-#endif
 
                 for (auto signal : signals)
                     if (sigaction(signal, &sa, nullptr))
@@ -698,10 +651,6 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
-
-#if defined(SANITIZER)
-    __sanitizer_set_death_callback(sanitizerDeathCallback);
-#endif
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
@@ -738,37 +687,37 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
     ServerApplication::terminate();
 }
 
-void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
+void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
 {
-    new_options.addOption(
+    Poco::Util::ServerApplication::defineOptions (_options);
+
+    _options.addOption(
         Poco::Util::Option("config-file", "C", "load configuration from a given file")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("config-file"));
 
-    new_options.addOption(
+    _options.addOption(
         Poco::Util::Option("log-file", "L", "use given log file")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("logger.log"));
 
-    new_options.addOption(
+    _options.addOption(
         Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("logger.errorlog"));
 
-    new_options.addOption(
+    _options.addOption(
         Poco::Util::Option("pid-file", "P", "use given pidfile")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("pid"));
-
-    Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
 bool isPidRunning(pid_t pid)

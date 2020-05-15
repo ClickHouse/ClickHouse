@@ -156,6 +156,16 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 }
 
+NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
+{
+    return getTargetTable()->getColumn(column_name);
+}
+
+bool StorageMaterializedView::hasColumn(const String & column_name) const
+{
+    return getTargetTable()->hasColumn(column_name);
+}
+
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
@@ -163,7 +173,7 @@ StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
     return result;
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr &query_ptr) const
 {
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
 }

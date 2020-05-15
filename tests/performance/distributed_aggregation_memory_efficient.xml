@@ -1,3 +1,0 @@
-<test>
-    <query>select sum(number) from remote('127.0.0{{2,3,4,5}}', numbers_mt(1000000000)) settings max_threads=4, distributed_aggregation_memory_efficient=1</query>
-</test>

@@ -1,19 +1,16 @@
 #pragma once
+#include <Common/config.h>
+#include <Interpreters/Context.h>
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequestHandler.h>
 
-#if USE_ODBC
-
-#    include <Interpreters/Context.h>
-#    include <Poco/Logger.h>
-#    include <Poco/Net/HTTPRequestHandler.h>
-#    include <Common/config.h>
-
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 /** The structure of the table is taken from the query "SELECT * FROM table WHERE 1=0".
   * TODO: It would be much better to utilize ODBC methods dedicated for columns description.
   * If there is no such table, an exception is thrown.
   */
 namespace DB
 {
-
 class ODBCColumnsInfoHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
@@ -29,7 +26,5 @@ private:
     size_t keep_alive_timeout;
     Context & context;
 };
-
 }
-
 #endif

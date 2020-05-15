@@ -100,7 +100,7 @@ struct AlterCommand
     /// Target column name
     String rename_to;
 
-    static std::optional<AlterCommand> parse(const ASTAlterCommand * command, bool sanity_check_compression_codecs);
+    static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(StorageInMemoryMetadata & metadata) const;
 

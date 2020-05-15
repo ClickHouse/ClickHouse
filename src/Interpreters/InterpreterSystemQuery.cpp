@@ -21,7 +21,6 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Access/ContextAccess.h>
-#include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -199,7 +198,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DNS_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
-            AllowedClientHosts::dropDNSCaches();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
@@ -343,7 +341,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, false);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 

@@ -1,4 +1,7 @@
-<test max_ignored_relative_change="0.5">
+<test>
+
+
+
     <substitutions>
         <substitution>
            <name>crypto_hash_func</name>

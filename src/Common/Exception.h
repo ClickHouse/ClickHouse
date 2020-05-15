@@ -14,6 +14,10 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+namespace ErrorCodes
+{
+}
+
 class Exception : public Poco::Exception
 {
 public:

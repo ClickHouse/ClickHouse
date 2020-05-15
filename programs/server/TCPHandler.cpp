@@ -1066,16 +1066,14 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            const Settings & query_settings = query_context->getSettingsRef();
-
-            std::string method = Poco::toUpper(query_settings.network_compression_method.toString());
+            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
-                level = query_settings.network_zstd_compression_level;
+                level = query_context->getSettingsRef().network_zstd_compression_level;
 
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level, !query_settings.allow_suspicious_codecs));
+                    *out, CompressionCodecFactory::instance().get(method, level));
             else
                 state.maybe_compressed_out = out;
         }

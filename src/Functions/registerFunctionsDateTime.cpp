@@ -11,7 +11,6 @@ void registerFunctionToDayOfWeek(FunctionFactory &);
 void registerFunctionToDayOfYear(FunctionFactory &);
 void registerFunctionToHour(FunctionFactory &);
 void registerFunctionToMinute(FunctionFactory &);
-void registerFunctionToStartOfSecond(FunctionFactory &);
 void registerFunctionToSecond(FunctionFactory &);
 void registerFunctionToStartOfDay(FunctionFactory &);
 void registerFunctionToMonday(FunctionFactory &);
@@ -85,7 +84,6 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionToStartOfMonth(factory);
     registerFunctionToStartOfQuarter(factory);
     registerFunctionToStartOfYear(factory);
-    registerFunctionToStartOfSecond(factory);
     registerFunctionToStartOfMinute(factory);
     registerFunctionToStartOfFiveMinute(factory);
     registerFunctionToStartOfTenMinutes(factory);

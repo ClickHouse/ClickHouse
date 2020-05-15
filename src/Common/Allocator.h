@@ -20,9 +20,8 @@
 #include <sys/mman.h>
 
 #include <Core/Defines.h>
-#if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
-    /// Thread and memory sanitizers do not intercept mremap. The usage of
-    /// mremap will lead to false positives.
+#ifdef THREAD_SANITIZER
+    /// Thread sanitizer does not intercept mremap. The usage of mremap will lead to false positives.
     #define DISABLE_MREMAP 1
 #endif
 #include <common/mremap.h>

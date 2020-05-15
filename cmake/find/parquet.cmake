@@ -70,7 +70,6 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
 
     set(USE_PARQUET 1)
     set(USE_ORC 1)
-    set(USE_ARROW 1)
    endif()
 endif()
 

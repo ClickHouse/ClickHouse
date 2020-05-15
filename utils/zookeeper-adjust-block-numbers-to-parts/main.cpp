@@ -279,7 +279,7 @@ try
 
     return 0;
 }
-catch (...)
+catch (const Poco::Exception & e)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
     throw;

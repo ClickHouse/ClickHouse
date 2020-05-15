@@ -78,6 +78,7 @@ namespace
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_)
+    /// It's important to initialize members before `thread` to avoid race.
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
@@ -102,6 +103,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     if (!quit)
     {
         quit = true;
+        cond.notify_one();
         task_handle->deactivate();
     }
 }
@@ -120,6 +122,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
     if (!quit)
     {
         quit = true;
+        cond.notify_one();
         task_handle->deactivate();
     }
 
@@ -131,10 +134,9 @@ void StorageDistributedDirectoryMonitor::run()
 {
     std::unique_lock lock{mutex};
 
-    bool do_sleep = false;
     while (!quit)
     {
-        do_sleep = true;
+        bool do_sleep = true;
         if (!monitor_blocker.isCancelled())
         {
             try
@@ -167,8 +169,15 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    if (!quit && do_sleep)
-        task_handle->scheduleAfter(sleep_time.count());
+    if (!quit)
+    {
+        /// If there is no error, then it will be scheduled by the DistributedBlockOutputStream,
+        /// so this is just in case, hence it is distributed_directory_monitor_max_sleep_time_ms
+        if (error_count)
+            task_handle->scheduleAfter(sleep_time.count());
+        else
+            task_handle->scheduleAfter(max_sleep_time.count());
+    }
 }
 
 
@@ -582,7 +591,7 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
 {
     if (quit)
         return false;
-    return task_handle->scheduleAfter(ms, false);
+    return task_handle->scheduleAfter(ms);
 }
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)

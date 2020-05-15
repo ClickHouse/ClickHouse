@@ -1,8 +1,6 @@
 #pragma once
-
 #include "config_formats.h"
 #include "config_core.h"
-
 #if USE_AVRO
 
 #include <unordered_map>
@@ -114,6 +112,7 @@ private:
     AvroDeserializer deserializer;
 };
 
+#if USE_POCO_JSON
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.
 /// Uses 3 caches:
 /// 1. global: schema registry cache (base_url -> SchemaRegistry)
@@ -137,7 +136,7 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
 };
+#endif
 
 }
-
 #endif

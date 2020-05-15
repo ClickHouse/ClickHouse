@@ -32,7 +32,6 @@ void registerDictionaries()
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
         registerDictionaryPolygon(factory);
-        registerDictionaryDirect(factory);
     }
 }
 

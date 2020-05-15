@@ -44,7 +44,6 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
@@ -315,7 +314,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
-        if (!options.only_analyze && context->hasQueryContext())
+        if (context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext().addScalar(it.first, it.second);
 
@@ -854,14 +853,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 {
                     pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
                     {
-                        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+                        if (stream_type == QueryPipeline::StreamType::Totals)
+                            return nullptr;
 
                         return std::make_shared<FilterTransform>(
                             block,
                             expressions.filter_info->actions,
                             expressions.filter_info->column_name,
-                            expressions.filter_info->do_remove_column,
-                            on_totals);
+                            expressions.filter_info->do_remove_column);
                     });
                 }
                 else
@@ -1211,12 +1210,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
                 if (is_alias)
-                {
-                    auto column_decl = storage_columns.get(column);
-                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
-                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
-                    column_expr = setAlias(cast_column_default->clone(), column);
-                }
+                    column_expr = setAlias(column_default->expression->clone(), column);
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
 
@@ -1614,10 +1608,9 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 
 void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
-    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & block)
     {
-        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter, on_totals);
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter);
     });
 }
 
@@ -1876,10 +1869,11 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
 
         /// TODO: do we need to save filter there?
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false, on_totals);
+        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false);
     });
 }
 
@@ -2039,9 +2033,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
                 sorting_stream, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort / pipeline.streams.size(),
-                context->getTemporaryVolume(),
-                settings.temporary_files_codec,
-                settings.min_free_disk_space_for_temporary_data);
+                context->getTemporaryVolume(), settings.min_free_disk_space_for_temporary_data);
 
             stream = merging_stream;
         });

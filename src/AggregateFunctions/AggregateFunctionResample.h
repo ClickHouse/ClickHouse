@@ -173,7 +173,7 @@ public:
     }
 
     void insertResultInto(
-        AggregateDataPtr place,
+        ConstAggregateDataPtr place,
         IColumn & to) const override
     {
         auto & col = assert_cast<ColumnArray &>(to);

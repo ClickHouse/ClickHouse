@@ -2,7 +2,7 @@
 
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Databases/IDatabase.h>
-
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -12,9 +12,9 @@ namespace DB
 class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
-    ExternalLoaderDatabaseConfigRepository(IDatabase & database_);
+    ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & context_);
 
-    const std::string & getName() const override { return database_name; }
+    const std::string & getName() const override { return name; }
 
     std::set<std::string> getAllLoadablesDefinitionNames() override;
 
@@ -25,8 +25,9 @@ public:
     LoadablesConfigurationPtr load(const std::string & loadable_definition_name) override;
 
 private:
-    const String database_name;
+    const String name;
     IDatabase & database;
+    Context context;
 };
 
 }

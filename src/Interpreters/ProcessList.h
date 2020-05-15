@@ -99,6 +99,9 @@ protected:
 
     CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
 
+    size_t max_memory_usage = 0;
+    double memory_tracker_fault_probability = 0.0;
+
     std::atomic<bool> is_killed { false };
 
     void setUserProcessList(ProcessListForUser * user_process_list_);
@@ -129,6 +132,8 @@ public:
     QueryStatus(
         const String & query_,
         const ClientInfo & client_info_,
+        size_t max_memory_usage,
+        double memory_tracker_fault_probability,
         QueryPriorities::Handle && priority_handle_);
 
     ~QueryStatus();

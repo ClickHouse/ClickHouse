@@ -31,8 +31,6 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(
 void GroupingAggregatedTransform::readFromAllInputs()
 {
     auto in = inputs.begin();
-    read_from_all_inputs = true;
-
     for (size_t i = 0; i < num_inputs; ++i, ++in)
     {
         if (in->isFinished())
@@ -44,15 +42,14 @@ void GroupingAggregatedTransform::readFromAllInputs()
         in->setNeeded();
 
         if (!in->hasData())
-        {
-            read_from_all_inputs = false;
-            continue;
-        }
+            return;
 
         auto chunk = in->pull();
         read_from_input[i] = true;
         addChunk(std::move(chunk), i);
     }
+
+    read_from_all_inputs = true;
 }
 
 void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_overflows)
@@ -276,7 +273,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 
 void GroupingAggregatedTransform::work()
 {
-    /// Convert single level data to two level.
     if (!single_level_chunks.empty())
     {
         const auto & header = getInputs().front().getHeader();  /// Take header from input port. Output header is empty.

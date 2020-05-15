@@ -102,8 +102,7 @@ public:
     bool schedule();
 
     /// Schedule for execution after specified delay.
-    /// If overwrite is set then the task will be re-scheduled (if it was already scheduled, i.e. delayed == true).
-    bool scheduleAfter(size_t ms, bool overwrite = true);
+    bool scheduleAfter(size_t ms);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
     void deactivate();
@@ -161,8 +160,6 @@ public:
         if (task_info)
             task_info->deactivate();
     }
-
-    operator bool() const { return task_info != nullptr; }
 
     BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
     const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }

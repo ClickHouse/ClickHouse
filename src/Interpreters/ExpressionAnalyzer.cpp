@@ -409,7 +409,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            getRootActionsNoMakeSet(arguments[i], true, actions);
+            getRootActions(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
             types[i] = actions->getSampleBlock().getByName(name).type;
             aggregate.argument_names[i] = name;

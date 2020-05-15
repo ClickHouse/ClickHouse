@@ -77,10 +77,9 @@ std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
     Block block;
 
     {
-        const auto & storage_columns = table->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
-        column.type = storage_columns.getPhysical("a").type;
+        column.type = table->getColumn("a").type;
         auto col = column.type->createColumn();
         ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 

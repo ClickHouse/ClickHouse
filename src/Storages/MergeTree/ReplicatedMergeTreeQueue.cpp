@@ -1861,17 +1861,10 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     for (auto [mutation_version, mutation_status] : in_partition->second)
     {
         max_version = mutation_version;
-        if (mutation_status->entry->isAlterMutation())
+        if (mutation_version > current_version && mutation_status->entry->alter_version != -1)
         {
-            /// We want to assign mutations for part which version is bigger
-            /// than part current version. But it doesn't make sence to assign
-            /// more fresh versions of alter-mutations if previous alter still
-            /// not done because alters execute one by one in strict order.
-            if (mutation_version > current_version || !mutation_status->is_done)
-            {
-                alter_version = mutation_status->entry->alter_version;
-                break;
-            }
+            alter_version = mutation_status->entry->alter_version;
+            break;
         }
     }
 

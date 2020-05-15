@@ -195,7 +195,10 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_)
+    : IStorage(table_id_, ColumnsDescription({
+            {"_path", std::make_shared<DataTypeString>()},
+            {"_file", std::make_shared<DataTypeString>()}
+        }, true))
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
@@ -349,14 +352,6 @@ void registerStorageS3(StorageFactory & factory)
     {
         .source_access_type = AccessType::S3,
     });
-}
-
-NamesAndTypesList StorageS3::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
 }
 
 }

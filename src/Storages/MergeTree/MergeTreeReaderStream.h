@@ -40,7 +40,6 @@ private:
 
     MarkCache * mark_cache;
     bool save_marks_in_cache;
-
     const MergeTreeIndexGranularityInfo * index_granularity_info;
 
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;

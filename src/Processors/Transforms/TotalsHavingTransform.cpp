@@ -21,13 +21,8 @@ void finalizeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     for (auto & column : columns)
-    {
-        if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
-        {
-            auto mut_column = (*std::move(column)).mutate();
-            column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
-        }
-    }
+        if (const auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(column.get()))
+            column = agg_function->convertToValues();
 
     chunk.setColumns(std::move(columns), num_rows);
 }

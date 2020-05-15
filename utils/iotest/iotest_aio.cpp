@@ -1,4 +1,4 @@
-#if !defined(OS_LINUX)
+#if __APPLE__ || __FreeBSD__
 int main(int, char **) { return 0; }
 #else
 
@@ -138,7 +138,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = nullptr;
+    const char * file_name = 0;
     int mode = MODE_READ;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;

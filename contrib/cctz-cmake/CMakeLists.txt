@@ -26,14 +26,10 @@ if (USE_INTERNAL_CCTZ)
 
     # Build a libray with embedded tzdata
 
-    if (OS_LINUX AND ARCH_AMD64)
+    # We invoke 'ld' and 'objcopy' directly because lld linker has no option to generate object file with binary data.
+    # Note: we can invoke specific ld from toolchain and relax condition on ARCH_AMD64.
 
-        find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-        if (OBJCOPY_PATH)
-            message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
-        else ()
-            message(FATAL_ERROR "Cannot find objcopy.")
-        endif ()
+    if (OS_LINUX AND ARCH_AMD64)
 
         set (TIMEZONES
             Africa/Abidjan
@@ -609,8 +605,8 @@ if (USE_INTERNAL_CCTZ)
 
             # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
             add_custom_command(OUTPUT ${TZ_OBJ}
-                COMMAND cd ${TZDIR} && ${OBJCOPY_PATH} -I binary -O elf64-x86-64 -B i386 ${TIMEZONE} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ}
-                COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
+                COMMAND cd ${TZDIR} && ld -r -b binary -o ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${TIMEZONE}
+                COMMAND objcopy --rename-section .data=.rodata,alloc,load,readonly,data,contents
                     ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${TZ_OBJ})
 
             set_source_files_properties(${TZ_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)

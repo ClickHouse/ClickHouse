@@ -98,21 +98,11 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         logs.emplace_back(metric_log.get());
 
     bool lazy_load = config.getBool("system_tables_lazy_load", true);
-
-    try
+    for (auto & log : logs)
     {
-        for (auto & log : logs)
-        {
-            if (!lazy_load)
-                log->prepareTable();
-            log->startup();
-        }
-    }
-    catch (...)
-    {
-        /// join threads
-        shutdown();
-        throw;
+        if (!lazy_load)
+            log->prepareTable();
+        log->startup();
     }
 }
 

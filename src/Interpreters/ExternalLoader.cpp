@@ -1260,7 +1260,7 @@ ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
 
 ExternalLoader::~ExternalLoader() = default;
 
-ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
+ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository)
 {
     auto * ptr = repository.get();
     String name = ptr->getName();

@@ -56,14 +56,9 @@ public:
 
     Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
-    NamesAndTypesList getVirtuals() const override
-    {
-        return part->storage.getVirtuals();
-    }
-
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_))
+        : IStorage(getIDFromPart(part_), ColumnsDescription(part_->storage.getColumns().getVirtuals(), true))
         , part(part_)
     {
         setColumns(part_->storage.getColumns());

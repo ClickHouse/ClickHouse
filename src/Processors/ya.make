@@ -21,7 +21,6 @@ SRCS(
     Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
-    Formats/Impl/JSONAsStringRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowOutputFormat.cpp
     Formats/Impl/JSONCompactRowOutputFormat.cpp
