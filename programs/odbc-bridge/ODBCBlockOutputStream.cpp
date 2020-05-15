@@ -113,9 +113,7 @@ void ODBCBlockOutputStream::write(const Block & block)
     std::vector<Poco::Dynamic::Var> row_to_insert(block.columns());
     Poco::Data::Statement statement(session << getInsertQuery(db_name, table_name, columns, quoting) + getQuestionMarks(block.columns()));
     for (size_t i = 0; i < block.columns(); ++i)
-    {
-        statement, Poco::Data::Keywords::use(row_to_insert[i]);
-    }
+        statement.addBind(Poco::Data::Keywords::use(row_to_insert[i]));
 
     for (size_t i = 0; i < block.rows(); ++i)
     {
