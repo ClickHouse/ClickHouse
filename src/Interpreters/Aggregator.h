@@ -1034,6 +1034,7 @@ protected:
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
+    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -1263,7 +1264,8 @@ protected:
         Columns columns,
         AggregateColumns & aggregate_columns,
         Columns & materialized_columns,
-        AggregateFunctionInstructions & instructions);
+        AggregateFunctionInstructions & instructions,
+        NestedColumnsHolder & nested_columns_holder);
 
     void fillAggregateColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
