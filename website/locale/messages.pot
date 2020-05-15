@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-30 15:45+0300\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -28,31 +28,31 @@ msgstr ""
 msgid "ClickHouse - fast open-source OLAP DBMS"
 msgstr ""
 
-#: templates/common_meta.html:10 templates/common_meta.html:21
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr ""
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "open-source"
 msgstr ""
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "relational"
 msgstr ""
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytics"
 msgstr ""
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytical"
 msgstr ""
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "Big Data"
 msgstr ""
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "web-analytics"
 msgstr ""
 
@@ -70,11 +70,23 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr ""
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr ""
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr ""
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -83,16 +95,12 @@ msgid ""
 "readable."
 msgstr ""
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr ""
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
-msgstr ""
-
-#: templates/docs/content.html:27
-msgid "Built from"
 msgstr ""
 
 #: templates/docs/sidebar.html:3

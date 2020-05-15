@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: hdfs
 ---
 
 # hdfs {#hdfs}
 
-ایجاد یک جدول از فایل ها در اچ دی. این جدول عملکرد شبیه به [نشانی وب](url.md) و [پرونده](file.md) یکی
+ایجاد یک جدول از فایل ها در اچ دی. این تابع جدول شبیه به [نشانی وب](url.md) و [پرونده](file.md) یکی
 
 ``` sql
 hdfs(URI, format, structure)

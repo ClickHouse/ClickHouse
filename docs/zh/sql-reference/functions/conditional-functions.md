@@ -9,7 +9,7 @@
 
 ## 多 {#multiif}
 
-允许您在查询中更紧凑地编写[CASE](../operators.md#operator_case)运算符。
+允许您在查询中更紧凑地编写[CASE](../operators/index.md#operator_case)运算符。
 
     multiIf(cond_1, then_1, cond_2, then_2...else)
 

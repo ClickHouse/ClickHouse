@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "\u8A2D\u5B9A\u306E\u5236\u7D04"
 ---
 
 # 設定の制約 {#constraints-on-settings}
 
-設定に関する制約は、次のように定義できます。 `profiles` のセクション `user.xml` 設定ファイルおよびユーザーが設定の一部を変更することを禁止します。 `SET` クエリ。
+設定に関する制約は、以下で定義することができます。 `profiles` のセクション `user.xml` 設定ファイルとユーザーが設定の一部を変更することを禁止します。 `SET` クエリ。
 制約は次のように定義されます:
 
 ``` xml
@@ -33,9 +33,9 @@ toc_title: "\u8A2D\u5B9A\u306E\u5236\u7D04"
 ```
 
 ユーザーが制約に違反しようとすると、例外がスローされ、設定は変更されません。
-サポートされている制約は次の三種類です: `min`, `max`, `readonly`. その `min` と `max` 制約は数値設定の上限と下限を指定し、組み合わせて使用できます。 その `readonly` 制約を指定すると、ユーザーは変更できませんので、対応する設定です。
+サポートされている制約は以下の通りです: `min`, `max`, `readonly`. その `min` と `max` 制約は、数値設定の上限と下限を指定し、組み合わせて使用できます。 その `readonly` 制約を指定すると、ユーザーは変更できませんので、対応する設定です。
 
-**例えば:** さあ `users.xml` 行を含む:
+**例:** さあ `users.xml` 行を含む:
 
 ``` xml
 <profiles>
@@ -70,6 +70,6 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
 
-**メモ:** その `default` プロファイルには特別な処理があります。 `default` プロファイルはデフォルトの制約になるため、すべてのユーザーを明示的に上書きするまで制限します。
+**注:** その `default` プロファイルには特別な処理があります。 `default` プロのデフォルトの制約、その制限するすべてのユーザーまでの彼らのメソッドを明示的にこれらのユーザー
 
 [元の記事](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

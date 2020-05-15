@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_folder_title: "\u0130\u015Flevler"
 toc_priority: 32
 toc_title: "Giri\u015F"
@@ -8,7 +8,7 @@ toc_title: "Giri\u015F"
 
 # İşlevler {#functions}
 
-En az\* iki tür fonksiyon vardır-düzenli Fonksiyonlar (sadece denir “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn’t depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
+En az\* iki tür fonksiyon vardır-düzenli Fonksiyonlar (sadece denir “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn't depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
 Bu bölümde düzenli işlevleri tartışıyoruz. Toplama işlevleri için bölüme bakın “Aggregate functions”.
 
@@ -44,18 +44,18 @@ Fonksiyonlar aşağıdaki davranışlara sahiptir:
 
 ## Süreklilik {#constancy}
 
-Functions can’t change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
+Functions can't change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
-## Hata işleme {#error-handling}
+## Hata İşleme {#error-handling}
 
 Veriler geçersizse bazı işlevler bir istisna oluşturabilir. Bu durumda, sorgu iptal edilir ve bir hata metni istemciye döndürülür. Dağıtılmış işlem için sunuculardan birinde bir özel durum oluştuğunda, diğer sunucular da sorguyu iptal etmeye çalışır.
 
-## Argüman Ifadelerinin değerlendirilmesi {#evaluation-of-argument-expressions}
+## Argüman ifadelerinin değerlendirilmesi {#evaluation-of-argument-expressions}
 
 Hemen hemen tüm programlama dillerinde, argümanlardan biri belirli operatörler için değerlendirilmeyebilir. Bu genellikle operatörler `&&`, `||`, ve `?:`.
-Ancak Clickhouse’da, fonksiyonların (operatörler) argümanları her zaman değerlendirilir. Bunun nedeni, sütunların tüm bölümlerinin her satırı ayrı ayrı hesaplamak yerine bir kerede değerlendirilmesidir.
+Ancak Clickhouse'da, fonksiyonların (operatörler) argümanları her zaman değerlendirilir. Bunun nedeni, sütunların tüm bölümlerinin her satırı ayrı ayrı hesaplamak yerine bir kerede değerlendirilmesidir.
 
-## Dağıtılmış Sorgu işleme işlevleri gerçekleştirme {#performing-functions-for-distributed-query-processing}
+## Dağıtılmış sorgu işleme işlevleri gerçekleştirme {#performing-functions-for-distributed-query-processing}
 
 Dağıtılmış sorgu işleme için, sorgu işlemenin mümkün olduğu kadar çok aşaması uzak sunucularda gerçekleştirilir ve aşamaların geri kalanı (Ara sonuçları ve bundan sonra her şeyi birleştirme) istek sahibi sunucuda gerçekleştirilir.
 
@@ -63,7 +63,7 @@ Bu, işlevlerin farklı sunucularda gerçekleştirilebileceği anlamına gelir.
 Örneğin, sorguda `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
 
 -   eğer bir `distributed_table` en az iki parçaya sahiptir, fonksiyonlar ‘g’ ve ‘h’ uzak sunucularda gerçekleştirilir ve işlev ‘f’ ıstekçi sunucuda gerçekleştirilir.
--   eğer bir `distributed_table` sadece bir parça var, tüm ‘f’, ‘g’, ve ‘h’ fonksiyonlar bu shard’ın sunucusunda gerçekleştirilir.
+-   eğer bir `distributed_table` sadece bir parça var, tüm ‘f’, ‘g’, ve ‘h’ fonksiyonlar bu shard'ın sunucusunda gerçekleştirilir.
 
 Bir işlevin sonucu genellikle hangi sunucuda gerçekleştirildiğine bağlı değildir. Ancak, bazen bu önemlidir.
 Örneğin, sözlüklerle çalışan işlevler, üzerinde çalışmakta oldukları sunucuda bulunan sözlüğü kullanır.

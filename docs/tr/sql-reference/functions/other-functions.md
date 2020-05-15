@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
 toc_title: "Di\u011Fer"
 ---
@@ -10,6 +10,63 @@ toc_title: "Di\u011Fer"
 ## hostnamename() {#hostname}
 
 Bu işlevin gerçekleştirildiği ana bilgisayarın adını içeren bir dize döndürür. Dağıtılmış işlem için, bu işlev uzak bir sunucuda gerçekleştirilirse, uzak sunucu ana bilgisayarının adıdır.
+
+## getMacro {#getmacro}
+
+Get as a nam AED value from the [makrolar](../../operations/server-configuration-parameters/settings.md#macros) sunucu yapılandırması bölümü.
+
+**Sözdizimi**
+
+``` sql
+getMacro(name);
+```
+
+**Parametre**
+
+-   `name` — Name to retrieve from the `macros` bölme. [Dize](../../sql-reference/data-types/string.md#string).
+
+**Döndürülen değer**
+
+-   Belirtilen makro değeri.
+
+Tür: [Dize](../../sql-reference/data-types/string.md).
+
+**Örnek**
+
+Örnek `macros` sunucu yapılandırma dosyasındaki bölüm:
+
+``` xml
+<macros>
+    <test>Value</test>
+</macros>
+```
+
+Sorgu:
+
+``` sql
+SELECT getMacro('test');
+```
+
+Sonuç:
+
+``` text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+Aynı değeri elde etmenin alternatif bir yolu:
+
+``` sql
+SELECT * FROM system.macros
+WHERE macro = 'test';
+```
+
+``` text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
 
 ## FQDN {#fqdn}
 
@@ -120,17 +177,17 @@ SELECT visibleWidth(NULL)
 
 Geçirilen bağımsız değişken türü adını içeren bir dize döndürür.
 
-Eğer `NULL` fonksiyona girdi olarak geçirilir, daha sonra `Nullable(Nothing)` bir iç karşılık gelen türü `NULL` Clickhouse’da temsil.
+Eğer `NULL` fonksiyona girdi olarak geçirilir, daha sonra `Nullable(Nothing)` bir iç karşılık gelen türü `NULL` Clickhouse'da temsil.
 
 ## blockSize() {#function-blocksize}
 
 Bloğun boyutunu alır.
-Clickhouse’da, sorgular her zaman bloklarda (sütun parçaları kümeleri) çalıştırılır. Bu işlev, aradığınız bloğun boyutunu almanızı sağlar.
+Clickhouse'da, sorgular her zaman bloklarda (sütun parçaları kümeleri) çalıştırılır. Bu işlev, aradığınız bloğun boyutunu almanızı sağlar.
 
 ## materialize (x) {#materializex}
 
 Bir sabiti yalnızca bir değer içeren tam bir sütuna dönüştürür.
-Clickhouse’da, tam sütunlar ve sabitler bellekte farklı şekilde temsil edilir. İşlevler, sabit argümanlar ve normal argümanlar için farklı şekilde çalışır (farklı kod yürütülür), ancak sonuç hemen hemen her zaman aynıdır. Bu işlev, bu davranış hata ayıklama içindir.
+Clickhouse'da, tam sütunlar ve sabitler bellekte farklı şekilde temsil edilir. İşlevler, sabit argümanlar ve normal argümanlar için farklı şekilde çalışır (farklı kod yürütülür), ancak sonuç hemen hemen her zaman aynıdır. Bu işlev, bu davranış hata ayıklama içindir.
 
 ## ignore(…) {#ignore}
 
@@ -183,13 +240,82 @@ Sonuç:
 └───────────────┘
 ```
 
+## ısconstant {#is-constant}
+
+Bağımsız değişken sabit bir ifade olup olmadığını denetler.
+
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [harfler](../syntax.md#literals) sabit ifadelerdir.
+
+Fonksiyon geliştirme, hata ayıklama ve gösteri için tasarlanmıştır.
+
+**Sözdizimi**
+
+``` sql
+isConstant(x)
+```
+
+**Parametre**
+
+-   `x` — Expression to check.
+
+**Döndürülen değerler**
+
+-   `1` — `x` sabit istir.
+-   `0` — `x` sabit olmayan.
+
+Tür: [Uİnt8](../data-types/int-uint.md).
+
+**Örnekler**
+
+Sorgu:
+
+``` sql
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+```
+
+Sonuç:
+
+``` text
+┌─isConstant(plus(x, 1))─┐
+│                      1 │
+└────────────────────────┘
+```
+
+Sorgu:
+
+``` sql
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
+```
+
+Sonuç:
+
+``` text
+┌─isConstant(cos(pi))─┐
+│                   1 │
+└─────────────────────┘
+```
+
+Sorgu:
+
+``` sql
+SELECT isConstant(number) FROM numbers(1)
+```
+
+Sonuç:
+
+``` text
+┌─isConstant(number)─┐
+│                  0 │
+└────────────────────┘
+```
+
 ## isFinite (x) {#isfinitex}
 
-Float32 ve Float64 kabul eder ve bağımsız değişken sonsuz değilse ve bir NaN değilse, Uint8’i 1’e eşit olarak döndürür, aksi halde 0.
+Float32 ve Float64 kabul eder ve bağımsız değişken sonsuz değilse ve bir NaN değilse, Uint8'i 1'e eşit olarak döndürür, aksi halde 0.
 
 ## isİnfinite (x) {#isinfinitex}
 
-Float32 ve Float64 kabul eder ve bağımsız değişken sonsuz ise 1’e eşit Uİnt8 döndürür, aksi takdirde 0. Bir NaN için 0 döndürüldüğünü unutmayın.
+Float32 ve Float64 kabul eder ve bağımsız değişken sonsuz ise 1'e eşit Uİnt8 döndürür, aksi takdirde 0. Bir NaN için 0 döndürüldüğünü unutmayın.
 
 ## ifNotFinite {#ifnotfinite}
 
@@ -225,11 +351,11 @@ Kullanarak benzer sonuç alabilirsiniz [üçlü operatör](conditional-functions
 
 ## ısnan (x) {#isnanx}
 
-Float32 ve Float64 kabul eder ve bağımsız değişken bir NaN, aksi takdirde 0 ise 1’e eşit uint8 döndürür.
+Float32 ve Float64 kabul eder ve bağımsız değişken bir NaN, aksi takdirde 0 ise 1'e eşit uint8 döndürür.
 
 ## hasColumnİnTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
 
-Sabit dizeleri kabul eder: veritabanı adı, tablo adı ve sütun adı. Bir sütun varsa 1’e eşit bir uint8 sabit ifadesi döndürür, aksi halde 0. Hostname parametresi ayarlanmışsa, sınama uzak bir sunucuda çalışır.
+Sabit dizeleri kabul eder: veritabanı adı, tablo adı ve sütun adı. Bir sütun varsa 1'e eşit bir uint8 sabit ifadesi döndürür, aksi halde 0. Hostname parametresi ayarlanmışsa, sınama uzak bir sunucuda çalışır.
 Tablo yoksa, işlev bir özel durum atar.
 İç içe veri yapısındaki öğeler için işlev, bir sütunun varlığını denetler. İç içe veri yapısının kendisi için işlev 0 döndürür.
 
@@ -313,7 +439,7 @@ Türler:
 Aynı harfin belirtildiği (t veya U), sayısal türler için bunlar eşleşen türler değil, ortak bir türe sahip türler olabilir.
 Örneğin, ilk bağımsız değişken Int64 türüne sahip olabilir, ikincisi ise Array(Uİnt16) türüne sahiptir.
 
-Eğer… ‘x’ değer, içindeki öğelerden birine eşittir. ‘array\_from’ array, varolan öğeyi döndürür (aynı numaralandırılır) ‘array\_to’ dizi. Aksi takdirde, döner ‘default’. İçinde birden fazla eşleşen öğe varsa ‘array\_from’, maçlardan birini döndürür.
+Eğer... ‘x’ değer, içindeki öğelerden birine eşittir. ‘array\_from’ array, varolan öğeyi döndürür (aynı numaralandırılır) ‘array\_to’ dizi. Aksi takdirde, döner ‘default’. İçinde birden fazla eşleşen öğe varsa ‘array\_from’, maçlardan birini döndürür.
 
 Örnek:
 
@@ -338,7 +464,7 @@ ORDER BY c DESC
 ### transform (x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 İlk vary thatasyon differsdan farklıdır. ‘default’ argüman atlandı.
-Eğer… ‘x’ değer, içindeki öğelerden birine eşittir. ‘array\_from’ array, eşleşen öğeyi (aynı numaralandırılmış) döndürür ‘array\_to’ dizi. Aksi takdirde, döner ‘x’.
+Eğer... ‘x’ değer, içindeki öğelerden birine eşittir. ‘array\_from’ array, eşleşen öğeyi (aynı numaralandırılmış) döndürür ‘array\_to’ dizi. Aksi takdirde, döner ‘x’.
 
 Türler:
 
@@ -393,11 +519,11 @@ SELECT
 
 ## en az (a, b) {#leasta-b}
 
-A ve B’den en küçük değeri döndürür.
+A ve B'den en küçük değeri döndürür.
 
 ## en büyük (a, b) {#greatesta-b}
 
-A ve B’nin en büyük değerini döndürür.
+A ve B'nin en büyük değerini döndürür.
 
 ## çalışma süresi() {#uptime}
 
@@ -612,7 +738,7 @@ WHERE diff != 1
 
 ## MACNumToString (num) {#macnumtostringnum}
 
-Bir uınt64 numarasını kabul eder. Big endian’da bir MAC adresi olarak yorumlar. AA:BB:CC:DD:EE:FF biçiminde karşılık gelen MAC adresini içeren bir dize döndürür (onaltılık formda iki nokta üst üste ayrılmış sayılar).
+Bir uınt64 numarasını kabul eder. Big endian'da bir MAC adresi olarak yorumlar. AA:BB:CC:DD:EE:FF biçiminde karşılık gelen MAC adresini içeren bir dize döndürür (onaltılık formda iki nokta üst üste ayrılmış sayılar).
 
 ## MACStringToNum (s) {#macstringtonums}
 
@@ -681,7 +807,7 @@ SELECT blockSerializedSize(maxState(1)) as x
 
 ## toColumnTypeName {#tocolumntypename}
 
-RAM’DEKİ sütunun veri türünü temsil eden sınıfın adını döndürür.
+RAM'DEKİ sütunun veri türünü temsil eden sınıfın adını döndürür.
 
 ``` sql
 toColumnTypeName(value)
@@ -721,7 +847,7 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 
 ## dumpColumnStructure {#dumpcolumnstructure}
 
-Ram’deki veri yapılarının ayrıntılı bir açıklamasını verir
+Ram'deki veri yapılarının ayrıntılı bir açıklamasını verir
 
 ``` sql
 dumpColumnStructure(value)

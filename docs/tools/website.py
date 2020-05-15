@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 
+import bs4
 import closure
 import cssmin
 import htmlmin
@@ -12,6 +13,57 @@ import jinja2
 import jsmin
 
 import mdx_clickhouse
+
+
+def adjust_markdown_html(content):
+    soup = bs4.BeautifulSoup(
+        content,
+        features='html.parser'
+    )
+    for details in soup.find_all('details'):
+        for summary in details.find_all('summary'):
+            if summary.parent != details:
+                summary.extract()
+                details.insert(0, summary)
+    for div in soup.find_all('div'):
+        div.attrs['role'] = 'alert'
+        div_class = div.attrs.get('class')
+        for a in div.find_all('a'):
+            a_class = a.attrs.get('class')
+            if a_class:
+                a.attrs['class'] = a_class + ['alert-link']
+            else:
+                a.attrs['class'] = 'alert-link'
+        for p in div.find_all('p'):
+            p_class = p.attrs.get('class')
+            if p_class and ('admonition-title' in p_class):
+                p.attrs['class'] = p_class + ['alert-heading', 'display-5', 'mb-2']
+        if div_class and 'admonition' in div.attrs.get('class'):
+            if ('info' in div_class) or ('note' in div_class):
+                mode = 'alert-primary'
+            elif ('attention' in div_class) or ('warning' in div_class):
+                mode = 'alert-warning'
+            elif 'important' in div_class:
+                mode = 'alert-danger'
+            elif 'tip' in div_class:
+                mode = 'alert-info'
+            else:
+                mode = 'alert-secondary'
+            div.attrs['class'] = div_class + ['alert', 'lead', 'pb-0', 'mb-4', mode]
+
+    return str(soup)
+
+
+def minify_html(content):
+    return htmlmin.minify(content,
+                          remove_comments=False,
+                          remove_empty_space=True,
+                          remove_all_empty_space=False,
+                          reduce_empty_attributes=True,
+                          reduce_boolean_attributes=False,
+                          remove_optional_attribute_quotes=True,
+                          convert_charrefs=False,
+                          keep_pre=True)
 
 
 def build_website(args):
@@ -40,6 +92,7 @@ def build_website(args):
             '*.md',
             '*.sh',
             '*.css',
+            '*.json',
             'js/*.js',
             'build',
             'docs',
@@ -150,7 +203,7 @@ def minify_website(args):
                 with open(path, 'rb') as f:
                     content = f.read().decode('utf-8')
                 if filename.endswith('.html'):
-                    content = htmlmin.minify(content, remove_empty_space=False)
+                    content = minify_html(content)
                     content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
                     content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
                 elif filename.endswith('.css'):

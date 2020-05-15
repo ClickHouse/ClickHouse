@@ -219,7 +219,7 @@ Some queries by their implementation require a set of privileges. For example, t
 
 ### SELECT {#grant-select}
 
-Allows executing [SELECT](select.md) queries.
+Allows executing [SELECT](select/index.md) queries.
 
 Privilege level: `COLUMN`.
 

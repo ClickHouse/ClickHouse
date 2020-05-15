@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "Arama Dizeleri \u0130\xE7in"
 ---
 
-# Dizeleri Aramak için işlevler {#functions-for-searching-strings}
+# Dizeleri aramak için işlevler {#functions-for-searching-strings}
 
 Arama, tüm bu işlevlerde varsayılan olarak büyük / küçük harf duyarlıdır. Büyük / küçük harf duyarlı arama için ayrı Varyantlar vardır.
 
 ## pozisyon (Samanlık, iğne), bulun (Samanlık, iğne) {#position}
 
-1’den başlayarak dizedeki bulunan alt dizenin konumunu (bayt cinsinden) döndürür.
+1'den başlayarak dizedeki bulunan alt dizenin konumunu (bayt cinsinden) döndürür.
 
 Dize, tek baytlık kodlanmış bir metni temsil eden bir bayt kümesi içerdiği varsayımı altında çalışır. Bu varsayım karşılanmazsa ve bir karakter tek bir bayt kullanılarak temsil edilemezse, işlev bir istisna atmaz ve beklenmeyen bir sonuç döndürür. Karakter iki bayt kullanılarak temsil edilebilirse, iki bayt vb. kullanır.
 
@@ -32,7 +32,7 @@ Takma ad: `locate(haystack, needle)`.
 
 **Döndürülen değerler**
 
--   Alt dize bulunursa, bayt cinsinden başlangıç pozisyonu (1’den sayma).
+-   Alt dize bulunursa, bayt cinsinden başlangıç pozisyonu (1'den sayma).
 -   0, alt dize bulunamadı.
 
 Tür: `Integer`.
@@ -55,7 +55,7 @@ Sonuç:
 └────────────────────────────────┘
 ```
 
-Rusça’daki aynı ifade, tek bir bayt kullanılarak temsil edilemeyen karakterler içerir. İşlev beklenmedik bir sonuç verir (kullanım [positionUTF8](#positionutf8) çok bayt kodlu metin için işlev):
+Rusça'daki aynı ifade, tek bir bayt kullanılarak temsil edilemeyen karakterler içerir. İşlev beklenmedik bir sonuç verir (kullanım [positionUTF8](#positionutf8) çok bayt kodlu metin için işlev):
 
 Sorgu:
 
@@ -73,7 +73,7 @@ Sonuç:
 
 ## positionCaseİnsensitive {#positioncaseinsensitive}
 
-Olarak aynı [konum](#position) 1’den başlayarak dizedeki bulunan alt dizenin konumunu (bayt cinsinden) döndürür. Büyük / küçük harf duyarlı bir arama için işlevi kullanın.
+Olarak aynı [konum](#position) 1'den başlayarak dizedeki bulunan alt dizenin konumunu (bayt cinsinden) döndürür. Büyük / küçük harf duyarlı bir arama için işlevi kullanın.
 
 Dize, tek baytlık kodlanmış bir metni temsil eden bir bayt kümesi içerdiği varsayımı altında çalışır. Bu varsayım karşılanmazsa ve bir karakter tek bir bayt kullanılarak temsil edilemezse, işlev bir istisna atmaz ve beklenmeyen bir sonuç döndürür. Karakter iki bayt kullanılarak temsil edilebilirse, iki bayt vb. kullanır.
 
@@ -90,7 +90,7 @@ positionCaseInsensitive(haystack, needle)
 
 **Döndürülen değerler**
 
--   Alt dize bulunursa, bayt cinsinden başlangıç pozisyonu (1’den sayma).
+-   Alt dize bulunursa, bayt cinsinden başlangıç pozisyonu (1'den sayma).
 -   0, alt dize bulunamadı.
 
 Tür: `Integer`.
@@ -113,7 +113,7 @@ Sonuç:
 
 ## positionUTF8 {#positionutf8}
 
-1’den başlayarak dizedeki bulunan alt dizenin konumunu (Unicode noktalarında) döndürür.
+1'den başlayarak dizedeki bulunan alt dizenin konumunu (Unicode noktalarında) döndürür.
 
 Dizenin UTF-8 kodlanmış bir metni temsil eden bir bayt kümesi içerdiği varsayımı altında çalışır. Bu varsayım karşılanmazsa, işlev bir istisna atmaz ve beklenmeyen bir sonuç döndürür. Karakter iki Unicode noktası kullanılarak temsil edilebilirse, iki vb. kullanır.
 
@@ -132,14 +132,14 @@ positionUTF8(haystack, needle)
 
 **Döndürülen değerler**
 
--   Unicode noktalarında başlangıç pozisyonu (1’den sayma), eğer alt dize bulundu.
+-   Unicode noktalarında başlangıç pozisyonu (1'den sayma), eğer alt dize bulundu.
 -   0, alt dize bulunamadı.
 
 Tür: `Integer`.
 
 **Örnekler**
 
-İfade “Hello, world!” rusça’da, tek noktalı kodlanmış bir metni temsil eden bir dizi Unicode noktası bulunur. İşlev beklenen bazı sonuçları döndürür:
+İfade “Hello, world!” rusça'da, tek noktalı kodlanmış bir metni temsil eden bir dizi Unicode noktası bulunur. İşlev beklenen bazı sonuçları döndürür:
 
 Sorgu:
 
@@ -187,7 +187,7 @@ Sonuç:
 
 ## positionCaseİnsensitiveUTF8 {#positioncaseinsensitiveutf8}
 
-Olarak aynı [positionUTF8](#positionutf8) ama büyük küçük harf duyarlı. 1’den başlayarak dizedeki bulunan alt dizenin konumunu (Unicode noktalarında) döndürür.
+Olarak aynı [positionUTF8](#positionutf8) ama büyük küçük harf duyarlı. 1'den başlayarak dizedeki bulunan alt dizenin konumunu (Unicode noktalarında) döndürür.
 
 Dizenin UTF-8 kodlanmış bir metni temsil eden bir bayt kümesi içerdiği varsayımı altında çalışır. Bu varsayım karşılanmazsa, işlev bir istisna atmaz ve beklenmeyen bir sonuç döndürür. Karakter iki Unicode noktası kullanılarak temsil edilebilirse, iki vb. kullanır.
 
@@ -204,7 +204,7 @@ positionCaseInsensitiveUTF8(haystack, needle)
 
 **Döndürülen değer**
 
--   Unicode noktalarında başlangıç pozisyonu (1’den sayma), eğer alt dize bulundu.
+-   Unicode noktalarında başlangıç pozisyonu (1'den sayma), eğer alt dize bulundu.
 -   0, alt dize bulunamadı.
 
 Tür: `Integer`.
@@ -227,12 +227,12 @@ Sonuç:
 
 ## multiSearchAllPositions {#multisearchallpositions}
 
-Olarak aynı [konum](string-search-functions.md#position) ama döner `Array` dizede bulunan karşılık gelen alt dizelerin konumlarının (bayt cinsinden). Pozisyonlar 1’den başlayarak endekslenir.
+Olarak aynı [konum](string-search-functions.md#position) ama döner `Array` dizede bulunan karşılık gelen alt dizelerin konumlarının (bayt cinsinden). Pozisyonlar 1'den başlayarak endekslenir.
 
 Arama, dize kodlaması ve harmanlama ile ilgili olmayan bayt dizileri üzerinde gerçekleştirilir.
 
 -   Büyük / küçük harf duyarlı ASCII arama için işlevi kullanın `multiSearchAllPositionsCaseInsensitive`.
--   UTF-8’de arama yapmak için işlevi kullanın [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+-   UTF-8'de arama yapmak için işlevi kullanın [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
 -   Büyük / küçük harf duyarlı UTF-8 arama için multisearchallpositionscaseınsensitiveutf8 işlevini kullanın.
 
 **Sözdizimi**
@@ -248,7 +248,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Döndürülen değerler**
 
--   Bayt cinsinden başlangıç pozisyonları dizisi (1’den sayma), karşılık gelen alt dize bulunursa ve 0 bulunmazsa.
+-   Bayt cinsinden başlangıç pozisyonları dizisi (1'den sayma), karşılık gelen alt dize bulunursa ve 0 bulunmazsa.
 
 **Örnek**
 
@@ -278,7 +278,7 @@ Büyük/küçük harfe duyarsız arama veya / VE UTF-8 biçiminde kullanım işl
 
 ## multiSearchFirstİndex (Samanlık, \[iğne<sub>1</sub>, iğne<sub>2</sub>, …, needle<sub>ve</sub>\]) {#multisearchfirstindexhaystack-needle1-needle2-needlen}
 
-Dizini döndürür `i` en soldaki bulunan iğnenin (1’den başlayarak)<sub>ben</sub> diz inede `haystack` ve 0 aksi takdirde.
+Dizini döndürür `i` en soldaki bulunan iğnenin (1'den başlayarak)<sub>ben</sub> diz inede `haystack` ve 0 aksi takdirde.
 
 Büyük/küçük harfe duyarsız arama veya / VE UTF-8 biçiminde kullanım işlevleri için `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
@@ -289,7 +289,7 @@ Döner 1, Eğer en az bir dize iğne<sub>ben</sub> dize ile eşleşir `haystack`
 Büyük/küçük harfe duyarsız arama veya / VE UTF-8 biçiminde kullanım işlevleri için `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
 !!! note "Not"
-    Tamamı `multiSearch*` fonksiyonlar iğne sayısı 2’den az olmalıdır<sup>8</sup> uygulama şartname nedeniyle.
+    Tamamı `multiSearch*` fonksiyonlar iğne sayısı 2'den az olmalıdır<sup>8</sup> uygulama şartname nedeniyle.
 
 ## maç (Samanlık, desen) {#matchhaystack-pattern}
 
@@ -307,7 +307,7 @@ Bir dizedeki alt dizeleri aramak için desenler için, LİKE veya ‘position’
 Olarak aynı `match`, ancak normal ifadelerin hiçbiri eşleşmezse 0 ve desenlerden herhangi biri eşleşirse 1 değerini döndürür. Kullanır [hyperscan](https://github.com/intel/hyperscan) kitaplık. Bir dizede alt dizeleri aramak için desenler için, kullanmak daha iyidir `multiSearchAny` çok daha hızlı çalıştığı için.
 
 !!! note "Not"
-    Herhangi birinin uzunluğu `haystack` dize 2’den az olmalıdır<sup>32</sup> bayt aksi takdirde özel durum atılır. Bu kısıtlama, hyperscan API nedeniyle gerçekleşir.
+    Herhangi birinin uzunluğu `haystack` dize 2'den az olmalıdır<sup>32</sup> bayt aksi takdirde özel durum atılır. Bu kısıtlama, hyperscan API nedeniyle gerçekleşir.
 
 ## multimatchanyındex (haystack, \[desen<sub>1</sub>, desen<sub>2</sub>, …, pattern<sub>ve</sub>\]) {#multimatchanyindexhaystack-pattern1-pattern2-patternn}
 
@@ -352,10 +352,10 @@ Normal ifade metasymbols içerebilir `%` ve `_`.
 
 `_` herhangi bir bayt gösterir.
 
-Ters eğik çizgi kullanın (`\`) metasimbollerden kaçmak için. Açıklamasında kaçan nota bakın ‘match’ işlev.
+Ters eğik çizgi kullanın (`\`) metasimbollerden kaçmak için. Açıklamasında kaçan nota bakın ‘match’ İşlev.
 
-Gibi düzenli ifadeler için `%needle%`, kod daha optimal ve hızlı olarak çalışır `position` işlev.
-Diğer normal ifadeler için kod, ‘match’ işlev.
+Gibi düzenli ifadeler için `%needle%`, kod daha optimal ve hızlı olarak çalışır `position` İşlev.
+Diğer normal ifadeler için kod, ‘match’ İşlev.
 
 ## notLike (Samanlık, desen), Samanlık desen operatörü gibi değil {#function-notlike}
 
@@ -363,7 +363,7 @@ Aynı şey ‘like’ ama negatif.
 
 ## ngramDistance(Samanlık, iğne) {#ngramdistancehaystack-needle}
 
-Arasındaki 4 gram distancelık mesaf theeyi hesaplar `haystack` ve `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 – the closer to zero, the more strings are similar to each other. If the constant `needle` veya `haystack` 32kb’den fazla, bir istisna atar. Sabit olmayan bazı `haystack` veya `needle` dizeler 32kb’den daha fazladır, mesafe her zaman birdir.
+Arasındaki 4 gram distancelık mesaf theeyi hesaplar `haystack` ve `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 – the closer to zero, the more strings are similar to each other. If the constant `needle` veya `haystack` 32kb'den fazla, bir istisna atar. Sabit olmayan bazı `haystack` veya `needle` dizeler 32kb'den daha fazladır, mesafe her zaman birdir.
 
 Büyük/küçük harf duyarsız arama veya / VE UTF-8 formatında kullanım işlevleri için `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
 

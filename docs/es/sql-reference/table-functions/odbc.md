@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: Nosotros
 ---
@@ -23,7 +23,7 @@ Para implementar con seguridad conexiones ODBC, ClickHouse usa un programa separ
 
 Los campos con el `NULL` Los valores de la tabla externa se convierten en los valores predeterminados para el tipo de datos base. Por ejemplo, si un campo de tabla MySQL remoto tiene `INT NULL` tipo se convierte a 0 (el valor predeterminado para ClickHouse `Int32` tipo de datos).
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 **Obtener datos de la instalación local de MySQL a través de ODBC**
 

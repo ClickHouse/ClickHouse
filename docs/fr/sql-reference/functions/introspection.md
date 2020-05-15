@@ -1,18 +1,18 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 65
 toc_title: Introspection
 ---
 
-# Fonctions D’Introspection {#introspection-functions}
+# Fonctions D'Introspection {#introspection-functions}
 
 Vous pouvez utiliser les fonctions décrites dans ce chapitre pour introspecter [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) et [DWARF](https://en.wikipedia.org/wiki/DWARF) pour le profilage de requête.
 
 !!! warning "Avertissement"
     Ces fonctions sont lentes et peuvent imposer des considérations de sécurité.
 
-Pour le bon fonctionnement des fonctions d’introspection:
+Pour le bon fonctionnement des fonctions d'introspection:
 
 -   Installer le `clickhouse-common-static-dbg` paquet.
 
@@ -24,7 +24,7 @@ Clickhouse enregistre les rapports du profileur [trace\_log](../../operations/sy
 
 ## addressToLine {#addresstoline}
 
-Convertit l’adresse de mémoire virtuelle dans le processus de serveur ClickHouse en nom de fichier et en numéro de ligne dans le code source de ClickHouse.
+Convertit l'adresse de mémoire virtuelle dans le processus de serveur ClickHouse en nom de fichier et en numéro de ligne dans le code source de ClickHouse.
 
 Si vous utilisez des paquets clickhouse officiels, vous devez installer le `clickhouse-common-static-dbg` paquet.
 
@@ -42,17 +42,17 @@ addressToLine(address_of_binary_instruction)
 
 -   Nom de fichier du code Source et le numéro de ligne dans ce fichier délimité par deux-points.
 
-        For example, `/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
--   Nom d’un binaire, si la fonction n’a pas pu trouver les informations de débogage.
+-   Nom d'un binaire, si la fonction n'a pas pu trouver les informations de débogage.
 
--   Chaîne vide, si l’adresse n’est pas valide.
+-   Chaîne vide, si l'adresse n'est pas valide.
 
 Type: [Chaîne](../../sql-reference/data-types/string.md).
 
 **Exemple**
 
-Activation des fonctions d’introspection:
+Activation des fonctions d'introspection:
 
 ``` sql
 SET allow_introspection_functions=1
@@ -76,7 +76,7 @@ query_id:                421b6855-1858-45a5-8f37-f383409d6d72
 trace:                   [140658411141617,94784174532828,94784076370703,94784076372094,94784076361020,94784175007680,140658411116251,140658403895439]
 ```
 
-Le `trace` champ contient la trace de pile au moment de l’échantillonnage.
+Le `trace` champ contient la trace de pile au moment de l'échantillonnage.
 
 Obtenir le nom de fichier du code source et le numéro de ligne pour une seule adresse:
 
@@ -87,7 +87,7 @@ SELECT addressToLine(94784076370703) \G
 ``` text
 Row 1:
 ──────
-addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
+addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
 
 Application de la fonction à la trace de la pile entière:
@@ -100,15 +100,15 @@ LIMIT 1
 \G
 ```
 
-Le [arrayMap](higher-order-functions.md#higher_order_functions-array-map) permet de traiter chaque élément individuel de l’ `trace` tableau par la `addressToLine` fonction. Le résultat de ce traitement que vous voyez dans l’ `trace_source_code_lines` colonne de sortie.
+Le [arrayMap](higher-order-functions.md#higher_order_functions-array-map) permet de traiter chaque élément individuel de l' `trace` tableau par la `addressToLine` fonction. Le résultat de ce traitement que vous voyez dans l' `trace_source_code_lines` colonne de sortie.
 
 ``` text
 Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
-/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
-/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.h:155
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.h:155
 /usr/include/c++/9/bits/atomic_base.h:551
 /usr/lib/debug/usr/bin/clickhouse
 /lib/x86_64-linux-gnu/libpthread-2.27.so
@@ -117,7 +117,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 ## adressetosymbol {#addresstosymbol}
 
-Convertit l’adresse de mémoire virtuelle dans le processus de serveur ClickHouse en symbole à partir des fichiers d’objets ClickHouse.
+Convertit l'adresse de mémoire virtuelle dans le processus de serveur ClickHouse en symbole à partir des fichiers d'objets ClickHouse.
 
 **Syntaxe**
 
@@ -131,14 +131,14 @@ addressToSymbol(address_of_binary_instruction)
 
 **Valeur renvoyée**
 
--   Symbole des fichiers D’objets ClickHouse.
--   Chaîne vide, si l’adresse n’est pas valide.
+-   Symbole des fichiers D'objets ClickHouse.
+-   Chaîne vide, si l'adresse n'est pas valide.
 
 Type: [Chaîne](../../sql-reference/data-types/string.md).
 
 **Exemple**
 
-Activation des fonctions d’introspection:
+Activation des fonctions d'introspection:
 
 ``` sql
 SET allow_introspection_functions=1
@@ -162,7 +162,7 @@ query_id:      724028bf-f550-45aa-910d-2af6212b94ac
 trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 ```
 
-Le `trace` champ contient la trace de pile au moment de l’échantillonnage.
+Le `trace` champ contient la trace de pile au moment de l'échantillonnage.
 
 Obtenir un symbole pour une seule adresse:
 
@@ -186,7 +186,7 @@ LIMIT 1
 \G
 ```
 
-Le [arrayMap](higher-order-functions.md#higher_order_functions-array-map) permet de traiter chaque élément individuel de l’ `trace` tableau par la `addressToSymbols` fonction. Le résultat de ce traitement que vous voyez dans l’ `trace_symbols` colonne de sortie.
+Le [arrayMap](higher-order-functions.md#higher_order_functions-array-map) permet de traiter chaque élément individuel de l' `trace` tableau par la `addressToSymbols` fonction. Le résultat de ce traitement que vous voyez dans l' `trace_symbols` colonne de sortie.
 
 ``` text
 Row 1:
@@ -229,13 +229,13 @@ demangle(symbol)
 **Valeur renvoyée**
 
 -   Nom de la fonction C++.
--   Chaîne vide si un symbole n’est pas valide.
+-   Chaîne vide si un symbole n'est pas valide.
 
 Type: [Chaîne](../../sql-reference/data-types/string.md).
 
 **Exemple**
 
-Activation des fonctions d’introspection:
+Activation des fonctions d'introspection:
 
 ``` sql
 SET allow_introspection_functions=1
@@ -259,7 +259,7 @@ query_id:      724028bf-f550-45aa-910d-2af6212b94ac
 trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 ```
 
-Le `trace` champ contient la trace de pile au moment de l’échantillonnage.
+Le `trace` champ contient la trace de pile au moment de l'échantillonnage.
 
 Obtenir un nom de fonction pour une seule adresse:
 
@@ -283,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-Le [arrayMap](higher-order-functions.md#higher_order_functions-array-map) permet de traiter chaque élément individuel de l’ `trace` tableau par la `demangle` fonction. Le résultat de ce traitement que vous voyez dans l’ `trace_functions` colonne de sortie.
+Le [arrayMap](higher-order-functions.md#higher_order_functions-array-map) permet de traiter chaque élément individuel de l' `trace` tableau par la `demangle` fonction. Le résultat de ce traitement que vous voyez dans l' `trace_functions` colonne de sortie.
 
 ``` text
 Row 1:
