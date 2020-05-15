@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u0628\u0631"
 ---
@@ -8,6 +8,9 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u0628\
 # تنظیمات کاربر {#user-settings}
 
 این `users` بخش از `user.xml` فایل پیکربندی شامل تنظیمات کاربر.
+
+!!! note "اطلاعات"
+    فاحشه خانه نیز پشتیبانی می کند [گردش کار مبتنی بر مربع](../access-rights.md#access-control) برای مدیریت کاربران. ما توصیه می کنیم از این استفاده کنید.
 
 ساختار `users` بخش:
 
@@ -18,6 +21,8 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u0628\
         <password></password>
         <!-- Or -->
         <password_sha256_hex></password_sha256_hex>
+
+        <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -69,6 +74,17 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u0628\
           PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
     خط اول نتیجه رمز عبور است. خط دوم مربوط به هش دو شی1 است.
+
+### مدیریت دسترسی {#access_management-user-setting}
+
+این تنظیم را قادر می سازد از غیر فعال با استفاده از گذاشتن محور [کنترل دسترسی و مدیریت حساب](../access-rights.md#access-control) برای کاربر.
+
+مقادیر ممکن:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+مقدار پیش فرض: 0.
 
 ### نام / شبکه {#user-namenetworks}
 

@@ -28,7 +28,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     add_library (_poco_json ${SRCS})
     add_library (Poco::JSON ALIAS _poco_json)
 
-    target_include_directories (_poco_json PUBLIC ${LIBRARY_DIR}/JSON/include)
+    target_include_directories (_poco_json SYSTEM PUBLIC ${LIBRARY_DIR}/JSON/include)
     target_link_libraries (_poco_json PUBLIC Poco::Foundation Poco::JSON::Pdjson)
 else ()
     add_library (Poco::JSON UNKNOWN IMPORTED GLOBAL)

@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 26
 toc_title: "Biblioth\xE8ques Clientes"
 ---
 
-# Bibliothèques Clientes De développeurs Tiers {#client-libraries-from-third-party-developers}
+# Bibliothèques clientes de développeurs tiers {#client-libraries-from-third-party-developers}
 
 !!! warning "Avertissement"
-    Yandex ne **pas** maintenir les bibliothèques énumérées ci-dessous et n’ont pas fait de tests approfondis pour assurer leur qualité.
+    Yandex ne **pas** maintenir les bibliothèques énumérées ci-dessous et n'ont pas fait de tests approfondis pour assurer leur qualité.
 
 -   Python
     -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
@@ -21,7 +21,7 @@ toc_title: "Biblioth\xE8ques Clientes"
     -   [bozerkins / clickhouse-client](https://packagist.org/packages/bozerkins/clickhouse-client)
     -   [simpod / clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
     -   [seva-code/php-cliquez-maison-client](https://packagist.org/packages/seva-code/php-click-house-client)
-    -   [Client Seasclick c++](https://github.com/SeasX/SeasClick)
+    -   [Client Seasclick c++ ](https://github.com/SeasX/SeasClick)
 -   Aller
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [aller-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -39,7 +39,7 @@ toc_title: "Biblioth\xE8ques Clientes"
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
-    -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+    -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
     -   [clickhouse-client](https://github.com/Ecwid/clickhouse-client)
@@ -53,6 +53,7 @@ toc_title: "Biblioth\xE8ques Clientes"
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
+    -   [pilier](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 

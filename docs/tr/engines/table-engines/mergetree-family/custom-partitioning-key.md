@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: "\xD6zel B\xF6l\xFCmleme Anahtar\u0131"
 ---
@@ -40,7 +40,7 @@ Bir tabloya yeni veri eklerken, bu veriler birincil anahtara göre sıralanmış
 !!! info "Bilgin"
     Birleştirme yalnızca bölümleme ifadesi için aynı değere sahip veri parçaları için çalışır. Bu demektir **aşırı granüler bölümler yapmamalısınız** (yaklaşık binden fazla bölüm). Aksi takdirde, `SELECT` sorgu, dosya sistemindeki ve açık dosya tanımlayıcılarındaki makul olmayan sayıda dosya nedeniyle yetersiz performans gösterir.
 
-Kullan… [sistem.parçalar](../../../operations/system-tables.md#system_tables-parts) tablo tablo parçaları ve bölümleri görüntülemek için. Örneğin, bir var varsayalım `visits` aya göre bölümleme ile tablo. Hadi gerçekleştirelim `SELECT` sorgu için `system.parts` Tablo:
+Kullan... [sistem.parçalar](../../../operations/system-tables.md#system_tables-parts) tablo tablo parçaları ve bölümleri görüntülemek için. Örneğin, bir var varsayalım `visits` aya göre bölümleme ile tablo. Hadi gerçekleştirelim `SELECT` sorgu için `system.parts` Tablo:
 
 ``` sql
 SELECT

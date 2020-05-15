@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
-toc_title: SummingMergeTree
+toc_title: "\u30B5\u30DF\u30F3\u30B0\u30DE\u30FC\u30B2\u30C4\u30EA\u30FC"
 ---
 
-# Summingmergetree {#summingmergetree}
+# サミングマーゲツリー {#summingmergetree}
 
-エンジンは [MergeTree](mergetree.md#table_engines-mergetree). 違いは、データ部分をマージするとき `SummingMergeTree` テーブルClickHouseは、すべての行を同じ主キー（またはより正確には同じ）で置き換えます [ソートキー](mergetree.md))数値データ型を持つ列の集計値を含む行。 並べ替えキーが単一のキー値が多数の行に対応するように構成されている場合、これによりストレージボリュームが大幅に削減され、データ選択がスピードア
+エンジンはから継承します [メルゲツリー](mergetree.md#table_engines-mergetree). 違いは、データ部分をマージするときに `SummingMergeTree` テーブルClickHouseは、すべての行を同じ主キー（またはより正確には同じキー）で置き換えます [ソートキー](mergetree.md)）数値データ型の列の集計値を含む行。 並べ替えキーが単一のキー値が多数の行に対応するように構成されている場合、ストレージ容量が大幅に削減され、データ選択が高速化されます。
 
-私たちは使用するエンジンと一緒に `MergeTree`. 完全なデータを格納する `MergeTree` テーブル、および使用 `SummingMergeTree` レポートを準備するときなど、集計データを保存する場合。 このようなアプローチは、誤って構成された主キーのために貴重なデー
+エンジンを一緒に使用することをお勧めします `MergeTree`. 完全なデータを格納する `MergeTree` テーブルおよび使用 `SummingMergeTree` たとえば、レポートの準備時など、集計データを格納する場合。 このようなアプローチを防ぎまらな貴重なデータにより正しく構成しその有効なタイプを利用します。
 
 ## テーブルの作成 {#creating-a-table}
 
@@ -28,20 +28,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 説明リクエストパラメータの参照 [要求の説明](../../../sql-reference/statements/create.md).
 
-**SummingMergeTreeのパラメータ**
+**Sumingmergetreeのパラメータ**
 
--   `columns` -値が要約される列の名前を持つタプル。 省略可能なパラメータ。
-    列は数値型である必要があり、主キーに含めることはできません。
+-   `columns` -値が集計される列の名前を持つタプル。 任意パラメータ。
+    列は数値型である必要があり、主キーには含まれていない必要があります。
 
-    もし `columns` 指定されていない場合、ClickHouseは、プライマリキーに含まれていない数値データ型を持つすべての列の値を集計します。
+    もし `columns` 指定されていないClickHouseは、主キーにない数値データ型を持つすべての列の値を集計します。
 
 **クエリ句**
 
-作成するとき `SummingMergeTree` テーブル同じ [句](mergetree.md) 作成するときと同じように、必須です。 `MergeTree` テーブル。
+を作成するとき `SummingMergeTree` 同じテーブル [句](mergetree.md) を作成するときのように必要です。 `MergeTree` テーブル。
 
 <details markdown="1">
 
-<summary>テーブルを作成する非推奨の方法</summary>
+<summary>推奨されていません法テーブルを作成する</summary>
 
 !!! attention "注意"
     可能であれば、古いプロジェクトを上記の方法に切り替えてください。
@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
 ```
 
-すべてのパラメーターを除く `columns` と同じ意味を持つ `MergeTree`.
+以下を除くすべてのパラメータ `columns` と同じ意味を持つ `MergeTree`.
 
 -   `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
 
@@ -63,7 +63,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## 使用例 {#usage-example}
 
-次の表を考えてみます:
+次の表を考えます:
 
 ``` sql
 CREATE TABLE summtt
@@ -75,13 +75,13 @@ ENGINE = SummingMergeTree()
 ORDER BY key
 ```
 
-それにデータを挿入する:
+データを挿入する:
 
 ``` sql
 INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
-ClickHouseは完全ではないすべての行を合計してもよい ([以下を参照](#data-processing)）ので、我々は集計関数を使用します `sum` と `GROUP BY` クエリ内の句。
+ClickHouseは完全ではないすべての行を合計可能性があります ([以下を参照](#data-processing)）ので、集計関数を使用します `sum` と `GROUP BY` クエリ内の句。
 
 ``` sql
 SELECT key, sum(value) FROM summtt GROUP BY key
@@ -96,9 +96,9 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 ## データ処理 {#data-processing}
 
-データがテーブルに挿入されると、そのまま保存されます。 これは、同じプライマリキーを持つ行が合計され、結果のデータ部分ごとに行が置き換えられたときです。
+データがテーブルに挿入されると、そのまま保存されます。 ClickHouseは、データの挿入された部分を定期的にマージし、これは、同じ主キーを持つ行が合計され、結果として得られるデータの各部分に対して行に置き換えられる
 
-ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`)集計関数 [合計()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) と `GROUP BY` 上記の例で説明したように、クエリで句を使用する必要があります。
+ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`)集計関数 [和()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) と `GROUP BY` 上記の例で説明したように、クエリで句を使用する必要があります。
 
 ### 合計の共通ルール {#common-rules-for-summation}
 
@@ -106,13 +106,13 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 合計のすべての列の値が0の場合、行は削除されます。
 
-列が主キーに含まれておらず、まとめられていない場合は、既存の値から任意の値が選択されます。
+Columnが主キーになく、集計されていない場合は、既存の値から任意の値が選択されます。
 
 主キーの列の値は集計されません。
 
 ### Aggregatefunction列の合計 {#the-summation-in-the-aggregatefunction-columns}
 
-列の場合 [AggregateFunctionタイプ](../../../sql-reference/data-types/aggregatefunction.md) クリックハウスは [ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹ](aggregatingmergetree.md) 機能に従って集約するエンジン。
+の列に対して [AggregateFunctionタイプ](../../../sql-reference/data-types/aggregatefunction.md) ClickHouseとして振る舞うと考えられてい [AggregatingMergeTree](aggregatingmergetree.md) 機能に従って集計するエンジン。
 
 ### 入れ子構造 {#nested-structures}
 
@@ -120,10 +120,10 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 入れ子になったテーブルの名前が `Map` また、以下の条件を満たす少なくとも二つの列が含まれています:
 
--   最初の列は数値です `(*Int*, Date, DateTime)` または文字列 `(String, FixedString)`、それを呼びましょう `key`,
--   他の列は算術演算です `(*Int*, Float32/64)`、それを呼びましょう `(values...)`,
+-   最初の列は数値です `(*Int*, Date, DateTime)` または文字列 `(String, FixedString)` それを呼びましょう `key`,
+-   他の列は算術演算です `(*Int*, Float32/64)` それを呼びましょう `(values...)`,
 
-次に、このネストされたテーブルは、 `key => (values...)` 行をマージすると、二つのデータセットの要素は次のようにマージされます `key` 対応する `(values...)`.
+次に、この入れ子になったテーブルは `key => (values...)` その行をマージするとき、二つのデータセットの要素は `key` 対応するの合計と `(values...)`.
 
 例:
 
@@ -134,8 +134,8 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-データを要求するときは、 [sumMap(キー,値)](../../../sql-reference/aggregate-functions/reference.md) の集約のための関数 `Map`.
+データを要求するときは、 [sumMap(キー、値)](../../../sql-reference/aggregate-functions/reference.md) の集合のための関数 `Map`.
 
-入れ子になったデータ構造の場合、合計の列のタプルに列を指定する必要はありません。
+入れ子になったデータ構造の場合、合計のために列のタプルにその列を指定する必要はありません。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

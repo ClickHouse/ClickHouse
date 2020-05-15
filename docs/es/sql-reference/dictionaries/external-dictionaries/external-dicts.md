@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "Descripci\xF3n General"
 ---
 
-# Diccionarios Externos {#dicts-external-dicts}
+# Diccionarios externos {#dicts-external-dicts}
 
 Puede agregar sus propios diccionarios de varias fuentes de datos. El origen de datos de un diccionario puede ser un archivo ejecutable o de texto local, un recurso HTTP u otro DBMS. Para obtener más información, consulte “[Fuentes para diccionarios externos](external-dicts-dict-sources.md)”.
 
@@ -18,6 +18,12 @@ Haga clic en Casa:
 La configuración de diccionarios externos se puede ubicar en uno o más archivos xml. La ruta de acceso a la configuración se especifica en el [Diccionarios\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parámetro.
 
 Los diccionarios se pueden cargar en el inicio del servidor o en el primer uso, dependiendo de la [Diccionarios\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) configuración.
+
+El [diccionario](../../../operations/system-tables.md#system_tables-dictionaries) La tabla del sistema contiene información sobre los diccionarios configurados en el servidor. Para cada diccionario se puede encontrar allí:
+
+-   Estado del diccionario.
+-   Parámetros de configuración.
+-   Métricas como la cantidad de RAM asignada para el diccionario o un número de consultas desde que el diccionario se cargó correctamente.
 
 El archivo de configuración del diccionario tiene el siguiente formato:
 

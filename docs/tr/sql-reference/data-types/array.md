@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: Dizi(T)
 ---
@@ -9,7 +9,7 @@ toc_title: Dizi(T)
 
 Bir dizi `T`- tip öğeleri. `T` herhangi bir veri türü, bir dizi dahil edilebilir.
 
-## Bir Dizi oluşturma {#creating-an-array}
+## Bir dizi oluşturma {#creating-an-array}
 
 Bir dizi oluşturmak için bir işlev kullanabilirsiniz:
 
@@ -45,7 +45,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Veri Türleri İle Çalışma {#working-with-data-types}
+## Veri türleri ile çalışma {#working-with-data-types}
 
 Anında bir dizi oluştururken, ClickHouse bağımsız değişken türünü otomatik olarak listelenen tüm bağımsız değişkenleri depolayabilen en dar veri türü olarak tanımlar. Eğer herhangi bir [Nullable](nullable.md#data_type-nullable) veya edebi [NULL](../../sql-reference/syntax.md#null-literal) değerler, bir dizi öğesinin türü de olur [Nullable](nullable.md).
 

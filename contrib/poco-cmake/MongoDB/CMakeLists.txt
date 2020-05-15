@@ -26,7 +26,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     add_library (_poco_mongodb ${SRCS})
     add_library (Poco::MongoDB ALIAS _poco_mongodb)
 
-    target_include_directories (_poco_mongodb PUBLIC ${LIBRARY_DIR}/MongoDB/include)
+    target_include_directories (_poco_mongodb SYSTEM PUBLIC ${LIBRARY_DIR}/MongoDB/include)
     target_link_libraries (_poco_mongodb PUBLIC Poco::Net)
 else ()
     add_library (Poco::MongoDB UNKNOWN IMPORTED GLOBAL)
