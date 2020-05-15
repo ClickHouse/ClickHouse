@@ -495,7 +495,7 @@ public:
 
             try
             {
-                region->init_value(std::forward<InitFunction>(initialize));
+                region->init_value(std::forward<Init>(initialize));
             }
             catch (...)
             {
