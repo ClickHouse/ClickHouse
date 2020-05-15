@@ -1,6 +1,6 @@
 #include <Common/UTF8Helpers.h>
 
-#include <widechar_width.h>
+#include <../base/widechar_width/widechar_width.h>
 
 namespace DB
 {

@@ -680,7 +680,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
-    std::vector<StringRef> regex = {R"( Mobile .*(Chrome)/(\d+)\.(\d+)\.(\d+)\.(\d+))", R"((chromeframe)/(\d+)\.(\d+)\.(\d+))"};
+    std::vector<StringRef> regex = {R"(aa)", R"(bb)", R"(cc)"};
     auto * hyperscan_browser_base = MultiRegexps::get<true, false>(regex, 0);
     global_context->setHyperscanBrowserBase(hyperscan_browser_base);
 

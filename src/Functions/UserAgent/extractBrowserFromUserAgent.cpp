@@ -30,7 +30,7 @@ struct extractBrowserFromUserAgentImpl
     {
         res_data.resize(data.size());
         res_offsets.assign(offsets);
-        size_t size = offsets.size();
+        // size_t size = offsets.size();
 
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(context.getHyperscanBrowserBase()->getScratch(), &scratch);
@@ -47,11 +47,11 @@ struct extractBrowserFromUserAgentImpl
                            void * ctx) -> int
         {
             *reinterpret_cast<UInt8 *>(ctx) = id;
-            return 1;
+            return 0;
         };
         const size_t haystack_offsets_size = offsets.size();
         UInt64 offset = 0;
-        ColumnString::Offset prev_offset = 0;
+        // ColumnString::Offset prev_offset = 0;
         ColumnString::Offset res_offset = 0;
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
@@ -60,7 +60,7 @@ struct extractBrowserFromUserAgentImpl
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", 1);
             /// Zero the result, scan, check, update the offset.
-            int a = 0;
+            UInt8 a = 0;
             err = hs_scan(
                 context.getHyperscanBrowserBase()->getDB(),
                 reinterpret_cast<const char *>(offsets.data()) + offset,
@@ -72,35 +72,31 @@ struct extractBrowserFromUserAgentImpl
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
                 throw Exception("Failed to scan with hyperscan", 2);
             offset = offsets[i];
-            if (a == 1)
+            char ret[1];
+            if (a == 0)
             {
-                const char * url_begin = "mobile";
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], url_begin, 6);
-                res_offset += 6;
-                res_offsets[i] = res_offset;
+                ret[0] = 'a'; 
+            }
+            else if (a == 1)
+            {
+                ret[0] = 'b'; 
             }
             else if (a == 2)
             {
-                const char * url_begin = "chrome";
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], url_begin, 6);
-                res_offset += 6;
-                res_offsets[i] = res_offset;
+                ret[0] = 'c'; 
+            }
+            else if (a == 3)
+            {
+                ret[0] = 'd'; 
             }
             else
             {
-                const char * url_begin = "hz";
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], url_begin, 2);
-                res_offset += 2;
-                res_offsets[i] = res_offset;
+                ret[0] = 'x';
             }
-        }
 
-        for (size_t i = 0; i < size; ++i)
-        {
-            for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
-                res_data[j] = data[offsets[i] + prev_offset - 2 - j];
-            res_data[offsets[i] - 1] = 0;
-            prev_offset = offsets[i];
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], ret, 1);
+            res_offset += 2;
+            res_offsets[i] = res_offset;
         }
     }
 
@@ -159,11 +155,14 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnString::create();
-            extractBrowserFromUserAgentImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            extractBrowserFromUserAgentImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), context);
             block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
+            throw Exception(
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
             auto col_res = ColumnFixedString::create(col_fixed->getN());
             extractBrowserFromUserAgentImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
