@@ -306,7 +306,7 @@ public:
     }
 
     template <typename ...TAllocatorParams>
-    explicit PODArray(const PODArray & other, TAllocatorParams && ...params)
+    explicit PODArray(const PODArray & other, alloc_tag_t, TAllocatorParams && ...params)
     {
         this->alloc_for_num_elements(other.size(), std::forward<TAllocatorParams>(params)...);
         insert(other.begin(), other.end());
