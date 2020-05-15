@@ -8,10 +8,10 @@ namespace DB
 {
 class Context;
 
-class InterpreterShowQuotasQuery : public IInterpreter
+class InterpreterShowPrivilegesQuery : public IInterpreter
 {
 public:
-    InterpreterShowQuotasQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterShowPrivilegesQuery(const ASTPtr & query_ptr_, Context & context_);
 
     BlockIO execute() override;
 
@@ -21,8 +21,6 @@ public:
 private:
     ASTPtr query_ptr;
     Context & context;
-
-    String getRewrittenQuery();
 };
 
 }
