@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <Common/IGrabberAllocator.h>
 
 #include <Common/Stopwatch.h>
 
@@ -28,8 +29,24 @@ int main(int argc, char ** argv)
 
         std::cerr << std::fixed << std::setprecision(3);
 
-        size_t hits = 0;
-        size_t misses = 0;
+        {
+            Stopwatch watch;
+            CachedCompressedReadBuffer in(
+                path,
+                [&]()
+                {
+                    return createReadBufferFromFileBase(path, 0, 0, 0);
+                },
+                &cache
+            );
+            WriteBufferFromFile out("/dev/null");
+            copyData(in, out);
+
+            std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
+        }
+
+        ga::Stats stats = cache.getStats()
+        std::cerr << "Hits: " << stats.hits << ", misses: " << stats.misses << std::endl;
 
         {
             Stopwatch watch;
@@ -47,27 +64,8 @@ int main(int argc, char ** argv)
             std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
         }
 
-        cache.getStats(hits, misses);
-        std::cerr << "Hits: " << hits << ", misses: " << misses << std::endl;
-
-        {
-            Stopwatch watch;
-            CachedCompressedReadBuffer in(
-                path,
-                [&]()
-                {
-                    return createReadBufferFromFileBase(path, 0, 0, 0);
-                },
-                &cache
-            );
-            WriteBufferFromFile out("/dev/null");
-            copyData(in, out);
-
-            std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
-        }
-
-        cache.getStats(hits, misses);
-        std::cerr << "Hits: " << hits << ", misses: " << misses << std::endl;
+        stats = cache.getStats();
+        std::cerr << "Hits: " << stats.hits << ", misses: " << stats.misses << std::endl;
     }
     catch (const Exception & e)
     {
