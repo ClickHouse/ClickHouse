@@ -1125,7 +1125,7 @@ struct FakeMemoryAllocForIG
     /// @see FakeMemoryAllocForIG
     constexpr static void * alloc(size_t, size_t, void * start) noexcept { return start; }
 
-    constexpr static void * realloc(char *, size_t, size_t, size_t) noexcept
+    static void * realloc(char *, size_t, size_t, size_t) noexcept
     {
         throw Exception("Object using FakePODAllocForIG must not call realloc()",
                         ErrorCodes::SYSTEM_ERROR);
