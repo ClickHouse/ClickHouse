@@ -42,12 +42,13 @@ class AggregateFunctionDistinct final : public IAggregateFunctionHelper<Aggregat
 {
 private:
     AggregateFunctionPtr nested_func;
+    size_t num_arguments;
     mutable AggregateFunctionDistinctData storage;
 
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested, const DataTypes & arguments)
     : IAggregateFunctionHelper<AggregateFunctionDistinct>(arguments, {})
-    , nested_func(nested)
+    , nested_func(nested), num_arguments(arguments.size())
     {
         if (arguments.empty())
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -90,7 +91,8 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         SipHash hash;
-        columns[0]->updateHashWithValue(row_num, hash);
+        for (size_t i = 0; i < num_arguments; ++i)
+            columns[i]->updateHashWithValue(row_num, hash);
 
         UInt128 key;
         hash.get128(key.low, key.high);
