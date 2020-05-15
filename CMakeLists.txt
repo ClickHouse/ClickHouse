@@ -346,6 +346,7 @@ include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -380,6 +381,15 @@ include (cmake/find/mysqlclient.cmake)
 
 if (OS_LINUX AND NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
+endif ()
+
+if (USE_OPENCL)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DBITONIC_SORT_PREFERRED")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBITONIC_SORT_PREFERRED")
+
+    if (OS_DARWIN)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -framework OpenCL")
+    endif ()
 endif ()
 
 include (cmake/print_flags.cmake)
