@@ -230,7 +230,7 @@ SELECT currentUser();
 └───────────────┘
 ```
 
-## isConstant {is-constant}
+## isConstant {#is-constant}
 
 Проверяет, является ли аргумент константным выражением.
 

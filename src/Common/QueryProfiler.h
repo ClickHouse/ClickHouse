@@ -6,7 +6,6 @@
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
-#    include <common/config_common.h>
 #endif
 
 

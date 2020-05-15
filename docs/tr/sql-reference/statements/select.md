@@ -777,7 +777,7 @@ Bir sabit, toplam işlevler için bağımsız değişken olarak belirtilemez. Ö
 
 #### NULL işleme {#null-processing}
 
-Gruplama için ClickHouse yorumlar [NULL](../syntax.md) bir değer olarak ve `NULL=NULL`.
+Gruplama için ClickHouse yorumlar [NULL](../syntax.md#null-literal) bir değer olarak ve `NULL=NULL`.
 
 İşte bunun ne anlama geldiğini göstermek için bir örnek.
 
@@ -1058,7 +1058,7 @@ Sonuç, grup tarafından, toplama işlevleri olmadan SEÇ'TE belirtilen tüm ala
 
 Select en az bir dizi sütunu varsa DISTINCT desteklenmez.
 
-`DISTINCT` ile çalışır [NULL](../syntax.md) sanki `NULL` belirli bir değer ve `NULL=NULL`. Diğer bir deyişle, içinde `DISTINCT` sonuçlar, farklı kombinasyonlar ile `NULL` yalnızca bir kez meydana gelir.
+`DISTINCT` ile çalışır [NULL](../syntax.md#null-literal) sanki `NULL` belirli bir değer ve `NULL=NULL`. Diğer bir deyişle, içinde `DISTINCT` sonuçlar, farklı kombinasyonlar ile `NULL` yalnızca bir kez meydana gelir.
 
 ClickHouse kullanarak destekler `DISTINCT` ve `ORDER BY` bir sorguda farklı sütunlar için yan tümceleri. Bu `DISTINCT` fık thera önce Yürüt theülür `ORDER BY` yan.
 
@@ -1215,7 +1215,7 @@ IN yan tümcesinde BIR alt sorgu her zaman tek bir sunucuda yalnızca bir kez ç
 
 #### NULL işleme {#null-processing-1}
 
-İstek işleme sırasında, In operatörü, bir işlemin sonucunun [NULL](../syntax.md) her zaman eşittir `0` olsun ne olursa olsun `NULL` operatörün sağ veya sol tarafındadır. `NULL` değerler herhangi bir veri kümesine dahil edilmez, birbirine karşılık gelmez ve karşılaştırılamaz.
+İstek işleme sırasında, In operatörü, bir işlemin sonucunun [NULL](../syntax.md#null-literal) her zaman eşittir `0` olsun ne olursa olsun `NULL` operatörün sağ veya sol tarafındadır. `NULL` değerler herhangi bir veri kümesine dahil edilmez, birbirine karşılık gelmez ve karşılaştırılamaz.
 
 İşte bir örnek ile `t_null` Tablo:
 

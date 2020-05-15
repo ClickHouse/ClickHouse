@@ -23,7 +23,7 @@ struct KafkaSettings : public SettingsCollection<KafkaSettings>
     M(SettingChar, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.", 0) \
     M(SettingString, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(SettingUInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
-    M(SettingUInt64, kafka_max_block_size, 0, "The maximum block size per table for Kafka engine.", 0) \
+    M(SettingUInt64, kafka_max_block_size, 0, "The maximum batch size for poll.", 0) \
     M(SettingUInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block", 0) \
     M(SettingUInt64, kafka_commit_every_batch, 0, "Commit every consumed and handled batch instead of a single commit after writing a whole block", 0)
 

@@ -14,14 +14,18 @@ def run_perf_test(cmd, xmls_path, output_folder):
     p = Popen("{} --skip-tags=long --recursive --input-files {}".format(cmd, xmls_path), shell=True, stdout=f, stderr=f)
     return p
 
-def run_func_test(cmd, output_prefix, num_processes):
+def run_func_test(cmd, output_prefix, num_processes, skip_tests_option):
     output_paths = [os.path.join(output_prefix, "stress_test_run_{}.txt".format(i)) for i in range(num_processes)]
     f = open(output_paths[0], 'w')
-    pipes = [Popen("{}".format(cmd), shell=True, stdout=f, stderr=f)]
+    main_command = "{} {}".format(cmd, skip_tests_option)
+    logging.info("Run func tests main cmd '%s'", main_command)
+    pipes = [Popen(main_command, shell=True, stdout=f, stderr=f)]
     for output_path in output_paths[1:]:
         time.sleep(0.5)
         f = open(output_path, 'w')
-        p = Popen("{} --order=random".format(cmd), shell=True, stdout=f, stderr=f)
+        full_command = "{} --order=random {}".format(cmd, skip_tests_option)
+        logging.info("Run func tests '%s'", full_command)
+        p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
     return pipes
 
@@ -37,6 +41,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     parser = argparse.ArgumentParser(description="ClickHouse script for running stresstest")
     parser.add_argument("--test-cmd", default='clickhouse-test')
+    parser.add_argument("--skip-func-tests", default='')
     parser.add_argument("--client-cmd", default='clickhouse-client')
     parser.add_argument("--perf-test-cmd", default='clickhouse-performance-test')
     parser.add_argument("--perf-test-xml-path", default='/usr/share/clickhouse-test/performance/')
@@ -49,7 +54,7 @@ if __name__ == "__main__":
     perf_process = None
     try:
         perf_process = run_perf_test(args.perf_test_cmd, args.perf_test_xml_path, args.output_folder)
-        func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel)
+        func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests)
 
         logging.info("Will wait functests to finish")
         while True:

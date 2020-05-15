@@ -282,7 +282,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -600,7 +600,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
@@ -815,7 +815,7 @@ public:
         data(place).last = prev;
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         auto & column_array = assert_cast<ColumnArray &>(to);
 
