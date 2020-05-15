@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_COLLATION;
-    extern const int OPENCL_ERROR;
 }
 
 static bool isCollationRequired(const SortColumnDescription & description)

@@ -19,10 +19,10 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int OPENCL_ERROR;
-    }
+namespace ErrorCodes
+{
+    extern const int OPENCL_ERROR;
+}
 }
 
 struct OCL
@@ -204,7 +204,7 @@ struct OCL
     static void checkError(cl_int error)
     {
         if (error != CL_SUCCESS)
-            throw DB::Exception("OpenCL error " + opencl_error_to_str(error), DB::ErrorCodes::OPENCL_ERROR);
+            throw DB::Exception("OpenCL error: " + opencl_error_to_str(error), DB::ErrorCodes::OPENCL_ERROR);
     }
 
 
@@ -216,10 +216,8 @@ struct OCL
         cl_int error = clGetPlatformIDs(settings.number_of_platform_entries, &platform,
                                         settings.number_of_available_platforms);
         checkError(error);
-
         return platform;
     }
-
 
     static cl_device_id getDeviceID(cl_platform_id & platform, const Settings & settings)
     {
@@ -227,10 +225,8 @@ struct OCL
         cl_int error = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, settings.number_of_devices_entries,
                                       &device, settings.number_of_available_devices);
         OCL::checkError(error);
-
         return device;
     }
-
 
     static cl_context makeContext(cl_device_id & device, const Settings & settings)
     {
@@ -239,10 +235,8 @@ struct OCL
                                                  &device, settings.context_callback, settings.context_callback_data,
                                                  &error);
         OCL::checkError(error);
-
         return gpu_context;
     }
-
 
     template <int version>
     static cl_command_queue makeCommandQueue(cl_device_id & device, cl_context & context, const Settings & settings [[maybe_unused]])
@@ -265,11 +259,10 @@ struct OCL
             throw DB::Exception("Binary is built with OpenCL version < 2.0", DB::ErrorCodes::OPENCL_ERROR);
 #endif
         }
-        OCL::checkError(error);
 
+        OCL::checkError(error);
         return command_queue;
     }
-
 
     static cl_program makeProgram(const char * source_code, cl_context context,
                                   cl_device_id device_id, const Settings & settings)
@@ -277,7 +270,8 @@ struct OCL
         cl_int error = 0;
         size_t source_size = strlen(source_code);
 
-        cl_program program = clCreateProgramWithSource(context, settings.number_of_program_source_pointers, &source_code, &source_size, &error);
+        cl_program program = clCreateProgramWithSource(context, settings.number_of_program_source_pointers,
+                                                       &source_code, &source_size, &error);
         checkError(error);
 
         error = clBuildProgram(program, settings.number_of_devices_entries, &device_id, settings.build_options,
@@ -299,38 +293,29 @@ struct OCL
         }
 
         checkError(error);
-
         return program;
     }
-
 
     /// Configuring buffer for given input data
 
     template<typename K>
-    static cl_mem createBuffer(K * p_input, cl_int array_size, cl_context context,
-                               cl_int elements_size = sizeof(K))
+    static cl_mem createBuffer(K * p_input, cl_int array_size, cl_context context, cl_int elements_size = sizeof(K))
     {
         cl_int error = CL_SUCCESS;
-        cl_mem cl_input_buffer =
-                clCreateBuffer
-                        (
+        cl_mem cl_input_buffer = clCreateBuffer(
                                 context,
                                 CL_MEM_USE_HOST_PTR,
                                 zeroCopySizeAlignment(elements_size * array_size),
                                 p_input,
-                                &error
-                        );
+                                &error);
         checkError(error);
-
         return cl_input_buffer;
     }
-
 
     static size_t zeroCopySizeAlignment(size_t required_size)
     {
         return required_size + (~required_size + 1) % 64;
     }
-
 
     /// Manipulating with common OpenCL variables.
 
@@ -341,10 +326,8 @@ struct OCL
         OCL::checkError(error);
     }
 
-
     template<class T>
-    static void releaseData(T * origin, cl_int array_size, cl_mem cl_buffer,
-                            cl_command_queue command_queue, size_t offset = 0)
+    static void releaseData(T * origin, cl_int array_size, cl_mem cl_buffer, cl_command_queue command_queue, size_t offset = 0)
     {
         cl_int error = CL_SUCCESS;
 
@@ -365,7 +348,6 @@ struct OCL
         error = clReleaseMemObject(cl_buffer);
         checkError(error);
     }
-
 };
 
 #endif
