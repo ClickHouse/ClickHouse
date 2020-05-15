@@ -1108,6 +1108,9 @@ struct FakePODAllocForIG
     /// The IGrabberAllocator::MemoryChunk will handle it.
     constexpr static void free(char *, size_t) noexcept {}
 
+    /// Not allocated from stack, see DB::PODArray::isAllocatedFromStack
+    constexpr static size_t stack_threshold() noexcept { return 0; }
+
     ///If called, something went wrong, so abort the program.
     static void realloc(char *, size_t, size_t) {
         throw Exception("Object using FakePODAllocForIG must not call realloc()",
