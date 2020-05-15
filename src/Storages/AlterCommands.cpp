@@ -814,7 +814,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                if (next_command.type == AlterCommand::RENAME_COLUMN)
                {
                    if (next_command.column_name == command.rename_to)
-                       throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sence)",
+                       throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sense)",
                                                             ErrorCodes::NOT_IMPLEMENTED};
                    else if (next_command.column_name == command.column_name)
                        throw Exception{"Cannot rename column '" + backQuote(command.column_name)
