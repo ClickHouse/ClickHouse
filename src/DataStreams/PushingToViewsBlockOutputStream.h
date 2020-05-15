@@ -42,6 +42,7 @@ private:
         String database;
         String table;
         BlockOutputStreamPtr out;
+        std::exception_ptr exception;
     };
 
     std::vector<ViewInfo> views;

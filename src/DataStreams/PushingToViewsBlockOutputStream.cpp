@@ -87,7 +87,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
                 out = std::make_shared<PushingToViewsBlockOutputStream>(
                         database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
 
-            views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
+            views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out), nullptr});
         }
     }
 
@@ -160,7 +160,12 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     {
         // Process sequentially
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
+        {
             process(block, view_num);
+
+            if (views[view_num].exception)
+                std::rethrow_exception(views[view_num].exception);
+        }
     }
 }
 
@@ -188,8 +193,18 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (output)
         output->writeSuffix();
 
+    std::exception_ptr first_exception;
+
     for (auto & view : views)
     {
+        if (view.exception)
+        {
+            if (!first_exception)
+                first_exception = view.exception;
+
+            continue;
+        }
+
         try
         {
             view.out->writeSuffix();
@@ -200,6 +215,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             throw;
         }
     }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
 }
 
 void PushingToViewsBlockOutputStream::flush()
@@ -267,7 +285,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     catch (Exception & ex)
     {
         ex.addMessage("while pushing to view " + backQuoteIfNeed(view.database) + "." + backQuoteIfNeed(view.table));
-        throw;
+        view.exception = std::current_exception();
+    }
+    catch (...)
+    {
+        view.exception = std::current_exception();
     }
 }
 
