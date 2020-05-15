@@ -21,7 +21,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         initInput();
         file_in->seek(file_pos, SEEK_SET);
 
-        UncompressedCacheCell cell{};
+        UncompressedCell cell{}; //ordinary allocator
 
         size_t size_decompressed;
         size_t size_compressed_without_checksum;
@@ -35,7 +35,8 @@ bool CachedCompressedReadBuffer::nextImpl()
         auto size_func = [cell_overall_size] { return cell_overall_size; };
 
         owned_cell = cache->getOrSet(key, std::move(size_func), [=, this, &cell](void * heap_address) {
-            UncompressedCacheCell other{};
+            UncompressedCell other{}; //also ordinary allocator, tmp value that will pass the data and die.
+            other.heap_storage = heap_address;
 
             if (cell.compressed_size)
             {

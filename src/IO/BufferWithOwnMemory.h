@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <utility>
 #include <boost/noncopyable.hpp>
 
@@ -49,6 +50,14 @@ struct Memory : boost::noncopyable, Allocator
     Memory(Memory && rhs) noexcept
     {
         *this = std::move(rhs);
+    }
+
+    template <typename TOtherAlloc, typename ...TAllocatorParams>
+    Memory(const Memory<TOtherAlloc>& other, TAllocatorParams && ... params)
+        : m_capacity(other.size()), m_size(m_capacity), alignment(other.alignment)
+    {
+        alloc(std::forward<TAllocatorParams>(params)...);
+        memcpy(other.data(), m_data, m_size);
     }
 
     Memory & operator=(Memory && rhs) noexcept
@@ -104,7 +113,8 @@ private:
         return (value + alignment - 1) / alignment * alignment;
     }
 
-    void alloc()
+    template <typename ...TAllocatorParams>
+    void alloc(TAllocatorParams && ... params)
     {
         if (!m_capacity)
         {
@@ -118,7 +128,11 @@ private:
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, padded_capacity);
 
         size_t new_capacity = align(padded_capacity, alignment);
-        m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
+
+        m_data = static_cast<char *>(
+                Allocator::alloc(new_capacity, alignment,
+                    std::forward<TAllocatorParams>(params)...));
+
         m_capacity = new_capacity;
         m_size = m_capacity - pad_right;
     }

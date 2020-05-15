@@ -1104,12 +1104,13 @@ struct FakePODAllocForIG
      * @see DB::MarksInCompressedFile::MarksInCompressedFile
      */
     constexpr static void * alloc(size_t, void * start) noexcept { return start; }
+    constexpr static void * alloc(size_t) noexcept = delete;
 
     /// The IGrabberAllocator::MemoryChunk will handle it.
     constexpr static void free(char *, size_t) noexcept {}
 
     /// Not allocated from stack, see DB::PODArray::isAllocatedFromStack
-    constexpr static size_t stack_threshold() noexcept { return 0; }
+    constexpr size_t stack_threshold() const noexcept { return 0; }
 
     ///If called, something went wrong, so abort the program.
     static void realloc(char *, size_t, size_t) {
@@ -1122,8 +1123,14 @@ struct FakeMemoryAllocForIG
 {
     /// @see DB::CachedCompressedReadBuffer::nextImpl().
     /// @see FakeMemoryAllocForIG
-    constexpr static void * alloc(size_t, size_t) noexcept { return nullptr; }
-    constexpr static void * realloc(char *, size_t, size_t, size_t, void * start) noexcept { return start; }
+    constexpr static void * alloc(size_t, size_t, void * start) noexcept { return start; }
+
+    constexpr static void * realloc(char *, size_t, size_t, size_t) noexcept
+    {
+        throw Exception("Object using FakePODAllocForIG must not call realloc()",
+                        ErrorCodes::SYSTEM_ERROR);
+    }
+
     constexpr static void free(char *, size_t) noexcept {}
 };
 }

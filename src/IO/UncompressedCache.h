@@ -17,19 +17,28 @@ namespace ProfileEvents
 
 namespace DB
 {
-struct UncompressedCacheCell
+struct UncompressedCell
+{
+    Memory<> data;
+    size_t compressed_size;
+    UInt32 additional_bytes;
+    void * heap_storage{nullptr}; /// Needed to pass to CacheUncompressedCell.
+};
+
+struct CacheUncompressedCell
 {
     Memory<FakeMemoryAllocForIG> data;
     size_t compressed_size;
     UInt32 additional_bytes;
+
+    /// Called while initializing data in DB::IGrabberAllocator::RegionMetadata::init_value.
+    CacheUncompressedCell(const UncompressedCell& other)
+        : data(other.data, other.heap_storage), // calling copy-ctor with alloc params
+          compressed_size(other.compressed_size),
+          additional_bytes(other.additional_bytes) {}
 };
 
-///return x.data.size();
-
-using UncompressedCacheBase = IGrabberAllocator<
-        UInt128,
-        UncompressedCacheCell,
-        UInt128TrivialHash>;
+using UncompressedCacheBase = IGrabberAllocator<UInt128, CacheUncompressedCell, UInt128TrivialHash>;
 
 /**
  * Cache of decompressed blocks for implementation of CachedCompressedReadBuffer.

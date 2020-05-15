@@ -107,7 +107,10 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
+        c_start = c_end = reinterpret_cast<char *>(
+                TAllocator::alloc(bytes,
+                                  std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
+
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
 
         if (pad_left)
@@ -138,7 +141,8 @@ protected:
         ptrdiff_t end_diff = c_end - c_start;
 
         c_start = reinterpret_cast<char *>(
-                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
+                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes,
+                    std::forward<TAllocatorParams>(allocator_params)...))
             + pad_left;
 
         c_end = c_start + end_diff;
@@ -299,6 +303,13 @@ public:
     {
         this->alloc_for_num_elements(n, std::forward<TAllocatorParams>(params)...);
         this->c_end += this->byte_size(n);
+    }
+
+    template <typename ...TAllocatorParams>
+    explicit PODArray(const PODArray & other, TAllocatorParams && ...params)
+    {
+        this->alloc_for_num_elements(other.size(), std::forward<TAllocatorParams>(params)...);
+        insert(other.begin(), other.end());
     }
 
     PODArray(size_t n, const T & x)
