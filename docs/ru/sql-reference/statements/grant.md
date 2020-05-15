@@ -213,7 +213,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 ### SELECT {#grant-select}
 
-Разрешает выполнять запросы [SELECT](select.md).
+Разрешает выполнять запросы [SELECT](select/index.md).
 
 Уровень: `COLUMN`.
 
