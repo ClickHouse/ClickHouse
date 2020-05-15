@@ -205,7 +205,7 @@ private:
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
 
-    MultiRegexps::Regexps * hyperscan_browser_base;
+    const MultiRegexps::Regexps * hyperscan_browser_base;
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -348,7 +348,8 @@ public:
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void setHyperscanBrowserBase(MultiRegexps::Regexps * regexps);
+    void setHyperscanBrowserBase(const MultiRegexps::Regexps * regexps);
+    const MultiRegexps::Regexps * getHyperscanBrowserBase() const;
 
     void killCurrentQuery();
 
