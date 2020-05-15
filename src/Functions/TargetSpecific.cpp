@@ -29,7 +29,7 @@ int GetSupportedArches() {
         if (__get_cpuid(7, &eax, &ebx, &ecx, &edx) && (ebx & bit_AVX2)) {
             res |= static_cast<int>(TargetArch::AVX2);
             if (ebx & bit_AVX512F) {
-                res |= static_cast<int>(TargetArch::AVX512f);
+                res |= static_cast<int>(TargetArch::AVX512F);
             }
         }
     }
@@ -49,7 +49,7 @@ String ToString(TargetArch arch)
         case TargetArch::SSE4:    return "sse4";
         case TargetArch::AVX:     return "avx";
         case TargetArch::AVX2:    return "avx2";
-        case TargetArch::AVX512f: return "avx512f";
+        case TargetArch::AVX512F: return "avx512f";
     }
 
     __builtin_unreachable();

@@ -29,8 +29,8 @@ void RandXorshiftImpl::execute(char * output, size_t size)
                          0xa321e1523f4f88c7ULL ^ reinterpret_cast<intptr_t>(output),
                          &mykey);
 
-    const int bytes_per_write = 8;
-    const intptr_t mask = bytes_per_write - 1; 
+    constexpr int bytes_per_write = 8;
+    constexpr intptr_t mask = bytes_per_write - 1; 
     
     // Process head to make output aligned.
     unalignedStore<UInt64>(output, xorshift128plus(&mykey));
@@ -55,9 +55,9 @@ void RandXorshiftImpl::execute(char * output, size_t size)
                              0xa321e1523f4f88c7ULL ^ reinterpret_cast<intptr_t>(output),
                              &mykey);
 
-    const int safe_overwrite = 16; // How many bytes we can write behind the end.
-    const int bytes_per_write = 32;
-    const intptr_t mask = bytes_per_write - 1; 
+    constexpr int safe_overwrite = 16; // How many bytes we can write behind the end.
+    constexpr int bytes_per_write = 32;
+    constexpr intptr_t mask = bytes_per_write - 1; 
 
     if (size + safe_overwrite <= bytes_per_write) {
         _mm_storeu_si128(reinterpret_cast<__m128i*>(output),
@@ -91,6 +91,7 @@ using FunctionRandXorshift64 = FunctionRandomXorshift<UInt64, NameRandXorshift64
 void registerFunctionRandXorshift(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRandXorshift>();
+    factory.registerFunction<FunctionRandXorshift64>();
 }
 
-}
+} // namespace DB

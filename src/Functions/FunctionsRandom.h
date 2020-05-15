@@ -92,10 +92,10 @@ class FunctionRandom : public FunctionPerformanceAdaptor<FunctionRandomImpl<Targ
 {
 public:
     FunctionRandom() {
-        registerImplementation<FunctionRandomImpl<TargetSpecific::SSE4::RandImpl,   ToType, Name>>(TargetArch::SSE4);
-        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,    ToType, Name>>(TargetArch::AVX);
-        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,   ToType, Name>>(TargetArch::AVX2);
-        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512f::RandImpl, ToType, Name>>(TargetArch::AVX512f);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::SSE4::RandImpl,    ToType, Name>>(TargetArch::SSE4);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,     ToType, Name>>(TargetArch::AVX);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,    ToType, Name>>(TargetArch::AVX2);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>(TargetArch::AVX512F);
     }
 
     static FunctionPtr create(const Context &) {
