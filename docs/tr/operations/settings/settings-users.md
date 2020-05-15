@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: "Kullan\u0131c\u0131 Ayarlar\u0131"
 ---
@@ -8,6 +8,9 @@ toc_title: "Kullan\u0131c\u0131 Ayarlar\u0131"
 # Kullanıcı Ayarları {#user-settings}
 
 Bu `users` bu bölüm `user.xml` yapılandırma dosyası kullanıcı ayarlarını içerir.
+
+!!! note "Bilgi"
+    ClickHouse da destekler [SQL tabanlı iş akışı](../access-rights.md#access-control) kullanıcıları yönetmek için. Bunu kullanmanızı öneririz.
 
 Bu yapı `users` bölme:
 
@@ -18,6 +21,8 @@ Bu yapı `users` bölme:
         <password></password>
         <!-- Or -->
         <password_sha256_hex></password_sha256_hex>
+
+        <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -70,6 +75,17 @@ Bu yapı `users` bölme:
 
     Sonucun ilk satırı şifredir. İkinci satır karşılık gelen çift SHA1 karmasıdır.
 
+### access\_management {#access_management-user-setting}
+
+Bu ayar, SQL-driven kullanarak devre dışı bırakır sağlar [erişim kontrolü ve hesap yönetimi](../access-rights.md#access-control) kullanıcı için.
+
+Olası değerler:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Varsayılan değer: 0.
+
 ### kullanıcı\_adı / ağlar {#user-namenetworks}
 
 Kullanıcının ClickHouse sunucusuna bağlanabileceği ağların listesi.
@@ -90,7 +106,7 @@ Listenin her öğesi aşağıdaki formlardan birine sahip olabilir:
 
     Örnek, `^example\d\d-\d\d-\d\.host\.ru$`
 
-    Erişimi kontrol etmek için, bir [DNS ptr sorgusu](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) eş adresi için gerçekleştirilir ve sonra belirtilen regexp uygulanır. Daha sonra PTR sorgusunun sonuçları için başka bir DNS sorgusu gerçekleştirilir ve alınan tüm adresler eş adresine karşılaştırılır. Regexp’nin $ile bitmesini şiddetle tavsiye ederiz.
+    Erişimi kontrol etmek için, bir [DNS ptr sorgusu](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) eş adresi için gerçekleştirilir ve sonra belirtilen regexp uygulanır. Daha sonra PTR sorgusunun sonuçları için başka bir DNS sorgusu gerçekleştirilir ve alınan tüm adresler eş adresine karşılaştırılır. Regexp'nin $ile bitmesini şiddetle tavsiye ederiz.
 
 Sunucu yeniden başlatılıncaya kadar DNS isteklerinin tüm sonuçları önbelleğe alınır.
 
@@ -105,7 +121,7 @@ Herhangi bir ağdan kullanıcı için erişimi açmak için şunları belirtin:
 !!! warning "Uyarıcı"
     Düzgün yapılandırılmış bir güvenlik duvarınız yoksa veya sunucu doğrudan internete bağlı değilse, herhangi bir ağdan erişimi açmak güvensizdir.
 
-Erişimi yalnızca localhost’tan açmak için şunları belirtin:
+Erişimi yalnızca localhost'tan açmak için şunları belirtin:
 
 ``` xml
 <ip>::1</ip>
@@ -129,7 +145,7 @@ Bu bölümde, ClickHouse tarafından döndürülen satırları sınırlayabilirs
 
 **Örnek**
 
-Aşağıdaki yapılandırma bu kullanıcıyı zorlar `user1` sadece satırları görebilirsiniz `table1` sonucu olarak `SELECT` sorgular, burada değeri `id` alan 1000’dir.
+Aşağıdaki yapılandırma bu kullanıcıyı zorlar `user1` sadece satırları görebilirsiniz `table1` sonucu olarak `SELECT` sorgular, burada değeri `id` alan 1000'dir.
 
 ``` xml
 <user1>

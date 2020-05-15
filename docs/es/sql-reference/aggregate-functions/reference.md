@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: Referencia
 ---
 
-# Referencia De La función {#function-reference}
+# Referencia de función agregada {#aggregate-functions-reference}
 
 ## contar {#agg_function-count}
 
@@ -19,7 +19,7 @@ ClickHouse admite las siguientes sintaxis para `count`:
 
 La función puede tomar:
 
--   Cero de los parámetros.
+-   Cero parámetros.
 -   Una [expresion](../syntax.md#syntax-expressions).
 
 **Valor devuelto**
@@ -83,7 +83,7 @@ En algunos casos, puede confiar en el orden de ejecución. Esto se aplica a los 
 
 Cuando un `SELECT` consulta tiene el `GROUP BY` cláusula o al menos una función agregada, ClickHouse (en contraste con MySQL) requiere que todas las expresiones `SELECT`, `HAVING`, y `ORDER BY` las cláusulas pueden calcularse a partir de claves o de funciones agregadas. En otras palabras, cada columna seleccionada de la tabla debe usarse en claves o dentro de funciones agregadas. Para obtener un comportamiento como en MySQL, puede colocar las otras columnas en el `any` función de agregado.
 
-## Cualquier Pesado (x) {#anyheavyx}
+## Cualquier pesado (x) {#anyheavyx}
 
 Selecciona un valor que ocurre con frecuencia [pesos pesados](http://www.cs.umd.edu/~samir/498/karp.pdf) algoritmo. Si hay un valor que se produce más de la mitad de los casos en cada uno de los subprocesos de ejecución de la consulta, se devuelve este valor. Normalmente, el resultado es no determinista.
 
@@ -115,7 +115,7 @@ FROM ontime
 Selecciona el último valor encontrado.
 El resultado es tan indeterminado como para el `any` función.
 
-## Método De codificación De Datos: {#groupbitand}
+## Método de codificación de datos: {#groupbitand}
 
 Se aplica bit a bit `AND` para la serie de números.
 
@@ -244,7 +244,7 @@ binary     decimal
 01101000 = 104
 ```
 
-## Método De codificación De Datos: {#groupbitmap}
+## Método de codificación de datos: {#groupbitmap}
 
 Mapa de bits o cálculos agregados de una columna entera sin signo, devuelve cardinalidad de tipo UInt64, si agrega el sufijo -State, luego devuelve [objeto de mapa de bits](../../sql-reference/functions/bitmap-functions.md).
 
@@ -332,9 +332,10 @@ Calcula la suma de los números, utilizando el mismo tipo de datos para el resul
 
 Solo funciona para números.
 
-## sumMap(clave, valor) {#agg_functions-summap}
+## Por ejemplo, el valor es el siguiente:)) {#agg_functions-summap}
 
 Totals el ‘value’ matriz de acuerdo con las claves especificadas en el ‘key’ matriz.
+Pasar una tupla de matrices de claves y valores es sinónimo de pasar dos matrices de claves y valores.
 El número de elementos en ‘key’ y ‘value’ debe ser el mismo para cada fila que se sume.
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -347,25 +348,28 @@ CREATE TABLE sum_map(
     statusMap Nested(
         status UInt16,
         requests UInt64
-    )
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
 SELECT
     timeslot,
-    sumMap(statusMap.status, statusMap.requests)
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
 FROM sum_map
 GROUP BY timeslot
 ```
 
 ``` text
-┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
-└─────────────────────┴──────────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
 ## SkewPop {#skewpop}
@@ -390,7 +394,7 @@ The skewness of the given distribution. Type — [Float64](../../sql-reference/d
 SELECT skewPop(value) FROM series_with_value_column
 ```
 
-## Sistema Abierto {#skewsamp}
+## Sistema abierto {#skewsamp}
 
 Calcula el [asimetría de la muestra](https://en.wikipedia.org/wiki/Skewness) de una secuencia.
 
@@ -460,7 +464,7 @@ The kurtosis of the given distribution. Type — [Float64](../../sql-reference/d
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## Para Obtener más información, Consulta Nuestra Política De Privacidad y Nuestras Condiciones De Uso) {#agg-function-timeseriesgroupsum}
+## Para obtener más información, consulta nuestra Política de privacidad y nuestras Condiciones de uso) {#agg-function-timeseriesgroupsum}
 
 `timeSeriesGroupSum` puede agregar diferentes series de tiempo que muestran la marca de tiempo no la alineación.
 Utilizará la interpolación lineal entre dos marcas de tiempo de muestra y luego sumará series temporales juntas.
@@ -512,22 +516,63 @@ Y el resultado será:
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
-## También Puede Utilizar El Siguiente Ejemplo:) {#agg-function-timeseriesgroupratesum}
+## También puede utilizar el siguiente ejemplo:) {#agg-function-timeseriesgroupratesum}
 
-Del mismo modo timeSeriesGroupRateSum, timeSeriesGroupRateSum calculará la tasa de series temporales y luego sumará las tasas juntas.
+De manera similar a `timeSeriesGroupSum`, `timeSeriesGroupRateSum` calcula la tasa de series temporales y luego suma las tasas juntas.
 Además, la marca de tiempo debe estar en orden ascendente antes de usar esta función.
 
-Use esta función, el resultado anterior será:
+Aplicando esta función a los datos del `timeSeriesGroupSum` ejemplo, se obtiene el siguiente resultado:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
-## Acerca De) {#agg_function-avg}
+## Acerca de) {#agg_function-avg}
 
 Calcula el promedio.
 Solo funciona para números.
 El resultado es siempre Float64.
+
+## avgPonderado {#avgweighted}
+
+Calcula el [media aritmética ponderada](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+
+**Sintaxis**
+
+``` sql
+avgWeighted(x, weight)
+```
+
+**Parámetros**
+
+-   `x` — Values. [Entero](../data-types/int-uint.md) o [punto flotante](../data-types/float.md).
+-   `weight` — Weights of the values. [Entero](../data-types/int-uint.md) o [punto flotante](../data-types/float.md).
+
+Tipo de `x` y `weight` debe ser el mismo.
+
+**Valor devuelto**
+
+-   Media ponderada.
+-   `NaN`. Si todos los pesos son iguales a 0.
+
+Tipo: [Float64](../data-types/float.md).
+
+**Ejemplo**
+
+Consulta:
+
+``` sql
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
+```
+
+Resultado:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                      8 │
+└────────────────────────┘
+```
 
 ## uniq {#agg_function-uniq}
 
@@ -584,7 +629,7 @@ La función toma un número variable de parámetros. Los parámetros pueden ser 
 
 **Valor devuelto**
 
--   Un número [UInt64](../../sql-reference/data-types/int-uint.md)-tipo número.
+-   Numero [UInt64](../../sql-reference/data-types/int-uint.md)-tipo número.
 
 **Detalles de implementación**
 
@@ -686,19 +731,93 @@ Por ejemplo, `groupArray (1) (x)` es equivalente a `[any (x)]`.
 
 En algunos casos, aún puede confiar en el orden de ejecución. Esto se aplica a los casos en que `SELECT` procede de una subconsulta que utiliza `ORDER BY`.
 
-## Para Obtener más información, Consulte El Siguiente Enlace:) {#grouparrayinsertatvalue-position}
+## GrupoArrayInsertAt {#grouparrayinsertat}
 
 Inserta un valor en la matriz en la posición especificada.
 
-!!! note "Nota"
-    Esta función utiliza posiciones de base cero, contrariamente a las posiciones de base única convencionales para matrices SQL.
+**Sintaxis**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+``` sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-Parámetros opcionales:
+Si en una consulta se insertan varios valores en la misma posición, la función se comporta de las siguientes maneras:
 
--   El valor predeterminado para sustituir en posiciones vacías.
--   La longitud de la matriz resultante. Esto le permite recibir matrices del mismo tamaño para todas las claves agregadas. Al utilizar este parámetro, se debe especificar el valor predeterminado.
+-   Si se ejecuta una consulta en un solo subproceso, se utiliza el primero de los valores insertados.
+-   Si una consulta se ejecuta en varios subprocesos, el valor resultante es uno indeterminado de los valores insertados.
+
+**Parámetros**
+
+-   `x` — Value to be inserted. [Expresion](../syntax.md#syntax-expressions) lo que resulta en uno de los [tipos de datos compatibles](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` se va a insertar. La numeración de índices en la matriz comienza desde cero. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [Expresion](../syntax.md#syntax-expressions) dando como resultado el tipo de datos configurado para `x` parámetro. Si `default_x` no está definido, el [valores predeterminados](../../sql-reference/statements/create.md#create-default-values) se utilizan.
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` debe ser especificado. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Valor devuelto**
+
+-   Matriz con valores insertados.
+
+Tipo: [Matriz](../../sql-reference/data-types/array.md#data-type-array).
+
+**Ejemplo**
+
+Consulta:
+
+``` sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+Resultado:
+
+``` text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+Consulta:
+
+``` sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+Resultado:
+
+``` text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Consulta:
+
+``` sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+Resultado:
+
+``` text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Inserción multihilo de elementos en una posición.
+
+Consulta:
+
+``` sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+Como resultado de esta consulta, obtiene un entero aleatorio en el `[0,9]` gama. Por ejemplo:
+
+``` text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
@@ -773,7 +892,7 @@ FROM t
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-## Método De codificación De Datos: {#agg_function-grouparraymovingavg}
+## Método de codificación de datos: {#agg_function-grouparraymovingavg}
 
 Calcula la media móvil de los valores de entrada.
 
@@ -942,11 +1061,11 @@ Apodo: `medianDeterministic`.
 
 **Valor devuelto**
 
--   Aproximado cuantil del nivel especificado.
+-   Cuantil aproximado del nivel especificado.
 
 Tipo:
 
--   [Float64](../../sql-reference/data-types/float.md) para el tipo de datos numérico de entrada.
+-   [Float64](../../sql-reference/data-types/float.md) para la entrada de tipo de datos numéricos.
 -   [Fecha](../../sql-reference/data-types/date.md) si los valores de entrada tienen `Date` tipo.
 -   [FechaHora](../../sql-reference/data-types/datetime.md) si los valores de entrada tienen `DateTime` tipo.
 
@@ -1009,7 +1128,7 @@ Apodo: `medianExact`.
 
 Tipo:
 
--   [Float64](../../sql-reference/data-types/float.md) para el tipo de datos numérico de entrada.
+-   [Float64](../../sql-reference/data-types/float.md) para la entrada de tipo de datos numéricos.
 -   [Fecha](../../sql-reference/data-types/date.md) si los valores de entrada tienen `Date` tipo.
 -   [FechaHora](../../sql-reference/data-types/datetime.md) si los valores de entrada tienen `DateTime` tipo.
 
@@ -1142,7 +1261,7 @@ De lo contrario, el resultado del cálculo se redondea al múltiplo más cercano
 Tipo: `Float32`.
 
 !!! note "Nota"
-    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select.md#select-order-by) para notas sobre la clasificación `NaN` valor.
+    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select/order-by.md#select-order-by) para notas sobre la clasificación `NaN` valor.
 
 **Ejemplo**
 
@@ -1227,7 +1346,7 @@ De lo contrario, el resultado del cálculo se redondea al múltiplo más cercano
 Tipo: `Float32`.
 
 !!! note "Nota"
-    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select.md#select-order-by) para notas sobre la clasificación `NaN` valor.
+    Si no se pasan valores a la función (cuando se `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) se devuelve. El propósito de esto es diferenciar estos casos de los casos que resultan en cero. Ver [ORDER BY cláusula](../statements/select/order-by.md#select-order-by) para notas sobre la clasificación `NaN` valor.
 
 **Ejemplo**
 
@@ -1418,7 +1537,7 @@ Resultado:
 
 Todas las funciones de cuantiles también tienen funciones de cuantiles correspondientes: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. Estas funciones calculan todos los cuantiles de los niveles enumerados en una sola pasada y devuelven una matriz de los valores resultantes.
 
-## Acerca De Nosotros) {#varsampx}
+## Acerca de Nosotros) {#varsampx}
 
 Calcula la cantidad `Σ((x - x̅)^2) / (n - 1)`, donde `n` es el tamaño de la muestra y `x̅`es el valor promedio de `x`.
 
@@ -1426,19 +1545,31 @@ Representa una estimación imparcial de la varianza de una variable aleatoria si
 
 Devoluciones `Float64`. Cuando `n <= 1`, devoluciones `+∞`.
 
-## Nombre De La Red inalámbrica (SSID):) {#varpopx}
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `varSampStable` función. Funciona más lento, pero proporciona un menor error computacional.
+
+## Nombre de la red inalámbrica (SSID):) {#varpopx}
 
 Calcula la cantidad `Σ((x - x̅)^2) / n`, donde `n` es el tamaño de la muestra y `x̅`es el valor promedio de `x`.
 
 En otras palabras, dispersión para un conjunto de valores. Devoluciones `Float64`.
 
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `varPopStable` función. Funciona más lento, pero proporciona un menor error computacional.
+
 ## Soporte técnico) {#stddevsampx}
 
 El resultado es igual a la raíz cuadrada de `varSamp(x)`.
 
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `stddevSampStable` función. Funciona más lento, pero proporciona un menor error computacional.
+
 ## stddevPop(x) {#stddevpopx}
 
 El resultado es igual a la raíz cuadrada de `varPop(x)`.
+
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `stddevPopStable` función. Funciona más lento, pero proporciona un menor error computacional.
 
 ## topK(N)(x) {#topknx}
 
@@ -1462,7 +1593,7 @@ Si se omite el parámetro, se utiliza el valor predeterminado 10.
 
 **Argumento**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
 **Ejemplo**
 
@@ -1524,13 +1655,22 @@ Calcula el valor de `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Devuelve Float64. Cuando `n <= 1`, returns +∞.
 
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `covarSampStable` función. Funciona más lento, pero proporciona un menor error computacional.
+
 ## covarPop(x, y) {#covarpopx-y}
 
 Calcula el valor de `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `covarPopStable` función. Funciona más lento pero proporciona un menor error computacional.
+
 ## corr(x, y) {#corrx-y}
 
 Calcula el coeficiente de correlación de Pearson: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "Nota"
+    Esta función utiliza un algoritmo numéricamente inestable. Si necesita [estabilidad numérica](https://en.wikipedia.org/wiki/Numerical_stability) en los cálculos, utilice el `corrStable` función. Funciona más lento, pero proporciona un menor error computacional.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 
@@ -1705,7 +1845,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 -   [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
 -   [Diferencia entre regresiones lineales y logísticas.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
-## Método De codificación De Datos: {#groupbitmapand}
+## Método de codificación de datos: {#groupbitmapand}
 
 Calcula el AND de una columna de mapa de bits, devuelve la cardinalidad del tipo UInt64, si agrega el sufijo -State, luego devuelve [objeto de mapa de bits](../../sql-reference/functions/bitmap-functions.md).
 
@@ -1748,7 +1888,7 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 └──────────────────────────────────────────────────┘
 ```
 
-## Método De codificación De Datos: {#groupbitmapor}
+## Método de codificación de datos: {#groupbitmapor}
 
 Calcula el OR de una columna de mapa de bits, devuelve la cardinalidad del tipo UInt64, si agrega el sufijo -State, luego devuelve [objeto de mapa de bits](../../sql-reference/functions/bitmap-functions.md). Esto es equivalente a `groupBitmapMerge`.
 
@@ -1791,7 +1931,7 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
 └─────────────────────────────────────────────────┘
 ```
 
-## Método De codificación De Datos: {#groupbitmapxor}
+## Método de codificación de datos: {#groupbitmapxor}
 
 Calcula el XOR de una columna de mapa de bits, devuelve la cardinalidad del tipo UInt64, si agrega el sufijo -State, luego devuelve [objeto de mapa de bits](../../sql-reference/functions/bitmap-functions.md).
 

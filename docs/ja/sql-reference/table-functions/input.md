@@ -1,32 +1,32 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "\u5165\u529B"
 ---
 
 # 入力 {#input}
 
-`input(structure)` -テーブル関数に送信されたデータを効果的に変換して挿入できるようにする
-別の構造を持つテーブルに与えられた構造を持つサーバー。
+`input(structure)` -に送られるデータを効果的に変え、挿入することを可能にする表機能
+別の構造を持つテーブルに指定された構造を持つサーバー。
 
-`structure` -次の形式でサーバーに送信されるデータの構造 `'column1_name column1_type, column2_name column2_type, ...'`.
+`structure` -以下の形式でサーバーに送信されるデータの構造 `'column1_name column1_type, column2_name column2_type, ...'`.
 例えば, `'id UInt32, name String'`.
 
-この関数は、以下でのみ使用できます `INSERT SELECT` query and only once but otherwiseは通常のテーブル関数のように動作します
-（たとえば、サブクエリなどで使用することができます。).
+この関数は、次の場合にのみ使用できます `INSERT SELECT` それ以外の場合は通常の表関数のように動作します
+（例えば、サブクエリなどで使用できます。).
 
-データを送ることができ、そのような通常の `INSERT` 利用できる照会および渡される [書式](../../interfaces/formats.md#formats)
-これは、クエリの最後に指定する必要があります（通常とは異なり `INSERT SELECT`).
+データは通常のような方法で送信することができます `INSERT` クエリと任意の利用可能に渡されます [形式](../../interfaces/formats.md#formats)
+クエリの最後に指定する必要があります(通常とは異なります `INSERT SELECT`).
 
-この機能はサーバからデータを受け取clientで同時に変換して
-式のリストによると、 `SELECT` ターゲットテーブルに句と挿入します。 一時テーブル
-すべての転送されたデータは作成されません。
+この機能の主な特徴は、サーバがクライアントからデータを受信すると同時に変換することです
+の式のリストに従って `SELECT` 節とターゲットテーブルへの挿入。 一時テーブル
+転送されたすべてのデータは作成されません。
 
 **例**
 
--   させる `test` テーブルには以下の構造 `(a String, b String)`
-    とデータで `data.csv` 異なる構造を持っています `(col1 String, col2 Date, col3 Int32)`. 挿入のクエリ
+-   は、 `test` 表の構造は次のとおりです `(a String, b String)`
+    そしてデータ `data.csv` 異なる構造を持っています `(col1 String, col2 Date, col3 Int32)`. 挿入のクエリ
     からのデータ `data.csv` に `test` 同時変換のテーブルは次のようになります:
 
 <!-- -->
@@ -35,7 +35,7 @@ toc_title: "\u5165\u529B"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
--   もし `data.csv` 同じ構造のデータを含む `test_structure` としてのテーブル `test` そしてこれら二つのクエリが等しい:
+-   もし `data.csv` 同じ構造のデータを含む `test_structure` 表として `test` そしてこれら二つのクエリが等しい:
 
 <!-- -->
 

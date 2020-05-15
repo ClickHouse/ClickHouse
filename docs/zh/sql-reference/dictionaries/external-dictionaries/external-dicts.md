@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u6982\u8FF0"
 ---
@@ -18,6 +18,12 @@ ClickHouse:
 外部字典的配置可以位于一个或多个xml文件中。 配置的路径在指定 [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) 参数。
 
 字典可以在服务器启动或首次使用时加载，具体取决于 [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 设置。
+
+该 [字典](../../../operations/system-tables.md#system_tables-dictionaries) 系统表包含有关在服务器上配置的字典的信息。 对于每个字典，你可以在那里找到:
+
+-   字典的状态。
+-   配置参数。
+-   度量指标，如为字典分配的RAM量或自成功加载字典以来的查询数量。
 
 字典配置文件具有以下格式:
 

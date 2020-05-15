@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: Enum
 ---
@@ -18,7 +18,7 @@ Soporta ClickHouse:
 
 ClickHouse elige automáticamente el tipo de `Enum` cuando se insertan datos. También puede utilizar `Enum8` o `Enum16` para estar seguro en el tamaño de almacenamiento.
 
-## Ejemplos De Uso {#usage-examples}
+## Ejemplos de uso {#usage-examples}
 
 Aquí creamos una tabla con un `Enum8('hello' = 1, 'world' = 2)` tipo columna:
 
@@ -89,7 +89,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 └─────────────────────────────────────────────────────┘
 ```
 
-## Reglas Generales y Uso {#general-rules-and-usage}
+## Reglas generales y uso {#general-rules-and-usage}
 
 A cada uno de los valores se le asigna un número en el rango `-128 ... 127` para `Enum8` o en el rango `-32768 ... 32767` para `Enum16`. Todas las cadenas y números deben ser diferentes. Se permite una cadena vacía. Si se especifica este tipo (en una definición de tabla), los números pueden estar en un orden arbitrario. Sin embargo, el orden no importa.
 
