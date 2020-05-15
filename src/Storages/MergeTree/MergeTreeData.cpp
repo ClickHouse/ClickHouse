@@ -1173,7 +1173,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
         {
             const DataPartPtr & part = *it;
 
-            if (part->modification_time < now - interval)
+            if (part->modification_time < now - getSettings()->recompress_with_interval_timeout.totalSeconds())
             {
                 parts_to_recompress.emplace_back(it);
             }

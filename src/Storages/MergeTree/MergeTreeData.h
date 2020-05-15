@@ -472,7 +472,6 @@ public:
     /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
     void tryRemovePartImmediately(DataPartPtr && part);
 
-    const time_t interval = 3600;
     /// Returns old commited parts that can be recompressed.
     DataPartsVector grabOldModifiedParts();
 
