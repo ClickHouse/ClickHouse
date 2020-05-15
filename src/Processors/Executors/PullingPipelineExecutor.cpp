@@ -73,8 +73,6 @@ static void threadFunction(PullingPipelineExecutor::Data & data, ThreadGroupStat
         data.exception = std::current_exception();
         data.has_exception = true;
     }
-
-    data.is_executed = true;
 }
 
 
@@ -102,7 +100,11 @@ bool PullingPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     }
 
     if (lazy_format->isFinished())
+    {
+        data->is_executed = true;
+        cancel();
         return false;
+    }
 
     chunk = lazy_format->getChunk(milliseconds);
     return true;
@@ -138,15 +140,9 @@ bool PullingPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
 void PullingPipelineExecutor::cancel()
 {
-    if (data && data->executor)
-        data->executor->cancel();
-}
-
-void PullingPipelineExecutor::wait()
-{
     /// Cancel execution if it wasn't finished.
-    if (data && !data->is_executed)
-        cancel();
+    if (data && !data->is_executed && data->executor)
+        data->executor->cancel();
 
     /// Finish lazy format. Otherwise thread.join() may hung.
     if (!lazy_format->isFinished())
