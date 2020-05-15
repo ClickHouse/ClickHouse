@@ -69,8 +69,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         key_columns[i] = materialized_columns.back();
     }
 
+    Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
-    params->aggregator.prepareAggregateInstructions(chunk.getColumns(), aggregate_columns, materialized_columns, aggregate_function_instructions);
+    params->aggregator.prepareAggregateInstructions(chunk.getColumns(), aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
 
     size_t key_end = 0;
     size_t key_begin = 0;

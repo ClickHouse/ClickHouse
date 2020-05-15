@@ -548,7 +548,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
 
 
 void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns & aggregate_columns, Columns & materialized_columns,
-                                              AggregateFunctionInstructions & aggregate_functions_instructions)
+                                              AggregateFunctionInstructions & aggregate_functions_instructions, NestedColumnsHolder & nested_columns_holder)
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
@@ -556,7 +556,6 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
     aggregate_functions_instructions.resize(params.aggregates_size + 1);
     aggregate_functions_instructions[params.aggregates_size].that = nullptr;
 
-    std::vector<std::vector<const IColumn *>> nested_columns_holder;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
@@ -650,9 +649,9 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
             }
         }
     }
-
+    NestedColumnsHolder nested_columns_holder;
     AggregateFunctionInstructions aggregate_functions_instructions;
-    prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions);
+    prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
 
     if (isCancelled())
         return true;
