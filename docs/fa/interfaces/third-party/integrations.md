@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 27
 toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 ---
@@ -26,7 +26,10 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [کلیک کنیدهاجر](https://github.com/zlzforever/ClickHouseMigrator)
 -   صف پیام
     -   [کافکا](https://kafka.apache.org)
-        -   [در حال بارگذاری](https://github.com/housepower/clickhouse_sinker) (استفاده [برو کارگیر](https://github.com/kshvakov/clickhouse/))
+        -   [در حال بارگذاری](https://github.com/housepower/clickhouse_sinker) (استفاده [برو کارگیر](https://github.com/ClickHouse/clickhouse-go/))
+-   پردازش جریان
+    -   [لرزش](https://flink.apache.org)
+        -   [سینک فلینک-کلیک](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   ذخیره سازی شی
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [کلیک-پشتیبان گیری](https://github.com/AlexAkulov/clickhouse-backup)
@@ -75,11 +78,11 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
     -   [پانداها](https://pandas.pydata.org)
         -   [پانداهاوس](https://github.com/kszucs/pandahouse)
 -   PHP
-    -   [Doctrine](https://www.doctrine-project.org/)
-        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
+    -   [دکترین](https://www.doctrine-project.org/)
+        -   [خانه هوشمند](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [هواپیمای دوباله](https://db.rstudio.com/dplyr/)
-        -   [خانه روستایی](https://github.com/IMSMWU/RClickhouse) (استفاده [صفحه اصلی](https://github.com/artpaul/clickhouse-cpp))
+        -   [خانه روستایی](https://github.com/IMSMWU/RClickHouse) (استفاده [صفحه اصلی](https://github.com/artpaul/clickhouse-cpp))
 -   جاوا
     -   [هادوپ](http://hadoop.apache.org)
         -   [سرویس پرداخت درونبرنامهای پلی](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده [JDBC](../../sql-reference/table-functions/jdbc.md))

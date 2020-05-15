@@ -1,21 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 55
 toc_title: Trabajar con direcciones IP
 ---
 
-# Funciones Para Trabajar Con Direcciones IP {#functions-for-working-with-ip-addresses}
+# Funciones para trabajar con direcciones IP {#functions-for-working-with-ip-addresses}
 
-## Número De código: IPv4NumToString (num) {#ipv4numtostringnum}
+## Número de código: IPv4NumToString (num) {#ipv4numtostringnum}
 
 Toma un número UInt32. Lo interpreta como una dirección IPv4 en big endian. Devuelve una cadena que contiene la dirección IPv4 correspondiente en el formato A.B.C.d (números separados por puntos en forma decimal).
 
-## Nombre De La Red inalámbrica (SSID):) {#ipv4stringtonums}
+## Nombre de la red inalámbrica (SSID):) {#ipv4stringtonums}
 
 La función inversa de IPv4NumToString. Si la dirección IPv4 tiene un formato no válido, devuelve 0.
 
-## Cómo Hacer Esto?) {#ipv4numtostringclasscnum}
+## Cómo hacer esto?) {#ipv4numtostringclasscnum}
 
 Similar a IPv4NumToString, pero usando xxx en lugar del último octeto.
 
@@ -48,7 +48,7 @@ LIMIT 10
 
 Desde el uso ‘xxx’ es altamente inusual, esto puede cambiarse en el futuro. Le recomendamos que no confíe en el formato exacto de este fragmento.
 
-### ¿cómo puedo hacerlo?) {#ipv6numtostringx}
+### ¿Cómo puedo hacerlo?) {#ipv6numtostringx}
 
 Acepta un valor FixedString(16) que contiene la dirección IPv6 en formato binario. Devuelve una cadena que contiene esta dirección en formato de texto.
 Las direcciones IPv4 asignadas a IPv6 se emiten en el formato ::ffff:111.222.33.44. Ejemplos:
@@ -115,7 +115,7 @@ LIMIT 10
 └────────────────────────────┴────────┘
 ```
 
-## Nombre De La Red inalámbrica (SSID):) {#ipv6stringtonums}
+## Nombre de la red inalámbrica (SSID):) {#ipv6stringtonums}
 
 La función inversa de IPv6NumToString. Si la dirección IPv6 tiene un formato no válido, devuelve una cadena de bytes nulos.
 HEX puede ser mayúscula o minúscula.
@@ -134,9 +134,9 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 └────────────────────┘
 ```
 
-## Para Obtener más información, Consulta Nuestra Política De Privacidad y Nuestras Condiciones De Uso) {#cutipv6x-bitstocutforipv6-bitstocutforipv4}
+## Para obtener más información, consulta nuestra Política de privacidad y nuestras Condiciones de uso) {#cutipv6x-bytestocutforipv6-bytestocutforipv4}
 
-Acepta un valor FixedString(16) que contiene la dirección IPv6 en formato binario. Devuelve una cadena que contiene la dirección del número especificado de bits eliminados en formato de texto. Por ejemplo:
+Acepta un valor FixedString(16) que contiene la dirección IPv6 en formato binario. Devuelve una cadena que contiene la dirección del número especificado de bytes eliminados en formato de texto. Por ejemplo:
 
 ``` sql
 WITH
@@ -153,7 +153,7 @@ SELECT
 └─────────────────────────────────────┴─────────────────────┘
 ```
 
-## ¿cómo puedo hacerlo?), {#ipv4cidrtorangeipv4-cidr}
+## IPv4CIDRToRange (ipv4, Cidr), {#ipv4cidrtorangeipv4-cidr}
 
 Acepta un valor IPv4 y UInt8 que contiene el valor [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). Devuelve una tupla con dos IPv4 que contienen el rango inferior y el rango superior de la subred.
 
@@ -167,7 +167,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 └────────────────────────────────────────────┘
 ```
 
-## ¿cómo puedo hacerlo?), {#ipv6cidrtorangeipv6-cidr}
+## IPv6CIDRToRange(ipv6, Cidr), {#ipv6cidrtorangeipv6-cidr}
 
 Acepta un valor IPv6 y UInt8 que contiene el CIDR. Devuelve una tupla con dos IPv6 que contienen el rango inferior y el rango superior de la subred.
 
@@ -181,7 +181,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Acerca De Nosotros) {#toipv4string}
+## Acerca de nosotros) {#toipv4string}
 
 Un alias para `IPv4StringToNum()` que toma una forma de cadena de dirección IPv4 y devuelve el valor de [IPv4](../../sql-reference/data-types/domains/ipv4.md) tipo, que es binario igual al valor devuelto por `IPv4StringToNum()`.
 
@@ -213,7 +213,7 @@ SELECT
 └───────────────────────────────────┴──────────────────────────┘
 ```
 
-## Acerca De Nosotros) {#toipv6string}
+## Acerca de nosotros) {#toipv6string}
 
 Un alias para `IPv6StringToNum()` que toma una forma de cadena de dirección IPv6 y devuelve el valor de [IPv6](../../sql-reference/data-types/domains/ipv6.md) tipo, que es binario igual al valor devuelto por `IPv6StringToNum()`.
 

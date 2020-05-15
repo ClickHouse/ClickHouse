@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: FechaHora
 ---
@@ -19,7 +19,7 @@ Rango de valores: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
 
 Resolución: 1 segundo.
 
-## Observaciones De Uso {#usage-remarks}
+## Observaciones de uso {#usage-remarks}
 
 El punto en el tiempo se guarda como un [Timestamp de Unix](https://en.wikipedia.org/wiki/Unix_time), independientemente de la zona horaria o el horario de verano. Además, el `DateTime` tipo puede almacenar zona horaria que es la misma para toda la columna, que afecta a cómo los valores de la `DateTime` Los valores de tipo se muestran en formato de texto y cómo se analizan los valores especificados como cadenas (‘2020-01-01 05:00:01’). La zona horaria no se almacena en las filas de la tabla (o en el conjunto de resultados), sino que se almacena en los metadatos de la columna.
 Se puede encontrar una lista de zonas horarias compatibles en el [Base de datos de zonas horarias de IANA](https://www.iana.org/time-zones).
@@ -123,7 +123,7 @@ FROM dt
 -   [Funciones para trabajar con matrices](../../sql-reference/functions/array-functions.md)
 -   [El `date_time_input_format` configuración](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [El `timezone` parámetro de configuración del servidor](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [Operadores para trabajar con fechas y horas](../../sql-reference/operators.md#operators-datetime)
+-   [Operadores para trabajar con fechas y horas](../../sql-reference/operators/index.md#operators-datetime)
 -   [El `Date` tipo de datos](date.md)
 
 [Artículo Original](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

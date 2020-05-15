@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
-toc_title: "\u30D3\u30E5\u30FC"
+toc_title: "\u8868\u793A"
 ---
 
-# ビュー {#table_engines-view}
+# 表示 {#table_engines-view}
 
-ビューを実装するために使用されます(詳細については、 `CREATE VIEW query`). で格納していないデータだけで店舗を指定された `SELECT` クエリ。 テーブルから読み取るときは、このクエリを実行します（クエリから不要な列をすべて削除します）。
+ビューの実装に使用されます(詳細については、 `CREATE VIEW query`). これはデータを格納せず、指定されたデータのみを格納します `SELECT` クエリ。 テーブルから読み取るときに、このクエリが実行されます（クエリから不要な列がすべて削除されます）。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/table_engines/view/) <!--hide-->
