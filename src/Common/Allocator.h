@@ -82,16 +82,17 @@ namespace ErrorCodes
 }
 }
 
-/** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
-  * Also used in hash tables.
-  * The interface is different from std::allocator
-  * - the presence of the method realloc, which for large chunks of memory uses mremap;
-  * - passing the size into the `free` method;
-  * - by the presence of the `alignment` argument;
-  * - the possibility of zeroing memory (used in hash tables);
-  * - random hint address for mmap
-  * - mmap_threshold for using mmap less or more
-  */
+/**
+ * Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
+ * Also used in hash tables.
+ * The interface is different from std::allocator
+ * - the presence of the method realloc, which for large chunks of memory uses mremap;
+ * - passing the size into the `free` method;
+ * - by the presence of the `alignment` argument;
+ * - the possibility of zeroing memory (used in hash tables);
+ * - random hint address for mmap
+ * - mmap_threshold for using mmap less or more
+ */
 template <bool clear_memory_, bool mmap_populate>
 class Allocator
 {

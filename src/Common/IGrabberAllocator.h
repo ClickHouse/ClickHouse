@@ -33,7 +33,6 @@ namespace DB::ErrorCodes
 {
 extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int CANNOT_MUNMAP;
-extern const int SYSTEM_ERROR;
 }
 
 namespace ga
@@ -45,7 +44,7 @@ struct runtime {};
 static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024;
 
 template <class Value>
-static constexpr size_t const defaultValueAlignment = std::max(16lu,  alignof(Value));
+static constexpr size_t const defaultValueAlignment = std::max(16lu, alignof(Value));
 
 struct DefaultASLR
 {
@@ -66,7 +65,7 @@ struct DefaultASLR
 
 /// Not in std for some sake.
 template<class T, class... Args>
-constexpr T* construct_at(void* p, Args&&... args )
+constexpr T* construct_at(void* p, Args&&... args)
 {
     return ::new (p) T(std::forward<Args>(args)...);
 }
