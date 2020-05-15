@@ -5,6 +5,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 
+#include <Functions/FunctionsRandom.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
 
@@ -16,69 +17,26 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-struct RandImplXorshift
+DECLARE_MULTITARGET_CODE(
+
+struct RandXorshiftImpl
 {
     static void execute(char * output, size_t size);
 };
 
+) // DECLARE_MULTITARGET_CODE
+
 template <typename ToType, typename Name>
-class FunctionRandomXorshift : public IFunction
+class FunctionRandomXorshift : public FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>
 {
 public:
-    static constexpr auto name = Name::name;
+    FunctionRandomXorshift() {
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>(TargetArch::AVX2);
+    }
 
     static FunctionPtr create(const Context &) {
         return std::make_shared<FunctionRandomXorshift<ToType, Name>>();
     }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() > 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 0 or 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return std::make_shared<DataTypeNumber<ToType>>();
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
-    {
-        auto col_to = ColumnVector<ToType>::create();
-        typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
-
-        size_t size = input_rows_count;
-        vec_to.resize(size);
-        RandImplXorshift::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
-
-        block.getByPosition(result).column = std::move(col_to);
-    }
 };
 
-// template <typename ToType, typename Name>
-// class FunctionRandom : public FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionRandom<ToType, Name>>
-// {
-// public:
-//     FunctionRandom() {
-//         registerImplementation<TargetSpecific::SSE4::FunctionRandom<ToType, Name>>(TargetArch::SSE4);
-//         registerImplementation<TargetSpecific::AVX::FunctionRandom<ToType, Name>>(TargetArch::AVX);
-//         registerImplementation<TargetSpecific::AVX2::FunctionRandom<ToType, Name>>(TargetArch::AVX2);
-//         registerImplementation<TargetSpecific::AVX512::FunctionRandom<ToType, Name>>(TargetArch::AVX512);
-//     }
-//     static FunctionPtr create(const Context &) {
-//         return std::make_shared<FunctionRandom<ToType, Name>>();
-//     }
-// };
-
-}
+} // namespace DB
