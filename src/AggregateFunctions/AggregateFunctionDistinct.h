@@ -11,11 +11,13 @@
 namespace DB
 {
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-struct AggregateFunctionDistinctData {
+struct AggregateFunctionDistinctData
+{
     using Key = UInt128;
 
     HashSet<
@@ -36,7 +38,8 @@ struct AggregateFunctionDistinctData {
   * Adding -Distinct suffix to aggregate function
 **/
 
-class AggregateFunctionDistinct final : public IAggregateFunctionHelper<AggregateFunctionDistinct> {
+class AggregateFunctionDistinct final : public IAggregateFunctionHelper<AggregateFunctionDistinct>
+{
 private:
     AggregateFunctionPtr nested_func;
     mutable AggregateFunctionDistinctData storage;
@@ -50,11 +53,13 @@ public:
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
-    String getName() const override {
+    String getName() const override
+    {
         return nested_func->getName() + "Distinct";
     }
 
-    DataTypePtr getReturnType() const override {
+    DataTypePtr getReturnType() const override
+    {
         return nested_func->getReturnType();
     }
 
@@ -77,11 +82,13 @@ public:
         return nested_func->alignOfData();
     }
 
-    bool hasTrivialDestructor() const override {
+    bool hasTrivialDestructor() const override
+    {
         return nested_func->hasTrivialDestructor();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override {
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
         SipHash hash;
         columns[0]->updateHashWithValue(row_num, hash);
 
@@ -92,23 +99,28 @@ public:
             nested_func->add(place, columns, row_num, arena);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override {
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override {
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    {
         nested_func->serialize(place, buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override {
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    {
         nested_func->deserialize(place, buf, arena);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override {
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    {
         nested_func->insertResultInto(place, to);
     }
 
-    bool allocatesMemoryInArena() const override {
+    bool allocatesMemoryInArena() const override
+    {
         return nested_func->allocatesMemoryInArena();
     }
 };

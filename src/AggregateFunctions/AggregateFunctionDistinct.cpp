@@ -24,7 +24,8 @@ namespace DB
                                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             DataTypes nested_arguments;
-            for (const auto & type : arguments) {
+            for (const auto & type : arguments)
+            {
                 nested_arguments.push_back(type);
             }
 
