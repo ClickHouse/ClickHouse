@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: INSERT INTO
 ---
@@ -50,7 +50,7 @@ Komut satırı istemcisini veya HTTP arabirimini kullanarak verileri sorgudan ay
 
 Tablo varsa [kısıtlamalar](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-### Sonuçları Ekleme `SELECT` {#insert_query_insert-select}
+### Sonuçları ekleme `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -70,7 +70,7 @@ Ancak, eski verileri kullanarak silebilirsiniz `ALTER TABLE ... DROP PARTITION`.
 `INSERT` giriş verilerini birincil anahtarla sıralar ve bunları bir bölüm anahtarı ile bölümlere ayırır. Bir kerede birkaç bölüme veri eklerseniz, bu veri tabanının performansını önemli ölçüde azaltabilir. `INSERT` sorgu. Bunu önlemek için:
 
 -   Bir seferde 100.000 satır gibi oldukça büyük gruplar halinde veri ekleyin.
--   Clickhouse’a yüklemeden önce verileri bir bölüm anahtarıyla gruplandırın.
+-   Clickhouse'a yüklemeden önce verileri bir bölüm anahtarıyla gruplandırın.
 
 Eğer performans azalmaz:
 

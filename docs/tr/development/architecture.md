@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 62
 toc_title: "ClickHouse mimarisine genel bak\u0131\u015F"
 ---
 
-# ClickHouse Mimarisine Genel bakış {#overview-of-clickhouse-architecture}
+# ClickHouse mimarisine genel bakış {#overview-of-clickhouse-architecture}
 
 ClickHouse gerçek bir sütun yönelimli DBMS olduğunu. Veriler sütunlar tarafından ve dizilerin yürütülmesi sırasında (vektörler veya sütun parçaları) saklanır. Mümkün olduğunda, işlemler tek tek değerler yerine dizilere gönderilir. Buna denir “vectorized query execution,” ve gerçek veri işleme maliyetini düşürmeye yardımcı olur.
 
 > Bu fikir yeni bir şey değil. Bu kadar uzanır `APL` programlama dili ve Tor andunları: `A +`, `J`, `K`, ve `Q`. Dizi programlama bilimsel veri işlemede kullanılır. Bu fikir ilişkisel veritabanlarında yeni bir şey değildir: örneğin, `Vectorwise` sistem.
 
-Sorgu işlemeyi hızlandırmak için iki farklı yaklaşım vardır: vektörize sorgu yürütme ve çalışma zamanı kodu oluşturma. İkincisi, tüm Yönlendirme ve dinamik gönderimi kaldırır. Bu yaklaşımların hiçbiri diğerinden kesinlikle daha iyi değildir. Çalışma zamanı kodu üretimi, birçok işlemi birleştirdiğinde daha iyi olabilir, böylece CPU yürütme birimlerini ve boru hattını tam olarak kullanır. Vectorized sorgu yürütme daha az pratik olabilir, çünkü önbelleğe yazılması ve geri okunması gereken geçici vektörler içerir. Geçici veri L2 önbelleğinde uymuyorsa, bu bir sorun haline gelir. Ancak vektörize sorgu yürütme, CPU’nun SIMD yeteneklerini daha kolay kullanır. Bir [araştırma öd paperevi](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) arkadaşlarımız tarafından yazıldı, her iki yaklaşımı birleştirmenin daha iyi olduğunu gösteriyor. ClickHouse vectorized sorgu yürütme kullanır ve çalışma zamanı kodu üretimi için başlangıç desteği sınırlıdır.
+Sorgu işlemeyi hızlandırmak için iki farklı yaklaşım vardır: vektörize sorgu yürütme ve çalışma zamanı kodu oluşturma. İkincisi, tüm Yönlendirme ve dinamik gönderimi kaldırır. Bu yaklaşımların hiçbiri diğerinden kesinlikle daha iyi değildir. Çalışma zamanı kodu üretimi, birçok işlemi birleştirdiğinde daha iyi olabilir, böylece CPU yürütme birimlerini ve boru hattını tam olarak kullanır. Vectorized sorgu yürütme daha az pratik olabilir, çünkü önbelleğe yazılması ve geri okunması gereken geçici vektörler içerir. Geçici veri L2 önbelleğinde uymuyorsa, bu bir sorun haline gelir. Ancak vektörize sorgu yürütme, CPU'nun SIMD yeteneklerini daha kolay kullanır. Bir [araştırma öd paperevi](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) arkadaşlarımız tarafından yazıldı, her iki yaklaşımı birleştirmenin daha iyi olduğunu gösteriyor. ClickHouse vectorized sorgu yürütme kullanır ve çalışma zamanı kodu üretimi için başlangıç desteği sınırlıdır.
 
 ## Sütun {#columns}
 
@@ -21,7 +21,7 @@ Sorgu işlemeyi hızlandırmak için iki farklı yaklaşım vardır: vektörize 
 
 ## Alan {#field}
 
-Bununla birlikte, bireysel değerlerle de çalışmak mümkündür. Bireysel bir değeri temsil etmek için, `Field` kullanılır. `Field` sadece ayrımcılığa uğramış bir birlik mi `UInt64`, `Int64`, `Float64`, `String` ve `Array`. `IColumn` has the `operator[]` n - inci değerini bir olarak alma yöntemi `Field` ve… `insert` bir ekleme yöntemi `Field` bir sütunun sonuna. Bu yöntemler çok verimli değildir, çünkü geçici olarak uğraşmayı gerektirirler `Field` tek bir değeri temsil eden nesneler. Daha etkili yöntemleri vardır, mesela: `insertFrom`, `insertRangeFrom` ve bu yüzden.
+Bununla birlikte, bireysel değerlerle de çalışmak mümkündür. Bireysel bir değeri temsil etmek için, `Field` kullanılır. `Field` sadece ayrımcılığa uğramış bir birlik mi `UInt64`, `Int64`, `Float64`, `String` ve `Array`. `IColumn` has the `operator[]` n - inci değerini bir olarak alma yöntemi `Field` ve... `insert` bir ekleme yöntemi `Field` bir sütunun sonuna. Bu yöntemler çok verimli değildir, çünkü geçici olarak uğraşmayı gerektirirler `Field` tek bir değeri temsil eden nesneler. Daha etkili yöntemleri vardır, mesela: `insertFrom`, `insertRangeFrom` ve bu yüzden.
 
 `Field` bir tablo için belirli bir veri türü hakkında yeterli bilgiye sahip değildir. Mesela, `UInt8`, `UInt16`, `UInt32`, ve `UInt64` hepsi olarak temsil edilir `UInt64` in a `Field`.
 
@@ -41,7 +41,7 @@ Sütunlar üzerinde çeşitli işlevler kullanarak genel, verimli olmayan bir ş
 
 `IDataType` çeşitli veri formatları için yardımcı yöntemlere sahiptir. Örnekler, Olası Alıntı ile bir değeri serileştirmek, json için bir değeri serileştirmek ve XML formatının bir parçası olarak bir değeri serileştirmek için kullanılan yöntemlerdir. Veri formatlarına doğrudan yazışma yoktur. Örneğin, farklı veri biçimleri `Pretty` ve `TabSeparated` aynı kullanabilirsiniz `serializeTextEscaped` hel methodper yöntemi `IDataType` Arabirim.
 
-## Blok {#block}
+## Engel {#block}
 
 A `Block` bellekteki bir tablonun bir alt kümesini (yığın) temsil eden bir kapsayıcıdır. Bu sadece üçlü bir dizi: `(IColumn, IDataType, column name)`. Sorgu yürütme sırasında veri tarafından işlenir `Block`s. Eğer bir `Block`(bu yaptığımız verileri `IColumn` nesne), biz onun türü hakkında bilgi var (içinde `IDataType`) bu bize bu sütunla nasıl başa çıkacağımızı söyler ve sütun adına sahibiz. Tablodan orijinal sütun adı veya hesaplamaların geçici sonuçlarını almak için atanan bazı yapay ad olabilir.
 
@@ -120,11 +120,11 @@ Sorgu yürütme kanalının oluşturulmasından tercümanlar sorumludur. `AST`. 
 
 Sıradan fonksiyonlar ve toplam fonksiyonlar vardır. Toplama işlevleri için bir sonraki bölüme bakın.
 
-Ordinary functions don’t change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`’s vectorized sorgu yürütme uygulamak için veri.
+Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s vectorized sorgu yürütme uygulamak için veri.
 
 Gibi bazı çeşitli fonksiyonlar vardır [blockSize](../sql-reference/functions/other-functions.md#function-blocksize), [rowNumberİnBlock](../sql-reference/functions/other-functions.md#function-rownumberinblock), ve [runningAccumulate](../sql-reference/functions/other-functions.md#function-runningaccumulate), blok işlemeyi istismar eden ve satırların bağımsızlığını ihlal eden.
 
-Clickhouse’un güçlü yazımı var, bu yüzden örtük tür dönüşümü yok. Bir işlev belirli bir tür kombinasyonunu desteklemiyorsa, bir istisna atar. Ancak, birçok farklı tür kombinasyonu için işlevler çalışabilir (aşırı yüklenebilir). Örneğin, `plus` fonksiyonu (uygulamak için `+` operatör) sayısal türlerin herhangi bir kombinasyonu için çalışır: `UInt8` + `Float32`, `UInt16` + `Int8` ve bu yüzden. Ayrıca, bazı variadic işlevleri gibi bağımsız değişkenlerin herhangi bir sayıda kabul edebilir `concat` işlev.
+Clickhouse'un güçlü yazımı var, bu yüzden örtük tür dönüşümü yok. Bir işlev belirli bir tür kombinasyonunu desteklemiyorsa, bir istisna atar. Ancak, birçok farklı tür kombinasyonu için işlevler çalışabilir (aşırı yüklenebilir). Örneğin, `plus` fonksiyonu (uygulamak için `+` operatör) sayısal türlerin herhangi bir kombinasyonu için çalışır: `UInt8` + `Float32`, `UInt16` + `Int8` ve bu yüzden. Ayrıca, bazı variadic işlevleri gibi bağımsız değişkenlerin herhangi bir sayıda kabul edebilir `concat` İşlev.
 
 Bir işlev açıkça desteklenen veri türlerini gönderir ve desteklenen çünkü bir işlev uygulamak biraz rahatsız edici olabilir `IColumns`. Örneğin, `plus` işlev, sayısal türlerin ve sabit veya sabit olmayan sol ve sağ bağımsız değişkenlerin her birleşimi için bir C++ şablonunun örneklendirilmesiyle oluşturulan koda sahiptir.
 
@@ -171,13 +171,13 @@ Dağıtılmış sorgu yürütme için genel bir sorgu planı yoktur. Her düğü
 
 `MergeTree` birincil anahtarla dizin oluşturmayı destekleyen bir depolama altyapısı ailesidir. Birincil anahtar, isteğe bağlı bir sütun veya ifade kümesi olabilir. Veri `MergeTree` tablo saklanır “parts”. Her bölüm verileri birincil anahtar sırasına göre saklar, böylece veriler birincil anahtar tuple tarafından lexicographically sıralanır. Tüm tablo sütunları ayrı olarak saklanır `column.bin` bu kısımlardaki dosyalar. Dosyalar sıkıştırılmış bloklardan oluşur. Her blok, ortalama değer boyutuna bağlı olarak genellikle 64 KB ila 1 MB sıkıştırılmamış veridir. Bloklar, birbiri ardına bitişik olarak yerleştirilmiş sütun değerlerinden oluşur. Sütun değerleri her sütun için aynı sıradadır (birincil anahtar siparişi tanımlar), bu nedenle birçok sütun tarafından yineleme yaptığınızda, karşılık gelen satırlar için değerler alırsınız.
 
-Birincil anahtarın kendisi “sparse”. Her satır Adres yok ama verilerin sadece biraz değişir. Ayıran `primary.idx` dosya, n’nin çağrıldığı her N-inci satır için birincil anahtarın değerine sahiptir `index_granularity` (genellikle, n = 8192). Ayrıca, her sütun için, biz var `column.mrk` dosyaları ile “marks,” veri dosyasındaki her N-inci satıra ofset olan. Her işaret bir çifttir: dosyadaki ofset sıkıştırılmış bloğun başlangıcına ve sıkıştırılmış bloktaki ofset verilerin başlangıcına. Genellikle, sıkıştırılmış bloklar işaretlerle hizalanır ve sıkıştırılmış bloktaki ofset sıfırdır. İçin veri `primary.idx` her zaman bellekte bulunur ve veri `column.mrk` dosyalar önbelleğe alınır.
+Birincil anahtarın kendisi “sparse”. Her satır Adres yok ama verilerin sadece biraz değişir. Ayıran `primary.idx` dosya, n'nin çağrıldığı her N-inci satır için birincil anahtarın değerine sahiptir `index_granularity` (genellikle, n = 8192). Ayrıca, her sütun için, biz var `column.mrk` dosyaları ile “marks,” veri dosyasındaki her N-inci satıra ofset olan. Her işaret bir çifttir: dosyadaki ofset sıkıştırılmış bloğun başlangıcına ve sıkıştırılmış bloktaki ofset verilerin başlangıcına. Genellikle, sıkıştırılmış bloklar işaretlerle hizalanır ve sıkıştırılmış bloktaki ofset sıfırdır. İçin veri `primary.idx` her zaman bellekte bulunur ve veri `column.mrk` dosyalar önbelleğe alınır.
 
 Bir kısm aından bir şey okuy readacağımız zaman `MergeTree` bak biz `primary.idx` veri ve istenen verileri içerebilecek aralıkları bulun, ardından `column.mrk` veri ve bu aralıkları okumaya başlamak için nerede için uzaklıklar hesaplayın. Çünkü seyrek, fazla veri okunabilir. ClickHouse, basit nokta sorgularının yüksek bir yükü için uygun değildir, çünkü tüm Aralık `index_granularity` her anahtar için satırlar okunmalı ve her sütun için sıkıştırılmış bloğun tamamı sıkıştırılmalıdır. Dizin için fark edilebilir bellek tüketimi olmadan tek bir sunucu başına trilyonlarca satır tutabilmemiz gerektiğinden dizini seyrek yaptık. Ayrıca, birincil anahtar seyrek olduğundan, benzersiz değildir: ekleme zamanında tablodaki anahtarın varlığını denetleyemez. Bir tabloda aynı anahtara sahip birçok satır olabilir.
 
 Ne zaman sen `INSERT` içine veri bir demet `MergeTree`, bu grup birincil anahtar sırasına göre sıralanır ve yeni bir bölüm oluşturur. Bazı parçaları periyodik olarak seçen ve parça sayısını nispeten düşük tutmak için bunları tek bir sıralanmış parçaya birleştiren arka plan iş parçacıkları vardır. Bu yüzden denir `MergeTree`. Tabii ki, birleştirme yol açar “write amplification”. Tüm parçalar değişmez: sadece oluşturulur ve silinir, ancak değiştirilmez. SELECT yürütüldüğünde, tablonun bir anlık görüntüsünü (bir parça kümesi) tutar. Birleştirildikten sonra, arızadan sonra iyileşmeyi kolaylaştırmak için eski parçaları bir süre tutuyoruz, bu nedenle birleştirilmiş bir parçanın muhtemelen kırıldığını görürsek, kaynak parçalarıyla değiştirebiliriz.
 
-`MergeTree` içermediği için bir lsm ağacı değildir “memtable” ve “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications.
+`MergeTree` içermediği için bir lsm ağacı değildir “memtable” ve “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity's sake, and because we are already inserting data in batches in our applications.
 
 > MergeTree tabloları yalnızca bir (birincil) dizine sahip olabilir: herhangi bir ikincil dizin yoktur. Bir mantıksal tablo altında birden fazla fiziksel gösterime izin vermek, örneğin verileri birden fazla fiziksel sırayla depolamak veya hatta orijinal verilerle birlikte önceden toplanmış verilerle gösterimlere izin vermek güzel olurdu.
 

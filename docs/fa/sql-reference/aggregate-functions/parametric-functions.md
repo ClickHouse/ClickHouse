@@ -1,9 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
-toc_title: "\u062A\u0648\u0627\u0628\u0639 \u0645\u062C\u0645\u0648\u0639 \u067E\u0627\
-  \u0631\u0627\u0645\u062A\u0631\u06CC"
+toc_title: "\u067E\u0627\u0631\u0627\u0645\u062A\u0631\u06CC"
 ---
 
 # توابع مجموع پارامتری {#aggregate_functions_parametric}
@@ -54,7 +53,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-شما می توانید یک هیستوگرام با تجسم [بار](../../sql-reference/functions/other-functions.md#function-bar) تابع برای مثال:
+شما می توانید یک هیستوگرام با تجسم [بار](../../sql-reference/functions/other-functions.md#function-bar) تابع, مثلا:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
@@ -112,7 +111,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 -   `(?N)` — Matches the condition argument at position `N`. شرایط در شماره `[1, 32]` محدوده. به عنوان مثال, `(?1)` با استدلال به تصویب رسید `cond1` پارامتر.
 
--   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
 -   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` مسابقات رویدادهایی که رخ می دهد بیش از 1800 ثانیه از یکدیگر. تعداد دلخواه از هر رویدادی می تواند بین این حوادث دراز. شما می توانید از `>=`, `>`, `<`, `<=` اپراتورها.
 
@@ -164,7 +163,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [شمارش معکوس](#function-sequencecount)
 
@@ -317,7 +316,7 @@ ORDER BY level ASC
 ## نگهداری {#retention}
 
 تابع طول می کشد به عنوان استدلال مجموعه ای از شرایط از 1 به 32 استدلال از نوع `UInt8` که نشان می دهد که یک بیماری خاص برای این رویداد مواجه شد.
-هر گونه شرایط را می توان به عنوان یک استدلال مشخص (همانطور که در [WHERE](../../sql-reference/statements/select.md#select-where)).
+هر گونه شرایط را می توان به عنوان یک استدلال مشخص (همانطور که در [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 شرایط, به جز اولین, درخواست در جفت: نتیجه دوم درست خواهد بود اگر اول و دوم درست باشد, از سوم اگر اولین و فیرد درست باشد, و غیره.
 
@@ -336,7 +335,7 @@ retention(cond1, cond2, ..., cond32);
 مجموعه ای از 1 یا 0.
 
 -   1 — condition was met for the event.
--   0 — condition wasn’t met for the event.
+-   0 — condition wasn't met for the event.
 
 نوع: `UInt8`.
 

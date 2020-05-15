@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "Tester Le Mat\xE9riel"
 ---
 
-# Comment Tester Votre Matériel Avec ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# Comment tester votre matériel avec ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
-Avec cette instruction, vous pouvez exécuter le test de performance clickhouse de base sur n’importe quel serveur sans installation de paquets ClickHouse.
+Avec cette instruction, vous pouvez exécuter le test de performance clickhouse de base sur n'importe quel serveur sans installation de paquets ClickHouse.
 
 1.  Aller à “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Cliquez sur la première coche verte ou croix rouge avec vert “ClickHouse Build Check” et cliquez sur le “Details” lien de proximité “ClickHouse Build Check”.
+2.  Cliquez sur la première coche verte ou croix rouge avec vert “ClickHouse Build Check” et cliquez sur le “Details” lien de proximité “ClickHouse Build Check”. Il n'y a pas un tel lien dans certains commits, par exemple des commits avec de la documentation. Dans ce cas, choisissez le commit le plus proche ayant ce lien.
 
 3.  Copiez le lien à “clickhouse” binaire pour amd64 ou aarch64.
 
@@ -65,7 +65,7 @@ Avec cette instruction, vous pouvez exécuter le test de performance clickhouse 
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Modifier le benchmark-new.sh, changement “clickhouse-client” de “./clickhouse client” et d’ajouter “–max\_memory\_usage 100000000000” paramètre.
+1.  Modifier le benchmark-new.sh, changement `clickhouse-client` de `./clickhouse client` et d'ajouter `–-max_memory_usage 100000000000` paramètre.
 
 <!-- -->
 
@@ -79,4 +79,4 @@ Avec cette instruction, vous pouvez exécuter le test de performance clickhouse 
 
 1.  Envoyez les numéros et les informations sur votre configuration matérielle à clickhouse-feedback@yandex-team.com
 
-Tous les résultats sont publiés ici: https://clickhouse.tech / benchmark\_hardware.HTML
+Tous les résultats sont publiés ici: https://clickhouse.tech/de référence/de matériel/

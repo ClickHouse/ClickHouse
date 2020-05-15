@@ -1,16 +1,24 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "\u8A2D\u5B9A\u30D7\u30ED\u30D5\u30A1\u30A4\u30EB"
 ---
 
 # 設定プロファイル {#settings-profiles}
 
-設定プロファイルは、同じ名前でグループ化された設定の集合です。 各clickhouseユーザプロファイル.
+設定プロファイルは、同じ名前でグループ化された設定の集合です。
+
+!!! note "情報"
+    ClickHouseはまた支えます [SQL駆動型ワークフロー](../access-rights.md#access-control) 設定プロファイルを管理する。 お勧めいたします。
+
+プロファイルのどれでも持つ事ができます。 プロファイルのどれでも持つ事ができます。 異なるユーザーに同じプロファイルを指定できます。 最も重要なことが書ける設定プロフィール `readonly=1` 読み取り専用アクセスを保証します。
+
+設定プロファイルは相互に継承できます。 継承を使用するには、一つまたは複数を指定します `profile` プロファイルにリストされている他の設定の前の設定。 ある設定が異なるプロファイルで定義されている場合は、定義された最新の設定が使用されます。
+
 プロファイル内のすべての設定を適用するには、 `profile` 設定。
 
-例えば:
+例:
 
 インストール `web` プロフィール
 
@@ -18,9 +26,9 @@ toc_title: "\u8A2D\u5B9A\u30D7\u30ED\u30D5\u30A1\u30A4\u30EB"
 SET profile = 'web'
 ```
 
-設定プロファイルは、user configファイルで宣言されます。 これは通常 `users.xml`.
+設定プロファイルで宣言されたユーザのconfigファイルです。 これは通常です `users.xml`.
 
-例えば:
+例:
 
 ``` xml
 <!-- Settings profiles -->
@@ -64,8 +72,10 @@ SET profile = 'web'
 </profiles>
 ```
 
-この例では、: `default` と `web`. その `default` プロファイルには特別な目的があります。 つまり、 `default` オプションの設定デフォルトを設定します。 その `web` プロファイルは通常のプロファイルです。 `SET` HTTPクエリでURLパラメーターを照会または使用する。
+この例では、: `default` と `web`.
 
-設定プロファイルは相互に継承できます。 継承を使用するには、一つまたは複数を指定します `profile` プロファイルにリストされている他の設定の前に設定します。 ある設定が異なるプロファイルで定義されている場合は、最新の設定が使用されます。
+その `default` プロファイルには特別な目的があります。 つまり、 `default` オプションの設定デフォルトを設定します。
+
+その `web` プロファイルは通常のプロファイルです。 `SET` クエリまたはHTTPクエリでURLパラメータを使用する。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

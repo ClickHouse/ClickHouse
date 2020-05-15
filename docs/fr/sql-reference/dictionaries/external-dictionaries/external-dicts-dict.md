@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: Configuration D'un dictionnaire externe
 ---
 
-# Configuration D’un Dictionnaire Externe {#dicts-external-dicts-dict}
+# Configuration D'un dictionnaire externe {#dicts-external-dicts-dict}
 
-Si dictionary est configuré à l’aide d’un fichier xml, than dictionary configuration a la structure suivante:
+Si dictionary est configuré à l'aide d'un fichier xml, than dictionary configuration a la structure suivante:
 
 ``` xml
 <dictionary>

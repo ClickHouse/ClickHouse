@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
-toc_folder_title: Table Functions
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: Les Fonctions De Table
 toc_priority: 34
 toc_title: Introduction
 ---
@@ -12,7 +12,7 @@ Les fonctions de Table sont des méthodes pour construire des tables.
 
 Vous pouvez utiliser les fonctions de table dans:
 
--   [FROM](../statements/select.md#select-from) la clause de la `SELECT` requête.
+-   [FROM](../statements/select/from.md) la clause de la `SELECT` requête.
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
@@ -28,7 +28,7 @@ Vous pouvez utiliser les fonctions de table dans:
 | [fichier](file.md)    | Crée un [Fichier](../../engines/table-engines/special/file.md)-moteur de table.                                                     |
 | [fusionner](merge.md) | Crée un [Fusionner](../../engines/table-engines/special/merge.md)-moteur de table.                                                  |
 | [nombre](numbers.md)  | Crée une table avec une seule colonne remplie de nombres entiers.                                                                   |
-| [distant](remote.md)  | Vous permet d’accéder à des serveurs distants sans [Distribué](../../engines/table-engines/special/distributed.md)-moteur de table. |
+| [distant](remote.md)  | Vous permet d'accéder à des serveurs distants sans [Distribué](../../engines/table-engines/special/distributed.md)-moteur de table. |
 | [URL](url.md)         | Crée un [URL](../../engines/table-engines/special/url.md)-moteur de table.                                                          |
 | [mysql](mysql.md)     | Crée un [MySQL](../../engines/table-engines/integrations/mysql.md)-moteur de table.                                                 |
 | [jdbc](jdbc.md)       | Crée un [JDBC](../../engines/table-engines/integrations/jdbc.md)-moteur de table.                                                   |

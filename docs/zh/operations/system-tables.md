@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "\u7CFB\u7EDF\u8868"
 ---
@@ -141,7 +141,7 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 ## 系统。数据库 {#system-databases}
 
-此表包含一个名为“字符串”的列 ‘name’ – the name of a database.
+此表包含一个名为"字符串"的列 ‘name’ – the name of a database.
 服务器知道的每个数据库在表中都有相应的条目。
 该系统表用于实现 `SHOW DATABASES` 查询。
 
@@ -149,27 +149,67 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 包含有关分离部分的信息 [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) 桌子 该 `reason` 列指定分离部件的原因。 对于用户分离的部件，原因是空的。 这些部件可以附加 [ALTER TABLE ATTACH PARTITION\|PART](../sql-reference/statements/alter.md#alter_attach-partition) 指挥部 有关其他列的说明，请参阅 [系统。零件](#system_tables-parts). 如果部件名称无效，某些列的值可能为 `NULL`. 这些部分可以删除 [ALTER TABLE DROP DETACHED PART](../sql-reference/statements/alter.md#alter_drop-detached).
 
-## 系统。字典 {#system-dictionaries}
+## 系统。字典 {#system_tables-dictionaries}
 
-包含有关外部字典的信息。
+包含以下信息 [外部字典](../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 列:
 
--   `name` (String) — Dictionary name.
--   `type` (String) — Dictionary type: Flat, Hashed, Cache.
--   `origin` (String) — Path to the configuration file that describes the dictionary.
--   `attribute.names` (Array(String)) — Array of attribute names provided by the dictionary.
--   `attribute.types` (Array(String)) — Corresponding array of attribute types that are provided by the dictionary.
--   `has_hierarchy` (UInt8) — Whether the dictionary is hierarchical.
--   `bytes_allocated` (UInt64) — The amount of RAM the dictionary uses.
--   `hit_rate` (Float64) — For cache dictionaries, the percentage of uses for which the value was in the cache.
--   `element_count` (UInt64) — The number of items stored in the dictionary.
--   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
--   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
--   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
--   `source` (String) — Text describing the data source for the dictionary.
+-   `database` ([字符串](../sql-reference/data-types/string.md)) — Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries.
+-   `name` ([字符串](../sql-reference/data-types/string.md)) — [字典名称](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md).
+-   `status` ([枚举8](../sql-reference/data-types/enum.md)) — Dictionary status. Possible values:
+    -   `NOT_LOADED` — Dictionary was not loaded because it was not used.
+    -   `LOADED` — Dictionary loaded successfully.
+    -   `FAILED` — Unable to load the dictionary as a result of an error.
+    -   `LOADING` — Dictionary is loading now.
+    -   `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](../sql-reference/statements/system.md#query_language-system-reload-dictionary) 查询，超时，字典配置已更改）。
+    -   `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
+-   `origin` ([字符串](../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
+-   `type` ([字符串](../sql-reference/data-types/string.md)) — Type of a dictionary allocation. [在内存中存储字典](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md).
+-   `key` — [密钥类型](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-key):数字键 ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) or Сomposite key ([字符串](../sql-reference/data-types/string.md)) — form “(type 1, type 2, …, type n)”.
+-   `attribute.names` ([阵列](../sql-reference/data-types/array.md)([字符串](../sql-reference/data-types/string.md))) — Array of [属性名称](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes) 由字典提供。
+-   `attribute.types` ([阵列](../sql-reference/data-types/array.md)([字符串](../sql-reference/data-types/string.md))) — Corresponding array of [属性类型](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes) 这是由字典提供。
+-   `bytes_allocated` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Amount of RAM allocated for the dictionary.
+-   `query_count` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
+-   `hit_rate` ([Float64](../sql-reference/data-types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.
+-   `element_count` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of items stored in the dictionary.
+-   `load_factor` ([Float64](../sql-reference/data-types/float.md)) — Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+-   `source` ([字符串](../sql-reference/data-types/string.md)) — Text describing the [数据源](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) 为了字典
+-   `lifetime_min` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Minimum [使用寿命](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) 在内存中的字典，之后ClickHouse尝试重新加载字典（如果 `invalidate_query` 被设置，那么只有当它已经改变）。 在几秒钟内设置。
+-   `lifetime_max` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Maximum [使用寿命](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) 在内存中的字典，之后ClickHouse尝试重新加载字典（如果 `invalidate_query` 被设置，那么只有当它已经改变）。 在几秒钟内设置。
+-   `loading_start_time` ([日期时间](../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
+-   `last_successful_update_time` ([日期时间](../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with external sources and investigate causes.
+-   `loading_duration` ([Float32](../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
+-   `last_exception` ([字符串](../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 
-请注意，字典使用的内存量与其中存储的项目数量不成正比。 因此，对于平面和缓存字典，所有的内存单元都是预先分配的，而不管字典实际上有多满。
+**示例**
+
+配置字典。
+
+``` sql
+CREATE DICTIONARY dictdb.dict
+(
+    `key` Int64 DEFAULT -1,
+    `value_default` String DEFAULT 'world',
+    `value_expression` String DEFAULT 'xxx' EXPRESSION 'toString(127 * 172)'
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dicttbl' DB 'dictdb'))
+LIFETIME(MIN 0 MAX 1)
+LAYOUT(FLAT())
+```
+
+确保字典已加载。
+
+``` sql
+SELECT * FROM system.dictionaries
+```
+
+``` text
+┌─database─┬─name─┬─status─┬─origin──────┬─type─┬─key────┬─attribute.names──────────────────────┬─attribute.types─────┬─bytes_allocated─┬─query_count─┬─hit_rate─┬─element_count─┬───────────load_factor─┬─source─────────────────────┬─lifetime_min─┬─lifetime_max─┬──loading_start_time─┌──last_successful_update_time─┬──────loading_duration─┬─last_exception─┐
+│ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
+└──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
+```
 
 ## 系统。活动 {#system_tables-events}
 
@@ -379,7 +419,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
 -   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` 通过索引粒度（通常为8192）（此提示不适用于自适应粒度）。
 
@@ -421,7 +461,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -570,7 +610,7 @@ ClickHouse仅在以下情况下创建此表 [query\_log](server-configuration-pa
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或者运行另一个TCP客户端。
 -   `client_name` (String) — The [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端名称。
 -   `client_revision` (UInt32) — Revision of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
@@ -644,7 +684,7 @@ ClickHouse仅在以下情况下创建此表 [query\_thread\_log](server-configur
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或者运行另一个TCP客户端。
 -   `client_name` (String) — The [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端名称。
 -   `client_revision` (UInt32) — Revision of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
@@ -680,24 +720,26 @@ ClickHouse创建此表时 [trace\_log](server-configuration-parameters/settings.
 
 列:
 
--   `event_date`([日期](../sql-reference/data-types/date.md)) — Date of sampling moment.
+-   `event_date` ([日期](../sql-reference/data-types/date.md)) — Date of sampling moment.
 
--   `event_time`([日期时间](../sql-reference/data-types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time` ([日期时间](../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
 
--   `revision`([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
+-   `timestamp_ns` ([UInt64](../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
+
+-   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
     通过以下方式连接到服务器 `clickhouse-client`，你看到的字符串类似于 `Connected to ClickHouse server version 19.18.1 revision 54429.`. 该字段包含 `revision`，但不是 `version` 的服务器。
 
--   `timer_type`([枚举8](../sql-reference/data-types/enum.md)) — Timer type:
+-   `timer_type` ([枚举8](../sql-reference/data-types/enum.md)) — Timer type:
 
     -   `Real` 表示挂钟时间。
     -   `CPU` 表示CPU时间。
 
--   `thread_number`([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_number` ([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id`([字符串](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) 系统表.
+-   `query_id` ([字符串](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) 系统表.
 
--   `trace`([数组(UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace` ([数组(UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **示例**
 
@@ -853,7 +895,7 @@ WHERE
 -   `max` ([可为空](../sql-reference/data-types/nullable.md)([字符串](../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [制约因素](settings/constraints-on-settings.md#constraints-on-settings). 如果设置没有最大值，则包含 [NULL](../sql-reference/syntax.md#null-literal).
 -   `readonly` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     -   `0` — Current user can change the setting.
-    -   `1` — Current user can’t change the setting.
+    -   `1` — Current user can't change the setting.
 
 **示例**
 
@@ -886,7 +928,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **另请参阅**
 
--   [设置](settings/index.md#settings)
+-   [设置](settings/index.md#session-settings-intro)
 -   [查询权限](settings/permissions-for-queries.md#settings_readonly)
 -   [对设置的限制](settings/constraints-on-settings.md)
 
