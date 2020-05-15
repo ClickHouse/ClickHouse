@@ -305,8 +305,10 @@ public:
         this->c_end += this->byte_size(n);
     }
 
-    template <typename ...TAllocatorParams>
-    explicit PODArray(const PODArray & other, alloc_tag_t, TAllocatorParams && ...params)
+    template <typename TOtherAlloc, typename ...TAllocatorParams>
+    explicit PODArray(
+            const PODArray<T, initial_bytes, TOtherAlloc, pad_right_, pad_left_> & other,
+            alloc_tag_t, TAllocatorParams && ...params)
     {
         this->alloc_for_num_elements(other.size(), std::forward<TAllocatorParams>(params)...);
         insert(other.begin(), other.end());
