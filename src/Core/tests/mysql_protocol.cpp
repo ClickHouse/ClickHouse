@@ -171,7 +171,7 @@ int main(int, char **)
             slave.connect();
 
             ///  start to dump binlog.
-            slave.startBinlogDump(slave_id, "", "", 4);
+            slave.startBinlogDump(slave_id, "dbtest", "", 4);
 
             /// Read one binlog event on by one.
             while (true)
@@ -212,7 +212,6 @@ int main(int, char **)
                         break;
                     }
                     default:
-                        event->dump();
                         break;
                 }
             }
