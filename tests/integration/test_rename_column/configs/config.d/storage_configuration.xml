@@ -4,6 +4,9 @@
     <disks>
         <default>
         </default>
+        <internal>
+            <path>/internal/</path>
+        </internal>
         <external>
             <path>/external/</path>
         </external>
@@ -11,9 +14,9 @@
     <policies>
         <default_with_external>
             <volumes>
-                <default>
-                    <disk>default</disk>
-                </default>
+                <internal>
+                    <disk>internal</disk>
+                </internal>
                 <external>
                     <disk>external</disk>
                 </external>
