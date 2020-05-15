@@ -5,6 +5,7 @@
 #include <cassert>
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -83,7 +84,8 @@ protected:
     /// Empty array will point to this static memory as padding.
     static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
 
-    static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
+    static_assert(pad_left <= EmptyPODArraySize,
+            "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
 
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
@@ -95,15 +97,20 @@ protected:
     /// Minimum amount of memory to allocate for num_elements, including padding.
     static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
 
-    void alloc_for_num_elements(size_t num_elements)
+    template <typename ... TAllocatorParams>
+    void alloc_for_num_elements(size_t num_elements, TAllocatorParams&& ...params)
     {
-        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
+        alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)),
+              std::forward<TAllocatorParams>(params)...);
     }
 
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
+        c_start = c_end = reinterpret_cast<char *>(
+                TAllocator::alloc(bytes,
+                                  std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
+
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
 
         if (pad_left)
@@ -134,14 +141,15 @@ protected:
         ptrdiff_t end_diff = c_end - c_start;
 
         c_start = reinterpret_cast<char *>(
-                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
+                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes,
+                    std::forward<TAllocatorParams>(allocator_params)...))
             + pad_left;
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
     }
 
-    bool isInitialized() const
+    constexpr bool isInitialized() const
     {
         return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
     }
@@ -256,6 +264,9 @@ public:
     }
 };
 
+struct alloc_tag_t {};
+constexpr alloc_tag_t alloc_tag;
+
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
@@ -279,13 +290,27 @@ public:
     using iterator = T *;
     using const_iterator = const T *;
 
-
-    PODArray() {}
+    PODArray() = default;
 
     PODArray(size_t n)
     {
         this->alloc_for_num_elements(n);
         this->c_end += this->byte_size(n);
+    }
+
+    template <typename ...TAllocatorParams>
+    PODArray(size_t n, alloc_tag_t, TAllocatorParams&& ...params)
+    {
+        this->alloc_for_num_elements(n, std::forward<TAllocatorParams>(params)...);
+        this->c_end += this->byte_size(n);
+    }
+
+    template <typename TOtherAlloc, typename ...TAllocatorParams>
+    explicit PODArray(
+            const PODArray<T, initial_bytes, TOtherAlloc, pad_right_, pad_left_> & other,
+            alloc_tag_t, TAllocatorParams && ...params)
+    {
+        insert(other.begin(), other.end(), std::forward<TAllocatorParams>(params)...);
     }
 
     PODArray(size_t n, const T & x)

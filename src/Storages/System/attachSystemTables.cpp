@@ -11,6 +11,7 @@
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
+#include <Storages/System/StorageSystemLicenses.h>
 #include <Storages/System/StorageSystemEvents.h>
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
@@ -85,8 +86,6 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
     system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
     system_database.attachTable("contributors", StorageSystemContributors::create("contributors"));
-<<<<<<< HEAD
-=======
     system_database.attachTable("users", StorageSystemUsers::create("users"));
     system_database.attachTable("roles", StorageSystemRoles::create("roles"));
     system_database.attachTable("grants", StorageSystemGrants::create("grants"));
@@ -104,7 +103,6 @@ void attachSystemTablesLocal(IDatabase & system_database)
 #if !defined(ARCADIA_BUILD)
     system_database.attachTable("licenses", StorageSystemLicenses::create("licenses"));
 #endif
->>>>>>> upstream/master
 #ifdef OS_LINUX
     system_database.attachTable("stack_trace", StorageSystemStackTrace::create("stack_trace"));
 #endif

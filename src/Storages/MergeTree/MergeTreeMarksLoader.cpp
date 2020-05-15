@@ -15,37 +15,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeMarksLoader::MergeTreeMarksLoader(
-    DiskPtr disk_,
-    MarkCache * mark_cache_,
-    const String & mrk_path_,
-    size_t marks_count_,
-    const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    bool save_marks_in_cache_,
-    size_t columns_in_mark_)
-    : disk(std::move(disk_))
-    , mark_cache(mark_cache_)
-    , mrk_path(mrk_path_)
-    , marks_count(marks_count_)
-    , index_granularity_info(index_granularity_info_)
-    , save_marks_in_cache(save_marks_in_cache_)
-    , columns_in_mark(columns_in_mark_) {}
-
-const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
-{
-    if (!marks)
-        loadMarks();
-
-#ifndef NDEBUG
-    if (column_index >= columns_in_mark)
-        throw Exception("Column index: " + toString(column_index)
-            + " is out of range [0, " + toString(columns_in_mark) + ")", ErrorCodes::LOGICAL_ERROR);
-#endif
-
-    return (*marks)[row_index * columns_in_mark + column_index];
-}
-
-MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
+void MergeTreeMarksLoader::loadMarks()
 {
     /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
     auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
@@ -56,28 +26,80 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     if (expected_file_size != file_size)
         throw Exception(
-            "Bad size of marks file '" + fullPath(disk, mrk_path) + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
+            "Bad size of marks file '" + fullPath(disk, mrk_path) + "': " + std::to_string(file_size) +
+            ", must be: " + std::to_string(expected_file_size),
             ErrorCodes::CORRUPTED_DATA);
 
-    auto res = std::make_shared<MarksInCompressedFile>(marks_count * columns_in_mark);
+    if (!mark_cache)
+        /// The cache is off, store this object somewhere in the heap.
+        marks_non_cache = std::make_unique<MarksInCompressedFile>(marks_count * columns_in_mark);
+    else
+    {
+        auto key = mark_cache->hash(mrk_path);
+
+        if (save_new_marks_in_cache)
+        {
+            const size_t marks_overall_size = marks_count * columns_in_mark;
+
+            auto size_func = [marks_overall_size] {
+                return sizeof(CacheMarksInCompressedFile) * marks_overall_size;
+            };
+
+            auto init_func = [marks_overall_size](void * heap_storage) {
+                /// Return a temporary value with an ordinary allocator that will pass its contents
+                /// and a #heap_storage pointer to the CacheMarksInCompressedFile ctor (allocating data where we want)
+                /// and self-destruct.
+                return MarksInCompressedFile(marks_overall_size, heap_storage);
+            };
+
+            /// The cache is active, insert the initial object there and get it reference back.
+            marks_cache = mark_cache->getOrSet(key, std::move(size_func), std::move(init_func));
+        }
+        else
+        {
+            if (marks_cache = mark_cache->get(key); !marks_cache)
+                /// No more other marks, current element not found, store here.
+                marks_non_cache = std::make_unique<MarksInCompressedFile>(marks_count * columns_in_mark);
+
+            /// Else new marks will not be stored in the cache, but #marks got right from there.
+        }
+    }
+
+    if (cached_marks() ? !marks_cache : !marks_non_cache)
+        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
 
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
         auto buffer = disk->readFile(mrk_path, file_size);
-        buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
+
+        MarkInCompressedFile * data;
+
+        if (cached_marks())
+            data = marks_cache->data();
+        else
+            data = marks_non_cache->data();
+
+        buffer->readStrict(reinterpret_cast<char *>(data), file_size);
 
         if (!buffer->eof())
-            throw Exception("Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof())
-            + ", buffer size: " + std::to_string(buffer->buffer().size()) + ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(
+                    "Cannot read all marks from file " + mrk_path + ", eof: " + std::to_string(buffer->eof()) +
+                    ", buffer size: " + std::to_string(buffer->buffer().size()) +
+                    ", file size: " + std::to_string(file_size), ErrorCodes::CANNOT_READ_ALL_DATA);
     }
     else
     {
         auto buffer = disk->readFile(mrk_path, file_size);
         size_t i = 0;
-        while (!buffer->eof())
+
+        while (!buffer->eof()) /// propagating while not supported.
         {
-            res->read(*buffer, i * columns_in_mark, columns_in_mark);
+            if (cached_marks())
+                marks_cache->read(*buffer, i * columns_in_mark, columns_in_mark);
+            else
+                marks_non_cache->read(*buffer, i * columns_in_mark, columns_in_mark);
+
             buffer->seek(sizeof(size_t), SEEK_CUR);
             ++i;
         }
@@ -85,32 +107,11 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         if (i * mark_size != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
-    res->protect();
-    return res;
-}
 
-void MergeTreeMarksLoader::loadMarks()
-{
-    if (mark_cache)
-    {
-        auto key = mark_cache->hash(mrk_path);
-        if (save_marks_in_cache)
-        {
-            auto callback = [this]{ return loadMarksImpl(); };
-            marks = mark_cache->getOrSet(key, callback);
-        }
-        else
-        {
-            marks = mark_cache->get(key);
-            if (!marks)
-                marks = loadMarksImpl();
-        }
-    }
+    if (cached_marks())
+        marks_cache->protect();
     else
-        marks = loadMarksImpl();
-
-    if (!marks)
-        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
+        marks_non_cache->protect();
+}
 }
 
-}
