@@ -238,7 +238,7 @@ def test_kafka_consumer_hang(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    # original problem appearance was a sequence of the following messages in kafka logs:
+    # original problem appearance was a sequence of the following messages in librdkafka logs:
     # BROKERFAIL -> |ASSIGN| -> REBALANCE_IN_PROGRESS -> "waiting for rebalance_cb" (repeated forever)
     # so it was waiting forever while the application will execute queued rebalance callback
 
