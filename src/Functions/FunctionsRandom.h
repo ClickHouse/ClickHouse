@@ -44,8 +44,10 @@ struct RandImpl
     static void execute(char * output, size_t size);
 };
 
-template <typename ToType, typename Name>
-class FunctionRandom : public IFunction
+) // DECLARE_MULTITARGET_CODE
+
+template <typename RandImpl, typename ToType, typename Name>
+class FunctionRandomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -85,21 +87,20 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
-
 template <typename ToType, typename Name>
-class FunctionRandom : public FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionRandom<ToType, Name>>
+class FunctionRandom : public FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>
 {
 public:
     FunctionRandom() {
-        registerImplementation<TargetSpecific::SSE4::FunctionRandom<ToType, Name>>(TargetArch::SSE4);
-        registerImplementation<TargetSpecific::AVX::FunctionRandom<ToType, Name>>(TargetArch::AVX);
-        registerImplementation<TargetSpecific::AVX2::FunctionRandom<ToType, Name>>(TargetArch::AVX2);
-        registerImplementation<TargetSpecific::AVX512::FunctionRandom<ToType, Name>>(TargetArch::AVX512);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::SSE4::RandImpl,   ToType, Name>>(TargetArch::SSE4);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,    ToType, Name>>(TargetArch::AVX);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,   ToType, Name>>(TargetArch::AVX2);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512::RandImpl, ToType, Name>>(TargetArch::AVX512);
     }
+
     static FunctionPtr create(const Context &) {
         return std::make_shared<FunctionRandom<ToType, Name>>();
     }
 };
 
-}
+} // namespace DB
