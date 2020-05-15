@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: "\u0633\u0647\u0645\u06CC\u0647"
 ---
 
 # سهمیه {#quotas}
 
-سهمیه به شما اجازه محدود کردن استفاده از منابع بیش از یک دوره از زمان, و یا به سادگی پیگیری استفاده از منابع.
-سهمیه در پیکربندی کاربر راه اندازی. این است که معمولا ‘users.xml’.
+سهمیه به شما اجازه محدود کردن استفاده از منابع بیش از یک دوره از زمان و یا پیگیری استفاده از منابع.
+سهمیه در پیکربندی کاربر راه اندازی, که معمولا ‘users.xml’.
 
 این سیستم همچنین دارای یک ویژگی برای محدود کردن پیچیدگی یک پرس و جو واحد. بخش را ببینید “Restrictions on query complexity”).
 
@@ -39,7 +39,7 @@ toc_title: "\u0633\u0647\u0645\u06CC\u0647"
     </default>
 ```
 
-به طور پیش فرض, سهمیه فقط ردیابی مصرف منابع برای هر ساعت, بدون محدود کردن استفاده.
+به طور پیش فرض, سهمیه ردیابی مصرف منابع برای هر ساعت, بدون محدود کردن استفاده.
 مصرف منابع محاسبه شده برای هر فاصله خروجی به ورود به سیستم سرور بعد از هر درخواست است.
 
 ``` xml
@@ -68,7 +68,7 @@ toc_title: "\u0633\u0647\u0645\u06CC\u0647"
 </statbox>
 ```
 
-برای ‘statbox’ سهمیه, محدودیت برای هر ساعت و برای هر مجموعه 24 ساعت ها (86,400 ثانیه). فاصله زمانی شمارش شروع از یک لحظه ثابت پیاده سازی تعریف شده در زمان. به عبارت دیگر فاصله 24 ساعته لزوما در نیمه شب شروع نمی شود.
+برای ‘statbox’ سهمیه, محدودیت برای هر ساعت و برای هر مجموعه 24 ساعت ها (86,400 ثانیه). فاصله زمانی شمارش شده است, با شروع از یک لحظه ثابت پیاده سازی تعریف شده در زمان. به عبارت دیگر فاصله 24 ساعته لزوما در نیمه شب شروع نمی شود.
 
 هنگامی که فاصله به پایان می رسد تمام مقادیر جمع شده پاک می شوند. برای ساعت بعد محاسبه سهمیه بیش از شروع می شود.
 
@@ -78,15 +78,15 @@ toc_title: "\u0633\u0647\u0645\u06CC\u0647"
 
 `errors` – The number of queries that threw an exception.
 
-`result_rows` – The total number of rows given as the result.
+`result_rows` – The total number of rows given as a result.
 
-`read_rows` – The total number of source rows read from tables for running the query, on all remote servers.
+`read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
 اگر حد برای حداقل یک فاصله زمانی بیش از, یک استثنا با یک متن که در مورد محدودیت بیش از حد شد پرتاب, که فاصله, و هنگامی که فاصله جدید شروع می شود (هنگامی که نمایش داده شد را می توان دوباره ارسال).
 
-سهمیه می توانید استفاده کنید “quota key” ویژگی به منظور گزارش منابع برای کلید های متعدد به طور مستقل. در اینجا یک مثال از این است:
+سهمیه می توانید استفاده کنید “quota key” ویژگی به گزارش منابع برای کلید های متعدد به طور مستقل. در اینجا یک مثال از این است:
 
 ``` xml
 <!-- For the global reports designer. -->
@@ -97,7 +97,7 @@ toc_title: "\u0633\u0647\u0645\u06CC\u0647"
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
-        You can also write <keyed_by_ip /> so the IP address is used as the quota key.
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
     -->
     <keyed />

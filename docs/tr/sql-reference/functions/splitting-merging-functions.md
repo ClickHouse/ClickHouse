@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 47
 toc_title: "Dizeleri ve dizileri b\xF6lme ve birle\u015Ftirme"
 ---
 
-# Dizeleri Ve Dizileri bölme Ve birleştirme işlevleri {#functions-for-splitting-and-merging-strings-and-arrays}
+# Dizeleri ve dizileri bölme ve birleştirme işlevleri {#functions-for-splitting-and-merging-strings-and-arrays}
 
 ## splitByChar (ayırıcı, s) {#splitbycharseparator-s}
 
@@ -94,7 +94,7 @@ SELECT splitByString('', 'abcde')
 
 ## arrayStringConcat(arr \[, ayırıcı\]) {#arraystringconcatarr-separator}
 
-Dizide listelenen dizeleri ayırıcı ile birleştirir.’separator’ isteğe bağlı bir parametredir: varsayılan olarak boş bir dizeye ayarlanmış sabit bir dize.
+Dizide listelenen dizeleri ayırıcı ile birleştirir.'separator' isteğe bağlı bir parametredir: varsayılan olarak boş bir dizeye ayarlanmış sabit bir dize.
 Dizeyi döndürür.
 
 ## alphaTokens (s) {#alphatokenss}

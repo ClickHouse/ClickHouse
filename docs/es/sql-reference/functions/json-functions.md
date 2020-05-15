@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 56
-toc_title: Trabajando con JSON.
+toc_title: Trabajar con JSON
 ---
 
-# Funciones Para Trabajar Con JSON {#functions-for-working-with-json}
+# Funciones para trabajar con JSON {#functions-for-working-with-json}
 
 En el Yandex.Metrica, JSON es transmitido por los usuarios como parámetros de sesión. Hay algunas funciones especiales para trabajar con este JSON. (Aunque en la mayoría de los casos, los JSON también se procesan previamente, y los valores resultantes se colocan en columnas separadas en su formato procesado.) Todas estas funciones se basan en sólidas suposiciones sobre lo que puede ser el JSON, pero tratan de hacer lo menos posible para hacer el trabajo.
 
@@ -196,17 +196,17 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 
 ## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], Value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
-Analizar pares clave-valor de un JSON donde los valores son del tipo de datos ClickHouse dado.
+Analiza los pares clave-valor de un JSON donde los valores son del tipo de datos ClickHouse especificado.
 
 Ejemplo:
 
 ``` sql
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)]
 ```
 
 ## JSONExtractRaw(json\[, indices\_or\_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
-Devuelve una parte de JSON.
+Devuelve una parte de JSON como cadena sin analizar.
 
 Si la pieza no existe o tiene un tipo incorrecto, se devolverá una cadena vacía.
 
@@ -216,7 +216,7 @@ Ejemplo:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-## JSONExtractArrayRaw(json\[, indices\_or\_keys\]…) {#jsonextractarrayrawjson-indices-or-keys}
+## JSONExtractArrayRaw(json\[, indices\_or\_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
 
 Devuelve una matriz con elementos de matriz JSON, cada uno representado como cadena sin analizar.
 
@@ -226,6 +226,72 @@ Ejemplo:
 
 ``` sql
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']'
+```
+
+## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}
+
+Extrae datos sin procesar de un objeto JSON.
+
+**Sintaxis**
+
+``` sql
+JSONExtractKeysAndValuesRaw(json[, p, a, t, h])
+```
+
+**Parámetros**
+
+-   `json` — [Cadena](../data-types/string.md) con JSON válido.
+-   `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [cadena](../data-types/string.md) para obtener el campo por la clave o un [entero](../data-types/int-uint.md) para obtener el campo N-ésimo (indexado desde 1, los enteros negativos cuentan desde el final). Si no se establece, todo el JSON se analiza como el objeto de nivel superior. Parámetro opcional.
+
+**Valores devueltos**
+
+-   Matriz con `('key', 'value')` tuplas. Ambos miembros de tupla son cadenas.
+-   Vacíe la matriz si el objeto solicitado no existe o si la entrada JSON no es válida.
+
+Tipo: [Matriz](../data-types/array.md)([Tupla](../data-types/tuple.md)([Cadena](../data-types/string.md), [Cadena](../data-types/string.md)).
+
+**Ejemplos**
+
+Consulta:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}')
+```
+
+Resultado:
+
+``` text
+┌─JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}')─┐
+│ [('a','[-100,200]'),('b','{"c":{"d":"hello","f":"world"}}')]                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Consulta:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', 'b')
+```
+
+Resultado:
+
+``` text
+┌─JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', 'b')─┐
+│ [('c','{"d":"hello","f":"world"}')]                                                               │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Consulta:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', -1, 'c')
+```
+
+Resultado:
+
+``` text
+┌─JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello", "f": "world"}}}', -1, 'c')─┐
+│ [('d','"hello"'),('f','"world"')]                                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->

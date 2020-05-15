@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: "\u067E\u0631\u0648\u0646\u062F\u0647"
 ---
@@ -116,6 +116,6 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 **همچنین نگاه کنید به**
 
--   [مجازی ستون](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [ستونهای مجازی](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/table_functions/file/) <!--hide-->
