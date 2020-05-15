@@ -55,11 +55,12 @@ void RandXorshiftImpl::execute(char * output, size_t size)
                              0xa321e1523f4f88c7ULL ^ reinterpret_cast<intptr_t>(output),
                              &mykey);
 
-    constexpr int safe_overwrite = 16; // How many bytes we can write behind the end.
+    constexpr int safe_overwrite = 15; // How many bytes we can write behind the end.
     constexpr int bytes_per_write = 32;
     constexpr intptr_t mask = bytes_per_write - 1; 
 
-    if (size + safe_overwrite <= bytes_per_write) {
+    if (size + safe_overwrite < bytes_per_write) {
+        // size <= 16.
         _mm_storeu_si128(reinterpret_cast<__m128i*>(output),
                          _mm256_extracti128_si256(avx_xorshift128plus(&mykey), 0));
         return;
@@ -74,7 +75,7 @@ void RandXorshiftImpl::execute(char * output, size_t size)
         output += bytes_per_write;
     }
 
-    // Process tail.
+    // Process tail. (end - output) <= 16.
     if ((end - output) > 0) {
         _mm_store_si128(reinterpret_cast<__m128i*>(output),
                         _mm256_extracti128_si256(avx_xorshift128plus(&mykey), 0));
