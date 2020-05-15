@@ -123,7 +123,7 @@ bool PullingPipelineExecutor::pull(Block & block, uint64_t milliseconds)
     {
         /// In case if timeout exceeded.
         block.clear();
-        return false;
+        return true;
     }
 
     block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
