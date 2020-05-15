@@ -27,7 +27,10 @@ public:
     , marks_count(marks_count_)
     , index_granularity_info(index_granularity_info_)
     , save_new_marks_in_cache(save_new_marks_in_cache_)
-    , columns_in_mark(columns_in_mark_) {}
+    , columns_in_mark(columns_in_mark_)
+    {
+
+    }
 
     const inline MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0)
     {
@@ -47,7 +50,8 @@ public:
             return (*marks_non_cache)[row_index * columns_in_mark + column_index];
     }
 
-    bool initialized() const noexcept {
+    bool initialized() const noexcept
+    {
         return cached_marks() ? marks_cache != nullptr : marks_non_cache != nullptr;
     }
 

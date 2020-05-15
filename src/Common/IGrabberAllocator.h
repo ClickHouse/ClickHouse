@@ -36,7 +36,8 @@ extern const int CANNOT_MUNMAP;
 extern const int SYSTEM_ERROR;
 }
 
-namespace ga {
+namespace ga
+{
 
 /// Default parameter for two of allocator's template parameters, serves as a placeholder.
 struct runtime {};
@@ -65,7 +66,8 @@ struct DefaultASLR
 
 /// Not in std for some sake.
 template<class T, class... Args>
-constexpr T* construct_at(void* p, Args&&... args ) {
+constexpr T* construct_at(void* p, Args&&... args )
+{
     return ::new (p) T(std::forward<Args>(args)...);
 }
 

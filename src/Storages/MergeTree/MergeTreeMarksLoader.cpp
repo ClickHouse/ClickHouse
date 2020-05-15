@@ -41,11 +41,13 @@ void MergeTreeMarksLoader::loadMarks()
         {
             const size_t marks_overall_size = marks_count * columns_in_mark;
 
-            auto size_func = [marks_overall_size] {
+            auto size_func = [marks_overall_size]
+            {
                 return sizeof(CacheMarksInCompressedFile) * marks_overall_size;
             };
 
-            auto init_func = [marks_overall_size](void * heap_storage) {
+            auto init_func = [marks_overall_size](void * heap_storage)
+            {
                 /// Return a temporary value with an ordinary allocator that will pass its contents
                 /// and a #heap_storage pointer to the CacheMarksInCompressedFile ctor (allocating data where we want)
                 /// and self-destruct.

@@ -34,7 +34,8 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         auto size_func = [cell_overall_size] { return cell_overall_size; };
 
-        owned_cell = cache->getOrSet(key, std::move(size_func), [=, this, &cell](void * heap_address) {
+        owned_cell = cache->getOrSet(key, std::move(size_func), [=, this, &cell](void * heap_address)
+        {
             UncompressedCell other{}; //also ordinary allocator, tmp value that will pass the data and die.
             other.heap_storage = heap_address;
 
