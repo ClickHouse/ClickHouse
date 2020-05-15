@@ -1,3 +1,7 @@
+---
+toc_title: WHERE
+---
+
 # WHERE Clause {#select-where}
 
 `WHERE` clause allows to filter the data that is coming from [FROM](from.md) clause of `SELECT`.
