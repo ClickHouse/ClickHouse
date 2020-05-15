@@ -470,6 +470,7 @@ namespace MySQLReplication
         virtual String getName() const = 0;
         virtual Position getPosition() const = 0;
         virtual BinlogEventPtr readOneEvent() = 0;
+        virtual void setReplicateDatabase(String db) = 0;
         virtual ~IFlavor() = default;
     };
 
@@ -480,11 +481,15 @@ namespace MySQLReplication
         String getName() const override { return "MySQL"; }
         Position getPosition() const override { return position; }
         BinlogEventPtr readOneEvent() override { return event; }
+        void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
 
     private:
         Position position;
         BinlogEventPtr event;
+        String replicate_do_db;
         std::shared_ptr<TableMapEvent> table_map;
+
+        inline bool do_replicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
     };
 }
 
