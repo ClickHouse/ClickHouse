@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 40
 toc_title: Trabajar con cadenas
 ---
 
-# Funciones para trabajar con cadenas {#functions-for-working-with-strings}
+# Funciones Para Trabajar Con Cadenas {#functions-for-working-with-strings}
 
 ## vaciar {#empty}
 
@@ -49,7 +49,7 @@ Convierte símbolos latinos ASCII en una cadena a minúsculas.
 
 Convierte los símbolos latinos ASCII en una cadena a mayúsculas.
 
-## Método de codificación de datos: {#lowerutf8}
+## Método De codificación De Datos: {#lowerutf8}
 
 Convierte una cadena en minúsculas, suponiendo que la cadena contiene un conjunto de bytes que componen un texto codificado en UTF-8.
 No detecta el idioma. Entonces, para el turco, el resultado podría no ser exactamente correcto.
@@ -63,11 +63,11 @@ No detecta el idioma. Entonces, para el turco, el resultado podría no ser exact
 Si la longitud de la secuencia de bytes UTF-8 es diferente para mayúsculas y minúsculas de un punto de código, el resultado puede ser incorrecto para este punto de código.
 Si la cadena contiene un conjunto de bytes que no es UTF-8, entonces el comportamiento no está definido.
 
-## Sistema abierto {#isvalidutf8}
+## Sistema Abierto {#isvalidutf8}
 
 Devuelve 1, si el conjunto de bytes es válido codificado en UTF-8, de lo contrario 0.
 
-## Acerca de Nosotros {#tovalidutf8}
+## Acerca De Nosotros {#tovalidutf8}
 
 Reemplaza los caracteres UTF-8 no válidos por `�` (U+FFFD) carácter. Todos los caracteres no válidos que se ejecutan en una fila se contraen en el único carácter de reemplazo.
 
@@ -263,7 +263,7 @@ Devuelve una subcadena que comienza con el byte ‘offset’ índice que es ‘l
 
 Lo mismo que ‘substring’, pero para puntos de código Unicode. Funciona bajo el supuesto de que la cadena contiene un conjunto de bytes que representan un texto codificado en UTF-8. Si no se cumple esta suposición, devuelve algún resultado (no arroja una excepción).
 
-## Aquí hay algunas opciones) {#appendtrailingcharifabsent}
+## Aquí Hay Algunas Opciones) {#appendtrailingcharifabsent}
 
 Si el ‘s’ cadena no está vacía y no contiene el ‘c’ carácter al final, se añade el ‘c’ carácter hasta el final.
 
@@ -271,7 +271,7 @@ Si el ‘s’ cadena no está vacía y no contiene el ‘c’ carácter al final
 
 Devuelve la cadena ‘s’ que se convirtió de la codificación en ‘from’ a la codificación en ‘to’.
 
-## Sistema abierto.) {#base64encode}
+## Sistema Abierto.) {#base64encode}
 
 Codificar ‘s’ cadena en base64
 

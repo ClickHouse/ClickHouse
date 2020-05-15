@@ -1,17 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 60
+toc_title: "Configuraci\xF3n"
 ---
 
 # Configuración {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-<<<<<<< HEAD
-Cambia el comportamiento de [subconsultas distribuidas](../../sql_reference/statements/select.md).
-=======
-Cambia el comportamiento de [subconsultas distribuidas](../../sql-reference/operators/in.md).
->>>>>>> upstream/master
+Cambia el comportamiento de [subconsultas distribuidas](../../sql-reference/statements/select.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -20,7 +18,7 @@ Restricción:
 -   Solo se aplica para las subconsultas IN y JOIN.
 -   Solo si la sección FROM utiliza una tabla distribuida que contiene más de un fragmento.
 -   Si la subconsulta se refiere a una tabla distribuida que contiene más de un fragmento.
--   No se usa para un valor de tabla [remoto](../../sql_reference/table_functions/remote.md) función.
+-   No se usa para un valor de tabla [remoto](../../sql-reference/table-functions/remote.md) función.
 
 Valores posibles:
 
@@ -55,7 +53,7 @@ Si `enable_optimize_predicate_expression = 0`, entonces el tiempo de ejecución 
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Fuerza una consulta a una réplica obsoleta si los datos actualizados no están disponibles. Ver [Replicación](../../engines/table_engines/mergetree_family/replication.md).
+Fuerza una consulta a una réplica obsoleta si los datos actualizados no están disponibles. Ver [Replicación](../../engines/table-engines/mergetree-family/replication.md).
 
 ClickHouse selecciona la más relevante de las réplicas obsoletas de la tabla.
 
@@ -63,13 +61,13 @@ Se utiliza al realizar `SELECT` desde una tabla distribuida que apunta a tablas 
 
 De forma predeterminada, 1 (habilitado).
 
-## Fecha de nacimiento {#settings-force_index_by_date}
+## Fecha De Nacimiento {#settings-force_index_by_date}
 
 Deshabilita la ejecución de consultas si el índice no se puede usar por fecha.
 
 Funciona con tablas de la familia MergeTree.
 
-Si `force_index_by_date=1`, ClickHouse comprueba si la consulta tiene una condición de clave de fecha que se puede usar para restringir intervalos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Por ejemplo, la condición `Date != ' 2000-01-01 '` es aceptable incluso cuando coincide con todos los datos de la tabla (es decir, ejecutar la consulta requiere un escaneo completo). Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, vea [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md).
+Si `force_index_by_date=1`, ClickHouse comprueba si la consulta tiene una condición de clave de fecha que se puede usar para restringir intervalos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Por ejemplo, la condición `Date != ' 2000-01-01 '` es aceptable incluso cuando coincide con todos los datos de la tabla (es decir, ejecutar la consulta requiere un escaneo completo). Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, vea [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## force\_primary\_key {#force-primary-key}
 
@@ -77,11 +75,11 @@ Deshabilita la ejecución de consultas si no es posible la indexación mediante 
 
 Funciona con tablas de la familia MergeTree.
 
-Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condición de clave principal que se puede usar para restringir rangos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, consulte [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md).
+Si `force_primary_key=1`, ClickHouse comprueba si la consulta tiene una condición de clave principal que se puede usar para restringir rangos de datos. Si no hay una condición adecuada, arroja una excepción. Sin embargo, no comprueba si la condición reduce la cantidad de datos a leer. Para obtener más información acerca de los intervalos de datos en las tablas MergeTree, consulte [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md).
 
 ## Formato\_esquema {#format-schema}
 
-Este parámetro es útil cuando se utilizan formatos que requieren una definición de esquema, como [Cap'n Proto](https://capnproto.org/) o [Protobuf](https://developers.google.com/protocol-buffers/). El valor depende del formato.
+Este parámetro es útil cuando se utilizan formatos que requieren una definición de esquema, como [Cap’n Proto](https://capnproto.org/) o [Protobuf](https://developers.google.com/protocol-buffers/). El valor depende del formato.
 
 ## fsync\_metadata {#fsync-metadata}
 
@@ -136,13 +134,9 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Nombre de la red inalámbrica (SSID): {#setting-max_http_get_redirects}
+## Nombre De La Red inalámbrica (SSID): {#setting-max_http_get_redirects}
 
-<<<<<<< HEAD
-Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table_engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../query_language/create/#create-table-query) consulta y por el [URL](../../sql_reference/table_functions/url.md) función de la tabla.
-=======
-Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table-engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) consulta y por el [URL](../../sql-reference/table-functions/url.md) función de la tabla.
->>>>>>> upstream/master
+Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table-engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../query_language/create/#create-table-query) consulta y por el [URL](../../sql-reference/table-functions/url.md) función de la tabla.
 
 Valores posibles:
 
@@ -178,7 +172,7 @@ Si ambos `input_format_allow_errors_num` y `input_format_allow_errors_ratio` se 
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
-Habilita o deshabilita el analizador SQL completo si el analizador de secuencias rápidas no puede analizar los datos. Esta configuración sólo se utiliza para [Valor](../../interfaces/formats.md#data-format-values) formato en la inserción de datos. Para obtener más información sobre el análisis de sintaxis, consulte [Sintaxis](../../sql_reference/syntax.md) apartado.
+Habilita o deshabilita el analizador SQL completo si el analizador de secuencias rápidas no puede analizar los datos. Esta configuración sólo se utiliza para [Valor](../../interfaces/formats.md#data-format-values) formato en la inserción de datos. Para obtener más información sobre el análisis de sintaxis, consulte [Sintaxis](../../sql-reference/syntax.md) apartado.
 
 Valores posibles:
 
@@ -194,7 +188,7 @@ Valor predeterminado: 1.
 
 Ejemplo de uso
 
-Inserte el [FechaHora](../../sql_reference/data_types/datetime.md) valor de tipo con los diferentes ajustes.
+Inserte el [FechaHora](../../sql-reference/data-types/datetime.md) valor de tipo con los diferentes ajustes.
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -228,24 +222,17 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Habilita o deshabilita la deducción de plantilla para expresiones SQL en [Valor](../../interfaces/formats.md#data-format-values) formato. Permite analizar e interpretar expresiones en `Values` mucho más rápido si las expresiones en filas consecutivas tienen la misma estructura. ClickHouse intenta deducir la plantilla de una expresión, analizar las siguientes filas utilizando esta plantilla y evaluar la expresión en un lote de filas analizadas correctamente.
-
-Valores posibles:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Valor predeterminado: 1.
-
-Para la siguiente consulta:
+Habilita o deshabilita la deducción de plantilla para expresiones SQL en [Valor](../../interfaces/formats.md#data-format-values) formato. Permite analizar e interpretar expresiones en `Values` mucho más rápido si las expresiones en filas consecutivas tienen la misma estructura. ClickHouse intentará deducir la plantilla de una expresión, analizar las siguientes filas utilizando esta plantilla y evaluar la expresión en un lote de filas analizadas correctamente. Para la siguiente consulta:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   Si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=0`, las expresiones se interpretan por separado para cada fila (esto es muy lento para un gran número de filas).
--   Si `input_format_values_interpret_expressions=0` y `format_values_deduce_templates_of_expressions=1`, las expresiones en la primera, segunda y tercera filas se analizan usando la plantilla `lower(String)` e interpretados juntos, la expresión en la cuarta fila se analiza con otra plantilla (`upper(String)`).
--   Si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=1`, lo mismo que en el caso anterior, pero también permite la alternativa a la interpretación de expresiones por separado si no es posible deducir la plantilla.
+-   si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=0` Las expresiones se interpretarán por separado para cada fila (esto es muy lento para un gran número de filas)
+-   si `input_format_values_interpret_expressions=0` y `format_values_deduce_templates_of_expressions=1` Las expresiones en la primera, segunda y tercera filas se analizarán usando la plantilla `lower(String)` e interpretados juntos, la expresión es la cuarta fila se analizará con otra plantilla (`upper(String)`)
+-   si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=1` - lo mismo que en el caso anterior, pero también permite la alternativa a la interpretación de expresiones por separado si no es posible deducir la plantilla.
+
+Habilitado de forma predeterminada.
 
 ## Entrada\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
@@ -257,17 +244,9 @@ Esta configuración sólo se utiliza cuando `input_format_values_deduce_template
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-Valores posibles:
-
--   0 — Disabled.
-
-    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` o `Int64` en lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
-
--   1 — Enabled.
-
-    En este caso, ClickHouse comprueba el tipo real de literal y utiliza una plantilla de expresión del tipo correspondiente. En algunos casos, puede ralentizar significativamente la evaluación de expresiones en `Values`.
-
-Valor predeterminado: 1.
+Cuando esta configuración está habilitada, ClickHouse comprobará el tipo real de literal y utilizará una plantilla de expresión del tipo correspondiente. En algunos casos, puede ralentizar significativamente la evaluación de expresiones en `Values`.
+When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` o `Int64` en lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
+Habilitado de forma predeterminada.
 
 ## Entrada\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
@@ -295,7 +274,7 @@ Habilita o deshabilita el uso de valores predeterminados si los datos de entrada
 
 ## input\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
 
-Habilita o deshabilita omitir la inserción de datos adicionales.
+Habilita o deshabilita saltarse la inserción de datos adicionales.
 
 Al escribir datos, ClickHouse produce una excepción si los datos de entrada contienen columnas que no existen en la tabla de destino. Si la omisión está habilitada, ClickHouse no inserta datos adicionales y no lanza una excepción.
 
@@ -317,7 +296,7 @@ Valor predeterminado: 0.
 
 Habilita o deshabilita la inserción de datos JSON con objetos anidados.
 
-Formatos soportados:
+Formatos compatibles:
 
 -   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 
@@ -332,7 +311,7 @@ Ver también:
 
 -   [Uso de estructuras anidadas](../../interfaces/formats.md#jsoneachrow-nested) con el `JSONEachRow` formato.
 
-## Entrada\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
+## input\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
 
 Habilita o deshabilita la comprobación del orden de las columnas al insertar datos.
 
@@ -354,7 +333,7 @@ Valor predeterminado: 1.
 
 Permite elegir un analizador de la representación de texto de fecha y hora.
 
-La configuración no se aplica a [Funciones de fecha y hora](../../sql_reference/functions/date_time_functions.md).
+La configuración no se aplica a [Funciones de fecha y hora](../../sql-reference/functions/date-time-functions.md).
 
 Valores posibles:
 
@@ -370,16 +349,12 @@ Valor predeterminado: `'basic'`.
 
 Ver también:
 
--   [Tipo de datos DateTime.](../../sql_reference/data_types/datetime.md)
--   [Funciones para trabajar con fechas y horas.](../../sql_reference/functions/date_time_functions.md)
+-   [Tipo de datos DateTime.](../../sql-reference/data-types/datetime.md)
+-   [Funciones para trabajar con fechas y horas.](../../sql-reference/functions/date-time-functions.md)
 
-## Por favor, introduzca su dirección de correo electrónico {#settings-join_default_strictness}
+## Por Favor, Introduzca Su dirección De Correo electrónico {#settings-join_default_strictness}
 
-<<<<<<< HEAD
-Establece el rigor predeterminado para [Cláusulas JOIN](../../sql_reference/statements/select.md#select-join).
-=======
-Establece el rigor predeterminado para [Cláusulas JOIN](../../sql-reference/statements/select/join.md#select-join).
->>>>>>> upstream/master
+Establece el rigor predeterminado para [Cláusulas JOIN](../../sql-reference/statements/select.md#select-join).
 
 Valores posibles:
 
@@ -395,7 +370,7 @@ Valor predeterminado: `ALL`.
 Cambia el comportamiento de las operaciones de unión con `ANY` rigor.
 
 !!! warning "Atención"
-    Esta configuración sólo se aplica a `JOIN` operaciones con [Unir](../../engines/table_engines/special/join.md) mesas de motores.
+    Esta configuración sólo se aplica a `JOIN` operaciones con [Unir](../../engines/table-engines/special/join.md) mesas de motores.
 
 Valores posibles:
 
@@ -406,28 +381,18 @@ Valor predeterminado: 0.
 
 Ver también:
 
-<<<<<<< HEAD
--   [Cláusula JOIN](../../sql_reference/statements/select.md#select-join)
--   [Unirse al motor de tabla](../../engines/table_engines/special/join.md)
--   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
-
-## Sistema abierto. {#join_use_nulls}
-
-Establece el tipo de [JOIN](../../sql_reference/statements/select.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
-=======
--   [Cláusula JOIN](../../sql-reference/statements/select/join.md#select-join)
+-   [Cláusula JOIN](../../sql-reference/statements/select.md#select-join)
 -   [Unirse al motor de tabla](../../engines/table-engines/special/join.md)
 -   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
 
-## Sistema abierto {#join_use_nulls}
+## Sistema Abierto {#join_use_nulls}
 
-Establece el tipo de [JOIN](../../sql-reference/statements/select/join.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
->>>>>>> upstream/master
+Establece el tipo de [JOIN](../../sql-reference/statements/select.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
 
 Valores posibles:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../sql_reference/data_types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULL](../../sql_reference/syntax.md).
+-   1 — `JOIN` se comporta de la misma manera que en SQL estándar. El tipo del campo correspondiente se convierte en [NULL](../../sql-reference/data-types/nullable.md#data_type-nullable), y las celdas vacías se llenan con [NULL](../../sql-reference/syntax.md).
 
 Valor predeterminado: 0.
 
@@ -447,11 +412,7 @@ Por defecto: 1,000,000. Solo funciona cuando se lee desde los motores MergeTree.
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-<<<<<<< HEAD
-Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md) tabla supera `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
-=======
-Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) mesa excede `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
->>>>>>> upstream/master
+Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) tabla supera `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
 
 Valores posibles:
 
@@ -461,7 +422,7 @@ Valor predeterminado: 163840.
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-Si el número de bytes a leer de un archivo de un [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md)-La tabla del motor excede `merge_tree_min_bytes_for_concurrent_read`, entonces ClickHouse intenta leer simultáneamente este archivo en varios subprocesos.
+Si el número de bytes a leer de un archivo de un [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md)-La tabla del motor excede `merge_tree_min_bytes_for_concurrent_read`, entonces ClickHouse intenta leer simultáneamente este archivo en varios subprocesos.
 
 Valor posible:
 
@@ -469,7 +430,7 @@ Valor posible:
 
 Valor predeterminado: 251658240.
 
-## Método de codificación de datos: {#setting-merge-tree-min-rows-for-seek}
+## Método De codificación De Datos: {#setting-merge-tree-min-rows-for-seek}
 
 Si la distancia entre dos bloques de datos que se leen en un archivo es menor que `merge_tree_min_rows_for_seek` filas, luego ClickHouse no busca a través del archivo, sino que lee los datos secuencialmente.
 
@@ -503,7 +464,7 @@ Valor predeterminado: 8.
 
 Si ClickHouse debería leer más de `merge_tree_max_rows_to_use_cache` en una consulta, no usa la memoria caché de bloques sin comprimir.
 
-La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
+La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
 
 Valores posibles:
 
@@ -515,7 +476,7 @@ Default value: 128 ✕ 8192.
 
 Si ClickHouse debería leer más de `merge_tree_max_bytes_to_use_cache` bytes en una consulta, no usa el caché de bloques sin comprimir.
 
-La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
+La memoria caché de bloques sin comprimir almacena datos extraídos para consultas. ClickHouse utiliza esta memoria caché para acelerar las respuestas a pequeñas consultas repetidas. Esta configuración protege la memoria caché del deterioro de las consultas que leen una gran cantidad de datos. El [Uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuración del servidor define el tamaño de la memoria caché de bloques sin comprimir.
 
 Valor posible:
 
@@ -523,11 +484,7 @@ Valor posible:
 
 Valor predeterminado: 2013265920.
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-min-bytes-to-use-direct-io}
-=======
-## Todos los derechos reservados {#settings-min-bytes-to-use-direct-io}
->>>>>>> upstream/master
+## Todos Los Derechos Reservados {#settings-min-bytes-to-use-direct-io}
 
 El volumen de datos mínimo necesario para utilizar el acceso directo de E/S al disco de almacenamiento.
 
@@ -544,7 +501,7 @@ Valor predeterminado: 0.
 
 Configuración del registro de consultas.
 
-Las consultas enviadas a ClickHouse con esta configuración se registran de acuerdo con las reglas [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) parámetro de configuración del servidor.
+Las consultas enviadas a ClickHouse con esta configuración se registran de acuerdo con las reglas [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) parámetro de configuración del servidor.
 
 Ejemplo:
 
@@ -552,29 +509,11 @@ Ejemplo:
 log_queries=1
 ```
 
-## Nombre de la red inalámbrica (SSID): {#settings-log-queries-min-type}
-
-`query_log` tipo mínimo para iniciar sesión.
-
-Valores posibles:
-- `QUERY_START` (`=1`)
-- `QUERY_FINISH` (`=2`)
-- `EXCEPTION_BEFORE_START` (`=3`)
-- `EXCEPTION_WHILE_PROCESSING` (`=4`)
-
-Valor predeterminado: `QUERY_START`.
-
-Se puede usar para limitar a qué entiries va `query_log`, digamos que eres interesante solo en errores, entonces puedes usar `EXCEPTION_WHILE_PROCESSING`:
-
-``` text
-log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
-```
-
 ## Log\_query\_threads {#settings-log-query-threads}
 
 Configuración del registro de subprocesos de consulta.
 
-Los subprocesos de consultas ejecutados por ClickHouse con esta configuración se registran de acuerdo con las reglas en el [Sistema abierto.](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) parámetro de configuración del servidor.
+Los subprocesos de consultas ejecutados por ClickHouse con esta configuración se registran de acuerdo con las reglas en el [Sistema abierto.](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) parámetro de configuración del servidor.
 
 Ejemplo:
 
@@ -594,31 +533,9 @@ Valor predeterminado: 1.048.576.
 
 El valor predeterminado es ligeramente más que `max_block_size`. La razón de esto se debe a que ciertos motores de mesa (`*MergeTree`) formar una parte de datos en el disco para cada bloque insertado, que es una entidad bastante grande. Similar, `*MergeTree` las tablas ordenan los datos durante la inserción y un tamaño de bloque lo suficientemente grande permiten clasificar más datos en la RAM.
 
-## Nombre de la red inalámbrica (SSID): {#min-insert-block-size-rows}
-
-Establece el número mínimo de filas en el bloque que se pueden insertar en una tabla `INSERT` consulta. Los bloques de menor tamaño se aplastan en otros más grandes.
-
-Valores posibles:
-
--   Entero positivo.
--   0 — Squashing disabled.
-
-Valor predeterminado: 1048576.
-
-## Todos los derechos reservados {#min-insert-block-size-bytes}
-
-Establece el número mínimo de bytes en el bloque que se pueden insertar en una tabla `INSERT` consulta. Los bloques de menor tamaño se aplastan en otros más grandes.
-
-Valores posibles:
-
--   Entero positivo.
--   0 — Squashing disabled.
-
-Valor predeterminado: 268435456.
-
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
-Deshabilita las réplicas rezagadas para consultas distribuidas. Ver [Replicación](../../engines/table_engines/mergetree_family/replication.md).
+Deshabilita las réplicas rezagadas para consultas distribuidas. Ver [Replicación](../../engines/table-engines/mergetree-family/replication.md).
 
 Establece el tiempo en segundos. Si una réplica tiene un retraso superior al valor establecido, no se utiliza esta réplica.
 
@@ -641,7 +558,7 @@ Para las consultas que se completan rápidamente debido a un LIMIT, puede establ
 
 Cuanto menor sea el `max_threads` valor, menos memoria se consume.
 
-## Método de codificación de datos: {#settings-max-insert-threads}
+## Método De codificación De Datos: {#settings-max-insert-threads}
 
 El número máximo de subprocesos para ejecutar el `INSERT SELECT` consulta.
 
@@ -661,9 +578,9 @@ El tamaño máximo de bloques de datos sin comprimir antes de comprimir para esc
 
 No confunda bloques para la compresión (un fragmento de memoria que consta de bytes) con bloques para el procesamiento de consultas (un conjunto de filas de una tabla).
 
-## Descripción del producto {#min-compress-block-size}
+## Descripción Del Producto {#min-compress-block-size}
 
-Para [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md)" tabla. Para reducir la latencia al procesar consultas, un bloque se comprime al escribir la siguiente marca si su tamaño es al menos ‘min\_compress\_block\_size’. De forma predeterminada, 65.536.
+Para [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md)" tabla. Para reducir la latencia al procesar consultas, un bloque se comprime al escribir la siguiente marca si su tamaño es al menos ‘min\_compress\_block\_size’. De forma predeterminada, 65.536.
 
 El tamaño real del bloque, si los datos sin comprimir son menores que ‘max\_compress\_block\_size’, no es menor que este valor y no menor que el volumen de datos para una marca.
 
@@ -741,7 +658,7 @@ Para obtener más información, consulte la sección “Extreme values”.
 ## Use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Si se debe usar una memoria caché de bloques sin comprimir. Acepta 0 o 1. De forma predeterminada, 0 (deshabilitado).
-El uso de la memoria caché sin comprimir (solo para tablas de la familia MergeTree) puede reducir significativamente la latencia y aumentar el rendimiento cuando se trabaja con un gran número de consultas cortas. Habilite esta configuración para los usuarios que envían solicitudes cortas frecuentes. También preste atención al [Uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+El uso de la memoria caché sin comprimir (solo para tablas de la familia MergeTree) puede reducir significativamente la latencia y aumentar el rendimiento cuando se trabaja con un gran número de consultas cortas. Habilite esta configuración para los usuarios que envían solicitudes cortas frecuentes. También preste atención al [Uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 Para consultas que leen al menos un volumen algo grande de datos (un millón de filas o más), la memoria caché sin comprimir se desactiva automáticamente para ahorrar espacio para consultas realmente pequeñas. Esto significa que puede mantener el ‘use\_uncompressed\_cache’ ajuste siempre establecido en 1.
 
@@ -750,13 +667,13 @@ Para consultas que leen al menos un volumen algo grande de datos (un millón de 
 Cuando se utiliza la interfaz HTTP, el ‘query\_id’ parámetro puede ser pasado. Se trata de cualquier cadena que sirva como identificador de consulta.
 Si una consulta del mismo usuario ‘query\_id’ que ya existe en este momento, el comportamiento depende de la ‘replace\_running\_query’ parámetro.
 
-`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ ya se está ejecutando).
+`0` (default) – Throw an exception (don’t allow the query to run if a query with the same ‘query\_id’ ya se está ejecutando).
 
 `1` – Cancel the old query and start running the new one.
 
 El Yandex.Metrica utiliza este parámetro establecido en 1 para implementar sugerencias para las condiciones de segmentación. Después de ingresar el siguiente carácter, si la consulta anterior aún no ha finalizado, debe cancelarse.
 
-## Nombre de la red inalámbrica (SSID): {#stream-flush-interval-ms}
+## Nombre De La Red inalámbrica (SSID): {#stream-flush-interval-ms}
 
 Funciona para tablas con streaming en el caso de un tiempo de espera, o cuando un subproceso genera [Max\_insert\_block\_size](#settings-max_insert_block_size) filas.
 
@@ -775,7 +692,7 @@ ClickHouse admite los siguientes algoritmos para elegir réplicas:
 -   [En orden](#load_balancing-in_order)
 -   [Primero o aleatorio](#load_balancing-first_or_random)
 
-### Aleatorio (por defecto) {#load_balancing-random}
+### Aleatorio (por Defecto) {#load_balancing-random}
 
 ``` sql
 load_balancing = random
@@ -784,13 +701,13 @@ load_balancing = random
 El número de errores se cuenta para cada réplica. La consulta se envía a la réplica con el menor número de errores, y si hay varios de estos, a cualquiera de ellos.
 Desventajas: La proximidad del servidor no se tiene en cuenta; si las réplicas tienen datos diferentes, también obtendrá datos diferentes.
 
-### Nombre de host más cercano {#load_balancing-nearest_hostname}
+### Nombre De Host más Cercano {#load_balancing-nearest_hostname}
 
 ``` sql
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 Por ejemplo, example01-01-1 y example01-01-2.yandex.ru son diferentes en una posición, mientras que example01-01-1 y example01-02-2 difieren en dos lugares.
 Este método puede parecer primitivo, pero no requiere datos externos sobre la topología de red, y no compara las direcciones IP, lo que sería complicado para nuestras direcciones IPv6.
@@ -798,7 +715,7 @@ Este método puede parecer primitivo, pero no requiere datos externos sobre la t
 Por lo tanto, si hay réplicas equivalentes, se prefiere la más cercana por nombre.
 También podemos suponer que al enviar una consulta al mismo servidor, en ausencia de fallas, una consulta distribuida también irá a los mismos servidores. Por lo tanto, incluso si se colocan datos diferentes en las réplicas, la consulta devolverá principalmente los mismos resultados.
 
-### En orden {#load_balancing-in_order}
+### En Orden {#load_balancing-in_order}
 
 ``` sql
 load_balancing = in_order
@@ -807,7 +724,7 @@ load_balancing = in_order
 Se accede a las réplicas con el mismo número de errores en el mismo orden en que se especifican en la configuración.
 Este método es apropiado cuando se sabe exactamente qué réplica es preferible.
 
-### Primero o aleatorio {#load_balancing-first_or_random}
+### Primero o Aleatorio {#load_balancing-first_or_random}
 
 ``` sql
 load_balancing = first_or_random
@@ -856,12 +773,12 @@ Si se compiló esta parte de la canalización, la consulta puede ejecutarse más
 
 ## min\_count\_to\_compile {#min-count-to-compile}
 
-¿Cuántas veces usar potencialmente un fragmento de código compilado antes de ejecutar la compilación? Por defecto, 3.
+¿cuántas veces usar potencialmente un fragmento de código compilado antes de ejecutar la compilación? por defecto, 3.
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
 Si el valor es 1 o más, la compilación se produce de forma asíncrona en un subproceso independiente. El resultado se utilizará tan pronto como esté listo, incluidas las consultas que se están ejecutando actualmente.
 
 Se requiere código compilado para cada combinación diferente de funciones agregadas utilizadas en la consulta y el tipo de claves en la cláusula GROUP BY.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don’t use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -910,7 +827,7 @@ Ver también:
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum_timeout}
 
 Escribir en tiempo de espera de quórum en segundos. Si el tiempo de espera ha pasado y aún no se ha realizado ninguna escritura, ClickHouse generará una excepción y el cliente debe repetir la consulta para escribir el mismo bloque en la misma réplica o en cualquier otra réplica.
 
@@ -952,7 +869,7 @@ Valores posibles:
 
 Valor predeterminado: 1.
 
-De forma predeterminada, los bloques insertados en tablas replicadas `INSERT` declaración se deduplican (ver [Replicación de datos](../../engines/table-engines/mergetree-family/replication.md)).
+De forma predeterminada, los bloques insertados en tablas replicadas `INSERT` (consulte \[Replicación de datos\] (../engines/table\_engines/mergetree\_family/replication.md).
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -969,10 +886,10 @@ Uso
 
 De forma predeterminada, la desduplicación no se realiza para las vistas materializadas, sino que se realiza en sentido ascendente, en la tabla de origen.
 Si se omite un bloque INSERTed debido a la desduplicación en la tabla de origen, no habrá inserción en las vistas materializadas adjuntas. Este comportamiento existe para permitir la inserción de datos altamente agregados en vistas materializadas, para los casos en que los bloques insertados son los mismos después de la agregación de vistas materializadas pero derivados de diferentes INSERT en la tabla de origen.
-Al mismo tiempo, este comportamiento “breaks” `INSERT` idempotencia. Si una `INSERT` en la mesa principal fue exitoso y `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` permite cambiar este comportamiento. Al reintentar, una vista materializada recibirá la inserción de repetición y realizará la comprobación de desduplicación por sí misma,
+Al mismo tiempo, este comportamiento “breaks” `INSERT` idempotencia. Si una `INSERT` en la mesa principal fue exitoso y `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` permite cambiar este comportamiento. Al reintentar, una vista materializada recibirá la inserción de repetición y realizará la comprobación de desduplicación por sí misma,
 ignorando el resultado de la comprobación para la tabla de origen, e insertará filas perdidas debido a la primera falla.
 
-## Método de codificación de datos: {#settings-max-network-bytes}
+## Método De codificación De Datos: {#settings-max-network-bytes}
 
 Limita el volumen de datos (en bytes) que se recibe o se transmite a través de la red al ejecutar una consulta. Esta configuración se aplica a cada consulta individual.
 
@@ -983,7 +900,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Método de codificación de datos: {#settings-max-network-bandwidth}
+## Método De codificación De Datos: {#settings-max-network-bandwidth}
 
 Limita la velocidad del intercambio de datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas.
 
@@ -994,11 +911,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-max-network-bandwidth-for-user}
-=======
-## Todos los derechos reservados {#settings-max-network-bandwidth-for-user}
->>>>>>> upstream/master
+## Todos Los Derechos Reservados {#settings-max-network-bandwidth-for-user}
 
 Limita la velocidad del intercambio de datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas que se ejecutan simultáneamente realizadas por un único usuario.
 
@@ -1009,11 +922,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-max-network-bandwidth-for-all-users}
-=======
-## Todos los derechos reservados {#settings-max-network-bandwidth-for-all-users}
->>>>>>> upstream/master
+## Todos Los Derechos Reservados {#settings-max-network-bandwidth-for-all-users}
 
 Limita la velocidad a la que se intercambian datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas que se ejecutan simultáneamente en el servidor.
 
@@ -1026,15 +935,15 @@ Valor predeterminado: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Especifica cuál de las `uniq*` se deben utilizar para realizar el [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) construcción.
+Especifica cuál de las `uniq*` se deben utilizar para realizar el [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) construcción.
 
 Valores posibles:
 
--   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
--   [UniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [UniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
 
 Valor predeterminado: `uniqExact`.
 
@@ -1099,7 +1008,7 @@ Valor predeterminado: 0.
 
 ## Optize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-Habilita o deshabilita el lanzamiento de una excepción [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) la consulta no realizó una fusión.
+Habilita o deshabilita el lanzamiento de una excepción [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) la consulta no realizó una fusión.
 
 Predeterminada, `OPTIMIZE` devuelve con éxito incluso si no hizo nada. Esta configuración le permite diferenciar estas situaciones y obtener el motivo en un mensaje de excepción.
 
@@ -1119,7 +1028,7 @@ Controla la rapidez con la que se ponen a cero los errores en las tablas distrib
 
 Ver también:
 
--   [Motor de tabla distribuido](../../engines/table_engines/special/distributed.md)
+-   [Motor de tabla distribuido](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
@@ -1131,12 +1040,12 @@ El recuento de errores de cada réplica está limitado a este valor, lo que impi
 
 Ver también:
 
--   [Motor de tabla distribuido](../../engines/table_engines/special/distributed.md)
+-   [Motor de tabla distribuido](../../engines/table-engines/special/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## Distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Intervalo base para el [Distribuido](../../engines/table_engines/special/distributed.md) motor de tabla para enviar datos. El intervalo real crece exponencialmente en caso de errores.
+Intervalo base para el [Distribuido](../../engines/table-engines/special/distributed.md) motor de tabla para enviar datos. El intervalo real crece exponencialmente en caso de errores.
 
 Valores posibles:
 
@@ -1146,7 +1055,7 @@ Valor predeterminado: 100 milisegundos.
 
 ## Distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Intervalo máximo para el [Distribuido](../../engines/table_engines/special/distributed.md) motor de tabla para enviar datos. Limita el crecimiento exponencial del intervalo establecido en el [Distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) configuración.
+Intervalo máximo para el [Distribuido](../../engines/table-engines/special/distributed.md) motor de tabla para enviar datos. Limita el crecimiento exponencial del intervalo establecido en el [Distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) configuración.
 
 Valores posibles:
 
@@ -1158,7 +1067,7 @@ Valor predeterminado: 30000 milisegundos (30 segundos).
 
 Habilita/deshabilita el envío de datos insertados en lotes.
 
-Cuando el envío por lotes está habilitado, el [Distribuido](../../engines/table_engines/special/distributed.md) El motor de tabla intenta enviar varios archivos de datos insertados en una operación en lugar de enviarlos por separado. El envío por lotes mejora el rendimiento del clúster al utilizar mejor los recursos del servidor y de la red.
+Cuando el envío por lotes está habilitado, el [Distribuido](../../engines/table-engines/special/distributed.md) El motor de tabla intenta enviar varios archivos de datos insertados en una operación en lugar de enviarlos por separado. El envío por lotes mejora el rendimiento del clúster al utilizar mejor los recursos del servidor y de la red.
 
 Valores posibles:
 
@@ -1184,7 +1093,7 @@ Valor predeterminado: 0.
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-Establece el período para un temporizador de reloj real del [perfilador de consultas](../../operations/optimizing_performance/sampling_query_profiler.md). El temporizador de reloj real cuenta el tiempo del reloj de pared.
+Establece el período para un temporizador de reloj real del [perfilador de consultas](../../operations/optimizing-performance/sampling-query-profiler.md). El temporizador de reloj real cuenta el tiempo del reloj de pared.
 
 Valores posibles:
 
@@ -1197,17 +1106,17 @@ Valores posibles:
 
 -   0 para apagar el temporizador.
 
-Tipo: [UInt64](../../sql_reference/data_types/int_uint.md).
+Tipo: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Valor predeterminado: 1000000000 nanosegundos (una vez por segundo).
 
 Ver también:
 
--   Tabla del sistema [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Tabla del sistema [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
-## Los resultados de la prueba {#query_profiler_cpu_time_period_ns}
+## Los Resultados De La Prueba {#query_profiler_cpu_time_period_ns}
 
-Establece el período para un temporizador de reloj de CPU [perfilador de consultas](../../operations/optimizing_performance/sampling_query_profiler.md). Este temporizador solo cuenta el tiempo de CPU.
+Establece el período para un temporizador de reloj de CPU [perfilador de consultas](../../operations/optimizing-performance/sampling-query-profiler.md). Este temporizador solo cuenta el tiempo de CPU.
 
 Valores posibles:
 
@@ -1220,17 +1129,17 @@ Valores posibles:
 
 -   0 para apagar el temporizador.
 
-Tipo: [UInt64](../../sql_reference/data_types/int_uint.md).
+Tipo: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Valor predeterminado: 1000000000 nanosegundos.
 
 Ver también:
 
--   Tabla del sistema [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   Tabla del sistema [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-Habilita deshabilita [funciones de introspecciones](../../sql_reference/functions/introspection.md) para la creación de perfiles de consultas.
+Habilita deshabilita [funciones de introspecciones](../../sql-reference/functions/introspection.md) para la creación de perfiles de consultas.
 
 Valores posibles:
 
@@ -1241,8 +1150,8 @@ Valor predeterminado: 0.
 
 **Ver también**
 
--   [Analizador de consultas de muestreo](../optimizing_performance/sampling_query_profiler.md)
--   Tabla del sistema [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
+-   [Analizador de consultas de muestreo](../optimizing-performance/sampling-query-profiler.md)
+-   Tabla del sistema [trace\_log](../../operations/system-tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
@@ -1251,18 +1160,14 @@ Valor predeterminado: 0.
 
 Habilitar el análisis paralelo de los formatos de datos para preservar el orden. Solo se admite para los formatos TSV, TKSV, CSV y JSONEachRow.
 
-## También puede utilizar los siguientes métodos de envío: {#min-chunk-bytes-for-parallel-parsing}
+## También Puede Utilizar Los Siguientes métodos De envío: {#min-chunk-bytes-for-parallel-parsing}
 
 -   Tipo: unsigned int
 -   Valor predeterminado: 1 MiB
 
 El tamaño mínimo de fragmento en bytes, que cada subproceso analizará en paralelo.
 
-<<<<<<< HEAD
-## Sistema abierto. {#settings-output_format_avro_codec}
-=======
-## Sistema abierto {#settings-output_format_avro_codec}
->>>>>>> upstream/master
+## Sistema Abierto {#settings-output_format_avro_codec}
 
 Establece el códec de compresión utilizado para el archivo Avro de salida.
 
@@ -1276,11 +1181,7 @@ Valores posibles:
 
 Valor predeterminado: `snappy` (si está disponible) o `deflate`.
 
-<<<<<<< HEAD
-## Sistema abierto. {#settings-output_format_avro_sync_interval}
-=======
-## Sistema abierto {#settings-output_format_avro_sync_interval}
->>>>>>> upstream/master
+## Sistema Abierto {#settings-output_format_avro_sync_interval}
 
 Establece el tamaño mínimo de datos (en bytes) entre los marcadores de sincronización para el archivo Avro de salida.
 
@@ -1290,26 +1191,12 @@ Valores posibles: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Valor predeterminado: 32768 (32 KiB)
 
-<<<<<<< HEAD
-## Todos los derechos reservados. {#settings-format_avro_schema_registry_url}
-=======
-## Todos los derechos reservados {#settings-format_avro_schema_registry_url}
->>>>>>> upstream/master
+## Todos Los Derechos Reservados {#settings-format_avro_schema_registry_url}
 
 Establece la URL del Registro de esquemas confluentes para usar con [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) formato
 
 Tipo: URL
 
 Valor predeterminado: Vacío
-
-## background\_pool\_size {#background_pool_size}
-
-Establece el número de subprocesos que realizan operaciones en segundo plano en motores de tabla (por ejemplo, fusiona [Motor MergeTree](../../engines/table-engines/mergetree-family/index.md) tabla). Esta configuración se aplica al inicio del servidor ClickHouse y no se puede cambiar en una sesión de usuario. Al ajustar esta configuración, puede administrar la carga de la CPU y el disco. Un tamaño de grupo más pequeño utiliza menos recursos de CPU y disco, pero los procesos en segundo plano avanzan más lentamente, lo que eventualmente podría afectar el rendimiento de la consulta.
-
-Valores posibles:
-
--   Cualquier entero positivo.
-
-Valor predeterminado: 16.
 
 [Artículo Original](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

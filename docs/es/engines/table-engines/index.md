@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_folder_title: Motores de mesa
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_folder_title: Table Engines
 toc_priority: 26
 toc_title: "Implantaci\xF3n"
 ---
 
-# Motores de mesa {#table_engines}
+# Motores De Mesa {#table_engines}
 
 El motor de tabla (tipo de tabla) determina:
 
@@ -17,11 +17,11 @@ El motor de tabla (tipo de tabla) determina:
 -   Si es posible la ejecución de solicitudes multiproceso.
 -   Parámetros de replicación de datos.
 
-## Familias de motores {#engine-families}
+## Familias De Motores {#engine-families}
 
-### Método de codificación de datos: {#mergetree}
+### Mergetree {#mergetree}
 
-Los motores de mesa más universales y funcionales para tareas de alta carga. La propiedad compartida por estos motores es la inserción rápida de datos con el posterior procesamiento de datos en segundo plano. `MergeTree` Los motores familiares admiten la replicación de datos (con [Replicado\*](mergetree-family/replication.md#table_engines-replication) versiones de motores), particionamiento y otras características no admitidas en otros motores.
+Los motores de mesa más universales y funcionales para tareas de alta carga. La propiedad compartida por estos motores es la inserción rápida de datos con el posterior procesamiento de datos en segundo plano. `MergeTree` Los motores familiares admiten la replicación de datos (con [Replicado\*](mergetree-family/replication.md#replication) versiones de motores), particionamiento y otras características no admitidas en otros motores.
 
 Motores en la familia:
 
@@ -43,7 +43,7 @@ Motores en la familia:
 -   [StripeLog](log-family/stripelog.md#stripelog)
 -   [Registro](log-family/log.md#log)
 
-### Motores de integración {#integration-engines}
+### Motores De integración {#integration-engines}
 
 Motores para comunicarse con otros sistemas de almacenamiento y procesamiento de datos.
 
@@ -55,14 +55,14 @@ Motores en la familia:
 -   [JDBC](integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](integrations/hdfs.md#hdfs)
 
-### Motores especiales {#special-engines}
+### Motores Especiales {#special-engines}
 
 Motores en la familia:
 
 -   [Distribuido](special/distributed.md#distributed)
 -   [Método de codificación de datos:](special/materializedview.md#materializedview)
 -   [Diccionario](special/dictionary.md#dictionary)
--   \[Fusión\](special/merge.md\#merge
+-   [Fusionar](special/merge.md#merge
 -   [File](special/file.md#file)
 -   [Nulo](special/null.md#null)
 -   [Establecer](special/set.md#set)

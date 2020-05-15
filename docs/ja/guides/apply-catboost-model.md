@@ -1,41 +1,41 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 41
 toc_title: "CatBoost\u30E2\u30C7\u30EB\u306E\u9069\u7528"
 ---
 
 # ClickHouseでのCatboostモデルの適用 {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) で開発された無料でオープンソースの勾配昇圧ライブラリです [Yandex](https://yandex.com/company/) 機械学習のために。
+[CatBoost](https://catboost.ai) では、このオープンソースの勾配向上の図書館が開発した [Yandex](https://yandex.com/company/) 機械学習のために。
 
-この手順では、SQLからモデル推論を実行して、ClickHouseで事前に訓練されたモデルを適用する方法を学習します。
+この命令では、sqlからモデル推論を実行して、事前に学習したモデルをclickhouseに適用する方法を学習します。
 
 ClickHouseでCatBoostモデルを適用するには:
 
 1.  [テーブルの作成](#create-table).
-2.  [テーブルにデータを挿入します](#insert-data-to-table).
-3.  [ClickHouseにCatBoostを統合する](#integrate-catboost-into-clickhouse) （任意ステップ）。
+2.  [データをテーブルに挿入する](#insert-data-to-table).
+3.  [ClickhouseにCatBoostを統合](#integrate-catboost-into-clickhouse) （任意ステップ）。
 4.  [SQLからモデル推論を実行する](#run-model-inference).
 
-CatBoostモデルのトレーニングの詳細については、 [モデルの学習と適用](https://catboost.ai/docs/features/training.html#training).
+CatBoostモデルのトレーニングの詳細については、 [訓練用モデル](https://catboost.ai/docs/features/training.html#training).
 
 ## 前提条件 {#prerequisites}
 
-あなたが持っていない場合 [ドッカー](https://docs.docker.com/install/) まだ、それを取付けなさい。
+あなたが持っていない場合 [Docker](https://docs.docker.com/install/) しかし、インストールしてください。
 
-!!! note "注"
-    [ドッカー](https://www.docker.com) CatBoostとClickHouseのインストールをシステムの残りの部分から分離するコンテナを作成できるソフトウェアプラットフォームです。
+!!! note "メモ"
+    [Docker](https://www.docker.com) であるソフトウェアプラットフォームを作成することができる容器を隔離するCatBoostとClickHouse設置からシステム。
 
 CatBoostモデルを適用する前に:
 
-**1.** プル [ドッカー画像](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) レジストリから:
+**1.** を引く [Dockerイメージ](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) レジストリから:
 
 ``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
 ```
 
-このDockerイメージには、CatBoostとClickHouseを実行するために必要なコード、ランタイム、ライブラリ、環境変数、設定ファイルがすべて含まれています。
+このdocker画像を含むものを実行する必要がありますcatboostとclickhouse:コードでは、ランタイム時において、図書館、環境変数の設定ファイルです。
 
 **2.** Dockerイメージが正常にプルされたことを確認します:
 
@@ -45,7 +45,7 @@ REPOSITORY                            TAG                 IMAGE ID            CR
 yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22 hours ago        1.37GB
 ```
 
-**3.** 起Dockerコンテナに基づくこのイメージ:
+**3.** この画像に基づいてDockerコンテナを起動します:
 
 ``` bash
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
@@ -53,18 +53,18 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 ## 1. テーブルの作成 {#create-table}
 
-トレーニングサンプルのClickHouseテーブルを作成するには:
+トレーニングサンプルのclickhouseテーブルを作成するには:
 
-**1.** 対話モードでClickHouse consoleクライアントを起動する:
+**1.** 開始ClickHouseコンソールがクライアントのインタラクティブモード:
 
 ``` bash
 $ clickhouse client
 ```
 
-!!! note "注"
-    ClickHouseサーバーはDockerコンテナ内で既に実行されています。
+!!! note "メモ"
+    ClickHouseサーバーはすでにDockerコンテナ内で実行されています。
 
-**2.** コマンドを使用して表を作成します:
+**2.** テーブルを作成しのコマンドを使用して:
 
 ``` sql
 :) CREATE TABLE amazon_train
@@ -84,13 +84,13 @@ $ clickhouse client
 ENGINE = MergeTree ORDER BY date
 ```
 
-**3.** ClickHouse consoleクライアントからの終了:
+**3.** ClickHouseコンソールクライアン:
 
 ``` sql
 :) exit
 ```
 
-## 2. テーブルにデータを挿入します {#insert-data-to-table}
+## 2. データをテーブルに挿入する {#insert-data-to-table}
 
 データを挿入するには:
 
@@ -100,13 +100,13 @@ ENGINE = MergeTree ORDER BY date
 $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CSVWithNames' < ~/amazon/train.csv
 ```
 
-**2.** 対話モードでClickHouse consoleクライアントを起動する:
+**2.** 開始ClickHouseコンソールがクライアントのインタラクティブモード:
 
 ``` bash
 $ clickhouse client
 ```
 
-**3.** データがアップロードされたことを確認:
+**3.** データがアップロードされている:
 
 ``` sql
 :) SELECT count() FROM amazon_train
@@ -119,20 +119,20 @@ FROM amazon_train
 +-------+
 ```
 
-## 3. ClickHouseにCatBoostを統合する {#integrate-catboost-into-clickhouse}
+## 3. ClickhouseにCatBoostを統合 {#integrate-catboost-into-clickhouse}
 
-!!! note "注"
-    **任意ステップ。** Dockerイメージには、CatBoostとClickHouseを実行するために必要なすべてが含まれています。
+!!! note "メモ"
+    **省略可能なステップ。** のDocker画像を含むものを実行する必要がありますCatBoostとClickHouse.
 
-ClickhouseにCatBoostを統合するには:
+CatBoostをClickHouseに統合するには:
 
 **1.** 評価ライブラリを構築します。
 
-CatBoostモデルを評価する最速の方法はコンパイルです `libcatboostmodel.<so|dll|dylib>` 図書館 に関する詳細については、図書館を参照 [CatBoostドキュメント](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+CatBoostモデルを評価する最速の方法はcompileです `libcatboostmodel.<so|dll|dylib>` ライブラリ。 に関する詳細については、図書館を参照 [CatBoost書](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**2.** 新しいディレクトリを任意の場所に作成し、任意の名前で作成します。, `data` 作成したライブラリをその中に入れます。 のDocker画像がすでに含まれている図書館 `data/libcatboostmodel.so`.
+**2.** 新しいディレクトリを任意の場所に、任意の名前で作成します。, `data` 作成したライブラリをその中に入れます。 Dockerイメージにはすでにライブ `data/libcatboostmodel.so`.
 
-**3.** Config modelの新しいディレクトリを任意の場所に、任意の名前で作成します。, `models`.
+**3.** Configモデルの新しいディレクトリを任意の場所に、任意の名前で作成します。, `models`.
 
 **4.** 任意の名前のモデル構成ファイルを作成します。, `models/amazon_model.xml`.
 
@@ -163,7 +163,7 @@ CatBoostモデルを評価する最速の方法はコンパイルです `libcatb
 
 ## 4. SQLからモデル推論を実行する {#run-model-inference}
 
-試験モデルのClickHouseト `$ clickhouse client`.
+試験モデルのclickhouseト `$ clickhouse client`.
 
 モデルが動作していることを確認しましょう:
 
@@ -184,10 +184,10 @@ FROM amazon_train
 LIMIT 10
 ```
 
-!!! note "注"
-    関数 [モデル評価](../sql-reference/functions/other-functions.md#function-modelevaluate) マルチクラスモデルのクラスごとの生の予測を持つタプルを返します。
+!!! note "メモ"
+    機能 [モデル値](../sql-reference/functions/other-functions.md#function-modelevaluate) マルチクラスモデルのクラスごとの生の予測を持つタプルを返します。
 
-のは、確率を予測してみましょう:
+確率を予測してみましょう:
 
 ``` sql
 :) SELECT
@@ -207,10 +207,10 @@ FROM amazon_train
 LIMIT 10
 ```
 
-!!! note "注"
+!!! note "メモ"
     詳細について [exp()](../sql-reference/functions/math-functions.md) 機能。
 
-サンプルのLogLossを計算しましょう:
+サンプルのloglossを計算してみましょう:
 
 ``` sql
 :) SELECT -avg(tg * log(prob) + (1 - tg) * log(1 - prob)) AS logloss
@@ -233,7 +233,7 @@ FROM
 )
 ```
 
-!!! note "注"
-    詳細について [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) と [ログ()](../sql-reference/functions/math-functions.md) 機能。
+!!! note "メモ"
+    詳細について [平均()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) と [ログ()](../sql-reference/functions/math-functions.md) 機能。
 
 [元の記事](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

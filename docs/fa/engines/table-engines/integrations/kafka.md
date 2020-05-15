@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 32
 toc_title: "\u06A9\u0627\u0641\u06A9\u0627"
 ---
@@ -32,16 +32,14 @@ SETTINGS
     [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
-    [kafka_max_block_size = 0,]
-    [kafka_skip_broken_messages = N,]
-    [kafka_commit_every_batch = 0]
+    [kafka_skip_broken_messages = N]
 ```
 
 پارامترهای مورد نیاز:
 
 -   `kafka_broker_list` – A comma-separated list of brokers (for example, `localhost:9092`).
 -   `kafka_topic_list` – A list of Kafka topics.
--   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
 -   `kafka_format` – Message format. Uses the same notation as the SQL `FORMAT` تابع مانند `JSONEachRow`. برای کسب اطلاعات بیشتر, دیدن [فرشها](../../../interfaces/formats.md) بخش.
 
 پارامترهای اختیاری:
@@ -49,9 +47,7 @@ SETTINGS
 -   `kafka_row_delimiter` – Delimiter character, which ends the message.
 -   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [سروان نیا](https://capnproto.org/) نیاز به مسیر به فایل طرح و نام ریشه `schema.capnp:Message` اعتراض.
 -   `kafka_num_consumers` – The number of consumers per table. Default: `1`. مشخص مصرف کنندگان بیشتر اگر توان عملیاتی یک مصرف کننده کافی است. تعداد کل مصرف کنندگان باید تعداد پارتیشن در موضوع تجاوز نمی, از تنها یک مصرف کننده را می توان در هر پارتیشن اختصاص داده.
--   `kafka_max_block_size` - حداکثر اندازه دسته ای (در پیام) برای نظرسنجی (پیش فرض: `max_block_size`).
 -   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. اگر `kafka_skip_broken_messages = N` سپس موتور پرش *N* پیام کافکا که نمی تواند تجزیه شود (یک پیام برابر یک ردیف از داده ها).
--   `kafka_commit_every_batch` - متعهد هر دسته مصرف و به کار گرفته به جای یک مرتکب پس از نوشتن یک بلوک کامل (به طور پیش فرض: `0`).
 
 مثالها:
 
@@ -147,7 +143,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 ## پیکربندی {#configuration}
 
-شبیه به GraphiteMergeTree های کافکا پشتیبانی از موتور تمدید پیکربندی با استفاده از ClickHouse فایل پیکربندی. دو کلید پیکربندی است که شما می توانید استفاده کنید وجود دارد: جهانی (`kafka`) و سطح موضوع (`kafka_*`). پیکربندی جهانی برای اولین بار اعمال می شود و سپس پیکربندی سطح موضوع اعمال می شود (در صورت وجود).
+شبیه به graphitemergetree های کافکا پشتیبانی از موتور تمدید پیکربندی با استفاده از clickhouse فایل پیکربندی. دو کلید پیکربندی است که شما می توانید استفاده کنید وجود دارد: جهانی (`kafka`) و سطح موضوع (`kafka_*`). پیکربندی جهانی برای اولین بار اعمال می شود و سپس پیکربندی سطح موضوع اعمال می شود (در صورت وجود).
 
 ``` xml
   <!-- Global configuration options for all tables of Kafka engine type -->
@@ -173,8 +169,8 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 -   `_timestamp` — Timestamp of the message.
 -   `_partition` — Partition of Kafka topic.
 
-**همچنین نگاه کنید به**
+**همچنین نگاه کنید**
 
--   [ستونهای مجازی](../index.md#table_engines-virtual_columns)
+-   [مجازی ستون](../index.md#table_engines-virtual_columns)
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

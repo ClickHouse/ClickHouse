@@ -7,7 +7,7 @@ toc_title: hidden
 
 # Справка по SQL {#spravka-po-sql}
 
--   [SELECT](statements/select/index.md)
+-   [SELECT](statements/select.md)
 -   [INSERT INTO](statements/insert-into.md)
 -   [CREATE](statements/create.md)
 -   [ALTER](statements/alter.md)

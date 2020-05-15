@@ -7,13 +7,9 @@ ADDINCL(
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)
 
-<<<<<<< HEAD
-=======
 CFLAGS (GLOBAL -DUSE_CPUID=1)
 CFLAGS (GLOBAL -DUSE_JEMALLOC=0)
-CFLAGS (GLOBAL -DUSE_RAPIDJSON=1)
 
->>>>>>> upstream/master
 IF (OS_DARWIN)
     CFLAGS (GLOBAL -DOS_DARWIN)
 ELSEIF (OS_FREEBSD)
@@ -44,7 +40,7 @@ SRCS(
     LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
-    preciseExp10.c
+    preciseExp10.cpp
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp

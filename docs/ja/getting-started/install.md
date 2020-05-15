@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 11
 toc_title: "\u8A2D\u7F6E"
 ---
@@ -9,40 +9,42 @@ toc_title: "\u8A2D\u7F6E"
 
 ## システム要件 {#system-requirements}
 
-ClickHouseは、x86\_64、AArch64、またはPowerPC64LE CPUアーキテクチャを持つLinux、FreeBSD、またはMac OS X上で実行できます。
+ClickHouseは、x86\_64、AArch64、またはPowerPC64LE CPUアーキテクチャを使用して、Linux、FreeBSD、またはMac OS X上で実行できます。
 
-公式の事前ビルドされたバイナリは、通常、x86\_64用にコンパイルされ、SSE4.2命令セットを利用するため、特に明記されていない限り、それをサポートす このコマンドをチェックが現在のCPU支援のためのSSE4.2:
+公式の事前構築されたバイナリは、通常、x86\_64用にコンパイルされ、sse4.2命令セットを利用するため、特に明記されていない限り、それをサポートす 現在のcpuがsse4.2をサポートしているかどう:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-走ClickHouseにプロセッサーをサポートしていないSSE4.2てAArch64はPowerPC64LE建築き [ソースからClickHouseを構築](#from-sources) 適切な構成調節を使って。
+走clickhouseにプロセッサーをサポートしていないsse4.2てaarch64はpowerpc64le建築き [ソースからのClickHouseのビルド](#from-sources) 適切な構成の調節を使って。
 
-## 利用できる設置選択 {#available-installation-options}
+## 使用可能な設置方法 {#available-installation-options}
 
 ### DEBパッケージから {#install-from-deb-packages}
 
-公式の事前コンパイルを使用することをお勧めします `deb` DebianまたはUbuntu用のパッケージ。 走りこれらのコマンド置パッケージ:
+公式の事前コンパイルを使用することをお勧めします `deb` DebianやUbuntuのためのパッケージ.
+
+そこにこれらのコマンド置パッケージ:
 
 ``` bash
 {% include 'install/deb.sh' %}
 ```
 
-最新のバージョンを使用する場合は、置き換えます `stable` と `testing` (これはテスト環境に推奨されます)。
+でもダウンロードとインストールパッケージを手動で下からもアクセスできます。https://repo.clickhouse.tech/deb/stable/main/.
 
-でもダウンロードとインストールパッケージ動 [ここに](https://repo.clickhouse.tech/deb/stable/main/).
+最新のバージョンを使用する場合は、以下を置き換えます `stable` と `testing` (これはテスト環境に推奨されます)。
 
 #### パッケージ {#packages}
 
 -   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
 -   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` とをインストールしデフォルトのサーバーの設定をします。
--   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` そして他の顧客関連の用具。 および設置お客様の設定ファイルです。
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` そして他の顧客関係した用具。 および設置お客様の設定ファイルです。
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### RPMパッケージから {#from-rpm-packages}
 
-公式の事前コンパイルを使用することをお勧めします `rpm` CentOS、RedHat、その他すべてのrpmベースのLinuxディストリビューション用のパッケージ。
+公式の事前コンパイルを使用することをお勧めします `rpm` パッケージCentOS,RedHat、その他のrpmベLinuxディストリビューション.
 
 まず、公式リポジトリを追加する必要があります:
 
@@ -52,7 +54,7 @@ sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-最新のバージョンを使用する場合は、置き換えます `stable` と `testing` (これはテスト環境に推奨されます)。 その `prestable` タグは時々あまりにも利用可能です。
+最新のバージョンを使用する場合は、以下を置き換えます `stable` と `testing` (これはテスト環境に推奨されます)。 その `prestable` タグも時々利用可能です。
 
 そこにこれらのコマンド置パッケージ:
 
@@ -60,13 +62,13 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_6
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-でもダウンロードとインストールパッケージ動 [ここに](https://repo.clickhouse.tech/rpm/stable/x86_64).
+でもダウンロードとインストールパッケージを手動で下からもアクセスできます。https://repo.クリックハウス。テック/rpm/安定した/x86\_64.
 
 ### Tgzアーカイブから {#from-tgz-archives}
 
-公式の事前コンパイルを使用することをお勧めします `tgz` のインストール `deb` または `rpm` パッケージはできません。
+公式の事前コンパイルを使用することをお勧めします `tgz` すべてのLinuxディストリビュ `deb` または `rpm` パッケージは不可能です。
 
-必要なバージョンは次のとおりです `curl` または `wget` リポジトリからhttps://repo.yandex.ru/clickhouse/tgz/.
+必要なバージョンは `curl` または `wget` リポジトリからhttps://repo.yandex.ru/clickhouse/tgz/。
 その後、アーカイブをダウンロードは開梱と設置と設置のためのイントロダクションです。 最新バージョンの例:
 
 ``` bash
@@ -90,27 +92,27 @@ tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
 sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 
-本番環境では、最新のものを使用することをお勧めします `stable`-バージョン。 き、その番号をGitHubのページhttps://github.com/ClickHouse/ClickHouse/tags とpostfix `-stable`.
+運用環境では、最新のものを使用することをお勧めします `stable`-バージョン。 その番号はGitHubページにありますhttps://github.com/ClickHouse/ClickHouse/tags 後置を使って `-stable`.
 
-### Dockerイメージから {#from-docker-image}
+### ドッカーの画像から {#from-docker-image}
 
-Docker内でClickHouseを実行するには、次のガイドに従います [Dockerハブ](https://hub.docker.com/r/yandex/clickhouse-server/). このように映像公 `deb` 中のパッケージ。
+Dockerの中でClickHouseを実行するには、次のガイドに従います [Docker拠点](https://hub.docker.com/r/yandex/clickhouse-server/). これらの画像は、公式を使用 `deb` 中のパッケージ。
 
 ### ソースから {#from-sources}
 
 ClickHouseを手動でコンパイルするには、以下の手順に従います [Linux](../development/build.md) または [Mac OS X](../development/build-osx.md).
 
-できるコンパイルパッケージはインストールしていたプログラムを使用もインストールせずにパッケージ。 またビルを手動で無数の組み合わせで自分だけのSSE4.2に必要構築のためのAArch64定する必要はありません。
+できるコンパイルパッケージはインストールしていたプログラムを使用もインストールせずにパッケージ。 またビルを手動で無数の組み合わせで自分だけのsse4.2に必要構築のためのaarch64定する必要はありません。
 
       Client: programs/clickhouse-client
       Server: programs/clickhouse-server
 
-データフォルダとメタデータフォルダを作成し、 `chown` 目的のユーザーのためのそれら。 それらのパスは、サーバー設定（src/programs/server/config）で変更することができます。xml)、デフォルトでは:
+データとメタデータフォルダを作成する必要があります `chown` 目的のユーザーのためのそれら。 それらのパスは、server config（src/programs/server/config）で変更できます。xml)、デフォルトでは次のとおりです:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/
 
-Gentooでは、以下を使用することができます `emerge clickhouse` ソースからClickHouseをインストールする。
+Gentooでは、次のものを使用できます `emerge clickhouse` ソースからClickHouseをインストールする。
 
 ## 起動 {#launch}
 
@@ -120,7 +122,7 @@ Gentooでは、以下を使用することができます `emerge clickhouse` �
 $ sudo service clickhouse-server start
 ```
 
-あなたが持っていない場合 `service` コマンドとして実行
+あなたが持っていない場合 `service` コマンド、実行
 
 ``` bash
 $ sudo /etc/init.d/clickhouse-server start
@@ -128,7 +130,7 @@ $ sudo /etc/init.d/clickhouse-server start
 
 のログを参照してください `/var/log/clickhouse-server/` ディレクトリ。
 
-サーバーが起動しない場合は、ファイル内の構成を確認してください `/etc/clickhouse-server/config.xml`.
+サーバーが起動しない場合は、ファイル内の設定を確認してください `/etc/clickhouse-server/config.xml`.
 
 または手動で開始のサーバーからのコンソール:
 
@@ -137,24 +139,24 @@ $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
 この場合、ログはコンソールに印刷され、開発中に便利です。
-設定ファイルがカレントディレクトリにある場合は、 `--config-file` パラメータ。 デフォルトでは、 `./config.xml`.
+設定ファイルがカレントディレクトリにある場合は、以下を指定する必要はありません。 `--config-file` パラメータ。 デフォルトでは、 `./config.xml`.
 
-ClickHouse対応アクセス制限を設定します。 彼らはに位置しています `users.xml` ファイル(隣のファイル `config.xml`).
-デフォルトでは、 `default` ユーザー、パスワードなし。 見る `user/default/networks`.
-詳細については [“Configuration Files”](../operations/configuration-files.md).
+ClickHouse対応アクセス制限を設定します。 彼らはに位置しています `users.xml` ファイル(次へ `config.xml`).
+デフォルトでは、アクセスはどこからでも可能です。 `default` ユーザー、パスワードなし。 見る `user/default/networks`.
+詳細については、以下を参照してください [“Configuration Files”](../operations/configuration-files.md).
 
-Serverを起動した後、コマンドラインクライアントを使用してserverに接続できます:
+サーバーの起動後、コマンドラインクライアントを使用してサーバーに接続できます:
 
 ``` bash
 $ clickhouse-client
 ```
 
-デフォルトでは、 `localhost:9000` ユーザーに代わって `default` パスワードなし。 また、リモートサーバに接続するために使用することもできます `--host` 引数。
+デフォルトでは、 `localhost:9000` ユーザーに代わって `default` パスワードなし。 また、以下を使用してリモートサーバーに接続することもできます `--host` 引数。
 
-端末はUTF-8エンコードを使用する必要があります。
-詳細については [“Command-line client”](../interfaces/cli.md).
+端末はutf-8エンコードを使用する必要があります。
+詳細については、以下を参照してください [“Command-line client”](../interfaces/cli.md).
 
-例:
+例えば:
 
 ``` bash
 $ ./clickhouse-client
@@ -175,8 +177,8 @@ SELECT 1
 :)
 ```
 
-**生、おめでとうございます、システムを作ります！！**
+**おめでとう、システムの作品！**
 
-継続実験をダウンロードでき、試験データセットやじ [チュートリ](https://clickhouse.tech/tutorial.html).
+継続実験をダウンロードでき、試験データセットやじ [tutorial](https://clickhouse.tech/tutorial.html).
 
 [元の記事](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

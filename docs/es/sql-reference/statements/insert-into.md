@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 34
 toc_title: INSERT INTO
 ---
@@ -50,7 +50,7 @@ Puede insertar datos por separado de la consulta mediante el cliente de línea d
 
 Si la tabla tiene [limitación](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-### Insertar los resultados de `SELECT` {#insert_query_insert-select}
+### Insertar Los Resultados De `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -65,7 +65,7 @@ Sin embargo, puede eliminar datos antiguos usando `ALTER TABLE ... DROP PARTITIO
 
 `FORMAT` cláusula debe especificarse al final de la consulta si `SELECT` cláusula contiene la función de tabla [entrada()](../table-functions/input.md).
 
-### Consideraciones de rendimiento {#performance-considerations}
+### Consideraciones De Rendimiento {#performance-considerations}
 
 `INSERT` ordena los datos de entrada por clave principal y los divide en particiones por una clave de partición. Si inserta datos en varias particiones a la vez, puede reducir significativamente el rendimiento del `INSERT` consulta. Para evitar esto:
 
@@ -74,7 +74,7 @@ Sin embargo, puede eliminar datos antiguos usando `ALTER TABLE ... DROP PARTITIO
 
 El rendimiento no disminuirá si:
 
--   Los datos se agregan en tiempo real.
--   Carga datos que normalmente están ordenados por tiempo.
+-   Se agregan datos en tiempo real.
+-   Cargar los datos que generalmente se ordenan por el tiempo.
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

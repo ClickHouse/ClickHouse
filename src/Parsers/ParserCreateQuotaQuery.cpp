@@ -22,11 +22,8 @@ namespace ErrorCodes
 namespace
 {
     using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
     using ResourceType = Quota::ResourceType;
-    using ResourceTypeInfo = Quota::ResourceTypeInfo;
     using ResourceAmount = Quota::ResourceAmount;
-
 
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
@@ -51,16 +48,16 @@ namespace
                 return false;
 
             const String & key_type_str = key_type_ast->as<ASTLiteral &>().value.safeGet<const String &>();
-            for (auto kt : ext::range(Quota::KeyType::MAX))
-                if (boost::iequals(KeyTypeInfo::get(kt).name, key_type_str))
+            for (auto kt : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+                if (boost::iequals(Quota::getNameOfKeyType(kt), key_type_str))
                 {
                     key_type = kt;
                     return true;
                 }
 
             String all_key_types_str;
-            for (auto kt : ext::range(Quota::KeyType::MAX))
-                all_key_types_str += String(all_key_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
+            for (auto kt : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
+                all_key_types_str += String(all_key_types_str.empty() ? "" : ", ") + "'" + Quota::getNameOfKeyType(kt) + "'";
             String msg = "Quota cannot be keyed by '" + key_type_str + "'. Expected one of these literals: " + all_key_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
         });
@@ -83,35 +80,31 @@ namespace
                 ParserKeyword{"MAX"}.ignore(pos, expected);
             }
 
-            std::optional<ResourceType> res_resource_type;
-            for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
+            bool resource_type_set = false;
+            for (auto rt : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
             {
-                if (ParserKeyword{ResourceTypeInfo::get(rt).keyword.c_str()}.ignore(pos, expected))
+                if (ParserKeyword{Quota::resourceTypeToKeyword(rt)}.ignore(pos, expected))
                 {
-                    res_resource_type = rt;
+                    resource_type = rt;
+                    resource_type_set = true;
                     break;
                 }
             }
-            if (!res_resource_type)
+            if (!resource_type_set)
                 return false;
 
-            ResourceAmount res_max;
             ASTPtr max_ast;
             if (ParserNumber{}.parse(pos, max_ast, expected))
             {
                 const Field & max_field = max_ast->as<ASTLiteral &>().value;
-                const auto & type_info = ResourceTypeInfo::get(*res_resource_type);
-                if (type_info.output_denominator == 1)
-                    res_max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
+                if (resource_type == Quota::EXECUTION_TIME)
+                    max = Quota::secondsToExecutionTime(applyVisitor(FieldVisitorConvertToNumber<double>(), max_field));
                 else
-                    res_max = static_cast<ResourceAmount>(
-                        applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
+                    max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
             }
             else
                 return false;
 
-            resource_type = *res_resource_type;
-            max = res_max;
             return true;
         });
     }

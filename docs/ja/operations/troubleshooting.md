@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 46
-toc_title: "\u30C8\u30E9\u30D6\u30EB\u30B7"
+toc_title: "\u30C8\u30E9\u30D6\u30EB"
 ---
 
-# トラブルシ {#troubleshooting}
+# トラブル {#troubleshooting}
 
 -   [設置](#troubleshooting-installation-errors)
 -   [サーバーへの接続](#troubleshooting-accepts-no-connections)
@@ -14,15 +14,10 @@ toc_title: "\u30C8\u30E9\u30D6\u30EB\u30B7"
 
 ## 設置 {#troubleshooting-installation-errors}
 
-### Apt-getではClickHouseリポジトリからDebパッケージを取得できません {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### Apt-getでClickhouseリポジトリからDebパッケージを取得できません {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
-<<<<<<< HEAD
 -   ファイア
--   できない場合はアクセスリポジトリのために、何らかの理由でダウンロードパッケージに記載のとおり [はじめに](../getting_started/index.md) を使用して手動でインストールします。 `sudo dpkg -i <packages>` 司令部 また、必要になります `tzdata` パッケージ。
-=======
--   ファイアウォールの設定
--   できない場合はアクセスリポジトリのために、何らかの理由でダウンロードパッケージに記載のとおり [はじめに](../getting-started/index.md) 記事とを使用して手動でインストール `sudo dpkg -i <packages>` コマンド また、必要になります `tzdata` パッケージ。
->>>>>>> upstream/master
+-   できない場合はアクセスリポジトリのために、何らかの理由でダウンロードパッケージに記載のとおり [はじめに](../getting-started/index.md) を使用して手動でインストールします。 `sudo dpkg -i <packages>` 司令部 また、必要になります `tzdata` パッケージ。
 
 ## サーバーへの接続 {#troubleshooting-accepts-no-connections}
 
@@ -31,9 +26,9 @@ toc_title: "\u30C8\u30E9\u30D6\u30EB\u30B7"
 -   サーバーが実行されていません。
 -   想定外または誤った設定パラメータ。
 
-### サーバの実行中に {#server-is-not-running}
+### サーバーが実行中でない {#server-is-not-running}
 
-**サーバーがrunnnigかどうかを確認する**
+**サーバーがrunnnigかどうかチェック**
 
 コマンド:
 
@@ -49,7 +44,7 @@ $ sudo service clickhouse-server start
 
 **ログの確認**
 
-のメインログ `clickhouse-server` である `/var/log/clickhouse-server/clickhouse-server.log` デフォルトでは。
+のメインログ `clickhouse-server` にある `/var/log/clickhouse-server/clickhouse-server.log` デフォルトでは。
 
 サーバーが正常に起動した場合は、文字列が表示されます:
 
@@ -68,7 +63,7 @@ $ sudo service clickhouse-server start
 <Information> Application: starting up.
 ```
 
-あなたが第二のインスタンスを起動しようとすると `clickhouse-server` サーバーには、次のログが表示されます:
+次のインスタンスを起動しようとすると、 `clickhouse-server` サーバーには、次のログが表示されます:
 
 ``` text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
@@ -86,13 +81,13 @@ Revision: 54413
 
 **システムを参照。dログ**
 
-で有用な情報が見つからない場合 `clickhouse-server` ログまたはログがない場合は、表示できます `system.d` コマンドを使用したログ:
+有用な情報が見つからない場合は `clickhouse-server` ログがないか、ログがない場合は、次のように表示できます `system.d` コマンドを使用したログ:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
 ```
 
-**Clickhouse-serverを対話モードで起動する**
+**インタラクティブモードでclickhouse-serverを起動**
 
 ``` bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
@@ -100,23 +95,19 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 このコマ このモードでは `clickhouse-server` 版画のすべてのイベントメッセージです。
 
-### 構成パラメータ {#configuration-parameters}
+### 構成変数 {#configuration-parameters}
 
 チェック:
 
--   ドッカーの設定。
+-   Dockerの設定。
 
-    DockerでClickhouseをIPv6ネットワークで実行する場合は、次のことを確認してください `network=host` 設定されています。
+    IPv6ネットワークのDockerでClickHouseを実行する場合は、次のことを確認してください `network=host` 設定されています。
 
 -   エンドポイント設定。
 
-<<<<<<< HEAD
-    チェック [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) と [tcp\_portgenericname](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
-=======
-    チェック [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) と [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
->>>>>>> upstream/master
+    チェック [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) と [tcp\_portgenericname](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) 設定。
 
-    ClickHouse serverはデフォルトでのみlocalhost接続を受け入れます。
+    ClickHouseサーバーを受け入れlocalhostの接続のみによるデフォルトです。
 
 -   HTTPプロトコル設定。
 
@@ -126,15 +117,10 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
     チェック:
 
-<<<<<<< HEAD
-    -   その [tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定。
-    -   の設定 [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
-=======
     -   その [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) 設定。
-    -   の設定 [SSLセルティクス](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
->>>>>>> upstream/master
+    -   の設定 [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
-    適切なパラメータを接続 たとえば、 `port_secure` 変数との `clickhouse_client`.
+    適切なパラメータを接続 たとえば、以下を使用します `port_secure` 変数との `clickhouse_client`.
 
 -   ユーザー設定。
 
@@ -142,19 +128,19 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 ## クエリ処理 {#troubleshooting-does-not-process-queries}
 
-ClickHouseは、クエリを処理できない場合は、クライアントにエラーの説明を送信します。 で `clickhouse-client` コンソールにエラーの説明が表示されます。 HTTPインターフェイスを使用している場合、ClickHouseは応答本文にエラーの説明を送信します。 例えば:
+ClickHouseがクエリを処理できない場合は、クライアントにエラーの説明を送信します。 で `clickhouse-client` コンソールにエラーの説明が表示されます。 HTTPインターフェイスを使用している場合、ClickHouseはレスポンス本文にエラーの説明を送信します。 例えば:
 
 ``` bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-あなたが開始した場合 `clickhouse-client` と `stack-trace` パラメータClickHouseは、エラーの説明を含むサーバースタックトレースを返します。
+あなたが始めるなら `clickhouse-client` と `stack-trace` パラメータ、ClickHouseは、エラーの説明とサーバースタックトレースを返します。
 
-あるいは、メッセージが壊れて接続します。 この場合、クエリを繰り返すことができます。 クエリを実行するたびに接続が切断された場合は、サーバーログでエラーを確認します。
+あるいは、メッセージが壊れて接続します。 この場合、クエリを繰り返すことができます。 クエリを実行するたびに接続が切断された場合は、サーバーログにエラーがないか確認します。
 
 ## クエリ処理の効率 {#troubleshooting-too-slow}
 
-ClickHouseの動作が遅すぎる場合は、クエリのサーバーリソースとネットワークの負荷をプロファイルする必要があります。
+だがclickhouseでもゆっくりが必要にプロファイルをサーバーに負荷をかける資源とネットワークのためのご質問.
 
-Clickhouse-benchmarkユーティリテ 毎秒処理されたクエリの数、毎秒処理された行数、およびクエリ処理時間の百分位数が表示されます。
+で利用できますclickhouse-ベンチマークユーティリティプます。 これは、毎秒処理されるクエリの数、毎秒処理される行の数、およびクエリの処理時間の百分位数を示します。

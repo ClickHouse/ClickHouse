@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 63
 toc_title: Trabajar con argumentos Nullable
 ---
 
-# Funciones para trabajar con agregados anulables {#functions-for-working-with-nullable-aggregates}
+# Funciones Para Trabajar Con Agregados Anulables {#functions-for-working-with-nullable-aggregates}
 
 ## IsNull {#isnull}
 
@@ -271,7 +271,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null
 └──────────────────────────────┘
 ```
 
-## Acerca de Nosotros {#tonullable}
+## Acerca De Nosotros {#tonullable}
 
 Convierte el tipo de argumento a `Nullable`.
 

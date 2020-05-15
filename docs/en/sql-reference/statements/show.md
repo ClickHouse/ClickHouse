@@ -101,6 +101,7 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ```
 
 
+
 ## SHOW GRANTS {#show-grants-statement}
 
 Shows privileges for a user.

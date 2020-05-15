@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: Combinators
+toc_title: Aggregate function combinators
 ---
 
 # Aggregate Function Combinators {#aggregate_functions_combinators}

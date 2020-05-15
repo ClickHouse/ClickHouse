@@ -1,72 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
 toc_priority: 66
 toc_title: Autre
 ---
 
-# D'Autres Fonctions {#other-functions}
+# D’autres Fonctions {#other-functions}
 
 ## hôte() {#hostname}
 
-Renvoie une chaîne avec le nom de l'hôte sur lequel cette fonction a été exécutée. Pour le traitement distribué, c'est le nom du serveur distant, si la fonction est exécutée sur un serveur distant.
-
-## getMacro {#getmacro}
-
-Obtient une valeur nommée à partir [macro](../../operations/server-configuration-parameters/settings.md#macros) la section de la configuration du serveur.
-
-**Syntaxe**
-
-``` sql
-getMacro(name);
-```
-
-**Paramètre**
-
--   `name` — Name to retrieve from the `macros` section. [Chaîne](../../sql-reference/data-types/string.md#string).
-
-**Valeur renvoyée**
-
--   Valeur de la macro spécifiée.
-
-Type: [Chaîne](../../sql-reference/data-types/string.md).
-
-**Exemple**
-
-Exemple `macros` section dans le fichier de configuration du serveur:
-
-``` xml
-<macros>
-    <test>Value</test>
-</macros>
-```
-
-Requête:
-
-``` sql
-SELECT getMacro('test');
-```
-
-Résultat:
-
-``` text
-┌─getMacro('test')─┐
-│ Value            │
-└──────────────────┘
-```
-
-Une méthode alternative pour obtenir la même valeur:
-
-``` sql
-SELECT * FROM system.macros
-WHERE macro = 'test';
-```
-
-``` text
-┌─macro─┬─substitution─┐
-│ test  │ Value        │
-└───────┴──────────────┘
-```
+Renvoie une chaîne avec le nom de l’hôte sur lequel cette fonction a été exécutée. Pour le traitement distribué, c’est le nom du serveur distant, si la fonction est exécutée sur un serveur distant.
 
 ## FQDN {#fqdn}
 
@@ -104,7 +47,7 @@ Résultat:
 
 ## basename {#basename}
 
-Extrait la partie finale d'une chaîne après la dernière barre oblique ou barre oblique inverse. Cette fonction est souvent utilisée pour extraire le nom de fichier d'un chemin.
+Extrait la partie finale d’une chaîne après la dernière barre oblique ou barre oblique inverse. Cette fonction est souvent utilisée pour extraire le nom de fichier d’un chemin.
 
 ``` sql
 basename( expr )
@@ -118,11 +61,11 @@ basename( expr )
 
 Une chaîne de caractères qui contient:
 
--   La partie finale d'une chaîne après la dernière barre oblique ou barre oblique inverse.
+-   La partie finale d’une chaîne après la dernière barre oblique ou barre oblique inverse.
 
         If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
--   La chaîne d'origine s'il n'y a pas de barres obliques ou de barres obliques inverses.
+-   La chaîne d’origine s’il n’y a pas de barres obliques ou de barres obliques inverses.
 
 **Exemple**
 
@@ -175,14 +118,14 @@ SELECT visibleWidth(NULL)
 
 ## toTypeName (x) {#totypenamex}
 
-Renvoie une chaîne contenant le nom du type de l'argument passé.
+Renvoie une chaîne contenant le nom du type de l’argument passé.
 
 Si `NULL` est passé à la fonction en entrée, puis il renvoie le `Nullable(Nothing)` type, ce qui correspond à un interne `NULL` représentation à ClickHouse.
 
 ## la taille de bloc() {#function-blocksize}
 
 Récupère la taille du bloc.
-Dans ClickHouse, les requêtes sont toujours exécutées sur des blocs (ensembles de parties de colonne). Cette fonction permet d'obtenir la taille du bloc pour lequel vous l'avez appelé.
+Dans ClickHouse, les requêtes sont toujours exécutées sur des blocs (ensembles de parties de colonne). Cette fonction permet d’obtenir la taille du bloc pour lequel vous l’avez appelé.
 
 ## matérialiser (x) {#materializex}
 
@@ -192,7 +135,7 @@ Dans ClickHouse, les colonnes complètes et les constantes sont représentées d
 ## ignore(…) {#ignore}
 
 Accepte tous les arguments, y compris `NULL`. Renvoie toujours 0.
-Cependant, l'argument est toujours évalué. Cela peut être utilisé pour les benchmarks.
+Cependant, l’argument est toujours évalué. Cela peut être utilisé pour les benchmarks.
 
 ## sommeil(secondes) {#sleepseconds}
 
@@ -209,7 +152,7 @@ Vous pouvez utiliser cette fonction dans les paramètres du moteur de table dans
 
 ## currentUser() {#other-function-currentuser}
 
-Renvoie la connexion de l'utilisateur actuel. La connexion de l'utilisateur, cette requête initiée, sera renvoyée en cas de requête distibuted.
+Renvoie la connexion de l’utilisateur actuel. La connexion de l’utilisateur, cette requête initiée, sera renvoyée en cas de requête distibuted.
 
 ``` sql
 SELECT currentUser();
@@ -219,8 +162,8 @@ Alias: `user()`, `USER()`.
 
 **Valeurs renvoyées**
 
--   Connexion de l'utilisateur actuel.
--   Connexion de l'utilisateur qui a lancé la requête en cas de requête distribuée.
+-   Connexion de l’utilisateur actuel.
+-   Connexion de l’utilisateur qui a lancé la requête en cas de requête distribuée.
 
 Type: `String`.
 
@@ -240,82 +183,13 @@ Résultat:
 └───────────────┘
 ```
 
-## isConstant {#is-constant}
-
-Vérifie si l'argument est une expression constante.
-
-A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [littéral](../syntax.md#literals) sont des expressions constantes.
-
-La fonction est destinée au développement, au débogage et à la démonstration.
-
-**Syntaxe**
-
-``` sql
-isConstant(x)
-```
-
-**Paramètre**
-
--   `x` — Expression to check.
-
-**Valeurs renvoyées**
-
--   `1` — `x` est constante.
--   `0` — `x` est non constante.
-
-Type: [UInt8](../data-types/int-uint.md).
-
-**Exemple**
-
-Requête:
-
-``` sql
-SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
-```
-
-Résultat:
-
-``` text
-┌─isConstant(plus(x, 1))─┐
-│                      1 │
-└────────────────────────┘
-```
-
-Requête:
-
-``` sql
-WITH 3.14 AS pi SELECT isConstant(cos(pi))
-```
-
-Résultat:
-
-``` text
-┌─isConstant(cos(pi))─┐
-│                   1 │
-└─────────────────────┘
-```
-
-Requête:
-
-``` sql
-SELECT isConstant(number) FROM numbers(1)
-```
-
-Résultat:
-
-``` text
-┌─isConstant(number)─┐
-│                  0 │
-└────────────────────┘
-```
-
 ## isFinite (x) {#isfinitex}
 
-Accepte Float32 et Float64 et renvoie UInt8 égal à 1 si l'argument n'est pas infini et pas un NaN, sinon 0.
+Accepte Float32 et Float64 et renvoie UInt8 égal à 1 si l’argument n’est pas infini et pas un NaN, sinon 0.
 
 ## isInfinite (x) {#isinfinitex}
 
-Accepte Float32 et Float64 et renvoie UInt8 égal à 1 si l'argument est infini, sinon 0. Notez que 0 est retourné pour un NaN.
+Accepte Float32 et Float64 et renvoie UInt8 égal à 1 si l’argument est infini, sinon 0. Notez que 0 est retourné pour un NaN.
 
 ## ifNotFinite {#ifnotfinite}
 
@@ -333,7 +207,7 @@ Vérifie si la valeur à virgule flottante est finie.
 **Valeur renvoyée**
 
 -   `x` si `x` est finie.
--   `y` si `x` n'est pas finie.
+-   `y` si `x` n’est pas finie.
 
 **Exemple**
 
@@ -351,13 +225,13 @@ Vous pouvez obtenir un résultat similaire en utilisant [opérateur ternaire](co
 
 ## isNaN (x) {#isnanx}
 
-Accepte Float32 et Float64 et renvoie UInt8 égal à 1 si l'argument est un NaN, sinon 0.
+Accepte Float32 et Float64 et renvoie UInt8 égal à 1 si l’argument est un NaN, sinon 0.
 
 ## hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
 
-Accepte les chaînes constantes: nom de la base de données, nom de la table et nom de la colonne. Renvoie une expression constante UInt8 égale à 1 s'il y a une colonne, sinon 0. Si le paramètre hostname est défini, le test s'exécutera sur un serveur distant.
-La fonction renvoie une exception si la table n'existe pas.
-Pour les éléments imbriqués structure des données, la fonction vérifie l'existence d'une colonne. Pour la structure de données imbriquée elle-même, la fonction renvoie 0.
+Accepte les chaînes constantes: nom de la base de données, nom de la table et nom de la colonne. Renvoie une expression constante UInt8 égale à 1 s’il y a une colonne, sinon 0. Si le paramètre hostname est défini, le test s’exécutera sur un serveur distant.
+La fonction renvoie une exception si la table n’existe pas.
+Pour les éléments imbriqués structure des données, la fonction vérifie l’existence d’une colonne. Pour la structure de données imbriquée elle-même, la fonction renvoie 0.
 
 ## bar {#function-bar}
 
@@ -371,7 +245,7 @@ Paramètre:
 -   `min, max` — Integer constants. The value must fit in `Int64`.
 -   `width` — Constant, positive integer, can be fractional.
 
-La bande dessinée avec précision à un huitième d'un symbole.
+La bande dessinée avec précision à un huitième d’un symbole.
 
 Exemple:
 
@@ -416,7 +290,7 @@ ORDER BY h ASC
 
 ## transformer {#transform}
 
-Transforme une valeur en fonction explicitement définis cartographie de certains éléments à l'autre.
+Transforme une valeur en fonction explicitement définis cartographie de certains éléments à l’autre.
 Il existe deux variantes de cette fonction:
 
 ### de transformation(x, array\_from, array\_to, par défaut) {#transformx-array-from-array-to-default}
@@ -427,7 +301,7 @@ Il existe deux variantes de cette fonction:
 
 `array_to` – Constant array of values to convert the values in ‘from’ de.
 
-`default` – Which value to use if ‘x’ n'est pas égale à une des valeurs de ‘from’.
+`default` – Which value to use if ‘x’ n’est pas égale à une des valeurs de ‘from’.
 
 `array_from` et `array_to` – Arrays of the same size.
 
@@ -436,10 +310,10 @@ Type:
 `transform(T, Array(T), Array(U), U) -> U`
 
 `T` et `U` peuvent être des types numériques, chaîne ou Date ou DateTime.
-Lorsque la même lettre est indiquée (T ou U), pour les types numériques, il se peut qu'il ne s'agisse pas de types correspondants, mais de types ayant un type commun.
+Lorsque la même lettre est indiquée (T ou U), pour les types numériques, il se peut qu’il ne s’agisse pas de types correspondants, mais de types ayant un type commun.
 Par exemple, le premier argument peut avoir le type Int64, tandis que le second a le type Array(UInt16).
 
-Si l' ‘x’ la valeur est égale à l'un des éléments dans la ‘array\_from’ tableau, elle renvoie l'élément existant (qui est numéroté de même) de la ‘array\_to’ tableau. Sinon, elle renvoie ‘default’. S'il y a plusieurs éléments correspondants dans ‘array\_from’ il renvoie l'un des matches.
+Si l’ ‘x’ la valeur est égale à l’un des éléments dans la ‘array\_from’ tableau, elle renvoie l’élément existant (qui est numéroté de même) de la ‘array\_to’ tableau. Sinon, elle renvoie ‘default’. S’il y a plusieurs éléments correspondants dans ‘array\_from’ il renvoie l’un des matches.
 
 Exemple:
 
@@ -463,8 +337,8 @@ ORDER BY c DESC
 
 ### de transformation(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
-Diffère de la première variation en ce que le ‘default’ l'argument est omis.
-Si l' ‘x’ la valeur est égale à l'un des éléments dans la ‘array\_from’ tableau, elle renvoie l'élément correspondant (qui est numéroté de même) de la ‘array\_to’ tableau. Sinon, elle renvoie ‘x’.
+Diffère de la première variation en ce que le ‘default’ l’argument est omis.
+Si l’ ‘x’ la valeur est égale à l’un des éléments dans la ‘array\_from’ tableau, elle renvoie l’élément correspondant (qui est numéroté de même) de la ‘array\_to’ tableau. Sinon, elle renvoie ‘x’.
 
 Type:
 
@@ -498,7 +372,7 @@ LIMIT 10
 
 ## formatReadableSize (x) {#formatreadablesizex}
 
-Accepte la taille (nombre d'octets). Renvoie une taille arrondie avec un suffixe (KiB, MiB, etc.) comme une chaîne de caractères.
+Accepte la taille (nombre d’octets). Renvoie une taille arrondie avec un suffixe (KiB, MiB, etc.) comme une chaîne de caractères.
 
 Exemple:
 
@@ -551,7 +425,7 @@ Renvoie le numéro de séquence de la ligne dans le bloc de données. Cette fonc
 
 ## voisin {#neighbor}
 
-La fonction de fenêtre qui donne accès à une ligne à un décalage spécifié qui vient avant ou après la ligne actuelle d'une colonne donnée.
+La fonction de fenêtre qui donne accès à une ligne à un décalage spécifié qui vient avant ou après la ligne actuelle d’une colonne donnée.
 
 **Syntaxe**
 
@@ -559,8 +433,8 @@ La fonction de fenêtre qui donne accès à une ligne à un décalage spécifié
 neighbor(column, offset[, default_value])
 ```
 
-Le résultat de la fonction dépend du touché des blocs de données et l'ordre des données dans le bloc.
-Si vous créez une sous-requête avec ORDER BY et appelez la fonction depuis l'extérieur de la sous-requête, vous pouvez obtenir le résultat attendu.
+Le résultat de la fonction dépend du touché des blocs de données et l’ordre des données dans le bloc.
+Si vous créez une sous-requête avec ORDER BY et appelez la fonction depuis l’extérieur de la sous-requête, vous pouvez obtenir le résultat attendu.
 
 **Paramètre**
 
@@ -570,7 +444,7 @@ Si vous créez une sous-requête avec ORDER BY et appelez la fonction depuis l'e
 
 **Valeurs renvoyées**
 
--   De la valeur pour `column` dans `offset` distance de la ligne actuelle si `offset` la valeur n'est pas en dehors des limites du bloc.
+-   De la valeur pour `column` dans `offset` distance de la ligne actuelle si `offset` la valeur n’est pas en dehors des limites du bloc.
 -   La valeur par défaut pour `column` si `offset` la valeur est en dehors des limites du bloc. Si `default_value` est donné, alors il sera utilisé.
 
 Type: type de blocs de données affectés ou type de valeur par défaut.
@@ -665,8 +539,8 @@ Résultat:
 Calculates the difference between successive row values ​​in the data block.
 Renvoie 0 pour la première ligne et la différence par rapport à la rangée précédente pour chaque nouvelle ligne.
 
-Le résultat de la fonction dépend du touché des blocs de données et l'ordre des données dans le bloc.
-Si vous créez une sous-requête avec ORDER BY et appelez la fonction depuis l'extérieur de la sous-requête, vous pouvez obtenir le résultat attendu.
+Le résultat de la fonction dépend du touché des blocs de données et l’ordre des données dans le bloc.
+Si vous créez une sous-requête avec ORDER BY et appelez la fonction depuis l’extérieur de la sous-requête, vous pouvez obtenir le résultat attendu.
 
 Exemple:
 
@@ -697,7 +571,7 @@ FROM
 └─────────┴─────────────────────┴───────┘
 ```
 
-Veuillez noter que la taille du bloc affecte le résultat. Avec chaque nouveau bloc, le `runningDifference` l'état est réinitialisé.
+Veuillez noter que la taille du bloc affecte le résultat. Avec chaque nouveau bloc, le `runningDifference` l’état est réinitialisé.
 
 ``` sql
 SELECT
@@ -738,15 +612,15 @@ De même que pour [runningDifference](./other-functions.md#other_functions-runni
 
 ## MACNumToString (num) {#macnumtostringnum}
 
-Accepte un numéro UInt64. Interprète comme une adresse MAC dans big endian. Renvoie une chaîne contenant l'adresse MAC correspondante au format AA:BB:CC: DD:EE: FF (Nombres séparés par deux points sous forme hexadécimale).
+Accepte un numéro UInt64. Interprète comme une adresse MAC dans big endian. Renvoie une chaîne contenant l’adresse MAC correspondante au format AA:BB:CC: DD:EE: FF (Nombres séparés par deux points sous forme hexadécimale).
 
 ## MACStringToNum (s) {#macstringtonums}
 
-La fonction inverse de MACNumToString. Si l'adresse MAC a un format non valide, elle renvoie 0.
+La fonction inverse de MACNumToString. Si l’adresse MAC a un format non valide, elle renvoie 0.
 
 ## MACStringToOUI (s) {#macstringtoouis}
 
-Accepte une adresse MAC au format AA:BB:CC: DD:EE: FF (Nombres séparés par deux points sous forme hexadécimale). Renvoie les trois premiers octets sous la forme D'un nombre UInt64. Si l'adresse MAC a un format non valide, elle renvoie 0.
+Accepte une adresse MAC au format AA:BB:CC: DD:EE: FF (Nombres séparés par deux points sous forme hexadécimale). Renvoie les trois premiers octets sous la forme D’un nombre UInt64. Si l’adresse MAC a un format non valide, elle renvoie 0.
 
 ## getSizeOfEnumType {#getsizeofenumtype}
 
@@ -762,8 +636,8 @@ getSizeOfEnumType(value)
 
 **Valeurs renvoyées**
 
--   Le nombre de champs avec `Enum` les valeurs d'entrée.
--   Une exception est levée si le type n'est pas `Enum`.
+-   Le nombre de champs avec `Enum` les valeurs d’entrée.
+-   Une exception est levée si le type n’est pas `Enum`.
 
 **Exemple**
 
@@ -791,7 +665,7 @@ blockSerializedSize(value[, value[, ...]])
 
 **Valeurs renvoyées**
 
--   Le nombre d'octets qui seront écrites sur le disque pour le bloc de valeurs (sans compression).
+-   Le nombre d’octets qui seront écrites sur le disque pour le bloc de valeurs (sans compression).
 
 **Exemple**
 
@@ -843,7 +717,7 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 └───────────────────────────────────────────────────────────┘
 ```
 
-L'exemple montre que le `DateTime` type de données est stocké dans la mémoire comme `Const(UInt32)`.
+L’exemple montre que le `DateTime` type de données est stocké dans la mémoire comme `Const(UInt32)`.
 
 ## dumpColumnStructure {#dumpcolumnstructure}
 
@@ -877,7 +751,7 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 
 Affiche la valeur par défaut du type de données.
 
-Ne pas inclure des valeurs par défaut pour les colonnes personnalisées définies par l'utilisateur.
+Ne pas inclure des valeurs par défaut pour les colonnes personnalisées définies par l’utilisateur.
 
 ``` sql
 defaultValueOfArgumentType(expression)
@@ -954,7 +828,7 @@ Résultat:
 
 ## filesystemAvailable {#filesystemavailable}
 
-Renvoie la quantité d'espace restant sur le système de fichiers où se trouvent les fichiers des bases de données. Il est toujours plus petit que l'espace libre total ([filesystemFree](#filesystemfree)) parce qu'un peu d'espace est réservé au système D'exploitation.
+Renvoie la quantité d’espace restant sur le système de fichiers où se trouvent les fichiers des bases de données. Il est toujours plus petit que l’espace libre total ([filesystemFree](#filesystemfree)) parce qu’un peu d’espace est réservé au système D’exploitation.
 
 **Syntaxe**
 
@@ -964,7 +838,7 @@ filesystemAvailable()
 
 **Valeur renvoyée**
 
--   La quantité d'espace restant disponible en octets.
+-   La quantité d’espace restant disponible en octets.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -986,7 +860,7 @@ Résultat:
 
 ## filesystemFree {#filesystemfree}
 
-Retourne montant total de l'espace libre sur le système de fichiers où les fichiers des bases de données. Voir aussi `filesystemAvailable`
+Retourne montant total de l’espace libre sur le système de fichiers où les fichiers des bases de données. Voir aussi `filesystemAvailable`
 
 **Syntaxe**
 
@@ -996,7 +870,7 @@ filesystemFree()
 
 **Valeur renvoyée**
 
--   Quantité d'espace libre en octets.
+-   Quantité d’espace libre en octets.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1018,7 +892,7 @@ Résultat:
 
 ## filesystemCapacity {#filesystemcapacity}
 
-Renvoie la capacité du système de fichiers en octets. Pour l'évaluation, la [chemin](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) le répertoire de données doit être configuré.
+Renvoie la capacité du système de fichiers en octets. Pour l’évaluation, la [chemin](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) le répertoire de données doit être configuré.
 
 **Syntaxe**
 
@@ -1050,17 +924,17 @@ Résultat:
 
 ## finalizeAggregation {#function-finalizeaggregation}
 
-Prend de l'état de la fonction d'agrégation. Renvoie le résultat de l'agrégation (état finalisé).
+Prend de l’état de la fonction d’agrégation. Renvoie le résultat de l’agrégation (état finalisé).
 
 ## runningAccumulate {#function-runningaccumulate}
 
-Prend les membres de la fonction d'agrégation et renvoie une colonne avec des valeurs, sont le résultat de l'accumulation de ces états pour un ensemble de bloc de lignes, de la première à la ligne actuelle.
-Par exemple, prend l'état de la fonction d'agrégat (exemple runningAccumulate(uniqState(UserID))), et pour chaque ligne de bloc, retourne le résultat de la fonction d'agrégat lors de la fusion des états de toutes les lignes précédentes et de la ligne actuelle.
-Ainsi, le résultat de la fonction dépend de la partition des données aux blocs et de l'ordre des données dans le bloc.
+Prend les membres de la fonction d’agrégation et renvoie une colonne avec des valeurs, sont le résultat de l’accumulation de ces états pour un ensemble de bloc de lignes, de la première à la ligne actuelle.
+Par exemple, prend l’état de la fonction d’agrégat (exemple runningAccumulate(uniqState(UserID))), et pour chaque ligne de bloc, retourne le résultat de la fonction d’agrégat lors de la fusion des états de toutes les lignes précédentes et de la ligne actuelle.
+Ainsi, le résultat de la fonction dépend de la partition des données aux blocs et de l’ordre des données dans le bloc.
 
 ## joinGet {#joinget}
 
-La fonction vous permet d'extraire les données de la table de la même manière qu'à partir d'un [dictionnaire](../../sql-reference/dictionaries/index.md).
+La fonction vous permet d’extraire les données de la table de la même manière qu’à partir d’un [dictionnaire](../../sql-reference/dictionaries/index.md).
 
 Obtient les données de [Rejoindre](../../engines/table-engines/special/join.md#creating-a-table) tables utilisant la clé de jointure spécifiée.
 
@@ -1074,7 +948,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Paramètre**
 
--   `join_storage_table_name` — an [identificateur](../syntax.md#syntax-identifiers) indique l'endroit où la recherche est effectuée. L'identificateur est recherché dans la base de données par défaut (voir paramètre `default_database` dans le fichier de config). Pour remplacer la base de données par défaut, utilisez `USE db_name` ou spécifiez la base de données et la table via le séparateur `db_name.db_table` voir l'exemple.
+-   `join_storage_table_name` — an [identificateur](../syntax.md#syntax-identifiers) indique l’endroit où la recherche est effectuée. L’identificateur est recherché dans la base de données par défaut (voir paramètre `default_database` dans le fichier de config). Pour remplacer la base de données par défaut, utilisez `USE db_name` ou spécifiez la base de données et la table via le séparateur `db_name.db_table` voir l’exemple.
 -   `value_column` — name of the column of the table that contains required data.
 -   `join_keys` — list of keys.
 
@@ -1082,13 +956,13 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Retourne la liste des valeurs correspond à la liste des clés.
 
-Si certain n'existe pas dans la table source alors `0` ou `null` seront renvoyés basé sur [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) paramètre.
+Si certain n’existe pas dans la table source alors `0` ou `null` seront renvoyés basé sur [join\_use\_nulls](../../operations/settings/settings.md#join_use_nulls) paramètre.
 
-Plus d'infos sur `join_use_nulls` dans [Opération de jointure](../../engines/table-engines/special/join.md).
+Plus d’infos sur `join_use_nulls` dans [Opération de jointure](../../engines/table-engines/special/join.md).
 
 **Exemple**
 
-Table d'entrée:
+Table d’entrée:
 
 ``` sql
 CREATE DATABASE db_test
@@ -1124,12 +998,12 @@ Résultat:
 ## modelEvaluate(model\_name, …) {#function-modelevaluate}
 
 Évaluer le modèle externe.
-Accepte un nom de modèle et le modèle de l'argumentation. Renvoie Float64.
+Accepte un nom de modèle et le modèle de l’argumentation. Renvoie Float64.
 
 ## throwIf (x \[, custom\_message\]) {#throwifx-custom-message}
 
-Lever une exception si l'argument est non nul.
-custom\_message - est un paramètre optionnel: une chaîne constante, fournit un message d'erreur
+Lever une exception si l’argument est non nul.
+custom\_message - est un paramètre optionnel: une chaîne constante, fournit un message d’erreur
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -1142,7 +1016,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identité {#identity}
 
-Renvoie la même valeur qui a été utilisée comme argument. Utilisé pour le débogage et les tests, permet d'annuler l'utilisation de l'index et d'obtenir les performances de requête d'une analyse complète. Lorsque la requête est analysée pour une utilisation possible de l'index, l'analyseur ne regarde pas à l'intérieur `identity` fonction.
+Renvoie la même valeur qui a été utilisée comme argument. Utilisé pour le débogage et les tests, permet d’annuler l’utilisation de l’index et d’obtenir les performances de requête d’une analyse complète. Lorsque la requête est analysée pour une utilisation possible de l’index, l’analyseur ne regarde pas à l’intérieur `identity` fonction.
 
 **Syntaxe**
 

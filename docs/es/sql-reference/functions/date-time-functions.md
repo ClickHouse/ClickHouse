@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 39
 toc_title: Trabajar con fechas y horas
 ---
 
-# Funciones para trabajar con fechas y horas {#functions-for-working-with-dates-and-times}
+# Funciones Para Trabajar Con Fechas y Horas {#functions-for-working-with-dates-and-times}
 
 Soporte para zonas horarias
 
@@ -27,7 +27,7 @@ SELECT
 
 Solo se admiten las zonas horarias que difieren de UTC por un número entero de horas.
 
-## Todos los derechos reservados {#totimezone}
+## Todos Los Derechos Reservados {#totimezone}
 
 Convierta la hora o la fecha y la hora a la zona horaria especificada.
 
@@ -43,15 +43,15 @@ Convierte una fecha o fecha con hora en un número UInt8 que contiene el número
 
 Convierte una fecha o fecha con hora en un número UInt8 que contiene el número de mes (1-12).
 
-## Todos los derechos reservados {#todayofyear}
+## Todos Los Derechos Reservados {#todayofyear}
 
 Convierte una fecha o fecha con hora en un número UInt16 que contiene el número del día del año (1-366).
 
-## Todos los derechos reservados {#todayofmonth}
+## Todos Los Derechos Reservados {#todayofmonth}
 
 Convierte una fecha o fecha con hora en un número UInt8 que contiene el número del día del mes (1-31).
 
-## Todos los derechos reservados {#todayofweek}
+## Todos Los Derechos Reservados {#todayofweek}
 
 Convierte una fecha o fecha con hora en un número UInt8 que contiene el número del día de la semana (el lunes es 1 y el domingo es 7).
 
@@ -69,7 +69,7 @@ Convierte una fecha con hora en un número UInt8 que contiene el número del min
 Convierte una fecha con hora en un número UInt8 que contiene el número del segundo en el minuto (0-59).
 Los segundos de salto no se contabilizan.
 
-## Todos los derechos reservados {#to-unix-timestamp}
+## Todos Los Derechos Reservados {#to-unix-timestamp}
 
 Para el argumento DateTime: convierte el valor a su representación numérica interna (Unix Timestamp).
 Para el argumento String: analice la fecha y hora de la cadena de acuerdo con la zona horaria (segundo argumento opcional, la zona horaria del servidor se usa de forma predeterminada) y devuelve la marca de tiempo de Unix correspondiente.
@@ -104,23 +104,23 @@ Resultado:
 └────────────────┘
 ```
 
-## Todos los derechos reservados {#tostartofyear}
+## Todos Los Derechos Reservados {#tostartofyear}
 
 Redondea una fecha o fecha con la hora hasta el primer día del año.
 Devuelve la fecha.
 
-## Todos los derechos reservados {#tostartofisoyear}
+## Todos Los Derechos Reservados {#tostartofisoyear}
 
 Redondea una fecha o fecha con la hora hasta el primer día del año ISO.
 Devuelve la fecha.
 
-## Todos los derechos reservados {#tostartofquarter}
+## Todos Los Derechos Reservados {#tostartofquarter}
 
 Redondea una fecha o fecha con la hora hasta el primer día del trimestre.
 El primer día del trimestre es el 1 de enero, el 1 de abril, el 1 de julio o el 1 de octubre.
 Devuelve la fecha.
 
-## Todos los derechos reservados {#tostartofmonth}
+## Todos Los Derechos Reservados {#tostartofmonth}
 
 Redondea una fecha o fecha con la hora hasta el primer día del mes.
 Devuelve la fecha.
@@ -139,31 +139,31 @@ Redondea una fecha o fecha con hora al domingo o lunes más cercano por modo.
 Devuelve la fecha.
 El argumento mode funciona exactamente igual que el argumento mode a toWeek() . Para la sintaxis de argumento único, se utiliza un valor de modo de 0.
 
-## Todos los derechos reservados {#tostartofday}
+## Todos Los Derechos Reservados {#tostartofday}
 
 Redondea una fecha con el tiempo hasta el comienzo del día.
 
-## Todos los derechos reservados {#tostartofhour}
+## Todos Los Derechos Reservados {#tostartofhour}
 
 Redondea una fecha con el tiempo hasta el comienzo de la hora.
 
-## Todos los derechos reservados {#tostartofminute}
+## Todos Los Derechos Reservados {#tostartofminute}
 
 Redondea una fecha con el tiempo hasta el inicio del minuto.
 
-## Acerca de nosotros {#tostartoffiveminute}
+## Acerca De Nosotros {#tostartoffiveminute}
 
 Redondea una fecha con el tiempo hasta el inicio del intervalo de cinco minutos.
 
-## Acerca de Nosotros {#tostartoftenminutes}
+## Acerca De Nosotros {#tostartoftenminutes}
 
 Redondea una fecha con el tiempo hasta el inicio del intervalo de diez minutos.
 
-## Para comenzar de quince minutos {#tostartoffifteenminutes}
+## Para Comenzar De Quince Minutos {#tostartoffifteenminutes}
 
 Redondea la fecha con el tiempo hasta el inicio del intervalo de quince minutos.
 
-## También puede usar una interfaz de usuario.\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## También Puede Usar Una Interfaz De Usuario.\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 Esta es una generalización de otras funciones llamadas `toStartOf*`. Por ejemplo,
 `toStartOfInterval(t, INTERVAL 1 year)` devuelve lo mismo que `toStartOfYear(t)`,
@@ -175,35 +175,35 @@ Esta es una generalización de otras funciones llamadas `toStartOf*`. Por ejempl
 
 Convierte una fecha con hora en una fecha fija determinada, preservando al mismo tiempo la hora.
 
-## Todos los derechos reservados {#torelativeyearnum}
+## Todos Los Derechos Reservados {#torelativeyearnum}
 
 Convierte una fecha con hora o fecha en el número del año, a partir de un determinado punto fijo en el pasado.
 
-## Nombre de la red inalámbrica (SSID): {#torelativequarternum}
+## Nombre De La Red inalámbrica (SSID): {#torelativequarternum}
 
 Convierte una fecha con hora o fecha en el número del trimestre, a partir de un determinado punto fijo en el pasado.
 
-## Nombre de la red inalámbrica (SSID): {#torelativemonthnum}
+## Nombre De La Red inalámbrica (SSID): {#torelativemonthnum}
 
 Convierte una fecha con hora o fecha en el número del mes, a partir de un determinado punto fijo en el pasado.
 
-## Nombre de la red inalámbrica (SSID): {#torelativeweeknum}
+## Nombre De La Red inalámbrica (SSID): {#torelativeweeknum}
 
 Convierte una fecha con hora o fecha en el número de la semana, a partir de un determinado punto fijo en el pasado.
 
-## Nombre de la red inalámbrica (SSID): {#torelativedaynum}
+## Nombre De La Red inalámbrica (SSID): {#torelativedaynum}
 
 Convierte una fecha con hora o fecha en el número del día, a partir de un determinado punto fijo en el pasado.
 
-## Nombre de la red inalámbrica (SSID): {#torelativehournum}
+## Nombre De La Red inalámbrica (SSID): {#torelativehournum}
 
 Convierte una fecha con hora o fecha en el número de la hora, a partir de un determinado punto fijo en el pasado.
 
-## Todos los derechos reservados {#torelativeminutenum}
+## Todos Los Derechos Reservados {#torelativeminutenum}
 
 Convierte una fecha con hora o fecha en el número del minuto, a partir de un cierto punto fijo en el pasado.
 
-## Todos los derechos reservados {#torelativesecondnum}
+## Todos Los Derechos Reservados {#torelativesecondnum}
 
 Convierte una fecha con hora o fecha en el número de la segunda, a partir de un cierto punto fijo en el pasado.
 
@@ -316,7 +316,7 @@ Convierte una fecha o fecha con hora en un número UInt32 que contiene el númer
 
 Convierte una fecha o fecha con hora en un número UInt64 que contiene el número de año y mes (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss).
 
-## Por ejemplo, en el caso de que el usuario pueda acceder a la página de inicio de sesión, seleccione la página de inicio de sesión {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
+## Por Ejemplo, En El Caso De Que El Usuario Pueda Acceder a La página De Inicio De sesión, Seleccione La página De Inicio De sesión {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
 
 La función agrega un intervalo de fecha / fecha y hora a una fecha / fecha y hora y luego devuelve la fecha / fecha y hora. Por ejemplo:
 
@@ -434,11 +434,11 @@ Modificadores compatibles para Formato:
 | %j              | día del año (001-366)                                            | 002        |
 | Más información | mes como un número decimal (01-12)                               | 01         |
 | %M              | minutos (00-59)                                                  | 33         |
-| %y              | carácter de nueva línea ('')                                     |            |
+| %y              | carácter de nueva línea (’’)                                     |            |
 | %p              | Designación AM o PM                                              | PM         |
 | %R              | HH de 24 horas: Tiempo del milímetro, equivalente a %H: %M       | 22:33      |
 | %S              | segundo (00-59)                                                  | 44         |
-| % t             | carácter de pestaña horizontal (')                               |            |
+| % t             | carácter de pestaña horizontal (’)                               |            |
 | %T              | Formato de hora ISO 8601 (HH:MM:SS), equivalente a %H:%M:%S      | 22:33:44   |
 | %u              | ISO 8601 día de la semana como número con el lunes como 1 (1-7)  | 2          |
 | %V              | Número de semana ISO 8601 (01-53)                                | 01         |

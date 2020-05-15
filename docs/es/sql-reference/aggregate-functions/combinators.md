@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 37
-toc_title: Combinadores
+toc_title: Combinadores de funciones agregadas
 ---
 
-# Combinadores de funciones agregadas {#aggregate_functions_combinators}
+# Combinadores De Funciones Agregadas {#aggregate_functions_combinators}
 
 El nombre de una función agregada puede tener un sufijo anexado. Esto cambia la forma en que funciona la función de agregado.
 
@@ -53,37 +53,11 @@ Convierte una función de agregado para tablas en una función de agregado para 
 
 ## -OPor defecto {#agg-functions-combinator-ordefault}
 
-Cambia el comportamiento de una función agregada.
-
-Si una función agregada no tiene valores de entrada, con este combinador devuelve el valor predeterminado para su tipo de datos de retorno. Se aplica a las funciones agregadas que pueden tomar datos de entrada vacíos.
-
-`-OrDefault` se puede utilizar con otros combinadores.
-
-**Sintaxis**
-
-``` sql
-<aggFunction>OrDefault(x)
-```
-
-**Parámetros**
-
--   `x` — Aggregate function parameters.
-
-**Valores devueltos**
-
-Devuelve el valor predeterminado del tipo devuelto de una función de agregado si no hay nada que agregar.
-
-El tipo depende de la función de agregado utilizada.
-
-**Ejemplo**
-
-Consulta:
+Rellena el valor predeterminado del tipo devuelto de la función de agregado si no hay nada que agregar.
 
 ``` sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
-
-Resultado:
 
 ``` text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
@@ -91,72 +65,21 @@ Resultado:
 └─────────────┴──────────────────────┘
 ```
 
-También `-OrDefault` se puede utilizar con otros combinadores. Es útil cuando la función de agregado no acepta la entrada vacía.
-
-Consulta:
-
-``` sql
-SELECT avgOrDefaultIf(x, x > 10)
-FROM
-(
-    SELECT toDecimal32(1.23, 2) AS x
-)
-```
-
-Resultado:
-
-``` text
-┌─avgOrDefaultIf(x, greater(x, 10))─┐
-│                              0.00 │
-└───────────────────────────────────┘
-```
-
 ## -OrNull {#agg-functions-combinator-ornull}
 
-Cambia el comportamiento de una función agregada.
-
-Este combinador convierte un resultado de una función agregada en [NULL](../data-types/nullable.md) tipo de datos. Si la función de agregado no tiene valores para calcular devuelve [NULL](../syntax.md#null-literal).
-
-`-OrNull` se puede utilizar con otros combinadores.
-
-**Sintaxis**
+Llenar `null` si no hay nada que agregar. La columna de retorno será anulable.
 
 ``` sql
-<aggFunction>OrNull(x)
+SELECT avg(number), avgOrNull(number) FROM numbers(0)
 ```
-
-**Parámetros**
-
--   `x` — Aggregate function parameters.
-
-**Valores devueltos**
-
--   El resultado de la función de agregado, convertida a la `Nullable` tipo de datos.
--   `NULL`, si no hay nada que agregar.
-
-Tipo: `Nullable(aggregate function return type)`.
-
-**Ejemplo**
-
-Añadir `-orNull` hasta el final de la función agregada.
-
-Consulta:
-
-``` sql
-SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
-```
-
-Resultado:
 
 ``` text
-┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
-│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
-└───────────────────┴───────────────────────────────┘
+┌─avg(number)─┬─avgOrNull(number)─┐
+│         nan │              ᴺᵁᴸᴸ │
+└─────────────┴───────────────────┘
 ```
 
-También `-OrNull` se puede utilizar con otros combinadores. Es útil cuando la función de agregado no acepta la entrada vacía.
-
-Consulta:
+-OrDefault y -OrNull se pueden combinar con otros combinadores. Es útil cuando la función de agregado no acepta la entrada vacía.
 
 ``` sql
 SELECT avgOrNullIf(x, x > 10)
@@ -165,8 +88,6 @@ FROM
     SELECT toDecimal32(1.23, 2) AS x
 )
 ```
-
-Resultado:
 
 ``` text
 ┌─avgOrNullIf(x, greater(x, 10))─┐

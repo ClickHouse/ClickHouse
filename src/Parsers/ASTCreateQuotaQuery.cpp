@@ -10,16 +10,14 @@ namespace DB
 namespace
 {
     using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
     using ResourceType = Quota::ResourceType;
-    using ResourceTypeInfo = Quota::ResourceTypeInfo;
     using ResourceAmount = Quota::ResourceAmount;
 
 
     void formatKeyType(const KeyType & key_type, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " KEYED BY " << (settings.hilite ? IAST::hilite_none : "") << "'"
-                      << KeyTypeInfo::get(key_type).name << "'";
+                      << Quota::getNameOfKeyType(key_type) << "'";
     }
 
 
@@ -37,9 +35,13 @@ namespace
         else
             settings.ostr << ",";
 
-        const auto & type_info = ResourceTypeInfo::get(resource_type);
-        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << type_info.keyword
-                      << (settings.hilite ? IAST::hilite_none : "") << " " << type_info.amountToString(max);
+        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << Quota::resourceTypeToKeyword(resource_type)
+                      << (settings.hilite ? IAST::hilite_none : "") << " ";
+
+        if (resource_type == Quota::EXECUTION_TIME)
+            settings.ostr << Quota::executionTimeToSeconds(max);
+        else
+            settings.ostr << max;
     }
 
 
@@ -65,7 +67,7 @@ namespace
         else
         {
             bool limit_found = false;
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : ext::range_with_static_cast<ResourceType>(Quota::MAX_RESOURCE_TYPE))
             {
                 if (limits.max[resource_type])
                 {

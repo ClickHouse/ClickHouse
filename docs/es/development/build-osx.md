@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 65
 toc_title: "C\xF3mo crear ClickHouse en Mac OS X"
 ---
 
-# Cómo crear ClickHouse en Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
+# Cómo Crear ClickHouse En Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
 Build debería funcionar en Mac OS X 10.15 (Catalina)
 
@@ -15,13 +15,13 @@ Build debería funcionar en Mac OS X 10.15 (Catalina)
 $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Instalar compiladores, herramientas y bibliotecas necesarios {#install-required-compilers-tools-and-libraries}
+## Instalar Compiladores, Herramientas y Bibliotecas Necesarios {#install-required-compilers-tools-and-libraries}
 
 ``` bash
 $ brew install cmake ninja libtool gettext
 ```
 
-## Fuentes de ClickHouse de pago {#checkout-clickhouse-sources}
+## Fuentes De ClickHouse De Pago {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git

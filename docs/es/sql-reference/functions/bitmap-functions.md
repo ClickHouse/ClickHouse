@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 49
 toc_title: Bits
 ---
 
-# Funciones de mapa de bits {#bitmap-functions}
+# Funciones De Mapa De Bits {#bitmap-functions}
 
 Las funciones de mapa de bits funcionan para dos mapas de bits Cálculo del valor del objeto, es devolver un nuevo mapa de bits o cardinalidad mientras se usa el cálculo de la fórmula, como y, o, xor, y no, etc.
 
@@ -469,7 +469,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 └─────┘
 ```
 
-## Por favor, introduzca su dirección de correo electrónico {#bitmapandnotcardinality}
+## Por Favor, Introduzca Su dirección De Correo electrónico {#bitmapandnotcardinality}
 
 Dos mapas de bits yno cálculo, devuelve cardinalidad de tipo UInt64.
 

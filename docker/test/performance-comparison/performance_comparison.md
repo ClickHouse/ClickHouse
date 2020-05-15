@@ -29,7 +29,7 @@ pull requests (0 for master) manually.
 
 ```
 docker run --network=host --volume=$(pwd)/workspace:/workspace --volume=$(pwd)/output:/output
-    [-e REF_PR={} -e REF_SHA={} -e ]
+    [-e REF_PR={} -e REF_SHA={}]
     -e PR_TO_TEST={} -e SHA_TO_TEST={}
     yandex/clickhouse-performance-comparison
 ```
@@ -40,6 +40,7 @@ There are some environment variables that influence what the test does:
  * `-e CHCP_RUNS` -- the number of runs;
  * `-e CHPC_TEST_GREP` -- the names of the tests (xml files) to run, interpreted
  as a grep pattern.
+ * `-e CHPC_LOCAL_SCRIPT` -- use the comparison scripts from the docker container and not from the tested commit.
 
 #### Re-genarate report with your tweaks
 From the workspace directory (extracted test output archive):
@@ -52,6 +53,29 @@ More stages are available, e.g. restart servers or run the tests. See the code.
 ```
 docker/test/performance-comparison/perf.py --host=localhost --port=9000 --runs=1 tests/performance/logical_functions_small.xml
 ```
+
+#### Run all tests on some custom configuration
+Start two servers manually on ports `9001` (old) and `9002` (new). Change to a
+new directory to be used as workspace for tests, and try something like this:
+```
+$ PATH=$PATH:~/ch4/build-gcc9-rel/programs \
+    CHPC_TEST_PATH=~/ch3/ch/tests/performance \
+    CHPC_TEST_GREP=visit_param \
+    stage=run_tests \
+    ~/ch3/ch/docker/test/performance-comparison/compare.sh
+```
+* `PATH` must contain `clickhouse-local` and `clickhouse-client`.
+* `CHPC_TEST_PATH` -- path to performance test cases, e.g. `tests/performance`.
+* `CHPC_TEST_GREP` -- a filter for which tests to run, as a grep pattern.
+* `stage` -- from which execution stage to start. To run the tests, use
+  `run_tests` stage.
+
+The tests will run, and the `report.html` will be generated in the current
+directory.
+
+More complex setup is possible, but inconvenient and requires some scripting.
+See `manual-run.sh` for inspiration.
+
 
 #### Statistical considerations
 Generating randomization distribution for medians is tricky. Suppose we have N

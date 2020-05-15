@@ -1,19 +1,19 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 59
-toc_title: "\u30AF\u30EA\u30C3\u30AF\u30CF\u30A6\u30B9-\u8907\u5199\u6A5F"
+toc_title: "\u30AF\u30EA\u30C3\u30AF\u30CF\u30A6\u30B9\u30B3\u30D4\u30FC\u6A5F"
 ---
 
-# クリックハウス-複写機 {#clickhouse-copier}
+# クリックハウスコピー機 {#clickhouse-copier}
 
 コピーデータからのテーブルを一つクラスターテーブルの他の同クラスター
 
 複数実行できます `clickhouse-copier` インスタンスの異なるサーバーを行う仕事です。 ZooKeeperはプロセスの同期に使用されます。
 
-開始後, `clickhouse-copier`:
+始まることの後, `clickhouse-copier`:
 
--   ZooKeeperに接続し、受信します:
+-   ZooKeeperに接続して受信する:
 
     -   ジョブのコピー。
     -   コピージョブの状態。
@@ -24,11 +24,11 @@ toc_title: "\u30AF\u30EA\u30C3\u30AF\u30CF\u30A6\u30B9-\u8907\u5199\u6A5F"
 
 `clickhouse-copier` ZooKeeperの変更を追跡し、その場でそれらを適用します。
 
-ネットワークトラフィ `clickhouse-copier` ソースデータが配置されている同じサーバー上。
+ネットワークトラフィッ `clickhouse-copier` ソースデータがある同じサーバー上。
 
-## クリックハウスコピー機の実行 {#running-clickhouse-copier}
+## ランニングclickhouse-コピー機 {#running-clickhouse-copier}
 
-このユーテ:
+このユーティ:
 
 ``` bash
 $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
@@ -38,12 +38,12 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
 -   `daemon` — Starts `clickhouse-copier` デーモンモードで。
 -   `config` — The path to the `zookeeper.xml` ZooKeeperへの接続のためのパラメータを持つファイル。
--   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` プロセスとタスクの保存。 タスクは `$task-path/description`.
+-   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` プロセスと格納タスク。 タスクは `$task-path/description`.
 -   `task-file` — Optional path to file with task configuration for initial upload to ZooKeeper.
--   `task-upload-force` — Force upload `task-file` ノードが既に存在していても。
--   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` 作成 `clickhouse-copier_YYYYMMHHSS_<PID>` サブディレクトリ `$base-dir`. このパラメーターを省略すると、ディレクトリは次の場所に作成されます `clickhouse-copier` 発売された。
+-   `task-upload-force` — Force upload `task-file` ノードが既に存在する場合でも。
+-   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` 作成 `clickhouse-copier_YYYYMMHHSS_<PID>` サブディレクトリ `$base-dir`. このパラメーターを省略すると、ディレクトリーは次の場所に作成されます `clickhouse-copier` 発売されました。
 
-## 飼育係の形式。xml {#format-of-zookeeper-xml}
+## 飼育係のフォーマット。xml {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>
@@ -62,7 +62,7 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 </yandex>
 ```
 
-## コピータスクの構成 {#configuration-of-copying-tasks}
+## コピータスクの設定 {#configuration-of-copying-tasks}
 
 ``` xml
 <yandex>
@@ -171,6 +171,6 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 </yandex>
 ```
 
-`clickhouse-copier` の変更を追跡します `/task/path/description` そしてその場でそれらを適用します。 たとえば、次の値を変更すると `max_workers`、タスクを実行しているプロセスの数も変更されます。
+`clickhouse-copier` の変更を追跡します。 `/task/path/description` そして、その場でそれらを適用します。 たとえば、次の値を変更すると `max_workers`、タスクを実行しているプロセスの数も変更されます。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

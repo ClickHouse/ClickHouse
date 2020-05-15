@@ -23,6 +23,7 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             gcc-9 \
             g++-9 \
+            llvm-10 \
             clang-10 \
             lld-10 \
             clang-tidy-10 \
@@ -56,6 +57,9 @@ RUN apt-get --allow-unauthenticated update -y \
             libre2-dev \
             libjemalloc-dev \
             libmsgpack-dev \
+            opencl-headers \
+            ocl-icd-libopencl1 \
+            intel-opencl-icd \
             unixodbc-dev \
             odbcinst \
             tzdata \
@@ -66,7 +70,9 @@ RUN apt-get --allow-unauthenticated update -y \
             gdb  \
             pigz \
             moreutils \
-            libcctz-dev
+            libcctz-dev \
+            libldap2-dev
+
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.

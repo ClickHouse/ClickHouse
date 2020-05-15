@@ -17,13 +17,21 @@ namespace DB
 class ASTDropAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    using EntityType = IAccessEntity::Type;
+    enum class Kind
+    {
+        USER,
+        ROLE,
+        QUOTA,
+        ROW_POLICY,
+        SETTINGS_PROFILE,
+    };
 
-    EntityType type;
+    const Kind kind;
     bool if_exists = false;
     Strings names;
-    std::vector<RowPolicy::NameParts> row_policies_name_parts;
+    std::vector<RowPolicy::FullNameParts> row_policies_names;
 
+    ASTDropAccessEntityQuery(Kind kind_);
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

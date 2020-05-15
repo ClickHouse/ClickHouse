@@ -1,72 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 66
 toc_title: Otro
 ---
 
-# Otras funciones {#other-functions}
+# Otras Funciones {#other-functions}
 
 ## nombre de host() {#hostname}
 
 Devuelve una cadena con el nombre del host en el que se realizó esta función. Para el procesamiento distribuido, este es el nombre del host del servidor remoto, si la función se realiza en un servidor remoto.
-
-## getMacro {#getmacro}
-
-Obtiene un valor con nombre del [macro](../../operations/server-configuration-parameters/settings.md#macros) sección de la configuración del servidor.
-
-**Sintaxis**
-
-``` sql
-getMacro(name);
-```
-
-**Parámetros**
-
--   `name` — Name to retrieve from the `macros` apartado. [Cadena](../../sql-reference/data-types/string.md#string).
-
-**Valor devuelto**
-
--   Valor de la macro especificada.
-
-Tipo: [Cadena](../../sql-reference/data-types/string.md).
-
-**Ejemplo**
-
-Ejemplo `macros` sección en el archivo de configuración del servidor:
-
-``` xml
-<macros>
-    <test>Value</test>
-</macros>
-```
-
-Consulta:
-
-``` sql
-SELECT getMacro('test');
-```
-
-Resultado:
-
-``` text
-┌─getMacro('test')─┐
-│ Value            │
-└──────────────────┘
-```
-
-Una forma alternativa de obtener el mismo valor:
-
-``` sql
-SELECT * FROM system.macros
-WHERE macro = 'test';
-```
-
-``` text
-┌─macro─┬─substitution─┐
-│ test  │ Value        │
-└───────┴──────────────┘
-```
 
 ## FQDN {#fqdn}
 
@@ -156,7 +99,7 @@ SELECT 'some-file-name' AS a, basename(a)
 └────────────────┴────────────────────────────┘
 ```
 
-## Ancho visible (x) {#visiblewidthx}
+## Ancho Visible (x) {#visiblewidthx}
 
 Calcula el ancho aproximado al enviar valores a la consola en formato de texto (separado por tabuladores).
 Esta función es utilizada por el sistema para implementar formatos Pretty.
@@ -238,75 +181,6 @@ Resultado:
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
-```
-
-## isConstant {#is-constant}
-
-Comprueba si el argumento es una expresión constante.
-
-A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literal](../syntax.md#literals) son expresiones constantes.
-
-La función está destinada al desarrollo, depuración y demostración.
-
-**Sintaxis**
-
-``` sql
-isConstant(x)
-```
-
-**Parámetros**
-
--   `x` — Expression to check.
-
-**Valores devueltos**
-
--   `1` — `x` es constante.
--   `0` — `x` no es constante.
-
-Tipo: [UInt8](../data-types/int-uint.md).
-
-**Ejemplos**
-
-Consulta:
-
-``` sql
-SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
-```
-
-Resultado:
-
-``` text
-┌─isConstant(plus(x, 1))─┐
-│                      1 │
-└────────────────────────┘
-```
-
-Consulta:
-
-``` sql
-WITH 3.14 AS pi SELECT isConstant(cos(pi))
-```
-
-Resultado:
-
-``` text
-┌─isConstant(cos(pi))─┐
-│                   1 │
-└─────────────────────┘
-```
-
-Consulta:
-
-``` sql
-SELECT isConstant(number) FROM numbers(1)
-```
-
-Resultado:
-
-``` text
-┌─isConstant(number)─┐
-│                  0 │
-└────────────────────┘
 ```
 
 ## isFinite(x) {#isfinitex}
@@ -496,7 +370,7 @@ LIMIT 10
 └────────────────┴─────────┘
 ```
 
-## Tamaño de formatoReadable (x) {#formatreadablesizex}
+## Tamaño De FormatoReadable (x) {#formatreadablesizex}
 
 Acepta el tamaño (número de bytes). Devuelve un tamaño redondeado con un sufijo (KiB, MiB, etc.) como una cadena.
 
@@ -533,7 +407,7 @@ Devuelve el tiempo de actividad del servidor en segundos.
 
 Devuelve la versión del servidor como una cadena.
 
-## Zona horaria() {#timezone}
+## Zona Horaria() {#timezone}
 
 Devuelve la zona horaria del servidor.
 
@@ -736,15 +610,15 @@ WHERE diff != 1
 
 Lo mismo que para [runningDifference](./other-functions.md#other_functions-runningdifference), la diferencia es el valor de la primera fila, devolvió el valor de la primera fila, y cada fila subsiguiente devuelve la diferencia de la fila anterior.
 
-## ¿Cómo puedo hacerlo?) {#macnumtostringnum}
+## ¿cómo puedo hacerlo?) {#macnumtostringnum}
 
 Acepta un número UInt64. Lo interpreta como una dirección MAC en big endian. Devuelve una cadena que contiene la dirección MAC correspondiente con el formato AA:BB:CC:DD:EE:FF (números separados por dos puntos en forma hexadecimal).
 
-## Sistema abierto.) {#macstringtonums}
+## Sistema Abierto.) {#macstringtonums}
 
 La función inversa de MACNumToString. Si la dirección MAC tiene un formato no válido, devuelve 0.
 
-## Sistema abierto.) {#macstringtoouis}
+## Sistema Abierto.) {#macstringtoouis}
 
 Acepta una dirección MAC con el formato AA:BB:CC:DD:EE:FF (números separados por dos puntos en forma hexadecimal). Devuelve los primeros tres octetos como un número UInt64. Si la dirección MAC tiene un formato no válido, devuelve 0.
 
@@ -952,7 +826,7 @@ Resultado:
 └───────────────────────────────┘
 ```
 
-## Sistema de archivosDisponible {#filesystemavailable}
+## Sistema De ArchivosDisponible {#filesystemavailable}
 
 Devuelve la cantidad de espacio restante en el sistema de archivos donde se encuentran los archivos de las bases de datos. Siempre es más pequeño que el espacio libre total ([Sistema de archivosLibre](#filesystemfree)) porque algo de espacio está reservado para el sistema operativo.
 
@@ -984,7 +858,7 @@ Resultado:
 └─────────────────┴────────┘
 ```
 
-## Sistema de archivosLibre {#filesystemfree}
+## Sistema De ArchivosLibre {#filesystemfree}
 
 Devuelve la cantidad total del espacio libre en el sistema de archivos donde se encuentran los archivos de las bases de datos. Ver también `filesystemAvailable`
 

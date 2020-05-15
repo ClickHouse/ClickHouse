@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
 toc_priority: 47
 toc_title: "Divisi\xF3n y fusi\xF3n de cuerdas y matrices"
 ---
 
-# Funciones para dividir y fusionar cuerdas y matrices {#functions-for-splitting-and-merging-strings-and-arrays}
+# Funciones Para Dividir y Fusionar Cadenas y Matrices {#functions-for-splitting-and-merging-strings-and-arrays}
 
-## Por ejemplo:) {#splitbycharseparator-s}
+## Por Ejemplo:) {#splitbycharseparator-s}
 
 Divide una cadena en subcadenas separadas por un carácter especificado. Utiliza una cadena constante `separator` que consiste en exactamente un carácter.
 Devuelve una matriz de subcadenas seleccionadas. Se pueden seleccionar subcadenas vacías si el separador aparece al principio o al final de la cadena, o si hay varios separadores consecutivos.
@@ -45,7 +45,7 @@ SELECT splitByChar(',', '1,2,3,abcde')
 └─────────────────────────────────┘
 ```
 
-## Por ejemplo:) {#splitbystringseparator-s}
+## Por Ejemplo:) {#splitbystringseparator-s}
 
 Divide una cadena en subcadenas separadas por una cadena. Utiliza una cadena constante `separator` de múltiples caracteres como separador. Si la cadena `separator` está vacío, dividirá la cadena `s` en una matriz de caracteres individuales.
 
@@ -92,12 +92,12 @@ SELECT splitByString('', 'abcde')
 └────────────────────────────┘
 ```
 
-## Por ejemplo, se puede usar una matriz.\]) {#arraystringconcatarr-separator}
+## Por Ejemplo, Se Puede Usar Una Matriz.\]) {#arraystringconcatarr-separator}
 
-Concatena las cadenas enumeradas en la matriz con el separador.'separador' es un parámetro opcional: una constante de cadena, establece una cadena vacía por defecto.
+Concatena las cadenas enumeradas en la matriz con el separador.’separador’ es un parámetro opcional: una constante de cadena, establece una cadena vacía por defecto.
 Devuelve la cadena.
 
-## Sistema abierto.) {#alphatokenss}
+## Sistema Abierto.) {#alphatokenss}
 
 Selecciona subcadenas de bytes consecutivos de los rangos a-z y A-Z.Devuelve una matriz de subcadenas.
 

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
 toc_priority: 26
 toc_title: "\u0130stemci Kitapl\u0131klar\u0131"
 ---
 
-# Üçüncü taraf geliştiricilerin istemci kitaplıkları {#client-libraries-from-third-party-developers}
+# Üçüncü Taraf geliştiricilerin Istemci kitaplıkları {#client-libraries-from-third-party-developers}
 
 !!! warning "Uyarı"
     Yandex yapar **değil** Aşağıda listelenen kütüphaneleri koruyun ve kalitelerini sağlamak için kapsamlı bir test yapmadınız.
@@ -53,7 +53,6 @@ toc_title: "\u0130stemci Kitapl\u0131klar\u0131"
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 -   İksir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
-    -   [sütun](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 

@@ -27,11 +27,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Using INTO OUTFILE Clause {#using-into-outfile-clause}
 
-<<<<<<< HEAD
-Add an [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) clause to your query.
-=======
-Add an [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) clause to your query.
->>>>>>> upstream/master
+Add an [INTO OUTFILE](../sql-reference/statements/select.md#into-outfile-clause) clause to your query.
 
 For example:
 
@@ -39,11 +35,7 @@ For example:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-<<<<<<< HEAD
-By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../sql_reference/statements/select.md#format-clause).
-=======
-By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../sql-reference/statements/select/format.md#format-clause).
->>>>>>> upstream/master
+By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../sql-reference/statements/select.md#format-clause).
 
 For example:
 
@@ -53,7 +45,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Using a File-Engine Table {#using-a-file-engine-table}
 
-See [File](../engines/table_engines/special/file.md).
+See [File](../engines/table-engines/special/file.md).
 
 ### Using Command-Line Redirection {#using-command-line-redirection}
 

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 toc_priority: 39
 toc_title: "\u65E5\u4ED8\u3068\u6642\u523B\u306E\u64CD\u4F5C"
 ---
@@ -9,7 +9,7 @@ toc_title: "\u65E5\u4ED8\u3068\u6642\u523B\u306E\u64CD\u4F5C"
 
 タイムゾーンのサポート
 
-タイムゾーンに論理的に使用される日付と時刻を操作するためのすべての関数は、オプションのタイムゾーン引数を受け入れることができます。 例：アジア/エカテリンブルク。 この場合、ローカル(既定)のタイムゾーンではなく、指定されたタイムゾーンを使用します。
+タイムゾーンの論理的使用を持つ日付と時刻を操作するためのすべての関数は、二番目の省略可能なタイムゾーン引数を受け入れることができます。 例：アジア/エカテリンブルク。 この場合、ローカル（デフォルト）の代わりに指定されたタイムゾーンを使用します。
 
 ``` sql
 SELECT
@@ -27,53 +27,53 @@ SELECT
 
 UTCと時間数が異なるタイムゾーンのみがサポートされます。
 
-## トティムゾーン {#totimezone}
+## トティメゾン {#totimezone}
 
 時刻または日付と時刻を指定したタイムゾーンに変換します。
 
 ## toYear {#toyear}
 
-日付または日付と時刻を、年番号(AD)を含むUInt16番号に変換します。
+時刻を含む日付または日付を年番号(ad)を含むuint16番号に変換します。
 
-## トクアーター {#toquarter}
+## toQuarter {#toquarter}
 
-Dateまたはdate with timeを、四半期番号を含むUInt8番号に変換します。
+時刻を含む日付または日付を、四半期番号を含むuint8番号に変換します。
 
-## トモンス {#tomonth}
+## トモント県france.kgm {#tomonth}
 
-Dateまたはdate with timeを、月番号(1-12)を含むUInt8番号に変換します。
+時刻を含む日付または日付を、月番号(1～12)を含むuint8番号に変換します。
 
 ## 今日の年 {#todayofyear}
 
-日付または日付と時刻を、年の日の番号を含むUInt16番号(1-366)に変換します。
+時刻を含む日付または日付を、その年の日付の番号(1-366)を含むuint16番号に変換します。
 
-## 今日の月 {#todayofmonth}
+## toDayOfMonth {#todayofmonth}
 
-日付または日付と時刻を、月の日の番号を含むUInt8番号(1-31)に変換します。
+時刻を含む日付または日付を、その月の日の番号(1-31)を含むuint8番号に変換します。
 
-## 今日の週 {#todayofweek}
+## toDayOfWeek {#todayofweek}
 
-Dateまたはdate with timeを、曜日の番号を含むUInt8番号に変換します(月曜日は1、日曜日は7)。
+時刻を含む日付または日付を、曜日の番号を含むuint8番号に変換します(月曜日は1、日曜日は7)。
 
-## toHour {#tohour}
+## tohourgenericname {#tohour}
 
-時刻を持つ日付を、24時間(0-23)の時間数を含むUInt8数値に変換します。
+時刻を含む日付を、uint8の24時間(0-23)の時刻を含む数値に変換します。
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true – even in Moscow the clocks were twice changed at a different time).
 
-## トミヌテ {#tominute}
+## toMinute {#tominute}
 
-時刻を持つ日付を、時間の分の数を含むUInt8番号(0-59)に変換します。
+時刻を含む日付を、時刻の分(0～59)の数を含むuint8数値に変換します。
 
-## toSecond {#tosecond}
+## ト秒 {#tosecond}
 
-日付と時刻を、分(0-59)の秒数を含むUInt8数値に変換します。
-うるう秒は考慮されません。
+Timeを含む日付をUInt8の数値に変換します(0～59)。
+うるう秒は説明されていません。
 
 ## toUnixTimestamp {#to-unix-timestamp}
 
-DateTime引数の場合:値を内部の数値表現(Unixタイムスタンプ)に変換します。
-文字列引数の場合：タイムゾーンに従って文字列からdatetimeを解析し（オプションの第二引数、サーバーのタイムゾーンがデフォルトで使用されます）、対応するunixタ
-Date引数の場合：動作は指定されていません。
+For DateTime argument:値を内部の数値表現(Unixタイムスタンプ)に変換します。
+文字列引数の場合：タイムゾーンに従って文字列からのdatetimeを解析します（オプションの第二引数、サーバーのタイムゾーンはデフォルトで使用されます）。
+日付の引数の場合：この動作は指定されていません。
 
 **構文**
 
@@ -88,7 +88,7 @@ toUnixTimestamp(str, [timezone])
 
 タイプ: `UInt32`.
 
-**例**
+**例えば**
 
 クエリ:
 
@@ -104,143 +104,143 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 └────────────────┘
 ```
 
-## トスタート {#tostartofyear}
+## toStartOfYear {#tostartofyear}
 
-日付または日付を年の最初の日に切り捨てます。
+日付または日付のある時刻を年の最初の日に切り捨てます。
 日付を返します。
 
-## トスタートフィソイヤー {#tostartofisoyear}
+## tostartofisoyearcomment {#tostartofisoyear}
 
-日付または日付をiso年の最初の日に切り捨てます。
+日付または日付と時刻をiso暦年の最初の日に切り捨てます。
 日付を返します。
 
 ## toStartOfQuarter {#tostartofquarter}
 
-日付または日付を四半期の最初の日に切り捨てます。
-四半期の最初の日は、1月、1月、1月、または1月のいずれかです。
+日付または日付のある時刻を四半期の最初の日に切り捨てます。
+四半期の最初の日はどちらかです1月,1四月,1七月,若しくは1十月.
 日付を返します。
 
-## トスタートモンス {#tostartofmonth}
+## toStartOfMonth {#tostartofmonth}
 
-日付または日付を月の最初の日に切り捨てます。
+日付または日付と時刻を月の最初の日に切り捨てます。
 日付を返します。
 
 !!! attention "注意"
-    不正な日付を解析する動作は、実装固有です。 ClickHouseはゼロの日付を返すか、例外をスローするか “natural” オーバーフロー
+    間違った日付を解析する動作は実装固有です。 clickhouseはゼロの日付を返したり、例外をスローしたりします “natural” オーバーフロー
 
-## トモンデイ {#tomonday}
+## toMonday {#tomonday}
 
-日付または日付を時刻とともに最も近い月曜日に切り捨てます。
+日付または日付と時刻を最も近い月曜日に切り捨てます。
 日付を返します。
 
-## トスタートフィーク(t\[,モード\]) {#tostartofweektmode}
+## toStartOfWeek(t\[,mode\]) {#tostartofweektmode}
 
-日付または時刻の日付を、最も近い日曜日または月曜日にモードで切り捨てます。
+日付または日付と時刻を、モード別に最も近い日曜日または月曜日に切り捨てます。
 日付を返します。
-Mode引数は、toWeek()のmode引数とまったく同じように動作します。 単一引数構文では、モード値0が使用されます。
+Mode引数は、toWeek()のmode引数とまったく同じように動作します。 単一引数の構文では、モード値0が使用されます。
 
-## トスタートフデイ {#tostartofday}
+## toStartOfDay {#tostartofday}
 
-日付を時刻とともに日の始まりまで切り捨てます。
+時刻を含む日付をその日の始まりに切り捨てます。
 
-## トスタートフール {#tostartofhour}
+## toStartOfHour {#tostartofhour}
 
-日付と時刻を時間の開始まで切り捨てます。
+時刻を含む日付を時間の開始位置に切り捨てます。
 
-## トスタートフミニュート {#tostartofminute}
+## toStartOfMinute {#tostartofminute}
 
-日付と時刻を分の開始まで切り捨てます。
+日付と時刻が分の先頭に切り捨てられます。
 
-## トスタートオフィブミニュート {#tostartoffiveminute}
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 日付と時刻を切り捨てます。
 
-## toStartOfTenMinutes {#tostartoftenminutes}
+## トスタートオフテンミニュート {#tostartoftenminutes}
 
-日付と時刻を切り捨てて、十分間隔の開始まで切り捨てます。
+日付と時刻を切り捨てます。
 
-## トスタートフィフテンミニュート {#tostartoffifteenminutes}
+## トスタートオフィフテンミニュート {#tostartoffifteenminutes}
 
-日付を時刻とともに切り捨てて、十分間隔の開始まで切り捨てます。
+日付と時刻を切り捨てます。
 
-## トスタートオフインターバル(time\_or\_data,区間x単位\[,time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
+## toStartOfInterval(time\_or\_data,間隔xユニット\[,time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
-これは、名前付きの他の関数の一般化です `toStartOf*`. 例えば,
+これは、名前の付いた他の関数の一般化です `toStartOf*`. 例えば,
 `toStartOfInterval(t, INTERVAL 1 year)` と同じを返します `toStartOfYear(t)`,
 `toStartOfInterval(t, INTERVAL 1 month)` と同じを返します `toStartOfMonth(t)`,
 `toStartOfInterval(t, INTERVAL 1 day)` と同じを返します `toStartOfDay(t)`,
-`toStartOfInterval(t, INTERVAL 15 minute)` と同じを返します `toStartOfFifteenMinutes(t)` 等。
+`toStartOfInterval(t, INTERVAL 15 minute)` と同じを返します `toStartOfFifteenMinutes(t)` など。
 
-## トータイム {#totime}
+## トタイム {#totime}
 
-時刻を保持しながら、時刻を持つ日付を特定の固定日付に変換します。
+時刻を保持しながら、時刻を含む日付を特定の固定日付に変換します。
 
-## toRelativeYearNum {#torelativeyearnum}
+## torelativeyearnumcomment {#torelativeyearnum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる年の番号に変換します。
+時刻または日付の日付を、過去の特定の固定小数点から始まる年の数に変換します。
 
-## toRelativeQuarterNum {#torelativequarternum}
+## torelativequarternumcomment {#torelativequarternum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる四半期の数値に変換します。
+時刻または日付の日付を、過去の特定の固定小数点から開始して、四半期の数に変換します。
 
-## トレラティブモンスヌム {#torelativemonthnum}
+## torelativemonthnumcomment {#torelativemonthnum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる月の番号に変換します。
+時刻または日付を含む日付を、過去の特定の固定小数点から始まる月の数に変換します。
 
-## toRelativeWeekNum {#torelativeweeknum}
+## torelativeweeknumcomment {#torelativeweeknum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる週の数に変換します。
+時刻または日付を含む日付を、過去の特定の固定小数点から始まる週の数に変換します。
 
-## toRelativeDayNum {#torelativedaynum}
+## torrelativedaynumcomment {#torelativedaynum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる日付の数値に変換します。
+時刻または日付を含む日付を、過去の特定の固定小数点から始まる日の数に変換します。
 
-## toRelativeHourNum {#torelativehournum}
+## torrelativehournumgenericname {#torelativehournum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる時間の数に変換します。
+時刻または日付の日付を、過去の特定の固定小数点から始まる時間の数値に変換します。
 
-## トレラティブミノテン {#torelativeminutenum}
+## toRelativeMinuteNum {#torelativeminutenum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる分の数に変換します。
+時刻または日付の日付を、過去の特定の固定小数点から始まる分の数値に変換します。
 
-## toRelativeSecondNum {#torelativesecondnum}
+## torrelativesecondnumcomdnamescription {#torelativesecondnum}
 
-時刻または日付を持つ日付を、過去の特定の固定点から始まる秒数に変換します。
+時刻または日付の日付を、過去の特定の固定小数点から開始して秒の数値に変換します。
 
 ## toISOYear {#toisoyear}
 
-Dateまたはdate with timeをISO年番号を含むUInt16番号に変換します。
+時刻を含む日付または日付を、iso年番号を含むuint16番号に変換します。
 
 ## toISOWeek {#toisoweek}
 
-日付または日付と時刻をISO週番号を含むUInt8番号に変換します。
+時刻を含む日付または日付を、iso週番号を含むuint8番号に変換します。
 
-## トウィーク(日付\[,モード\]) {#toweekdatemode}
+## toWeek(日付\[,モード\]) {#toweekdatemode}
 
-この関数は、dateまたはdatetimeの週番号を返します。 二引数形式のtoWeek()を使用すると、週が日曜日か月曜日か、戻り値が0から53または1から53の範囲であるかどうかを指定できます。 引数modeを省略すると、デフォルトのモードは0になります。
-`toISOWeek()`と等価な互換性関数です `toWeek(date,3)`.
-次の表は、mode引数の動作方法を示しています。
+この関数は、dateまたはdatetimeの週番号を返します。 また、戻り値の範囲が0から53または1から53のどちらであるかを指定することができます。 引数modeを省略すると、デフォルトのモードは0になります。
+`toISOWeek()`は、以下と同等の互換性関数です `toWeek(date,3)`.
+次の表では、mode引数の動作について説明します。
 
 | モード | 週の最初の日 | 範囲 | Week 1 is the first week … |
 |--------|--------------|------|----------------------------|
-| 0      | 日曜日       | 0-53 | 今年の日曜日と             |
+| 0      | 日曜日       | 0-53 | 今年の日曜日に             |
 | 1      | 月曜日       | 0-53 | 今年は4日以上              |
-| 2      | 日曜日       | 1-53 | 今年の日曜日と             |
+| 2      | 日曜日       | 1-53 | 今年の日曜日に             |
 | 3      | 月曜日       | 1-53 | 今年は4日以上              |
 | 4      | 日曜日       | 0-53 | 今年は4日以上              |
 | 5      | 月曜日       | 0-53 | 今年の月曜日と             |
 | 6      | 日曜日       | 1-53 | 今年は4日以上              |
 | 7      | 月曜日       | 1-53 | 今年の月曜日と             |
-| 8      | 日曜日       | 1-53 | 1を含む                    |
-| 9      | 月曜日       | 1-53 | 1を含む                    |
+| 8      | 日曜日       | 1-53 | 含まれ月1                  |
+| 9      | 月曜日       | 1-53 | 含まれ月1                  |
 
-の意味を持つモード値の場合 “with 4 or more days this year,” 週はISO8601:1988に従って番号が付けられます:
+意味のあるモード値の場合 “with 4 or more days this year,” 週はISO8601:1988に従って番号が付けられます:
 
--   1月を含む週が新年に4日以上ある場合、それは1週である。
+-   1月を含む週がある場合4新年の日,それは週です1.
 
 -   それ以外の場合は、前年の最後の週であり、次の週は1週です。
 
-の意味を持つモード値の場合 “contains January 1”、1月を含む週は1週である。 たとえそれが一日だけ含まれていても、その週が含まれている新年の日数は問題ではありません。
+意味のあるモード値の場合 “contains January 1” の週の月には1週間に1. たとえそれが一日だけ含まれていても、その週に含まれている新年の日数は関係ありません。
 
 ``` sql
 toWeek(date, [, mode][, Timezone])
@@ -252,7 +252,7 @@ toWeek(date, [, mode][, Timezone])
 -   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
 -   `Timezone` – Optional parameter, it behaves like any other conversion function.
 
-**例**
+**例えば**
 
 ``` sql
 SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS week1, toWeek(date,9) AS week9;
@@ -264,15 +264,15 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 └────────────┴───────┴───────┴───────┘
 ```
 
-## toYearWeek(日付\[,モード\]) {#toyearweekdatemode}
+## toeearweek(日付\[,モード\]) {#toyearweekdatemode}
 
-日付の年と週を返します。 結果の年は、年の最初と最後の週のdate引数の年とは異なる場合があります。
+日付の年と週を返します。 結果の年は、その年の最初と最後の週の日付の引数の年とは異なる場合があります。
 
-Mode引数は、toWeek()のmode引数とまったく同じように動作します。 単一引数構文では、モード値0が使用されます。
+Mode引数は、toWeek()のmode引数とまったく同じように動作します。 単一引数の構文では、モード値0が使用されます。
 
-`toISOYear()`と等価な互換性関数です `intDiv(toYearWeek(date,3),100)`.
+`toISOYear()`は、以下と同等の互換性関数です `intDiv(toYearWeek(date,3),100)`.
 
-**例**
+**例えば**
 
 ``` sql
 SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(date,1) AS yearWeek1, toYearWeek(date,9) AS yearWeek9;
@@ -286,39 +286,39 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## さて {#now}
 
-ゼロの引数を受け取り、要求の実行のいずれかの瞬間に現在の時刻を返します。
-この関数は、要求が完了するまでに時間がかかった場合でも、定数を返します。
+ゼロ引数を受け取り、リクエスト実行のいずれかの時点で現在の時刻を返します。
+この関数は、要求が完了するまでに長い時間がかかった場合でも、定数を返します。
 
 ## 今日 {#today}
 
-ゼロの引数を受け取り、要求の実行のいずれかの瞬間に現在の日付を返します。
-と同じ ‘toDate(now())’.
+ゼロ引数を受け取り、リクエスト実行のいずれかの時点で現在の日付を返します。
+同じように ‘toDate(now())’.
 
 ## 昨日 {#yesterday}
 
-ゼロの引数を受け取り、要求の実行のいずれかの瞬間に昨日の日付を返します。
-と同じ ‘today() - 1’.
+ゼロの引数を受け取り、リクエストの実行のいずれかの時点で、昨日の日付を返します。
+同じように ‘today() - 1’.
 
 ## タイムスロット {#timeslot}
 
-時間を半分の時間に丸めます。
-この機能はYandexに固有のものです。Metricaは、トラッキングタグが単一のユーザーの連続したページビューを表示する場合、セッションを二つのセッションに分割するための最小時間であるため、こ つまり、タプル(タグID、ユーザー ID、およびタイムスロット)を使用して、対応するセッションに含まれるページビューを検索できます。
+時間を半分時間に丸めます。
+この機能はyandexに固有です。トラッキングタグがこの量よりも厳密に時間が異なる単一のユーザーの連続したページビューを表示する場合、セッションを二つのセッションに分割す つまり、タプル(タグid、ユーザー id、およびタイムスロット)を使用して、対応するセッションに含まれるページビューを検索できます。
 
-## トイヤイム {#toyyyymm}
+## toYYYYMM {#toyyyymm}
 
-日付または日付と時刻を、年と月の番号(YYYY\*100+MM)を含むUInt32番号に変換します。
+時刻を含む日付または日付を、年と月の数値(yyyy\*100+mm)を含むuint32番号に変換します。
 
-## トイヤイム {#toyyyymmdd}
+## toyyymmdd {#toyyyymmdd}
 
-日付または日付と時刻を、年と月の番号(YYYY\*10000+MM\*100+DD)を含むUInt32番号に変換します。
+時刻を含む日付または日付を、年と月の数値(yyyy\*10000+mm\*100+dd)を含むuint32番号に変換します。
 
-## トイヤイム {#toyyyymmddhhmmss}
+## toYYYYMMDDhhmmss {#toyyyymmddhhmmss}
 
-日付または日付と時刻を、年と月の番号(YYYY\*10000000000+MM\*100000000+DD\*1000000+hh\*10000+mm\*100+ss)を含むUInt64番号に変換します。
+時刻付きの日付または日付を、年と月の数値を含むuint64番号に変換します(yyyy\*10000000000+mm\*100000000+dd\*1000000+hh\*10000+mm\*100+ss)。
 
-## addYears,addMonths,addWeeks,addDays,addHours,addMinutes,addSeconds,addQuarters {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
+## addYears,addMonths,addweks,addDays,addHours,addMinutes,addSeconds,addQuarters {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
 
-関数は、日付/日付時刻に日付/日付時刻の間隔を追加し、日付/日付時刻を返します。 例えば:
+関数は、日付/日付時刻の間隔を日付/日付時刻に追加してから、日付/日付時刻を返します。 例えば:
 
 ``` sql
 WITH
@@ -335,9 +335,9 @@ SELECT
 └─────────────────────┴──────────────────────────┘
 ```
 
-## subtruttyears、subtrutmonths、subtrutweeks、subtrutdays、subtrutthours、subtrutminutes、subtrutseconds、subtrutquarters {#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters}
+## subtractYears,subtractMonths,subtractWeeks,subtractDays,subtractHours,subtractMinutes,subtractSeconds,subtractQuarters {#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters}
 
-関数Date/DateTime間隔をDate/DateTimeに減算し、Date/DateTimeを返します。 例えば:
+関数date/datetime間隔をdate/datetimeに減算し、date/datetimeを返します。 例えば:
 
 ``` sql
 WITH
@@ -356,7 +356,7 @@ SELECT
 
 ## dateDiff {#datediff}
 
-Date値またはDateTime値の差を返します。
+日付または日付時刻値の差を返します。
 
 **構文**
 
@@ -385,15 +385,15 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 -   `enddate` — The second time value to compare. [日付](../../sql-reference/data-types/date.md) または [DateTime](../../sql-reference/data-types/datetime.md).
 
--   `timezone` — Optional parameter. If specified, it is applied to both `startdate` と `enddate`. 指定されていない場合、 `startdate` と `enddate` 使用されます。 それらが同じでない場合、結果は未指定です。
+-   `timezone` — Optional parameter. If specified, it is applied to both `startdate` と `enddate`. 指定されていない場合は、 `startdate` と `enddate` 使用されます。 それらが同じでない場合、結果は不特定です。
 
 **戻り値**
 
-の違い `startdate` と `enddate` で表される。 `unit`.
+の違い `startdate` と `enddate` で表現 `unit`.
 
 タイプ: `int`.
 
-**例**
+**例えば**
 
 クエリ:
 
@@ -409,42 +409,42 @@ SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-0
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## タイムスロット(StartTime,Duration,\[,Size\]) {#timeslotsstarttime-duration-size}
+## timeSlots(StartTime,Duration,\[,Size\]) {#timeslotsstarttime-duration-size}
 
-で始まる時間間隔の場合 ‘StartTime’ そして続けるために ‘Duration’ これは、この区間の点で構成される時間内の瞬間の配列を返します。 ‘Size’ 秒で。 ‘Size’ 定数UInt32で、既定では1800に設定されます。
+で始まる時間間隔のために ‘StartTime’ そしてのために継続 ‘Duration’ 秒、この間隔からのポイントからなる時間内のモーメントの配列を返します。 ‘Size’ 数秒で。 ‘Size’ オプションのパラメーターです:既定では定数UInt32を1800に設定します。
 例えば, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 これは、対応するセッションでページビューを検索するために必要です。
 
-## formatDateTime(時刻,Format\[,タイムゾーン\]) {#formatdatetime}
+## formatDateTime(時間,フォーマット\[,タイムゾーン\]) {#formatdatetime}
 
 Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
 
-サポートされている形式の修飾子:
-(“Example” 列に時間の書式設定の結果が表示されます `2018-01-02 22:33:44`)
+形式のサポートされている修飾子:
+(“Example” このページを正しく表示するフォーマット結果のための時間 `2018-01-02 22:33:44`)
 
-| 修飾子 | 説明                                            | 例         |
-|--------|-------------------------------------------------|------------|
-| %C     | 年を100で割り、整数に切り捨てます(00-99)        | 20         |
-| %d     | 月の日、ゼロパッド(01-31)                       | 02         |
-| %D     | %M/%d/%yに相当する短いMM/DD/YYの日付            | 01/02/18   |
-| %e     | 月の日,スペース埋め(1-31)                       | 2          |
-| %F     | %Y-%m-%dに相当します                            | 2018-01-02 |
-| %H     | 24時間形式（00-23時)                            | 22         |
-| %I     | 12時間形式（01-12)                              | 10         |
-| %j     | 年の日(001-366)                                 | 002        |
-| %m     | 十進数としての月(01-12)                         | 01         |
-| %M     | 分(00-59)                                       | 33         |
-| %n     | 改行文字(")                                     |            |
-| %p     | AMまたはPMの指定                                | PM         |
-| %R     | 24時間HH:MM時間、%H:%Mに相当                    | 22:33      |
-| %S     | 第二（00-59)                                    | 44         |
-| %t     | 横タブ文字(')                                   |            |
-| %T     | ISO8601時間形式(HH:MM:SS)、%H:%M:%Sに相当します | 22:33:44   |
-| %u     | ISO8601平日as番号、月曜日as1(1-7)               | 2          |
-| %V     | ISO8601週番号(01-53)                            | 01         |
-| %w     | 曜日を十進数とし、日曜日を0(0-6)とします)       | 2          |
-| %y     | 年,最後の二桁(00-99)                            | 18         |
-| %Y     | 年                                              | 2018       |
-| %%     | %記号                                           | %          |
+| 修飾子 | 説明                                               | 例えば     |
+|--------|----------------------------------------------------|------------|
+| %C     | 年を100で除算し、整数(00から99)に切り捨てられます) | 20         |
+| %d     | 月の日、ゼロ-パディング（01-31)                    | 02         |
+| %D     | %m/%d/%yに相当する短いmm/dd/yy日付                 | 01/02/18   |
+| %e     | 月の日、スペース埋め(1-31)                         | 2          |
+| %F     | %Y-%m-%dに相当する短いYYYY-MM-DD日付               | 2018-01-02 |
+| %H     | 24時間形式(00-23)の時間)                           | 22         |
+| %I     | 時間で12h形式(01-12)                               | 10         |
+| %j     | 年の日(001-366)                                    | 002        |
+| %m     | 月を小数(01-12)として指定します)                   | 01         |
+| %M     | 分(00-59)                                          | 33         |
+| %n     | 改行文字(")                                        |            |
+| %p     | AMまたはPMの指定                                   | PM         |
+| %R     | 24時間HH:MM時間、%Hに相当する:%M                   | 22:33      |
+| %S     | 二番目に（00-59)                                   | 44         |
+| %t     | 水平タブ文字(’)                                    |            |
+| %T     | ISO8601時刻フォーマット(HH:MM:SS)、%H:%M:%Sに相当  | 22:33:44   |
+| %u     | ISO8601月曜日が1(1-7)の数値としての平日)           | 2          |
+| %V     | ISO8601週番号(01-53)                               | 01         |
+| %w     | weekday as a decimal number with Sunday as0(0-6)   | 2          |
+| %y     | 年,最後の二つの数字(00-99)                         | 18         |
+| %Y     | 年                                                 | 2018       |
+| %%     | %記号                                              | %          |
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->

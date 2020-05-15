@@ -3,8 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/RowPolicy.h>
-#include <array>
-#include <optional>
+#include <utility>
+#include <vector>
 
 
 namespace DB
@@ -36,11 +36,12 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    RowPolicy::NameParts name_parts;
-    String new_short_name;
+    RowPolicy::FullNameParts name_parts;
+    String new_policy_name;
 
     std::optional<bool> is_restrictive;
-    std::array<std::optional<ASTPtr>, RowPolicy::MAX_CONDITION_TYPE> conditions; /// `nullopt` means "not set", `nullptr` means set to NONE.
+    using ConditionType = RowPolicy::ConditionType;
+    std::vector<std::pair<ConditionType, ASTPtr>> conditions;
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
 
