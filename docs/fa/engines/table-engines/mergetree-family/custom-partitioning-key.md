@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: "\u06A9\u0644\u06CC\u062F \u067E\u0627\u0631\u062A\u06CC\u0634\u0646 \u0628\
   \u0646\u062F\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"

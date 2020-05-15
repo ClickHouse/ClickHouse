@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
-toc_title: "\u30CD\u30B9\u30C8(Name1\u30BF\u30A4\u30D71,Name2\u30BF\u30A4\u30D72,...)"
+toc_title: "\u30CD\u30B9\u30C8\u3055\u308C\u305F(Name1Type1,Name2Type2,...)"
 ---
 
 # Nested(name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
-A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create.md) クエリ。 各テーブル行は、入れ子になったデータ構造内の任意の数の行に対応できます。
+A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create.md) クエリ。 各テーブルの行は、入れ子になったデータ構造内の任意の数の行に対応できます。
 
-例えば:
+例:
 
 ``` sql
 CREATE TABLE test.visits
@@ -34,13 +34,13 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-この例では、 `Goals` ネストされたデータ構造。 の各行 ‘visits’ 表は、ゼロまたは任意の数の変換に対応することができます。
+この例では、 `Goals` コンバージョンに関するデータを含む入れ子になったデータ構造。 の各行 ‘visits’ tableは、ゼロまたは任意の数の変換に対応できます。
 
-単一の入れ子レベルのみがサポートされます。 配列を含むネストされた構造体の列は、多次元配列と同等であるため、サポートが制限されています（mergetreeエンジンを使用してこれらの列をテーブルに格
+単一の入れ子レベルのみがサポートされます。 配列を含む入れ子になった構造体の列は多次元配列と同等なので、サポートが限られています（MergeTreeエンジンでこれらの列をテーブルに格納するサポートは
 
-ほとんどの場合、入れ子になったデータ構造で作業する場合、その列はドットで区切られた列名で指定されます。 これらの列は、一致する型の配列を構成します。 単一の入れ子になったデータ構造のすべての列配列の長さは同じです。
+ほとんどの場合、入れ子になったデータ構造を操作する場合、その列はドットで区切られた列名で指定されます。 これらの列は、一致する型の配列を構成します。 単一の入れ子になったデータ構造のすべての列配列の長さは同じです。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -66,9 +66,9 @@ LIMIT 10
 └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-ネストされたデータ構造を、同じ長さの複数の列配列のセットと考えるのが最も簡単です。
+ネストされたデータ構造は、同じ長さの複数の列配列のセットと考えるのが最も簡単です。
 
-SELECTクエリで、個々の列ではなくネストされたデータ構造全体の名前を指定できる唯一の場所は、ARRAY JOIN句です。 詳細については、 “ARRAY JOIN clause”. 例えば:
+SELECTクエリで個々の列ではなく入れ子になったデータ構造全体の名前を指定できるのは、ARRAY JOIN句だけです。 詳細については、 “ARRAY JOIN clause”. 例:
 
 ``` sql
 SELECT
@@ -95,12 +95,12 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-ネストされたデータ構造全体のselectは実行できません。 明示的にリストできるのは、その一部である個々の列のみです。
+入れ子になったデータ構造全体に対してSELECTは実行できません。 明示的にリストできるのは、その一部である個々の列のみです。
 
-挿入クエリでは、入れ子になったデータ構造のすべてのコンポーネント列配列を個別に渡す必要があります(個々の列配列と同様)。 挿入時に、システムは同じ長さを持つことをチェックします。
+INSERTクエリでは、入れ子になったデータ構造のすべてのコンポーネント列配列を個別に渡す必要があります(個々の列配列と同様に)。 挿入時に、同じ長さであることがチェックされます。
 
-DESCRIBEクエリの場合、入れ子になったデータ構造内の列は、同じ方法で別々にリストされます。
+DESCRIBEクエリの場合、入れ子になったデータ構造の列は、同じ方法で別々に表示されます。
 
-入れ子になったデータ構造内の要素に対するalter queryには制限があります。
+入れ子になったデータ構造内の要素のALTERクエリには制限があります。
 
 [元の記事](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

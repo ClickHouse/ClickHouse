@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: "\u0645\u0646\u0627\u0628\u0639 \u0644\u063A\u062A \u0646\u0627\u0645\u0647\
   \ \u0647\u0627\u06CC \u062E\u0627\u0631\u062C\u06CC"
@@ -37,6 +37,28 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 ```
 
 منبع در پیکربندی `source` بخش.
+
+برای انواع منبع [پرونده محلی](#dicts-external_dicts_dict_sources-local_file), [پرونده اجرایی](#dicts-external_dicts_dict_sources-executable), [HTTP(s)](#dicts-external_dicts_dict_sources-http), [فاحشه خانه](#dicts-external_dicts_dict_sources-clickhouse)
+تنظیمات اختیاری در دسترس هستند:
+
+``` xml
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+  <settings>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+  </settings>
+</source>
+```
+
+یا
+
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 0)
+```
 
 انواع منابع (`source_type`):
 
@@ -196,7 +218,7 @@ SOURCE(ODBC(
 
 **نمونه ای از استفاده نا امن**
 
-اجازه می دهد تا پیکربندی unixodbc برای postgresql. محتوای `/etc/odbc.ini`:
+اجازه می دهد تا پیکربندی unixODBC برای PostgreSQL. محتوای `/etc/odbc.ini`:
 
 ``` text
 [gregtest]
@@ -221,7 +243,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 سیستم عامل اوبونتو.
 
-نصب unixodbc و odbc driver for postgresql:
+نصب unixODBC و ODBC driver for PostgreSQL:
 
 ``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql

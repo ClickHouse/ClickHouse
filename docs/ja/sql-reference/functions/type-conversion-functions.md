@@ -1,21 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: "\u30BF\u30A4\u30D7\u5909\u63DB"
 ---
 
-# タイプ変換関数 {#type-conversion-functions}
+# 型変換関数 {#type-conversion-functions}
 
 ## 数値変換の一般的な問題 {#numeric-conversion-issues}
 
-値をあるデータ型から別のデータ型に変換するときは、一般的なケースでは、データの損失につながる危険な操作であることを覚えておく必要があります。 大きいデータ型の値を小さいデータ型にフィットさせる場合、または異なるデータ型の間で値を変換する場合、データ損失が発生する可能性があります。
+あるデータ型から別のデータ型に値を変換する場合、一般的なケースでは、データ損失につながる危険な操作であることを覚えておく必要があります。 大きいデータ型から小さいデータ型に値を近似しようとする場合、または異なるデータ型間で値を変換する場合、データ損失が発生する可能性があります。
 
-クリックハウスには [C++プログラムと同じ動作](https://en.cppreference.com/w/cpp/language/implicit_conversion).
+クリックハウスは [C++プログラムと同じ動作](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-## toInt(8/16/32/64) {#toint8163264}
+## トイント（8/16/32/64) {#toint8163264}
 
-入力値を次の値に変換します。 [Int](../../sql-reference/data-types/int-uint.md) データ型。 この関数ファミ:
+入力値を [Int](../../sql-reference/data-types/int-uint.md) データ型。 この関数ファミ:
 
 -   `toInt8(expr)` — Results in the `Int8` データ型。
 -   `toInt16(expr)` — Results in the `Int16` データ型。
@@ -24,17 +24,17 @@ toc_title: "\u30BF\u30A4\u30D7\u5909\u63DB"
 
 **パラメータ**
 
--   `expr` — [式](../syntax.md#syntax-expressions) 数値または数値の小数表現を含む文字列を返します。 数値のBinary、octal、およびhexadecimal表現はサポートされていません。 先頭のゼロは除去されます。
+-   `expr` — [式](../syntax.md#syntax-expressions) 数値または数値の十進表現を持つ文字列を返します。 数値の二進表現、八進表現、進表現はサポートされていません。 先頭のゼロは削除されます。
 
 **戻り値**
 
-の整数値 `Int8`, `Int16`, `Int32`、または `Int64` データ型。
+の整数値 `Int8`, `Int16`, `Int32`,または `Int64` データ型。
 
-関数の使用 [ゼロに向かって丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) つまり、数字の小数桁を切り捨てます。
+関数の使用 [ゼロへの丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) つまり、数字の小数部の数字を切り捨てます。
 
-のための機能の動作 [NaNおよびInf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 引数は未定義です。 覚えておいて [数値変換の問題](#numeric-conversion-issues)、機能を使用する場合。
+に対する関数の振る舞い [NaNおよびInf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 引数は未定義です。 覚えておいて [数値変換の問題](#numeric-conversion-issues)、関数を使用する場合。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
@@ -48,9 +48,9 @@ SELECT toInt64(nan), toInt32(32), toInt16('16'), toInt8(8.8)
 
 ## toInt(8/16/32/64)OrZero {#toint8163264orzero}
 
-これは、string型の引数をとり、int型にそれを解析しようとします(8 \| 16 \| 32 \| 64). 失敗した場合は0を返します。
+String型の引数を取り、それをIntに解析しようとします(8 \| 16 \| 32 \| 64). 失敗した場合は0を返します。
 
-**例えば**
+**例**
 
 ``` sql
 select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
@@ -64,9 +64,9 @@ select toInt64OrZero('123123'), toInt8OrZero('123qwe123')
 
 ## toInt(8/16/32/64)OrNull {#toint8163264ornull}
 
-これは、string型の引数をとり、int型にそれを解析しようとします(8 \| 16 \| 32 \| 64). 失敗した場合はnullを返します。
+String型の引数を取り、それをIntに解析しようとします(8 \| 16 \| 32 \| 64). 失敗した場合はNULLを返します。
 
-**例えば**
+**例**
 
 ``` sql
 select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
@@ -78,9 +78,9 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 └─────────────────────────┴───────────────────────────┘
 ```
 
-## toUInt(8/16/32/64) {#touint8163264}
+## トゥイント（8/16/32/64) {#touint8163264}
 
-入力値を次の値に変換します。 [UInt](../../sql-reference/data-types/int-uint.md) データ型。 この関数ファミ:
+入力値を [UInt](../../sql-reference/data-types/int-uint.md) データ型。 この関数ファミ:
 
 -   `toUInt8(expr)` — Results in the `UInt8` データ型。
 -   `toUInt16(expr)` — Results in the `UInt16` データ型。
@@ -89,17 +89,17 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 
 **パラメータ**
 
--   `expr` — [式](../syntax.md#syntax-expressions) 数値または数値の小数表現を含む文字列を返します。 数値のBinary、octal、およびhexadecimal表現はサポートされていません。 先頭のゼロは除去されます。
+-   `expr` — [式](../syntax.md#syntax-expressions) 数値または数値の十進表現を持つ文字列を返します。 数値の二進表現、八進表現、進表現はサポートされていません。 先頭のゼロは削除されます。
 
 **戻り値**
 
-の整数値 `UInt8`, `UInt16`, `UInt32`、または `UInt64` データ型。
+の整数値 `UInt8`, `UInt16`, `UInt32`,または `UInt64` データ型。
 
-関数の使用 [ゼロに向かって丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) つまり、数字の小数桁を切り捨てます。
+関数の使用 [ゼロへの丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) つまり、数字の小数部の数字を切り捨てます。
 
-負のagrumentsのための関数の動作と [NaNおよびInf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 引数は未定義です。 負の数の文字列を渡すと、次のようになります `'-32'`、ClickHouseは例外を発生させます。 覚えておいて [数値変換の問題](#numeric-conversion-issues)、機能を使用する場合。
+負の関数に対する関数の振る舞いと [NaNおよびInf](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 引数は未定義です。 負の数の文字列を渡すと、次のようになります `'-32'`,ClickHouseは例外を発生させます。 覚えておいて [数値変換の問題](#numeric-conversion-issues)、関数を使用する場合。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
@@ -111,31 +111,31 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 └─────────────────────┴───────────────┴────────────────┴──────────────┘
 ```
 
-## toUInt(8/16/32/64)OrZero {#touint8163264orzero}
+## トゥイント(8/16/32/64)オルゼロ {#touint8163264orzero}
 
-## toUInt(8/16/32/64)OrNull {#touint8163264ornull}
+## トゥイント(8/16/32/64)OrNull {#touint8163264ornull}
 
-## toFloat(32/64) {#tofloat3264}
+## トフロア(32/64) {#tofloat3264}
 
 ## toFloat(32/64)OrZero {#tofloat3264orzero}
 
 ## toFloat(32/64)OrNull {#tofloat3264ornull}
 
-## toDate {#todate}
+## 東立（とうだて {#todate}
 
-## toDateOrZero {#todateorzero}
+## トダテオルゼロ {#todateorzero}
 
 ## toDateOrNull {#todateornull}
 
 ## toDateTime {#todatetime}
 
-## toDateTimeOrZero {#todatetimeorzero}
+## トダティメオルゼロ {#todatetimeorzero}
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDecimal(32/64/128) {#todecimal3264128}
+## トデシマル(32/64/128) {#todecimal3264128}
 
-変換 `value` に [小数](../../sql-reference/data-types/decimal.md) 精度の高いデータ型 `S`. その `value` 数値または文字列を指定できます。 その `S` （スケール）パラメータ小数点以下の桁数を指定します。
+変換 `value` に [小数点](../../sql-reference/data-types/decimal.md) 精度の高いデータ型 `S`. その `value` 数値または文字列を指定できます。 その `S` (scale)パラメータは、小数点以下の桁数を指定します。
 
 -   `toDecimal32(value, S)`
 -   `toDecimal64(value, S)`
@@ -143,25 +143,25 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toDecimal(32/64/128)OrNull {#todecimal3264128ornull}
 
-入力文字列をaに変換します [Nullable(小数点(P,S)))](../../sql-reference/data-types/decimal.md) データ型の値。 このファミリの機能など:
+入力文字列をaに変換します [Nullable(Decimal(P,S)))](../../sql-reference/data-types/decimal.md) データ型の値。 このファミリの機能など:
 
 -   `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` データ型。
 -   `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` データ型。
 -   `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` データ型。
 
-これらの関数は、次の代わりに使用します `toDecimal*()` を取得したい場合は、 `NULL` 入力値の解析エラーが発生した場合の例外の代わりに値を指定します。
+これらの関数は、 `toDecimal*()` あなたが得ることを好むならば、関数 `NULL` 入力値の解析エラーが発生した場合の例外ではなく、値。
 
 **パラメータ**
 
--   `expr` — [式](../syntax.md#syntax-expressions)、値を返します [文字列](../../sql-reference/data-types/string.md) データ型。 ClickHouseは、小数のテキスト表現を想定しています。 例えば, `'1.111'`.
+-   `expr` — [式](../syntax.md#syntax-expressions) の値を返します。 [文字列](../../sql-reference/data-types/string.md) データ型。 ClickHouseは、十進数のテキスト表現を想定しています。 例えば, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
 
 **戻り値**
 
-の値 `Nullable(Decimal(P,S))` データ型。 値は次のとおりです:
+の値 `Nullable(Decimal(P,S))` データ型。 この値を含む:
 
--   数との `S` ClickHouseが入力文字列を数値として解釈する場合、小数点以下の桁数。
--   `NULL` ClickHouseが入力文字列を数値として解釈できない場合、または入力番号に `S` 小数点以下の桁数。
+-   との数 `S` ClickHouseが入力文字列を数値として解釈する場合は、小数点以下の桁数。
+-   `NULL`、ClickHouseが入力文字列を数値として解釈できない場合、または入力番号に以下のものが含まれている場合 `S` 小数点以下の桁数。
 
 **例**
 
@@ -187,27 +187,27 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 
 ## toDecimal(32/64/128)OrZero {#todecimal3264128orzero}
 
-入力値を次の値に変換します。 [小数点(p,s))](../../sql-reference/data-types/decimal.md) データ型。 このファミリの機能など:
+入力値を [小数(P,S)](../../sql-reference/data-types/decimal.md) データ型。 このファミリの機能など:
 
 -   `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` データ型。
 -   `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` データ型。
 -   `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` データ型。
 
-これらの関数は、次の代わりに使用します `toDecimal*()` を取得したい場合は、 `0` 入力値の解析エラーが発生した場合の例外の代わりに値を指定します。
+これらの関数は、 `toDecimal*()` あなたが得ることを好むならば、関数 `0` 入力値の解析エラーが発生した場合の例外ではなく、値。
 
 **パラメータ**
 
--   `expr` — [式](../syntax.md#syntax-expressions)、値を返します [文字列](../../sql-reference/data-types/string.md) データ型。 ClickHouseは、小数のテキスト表現を想定しています。 例えば, `'1.111'`.
+-   `expr` — [式](../syntax.md#syntax-expressions) の値を返します。 [文字列](../../sql-reference/data-types/string.md) データ型。 ClickHouseは、十進数のテキスト表現を想定しています。 例えば, `'1.111'`.
 -   `S` — Scale, the number of decimal places in the resulting value.
 
 **戻り値**
 
-の値 `Nullable(Decimal(P,S))` データ型。 値は次のとおりです:
+の値 `Nullable(Decimal(P,S))` データ型。 この値を含む:
 
--   数との `S` ClickHouseが入力文字列を数値として解釈する場合、小数点以下の桁数。
--   0とともに `S` ClickHouseが入力文字列を数値として解釈できない場合、または入力番号に `S` 小数点以下の桁数。
+-   との数 `S` ClickHouseが入力文字列を数値として解釈する場合は、小数点以下の桁数。
+-   0とともに `S` ClickHouseが入力文字列を数値として解釈できない場合、または入力番号に以下のものが含まれている場合は、小数点以下の桁数 `S` 小数点以下の桁数。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val)
@@ -231,28 +231,28 @@ SELECT toDecimal32OrZero(toString(-1.111), 2) AS val, toTypeName(val)
 
 ## toString {#tostring}
 
-数値、文字列（固定文字列ではない）、日付、および日付を時刻で変換するための関数。
+数値、文字列（ただし、固定文字列ではありません）、日付、および時刻を持つ日付の間で変換するための関数。
 これら全ての機能を受け入れを一つの引数。
 
-文字列に変換するとき、または文字列から変換するとき、値はtabseparated形式（および他のほとんどすべてのテキスト形式）と同じ規則を使用して書式設定ま 文字列を解析できない場合は、例外がスローされ、要求はキャンセルされます。
+文字列との間で変換する場合、値はTabSeparated形式(およびほとんどすべての他のテキスト形式)と同じ規則を使用して書式設定または解析されます。 文字列を解析できない場合は、例外がスローされ、要求がキャンセルされます。
 
-日付を数値またはその逆に変換する場合、日付はunixエポックの開始からの日数に対応します。
-時刻を含む日付を数値またはその逆に変換する場合、時刻を含む日付は、unixエポックの開始からの秒数に対応します。
+日付を数値に変換する場合、またはその逆の場合、日付はUnixエポックの開始からの日数に対応します。
+時刻付きの日付を数値に変換する場合、またはその逆の場合、時刻付きの日付はUnixエポックの開始からの秒数に対応します。
 
-ToDate/toDateTime関数の日時形式は、次のように定義されています:
+ToDate/toDateTime関数の日付および日付と時刻の形式は、次のように定義されます:
 
 ``` text
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-例外として、uint32、int32、uint64、またはint64の数値型からdateに変換し、その数値が65536以上の場合、その数値はunixタイムスタンプとして(日数ではなく)解釈さ これにより、一般的な執筆のサポートが可能になります ‘toDate(unix\_timestamp)’ それ以外の場合はエラーになり、より面倒な書き込みが必要になります ‘toDate(toDateTime(unix\_timestamp))’.
+例外として、uint32、Int32、UInt64、またはInt64の数値型からDateに変換する場合、数値が65536以上の場合、数値はUnixタイムスタンプとして解釈され(日数ではなく)、日付 この支援のための共通の発生を書く ‘toDate(unix\_timestamp)’ それ以外の場合はエラーになり、より面倒な書き込みが必要になります ‘toDate(toDateTime(unix\_timestamp))’.
 
-時間を伴う日付と日付の間の変換は、ヌル時間を追加するか、時間を落とすことによって自然な方法で行われます。
+日付と時刻の間の変換は、null時間を追加するか、時間を削除することによって、自然な方法で実行されます。
 
-数値型間の変換は、c++で異なる数値型間の代入と同じ規則を使用します。
+数値型間の変換では、C++の異なる数値型間の代入と同じ規則が使用されます。
 
-さらに、datetime引数のtostring関数は、タイムゾーンの名前を含む第二の文字列引数を取ることができます。 例えば: `Asia/Yekaterinburg` この場合、時刻は指定されたタイムゾーンに従ってフォーマットされます。
+さらに、DateTime引数のtoString関数は、タイムゾーンの名前を含む第二の文字列引数を取ることができます。 例: `Asia/Yekaterinburg` この場合、時刻は指定されたタイムゾーンに従って書式設定されます。
 
 ``` sql
 SELECT
@@ -270,14 +270,14 @@ SELECT
 
 ## toFixedString(s,N) {#tofixedstrings-n}
 
-文字列型引数をfixedstring(n)型(固定長nの文字列)に変換します。 nは定数でなければなりません。
-文字列のバイト数がnより少ない場合は、右側にnullバイトが渡されます。 文字列のバイト数がnより多い場合は、例外がスローされます。
+文字列型の引数をFixedString(N)型(固定長Nの文字列)に変換します。 Nは定数でなければなりません。
+文字列のバイト数がNより少ない場合は、右側にnullバイトが埋め込まれます。 文字列のバイト数がNより多い場合は、例外がスローされます。
 
-## tostringクットゼロ(s) {#tostringcuttozeros}
+## トストリングカットゼロ(s) {#tostringcuttozeros}
 
-文字列またはfixedstring引数を受け取ります。 最初のゼロ-バイトで切り捨てられたコンテンツを持つ文字列を返します。
+文字列またはFixedString引数を受け取ります。 見つかった最初のゼロバイトで切り捨てられた内容の文字列を返します。
 
-例えば:
+例:
 
 ``` sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
@@ -299,31 +299,31 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-## reinterpretAsUInt(8/16/32/64) {#reinterpretasuint8163264}
+## 再解釈（8/16/32/64) {#reinterpretasuint8163264}
 
 ## 再解釈(8/16/32/64) {#reinterpretasint8163264}
 
-## 再解釈(32/64) {#reinterpretasfloat3264}
+## reinterpretAsFloat(32/64) {#reinterpretasfloat3264}
 
-## 再解釈アスデート {#reinterpretasdate}
+## 再解釈日 {#reinterpretasdate}
 
-## タスデータタイムの再解釈 {#reinterpretasdatetime}
+## データの再解釈 {#reinterpretasdatetime}
 
-これらの関数は文字列を受け取り、文字列の先頭に置かれたバイトをホスト順(リトルエンディアン)の数値として解釈します。 文字列が十分な長さでない場合、関数は、文字列が必要な数のヌルバイトで埋められているかのように機能します。 文字列が必要以上に長い場合、余分なバイトは無視されます。 日付はunixエポックの開始からの日数として解釈され、時刻付きの日付はunixエポックの開始からの秒数として解釈されます。
+これらの関数は、文字列を受け入れ、文字列の先頭に置かれたバイトをホスト順(リトルエンディアン)の数値として解釈します。 文字列が十分な長さでない場合、関数は文字列がnullバイトの必要な数で埋め込まれているかのように動作します。 文字列が必要以上に長い場合、余分なバイトは無視されます。 日付はUnixエポックの開始からの日数として解釈され、時刻を持つ日付はUnixエポックの開始からの秒数として解釈されます。
 
-## 文字列の再解釈 {#type_conversion_functions-reinterpretAsString}
+## 再解釈 {#type_conversion_functions-reinterpretAsString}
 
-この関数は、時刻を含む数値または日付または日付を受け取り、対応する値をホスト順(リトルエンディアン)で表すバイトを含む文字列を返します。 nullバイトは、末尾から削除されます。 たとえば、uint32型の値255は、バイト長の文字列です。
+この関数は、数値または日付または日付と時刻を受け入れ、対応する値をホスト順(リトルエンディアン)で表すバイトを含む文字列を返します。 Nullバイトは末尾から削除されます。 たとえば、UInt32型の値255は、バイト長の文字列です。
 
-## 再解釈された文字列 {#reinterpretasfixedstring}
+## reinterpretAsFixedString {#reinterpretasfixedstring}
 
-この関数は、時刻を含む数値または日付または日付を受け取り、対応する値をホスト順（リトルエンディアン）で表すバイトを含むfixedstringを返します。 nullバイトは、末尾から削除されます。 たとえば、uint32型の値255は、バイト長のfixedstringです。
+この関数は、数値または日付または日付と時刻を受け取り、ホスト順(リトルエンディアン)で対応する値を表すバイトを含むFixedStringを返します。 Nullバイトは末尾から削除されます。 たとえば、UInt32型の値255は、バイト長のFixedStringです。
 
-## キャスト(x,t) {#type_conversion_function-cast}
+## キャスト(x,T) {#type_conversion_function-cast}
 
 変換 ‘x’ に ‘t’ データ型。 構文CAST(x AS t)もサポートされています。
 
-例えば:
+例:
 
 ``` sql
 SELECT
@@ -342,7 +342,7 @@ SELECT
 
 FixedString(N)への変換は、String型またはFixedString(N)型の引数に対してのみ機能します。
 
-タイプへの変換 [Nullable](../../sql-reference/data-types/nullable.md) そして背部は支えられます。 例えば:
+タイプ変換 [Null可能](../../sql-reference/data-types/nullable.md) そして背部は支えられる。 例:
 
 ``` sql
 SELECT toTypeName(x) FROM t_null
@@ -366,9 +366,9 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
-## toInterval(年/四半期\|月/週\|日/時/分/秒) {#function-tointerval}
+## toInterval(年/四半期\|月/週\|日\|時/分/秒) {#function-tointerval}
 
-数値型の引数を [間隔](../../sql-reference/data-types/special-data-types/interval.md) データ型。
+数値型引数を [間隔](../../sql-reference/data-types/special-data-types/interval.md) データ型。
 
 **構文**
 
@@ -391,7 +391,7 @@ toIntervalYear(number)
 
 -   の値 `Interval` データ型。
 
-**例えば**
+**例**
 
 ``` sql
 WITH
@@ -411,9 +411,9 @@ SELECT
 
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
 
-の日付と時刻を変換します。 [文字列](../../sql-reference/data-types/string.md) 表現する [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) データ型。
+の日付と時刻を変換します。 [文字列](../../sql-reference/data-types/string.md) への表現 [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) データ型。
 
-関数は解析します [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC1123-5.2.14RFC-822日付と時刻の指定](https://tools.ietf.org/html/rfc1123#page-55)、ClickHouseのと他のいくつかの日付と時刻の形式。
+関数は解析します [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC1123-5.2.14RFC-822日付と時刻の仕様](https://tools.ietf.org/html/rfc1123#page-55)、ClickHouseのといくつかの他の日付と時刻の形式。
 
 **構文**
 
@@ -428,17 +428,17 @@ parseDateTimeBestEffort(time_string [, time_zone]);
 
 **サポートされている非標準形式**
 
--   9を含む文字列。.10桁 [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
--   日付と時刻コンポーネントを含む文字列: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`、等。
--   日付を含む文字列で、時間の要素は含まれません: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` など。
--   日と時間のある文字列: `DD`, `DD hh`, `DD hh:mm`. この場合 `YYYY-MM` として代入される。 `2000-01`.
--   タイムゾーンオフセット情報と共に日付と時刻を含む文字列: `YYYY-MM-DD hh:mm:ss ±h:mm`、等。 例えば, `2020-12-12 17:36:00 -5:00`.
+-   9を含む文字列。.10桁 [unixタイムスタン](https://en.wikipedia.org/wiki/Unix_time).
+-   日付と時刻コンポーネントを持つ文字列: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss` など。
+-   日付を持つ文字列ですが、時刻コンポーネントはありません: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` 等。
+-   日付と時刻の文字列: `DD`, `DD hh`, `DD hh:mm`. この場合 `YYYY-MM` と置き換えられる。 `2000-01`.
+-   日付と時刻とタイムゾーンのオフセット情報を含む文字列: `YYYY-MM-DD hh:mm:ss ±h:mm` など。 例えば, `2020-12-12 17:36:00 -5:00`.
 
-Separatorを持つすべての形式について、この関数は、フルネームまたは月名の最初の三文字で表される月の名前を解析します。 例: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
+区切り文字を持つすべての形式について、関数は月名をフルネームまたは月名の最初の三文字で表したものを解析します。 例: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
 
 **戻り値**
 
--   `time_string` に変換される。 `DateTime` データ型。
+-   `time_string` に変換されます。 `DateTime` データ型。
 
 **例**
 
@@ -516,19 +516,19 @@ SELECT parseDateTimeBestEffort('10 20:19')
 └─────────────────────────────────────┘
 ```
 
-**また見なさい**
+**も参照。**
 
--   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
+-   \[ISO8601による発表 @xkcd\]（https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
--   [toDate](#todate)
+-   [東立（とうだて](#todate)
 -   [toDateTime](#todatetime)
 
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
 
-と同じ [parseDateTimeBestEffort](#parsedatetimebesteffort) ただし、処理できない日付形式が検出された場合はnullを返します。
+同じように [parseDateTimeBestEffort](#parsedatetimebesteffort) ただし、処理できない日付形式が検出されるとnullが返されます。
 
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 
-と同じ [parseDateTimeBestEffort](#parsedatetimebesteffort) ただし、処理できない日付形式に遭遇した場合は、日付またはゼロの日時が返されます。
+同じように [parseDateTimeBestEffort](#parsedatetimebesteffort) ただし、処理できない日付形式が検出されたときにゼロの日付またはゼロの日付時刻を返します。
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

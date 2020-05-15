@@ -127,8 +127,6 @@ SRCS(
     cos.cpp
     CRC.cpp
     currentDatabase.cpp
-    currentQuota.cpp
-    currentRowPolicies.cpp
     currentUser.cpp
     dateDiff.cpp
     defaultValueOfArgumentType.cpp

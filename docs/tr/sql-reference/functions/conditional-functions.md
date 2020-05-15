@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: "Ko\u015Fullu "
 ---
@@ -17,7 +17,7 @@ Koşullu dallanmayı kontrol eder. Çoğu sistemin aksine, ClickHouse her zaman 
 SELECT if(cond, then, else)
 ```
 
-Eğer durum `cond` sıfır olmayan bir değere değerlendirir, ifadenin sonucunu döndürür `then` ve ifad andenin sonucu `else` varsa, atlanır. Eğer… `cond` sıfır veya `NULL` fakat daha sonra sonucu `then` ifade atlanır ve sonucu `else` Ifade, varsa, döndürülür.
+Eğer durum `cond` sıfır olmayan bir değere değerlendirir, ifadenin sonucunu döndürür `then` ve ifad andenin sonucu `else` varsa, atlanır. Eğer... `cond` sıfır veya `NULL` fakat daha sonra sonucu `then` ifade atlanır ve sonucu `else` Ifade, varsa, döndürülür.
 
 **Parametre**
 
@@ -99,11 +99,11 @@ Not: `NULL` bu örnekte değerler kullanılmaz, kontrol edin [Koşullardaki boş
 
 ## Üçlü Operatör {#ternary-operator}
 
-Aynı gibi çalışıyor. `if` işlev.
+Aynı gibi çalışıyor. `if` İşlev.
 
 Sözdizimi: `cond ? then : else`
 
-Dönüşler `then` eğer… `cond` true (sıfırdan büyük) olarak değerlendirir, aksi takdirde döndürür `else`.
+Dönüşler `then` eğer... `cond` true (sıfırdan büyük) olarak değerlendirir, aksi takdirde döndürür `else`.
 
 -   `cond` türü olmalıdır `UInt8`, ve `then` ve `else` en düşük ortak türe sahip olmalıdır.
 
@@ -115,7 +115,7 @@ Dönüşler `then` eğer… `cond` true (sıfırdan büyük) olarak değerlendir
 
 ## multiİf {#multiif}
 
-Yaz allowsmanızı sağlar [CASE](../operators.md#operator_case) operatör sorguda daha kompakt.
+Yaz allowsmanızı sağlar [CASE](../operators/index.md#operator_case) operatör sorguda daha kompakt.
 
 Sözdizimi: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
@@ -151,7 +151,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Koşullu sonuçları doğrudan Kullanma {#using-conditional-results-directly}
+## Koşullu Sonuçları Doğrudan Kullanma {#using-conditional-results-directly}
 
 Koşullar her zaman sonuç `0`, `1` veya `NULL`. Böylece koşullu sonuçları doğrudan bu şekilde kullanabilirsiniz:
 

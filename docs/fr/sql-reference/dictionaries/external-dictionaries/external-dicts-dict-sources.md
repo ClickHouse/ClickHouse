@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: Sources de dictionnaires externes
 ---
 
-# Sources De Dictionnaires Externes {#dicts-external-dicts-dict-sources}
+# Sources de dictionnaires externes {#dicts-external-dicts-dict-sources}
 
 Externe dictionnaire peut être connecté à partir de nombreuses sources différentes.
 
-Si dictionary est configuré à l’aide de xml-file, la configuration ressemble à ceci:
+Si dictionary est configuré à l'aide de xml-file, la configuration ressemble à ceci:
 
 ``` xml
 <yandex>
@@ -37,11 +37,17 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 La source est configurée dans le `source` section.
 
-Pour les sources de types [Fichier Local](#dicts-external_dicts_dict_sources-local_file), [Fichier exécutable](#dicts-external_dicts_dict_sources-executable), [HTTP(s)](#dicts-external_dicts_dict_sources-http), [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-les paramètres optionnels sont possibles:
+Pour les types de source [Fichier Local](#dicts-external_dicts_dict_sources-local_file), [Fichier exécutable](#dicts-external_dicts_dict_sources-executable), [HTTP(S)](#dicts-external_dicts_dict_sources-http), [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+les paramètres optionnels sont disponibles:
 
 ``` xml
-@@ -53,6 +49,12 @@ optional settings are available:
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+  <settings>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
   </settings>
 </source>
 ```
@@ -50,7 +56,7 @@ ou
 
 ``` sql
 SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
-SETTINGS(format_csv_allow_single_quotes = 1)
+SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
 Les Types de sources (`source_type`):
@@ -167,7 +173,7 @@ Définition des champs:
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
-Vous pouvez utiliser cette méthode pour connecter n’importe quelle base de données dotée d’un pilote ODBC.
+Vous pouvez utiliser cette méthode pour connecter n'importe quelle base de données dotée d'un pilote ODBC.
 
 Exemple de paramètres:
 
@@ -200,16 +206,16 @@ Définition des champs:
 -   `connection_string` – Connection string.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Mise à jour des dictionnaires](external-dicts-dict-lifetime.md).
 
-ClickHouse reçoit des symboles de citation D’ODBC-driver et cite tous les paramètres des requêtes au pilote, il est donc nécessaire de définir le nom de la table en conséquence sur le cas du nom de la table dans la base de données.
+ClickHouse reçoit des symboles de citation D'ODBC-driver et cite tous les paramètres des requêtes au pilote, il est donc nécessaire de définir le nom de la table en conséquence sur le cas du nom de la table dans la base de données.
 
-Si vous avez des problèmes avec des encodages lors de l’utilisation d’Oracle, consultez le [FAQ](../../../faq/general.md#oracle-odbc-encodings) article.
+Si vous avez des problèmes avec des encodages lors de l'utilisation d'Oracle, consultez le [FAQ](../../../faq/general.md#oracle-odbc-encodings) article.
 
-### Vulnérabilité Connue De La fonctionnalité Du Dictionnaire ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
+### Vulnérabilité connue de la fonctionnalité du dictionnaire ODBC {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 !!! attention "Attention"
     Lors de la connexion à la base de données via le paramètre de connexion du pilote ODBC `Servername` peut être substitué. Dans ce cas, les valeurs de `USERNAME` et `PASSWORD` de `odbc.ini` sont envoyés au serveur distant et peuvent être compromis.
 
-**Exemple d’utilisation non sécurisée**
+**Exemple d'utilisation non sécurisée**
 
 Configurons unixODBC pour PostgreSQL. Le contenu de `/etc/odbc.ini`:
 
@@ -232,11 +238,11 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 Le pilote ODBC enverra des valeurs de `USERNAME` et `PASSWORD` de `odbc.ini` de `some-server.com`.
 
-### Exemple De Connexion Postgresql {#example-of-connecting-postgresql}
+### Exemple de connexion Postgresql {#example-of-connecting-postgresql}
 
 Ubuntu OS.
 
-Installation d’unixODBC et du pilote ODBC pour PostgreSQL:
+Installation d'unixODBC et du pilote ODBC pour PostgreSQL:
 
 ``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
@@ -311,9 +317,9 @@ LAYOUT(HASHED())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-Vous devrez peut-être modifier `odbc.ini` pour spécifier le chemin d’accès complet à la bibliothèque avec le conducteur `DRIVER=/usr/local/lib/psqlodbcw.so`.
+Vous devrez peut-être modifier `odbc.ini` pour spécifier le chemin d'accès complet à la bibliothèque avec le conducteur `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Exemple De Connexion à MS SQL Server {#example-of-connecting-ms-sql-server}
+### Exemple de connexion à MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Ubuntu OS.
 
@@ -506,7 +512,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### Clickhouse {#dicts-external_dicts_dict_sources-clickhouse}
+### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Exemple de paramètres:
 
