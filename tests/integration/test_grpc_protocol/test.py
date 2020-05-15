@@ -41,8 +41,8 @@ finally:
             stub = GrpcConnection_pb2_grpc.GRPCStub(channel)
             def write_query():
                 user_info = GrpcConnection_pb2.User(user="default", password='123', quota='default')
-                query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', format="TabSeparated", insert_data=False)
-                yield GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info, interactive_delay=1000)
+                query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', insert_data=False, settings={'default_format':'TabSeparated'})
+                yield GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info)
             
             for response in stub.Query(write_query()):
                 output += response.output.split()

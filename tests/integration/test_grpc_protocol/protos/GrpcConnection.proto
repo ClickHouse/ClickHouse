@@ -6,13 +6,12 @@ message User {
    string user = 1;
    string password = 2;
    string quota = 3;
-   string database = 4;
 }
 message QuerySettings {
    string query = 1;
    string query_id = 2;
-   string format = 3;
    bool insert_data = 4;
+   map<string, string> settings = 5;
 }
 message QueryRequest {
    User user_info = 1;

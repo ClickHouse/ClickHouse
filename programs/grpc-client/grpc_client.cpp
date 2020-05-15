@@ -30,8 +30,11 @@ class GRPCClient {
 
             querySettigs->set_query(query);
             querySettigs->set_query_id(std::to_string(id));
-            querySettigs->set_format("Values");
             querySettigs->set_insert_data((insert_data.size() != 0));
+
+            (*querySettigs->mutable_settings())["default_format"] ="Pretty";
+            (*querySettigs->mutable_settings())["max_query_size"] ="100";
+
 
             request.set_allocated_query_info(querySettigs.release());
             

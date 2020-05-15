@@ -69,7 +69,7 @@ class CallDataQuery : public CommonCallData {
           };
           void SendDetails();
 
-          bool senData(const Block & block);
+          bool sendData(const Block & block);
           bool sendProgress();
           bool sendTotals(const Block & totals);
           bool sendExtremes(const Block & block);
@@ -169,6 +169,7 @@ class CallDataQuery : public CommonCallData {
           Stopwatch progress_watch;
           Stopwatch query_watch;
           Progress progress;
+
           DetailsStatus detailsStatus;
           Status status;
 
@@ -183,6 +184,7 @@ class CallDataQuery : public CommonCallData {
           std::shared_ptr<WriteBufferFromGRPC> out;
           String format_output;
           String format_input;
+          uint64_t interactive_delay;
           std::optional<CurrentThread::QueryScope> query_scope;
 
 

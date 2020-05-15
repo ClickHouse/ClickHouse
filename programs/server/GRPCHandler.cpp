@@ -5,7 +5,7 @@
 #include <Interpreters/executeQuery.h>
 #include <ext/scope_guard.h>
 #include <common/getFQDNOrHostName.h>
-
+#include <Common/SettingsChanges.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -26,9 +26,11 @@ using GRPCConnection::GRPC;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
+    extern const int NO_DATA_TO_INSERT;
 }
 
 std::string ParseGrpcPeer(const grpc::ServerContext& context_) {
@@ -45,27 +47,43 @@ void CallDataQuery::ParseQuery() {
     std::string user = request.user_info().user();
     std::string password = request.user_info().password();
     std::string quota_key = request.user_info().quota();
-    std::string default_database = request.user_info().database();
-    format_output = request.query_info().format();
-
+    interactive_delay = request.interactive_delay();
+    if (interactive_delay == 0)
+        interactive_delay = INT_MAX;
     context.setProgressCallback([this] (const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
-    
-    if (!default_database.empty())
-    {
-        if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
-        {
-            Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-        }
 
-        context.setCurrentDatabase(default_database);
-    }
 
     query_context = context;
     query_scope.emplace(*query_context);
     query_context->setUser(user, password, user_adress, quota_key);
     query_context->setCurrentQueryId(request.query_info().query_id());
 
-    ClientInfo & client_info = context.getClientInfo();
+    SettingsChanges settings_changes;
+    for (const auto & [key, value] : request.query_info().settings())
+    {
+        if (key == "database")
+        {
+            if (!DatabaseCatalog::instance().isDatabaseExist(value))
+            {
+                Exception e("Database " + value + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            }
+            query_context->setCurrentDatabase(value);
+        }
+        else if (key == "default_format")
+        {
+            format_output = value;
+            query_context->setDefaultFormat(value);
+        }
+        else
+        {
+            settings_changes.push_back({key, value});
+        }
+    }
+
+    query_context->checkSettingsConstraints(settings_changes);
+    query_context->applySettingsChanges(settings_changes);
+
+    ClientInfo & client_info = query_context->getClientInfo();
     client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
     client_info.interface = ClientInfo::Interface::GRPC;
 
@@ -96,7 +114,7 @@ void CallDataQuery::ParseData() {
 
         if (!insert_query || !(insert_query->data || request.query_info().insert_data() || !request.insert_data().empty()))
         {
-            throw Exception("Logical error: query requires data to insert, but it is not INSERT query", 0);
+            Exception e("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
         }
 
         format_input = insert_query->format;
@@ -203,12 +221,12 @@ void CallDataQuery::ProgressQuery() {
             query_watch.restart();
             if (!io.null_format)
             {
-                sent = senData(block); 
+                sent = sendData(block); 
                 break;
             }
         } 
         // interactive_delay in miliseconds
-        if (progress_watch.elapsedMilliseconds() >= request.interactive_delay())
+        if (progress_watch.elapsedMilliseconds() >= interactive_delay)
         {
             progress_watch.restart();
             sent = sendProgress(); 
@@ -254,7 +272,7 @@ void CallDataQuery::FinishQuery() {
     out->finalize();
 }
 
-bool CallDataQuery::senData(const Block & block) {
+bool CallDataQuery::sendData(const Block & block) {
     out->setResponse([](const String& buffer) {
                          QueryResponse tmp_response;
                          tmp_response.set_output(buffer);
