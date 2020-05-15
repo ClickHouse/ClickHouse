@@ -11,7 +11,6 @@
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDictionaries.h>
-#include <Storages/System/StorageSystemLicenses.h>
 #include <Storages/System/StorageSystemEvents.h>
 #include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
@@ -36,6 +35,9 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Storages/System/StorageSystemLicenses.h>
+#endif
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <Storages/System/StorageSystemZeros.h>
