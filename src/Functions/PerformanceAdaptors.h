@@ -104,6 +104,11 @@ struct PerformanceStatistics
     PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
 };
 
+struct PerformanceAdaptorOptions
+{
+
+};
+
 /// Combine several IExecutableFunctionImpl into one.
 /// All the implementations should be equivalent.
 /// Implementation to execute will be selected based on performance on previous runs.
@@ -152,6 +157,7 @@ public:
 private:
     std::vector<ExecutableFunctionImplPtr> impls; // Alternative implementations.
     PerformanceStatistics statistics;
+    PerformanceAdaptorOptions options;
 };
 
 // The same as ExecutableFunctionPerformanceAdaptor, but combine via IFunction interface.
@@ -197,24 +203,7 @@ public:
 private:
     std::vector<FunctionPtr> impls; // Alternative implementations.
     PerformanceStatistics statistics;
-};
-
-// TODO(dakovalkov): May be it's better to delete this macros and write every function explicitly for better readability.
-#define DECLARE_STANDART_TARGET_ADAPTOR(Function) \
-class Function : public FunctionDynamicAdaptor<TargetSpecific::Default::Function> \
-{ \
-public: \
-    Function(const Context &) : FunctionDynamicAdaptor<TargetSpecific::Default::Function>() \
-    { \
-        registerImplementation<TargetSpecific::SSE4::Function>(TargetArch::SSE4); \
-        registerImplementation<TargetSpecific::AVX::Function>(TargetArch::AVX); \
-        registerImplementation<TargetSpecific::AVX2::Function>(TargetArch::AVX2); \
-        registerImplementation<TargetSpecific::AVX512::Function>(TargetArch::AVX512); \
-    } \
-    static FunctionPtr create(const Context & context) \
-    { \
-        return std::make_shared<Function>(context); \
-    } \
+    PerformanceAdaptorOptions options;
 };
 
 } // namespace DB

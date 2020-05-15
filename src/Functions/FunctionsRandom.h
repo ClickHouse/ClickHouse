@@ -95,7 +95,7 @@ public:
         registerImplementation<FunctionRandomImpl<TargetSpecific::SSE4::RandImpl,   ToType, Name>>(TargetArch::SSE4);
         registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,    ToType, Name>>(TargetArch::AVX);
         registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,   ToType, Name>>(TargetArch::AVX2);
-        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512::RandImpl, ToType, Name>>(TargetArch::AVX512);
+        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512f::RandImpl, ToType, Name>>(TargetArch::AVX512f);
     }
 
     static FunctionPtr create(const Context &) {
