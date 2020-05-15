@@ -46,7 +46,7 @@ void MergeTreeMarksLoader::loadMarks()
             };
 
             auto init_func = [marks_overall_size](void * heap_storage) {
-                return CacheMarksInCompressedFile(marks_overall_size, heap_storage);
+                return CacheMarksInCompressedFile(marks_overall_size,heap_storage);
             };
 
             /// The cache is active, insert the initial object there and get it reference back.

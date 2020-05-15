@@ -260,6 +260,8 @@ public:
     }
 };
 
+struct alloc_tag {};
+
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArray : public PODArrayBase<sizeof(T), initial_bytes, TAllocator, pad_right_, pad_left_>
 {
@@ -283,10 +285,10 @@ public:
     using iterator = T *;
     using const_iterator = const T *;
 
-    PODArray() {}
+    PODArray() = default;
 
     template <typename ...TAllocatorParams>
-    explicit(sizeof...(TAllocatorParams) == 0) PODArray(size_t n, TAllocatorParams&& ...params)
+    PODArray(size_t n, alloc_tag, TAllocatorParams&& ...params)
     {
         this->alloc_for_num_elements(n, std::forward<TAllocatorParams>(params)...);
         this->c_end += this->byte_size(n);

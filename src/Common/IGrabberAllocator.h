@@ -1105,6 +1105,8 @@ struct FakePODAllocForIG
      */
     constexpr static void * alloc(size_t, void * start) noexcept { return start; }
 
+    constexpr static void * alloc(size_t, void * start) noexcept { return start; }
+
     /// The IGrabberAllocator::MemoryChunk will handle it.
     constexpr static void free(char *, size_t) noexcept {}
 
