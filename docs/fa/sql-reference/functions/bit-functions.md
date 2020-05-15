@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
 toc_title: "\u0628\u06CC\u062A"
 ---
 
 # توابع بیت {#bit-functions}
 
-بیت توابع کار برای هر جفت از انواع از uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32 یا float64.
+بیت توابع کار برای هر جفت از انواع از UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32 یا Float64.
 
 نوع نتیجه یک عدد صحیح با بیت به حداکثر بیت از استدلال خود را برابر است. اگر حداقل یکی از استدلال امضا شده است, نتیجه یک شماره امضا شده است. اگر استدلال یک عدد ممیز شناور است, این است که به درون بازیگران64.
 

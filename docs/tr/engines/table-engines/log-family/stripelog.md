@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: StripeLog
 ---
 
 # Stripelog {#stripelog}
 
-Bu motor günlük motor ailesine aittir. Günlük motorlarının ortak özelliklerini ve farklılıklarını görün [Log Engine Ailesi](log-family.md) makale.
+Bu motor günlük motor ailesine aittir. Günlük motorlarının ortak özelliklerini ve farklılıklarını görün [Log Engine Ailesi](log-family.md) Makale.
 
 Az miktarda veri içeren (1 milyondan az satır) birçok tablo yazmanız gerektiğinde, bu altyapıyı senaryolarda kullanın.
 
@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Ayrıntılı açıklamasına bakın [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) sorgu.
 
-## Veri Yazma {#table_engines-stripelog-writing-the-data}
+## Veri yazma {#table_engines-stripelog-writing-the-data}
 
 Bu `StripeLog` motor tüm sütunları tek bir dosyada saklar. Her biri için `INSERT` sorgu, ClickHouse veri bloğunu bir tablo dosyasının sonuna ekler, sütunları tek tek yazar.
 
@@ -35,11 +35,11 @@ Her tablo için ClickHouse dosyaları yazar:
 
 Bu `StripeLog` motor desteklemiyor `ALTER UPDATE` ve `ALTER DELETE` harekat.
 
-## Verileri Okuma {#table_engines-stripelog-reading-the-data}
+## Verileri okuma {#table_engines-stripelog-reading-the-data}
 
-İşaretli dosya, Clickhouse’un verilerin okunmasını paralelleştirmesine izin verir. Bu demektir `SELECT` sorgu satırları öngörülemeyen bir sırayla döndürür. Kullan… `ORDER BY` satırları sıralamak için yan tümce.
+İşaretli dosya, Clickhouse'un verilerin okunmasını paralelleştirmesine izin verir. Bu demektir `SELECT` sorgu satırları öngörülemeyen bir sırayla döndürür. Kullan... `ORDER BY` satırları sıralamak için yan tümce.
 
-## Kullanım Örneği {#table_engines-stripelog-example-of-use}
+## Kullanım örneği {#table_engines-stripelog-example-of-use}
 
 Tablo oluşturma:
 

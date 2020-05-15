@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "Kullan\u0131m \xD6nerileri"
 ---
@@ -17,14 +17,14 @@ $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gov
 
 ## CPU sınırlamaları {#cpu-limitations}
 
-İşlemciler aşırı ısınabilir. Kullanmak `dmesg` aşırı ısınma nedeniyle CPU’nun saat hızının sınırlı olup olmadığını görmek için.
+İşlemciler aşırı ısınabilir. Kullanmak `dmesg` aşırı ısınma nedeniyle CPU'nun saat hızının sınırlı olup olmadığını görmek için.
 Kısıtlama, veri merkezi düzeyinde harici olarak da ayarlanabilir. Kullanabilirsiniz `turbostat` bir yük altında izlemek için.
 
 ## RAM {#ram}
 
-Küçük miktarlarda veri için (~200 GB’a kadar sıkıştırılmış), veri hacmi kadar bellek kullanmak en iyisidir.
+Küçük miktarlarda veri için (~200 GB'a kadar sıkıştırılmış), veri hacmi kadar bellek kullanmak en iyisidir.
 Büyük miktarda veri için ve etkileşimli (çevrimiçi) sorguları işlerken, sıcak veri alt kümesi sayfaların önbelleğine sığacak şekilde makul miktarda RAM (128 GB veya daha fazla) kullanmalısınız.
-Sunucu başına ~50 TB veri hacimleri için bile, 128 GB RAM kullanmak, 64 GB’ye kıyasla sorgu performansını önemli ölçüde artırır.
+Sunucu başına ~50 TB veri hacimleri için bile, 128 GB RAM kullanmak, 64 GB'ye kıyasla sorgu performansını önemli ölçüde artırır.
 
 Overcommit devre dışı bırakmayın. Değer `cat /proc/sys/vm/overcommit_memory` 0 veya 1 olmalıdır. Koşmak
 
@@ -46,19 +46,19 @@ Kalıcı büyük sayfaların da tahsis edilmesine gerek yoktur.
 ## Depolama Alt Sistemi {#storage-subsystem}
 
 Bütçeniz SSD kullanmanıza izin veriyorsa, SSD kullanın.
-Eğer değilse, sabit disk kullanın. SATA HDD’ler 7200 RPM yapacak.
+Eğer değilse, sabit disk kullanın. SATA HDD'ler 7200 RPM yapacak.
 
 Bağlı disk raflarına sahip daha az sayıda sunucu üzerinde yerel sabit disklere sahip birçok sunucuyu tercih edin.
 Ancak nadir sorguları olan arşivleri saklamak için raflar çalışacaktır.
 
 ## RAID {#raid}
 
-HDD kullanırken, RAID-10, RAID-5, RAID-6 veya RAID-50’yi birleştirebilirsiniz.
-Linux için, yazılım RAID daha iyidir (ile `mdadm`). LVM’Yİ kullanmanızı önermiyoruz.
+HDD kullanırken, RAID-10, RAID-5, RAID-6 veya RAID-50'yi birleştirebilirsiniz.
+Linux için, yazılım RAID daha iyidir (ile `mdadm`). LVM'Yİ kullanmanızı önermiyoruz.
 RAID-10 oluştururken, `far` düzen.
-Bütçeniz izin veriyorsa, RAID-10’u seçin.
+Bütçeniz izin veriyorsa, RAID-10'u seçin.
 
-4’ten fazla diskiniz varsa, RAID-5 yerine RAID-6 (tercih edilen) veya RAID-50 kullanın.
+4'ten fazla diskiniz varsa, RAID-5 yerine RAID-6 (tercih edilen) veya RAID-50 kullanın.
 RAID-5, RAID-6 veya RAID-50 kullanırken, varsayılan değer genellikle en iyi seçenek olmadığından daima stripe\_cache\_size değerini artırın.
 
 ``` bash
@@ -70,10 +70,10 @@ Formülü kullanarak cihaz sayısından ve blok boyutundan tam sayıyı hesaplay
 Tüm RAID yapılandırmaları için 1024 KB blok boyutu yeterlidir.
 Blok boyutunu asla çok küçük veya çok büyük ayarlamayın.
 
-SSD’DE RAID-0 kullanabilirsiniz.
+SSD'DE RAID-0 kullanabilirsiniz.
 RAID kullanımı ne olursa olsun, her zaman veri güvenliği için çoğaltma kullanın.
 
-Uzun bir kuyruk ile NCQ etkinleştirin. HDD için CFQ zamanlayıcısını seçin ve SSD için noop’u seçin. Azalt themayın ‘readahead’ ayar.
+Uzun bir kuyruk ile NCQ etkinleştirin. HDD için CFQ zamanlayıcısını seçin ve SSD için noop'u seçin. Azalt themayın ‘readahead’ ayar.
 HDD için yazma önbelleğini etkinleştirin.
 
 ## Dosya Sistemi {#file-system}
@@ -97,7 +97,7 @@ Mümkünse en az 10 GB ağ kullanın. 1 Gb de çalışacak, ancak onlarca teraba
 
 Muhtemelen zaten başka amaçlar için ZooKeeper kullanıyor. Zaten aşırı değilse, aynı ZooKeeper kurulumunu kullanabilirsiniz.
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 Sonuç sıralı düğümler için yanlış olacağından, farklı ZooKeeper kümeleri arasında veri aktarmak için el ile yazılmış komut dosyalarını asla kullanmamalısınız. Asla kullanmayın “zkcopy” aynı nedenle yardımcı program: https://github.com/ksprojects/zkcopy/issues/15
 
@@ -111,7 +111,7 @@ Varsayılan ayarlarla, ZooKeeper bir saatli bomba:
 
 Bu bomba etkisiz hale getirilmeli.
 
-Aşağıdaki ZooKeeper (3.5.1) yapılandırması Yandex’te kullanılmaktadır.20 Mayıs 2017 tarihi itibariyle Metrica üretim ortamı:
+Aşağıdaki ZooKeeper (3.5.1) yapılandırması Yandex'te kullanılmaktadır.20 Mayıs 2017 tarihi itibariyle Metrica üretim ortamı:
 
 hayvanat bahçesi.cfg:
 

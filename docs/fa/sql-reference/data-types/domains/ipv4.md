@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: IPv4
 ---
@@ -69,7 +69,7 @@ SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
     │ String                            │ 183.247.232.58 │
     └───────────────────────────────────┴────────────────┘
 
-یا بازیگران به `UInt32` مقدار:
+یا بازیگران به یک `UInt32` مقدار:
 
 ``` sql
 SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;

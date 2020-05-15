@@ -61,7 +61,7 @@
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
-#ifdef USE_OPENCL
+#if USE_OPENCL
 #include "Common/BitonicSort.h"
 #endif
 
@@ -225,7 +225,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
 
-#if defined (USE_OPENCL)
+#if USE_OPENCL
         BitonicSort::getInstance().configure();
 #endif
 

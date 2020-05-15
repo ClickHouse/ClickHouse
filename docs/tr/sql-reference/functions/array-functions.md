@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "Dizilerle \xE7al\u0131\u015Fma"
 ---
@@ -10,19 +10,19 @@ toc_title: "Dizilerle \xE7al\u0131\u015Fma"
 ## boş {#function-empty}
 
 Boş bir dizi için 1 veya boş olmayan bir dizi için 0 döndürür.
-Sonuç türü Uint8’dir.
+Sonuç türü Uint8'dir.
 İşlev ayrıca dizeler için de çalışır.
 
 ## notEmpty {#function-notempty}
 
 Boş bir dizi için 0 veya boş olmayan bir dizi için 1 döndürür.
-Sonuç türü Uint8’dir.
+Sonuç türü Uint8'dir.
 İşlev ayrıca dizeler için de çalışır.
 
 ## uzunluk {#array_functions-length}
 
 Dizideki öğe sayısını döndürür.
-Sonuç türü Uint64’tür.
+Sonuç türü Uint64'tür.
 İşlev ayrıca dizeler için de çalışır.
 
 ## emptyArrayUİnt8, emptyArrayUİnt16, emptyArrayUİnt32, emptyArrayUİnt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
@@ -47,7 +47,7 @@ Boş bir dizi kabul eder ve varsayılan değere eşit bir tek öğe dizisi dönd
 Eğer argüman `start` belirtilmemiş, varsayılan olarak 0.
 Eğer argüman `step` belirtilmemiş, varsayılan olarak 1.
 Neredeyse pythonic gibi davranışlar `range`. Ancak fark, tüm argümanların tipinin olması gerektiğidir `UInt` şiir.
-Bir veri bloğunda toplam uzunluğu 100.000.000’den fazla öğe olan diziler oluşturulursa, bir istisna atılır.
+Bir veri bloğunda toplam uzunluğu 100.000.000'den fazla öğe olan diziler oluşturulursa, bir istisna atılır.
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
 
@@ -180,7 +180,7 @@ hasAny(array1, array2)
 
 ## ındexof(arr, x) {#indexofarr-x}
 
-İlk dizini döndürür ‘x’ dizide ise öğe (1’den başlayarak) veya değilse 0.
+İlk dizini döndürür ‘x’ dizide ise öğe (1'den başlayarak) veya değilse 0.
 
 Örnek:
 
@@ -369,7 +369,7 @@ arrayPushBack(array, single_value)
 **Parametre**
 
 -   `array` – Array.
--   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` dizinin veri türü için yazın. Clickhouse’daki veri türleri hakkında daha fazla bilgi için bkz. “[Veri türleri](../../sql-reference/data-types/index.md#data_types)”. Olabilir `NULL`. Fonksiyon bir ekler `NULL` bir dizi için öğe ve dizi öğeleri türü dönüştürür `Nullable`.
+-   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` dizinin veri türü için yazın. Clickhouse'daki veri türleri hakkında daha fazla bilgi için bkz. “[Veri türleri](../../sql-reference/data-types/index.md#data_types)”. Olabilir `NULL`. Fonksiyon bir ekler `NULL` bir dizi için öğe ve dizi öğeleri türü dönüştürür `Nullable`.
 
 **Örnek**
 
@@ -394,7 +394,7 @@ arrayPushFront(array, single_value)
 **Parametre**
 
 -   `array` – Array.
--   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` dizinin veri türü için yazın. Clickhouse’daki veri türleri hakkında daha fazla bilgi için bkz. “[Veri türleri](../../sql-reference/data-types/index.md#data_types)”. Olabilir `NULL`. Fonksiyon bir ekler `NULL` bir dizi için öğe ve dizi öğeleri türü dönüştürür `Nullable`.
+-   `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` dizinin veri türü için yazın. Clickhouse'daki veri türleri hakkında daha fazla bilgi için bkz. “[Veri türleri](../../sql-reference/data-types/index.md#data_types)”. Olabilir `NULL`. Fonksiyon bir ekler `NULL` bir dizi için öğe ve dizi öğeleri türü dönüştürür `Nullable`.
 
 **Örnek**
 
@@ -480,7 +480,7 @@ Ar arrayray elem toents set to `NULL` normal değerler olarak ele alınır.
 
 ## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
-Elemanları sıralar `arr` artan düzende dizi. Eğer… `func` fonksiyonu belirtilir, sıralama düzeni sonucu belirlenir `func` fonksiyon dizinin elemanlarına uygulanır. Eğer `func` birden fazla argüman kabul eder, `arraySort` fonksiyon argümanları birkaç diziler geçirilir `func` karşılık gelir. Ayrıntılı örnekler sonunda gösterilir `arraySort` açıklama.
+Elemanları sıralar `arr` artan düzende dizi. Eğer... `func` fonksiyonu belirtilir, sıralama düzeni sonucu belirlenir `func` fonksiyon dizinin elemanlarına uygulanır. Eğer `func` birden fazla argüman kabul eder, `arraySort` fonksiyon argümanları birkaç diziler geçirilir `func` karşılık gelir. Ayrıntılı örnekler sonunda gösterilir `arraySort` açıklama.
 
 Tamsayı değerleri sıralama örneği:
 
@@ -551,7 +551,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Burada, ikinci dizide (\[2, 1\]) geçirilen öğeler, kaynak diziden karşılık gelen öğe için bir sıralama anahtarı tanımlar (\[‘hello’, ‘world’\]), bu, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x`, kaynak dizinin gerçek değerleri sonuçtaki sırayı etkilemez. Böyle, ‘hello’ sonuçtaki ikinci eleman olacak ve ‘world’ ilk olacak.
+Burada, ikinci dizide (\[2, 1\]) geçirilen öğeler, kaynak diziden karşılık gelen öğe için bir sıralama anahtarı tanımlar (\[‘hello’, ‘world’\]), bu, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn't use `x`, kaynak dizinin gerçek değerleri sonuçtaki sırayı etkilemez. Böyle, ‘hello’ sonuçtaki ikinci eleman olacak ve ‘world’ ilk olacak.
 
 Diğer örnekler aşağıda gösterilmiştir.
 
@@ -580,7 +580,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 
 ## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
-Elemanları sıralar `arr` azalan sırayla dizi. Eğer… `func` fonksiyon belirtilir, `arr` sonucuna göre sıra islanır. `func` işlev dizinin öğelerine uygulanır ve sonra sıralanmış dizi tersine çevrilir. Eğer `func` birden fazla argüman kabul eder, `arrayReverseSort` fonksiyon argümanları birkaç diziler geçirilir `func` karşılık gelir. Ayrıntılı örnekler sonunda gösterilir `arrayReverseSort` açıklama.
+Elemanları sıralar `arr` azalan sırayla dizi. Eğer... `func` fonksiyon belirtilir, `arr` sonucuna göre sıra islanır. `func` işlev dizinin öğelerine uygulanır ve sonra sıralanmış dizi tersine çevrilir. Eğer `func` birden fazla argüman kabul eder, `arrayReverseSort` fonksiyon argümanları birkaç diziler geçirilir `func` karşılık gelir. Ayrıntılı örnekler sonunda gösterilir `arrayReverseSort` açıklama.
 
 Tamsayı değerleri sıralama örneği:
 
@@ -1028,7 +1028,7 @@ Sonuç:
 
 ## arrayAUC {#arrayauc}
 
-Auc’yi hesaplayın (makine öğreniminde bir kavram olan eğrinin altındaki alan, daha fazla ayrıntıya bakın: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
+Auc'yi hesaplayın (makine öğreniminde bir kavram olan eğrinin altındaki alan, daha fazla ayrıntıya bakın: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
 
 **Sözdizimi**
 

@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "Url\u306E\u64CD\u4F5C"
 ---
 
 # Urlを操作するための関数 {#functions-for-working-with-urls}
 
-これらの関数はすべてrfcに従いません。 それらは改善された性能のために最大限に簡単である。
+これらの関数はすべてRFCに従っていません。 それらは改善された性能のために最大限に簡単にされる。
 
 ## URLの一部を抽出する関数 {#functions-that-extract-parts-of-a-url}
 
-関連する部分がurlに存在しない場合は、空の文字列が返されます。
+関連する部分がURLにない場合は、空の文字列が返されます。
 
 ### プロトコル {#protocol}
 
@@ -49,12 +49,12 @@ yandex.com
 
 **戻り値**
 
--   ホスト名。 clickhouseが入力文字列をurlとして解析できる場合。
--   空の文字列。 clickhouseが入力文字列をurlとして解析できない場合。
+-   ホスト名。 ClickHouseが入力文字列をURLとして解析できる場合。
+-   空の文字列。 ClickHouseが入力文字列をURLとして解析できない場合。
 
 タイプ: `String`.
 
-**例えば**
+**例**
 
 ``` sql
 SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
@@ -66,11 +66,11 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 └────────────────────────────────────────────────────────┘
 ```
 
-### ドメインウィズなしwww {#domainwithoutwww}
+### domainWithoutWWW {#domainwithoutwww}
 
-ドメインを返し、複数のドメインを削除します ‘www.’ それの初めから、存在する場合。
+ドメインを返し、複数のドメインを削除しません ‘www.’ それの始めから、存在する場合。
 
-### topleveldomaincomment {#topleveldomain}
+### トップレベルドメイン {#topleveldomain}
 
 URLからトップレベルドメインを抽出します。
 
@@ -92,12 +92,12 @@ https://yandex.com/time/
 
 **戻り値**
 
--   ドメイン名。 clickhouseが入力文字列をurlとして解析できる場合。
--   空の文字列。 clickhouseが入力文字列をurlとして解析できない場合。
+-   ドメイン名。 ClickHouseが入力文字列をURLとして解析できる場合。
+-   空の文字列。 ClickHouseが入力文字列をURLとして解析できない場合。
 
 タイプ: `String`.
 
-**例えば**
+**例**
 
 ``` sql
 SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
@@ -109,31 +109,31 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### 最初のサブドメイン {#firstsignificantsubdomain}
+### firstSignificantSubdomain {#firstsignificantsubdomain}
 
-を返します “first significant subdomain”. これはYandex固有の非標準的な概念です。メトリカ 最初の重要なサブドメインは、セカンドレベルドメインです。 ‘com’, ‘net’, ‘org’、または ‘co’. それ以外の場合は、サードレベルのドメインです。 例えば, `firstSignificantSubdomain (‘https://news.yandex.ru/’) = ‘yandex’, firstSignificantSubdomain (‘https://news.yandex.com.tr/’) = ‘yandex’`. のリスト “insignificant” 二次レベルドメインおよびその他の実施内容に変化する可能性があります。
+を返す。 “first significant subdomain”. これはYandexに固有の非標準的な概念です。メトリカ 最初の重要なサブドメインは、次の場合にセカンドレベルドメインです ‘com’, ‘net’, ‘org’,または ‘co’. それ以外の場合は、サードレベルドメインです。 例えば, `firstSignificantSubdomain (‘https://news.yandex.ru/’) = ‘yandex’, firstSignificantSubdomain (‘https://news.yandex.com.tr/’) = ‘yandex’`. のリスト “insignificant” セカンドレベルドメイ
 
 ### cutToFirstSignificantSubdomain {#cuttofirstsignificantsubdomain}
 
-トップレベルのサブドメインを含むドメインの部分を返します。 “first significant subdomain” （上記の説明を参照）。
+トップレベルのサブドメインを含むドメインの一部を返します。 “first significant subdomain” （上記の説明を参照）。
 
 例えば, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
 ### パス {#path}
 
-パスを返します。 例えば: `/top/news.html` パスにはクエリ文字列は含まれません。
+パスを返します。 例: `/top/news.html` パスにはクエリ文字列は含まれません。
 
-### pathFull {#pathfull}
+### パスフル {#pathfull}
 
-上記と同じですが、クエリ文字列とフラグメントを含みます。 例：/トップ/ニュース。html?ページ=2\#コメント
+上記と同じですが、クエリ文字列とフラグメントを含みます。 例:/top/news.html?ページ=2\#コメント
 
 ### クエリ文字列 {#querystring}
 
-クエリ文字列を返します。 例：ページ=1＆lr=213。 query-stringには、最初の疑問符と\#と\#後のすべてが含まれていません。
+クエリ文字列を返します。 例:ページ=1&lr=213. query-stringには、最初の疑問符だけでなく、\#と\#の後のすべても含まれていません。
 
 ### 断片 {#fragment}
 
-フラグメント識別子を返します。 fragmentには、最初のハッシュ記号は含まれません。
+フラグメント識別子を返します。 fragmentには初期ハッシュ記号は含まれません。
 
 ### queryStringAndFragment {#querystringandfragment}
 
@@ -141,23 +141,23 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 
 ### extractURLParameter(URL,名前) {#extracturlparameterurl-name}
 
-の値を返します ‘name’ URL内にパラメータが存在する場合。 それ以外の場合は、空の文字列。 この名前のパラメータが多数ある場合は、最初のオカレンスが返されます。 この関数は、パラメータ名が渡された引数とまったく同じ方法でURLにエンコードされるという前提の下で機能します。
+の値を返します。 ‘name’ URLにパラメータがある場合。 それ以外の場合は、空の文字列です。 この名前のパラメーターが多い場合は、最初に出現するパラメーターを返します。 この関数は、パラメータ名が渡された引数とまったく同じ方法でURLにエンコードされるという前提の下で機能します。
 
 ### extractURLParameters(URL) {#extracturlparametersurl}
 
-URLパラメータに対応するname=value文字列の配列を返します。 値は決してデコードされません。
+URLパラメーターに対応するname=value文字列の配列を返します。 値はどのような方法でもデコードされません。
 
 ### extractURLParameterNames(URL) {#extracturlparameternamesurl}
 
-URLパラメータの名前に対応する名前文字列の配列を返します。 値は決してデコードされません。
+URLパラメーターの名前に対応する名前文字列の配列を返します。 値はどのような方法でもデコードされません。
 
 ### URLHierarchy(URL) {#urlhierarchyurl}
 
-最後に/,?記号で切り捨てられたurlを含む配列を返します。 パスとクエリ文字列で。 連続セパレータ文字として数えます。 カットは、すべての連続した区切り文字の後の位置に作られています。
+URLを含む配列を返します。 パスとクエリ文字列で。 連続セパレータ文字として数えます。 カットは、すべての連続した区切り文字の後の位置に行われます。
 
 ### URLPathHierarchy(URL) {#urlpathhierarchyurl}
 
-上記と同じですが、結果のプロトコルとホストはありません。 要素(ルート)は含まれません。 例：この関数は、ツリーを実装するために使用されるyandexのurlを報告します。 メトリック。
+上記と同じですが、結果にプロトコルとホストはありません。 要素(ルート)は含まれません。 例：関数は、ツリーを実装するために使用されるYandexの中のURLを報告します。 メートル法
 
 ``` text
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
@@ -169,8 +169,8 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 
 ### decodeURLComponent(URL) {#decodeurlcomponenturl}
 
-復号化されたurlを返します。
-例えば:
+デコードしたURLを返します。
+例:
 
 ``` sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
@@ -182,13 +182,13 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## URLの一部を削除する関数。 {#functions-that-remove-part-of-a-url}
+## URLの一部を削除する関数 {#functions-that-remove-part-of-a-url}
 
-URLに類似したものがない場合、URLは変更されません。
+URLに類似のものがない場合、URLは変更されません。
 
 ### cutWWW {#cutwww}
 
-一つ以下を削除します ‘www.’ URLのドメインの先頭から、存在する場合。
+複数を削除しません ‘www.’ URLのドメインの先頭から存在する場合。
 
 ### cutQueryString {#cutquerystring}
 
@@ -204,6 +204,6 @@ URLに類似したものがない場合、URLは変更されません。
 
 ### cutURLParameter(URL,名前) {#cuturlparameterurl-name}
 
-削除する ‘name’ URLパラメーターがある場合。 この関数は、パラメータ名が渡された引数とまったく同じ方法でURLにエンコードされるという前提の下で機能します。
+を削除します。 ‘name’ URLパラメータが存在する場合。 この関数は、パラメータ名が渡された引数とまったく同じ方法でURLにエンコードされるという前提の下で機能します。
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->

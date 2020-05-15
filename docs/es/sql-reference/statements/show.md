@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: SHOW
 ---
 
-# MOSTRAR Consultas {#show-queries}
+# MOSTRAR consultas {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
 
@@ -100,6 +100,70 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+## SHOW GRANTS {#show-grants-statement}
+
+Muestra privilegios para un usuario.
+
+### Sintaxis {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+Si no se especifica user, la consulta devuelve privilegios para el usuario actual.
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+Muestra los parámetros que se usaron en un [creación de usuario](create.md#create-user-statement).
+
+`SHOW CREATE USER` no genera contraseñas de usuario.
+
+### Sintaxis {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+Muestra los parámetros que se usaron en un [creación de roles](create.md#create-role-statement)
+
+### Sintaxis {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+Muestra los parámetros que se usaron en un [creación de políticas de fila](create.md#create-row-policy-statement)
+
+### Sintaxis {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+Muestra los parámetros que se usaron en un [creación de cuotas](create.md#create-quota-statement)
+
+### Sintaxis {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+Muestra los parámetros que se usaron en un [configuración creación de perfil](create.md#create-settings-profile-statement)
+
+### Sintaxis {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
 [Artículo Original](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

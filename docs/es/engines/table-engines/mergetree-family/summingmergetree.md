@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: SummingMergeTree
 ---
 
-# Summingmergetree {#summingmergetree}
+# SummingMergeTree {#summingmergetree}
 
 El motor hereda de [Método de codificación de datos:](mergetree.md#table_engines-mergetree). La diferencia es que al fusionar partes de datos para `SummingMergeTree` ClickHouse reemplaza todas las filas con la misma clave primaria (o más exactamente, con la misma [clave de clasificación](mergetree.md)) con una fila que contiene valores resumidos para las columnas con el tipo de datos numérico. Si la clave de ordenación está compuesta de manera que un solo valor de clave corresponde a un gran número de filas, esto reduce significativamente el volumen de almacenamiento y acelera la selección de datos.
 
 Recomendamos usar el motor junto con `MergeTree`. Almacenar datos completos en `MergeTree` mesa, y el uso `SummingMergeTree` para el almacenamiento de datos agregados, por ejemplo, al preparar informes. Tal enfoque evitará que pierda datos valiosos debido a una clave primaria compuesta incorrectamente.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -61,7 +61,7 @@ Todos los parámetros excepto `columns` el mismo significado que en `MergeTree`.
 
 </details>
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 Considere la siguiente tabla:
 
@@ -94,13 +94,13 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-## Procesamiento De Datos {#data-processing}
+## Procesamiento de datos {#data-processing}
 
-Cuando los datos se insertan en una tabla, se guardan tal cual. Clickhouse fusiona las partes insertadas de datos periódicamente y esto es cuando las filas con la misma clave principal se suman y se reemplazan con una para cada parte resultante de los datos.
+Cuando los datos se insertan en una tabla, se guardan tal cual. ClickHouse combina las partes insertadas de los datos periódicamente y esto es cuando las filas con la misma clave principal se suman y se reemplazan con una para cada parte resultante de los datos.
 
 ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) una función agregada [resumir()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) y `GROUP BY` cláusula se debe utilizar en una consulta como se describe en el ejemplo anterior.
 
-### Reglas Comunes Para La Suma {#common-rules-for-summation}
+### Reglas comunes para la suma {#common-rules-for-summation}
 
 Se resumen los valores de las columnas con el tipo de datos numérico. El conjunto de columnas está definido por el parámetro `columns`.
 
@@ -110,11 +110,11 @@ Si la columna no está en la clave principal y no se resume, se selecciona un va
 
 Los valores no se resumen para las columnas de la clave principal.
 
-### La Suma En Las Columnas De función Agregada {#the-summation-in-the-aggregatefunction-columns}
+### La suma en las columnas de función agregada {#the-summation-in-the-aggregatefunction-columns}
 
 Para columnas de [Tipo AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse se comporta como [AgregaciónMergeTree](aggregatingmergetree.md) agregación del motor según la función.
 
-### Estructuras Anidadas {#nested-structures}
+### Estructuras anidadas {#nested-structures}
 
 La tabla puede tener estructuras de datos anidadas que se procesan de una manera especial.
 

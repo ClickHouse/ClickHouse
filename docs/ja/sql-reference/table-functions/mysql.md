@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: mysql
 ---
@@ -33,13 +33,13 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
         To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-シンプル `WHERE` 次のような句 `=, !=, >, >=, <, <=` 現在、MySQLサーバで実行されています。
+シンプル `WHERE` 次のような句 `=, !=, >, >=, <, <=` 現在、MySQLサーバー上で実行されています。
 
 残りの条件と `LIMIT` サンプリング制約は、MySQLへのクエリが終了した後にのみClickHouseで実行されます。
 
 **戻り値**
 
-元のmysqlテーブルと同じカラムを持つテーブルオブジェクト。
+元のMySQLテーブルと同じ列を持つテーブルオブジェクト。
 
 ## 使用例 {#usage-example}
 
@@ -78,9 +78,9 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## また見なさい {#see-also}
+## も参照。 {#see-also}
 
 -   [その ‘MySQL’ 表エンジン](../../engines/table-engines/integrations/mysql.md)
--   [MySQLを外部辞書のソースとして使用する](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [外部辞書のソースとしてMySQLを使用する](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->

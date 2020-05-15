@@ -1,18 +1,18 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 15
 toc_title: A tiempo
 ---
 
-# A Tiempo {#ontime}
+# A tiempo {#ontime}
 
 Este conjunto de datos se puede obtener de dos maneras:
 
 -   importación de datos sin procesar
 -   descarga de particiones preparadas
 
-## Importar Desde Datos Sin Procesar {#import-from-raw-data}
+## Importar desde datos sin procesar {#import-from-raw-data}
 
 Descarga de datos:
 
@@ -153,7 +153,7 @@ Carga de datos:
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Descarga De Prepared Partitions {#download-of-prepared-partitions}
+## Descarga de Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
@@ -257,7 +257,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC
 ```
 
-¿por qué? la solicitud anterior de una gama más amplia de años, 2000-2008
+¿Por qué? La solicitud anterior de una gama más amplia de años, 2000-2008
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -326,7 +326,7 @@ GROUP BY Year
 ORDER BY Year;
 ```
 
-¿por qué? los destinos más populares por el número de ciudades conectadas directamente para varios rangos de año
+¿Por qué? Los destinos más populares por el número de ciudades conectadas directamente para varios rangos de año
 
 ``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u

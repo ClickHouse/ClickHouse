@@ -5,16 +5,29 @@ class TSV:
     """Helper to get pretty diffs between expected and actual tab-separated value files"""
 
     def __init__(self, contents):
-        raw_lines = contents.readlines() if isinstance(contents, file) else contents.splitlines(True)
+        if isinstance(contents, file):
+            raw_lines = contents.readlines()
+        elif isinstance(contents, str) or isinstance(contents, unicode):
+            raw_lines = contents.splitlines(True)
+        elif isinstance(contents, list):
+            raw_lines = ['\t'.join(map(str, l)) if isinstance(l, list) else str(l) for l in contents]
+        else:
+            raise TypeError("contents must be either file or string or list, actual type: " + type(contents).__name__)
         self.lines = [l.strip() for l in raw_lines if l.strip()]
 
     def __eq__(self, other):
+        if not isinstance(other, TSV):
+            return self == TSV(other)
         return self.lines == other.lines
 
     def __ne__(self, other):
+        if not isinstance(other, TSV):
+            return self != TSV(other)
         return self.lines != other.lines
 
     def diff(self, other, n1=None, n2=None):
+        if not isinstance(other, TSV):
+            return self.diff(TSV(other), n1=n1, n2=n2)
         return list(line.rstrip() for line in difflib.unified_diff(self.lines, other.lines, fromfile=n1, tofile=n2))[2:]
 
     def __str__(self):

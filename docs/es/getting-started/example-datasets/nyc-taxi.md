@@ -1,18 +1,18 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 16
 toc_title: Datos de taxis de Nueva York
 ---
 
-# Datos De Taxis De Nueva York {#new-york-taxi-data}
+# Datos de taxis de Nueva York {#new-york-taxi-data}
 
 Este conjunto de datos se puede obtener de dos maneras:
 
 -   importación de datos sin procesar
 -   descarga de particiones preparadas
 
-## Cómo Importar Los Datos Sin Procesar {#how-to-import-the-raw-data}
+## Cómo importar los datos sin procesar {#how-to-import-the-raw-data}
 
 Consulte https://github.com/toddwschneider/nyc-taxi-data y http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html para obtener la descripción de un conjunto de datos e instrucciones para descargar.
 
@@ -282,7 +282,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 
 Entre otras cosas, puede ejecutar la consulta OPTIMIZE en MergeTree. Pero no es necesario ya que todo estará bien sin él.
 
-## Descarga De Prepared Partitions {#download-of-prepared-partitions}
+## Descarga de Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
@@ -295,7 +295,7 @@ $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 !!! info "INFO"
     Si va a ejecutar las consultas que se describen a continuación, debe usar el nombre completo de la tabla, `datasets.trips_mergetree`.
 
-## Resultados En Un Solo Servidor {#results-on-single-server}
+## Resultados en un solo servidor {#results-on-single-server}
 
 Q1:
 

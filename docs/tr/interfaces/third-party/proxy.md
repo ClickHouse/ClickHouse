@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 29
 toc_title: Vekiller
 ---
 
-# Üçüncü Taraf geliştiricilerin Proxy sunucuları {#proxy-servers-from-third-party-developers}
+# Üçüncü taraf geliştiricilerin Proxy sunucuları {#proxy-servers-from-third-party-developers}
 
 ## chproxy {#chproxy}
 

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_folder_title: "Masa Motorlar\u0131"
 toc_priority: 26
 toc_title: "Giri\u015F"
@@ -21,7 +21,7 @@ Tablo motoru (tablo türü) belirler:
 
 ### MergeTree {#mergetree}
 
-Yüksek yük görevleri için en evrensel ve fonksiyonel masa motorları. Bu motorlar tarafından paylaşılan özellik, sonraki arka plan veri işleme ile hızlı veri ekleme ’ dir. `MergeTree` aile motorları destek veri çoğaltma (ile [Çoğaltıyordu\*](mergetree-family/replication.md#replication) sürümleri), bölümleme ve diğer özellikler diğer motorlarda desteklenmez.
+Yüksek yük görevleri için en evrensel ve fonksiyonel masa motorları. Bu motorlar tarafından paylaşılan özellik, sonraki arka plan veri işleme ile hızlı veri ekleme ' dir. `MergeTree` aile motorları destek veri çoğaltma (ile [Çoğaltıyordu\*](mergetree-family/replication.md#table_engines-replication) sürümleri), bölümleme ve diğer özellikler diğer motorlarda desteklenmez.
 
 Ailede motorlar:
 
@@ -62,14 +62,14 @@ Ailede motorlar:
 -   [Dağılı](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Sözlük](special/dictionary.md#dictionary)
--   [Birleştirmek](special/merge.md#merge
+-   \[Mer \]ge\] (spec /ial / mer \#ge. md\#mer \#ge
 -   [Dosya](special/file.md#file)
 -   [Boş](special/null.md#null)
 -   [Koymak](special/set.md#set)
 -   [Katmak](special/join.md#join)
 -   [URL](special/url.md#table_engines-url)
 -   [Görünüm](special/view.md#table_engines-view)
--   [Bellek](special/memory.md#memory)
+-   [Hafıza](special/memory.md#memory)
 -   [Arabellek](special/buffer.md#buffer)
 
 ## Sanal Sütunlar {#table_engines-virtual_columns}

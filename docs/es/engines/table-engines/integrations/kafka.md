@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: Kafka
 ---
@@ -15,7 +15,7 @@ Kafka te permite:
 -   Organice el almacenamiento tolerante a fallos.
 -   Secuencias de proceso a medida que estén disponibles.
 
-## Creación De Una Tabla {#table_engine-kafka-creating-a-table}
+## Creación de una tabla {#table_engine-kafka-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -32,22 +32,26 @@ SETTINGS
     [kafka_row_delimiter = 'delimiter_symbol',]
     [kafka_schema = '',]
     [kafka_num_consumers = N,]
-    [kafka_skip_broken_messages = N]
+    [kafka_max_block_size = 0,]
+    [kafka_skip_broken_messages = N,]
+    [kafka_commit_every_batch = 0]
 ```
 
 Parámetros requeridos:
 
 -   `kafka_broker_list` – A comma-separated list of brokers (for example, `localhost:9092`).
 -   `kafka_topic_list` – A list of Kafka topics.
--   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_group_name` – A group of Kafka consumers. Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
 -   `kafka_format` – Message format. Uses the same notation as the SQL `FORMAT` función, tal como `JSONEachRow`. Para obtener más información, consulte [Formato](../../../interfaces/formats.md) apartado.
 
 Parámetros opcionales:
 
 -   `kafka_row_delimiter` – Delimiter character, which ends the message.
--   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requiere la ruta de acceso al archivo de esquema y el nombre de la raíz `schema.capnp:Message` objeto.
+-   `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requiere la ruta de acceso al archivo de esquema y el nombre de la raíz `schema.capnp:Message` objeto.
 -   `kafka_num_consumers` – The number of consumers per table. Default: `1`. Especifique más consumidores si el rendimiento de un consumidor es insuficiente. El número total de consumidores no debe exceder el número de particiones en el tema, ya que solo se puede asignar un consumidor por partición.
+-   `kafka_max_block_size` - El tamaño máximo de lote (en mensajes) para la encuesta (predeterminado: `max_block_size`).
 -   `kafka_skip_broken_messages` – Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. Si `kafka_skip_broken_messages = N` entonces el motor salta *N* Mensajes de Kafka que no se pueden analizar (un mensaje es igual a una fila de datos).
+-   `kafka_commit_every_batch` - Confirmar cada lote consumido y manejado en lugar de una única confirmación después de escribir un bloque completo (predeterminado: `0`).
 
 Ejemplos:
 

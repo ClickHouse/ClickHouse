@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "Descripci\xF3n"
 ---
@@ -16,7 +16,7 @@ Puede usar dominios en cualquier lugar que se pueda usar el tipo base correspond
 -   Úselo como un índice si un tipo base se puede usar como un índice
 -   Funciones de llamada con valores de la columna de dominio
 
-### Características Adicionales De Los Dominios {#extra-features-of-domains}
+### Características adicionales de los dominios {#extra-features-of-domains}
 
 -   Nombre de tipo de columna explícito en `SHOW CREATE TABLE` o `DESCRIBE TABLE`
 -   Entrada del formato humano-amistoso con `INSERT INTO domain_table(domain_column) VALUES(...)`
