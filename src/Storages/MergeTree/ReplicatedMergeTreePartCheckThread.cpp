@@ -248,9 +248,13 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
             }
-            catch (const Exception &)
+            catch (const Exception & e)
             {
-                /// TODO Better to check error code.
+                /// Don't count the part as broken if there is not enough memory to load it.
+                /// In fact, there can be many similar situations.
+                /// But it is OK, because there is a safety guard against deleting too many parts.
+                if (isNotEnoughMemoryErrorCode(e.code()))
+                    throw;
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 

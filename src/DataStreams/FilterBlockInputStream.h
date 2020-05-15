@@ -40,7 +40,7 @@ private:
 
     ConstantFilterDescription constant_filter_description;
 
-    Block removeFilterIfNeed(Block && block);
+    Block removeFilterIfNeed(Block && block) const;
 };
 
 }

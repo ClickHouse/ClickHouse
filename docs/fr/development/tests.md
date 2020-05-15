@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 69
 toc_title: "Comment ex\xE9cuter des Tests ClickHouse"
 ---
@@ -34,7 +34,7 @@ sens. `long` est pour les tests qui s'exécutent légèrement plus longtemps qu'
 désactivez ces groupes de tests en utilisant `--no-zookeeper`, `--no-shard` et
 `--no-long` options, respectivement.
 
-## Bugs connus {#known-bugs}
+## Bugs Connus {#known-bugs}
 
 Si nous connaissons des bugs qui peuvent être facilement reproduits par des tests fonctionnels, nous plaçons des tests fonctionnels préparés dans `tests/queries/bugs` répertoire. Ces tests seront déplacés à `tests/queries/0_stateless` quand les bugs sont corrigés.
 
@@ -56,17 +56,17 @@ Ce n'est pas nécessairement d'avoir des tests unitaires si le code est déjà c
 
 Les tests de Performance permettent de mesurer et de comparer les performances d'une partie isolée de ClickHouse sur des requêtes synthétiques. Les Tests sont situés à `tests/performance`. Chaque test est représenté par `.xml` fichier avec description du cas de test. Les Tests sont exécutés avec `clickhouse performance-test` outil (qui est incorporé dans `clickhouse` binaire). Voir `--help` pour l'invocation.
 
-Chaque essai un ou miltiple requêtes (éventuellement avec des combinaisons de paramètres) dans une boucle avec certaines conditions pour l'arrêt (comme “maximum execution speed is not changing in three seconds”) et mesurer certaines mesures sur les performances de la requête (comme “maximum execution speed”). Certains tests peuvent contenir des conditions préalables sur un ensemble de données de test préchargé.
+Chaque essai d'exécuter une ou plusieurs requêtes (éventuellement avec des combinaisons de paramètres) dans une boucle avec certaines conditions pour l'arrêt (comme “maximum execution speed is not changing in three seconds”) et mesurer certaines mesures sur les performances de la requête (comme “maximum execution speed”). Certains tests peuvent contenir des conditions préalables sur un ensemble de données de test préchargé.
 
 Si vous souhaitez améliorer les performances de ClickHouse dans certains scénarios, et si des améliorations peuvent être observées sur des requêtes simples, il est fortement recommandé d'écrire un test de performance. Il est toujours logique d'utiliser `perf top` ou d'autres outils perf pendant vos tests.
 
-## Outils Et Scripts De Test {#test-tools-and-scripts}
+## Outils et Scripts de Test {#test-tools-and-scripts}
 
-Certains programmes dans `tests` directory ne sont pas des tests préparés, mais sont des outils de test. Par exemple, pour `Lexer` il est un outil `dbms/Parsers/tests/lexer` Cela fait juste la tokenisation de stdin et écrit le résultat colorisé dans stdout. Vous pouvez utiliser ce genre d'outils comme exemples de code et pour l'exploration et les tests manuels.
+Certains programmes dans `tests` directory ne sont pas des tests préparés, mais sont des outils de test. Par exemple, pour `Lexer` il est un outil `src/Parsers/tests/lexer` Cela fait juste la tokenisation de stdin et écrit le résultat colorisé dans stdout. Vous pouvez utiliser ce genre d'outils comme exemples de code et pour l'exploration et les tests manuels.
 
 Vous pouvez également placer une paire de fichiers `.sh` et `.reference` avec l'outil pour l'exécuter sur une entrée prédéfinie - alors le résultat du script peut être comparé à `.reference` fichier. Ce genre de tests ne sont pas automatisés.
 
-## Tests Divers {#miscellanous-tests}
+## Divers Tests {#miscellaneous-tests}
 
 Il existe des tests pour les dictionnaires externes situés à `tests/external_dictionaries` et pour machine appris modèles dans `tests/external_models`. Ces tests ne sont pas mis à jour et doivent être transférés aux tests d'intégration.
 
@@ -165,11 +165,11 @@ Par exemple, construire avec des paquets système est une mauvaise pratique, car
 
 Bien que nous ne puissions pas exécuter tous les tests sur toutes les variantes de builds, nous voulons vérifier au moins que les différentes variantes de build ne sont pas cassées. Pour cela nous utilisons les essais de construction.
 
-## Test De Compatibilité Du Protocole {#testing-for-protocol-compatibility}
+## Test de compatibilité du protocole {#testing-for-protocol-compatibility}
 
 Lorsque nous étendons le protocole réseau ClickHouse, nous testons manuellement que l'ancien clickhouse-client fonctionne avec le nouveau clickhouse-server et que le nouveau clickhouse-client fonctionne avec l'ancien clickhouse-server (simplement en exécutant des binaires à partir des paquets correspondants).
 
-## L'Aide Du Compilateur {#help-from-the-compiler}
+## L'aide du Compilateur {#help-from-the-compiler}
 
 Code ClickHouse principal (qui est situé dans `dbms` annuaire) est construit avec `-Wall -Wextra -Werror` et avec quelques avertissements supplémentaires activés. Bien que ces options ne soient pas activées pour les bibliothèques tierces.
 
@@ -199,13 +199,23 @@ Version de débogage de `jemalloc` est utilisé pour la construction de débogag
 
 ## Fuzzing {#fuzzing}
 
-Nous utilisons un simple test fuzz pour générer des requêtes SQL aléatoires et vérifier que le serveur ne meurt pas. Le test de Fuzz est effectué avec un désinfectant D'adresse. Vous pouvez le trouver dans `00746_sql_fuzzy.pl`. Ce test doit être exécuté en continu (pendant la nuit et plus longtemps).
+Clickhouse fuzzing est implémenté à la fois en utilisant [libFuzzer](https://llvm.org/docs/LibFuzzer.html) et des requêtes SQL aléatoires.
+Tous les tests de fuzz doivent être effectués avec des désinfectants (adresse et indéfini).
 
-En décembre 2018, nous n'utilisons toujours pas de tests fuzz isolés du code de la bibliothèque.
+LibFuzzer est utilisé pour les tests de fuzz isolés du code de la bibliothèque. Les Fuzzers sont implémentés dans le cadre du code de test et ont “\_fuzzer” nom postfixes.
+Exemple Fuzzer peut être trouvé à `src/Parsers/tests/lexer_fuzzer.cpp`. Les configs, dictionnaires et corpus spécifiques à LibFuzzer sont stockés à `tests/fuzz`.
+Nous vous encourageons à écrire des tests fuzz pour chaque fonctionnalité qui gère l'entrée de l'utilisateur.
+
+Fuzzers ne sont pas construits par défaut. Pour construire fuzzers à la fois `-DENABLE_FUZZING=1` et `-DENABLE_TESTS=1` options doivent être définies.
+Nous vous recommandons de désactiver Jemalloc lors de la construction de fuzzers. Configuration utilisée pour intégrer clickhouse fuzzing à
+Google OSS-Fuzz peut être trouvé à `docker/fuzz`.
+
+Nous utilisons également un simple test fuzz pour générer des requêtes SQL aléatoires et vérifier que le serveur ne meurt pas en les exécutant.
+Vous pouvez le trouver dans `00746_sql_fuzzy.pl`. Ce test doit être exécuté en continu (pendant la nuit et plus longtemps).
 
 ## Audit De Sécurité {#security-audit}
 
-Les gens du Département Cloud de Yandex font un aperçu de base des capacités de ClickHouse du point de vue de la sécurité.
+Les gens de L'équipe de sécurité Yandex font un aperçu de base des capacités de ClickHouse du point de vue de la sécurité.
 
 ## Analyseurs Statiques {#static-analyzers}
 
@@ -249,4 +259,3 @@ Nous n'utilisons pas Travis CI en raison de la limite de temps et de puissance d
 On n'utilise pas Jenkins. Il a été utilisé avant et maintenant nous sommes heureux de ne pas utiliser Jenkins.
 
 [Article Original](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
-développement/tests/) <!--hide-->

@@ -11,7 +11,37 @@
         <size>1000M</size>
         <count>10</count>
         <!-- <console>1</console> --> <!-- Default behavior is autodetection (log to console if not daemon mode and is tty) -->
+
+        <!-- Per level overrides (legacy):
+
+        For example to suppress logging of the ConfigReloader you can use:
+        NOTE: levels.logger is reserved, see below.
+        -->
+        <!--
+        <levels>
+          <ConfigReloader>none</ConfigReloader>
+        </levels>
+        -->
+
+        <!-- Per level overrides:
+
+        For example to suppress logging of the RBAC for default user you can use:
+        (But please note that the logger name maybe changed from version to version, even after minor upgrade)
+        -->
+        <!--
+        <levels>
+          <logger>
+            <name>ContextAccess (default)</name>
+            <level>none</level>
+          </logger>
+          <logger>
+            <name>DatabaseOrdinary (test)</name>
+            <level>none</level>
+          </logger>
+        </levels>
+        -->
     </logger>
+
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
@@ -89,6 +119,37 @@
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
+
+    <!-- Maximum memory usage (resident set size) for server process.
+         Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
+         If the value is larger than "max_server_memory_usage_to_ram_ratio" of available physical RAM, it will be cut down.
+
+         The constraint is checked on query execution time.
+         If a query tries to allocate memory and the current memory usage plus allocation is greater
+          than specified threshold, exception will be thrown.
+
+         It is not practical to set this constraint to small values like just a few gigabytes,
+          because memory allocator will keep this amount of memory in caches and the server will deny service of queries.
+      -->
+    <max_server_memory_usage>0</max_server_memory_usage>
+
+    <!-- On memory constrained environments you may have to set this to value larger than 1.
+      -->
+    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+
+    <!-- Simple server-wide memory profiler. Collect a stack trace at every peak allocation step (in bytes).
+         Data will be stored in system.trace_log table with query_id = empty string.
+         Zero means disabled.
+      -->
+    <total_memory_profiler_step>4194304</total_memory_profiler_step>
+
+    <!-- Collect random allocations and deallocations and write them into system.trace_log with 'MemorySample' trace_type.
+         The probability is for every alloc/free regardless to the size of the allocation.
+         Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit,
+          which is 4 MiB by default but can be lowered if 'total_memory_profiler_step' is lowered.
+         You may want to set 'total_memory_profiler_step' to 1 for extra fine grained sampling.
+      -->
+    <total_memory_tracker_sample_probability>0</total_memory_tracker_sample_probability>
 
     <!-- Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
          correct maximum value. -->
@@ -175,6 +236,8 @@
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <shard>
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+                <!-- <internal_replication>false</internal_replication> -->
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>
@@ -512,7 +575,6 @@
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
-
     <!-- Uncomment to use query masking rules.
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
@@ -524,6 +586,50 @@
             <replace>000-00-0000</replace>
         </rule>
     </query_masking_rules>
+    -->
+
+    <!-- Uncomment to use custom http handlers.
+        rules are checked from top to bottom, first match runs the handler
+            url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
+            methods - to match request method, you can use commas to separate multiple method matches(optional)
+            headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
+        handler is request handler
+            type - supported types: static, dynamic_query_handler, predefined_query_handler
+            query - use with predefined_query_handler type, executes query when the handler is called
+            query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
+            status - use with static type, response status code
+            content_type - use with static type, response content-type
+            response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
+
+    <http_handlers>
+        <rule>
+            <url>/</url>
+            <methods>POST,GET</methods>
+            <headers><pragma>no-cache</pragma></headers>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>query</query_param_name>
+            </handler>
+        </rule>
+
+        <rule>
+            <url>/predefined_query</url>
+            <methods>POST,GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT * FROM system.settings</query>
+            </handler>
+        </rule>
+
+        <rule>
+            <handler>
+                <type>static</type>
+                <status>200</status>
+                <content_type>text/plain; charset=UTF-8</content_type>
+                <response_content>config://http_server_default_response</response_content>
+            </handler>
+        </rule>
+    </http_handlers>
     -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->

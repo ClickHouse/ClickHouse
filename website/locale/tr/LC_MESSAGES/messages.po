@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
 "PO-Revision-Date: 2020-04-15 13:17+0000\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: tr\n"
@@ -18,32 +18,47 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr ""
+"ClickHouse SQL sorguları kullanarak gerçek zamanlı olarak analitik veri "
+"raporları üreten sağlayan hızlı bir açık kaynak sütun odaklı veritabanı "
+"yönetim sistemidir"
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr "ClickHouse - hızlı açık kaynak OLAP DBMS"
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "ClickHouse DBMS"
 
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
-msgstr ""
-"ClickHouse SQL sorguları kullanarak gerçek zamanlı olarak analitik veri "
-"raporları üreten sağlayan bir açık kaynak sütun odaklı veritabanı yönetim"
-" sistemidir."
+#: templates/common_meta.html:21
+msgid "open-source"
+msgstr "açık kaynak"
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
-msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:21
+msgid "relational"
+msgstr "ilişkisel"
+
+#: templates/common_meta.html:21
+msgid "analytics"
+msgstr "analiz"
+
+#: templates/common_meta.html:21
+msgid "analytical"
+msgstr "analitik"
+
+#: templates/common_meta.html:21
+msgid "Big Data"
+msgstr "Büyük Veri"
+
+#: templates/common_meta.html:21
+msgid "web-analytics"
+msgstr "web-analyt -ics"
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
@@ -61,11 +76,23 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "Dahili"
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr "yayınlanan"
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr "modifiye on"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "Yardım istedi!"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -79,17 +106,13 @@ msgstr ""
 "yaşar ve diğer anadili konuşanların daha insan tarafından okunabilir "
 "olmasını bekler."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "Orijinal İngilizce sürümünü referans olarak da kullanabilirsiniz."
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "Bu sayfayı düzenleyerek ClickHouse belgelerine yardım edin"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "Dahili"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -268,4 +291,38 @@ msgstr ""
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
 msgstr "e-posta adresini görmek için JavaScript'i açın"
+
+#~ msgid ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+#~ msgstr ""
+#~ "ClickHouse SQL sorguları kullanarak gerçek "
+#~ "zamanlı olarak analitik veri raporları "
+#~ "üreten sağlayan bir açık kaynak sütun"
+#~ " odaklı veritabanı yönetim sistemidir."
+
+#~ msgid ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+#~ msgstr ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "yayınlanan at"
+
+#~ msgid "modified at"
+#~ msgstr "modifiye at"
 

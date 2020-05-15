@@ -4,7 +4,7 @@
 #include <thread>
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
-#include <Common/ThreadPool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
@@ -94,8 +94,6 @@ public:
     std::optional<UInt64> totalRows() const override;
     std::optional<UInt64> totalBytes() const override;
 
-    ~StorageBuffer() override;
-
 private:
     Context global_context;
 
@@ -118,10 +116,6 @@ private:
 
     Poco::Logger * log;
 
-    Poco::Event shutdown_event;
-    /// Resets data by timeout.
-    ThreadFromGlobalPool flush_thread;
-
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
     void flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);
@@ -131,7 +125,11 @@ private:
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
-    void flushThread();
+    void flushBack();
+    void reschedule();
+
+    BackgroundSchedulePool & bg_pool;
+    BackgroundSchedulePoolTaskHolder flush_handle;
 
 protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)

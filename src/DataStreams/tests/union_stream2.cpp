@@ -23,7 +23,8 @@ using namespace DB;
 int main(int, char **)
 try
 {
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
     Settings settings = context.getSettings();
 

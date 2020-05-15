@@ -251,6 +251,15 @@ enum class JoinAlgorithm
 };
 using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
 
+
+enum class SpecialSort
+{
+    NOT_SPECIFIED = 0,
+    OPENCL_BITONIC,
+};
+using SettingSpecialSort = SettingEnum<SpecialSort>;
+
+
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
@@ -297,6 +306,13 @@ enum class LogsLevel
     trace,
 };
 using SettingLogsLevel = SettingEnum<LogsLevel>;
+
+enum class DefaultDatabaseEngine
+{
+    Ordinary,
+    Atomic,
+};
+using SettingDefaultDatabaseEngine = SettingEnum<DefaultDatabaseEngine>;
 
 // Make it signed for compatibility with DataTypeEnum8
 enum QueryLogElementType : int8_t
@@ -524,8 +540,8 @@ public:
     bool tryGet(const StringRef & name, String & value) const;
 
     /// Compares two collections of settings.
-    bool operator ==(const Derived & rhs) const;
-    bool operator!=(const Derived & rhs) const { return !(*this == rhs); }
+    bool operator ==(const SettingsCollection & rhs) const;
+    bool operator!=(const SettingsCollection & rhs) const { return !(*this == rhs); }
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;

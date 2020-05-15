@@ -35,7 +35,7 @@ Block LimitByBlockInputStream::readImpl()
             UInt128 key;
             SipHash hash;
 
-            for (auto & column : column_ptrs)
+            for (const auto & column : column_ptrs)
                 column->updateHashWithValue(i, hash);
 
             hash.get128(key.low, key.high);

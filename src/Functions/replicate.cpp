@@ -53,7 +53,7 @@ public:
         ColumnPtr temp_column;
         if (!array_column)
         {
-            auto const_array_column = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
+            const auto * const_array_column = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
             if (!const_array_column)
                 throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
             temp_column = const_array_column->convertToFullColumn();

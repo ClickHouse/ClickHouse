@@ -1,6 +1,6 @@
 ---
 toc_priority: 7
-toc_title: 歴史
+toc_title: "\u6B74\u53F2"
 ---
 
 # ClickHouseの歴史 {#clickhousenoli-shi}

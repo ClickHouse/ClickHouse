@@ -13,7 +13,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/FieldVisitors.h>
@@ -76,19 +75,10 @@ StorageBuffer::StorageBuffer(
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
     , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     setColumns(columns_);
     setConstraints(constraints_);
-}
-
-StorageBuffer::~StorageBuffer()
-{
-    // Should not happen if shutdown was called
-    if (flush_thread.joinable())
-    {
-        shutdown_event.set();
-        flush_thread.join();
-    }
 }
 
 
@@ -173,8 +163,10 @@ Pipes StorageBuffer::read(
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
-            return destination->hasColumn(column_name) &&
-                   destination->getColumn(column_name).type->equals(*getColumn(column_name).type);
+            const auto & dest_columns = destination->getColumns();
+            const auto & our_columns = getColumns();
+            return dest_columns.hasPhysical(column_name) &&
+                   dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
         });
 
         if (dst_has_same_structure)
@@ -191,17 +183,19 @@ Pipes StorageBuffer::read(
             const Block header = getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
+            const auto & dest_columns = destination->getColumns();
+            const auto & our_columns = getColumns();
             for (const String & column_name : column_names)
             {
-                if (!destination->hasColumn(column_name))
+                if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
                         << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
-                const auto & dst_col = destination->getColumn(column_name);
-                const auto & col = getColumn(column_name);
+                const auto & dst_col = dest_columns.getPhysical(column_name);
+                const auto & col = our_columns.getPhysical(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
@@ -397,6 +391,9 @@ public:
             least_busy_lock = std::unique_lock(least_busy_buffer->mutex);
         }
         insertIntoBuffer(block, *least_busy_buffer);
+        least_busy_lock.unlock();
+
+        storage.reschedule();
     }
 private:
     StorageBuffer & storage;
@@ -458,16 +455,18 @@ void StorageBuffer::startup()
             << " Set appropriate system_profile to fix this.");
     }
 
-    flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
+
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
+    flush_handle->activateAndSchedule();
 }
 
 
 void StorageBuffer::shutdown()
 {
-    shutdown_event.set();
+    if (!flush_handle)
+        return;
 
-    if (flush_thread.joinable())
-        flush_thread.join();
+    flush_handle->deactivate();
 
     try
     {
@@ -595,7 +594,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
+    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds " << (check_thresholds ? "(bg)" : "(direct)") << ".");
 
     if (!destination_id)
         return;
@@ -697,21 +696,42 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 }
 
 
-void StorageBuffer::flushThread()
+void StorageBuffer::flushBack()
 {
-    setThreadName("BufferFlush");
-
-    do
+    try
     {
-        try
-        {
-            flushAllBuffers(true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    } while (!shutdown_event.tryWait(1000));
+        flushAllBuffers(true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    reschedule();
+}
+
+void StorageBuffer::reschedule()
+{
+    time_t min_first_write_time = std::numeric_limits<time_t>::max();
+    time_t rows = 0;
+
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        min_first_write_time = buffer.first_write_time;
+        rows += buffer.data.rows();
+    }
+
+    /// will be rescheduled via INSERT
+    if (!rows)
+        return;
+
+    time_t current_time = time(nullptr);
+    time_t time_passed = current_time - min_first_write_time;
+
+    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
+    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
+    flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
@@ -737,7 +757,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
         return underlying_rows;
 
     UInt64 rows = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         rows += buffer.data.rows();
@@ -748,7 +768,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
 std::optional<UInt64> StorageBuffer::totalBytes() const
 {
     UInt64 bytes = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         bytes += buffer.data.bytes();
@@ -768,7 +788,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 

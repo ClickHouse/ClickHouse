@@ -146,7 +146,7 @@ public:
         }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         if (result_is_nullable)
         {

@@ -1,4 +1,6 @@
-#include <config_core.h>
+#if !defined(ARCADIA_BUILD)
+#    include <config_core.h>
+#endif
 
 namespace DB
 {
@@ -7,8 +9,6 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
-void registerFunctionCurrentQuota(FunctionFactory &);
-void registerFunctionCurrentRowPolicies(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -66,8 +66,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
-    registerFunctionCurrentQuota(factory);
-    registerFunctionCurrentRowPolicies(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);

@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
+    extern const int ABORTED;
 }
 
 
@@ -426,6 +427,8 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
 void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
+    if (pull_log_blocker.isCancelled())
+        throw Exception("Log pulling is cancelled", ErrorCodes::ABORTED);
 
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
@@ -878,7 +881,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 {
     std::vector<std::pair<String, LogEntryPtr>> conflicts;
 
-    for (auto & future_part_elem : future_parts)
+    for (const auto & future_part_elem : future_parts)
     {
         /// Do not check itself log entry
         if (future_part_elem.second->znode_name == entry.znode_name)
@@ -1645,8 +1648,21 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(
-        const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
-        String * out_reason) const
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
+{
+    if (left)
+        return canMergeTwoParts(left, right, out_reason);
+    else
+        return canMergeSinglePart(right, out_reason);
+}
+
+
+bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -1781,6 +1797,39 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     return true;
 }
 
+bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
+    const MergeTreeData::DataPartPtr & part,
+    String * out_reason) const
+{
+    if (part->name == inprogress_quorum_part)
+    {
+        if (out_reason)
+            *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+        return false;
+    }
+
+    if (prev_virtual_parts.getContainingPart(part->info).empty())
+    {
+        if (out_reason)
+            *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+
+    /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+    /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+    String containing_part = queue.virtual_parts.getContainingPart(part->info);
+    if (containing_part != part->name)
+    {
+        if (out_reason)
+            *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
+        return false;
+    }
+
+    return true;
+}
+
 
 std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {
@@ -1812,10 +1861,17 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     for (auto [mutation_version, mutation_status] : in_partition->second)
     {
         max_version = mutation_version;
-        if (mutation_version > current_version && mutation_status->entry->alter_version != -1)
+        if (mutation_status->entry->isAlterMutation())
         {
-            alter_version = mutation_status->entry->alter_version;
-            break;
+            /// We want to assign mutations for part which version is bigger
+            /// than part current version. But it doesn't make sence to assign
+            /// more fresh versions of alter-mutations if previous alter still
+            /// not done because alters execute one by one in strict order.
+            if (mutation_version > current_version || !mutation_status->is_done)
+            {
+                alter_version = mutation_status->entry->alter_version;
+                break;
+            }
         }
     }
 
