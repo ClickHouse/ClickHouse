@@ -57,7 +57,7 @@ struct Memory : boost::noncopyable, Allocator
         : m_capacity(other.size()), m_size(m_capacity), alignment(other.alignment)
     {
         alloc(std::forward<TAllocatorParams>(params)...);
-        memcpy(other.data(), m_data, m_size);
+        memcpy(m_data, other.data(), m_size);
     }
 
     Memory & operator=(Memory && rhs) noexcept
