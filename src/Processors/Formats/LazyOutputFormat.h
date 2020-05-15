@@ -8,8 +8,8 @@ namespace DB
 {
 
 /// LazyOutputFormat is used to retrieve ready data from executing pipeline.
-/// You can periodically call `getBlock` from separate thread.
-/// Used in TCPHandler.
+/// You can periodically call `getChunk` from separate thread.
+/// Used in PullingPipelineExecutor.
 class LazyOutputFormat : public IOutputFormat
 {
 

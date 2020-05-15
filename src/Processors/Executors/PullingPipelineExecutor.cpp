@@ -44,7 +44,7 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
 {
     try
     {
-        wait();
+        cancel();
     }
     catch (...)
     {
@@ -102,6 +102,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (lazy_format->isFinished())
     {
         data->is_executed = true;
+        /// Wait thread ant rethrow exception if any.
         cancel();
         return false;
     }
