@@ -1,39 +1,25 @@
-set(CLICKHOUSE_ODBC_BRIDGE_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/ColumnInfoHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/getIdentifierQuote.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/HandlerFactory.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/IdentifierQuoteHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MainHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBlockInputStream.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ODBCBridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PingHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/validateODBCConnectionString.cpp
+set (CLICKHOUSE_ODBC_BRIDGE_SOURCES
+    ColumnInfoHandler.cpp
+    getIdentifierQuote.cpp
+    HandlerFactory.cpp
+    IdentifierQuoteHandler.cpp
+    MainHandler.cpp
+    ODBCBlockInputStream.cpp
+    ODBCBlockOutputStream.cpp
+    ODBCBridge.cpp
+    PingHandler.cpp
+    validateODBCConnectionString.cpp
 )
 
-set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_parsers PUBLIC daemon)
-set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE PUBLIC ${ClickHouse_SOURCE_DIR}/base)
-
-if (USE_POCO_SQLODBC)
-    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_SQLODBC_LIBRARY})
-    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
-    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR})
-endif ()
-if (Poco_SQL_FOUND)
-    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_SQL_LIBRARY})
-    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
-    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-endif ()
-
-if (USE_POCO_DATAODBC)
-    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_DataODBC_LIBRARY})
-    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
-    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
-endif()
-if (Poco_Data_FOUND)
-    set(CLICKHOUSE_ODBC_BRIDGE_LINK ${CLICKHOUSE_ODBC_BRIDGE_LINK} PRIVATE ${Poco_Data_LIBRARY})
-    # Wouldnt work anyway because of the way list variable got expanded in `target_include_directories`
-    # set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE} SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-endif ()
+set (CLICKHOUSE_ODBC_BRIDGE_LINK
+    PRIVATE
+        clickhouse_parsers
+        daemon
+        dbms
+        Poco::Data
+    PUBLIC
+        Poco::Data::ODBC
+)
 
 clickhouse_program_add_library(odbc-bridge)
 

@@ -14,6 +14,11 @@ kill_clickhouse () {
             sleep 10
         fi
     done
+
+    echo "Will try to send second kill signal for sure"
+    kill `pgrep -u clickhouse` 2>/dev/null
+    sleep 5
+    echo "clickhouse pids" `ps aux | grep clickhouse` | ts '%Y-%m-%d %H:%M:%S'
 }
 
 start_clickhouse () {
@@ -34,6 +39,13 @@ mkdir -p /var/log/clickhouse-server
 chmod 777 -R /var/lib/clickhouse
 chmod 777 -R /var/log/clickhouse-server/
 
+# Temorary way to keep CI green while moving dictionaries to separate directory
+mkdir -p /etc/clickhouse-server/dict_examples
+chmod 777 -R /etc/clickhouse-server/dict_examples
+ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/dict_examples/; \
+    ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/; \
+    ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/;
+
 ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/; \
@@ -50,6 +62,7 @@ ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/con
     ln -s /usr/share/clickhouse-test/config/disks.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/secure_ports.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/clusters.xml /etc/clickhouse-server/config.d/; \
+    ln -s /usr/share/clickhouse-test/config/graphite.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/server.key /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/server.crt /etc/clickhouse-server/; \
     ln -s /usr/share/clickhouse-test/config/dhparam.pem /etc/clickhouse-server/; \

@@ -16,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Parsers/queryToString.h>
@@ -34,15 +35,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
-
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
 
 namespace
 {
@@ -61,7 +56,7 @@ namespace
             StoragePtr table;
             std::tie(table_name, table)
                 = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
-            database.attachTable(table_name, table);
+            database.attachTable(table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
         {
@@ -74,18 +69,24 @@ namespace
 
 
     void tryAttachDictionary(
-        Context & context,
-        const ASTCreateQuery & query,
-        DatabaseOrdinary & database)
+        const ASTPtr & query,
+        DatabaseOrdinary & database,
+        const String & metadata_path)
     {
-        assert(query.is_dictionary);
+        auto & create_query = query->as<ASTCreateQuery &>();
+        assert(create_query.is_dictionary);
         try
         {
-            database.attachDictionary(query.table, context);
+            Poco::File meta_file(metadata_path);
+            auto config = getDictionaryConfigurationFromAST(create_query, database.getDatabaseName());
+            time_t modification_time = meta_file.getLastModified().epochTime();
+            database.attachDictionary(create_query.table, DictionaryAttachInfo{query, config, modification_time});
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            e.addMessage("Cannot attach dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(create_query.table) +
+                         " from metadata file " + metadata_path +
+                         " from query " + serializeAST(*query));
             throw;
         }
     }
@@ -103,11 +104,14 @@ namespace
 
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithDictionaries(name_, metadata_path_, "DatabaseOrdinary (" + name_ + ")")
+    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
-    Poco::File(context_.getPath() + getDataPath()).createDirectories();
 }
 
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
+        : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
+{
+}
 
 void DatabaseOrdinary::loadStoredObjects(
     Context & context,
@@ -121,12 +125,13 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
+
+    auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
         {
-            auto ast = parseQueryFromMetadata(context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, context, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
@@ -140,7 +145,9 @@ void DatabaseOrdinary::loadStoredObjects(
             throw;
         }
 
-    });
+    };
+
+    iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
@@ -172,13 +179,12 @@ void DatabaseOrdinary::loadStoredObjects(
     startupTables(pool);
 
     /// Attach dictionaries.
-    attachToExternalDictionariesLoader(context);
-    for (const auto & name_with_query : file_names)
+    for (const auto & [name, query] : file_names)
     {
-        auto create_query = name_with_query.second->as<const ASTCreateQuery &>();
+        auto create_query = query->as<const ASTCreateQuery &>();
         if (create_query.is_dictionary)
         {
-            tryAttachDictionary(context, create_query, *this);
+            tryAttachDictionary(query, *this, getMetadataPath() + name);
 
             /// Messages, so that it's not boring to wait for the server to load for a long time.
             logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
@@ -219,9 +225,10 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
-    const String & table_name,
+    const StorageID & table_id,
     const StorageInMemoryMetadata & metadata)
 {
+    String table_name = table_id.table_name;
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
@@ -234,7 +241,8 @@ void DatabaseOrdinary::alterTable(
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path,
+        0, context.getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
@@ -279,6 +287,11 @@ void DatabaseOrdinary::alterTable(
         out.close();
     }
 
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path);
+}
+
+void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
     try
     {
         /// rename atomically replaces the old file with the new one.

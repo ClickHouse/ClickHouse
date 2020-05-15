@@ -19,21 +19,17 @@ class Context;
 class DatabaseWithOwnTablesBase : public IDatabase
 {
 public:
-    bool isTableExist(
-        const Context & context,
-        const String & table_name) const override;
+    bool isTableExist(const String & table_name) const override;
 
-    StoragePtr tryGetTable(
-        const Context & context,
-        const String & table_name) const override;
+    StoragePtr tryGetTable(const String & table_name) const override;
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
-    void attachTable(const String & table_name, const StoragePtr & table) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(const String & table_name) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
 
     void shutdown() override;
 
@@ -42,13 +38,13 @@ public:
 protected:
     mutable std::mutex mutex;
     Tables tables;
-    Dictionaries dictionaries;
     Poco::Logger * log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger);
 
-    void attachTableUnlocked(const String & table_name, const StoragePtr & table);
-    StoragePtr detachTableUnlocked(const String & table_name);
+    void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
+    StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);
+    StoragePtr getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock) const;
 };
 
 }

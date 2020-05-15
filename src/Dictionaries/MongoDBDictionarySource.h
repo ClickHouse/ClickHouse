@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Core/Block.h>
-#include "config_core.h"
-#if USE_POCO_MONGODB
 
-#    include "DictionaryStructure.h"
-#    include "IDictionarySource.h"
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 
 namespace Poco
 {
@@ -98,4 +96,3 @@ private:
 };
 
 }
-#endif

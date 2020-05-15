@@ -33,6 +33,7 @@
 #include <boost/algorithm/string.hpp>
 #include "ASTColumnsMatcher.h"
 
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -190,9 +191,22 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         name += parts.back();
     }
 
+    ParserKeyword s_uuid("UUID");
+    UUID uuid = UUIDHelpers::Nil;
+
+    if (table_name_with_optional_uuid && parts.size() <= 2 && s_uuid.ignore(pos, expected))
+    {
+        ParserStringLiteral uuid_p;
+        ASTPtr ast_uuid;
+        if (!uuid_p.parse(pos, ast_uuid, expected))
+            return false;
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+    }
+
     if (parts.size() == 1)
         parts.clear();
     node = std::make_shared<ASTIdentifier>(name, std::move(parts));
+    node->as<ASTIdentifier>()->uuid = uuid;
 
     return true;
 }
@@ -1000,6 +1014,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
     Collection arr;
     ParserLiteral literal_p;
+    ParserCollectionOfLiterals<Collection> collection_p(opening_bracket, closing_bracket);
 
     ++pos;
     while (pos.isValid())
@@ -1032,7 +1047,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         }
 
         ASTPtr literal_node;
-        if (!literal_p.parse(pos, literal_node, expected))
+        if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
             return false;
 
         arr.push_back(literal_node->as<ASTLiteral &>().value);
@@ -1042,6 +1057,8 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     return false;
 }
 
+template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

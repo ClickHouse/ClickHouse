@@ -14,10 +14,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
 class Exception : public Poco::Exception
 {
 public:
@@ -79,6 +75,7 @@ using Exceptions = std::vector<std::exception_ptr>;
 
 std::string errnoToString(int code, int the_errno = errno);
 [[noreturn]] void throwFromErrno(const std::string & s, int code, int the_errno = errno);
+/// Useful to produce some extra information about available space and inodes on device
 [[noreturn]] void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code,
                                          int the_errno = errno);
 

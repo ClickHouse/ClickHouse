@@ -1,10 +1,8 @@
-#include <Common/config.h>
-
 #include "MySQLHandler.h"
+
 #include <limits>
 #include <ext/scope_guard.h>
 #include <Columns/ColumnVector.h>
-#include <Common/config_version.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Core/MySQLProtocol.h>
@@ -18,11 +16,15 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <regex>
 
-#if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
-#include <Poco/Net/SSLManager.h>
-#include <Poco/Crypto/CipherFactory.h>
-#include <Poco/Crypto/RSAKey.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
+
+#if USE_SSL
+#    include <Poco/Crypto/CipherFactory.h>
+#    include <Poco/Crypto/RSAKey.h>
+#    include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace DB
@@ -30,7 +32,7 @@ namespace DB
 
 using namespace MySQLProtocol;
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 using Poco::Net::SecureStreamSocket;
 using Poco::Net::SSLManager;
 #endif
@@ -330,7 +332,7 @@ void MySQLHandler::finishHandshakeSSL([[maybe_unused]] size_t packet_size, [[may
     throw Exception("Client requested SSL, while it is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
 }
 
-#if USE_SSL && USE_POCO_NETSSL
+#if USE_SSL
 MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_)
     : MySQLHandler(server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)

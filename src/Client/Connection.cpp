@@ -19,16 +19,19 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 
-#include <Common/config.h>
-#if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#    include <Common/config.h>
+#endif
+
+#if USE_SSL
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace CurrentMetrics
@@ -63,7 +66,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         if (static_cast<bool>(secure))
         {
-#if USE_POCO_NETSSL
+#if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
@@ -376,7 +379,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
+        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();

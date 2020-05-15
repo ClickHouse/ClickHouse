@@ -19,8 +19,8 @@ void ODBCDriverBlockOutputFormat::consume(Chunk chunk)
 
     const size_t num_rows = chunk.getNumRows();
     const size_t num_columns = chunk.getNumColumns();
-    auto & columns = chunk.getColumns();
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & columns = chunk.getColumns();
+    const auto & header = getPort(PortKind::Main).getHeader();
     String text_value;
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -28,8 +28,8 @@ void ODBCDriverBlockOutputFormat::consume(Chunk chunk)
         for (size_t j = 0; j < num_columns; ++j)
         {
             text_value.resize(0);
-            auto & column = columns[j];
-            auto & type = header.getByPosition(j).type;
+            const auto & column = columns[j];
+            const auto & type = header.getByPosition(j).type;
 
             {
                 WriteBufferFromString text_out(text_value);
@@ -43,7 +43,7 @@ void ODBCDriverBlockOutputFormat::consume(Chunk chunk)
 
 void ODBCDriverBlockOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     const size_t columns = header.columns();
 
     /// Number of columns.

@@ -1,13 +1,17 @@
 #pragma once
-#include <Common/config.h>
+
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/MySQLProtocol.h>
 #include "IServer.h"
 
-#if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_SSL
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace CurrentMetrics
@@ -71,7 +75,7 @@ private:
     static const String show_table_status_replacement_query;
 };
 
-#if USE_SSL && USE_POCO_NETSSL
+#if USE_SSL
 class MySQLHandlerSSL : public MySQLHandler
 {
 public:

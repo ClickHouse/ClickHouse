@@ -318,7 +318,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
         return result_node;
     }
 
-    const auto cloned_node = node->clone();
+    auto cloned_node = node->clone();
 
     if (func && inverse_relations.find(func->name) != inverse_relations.cend())
     {
@@ -710,8 +710,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 
     try
     {
-        /// NOTE: We don't need accurate info about src_type at this moment
-        src_value = convertFieldToType(src_value, *desired_type);
+        src_value = convertFieldToType(src_value, *desired_type, src_type.get());
     }
     catch (...)
     {

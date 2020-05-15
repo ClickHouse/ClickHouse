@@ -1,18 +1,16 @@
-#include "config_formats.h"
-#if USE_PROTOBUF
-
 #include "ProtobufWriter.h"
 
-#include <cassert>
-#include <optional>
-#include <math.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <boost/numeric/conversion/cast.hpp>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#if USE_PROTOBUF
+#    include <cassert>
+#    include <optional>
+#    include <math.h>
+#    include <AggregateFunctions/IAggregateFunction.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <boost/numeric/conversion/cast.hpp>
+#    include <google/protobuf/descriptor.h>
+#    include <google/protobuf/descriptor.pb.h>
 
 
 namespace DB
@@ -496,19 +494,19 @@ private:
     std::optional<std::unordered_map<Int16, String>> enum_value_to_name_map;
 };
 
-#define PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(field_type_id) \
-    template <> \
-    std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<field_type_id>( \
-        const google::protobuf::FieldDescriptor * field) \
-    { \
-        if (shouldSkipNullValue(field)) \
-            return std::make_unique<ConverterToString<true>>(simple_writer, field); \
-        else \
-            return std::make_unique<ConverterToString<false>>(simple_writer, field); \
-    }
+#    define PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(field_type_id) \
+        template <> \
+        std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<field_type_id>( \
+            const google::protobuf::FieldDescriptor * field) \
+        { \
+            if (shouldSkipNullValue(field)) \
+                return std::make_unique<ConverterToString<true>>(simple_writer, field); \
+            else \
+                return std::make_unique<ConverterToString<false>>(simple_writer, field); \
+        }
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING)
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES)
-#undef PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS
+#    undef PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS
 
 
 template <int field_type_id, typename ToType, bool skip_null_value, bool pack_repeated>
@@ -606,18 +604,19 @@ private:
     }
 };
 
-#define PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
-    template <> \
-    std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<field_type_id>( \
-        const google::protobuf::FieldDescriptor * field) \
-    { \
-        if (shouldSkipNullValue(field)) \
-            return std::make_unique<ConverterToNumber<field_type_id, field_type, true, false>>(simple_writer, field); \
-        else if (shouldPackRepeated(field)) \
-            return std::make_unique<ConverterToNumber<field_type_id, field_type, false, true>>(simple_writer, field); \
-        else \
-            return std::make_unique<ConverterToNumber<field_type_id, field_type, false, false>>(simple_writer, field); \
-    }
+#    define PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
+        template <> \
+        std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<field_type_id>( \
+            const google::protobuf::FieldDescriptor * field) \
+        { \
+            if (shouldSkipNullValue(field)) \
+                return std::make_unique<ConverterToNumber<field_type_id, field_type, true, false>>(simple_writer, field); \
+            else if (shouldPackRepeated(field)) \
+                return std::make_unique<ConverterToNumber<field_type_id, field_type, false, true>>(simple_writer, field); \
+            else \
+                return std::make_unique<ConverterToNumber<field_type_id, field_type, false, false>>(simple_writer, field); \
+        }
+
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int32);
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int32);
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt32);
@@ -630,7 +629,7 @@ PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::Fi
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
 PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
-#undef PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
+#    undef PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
 
 
 template <bool skip_null_value, bool pack_repeated>
@@ -779,7 +778,7 @@ private:
         enum_value_always_equals_pbnumber = true;
         for (const auto & name_value_pair : name_value_pairs)
         {
-            Int16 value = name_value_pair.second;
+            Int16 value = name_value_pair.second; // NOLINT
             const auto * enum_descriptor = field->enum_type()->FindValueByName(name_value_pair.first);
             if (enum_descriptor)
             {
@@ -871,10 +870,10 @@ void ProtobufWriter::setTraitsDataAfterMatchingColumns(Message * message)
         }
         switch (field.field_descriptor->type())
         {
-#define PROTOBUF_WRITER_CONVERTER_CREATING_CASE(field_type_id) \
-            case field_type_id: \
-                field.data.converter = createConverter<field_type_id>(field.field_descriptor); \
-                break
+#    define PROTOBUF_WRITER_CONVERTER_CREATING_CASE(field_type_id) \
+        case field_type_id: \
+            field.data.converter = createConverter<field_type_id>(field.field_descriptor); \
+            break
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_STRING);
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BYTES);
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_INT32);
@@ -891,7 +890,7 @@ void ProtobufWriter::setTraitsDataAfterMatchingColumns(Message * message)
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_DOUBLE);
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BOOL);
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_ENUM);
-#undef PROTOBUF_WRITER_CONVERTER_CREATING_CASE
+#    undef PROTOBUF_WRITER_CONVERTER_CREATING_CASE
             default:
                 throw Exception(
                     String("Protobuf type '") + field.field_descriptor->type_name() + "' isn't supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -991,4 +990,5 @@ void ProtobufWriter::setNestedMessageNeedsRepeat()
 }
 
 }
+
 #endif

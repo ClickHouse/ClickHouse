@@ -1,6 +1,5 @@
 #include <IO/HTTPCommon.h>
 
-#include <Common/config.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/PoolBase.h>
@@ -9,14 +8,18 @@
 
 #include <Poco/Version.h>
 
-#if USE_POCO_NETSSL
-#include <Poco/Net/AcceptCertificateHandler.h>
-#include <Poco/Net/Context.h>
-#include <Poco/Net/HTTPSClientSession.h>
-#include <Poco/Net/InvalidCertificateHandler.h>
-#include <Poco/Net/PrivateKeyPassphraseHandler.h>
-#include <Poco/Net/RejectCertificateHandler.h>
-#include <Poco/Net/SSLManager.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#if USE_SSL
+#    include <Poco/Net/AcceptCertificateHandler.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/HTTPSClientSession.h>
+#    include <Poco/Net/InvalidCertificateHandler.h>
+#    include <Poco/Net/PrivateKeyPassphraseHandler.h>
+#    include <Poco/Net/RejectCertificateHandler.h>
+#    include <Poco/Net/SSLManager.h>
 #endif
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -70,7 +73,7 @@ namespace
         HTTPSessionPtr session;
 
         if (https)
-#if USE_POCO_NETSSL
+#if USE_SSL
             session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);

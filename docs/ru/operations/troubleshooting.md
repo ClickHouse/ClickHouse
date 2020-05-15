@@ -10,7 +10,7 @@
 ### Не получается скачать deb-пакеты из репозитория ClickHouse с помощью Apt-get {#ne-poluchaetsia-skachat-deb-pakety-iz-repozitoriia-clickhouse-s-pomoshchiu-apt-get}
 
 -   Проверьте настройки брандмауэра.
--   Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting_started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
+-   Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting-started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
 
 ## Соединение с сервером {#troubleshooting-accepts-no-connections}
 
