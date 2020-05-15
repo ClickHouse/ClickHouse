@@ -85,6 +85,11 @@ protected:
 
     static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
 
+    // If we are using allocator with inline memory, the minimal size of
+    // array must be in sync with the size of this memory.
+    static_assert(allocatorInitialBytes<TAllocator> == 0
+                  || allocatorInitialBytes<TAllocator> == initial_bytes);
+
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
     char * c_end_of_storage = null;    /// Does not include pad_right.

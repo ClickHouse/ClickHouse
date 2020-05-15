@@ -153,10 +153,8 @@ bool FunctionArrayDistinct::executeNumber(
     if (nullable_col)
         src_null_map = &nullable_col->getNullMapData();
 
-    using Set = ClearableHashSet<T,
-        DefaultHash<T>,
-        HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+    using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashSet,
+        T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>);
 
     Set set;
 
@@ -201,10 +199,8 @@ bool FunctionArrayDistinct::executeString(
 
     ColumnString & res_data_column_string = typeid_cast<ColumnString &>(res_data_col);
 
-    using Set = ClearableHashSet<StringRef,
-        StringRefHash,
-        HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
+    using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashSet,
+        StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>);
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
@@ -249,8 +245,8 @@ void FunctionArrayDistinct::executeHashed(
     ColumnArray::Offsets & res_offsets,
     const ColumnNullable * nullable_col)
 {
-    using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+    using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashSet,
+        UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>);
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
