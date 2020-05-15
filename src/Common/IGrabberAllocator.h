@@ -55,7 +55,7 @@ struct DefaultASLR
                     0x100000000000UL,
                     0x700000000000UL)(rng));
 
-    };
+    }
 };
 
 [[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding) noexcept
@@ -178,7 +178,7 @@ private:
 
     static constexpr const size_t page_size = 4096;
 
-    class RegionMetadata;
+    struct RegionMetadata;
     static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
 
     mutable std::mutex mutex;
@@ -259,7 +259,7 @@ public:
     }
 
     /// Clears the cache.
-    constexpr void reset() noexcept
+    void reset() noexcept
     {
         std::lock_guard lock(mutex);
 
@@ -292,7 +292,7 @@ public:
     /**
      * @note Metadata is allocated by a usual allocator (malloc/new) so its memory usage is not accounted.
      */
-    [[nodiscard]] constexpr ga::Stats getStats() const noexcept
+    [[nodiscard]] ga::Stats getStats() const noexcept
     {
         std::lock_guard cache_lock(mutex);
 
@@ -552,7 +552,7 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
-    constexpr void onSharedValueCreate(RegionMetadata& metadata) noexcept
+    void onSharedValueCreate(RegionMetadata& metadata) noexcept
     {
         std::lock_guard cache_lock(mutex);
 
@@ -567,7 +567,7 @@ private:
         total_size_in_use += metadata.size;
     }
 
-    constexpr void onValueDelete(Value * value) noexcept
+    void onValueDelete(Value * value) noexcept
     {
         std::lock_guard cache_lock(mutex);
 
@@ -591,7 +591,7 @@ private:
         // No delete value here because we do not need to (it will be unmmap'd on MemoreChunk disposal).
     }
 
-    class InsertionAttemptDisposer;
+    struct InsertionAttemptDisposer;
 
     inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {

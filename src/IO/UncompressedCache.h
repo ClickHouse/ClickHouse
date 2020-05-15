@@ -38,15 +38,16 @@ struct CacheUncompressedCell
           additional_bytes(other.additional_bytes) {}
 };
 
-using UncompressedCacheBase = IGrabberAllocator<UInt128, CacheUncompressedCell, UInt128TrivialHash>;
-
 /**
  * Cache of decompressed blocks for implementation of CachedCompressedReadBuffer.
  */
-class UncompressedCache : public UncompressedCacheBase
+class UncompressedCache : public IGrabberAllocator<UInt128, CacheUncompressedCell, UInt128TrivialHash>
 {
+private:
+    using Base = IGrabberAllocator<UInt128, CacheUncompressedCell, UInt128TrivialHash>;
+
 public:
-    UncompressedCache(size_t max_size_in_bytes): UncompressedCacheBase(max_size_in_bytes) {}
+    UncompressedCache(size_t max_size_in_bytes): Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset)
@@ -63,7 +64,7 @@ public:
 
     ValuePtr get(const Key & key)
     {
-        ValuePtr ptr = UncompressedCacheBase::get(key);
+        ValuePtr ptr = Base::get(key);
 
         if (ptr)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
