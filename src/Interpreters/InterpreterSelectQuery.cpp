@@ -423,11 +423,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
 
     /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system" &&
-        ((left_table_id.table_name == "quotas") || (left_table_id.table_name == "quota_usage") || (left_table_id.table_name == "one")))
+    if (left_table_id.database_name == "system")
     {
-        options.ignore_quota = true;
-        options.ignore_limits = true;
+        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        {
+            options.ignore_quota = true;
+            options.ignore_limits = true;
+        }
     }
 
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and

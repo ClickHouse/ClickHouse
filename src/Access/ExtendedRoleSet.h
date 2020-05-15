@@ -28,7 +28,6 @@ struct ExtendedRoleSet
 
     ExtendedRoleSet(const UUID & id);
     ExtendedRoleSet(const std::vector<UUID> & ids_);
-    ExtendedRoleSet(const boost::container::flat_set<UUID> & ids_);
 
     /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
     ExtendedRoleSet(const ASTExtendedRoleSet & ast);
@@ -37,10 +36,9 @@ struct ExtendedRoleSet
     ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id);
 
     std::shared_ptr<ASTExtendedRoleSet> toAST() const;
-    String toString() const;
-    Strings toStrings() const;
-
     std::shared_ptr<ASTExtendedRoleSet> toASTWithNames(const AccessControlManager & manager) const;
+
+    String toString() const;
     String toStringWithNames(const AccessControlManager & manager) const;
     Strings toStringsWithNames(const AccessControlManager & manager) const;
 
@@ -48,11 +46,9 @@ struct ExtendedRoleSet
     void clear();
     void add(const UUID & id);
     void add(const std::vector<UUID> & ids_);
-    void add(const boost::container::flat_set<UUID> & ids_);
 
     /// Checks if a specified ID matches this ExtendedRoleSet.
     bool match(const UUID & id) const;
-    bool match(const UUID & user_id, const std::vector<UUID> & enabled_roles) const;
     bool match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const;
 
     /// Returns a list of matching IDs. The function must not be called if `all` == `true`.
