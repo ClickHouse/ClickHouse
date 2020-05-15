@@ -7,7 +7,11 @@ toc_title: Settings
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
+<<<<<<< HEAD
 Changes the behavior of [distributed subqueries](../../sql_reference/statements/select.md).
+=======
+Changes the behavior of [distributed subqueries](../../sql-reference/operators/in.md).
+>>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -367,7 +371,11 @@ See also:
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 Sets default strictness for [JOIN clauses](../../sql_reference/statements/select.md#select-join).
+=======
+Sets default strictness for [JOIN clauses](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 Possible values:
 
@@ -394,13 +402,22 @@ Default value: 0.
 
 See also:
 
+<<<<<<< HEAD
 -   [JOIN clause](../../sql_reference/statements/select.md#select-join)
 -   [Join table engine](../../engines/table_engines/special/join.md)
+=======
+-   [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
+-   [Join table engine](../../engines/table-engines/special/join.md)
+>>>>>>> upstream/master
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
+<<<<<<< HEAD
 Sets the type of [JOIN](../../sql_reference/statements/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
+=======
+Sets the type of [JOIN](../../sql-reference/statements/select/join.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
+>>>>>>> upstream/master
 
 Possible values:
 

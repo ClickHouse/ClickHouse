@@ -1,15 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_priority: 60
-toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A"
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # تنظیمات {#settings}
 
 ## \_شماره توزیع شده {#distributed-product-mode}
 
+<<<<<<< HEAD
 تغییر رفتار [توزیع subqueries](../../sql_reference/statements/select.md).
+=======
+تغییر رفتار [توزیع subqueries](../../sql-reference/operators/in.md).
+>>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -136,7 +138,11 @@ ClickHouse applies this setting when the query contains the product of distribut
 
 ## عناصر {#setting-max_http_get_redirects}
 
+<<<<<<< HEAD
 محدودیت حداکثر تعداد قام از رازک تغییر مسیر برای [URL](../../engines/table_engines/special/url.md)- جدول موتور . تنظیمات مربوط به هر دو نوع جداول: کسانی که ایجاد شده توسط [CREATE TABLE](../../query_language/create/#create-table-query) پرس و جو و توسط [نشانی وب](../../sql_reference/table_functions/url.md) تابع جدول.
+=======
+محدودیت حداکثر تعداد قام از رازک تغییر مسیر برای [URL](../../engines/table-engines/special/url.md)- جدول موتور . تنظیمات مربوط به هر دو نوع جداول: کسانی که ایجاد شده توسط [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) پرس و جو و توسط [نشانی وب](../../sql-reference/table-functions/url.md) تابع جدول.
+>>>>>>> upstream/master
 
 مقادیر ممکن:
 
@@ -222,21 +228,28 @@ Ok.
 
 ## در حال خواندن: {#settings-input_format_values_deduce_templates_of_expressions}
 
-کسر قالب را برای عبارات مربع فعال یا غیرفعال می کند [مقادیر](../../interfaces/formats.md#data-format-values) قالب. این اجازه می دهد به تجزیه و تفسیر عبارات در `Values` بسیار سریع تر اگر عبارات در ردیف متوالی همان ساختار. تاتر سعی خواهد کرد به استنباط قالب یک عبارت, تجزیه ردیف زیر با استفاده از این الگو و ارزیابی بیان در یک دسته از ردیف موفقیت تجزیه. برای پرس و جو زیر:
+را قادر می سازد و یا غیر فعال کسر الگو برای عبارات گذاشتن در [مقادیر](../../interfaces/formats.md#data-format-values) قالب. این اجازه می دهد تجزیه و تفسیر عبارات در `Values` بسیار سریع تر اگر عبارات در ردیف متوالی همان ساختار. تاتر تلاش می کند به استنباط قالب یک عبارت, تجزیه ردیف زیر با استفاده از این الگو و ارزیابی بیان در یک دسته از ردیف موفقیت تجزیه.
+
+مقادیر ممکن:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+مقدار پیش فرض: 1.
+
+برای پرس و جو زیر:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   اگر `input_format_values_interpret_expressions=1` و `format_values_deduce_templates_of_expressions=0` عبارات خواهد شد به طور جداگانه برای هر سطر تفسیر (این برای تعداد زیادی از ردیف بسیار کند است)
--   اگر `input_format_values_interpret_expressions=0` و `format_values_deduce_templates_of_expressions=1` عبارات در اولین, ردیف دوم و سوم خواهد شد با استفاده از الگو تجزیه `lower(String)` و تفسیر با هم, بیان ردیف جلو خواهد شد با قالب دیگری تجزیه (`upper(String)`)
--   اگر `input_format_values_interpret_expressions=1` و `format_values_deduce_templates_of_expressions=1` - همان است که در مورد قبلی, اما همچنین اجازه می دهد تا عقب نشینی به تفسیر عبارات به طور جداگانه اگر ممکن نیست به استنباط الگو.
-
-فعال به طور پیش فرض.
+-   اگر `input_format_values_interpret_expressions=1` و `format_values_deduce_templates_of_expressions=0`, عبارات به طور جداگانه برای هر سطر تفسیر (این برای تعداد زیادی از ردیف بسیار کند است).
+-   اگر `input_format_values_interpret_expressions=0` و `format_values_deduce_templates_of_expressions=1`, عبارات در اولین, ردیف دوم و سوم با استفاده از الگو تجزیه `lower(String)` و با هم تفسیر, بیان در ردیف جلو با قالب دیگری تجزیه (`upper(String)`).
+-   اگر `input_format_values_interpret_expressions=1` و `format_values_deduce_templates_of_expressions=1`, همان است که در مورد قبلی, بلکه اجازه می دهد تا عقب نشینی به تفسیر عبارات به طور جداگانه اگر این امکان وجود ندارد به استنباط الگو.
 
 ## وارد کردن \_تماس\_عول\_ایجاد \_شکلتهای \_شخصی {#settings-input-format-values-accurate-types-of-literals}
 
-این تنظیم تنها زمانی استفاده می شود `input_format_values_deduce_templates_of_expressions = 1`. آن را می تواند رخ دهد که برای برخی از عبارات ستون دارای ساختار مشابه اما حاوی عددی literals از انواع مختلف الکترونیکی.g
+این تنظیم تنها زمانی استفاده می شود `input_format_values_deduce_templates_of_expressions = 1`. این می تواند رخ دهد, که عبارت برای برخی از ستون دارای ساختار مشابه, اما حاوی لیتر عددی از انواع مختلف, به عنوان مثال
 
 ``` sql
 (..., abs(0), ...),             -- UInt64 literal
@@ -244,9 +257,17 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-هنگامی که این تنظیم فعال است, خانه را به نوع واقعی از تحت اللفظی را بررسی کنید و یک قالب بیان از نوع مربوطه استفاده. در بعضی موارد, ممکن است به طور قابل توجهی کاهش سرعت ارزیابی بیان در `Values`.
-When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` یا `Int64` به جای `UInt64` برای `42`), اما ممکن است مشکلات سرریز و دقت شود.
-فعال به طور پیش فرض.
+مقادیر ممکن:
+
+-   0 — Disabled.
+
+    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` یا `Int64` به جای `UInt64` برای `42`), اما ممکن است مشکلات سرریز و دقت شود.
+
+-   1 — Enabled.
+
+    در این مورد, تاتر چک نوع واقعی تحت اللفظی و با استفاده از یک قالب بیان از نوع مربوطه. در بعضی موارد, ممکن است به طور قابل توجهی کاهش سرعت ارزیابی بیان در `Values`.
+
+مقدار پیش فرض: 1.
 
 ## \_پوشه های ورودی و خروجی {#session_settings-input_format_defaults_for_omitted_fields}
 
@@ -354,7 +375,11 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 
 ## بررسی اجمالی {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 مجموعه سختی پیش فرض برای [تاریخ بند](../../sql_reference/statements/select.md#select-join).
+=======
+مجموعه سختی پیش فرض برای [تاریخ بند](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 مقادیر ممکن:
 
@@ -381,13 +406,22 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 
 همچنین نگاه کنید به:
 
+<<<<<<< HEAD
 -   [پیوستن بند](../../sql_reference/statements/select.md#select-join)
 -   [پیوستن به موتور جدول](../../engines/table_engines/special/join.md)
+=======
+-   [پیوستن بند](../../sql-reference/statements/select/join.md#select-join)
+-   [پیوستن به موتور جدول](../../engines/table-engines/special/join.md)
+>>>>>>> upstream/master
 -   [بررسی اجمالی](#settings-join_default_strictness)
 
 ## ارزشهای خبری عبارتند از: {#join_use_nulls}
 
+<<<<<<< HEAD
 نوع را تنظیم می کند [JOIN](../../sql_reference/statements/select.md) رفتار هنگامی که ادغام جداول سلول های خالی ممکن است ظاهر شود. کلیک هاوس بر اساس این تنظیم متفاوت است.
+=======
+نوع را تنظیم می کند [JOIN](../../sql-reference/statements/select/join.md) رفتار هنگامی که ادغام جداول سلول های خالی ممکن است ظاهر شود. کلیک هاوس بر اساس این تنظیم متفاوت است.
+>>>>>>> upstream/master
 
 مقادیر ممکن:
 
@@ -509,11 +543,33 @@ Default value: 128 ✕ 8192.
 log_queries=1
 ```
 
+## \_قاب کردن \_نوع {#settings-log-queries-min-type}
+
+`query_log` حداقل نوع برای ورود به سیستم.
+
+مقادیر ممکن:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+مقدار پیشفرض: `QUERY_START`.
+
+می توان برای محدود کردن که `query_log`, می گویند شما جالب تنها در اشتباهات هستند, سپس شما می توانید استفاده کنید `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## باز کردن {#settings-log-query-threads}
 
 راه اندازی موضوعات پرس و جو ورود به سیستم.
 
+<<<<<<< HEAD
 نمایش داده شد' موضوعات runned توسط clickhouse با راه اندازی این سیستم هستند با توجه به قوانین در [\_ر\_خروج](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) پارامتر پیکربندی سرور.
+=======
+نمایش داده شد' موضوعات runned توسط ClickHouse با راه اندازی این سیستم هستند با توجه به قوانین در [\_ر\_خروج](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) پارامتر پیکربندی سرور.
+>>>>>>> upstream/master
 
 مثال:
 
@@ -532,6 +588,28 @@ log_query_threads=1
 مقدار پیش فرض: 1,048,576.
 
 به طور پیش فرض کمی بیش از `max_block_size`. دلیل این کار این است زیرا موتورهای جدول خاص (`*MergeTree`) بخش داده ها بر روی دیسک برای هر بلوک قرار داده شده است که یک نهاد نسبتا بزرگ را تشکیل می دهند. به طور مشابه, `*MergeTree` جداول مرتب سازی بر داده ها در هنگام درج و اندازه بلوک به اندازه کافی بزرگ اجازه می دهد مرتب سازی داده های بیشتر در رم.
+
+## \_معرض \_سبک\_ز\_وز {#min-insert-block-size-rows}
+
+مجموعه حداقل تعداد ردیف در بلوک است که می تواند به یک جدول توسط یک قرار داده `INSERT` پرس و جو. بلوک های کوچکتر به اندازه به موارد بزرگتر له می شوند.
+
+مقادیر ممکن:
+
+-   عدد صحیح مثبت.
+-   0 — Squashing disabled.
+
+مقدار پیش فرض: 1048576.
+
+## ا\_فزونهها {#min-insert-block-size-bytes}
+
+مجموعه حداقل تعداد بایت در بلوک است که می تواند به یک جدول توسط یک قرار داده `INSERT` پرس و جو. بلوک های کوچکتر به اندازه به موارد بزرگتر له می شوند.
+
+مقادیر ممکن:
+
+-   عدد صحیح مثبت.
+-   0 — Squashing disabled.
+
+مقدار پیش فرض: 268435456.
 
 ## \_شروع مجدد \_شروع مجدد \_شروع مجدد \_کاربری {#settings-max_replica_delay_for_distributed_queries}
 
@@ -782,7 +860,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 ## خروجی \_فرمان\_جسون\_کوات\_64بیت\_تنظیمی {#session_settings-output_format_json_quote_64bit_integers}
 
-اگر مقدار درست است صحیح به نظر می رسد در نقل قول ها در هنگام استفاده از json\* int64 و uint64 فرمت (برای سازگاری بیشتر با جاوا اسکریپت پیاده سازی); در غیر این صورت اعداد صحیح هستند و خروجی بدون نقل قول.
+اگر مقدار درست است صحیح به نظر می رسد در نقل قول ها در هنگام استفاده از JSON\* Int64 و UInt64 فرمت (برای سازگاری بیشتر با جاوا اسکریپت پیاده سازی); در غیر این صورت اعداد صحیح هستند و خروجی بدون نقل قول.
 
 ## \_مخفی کردن \_قابلیت \_جدید {#settings-format_csv_delimiter}
 
@@ -794,7 +872,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 ## \_انتقال به \_شروع مجدد {#settings-output-format-csv-crlf-end-of-line}
 
-استفاده از داس/ویندوز-سبک خط جدا کننده (crlf) در csv به جای یونیکس سبک (lf).
+استفاده از داس/ویندوز-سبک خط جدا کننده (CRLF) در CSV به جای یونیکس سبک (LF).
 
 ## \_فرستادن در\_م\_مایش از \_برخط {#settings-output-format-tsv-crlf-end-of-line}
 
@@ -869,7 +947,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 1.
 
-به طور پیش فرض بلوک ها به جداول تکرار شده توسط `INSERT` بیانیه deduplicated (نگاه کنید به \[Data Replication\] (../موتورهای/table\_engines/mergetree\_family/تکرار است.md).
+به طور پیش فرض بلوک ها به جداول تکرار شده توسط `INSERT` بیانیه تقسیم شده است (نگاه کنید به [تکرار داده ها](../../engines/table-engines/mergetree-family/replication.md)).
 
 ## دریافت حسابهای کاربری دستگاه {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -939,11 +1017,19 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقادیر ممکن:
 
+<<<<<<< HEAD
 -   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
 -   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
 -   [نیم قرن 64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
 -   [یونقلل12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
 -   [قرارداد اتحادیه](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
+=======
+-   [دانشگاه](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
+-   [مخلوط نشده](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
+-   [نیم قرن 64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
+-   [یونقلل12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
+-   [قرارداد اتحادیه](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
+>>>>>>> upstream/master
 
 مقدار پیشفرض: `uniqExact`.
 
@@ -979,7 +1065,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 ## افراد زیر در این افزونه مشارکت کردهاند {#settings-optimize_skip_unused_shards}
 
-فعال یا غیر فعال پرش استفاده نشده خرده ریز برای انتخاب نمایش داده شد که sharding شرط کلیدی در prewhere/که در آن (به فرض که داده ها توزیع شده است sharding کلیدی در غیر این صورت هیچ چیز).
+فعال یا غیر فعال پرش استفاده نشده خرده ریز برای انتخاب نمایش داده شد که sharding شرط کلیدی در PREWHERE/که در آن (به فرض که داده ها توزیع شده است sharding کلیدی در غیر این صورت هیچ چیز).
 
 مقدار پیشفرض: 0
 
@@ -1148,7 +1234,7 @@ The results of the compilation are saved in the build directory in the form of .
 
 مقدار پیش فرض: 0.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [پروفایل پرس و جو نمونه برداری](../optimizing_performance/sampling_query_profiler.md)
 -   جدول سیستم [\_قطع](../../operations/system_tables.md#system_tables-trace_log)
@@ -1158,7 +1244,7 @@ The results of the compilation are saved in the build directory in the form of .
 -   نوع: بولی
 -   مقدار پیشفرض: درست
 
-فعال کردن نظم حفظ تجزیه موازی از فرمت های داده. پشتیبانی تنها برای tsv tksv csv و jsoneachrow فرمت های.
+فعال کردن نظم حفظ تجزیه موازی از فرمت های داده. پشتیبانی تنها برای TSV TKSV CSV و JSONEachRow فرمت های.
 
 ## \_حداقل کردن \_بیتس\_برای\_پرال\_درپارس {#min-chunk-bytes-for-parallel-parsing}
 
@@ -1198,5 +1284,15 @@ The results of the compilation are saved in the build directory in the form of .
 نوع: نشانی وب
 
 مقدار پیشفرض: خالی
+
+## پس زمینه {#background_pool_size}
+
+مجموعه تعدادی از موضوعات انجام عملیات پس زمینه در موتورهای جدول (مثلا, ادغام در [موتور ادغام](../../engines/table-engines/mergetree-family/index.md) جدول). این تنظیم در شروع سرور کلیک استفاده می شود و نمی تواند در یک جلسه کاربر تغییر کند. با تنظیم این تنظیم شما پردازنده و دیسک بار مدیریت. اندازه استخر کوچکتر با بهره گیری از پردازنده و دیسک منابع کمتر, اما فرایندهای پس زمینه پیشرفت کندتر که در نهایت ممکن است تاثیر عملکرد پرس و جو.
+
+مقادیر ممکن:
+
+-   هر عدد صحیح مثبت.
+
+مقدار پیش فرض: 16.
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "D\xE9pannage"
 ---
@@ -14,12 +14,21 @@ toc_title: "D\xE9pannage"
 
 ## Installation {#troubleshooting-installation-errors}
 
+<<<<<<< HEAD
 ### Vous ne pouvez pas obtenir de paquets deb à partir du référentiel Clickhouse avec Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Vérifiez les paramètres du pare-feu.
 -   Si vous ne pouvez pas accéder au référentiel pour quelque raison que ce soit, téléchargez les packages comme décrit dans [Prise en main](../getting_started/index.md) article et les installer manuellement en utilisant le `sudo dpkg -i <packages>` commande. Vous aurez aussi besoin d' `tzdata` paquet.
 
 ## Connexion au serveur {#troubleshooting-accepts-no-connections}
+=======
+### Vous ne pouvez pas obtenir de paquets deb à partir du référentiel ClickHouse avec Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+
+-   Vérifiez les paramètres du pare-feu.
+-   Si vous ne pouvez pas accéder au référentiel pour quelque raison que ce soit, téléchargez les packages comme décrit dans [Prise en main](../getting-started/index.md) article et les installer manuellement en utilisant le `sudo dpkg -i <packages>` commande. Vous aurez aussi besoin d' `tzdata` paquet.
+
+## Connexion au Serveur {#troubleshooting-accepts-no-connections}
+>>>>>>> upstream/master
 
 Problèmes possibles:
 
@@ -139,7 +148,7 @@ Si vous commencez à `clickhouse-client` avec l' `stack-trace` paramètre, Click
 
 Vous pouvez voir un message sur une connexion rompue. Dans ce cas, vous pouvez répéter la requête. Si la connexion se rompt chaque fois que vous effectuez la requête, vérifiez les journaux du serveur pour détecter les erreurs.
 
-## Efficacité Du Traitement Des Requêtes {#troubleshooting-too-slow}
+## Efficacité du traitement des requêtes {#troubleshooting-too-slow}
 
 Si vous voyez que ClickHouse fonctionne trop lentement, vous devez profiler la charge sur les ressources du serveur et le réseau pour vos requêtes.
 

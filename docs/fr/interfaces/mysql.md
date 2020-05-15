@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 20
 toc_title: Interface MySQL
 ---
@@ -37,8 +37,13 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
+<<<<<<< HEAD
 Pour la compatibilité avec tous les clients MySQL, il est recommandé de spécifier le mot de passe utilisateur avec [double SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) dans le fichier de configuration.
 Si le mot de passe de l'utilisateur est spécifié [SHA256](../operations/settings/settings_users.md#password_sha256_hex), certains clients ne pourront pas s'authentifier (mysqljs et anciennes versions de l'outil de ligne de commande mysql).
+=======
+Pour la compatibilité avec tous les clients MySQL, il est recommandé de spécifier le mot de passe utilisateur avec [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) dans le fichier de configuration.
+Si le mot de passe de l'utilisateur est spécifié [SHA256](../operations/settings/settings-users.md#password_sha256_hex), certains clients ne pourront pas s'authentifier (mysqljs et anciennes versions de l'outil de ligne de commande mysql).
+>>>>>>> upstream/master
 
 Restriction:
 

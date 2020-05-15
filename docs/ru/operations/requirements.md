@@ -17,9 +17,15 @@ ClickHouse реализует параллельную обработку дан
 -   Сложности запросов.
 -   Объёма данных, обрабатываемых в запросах.
 
+<<<<<<< HEAD
 Для расчета объёма RAM необходимо оценить размер промежуточных данных для операций [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) а также других операций, которыми вы пользуетесь.
 
 ClickHouse может использовать внешнюю память для промежуточных данных. Подробнее смотрите в разделе [GROUP BY во внешней памяти](../sql_reference/statements/select.md#select-group-by-in-external-memory).
+=======
+Для расчета объёма RAM необходимо оценить размер промежуточных данных для операций [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) а также других операций, которыми вы пользуетесь.
+
+ClickHouse может использовать внешнюю память для промежуточных данных. Подробнее смотрите в разделе [GROUP BY во внешней памяти](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
+>>>>>>> upstream/master
 
 ## Файл подкачки {#fail-podkachki}
 

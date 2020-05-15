@@ -2,7 +2,11 @@
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
+<<<<<<< HEAD
 Изменяет поведение [распределенных подзапросов](../../sql_reference/statements/select.md).
+=======
+Изменяет поведение [распределенных подзапросов](../../sql-reference/operators/index.md).
+>>>>>>> upstream/master
 
 ClickHouse применяет настройку в тех случаях, когда запрос содержит произведение распределённых таблиц, т.е. когда запрос к распределенной таблице содержит не-GLOBAL подзапрос к также распределенной таблице.
 
@@ -362,7 +366,11 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 Устанавливает строгость по умолчанию для [JOIN](../../sql_reference/statements/select.md#select-join).
+=======
+Устанавливает строгость по умолчанию для [JOIN](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 Возможные значения
 
@@ -388,13 +396,22 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 См. также:
 
+<<<<<<< HEAD
 -   [Секция JOIN](../../sql_reference/statements/select.md#select-join)
 -   [Движок таблиц Join](../../engines/table_engines/special/join.md)
+=======
+-   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
+-   [Движок таблиц Join](../../engines/table-engines/special/join.md)
+>>>>>>> upstream/master
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
+<<<<<<< HEAD
 Устанавливает тип поведения [JOIN](../../sql_reference/statements/select.md). При объединении таблиц могут появиться пустые ячейки. ClickHouse заполняет их по-разному в зависимости от настроек.
+=======
+Устанавливает тип поведения [JOIN](../../sql-reference/statements/select/join.md). При объединении таблиц могут появиться пустые ячейки. ClickHouse заполняет их по-разному в зависимости от настроек.
+>>>>>>> upstream/master
 
 Возможные значения
 

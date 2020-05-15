@@ -1,13 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: Veri Yedekleme
 ---
 
 # Veri Yedekleme {#data-backup}
 
+<<<<<<< HEAD
 Karşın [çoğalma](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50 GB'den fazla veri içeren MergeTree benzeri bir motorla tabloları bırakamazsınız](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Ancak, bu önlemler olası tüm davaları kapsamaz ve atlatılabilir.
+=======
+Karşın [çoğalma](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [50 GB'den fazla veri içeren MergeTree benzeri bir motorla tabloları bırakamazsınız](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Ancak, bu önlemler olası tüm davaları kapsamaz ve atlatılabilir.
+>>>>>>> upstream/master
 
 Olası insan hatalarını etkili bir şekilde azaltmak için, verilerinizi yedeklemek ve geri yüklemek için dikkatli bir şekilde bir strateji hazırlamanız gerekir **önceden**.
 

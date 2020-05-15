@@ -2,7 +2,7 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
-    contrib/libs/protobuf_std
+    contrib/libs/protobuf
 )
 
 SRCS(

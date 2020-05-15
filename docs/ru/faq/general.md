@@ -25,7 +25,11 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Секция INTO OUTFILE {#sektsiia-into-outfile}
 
+<<<<<<< HEAD
 Добавьте секцию [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) к своему запросу.
+=======
+Добавьте секцию [INTO OUTFILE](../sql-reference/statements/select/into-outfile.md#into-outfile-clause) к своему запросу.
+>>>>>>> upstream/master
 
 Например:
 
@@ -33,7 +37,11 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
+<<<<<<< HEAD
 По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../sql_reference/statements/select.md#format-clause).
+=======
+По умолчанию, для выдачи данных ClickHouse использует формат [TabSeparated](../interfaces/formats.md#tabseparated). Чтобы выбрать [формат данных](../interfaces/formats.md), используйте [секцию FORMAT](../sql-reference/statements/select/format.md#format-clause).
+>>>>>>> upstream/master
 
 Например:
 

@@ -1,15 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
-toc_priority: 60
-toc_title: "Param\xE8tre"
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Paramètre {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
+<<<<<<< HEAD
 Modifie le comportement de [distribués sous-requêtes](../../sql_reference/statements/select.md).
+=======
+Modifie le comportement de [distribués sous-requêtes](../../sql-reference/operators/in.md).
+>>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -18,7 +20,11 @@ Restriction:
 -   Uniquement appliqué pour les sous-requêtes IN et JOIN.
 -   Uniquement si la section FROM utilise une table distribuée contenant plus d'un fragment.
 -   Si la sous-requête concerne un distribué tableau contenant plus d'un fragment.
+<<<<<<< HEAD
 -   Pas utilisé pour une table [distant](../../sql_reference/table_functions/remote.md) fonction.
+=======
+-   Pas utilisé pour une table [distant](../../sql-reference/table-functions/remote.md) fonction.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -67,7 +73,11 @@ Désactive l'exécution de la requête si l'index ne peut pas être utilisé par
 
 Fonctionne avec les tables de la famille MergeTree.
 
+<<<<<<< HEAD
 Si `force_index_by_date=1`, Clickhouse vérifie si la requête a une condition de clé de date qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Par exemple, la condition `Date != ' 2000-01-01 '` est acceptable même lorsqu'il correspond à toutes les données de la table (c'est-à-dire que l'exécution de la requête nécessite une analyse complète). Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+=======
+Si `force_index_by_date=1`, Clickhouse vérifie si la requête a une condition de clé de date qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Par exemple, la condition `Date != ' 2000-01-01 '` est acceptable même lorsqu'il correspond à toutes les données de la table (c'est-à-dire que l'exécution de la requête nécessite une analyse complète). Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+>>>>>>> upstream/master
 
 ## force\_primary\_key {#force-primary-key}
 
@@ -75,7 +85,11 @@ Désactive l'exécution de la requête si l'indexation par la clé primaire n'es
 
 Fonctionne avec les tables de la famille MergeTree.
 
+<<<<<<< HEAD
 Si `force_primary_key=1`, Clickhouse vérifie si la requête a une condition de clé primaire qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+=======
+Si `force_primary_key=1`, Clickhouse vérifie si la requête a une condition de clé primaire qui peut être utilisée pour restreindre les plages de données. S'il n'y a pas de condition appropriée, il lève une exception. Cependant, il ne vérifie pas si la condition réduit la quantité de données à lire. Pour plus d'informations sur les plages de données dans les tables MergeTree, voir [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+>>>>>>> upstream/master
 
 ## format\_schema {#format-schema}
 
@@ -136,7 +150,11 @@ Valeur par défaut: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
+<<<<<<< HEAD
 Limite le nombre maximal de sauts de redirection HTTP GET pour [URL](../../engines/table_engines/special/url.md)-tables de moteur. Le paramètre s'applique aux deux types de tables: celles créées par [CREATE TABLE](../../query_language/create/#create-table-query) requête et par la [URL](../../sql_reference/table_functions/url.md) table de fonction.
+=======
+Limite le nombre maximal de sauts de redirection HTTP GET pour [URL](../../engines/table-engines/special/url.md)-tables de moteur. Le paramètre s'applique aux deux types de tables: celles créées par [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) requête et par la [URL](../../sql-reference/table-functions/url.md) table de fonction.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -172,7 +190,11 @@ Si les deux `input_format_allow_errors_num` et `input_format_allow_errors_ratio`
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
+<<<<<<< HEAD
 Active ou désactive L'analyseur SQL complet si l'analyseur de flux rapide ne peut pas analyser les données. Ce paramètre est utilisé uniquement pour la [Valeur](../../interfaces/formats.md#data-format-values) format lors de l'insertion des données. Pour plus d'informations sur l'analyse syntaxique, consultez [Syntaxe](../../sql_reference/syntax.md) section.
+=======
+Active ou désactive L'analyseur SQL complet si l'analyseur de flux rapide ne peut pas analyser les données. Ce paramètre est utilisé uniquement pour la [Valeur](../../interfaces/formats.md#data-format-values) format lors de l'insertion des données. Pour plus d'informations sur l'analyse syntaxique, consultez [Syntaxe](../../sql-reference/syntax.md) section.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -222,17 +244,36 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
+<<<<<<< HEAD
 Active ou désactive la déduction de modèle pour une expression SQL dans [Valeur](../../interfaces/formats.md#data-format-values) format. Il permet d'analyser et d'interpréter les expressions dans `Values` beaucoup plus rapide si les expressions dans des lignes consécutives ont la même structure. ClickHouse va essayer de déduire le modèle d'une expression, analyser les lignes suivantes en utilisant ce modèle et évaluer l'expression sur un lot de lignes analysées avec succès. Pour la requête suivante:
+=======
+Active ou désactive la déduction de modèle pour les expressions SQL dans [Valeur](../../interfaces/formats.md#data-format-values) format. Il permet d'analyser et d'interpréter des expressions dans `Values` beaucoup plus rapide si les expressions dans des lignes consécutives ont la même structure. ClickHouse tente de déduire le modèle d'une expression, d'analyser les lignes suivantes à l'aide de ce modèle et d'évaluer l'expression sur un lot de lignes analysées avec succès.
+
+Valeurs possibles:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Valeur par défaut: 1.
+
+Pour la requête suivante:
+>>>>>>> upstream/master
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
+<<<<<<< HEAD
 -   si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=0` les expressions seront interprétées séparément pour chaque ligne (Ceci est très lent pour un grand nombre de lignes)
 -   si `input_format_values_interpret_expressions=0` et `format_values_deduce_templates_of_expressions=1` expressions dans les première, deuxième et troisième lignes seront analysées à l'aide du modèle `lower(String)` et interprété ensemble, l'expression est la quatrième ligne sera analysée avec un autre modèle (`upper(String)`)
 -   si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=1` - la même chose que dans le cas précédent, mais permet également d'interpréter les expressions séparément s'il n'est pas possible de déduire le modèle.
 
 Activé par défaut.
+=======
+-   Si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=0`, les expressions sont interprétées séparément pour chaque ligne (c'est très lent pour un grand nombre de lignes).
+-   Si `input_format_values_interpret_expressions=0` et `format_values_deduce_templates_of_expressions=1`, les expressions des première, deuxième et troisième lignes sont analysées à l'aide de template `lower(String)` et interprété ensemble, l'expression dans la quatrième ligne est analysée avec un autre modèle (`upper(String)`).
+-   Si `input_format_values_interpret_expressions=1` et `format_values_deduce_templates_of_expressions=1`, le même que dans le cas précédent, mais permet également d'interpréter les expressions séparément s'il n'est pas possible de déduire le modèle.
+>>>>>>> upstream/master
 
 ## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
@@ -244,9 +285,23 @@ Ce paramètre est utilisé uniquement lorsque `input_format_values_deduce_templa
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
+<<<<<<< HEAD
 Lorsque ce paramètre est activé, ClickHouse vérifie le type réel de littéral et utilise un modèle d'expression du type correspondant. Dans certains cas, cela peut considérablement ralentir l'évaluation de l'expression dans `Values`.
 When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` ou `Int64` plutôt `UInt64` pour `42`), mais cela peut causer des problèmes de débordement et de précision.
 Activé par défaut.
+=======
+Valeurs possibles:
+
+-   0 — Disabled.
+
+    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` ou `Int64` plutôt `UInt64` pour `42`), mais cela peut causer des problèmes de débordement et de précision.
+
+-   1 — Enabled.
+
+    Dans ce cas, ClickHouse vérifie le type réel de littéral et utilise un modèle d'expression du type correspondant. Dans certains cas, cela peut considérablement ralentir l'évaluation de l'expression dans `Values`.
+
+Valeur par défaut: 1.
+>>>>>>> upstream/master
 
 ## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
@@ -333,7 +388,11 @@ Valeur par défaut: 1.
 
 Permet de choisir un analyseur de la représentation textuelle de la date et de l'heure.
 
+<<<<<<< HEAD
 Le réglage ne s'applique pas à [fonctions date et heure](../../sql_reference/functions/date_time_functions.md).
+=======
+Le réglage ne s'applique pas à [fonctions date et heure](../../sql-reference/functions/date-time-functions.md).
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -354,7 +413,11 @@ Voir aussi:
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 Définit la rigueur par défaut pour [JOIN clauses](../../sql_reference/statements/select.md#select-join).
+=======
+Définit la rigueur par défaut pour [JOIN clauses](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -370,7 +433,11 @@ Valeur par défaut: `ALL`.
 Modifie le comportement des opérations de jointure avec `ANY` rigueur.
 
 !!! warning "Attention"
+<<<<<<< HEAD
     Ce paramètre s'applique uniquement pour `JOIN` opérations avec [Rejoindre](../../engines/table_engines/special/join.md) le moteur de tables.
+=======
+    Ce paramètre s'applique uniquement pour `JOIN` opérations avec [Rejoindre](../../engines/table-engines/special/join.md) le moteur de tables.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -381,13 +448,22 @@ Valeur par défaut: 0.
 
 Voir aussi:
 
+<<<<<<< HEAD
 -   [Clause de JOINTURE](../../sql_reference/statements/select.md#select-join)
 -   [Rejoindre le moteur de table](../../engines/table_engines/special/join.md)
+=======
+-   [Clause de JOINTURE](../../sql-reference/statements/select/join.md#select-join)
+-   [Rejoindre le moteur de table](../../engines/table-engines/special/join.md)
+>>>>>>> upstream/master
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
+<<<<<<< HEAD
 Définit le type de [JOIN](../../sql_reference/statements/select.md) comportement. Lors de la fusion de tables, des cellules vides peuvent apparaître. ClickHouse les remplit différemment en fonction de ce paramètre.
+=======
+Définit le type de [JOIN](../../sql-reference/statements/select/join.md) comportement. Lors de la fusion de tables, des cellules vides peuvent apparaître. ClickHouse les remplit différemment en fonction de ce paramètre.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -412,7 +488,11 @@ Par défaut: 1 000 000. Cela ne fonctionne que lors de la lecture des moteurs Me
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
+<<<<<<< HEAD
 Si le nombre de lignes à lire à partir d'un fichier d'un [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) table dépasse `merge_tree_min_rows_for_concurrent_read` ensuite, ClickHouse essaie d'effectuer une lecture simultanée de ce fichier sur plusieurs threads.
+=======
+Si le nombre de lignes à lire à partir d'un fichier d'un [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table dépasse `merge_tree_min_rows_for_concurrent_read` ensuite, ClickHouse essaie d'effectuer une lecture simultanée de ce fichier sur plusieurs threads.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -422,7 +502,11 @@ Valeur par défaut: 163840.
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
+<<<<<<< HEAD
 Si le nombre d'octets à lire à partir d'un fichier d'un [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)- table de moteur dépasse `merge_tree_min_bytes_for_concurrent_read` puis ClickHouse essaie de lire simultanément à partir de ce fichier dans plusieurs threads.
+=======
+Si le nombre d'octets à lire à partir d'un fichier d'un [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)- table de moteur dépasse `merge_tree_min_bytes_for_concurrent_read` puis ClickHouse essaie de lire simultanément à partir de ce fichier dans plusieurs threads.
+>>>>>>> upstream/master
 
 Valeur Possible:
 
@@ -509,6 +593,24 @@ Exemple:
 log_queries=1
 ```
 
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` type minimal à enregistrer.
+
+Valeurs possibles:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Valeur par défaut: `QUERY_START`.
+
+Peut être utilisé pour limiter le nombre de entiries va va `query_log`, dites que vous êtes intéressant que dans les erreurs, alors vous pouvez utiliser `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## log\_query\_threads {#settings-log-query-threads}
 
 Configuration de la journalisation des threads de requête.
@@ -532,6 +634,31 @@ Le paramètre n'a pas non plus de but lors de L'utilisation D'INSERT SELECT, car
 Valeur par défaut: 1 048 576 octets.
 
 La valeur par défaut est légèrement supérieure à `max_block_size`. La raison en est que certains moteurs de table (`*MergeTree`) former une partie de données sur le disque pour chaque bloc inséré, qui est une entité assez grande. Pareillement, `*MergeTree` les tables trient les données lors de l'insertion et une taille de bloc suffisamment grande permet de trier plus de données dans la RAM.
+<<<<<<< HEAD
+=======
+
+## min\_insert\_block\_size\_rows {#min-insert-block-size-rows}
+
+Définit le nombre minimum de lignes dans le bloc qui peut être inséré dans un tableau par un `INSERT` requête. Les blocs de plus petite taille sont écrasés en plus gros.
+
+Valeurs possibles:
+
+-   Entier positif.
+-   0 — Squashing disabled.
+
+Valeur par défaut: 1048576.
+
+## min\_insert\_block\_size\_bytes {#min-insert-block-size-bytes}
+
+Définit le nombre minimal d'octets dans le bloc qui peut être inséré dans un tableau par un `INSERT` requête. Les blocs de plus petite taille sont écrasés en plus gros.
+
+Valeurs possibles:
+
+-   Entier positif.
+-   0 — Squashing disabled.
+
+Valeur par défaut: 268435456.
+>>>>>>> upstream/master
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -580,7 +707,11 @@ Ne confondez pas les blocs pour la compression (un morceau de mémoire constitu�
 
 ## min\_compress\_block\_size {#min-compress-block-size}
 
+<<<<<<< HEAD
 Pour [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)" table. Afin de réduire la latence lors du traitement des requêtes, un bloc est compressé lors de l'écriture de la marque suivante si sa taille est au moins ‘min\_compress\_block\_size’. Par défaut, 65 536.
+=======
+Pour [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)" table. Afin de réduire la latence lors du traitement des requêtes, un bloc est compressé lors de l'écriture de la marque suivante si sa taille est au moins ‘min\_compress\_block\_size’. Par défaut, 65 536.
+>>>>>>> upstream/master
 
 La taille réelle du bloc, si les données non compressées sont inférieures à ‘max\_compress\_block\_size’ pas moins de cette valeur et pas moins que le volume de données pour une marque.
 
@@ -658,7 +789,11 @@ Pour plus d'informations, consultez la section “Extreme values”.
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Indique s'il faut utiliser un cache de blocs non compressés. Accepte 0 ou 1. Par défaut, 0 (désactivé).
+<<<<<<< HEAD
 L'utilisation du cache non compressé (uniquement pour les tables de la famille MergeTree) peut réduire considérablement la latence et augmenter le débit lorsque vous travaillez avec un grand nombre de requêtes courtes. Activez ce paramètre pour les utilisateurs qui envoient des requêtes courtes fréquentes. Faites également attention à la [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+=======
+L'utilisation du cache non compressé (uniquement pour les tables de la famille MergeTree) peut réduire considérablement la latence et augmenter le débit lorsque vous travaillez avec un grand nombre de requêtes courtes. Activez ce paramètre pour les utilisateurs qui envoient des requêtes courtes fréquentes. Faites également attention à la [uncompressed\_cache\_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+>>>>>>> upstream/master
 
 Pour les requêtes qui lisent au moins un volume de données assez important (un million de lignes ou plus), le cache non compressé est désactivé automatiquement pour économiser de l'espace pour les requêtes vraiment petites. Cela signifie que vous pouvez garder la ‘use\_uncompressed\_cache’ toujours la valeur 1.
 
@@ -869,7 +1004,7 @@ Valeurs possibles:
 
 Valeur par défaut: 1.
 
-Par défaut, les blocs insérés dans les tables répliquées `INSERT` déclaration sont dédupliquées (voir \[Réplication de Données\] (../moteurs/table\_engines/mergetree\_family/réplication.md).
+Par défaut, les blocs insérés dans les tables répliquées `INSERT` déclaration sont dédupliquées (voir [Réplication Des Données](../../engines/table-engines/mergetree-family/replication.md)).
 
 ## déduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -935,7 +1070,11 @@ Valeur par défaut: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
+<<<<<<< HEAD
 Spécifie de l' `uniq*` les fonctions doivent être utilisées pour [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) construction.
+=======
+Spécifie de l' `uniq*` les fonctions doivent être utilisées pour [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) construction.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -1008,7 +1147,11 @@ Valeur par défaut: 0.
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
+<<<<<<< HEAD
 Active ou désactive le lancement d'une exception si [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) la requête n'a pas effectué de fusion.
+=======
+Active ou désactive le lancement d'une exception si [OPTIMIZE](../../sql-reference/statements/misc.md#misc_operations-optimize) la requête n'a pas effectué de fusion.
+>>>>>>> upstream/master
 
 Par défaut, `OPTIMIZE` retourne avec succès même s'il n'a rien fait. Ce paramètre vous permet de différencier ces situations et d'obtenir la raison dans un message d'exception.
 
@@ -1045,7 +1188,11 @@ Voir aussi:
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
+<<<<<<< HEAD
 Intervalle de Base pour le [Distribué](../../engines/table_engines/special/distributed.md) tableau moteur à envoyer des données. L'intervalle réel augmente de façon exponentielle en cas d'erreurs.
+=======
+Intervalle de Base pour le [Distribué](../../engines/table-engines/special/distributed.md) tableau moteur à envoyer des données. L'intervalle réel augmente de façon exponentielle en cas d'erreurs.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -1055,7 +1202,11 @@ Valeur par défaut: 100 millisecondes.
 
 ## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
+<<<<<<< HEAD
 Intervalle maximal pour le [Distribué](../../engines/table_engines/special/distributed.md) tableau moteur à envoyer des données. Limite la croissance exponentielle de l'intervalle défini dans [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) paramètre.
+=======
+Intervalle maximal pour le [Distribué](../../engines/table-engines/special/distributed.md) tableau moteur à envoyer des données. Limite la croissance exponentielle de l'intervalle défini dans [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) paramètre.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -1067,7 +1218,11 @@ Valeur par défaut: 30000 millisecondes (30 secondes).
 
 Active / désactive l'envoi des données insérées par lots.
 
+<<<<<<< HEAD
 Lorsque l'envoi par lots est activé, le [Distribué](../../engines/table_engines/special/distributed.md) tableau moteur essaie d'envoyer plusieurs fichiers de données insérées dans une seule opération au lieu de les envoyer séparément. L'envoi par lots améliore les performances du cluster en utilisant mieux les ressources du serveur et du réseau.
+=======
+Lorsque l'envoi par lots est activé, le [Distribué](../../engines/table-engines/special/distributed.md) tableau moteur essaie d'envoyer plusieurs fichiers de données insérées dans une seule opération au lieu de les envoyer séparément. L'envoi par lots améliore les performances du cluster en utilisant mieux les ressources du serveur et du réseau.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -1093,7 +1248,11 @@ Valeur par défaut: 0.
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
+<<<<<<< HEAD
 Définit la période pour une horloge réelle de la [requête profiler](../../operations/optimizing_performance/sampling_query_profiler.md). La vraie minuterie d'horloge compte le temps d'horloge murale.
+=======
+Définit la période pour une horloge réelle de la [requête profiler](../../operations/optimizing-performance/sampling-query-profiler.md). La vraie minuterie d'horloge compte le temps d'horloge murale.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -1116,7 +1275,11 @@ Voir aussi:
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
+<<<<<<< HEAD
 Définit la période pour une minuterie D'horloge CPU du [requête profiler](../../operations/optimizing_performance/sampling_query_profiler.md). Cette minuterie ne compte que le temps CPU.
+=======
+Définit la période pour une minuterie D'horloge CPU du [requête profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Cette minuterie ne compte que le temps CPU.
+>>>>>>> upstream/master
 
 Valeurs possibles:
 
@@ -1198,5 +1361,15 @@ Définit L'URL de Registre de schéma Confluent à utiliser avec [AvroConfluent]
 Type: URL
 
 Valeur par défaut: vide
+
+## background\_pool\_size {#background_pool_size}
+
+Définit le nombre de threads effectuant des opérations d'arrière-plan dans les moteurs de table (par exemple, fusionne dans [Moteur MergeTree](../../engines/table-engines/mergetree-family/index.md) table). Ce paramètre est appliqué au démarrage du serveur ClickHouse et ne peut pas être modifié dans une session utilisateur. En ajustant ce paramètre, vous gérez la charge du processeur et du disque. Une taille de pool plus petite utilise moins de ressources CPU et disque, mais les processus d'arrière-plan avancent plus lentement, ce qui pourrait éventuellement avoir un impact sur les performances des requêtes.
+
+Valeurs possibles:
+
+-   Tout nombre entier positif.
+
+Valeur par défaut: 16.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
