@@ -1,3 +1,4 @@
+#pragma once
 #include <Common/config.h>
 #if USE_OPENCL
 
@@ -15,13 +16,6 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
-#ifndef CL_VERSION_2_0
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-#endif
-
-
-using KernelType = std::remove_reference<decltype(*cl_kernel())>::type;
-
 
 namespace DB
 {
@@ -33,6 +27,7 @@ namespace DB
 
 struct OCL
 {
+    using KernelType = std::remove_reference<decltype(*cl_kernel())>::type;
 
     /**
      * Structure which represents the most essential settings of common OpenCl entities.
@@ -249,14 +244,27 @@ struct OCL
     }
 
 
+    template <int version>
     static cl_command_queue makeCommandQueue(cl_device_id & device, cl_context & context, const Settings & settings [[maybe_unused]])
     {
         cl_int error;
-#ifdef CL_USE_DEPRECATED_OPENCL_1_2_APIS
-        cl_command_queue command_queue = clCreateCommandQueue(context, device, settings.command_queue_properties, &error);
+        cl_command_queue command_queue;
+
+        if constexpr (version == 1)
+        {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+            command_queue = clCreateCommandQueue(context, device, settings.command_queue_properties, &error);
+#pragma GCC diagnostic pop
+        }
+        else
+        {
+#ifdef CL_VERSION_2_0
+            command_queue = clCreateCommandQueueWithProperties(context, device, nullptr, &error);
 #else
-        cl_command_queue command_queue = clCreateCommandQueueWithProperties(context, device, nullptr, &error);
+            throw DB::Exception("Binary is built with OpenCL version < 2.0", DB::ErrorCodes::OPENCL_ERROR);
 #endif
+        }
         OCL::checkError(error);
 
         return command_queue;

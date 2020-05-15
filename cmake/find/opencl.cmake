@@ -1,3 +1,7 @@
+if(NOT ARCH_ARM AND NOT OS_FREEBSD)
+    option(ENABLE_OPENCL "Enable OpenCL support" ${ENABLE_LIBRARIES})
+endif()
+
 if(ENABLE_OPENCL)
 
 # Intel OpenCl driver: sudo apt install intel-opencl-icd
@@ -7,7 +11,7 @@ if(ENABLE_OPENCL)
 # sudo apt install opencl-headers ocl-icd-libopencl1
 # sudo ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so
 
-find_package(OpenCL REQUIRED)
+find_package(OpenCL)
 if(OpenCL_FOUND)
     set(USE_OPENCL 1)
 endif()

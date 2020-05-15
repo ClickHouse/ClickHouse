@@ -17,12 +17,14 @@
 #include <Common/PODArray.h>
 #include <Columns/ColumnsCommon.h>
 
-#include "oclBasics.cpp"
+#include "oclBasics.h"
 #include "bitonicSortKernels.cl"
 
 class BitonicSort
 {
 public:
+    using KernelType = OCL::KernelType;
+
     enum Types
     {
         KernelInt8 = 0,
@@ -47,14 +49,14 @@ public:
     bool sort(const DB::PaddedPODArray<T> & data, DB::IColumn::Permutation & res, cl_uint sort_ascending) const
     {
         if constexpr (
-            std::is_same_v<T, cl_char> ||
-            std::is_same_v<T, cl_uchar> ||
-            std::is_same_v<T, cl_short> ||
-            std::is_same_v<T, cl_ushort> ||
-            std::is_same_v<T, cl_int> ||
-            std::is_same_v<T, cl_uint> ||
-            std::is_same_v<T, cl_long> ||
-            std::is_same_v<T, cl_ulong>)
+            std::is_same_v<T, Int8> ||
+            std::is_same_v<T, UInt8> ||
+            std::is_same_v<T, Int16> ||
+            std::is_same_v<T, UInt16> ||
+            std::is_same_v<T, Int32> ||
+            std::is_same_v<T, UInt32> ||
+            std::is_same_v<T, Int64> ||
+            std::is_same_v<T, UInt64>)
         {
             size_t data_size = data.size();
 
@@ -99,7 +101,7 @@ public:
         cl_platform_id platform = OCL::getPlatformID(settings);
         cl_device_id device = OCL::getDeviceID(platform, settings);
         cl_context gpu_context = OCL::makeContext(device, settings);
-        cl_command_queue command_queue = OCL::makeCommandQueue(device, gpu_context, settings);
+        cl_command_queue command_queue = OCL::makeCommandQueue<2>(device, gpu_context, settings);
 
         cl_program program = OCL::makeProgram(bitonic_sort_kernels, gpu_context, device, settings);
 

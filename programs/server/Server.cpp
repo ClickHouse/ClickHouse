@@ -61,10 +61,6 @@
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
-#if USE_OPENCL
-#include "Common/BitonicSort.h"
-#endif
-
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #    include "Common/config_version.h"
@@ -78,6 +74,10 @@
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
+#endif
+
+#if USE_OPENCL
+#    include "Common/BitonicSort.h"
 #endif
 
 namespace CurrentMetrics
@@ -226,7 +226,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDisks();
 
 #if USE_OPENCL
-        BitonicSort::getInstance().configure();
+    BitonicSort::getInstance().configure();
 #endif
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
