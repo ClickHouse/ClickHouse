@@ -80,31 +80,9 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     });
 }
 
-ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
-{
-    try
-    {
-        if (!consumer->get_subscription().empty())
-            consumer->unsubscribe();
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor (unsubscribe): " << e.what());
-    }
-
-    try
-    {
-        // we need to drain rest of the messages / queued callback calls from the consumer
-        // after unsubscribe, otherwise consumer will hang on destruction
-        // see https://github.com/edenhill/librdkafka/issues/2077
-        //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
-        while (consumer->poll(100ms));
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor (drain): " << e.what());
-    }
-}
+// NOTE on removed desctuctor: There is no need to unsubscribe prior to calling rd_kafka_consumer_close().
+// check: https://github.com/edenhill/librdkafka/blob/master/INTRODUCTION.md#termination
+// manual destruction was source of weird errors (hangs during droping kafka table, etc.)
 
 void ReadBufferFromKafkaConsumer::commit()
 {
@@ -235,8 +213,13 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     // it should not raise exception as used in destructor
     try
     {
-        if (!consumer->get_subscription().empty())
-            consumer->unsubscribe();
+        // From docs: Any previous subscription will be unassigned and unsubscribed first.
+        consumer->subscribe(topics);
+
+        // I wanted to avoid explicit unsubscribe as it requires draining the messages
+        // to close the consumer safely after unsubscribe
+        // see https://github.com/edenhill/librdkafka/issues/2077
+        //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
     }
     catch (const cppkafka::HandleException & e)
     {

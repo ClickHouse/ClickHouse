@@ -242,9 +242,6 @@ def test_kafka_consumer_hang(kafka_cluster):
     # BROKERFAIL -> |ASSIGN| -> REBALANCE_IN_PROGRESS -> "waiting for rebalance_cb" (repeated forever)
     # so it was waiting forever while the application will execute queued rebalance callback
 
-    # now we drain all queued callbacks (visible as 'Rebalance initiated' after 'Waiting for cleanup')
-    instance.exec_in_container(["bash", "-c", "tail -n 500 /var/log/clickhouse-server/clickhouse-server.log | grep 'Waiting for cleanup' -A 500 | grep -q 'Rebalance initiated. Revoking partitions'"])
-
     # from a user perspective: we expect no hanging 'drop' queries
     # 'dr'||'op' to avoid self matching
     assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
