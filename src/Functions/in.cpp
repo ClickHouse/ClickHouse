@@ -70,7 +70,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override
+    {
+        /// Never return constant for -IgnoreSet functions to avoid constant folding.
+        return !ignore_set;
+    }
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 

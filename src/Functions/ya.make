@@ -207,7 +207,6 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
-    ignoreExceptNull.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
