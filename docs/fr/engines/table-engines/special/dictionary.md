@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: Dictionnaire
 ---
@@ -9,7 +9,7 @@ toc_title: Dictionnaire
 
 Le `Dictionary` le moteur affiche le [dictionnaire](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) données comme une table ClickHouse.
 
-À titre d’exemple, considérons un dictionnaire de `products` avec la configuration suivante:
+À titre d'exemple, considérons un dictionnaire de `products` avec la configuration suivante:
 
 ``` xml
 <dictionaries>
@@ -64,9 +64,9 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-Vous pouvez utiliser l’ [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) fonction pour obtenir les données du dictionnaire dans ce format.
+Vous pouvez utiliser l' [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) fonction pour obtenir les données du dictionnaire dans ce format.
 
-Cette vue n’est pas utile lorsque vous avez besoin d’obtenir des données brutes ou `JOIN` opération. Pour ces cas, vous pouvez utiliser le `Dictionary` moteur, qui affiche les données du dictionnaire dans une table.
+Cette vue n'est pas utile lorsque vous avez besoin d'obtenir des données brutes ou `JOIN` opération. Pour ces cas, vous pouvez utiliser le `Dictionary` moteur, qui affiche les données du dictionnaire dans une table.
 
 Syntaxe:
 
@@ -74,7 +74,7 @@ Syntaxe:
 CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 ```
 
-Exemple d’utilisation:
+Exemple d'utilisation:
 
 ``` sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);

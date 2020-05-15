@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Functions
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u062A\u0648\u0627\u0628\u0639"
 toc_priority: 32
 toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
 
 # توابع {#functions}
 
-حداقل\* دو نوع از توابع وجود دارد - توابع به طور منظم (فقط به نام “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn’t depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
+حداقل\* دو نوع از توابع وجود دارد - توابع به طور منظم (فقط به نام “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn't depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
 در این بخش ما در مورد توابع به طور منظم. برای توابع کل, بخش را ببینید “Aggregate functions”.
 
@@ -24,7 +24,7 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 ## انواع نتایج {#types-of-results}
 
-همه توابع بازگشت بازگشت بازگشت تنها به عنوان نتیجه (چند ارزش نیست, و نه صفر ارزش). نوع نتیجه است که معمولا تنها با انواع استدلال تعریف, نه با ارزش. استثنا هستند tupleelement function (a.n اپراتور) و tofixedstring تابع.
+همه توابع بازگشت بازگشت بازگشت تنها به عنوان نتیجه (چند ارزش نیست, و نه صفر ارزش). نوع نتیجه است که معمولا تنها با انواع استدلال تعریف, نه با ارزش. استثنا هستند tupleElement function (a.N اپراتور) و toFixedString تابع.
 
 ## ثابتها {#constants}
 
@@ -44,7 +44,7 @@ toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 
 ## پایداری {#constancy}
 
-Functions can’t change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
+Functions can't change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
 ## خطا {#error-handling}
 

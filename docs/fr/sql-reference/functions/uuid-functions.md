@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 53
 toc_title: Travailler avec UUID
 ---
 
-# Fonctions Pour Travailler Avec UUID {#functions-for-working-with-uuid}
+# Fonctions pour travailler avec UUID {#functions-for-working-with-uuid}
 
 Les fonctions pour travailler avec UUID sont listées ci-dessous.
 
@@ -21,9 +21,9 @@ generateUUIDv4()
 
 La valeur de type UUID.
 
-**Exemple d’utilisation**
+**Exemple d'utilisation**
 
-Cet exemple montre la création d’une table avec la colonne de type UUID et l’insertion d’une valeur dans la table.
+Cet exemple montre la création d'une table avec la colonne de type UUID et l'insertion d'une valeur dans la table.
 
 ``` sql
 CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
@@ -51,7 +51,7 @@ toUUID(String)
 
 La valeur de type UUID.
 
-**Exemple d’utilisation**
+**Exemple d'utilisation**
 
 ``` sql
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
@@ -65,7 +65,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 
 ## UUIDStringToNum {#uuidstringtonum}
 
-Accepte une chaîne contenant 36 caractères dans le format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, et le renvoie comme un ensemble d’octets dans un [FixedString (16)](../../sql-reference/data-types/fixedstring.md).
+Accepte une chaîne contenant 36 caractères dans le format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, et le renvoie comme un ensemble d'octets dans un [FixedString (16)](../../sql-reference/data-types/fixedstring.md).
 
 ``` sql
 UUIDStringToNum(String)
@@ -75,7 +75,7 @@ UUIDStringToNum(String)
 
 FixedString (16)
 
-**Exemples d’utilisation**
+**Exemples d'utilisation**
 
 ``` sql
 SELECT
@@ -101,7 +101,7 @@ UUIDNumToString(FixedString(16))
 
 Chaîne.
 
-**Exemple d’utilisation**
+**Exemple d'utilisation**
 
 ``` sql
 SELECT

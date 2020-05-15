@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "Harici S\xF6zl\xFCklerle \xE7al\u0131\u015Fma"
 ---
 
-# Harici Sözlüklerle Çalışmak İçin İşlevler {#ext_dict_functions}
+# Harici Sözlüklerle çalışmak için işlevler {#ext_dict_functions}
 
 Dış sözlükleri bağlama ve yapılandırma hakkında bilgi için bkz. [Dış söz dictionarieslükler](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
@@ -23,7 +23,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [String lit literal](../syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [String lit literal](../syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [İfade](../syntax.md#syntax-expressions) dönen bir [Uİnt64](../../sql-reference/data-types/int-uint.md) veya [Demet](../../sql-reference/data-types/tuple.md)- sözlük yapılandırmasına bağlı olarak değer yazın.
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` anahtar. [İfade](../syntax.md#syntax-expressions) veri türü için yapılandırılmış değeri döndürme `attr_name` öznitelik.
+-   `default_value_expr` — Value returned if the dictionary doesn't contain a row with the `id_expr` anahtar. [İfade](../syntax.md#syntax-expressions) veri türü için yapılandırılmış değeri döndürme `attr_name` nitelik.
 
 **Döndürülen değer**
 
@@ -189,7 +189,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [String lit literal](../syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [String lit literal](../syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [İfade](../syntax.md#syntax-expressions) dönen bir [Uİnt64](../../sql-reference/data-types/int-uint.md)- tip değeri.
--   `default_value_expr` — Value which is returned if the dictionary doesn’t contain a row with the `id_expr` anahtar. [İfade](../syntax.md#syntax-expressions) veri türü için yapılandırılmış bir değer döndürme `attr_name` öznitelik.
+-   `default_value_expr` — Value which is returned if the dictionary doesn't contain a row with the `id_expr` anahtar. [İfade](../syntax.md#syntax-expressions) veri türü için yapılandırılmış bir değer döndürme `attr_name` nitelik.
 
 **Döndürülen değer**
 

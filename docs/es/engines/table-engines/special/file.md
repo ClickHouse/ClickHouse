@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: File
 ---
@@ -16,7 +16,7 @@ Ejemplos de uso:
 -   Convertir datos de un formato a otro.
 -   Actualización de datos en ClickHouse mediante la edición de un archivo en un disco.
 
-## Uso En El Servidor De Clickhouse {#usage-in-clickhouse-server}
+## Uso en el servidor ClickHouse {#usage-in-clickhouse-server}
 
 ``` sql
 File(Format)
@@ -67,16 +67,16 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Uso En Clickhouse-local {#usage-in-clickhouse-local}
+## Uso en ClickHouse-local {#usage-in-clickhouse-local}
 
-En [Sistema abierto.](../../../operations/utilities/clickhouse-local.md) El motor de archivos acepta la ruta del archivo además de `Format`. Los flujos de entrada / salida predeterminados se pueden especificar utilizando nombres numéricos o legibles por humanos como `0` o `stdin`, `1` o `stdout`.
+En [Sistema abierto.](../../../operations/utilities/clickhouse-local.md#clickhouse-local) El motor de archivos acepta la ruta del archivo además de `Format`. Los flujos de entrada / salida predeterminados se pueden especificar utilizando nombres numéricos o legibles por humanos como `0` o `stdin`, `1` o `stdout`.
 **Ejemplo:**
 
 ``` bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-## Detalles De La implementación {#details-of-implementation}
+## Detalles de la implementación {#details-of-implementation}
 
 -   Multiple `SELECT` las consultas se pueden realizar simultáneamente, pero `INSERT` las consultas se esperarán entre sí.
 -   Apoyado la creación de nuevos archivos por `INSERT` consulta.

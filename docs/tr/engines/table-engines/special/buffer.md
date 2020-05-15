@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: Arabellek
 ---
 
 # Arabellek {#buffer}
 
-RAM’de yazmak için verileri tamponlar, periyodik olarak başka bir tabloya temizler. Okuma işlemi sırasında veri arabellekten ve diğer tablodan aynı anda okunur.
+RAM'de yazmak için verileri tamponlar, periyodik olarak başka bir tabloya temizler. Okuma işlemi sırasında veri arabellekten ve diğer tablodan aynı anda okunur.
 
 ``` sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
@@ -28,7 +28,7 @@ Veri arabellekten temizlendi ve hedef tabloya yazılır eğer tüm `min*` koşul
 
 Yazma işlemi sırasında veri bir `num_layers` rastgele tampon sayısı. Veya, eklenecek veri kısmı yeterince büyükse (daha büyük `max_rows` veya `max_bytes`), arabelleği atlayarak doğrudan hedef tabloya yazılır.
 
-Verilerin yıkanması için koşullar, her biri için ayrı ayrı hesaplanır. `num_layers` arabellekler. Örneğin, `num_layers = 16` ve `max_bytes = 100000000`, maksimum RAM tüketimi 1,6 GB’DİR.
+Verilerin yıkanması için koşullar, her biri için ayrı ayrı hesaplanır. `num_layers` arabellekler. Örneğin, `num_layers = 16` ve `max_bytes = 100000000`, maksimum RAM tüketimi 1,6 GB'DİR.
 
 Örnek:
 
@@ -36,7 +36,7 @@ Verilerin yıkanması için koşullar, her biri için ayrı ayrı hesaplanır. `
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-Oluşturma Bir ‘merge.hits\_buffer’ ile aynı yapıya sahip tablo ‘merge.hits’ ve Tampon motorunu kullanarak. Bu tabloya yazarken, veriler RAM’de arabelleğe alınır ve daha sonra ‘merge.hits’ Tablo. 16 tamponlar oluşturulur. 100 saniye geçti veya bir milyon satır yazılmış veya 100 MB veri yazılmıştır; ya da aynı anda 10 saniye geçti ve 10.000 satır ve 10 MB veri yazılmıştır, bunların her veri temizlendi. Örneğin, sadece bir satır yazılmışsa, 100 saniye sonra ne olursa olsun, yıkanacaktır. Ancak, birçok satır yazılmışsa, veriler daha erken temizlenecektir.
+Oluşturma Bir ‘merge.hits\_buffer’ ile aynı yapıya sahip tablo ‘merge.hits’ ve Tampon motorunu kullanarak. Bu tabloya yazarken, veriler RAM'de arabelleğe alınır ve daha sonra ‘merge.hits’ Tablo. 16 tamponlar oluşturulur. 100 saniye geçti veya bir milyon satır yazılmış veya 100 MB veri yazılmıştır; ya da aynı anda 10 saniye geçti ve 10.000 satır ve 10 MB veri yazılmıştır, bunların her veri temizlendi. Örneğin, sadece bir satır yazılmışsa, 100 saniye sonra ne olursa olsun, yıkanacaktır. Ancak, birçok satır yazılmışsa, veriler daha erken temizlenecektir.
 
 Sunucu DROP TABLE veya DETACH TABLE ile durdurulduğunda, arabellek verileri de hedef tabloya temizlendi.
 
@@ -58,7 +58,7 @@ Son ve örnek arabellek tabloları için düzgün çalışmıyor. Bu koşullar h
 
 Bir arabelleğe veri eklerken, arabelleklerden biri kilitlenir. Bir okuma işlemi aynı anda tablodan gerçekleştiriliyor, bu gecikmelere neden olur.
 
-Bir arabellek tablosuna eklenen veriler, alt tabloda farklı bir sırada ve farklı bloklarda sonuçlanabilir. Bu nedenle, bir arabellek tablo CollapsingMergeTree doğru yazmak için kullanmak zordur. Sorunları önlemek için şunları ayarlayabilirsiniz ‘num\_layers’ 1’e.
+Bir arabellek tablosuna eklenen veriler, alt tabloda farklı bir sırada ve farklı bloklarda sonuçlanabilir. Bu nedenle, bir arabellek tablo CollapsingMergeTree doğru yazmak için kullanmak zordur. Sorunları önlemek için şunları ayarlayabilirsiniz ‘num\_layers’ 1'e.
 
 Hedef tablo yinelenirse, bir arabellek tablosuna yazarken yinelenmiş tabloların bazı beklenen özellikleri kaybolur. Satır ve veri parçaları boyutlarda sipariş için rasgele değişiklikler veri çoğaltma güvenilir olması mümkün olmadığını ifade eden çalışma, kapanmasına neden ‘exactly once’ çoğaltılan tablolara yazın.
 

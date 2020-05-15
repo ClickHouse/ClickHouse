@@ -340,7 +340,8 @@ if args.report == 'main':
         message_array.append(str(faster_queries) + ' faster')
 
     if slower_queries:
-        status = 'failure'
+        if slower_queries > 3:
+            status = 'failure'
         message_array.append(str(slower_queries) + ' slower')
 
     if unstable_queries:

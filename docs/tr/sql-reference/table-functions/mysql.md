@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: mysql
 ---
@@ -35,7 +35,7 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 Basit `WHERE` gibi maddeler `=, !=, >, >=, <, <=` şu anda MySQL sunucusunda yürütülür.
 
-Geri kalan şartlar ve `LIMIT` örnekleme kısıtlaması, yalnızca MySQL sorgusu bittikten sonra Clickhouse’da yürütülür.
+Geri kalan şartlar ve `LIMIT` örnekleme kısıtlaması, yalnızca MySQL sorgusu bittikten sonra Clickhouse'da yürütülür.
 
 **Döndürülen Değer**
 
@@ -66,7 +66,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Clickhouse’dan veri seçme:
+Clickhouse'dan veri seçme:
 
 ``` sql
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')

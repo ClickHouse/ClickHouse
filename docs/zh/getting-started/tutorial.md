@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 12
 toc_title: "\u6559\u7A0B"
 ---
 
-# 教程 {#clickhouse-tutorial}
+# 点击教程 {#clickhouse-tutorial}
 
 ## 从本教程中可以期待什么？ {#what-to-expect-from-this-tutorial}
 
@@ -48,6 +48,7 @@ sudo /etc/init.d/clickhouse-server start
 <details markdown="1">
 
 <summary>Clickhouse-客户端的快速提示</summary>
+
 交互模式:
 
 ``` bash
@@ -104,7 +105,7 @@ clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 
 1.  要创建的表的名称。
 2.  Table schema, i.e. list of columns and their [数据类型](../sql-reference/data-types/index.md).
-3.  [表引擎](../engines/table-engines/index.md) 它是settings，它决定了如何物理执行对此表的查询的所有细节。
+3.  [表引擎](../engines/table-engines/index.md) 及其设置，这决定了如何物理执行对此表的查询的所有细节。
 
 YandexMetrica是一个网络分析服务，样本数据集不包括其全部功能，因此只有两个表可以创建:
 

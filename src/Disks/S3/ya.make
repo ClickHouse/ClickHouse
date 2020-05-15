@@ -7,7 +7,8 @@ PEERDIR(
 SRCS(
     DiskS3.cpp
     registerDiskS3.cpp
-    DynamicProxyConfiguration.cpp
+    ProxyListConfiguration.cpp
+    ProxyResolverConfiguration.cpp
 )
 
 END()

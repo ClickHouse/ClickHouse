@@ -1,113 +1,144 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
-toc_title: "\u30A2\u30AF\u30BB\u30B9\u6A29"
+toc_title: "\u30A2\u30AF\u30BB\u30B9\u5236\u5FA1\u3068\u30A2\u30AB\u30A6\u30F3\u30C8\
+  \u7BA1\u7406"
 ---
 
-# アクセス権 {#access-rights}
+# アクセス制御とアカウント管理 {#access-control}
 
-ユーザーとアクセス権は、ユーザー設定で設定されます。 これは通常 `users.xml`.
+ClickHouseはに基づくアクセス制御管理を支えます [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) アプローチ
 
-ユーザーは `users` セクション。 ここでの断片です `users.xml` ファイル:
+ClickHouseアクセス事業体:
+- [ユーザー](#user-account-management)
+- [役割](#role-management)
+- [行ポリシー](#row-policy-management)
+- [設定プロファイル](#settings-profiles-management)
+- [クォータ](#quotas-management)
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+を設定することができアクセスを用いた:
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+-   SQL駆動型ワークフロー。
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+    する必要があります [有効にする](#enabling-access-control) この機能。
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+-   サーバ [設定ファイル](configuration-files.md) `users.xml` と `config.xml`.
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.host\.ru$.
+SQL駆動型ワークフローの使用をお勧めします。 両方の構成方法が同時に機能するため、アカウントとアクセス権を管理するためにサーバー構成ファイルを使用する場合は、sql駆動型ワークフローに簡単
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+!!! note "警告"
+    両方の構成方法で同じaccessエンティティを同時に管理することはできません。
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
+## 使用法 {#access-control-usage}
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+既定では、ClickHouseサーバーはユーザーアカウントを提供します `default` SQL駆動型のアクセス制御とアカウント管理を使用することはできませんが、すべての権限と権限を持っています。 その `default` ユーザーアカウントは、クライアントからのログイン時や分散クエリなど、ユーザー名が定義されていない場合に使用されます。 分散クエリ処理のデフォルトのユーザーアカウントをお使いの場合、設定のサーバまたはクラスターを指定していないの [ユーザとパスワード](../engines/table-engines/special/distributed.md) プロパティ。
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-        <allow_dictionaries>
-           <dictionary>test</dictionary>
-        </allow_dictionaries>
-    </web>
-</users>
-```
+ClickHouseの使用を開始したばかりの場合は、次のシナリオを使用できます:
 
-する宣言からユーザー: `default`と`web`. 私達は加えました `web` ユーザー別途。
+1.  [有効にする](#enabling-access-control) のためのSQL駆動型アクセス制御およびアカウント管理 `default` ユーザー。
+2.  の下でログイン `default` ユーザーアカウントを作成し、必要なすべてのユーザー 管理者アカウントの作成を忘れないでください (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+3.  [権限の制限](settings/permissions-for-queries.md#permissions_for_queries) のために `default` SQL駆動型のアクセス制御とアカウント管理をユーザーと無効にします。
 
-その `default` ユーザは、ユーザ名が渡されない場合に選択されます。 その `default` userは、サーバーまたはクラスターの構成が指定されていない場合は、分散クエリ処理にも使用されます。 `user` と `password` (上のセクションを参照 [分散](../engines/table-engines/special/distributed.md) エンジン）。
+### 現在のソリューションの特性 {#access-control-properties}
 
-The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+-   データベースとテーブルが存在しない場合でも、権限を付与できます。
+-   テーブルが削除された場合、このテーブルに対応するすべての権限は取り消されません。 したがって、後で同じ名前で新しいテーブルが作成されると、すべての特権が再び実際になります。 削除されたテーブルに対応する権限を取り消すには、次のように実行する必要があります。 `REVOKE ALL PRIVILEGES ON db.table FROM ALL` クエリ。
+-   特権の有効期間の設定はありません。
 
-パスワードは、クリアテキスト(非推奨)またはsha-256で指定します。 ハッシュは塩漬けじゃない この点に関し、すべきではないと考えるこれらのパスワードとして提供すことに対する潜在的悪意のある攻撃であった。 むしろ、従業員からの保護のために必要です。
+## ユーザー {#user-account-management}
 
-アクセスを許可するネットワークのリストが指定されています。 この例では、両方のユーザーのネットワークの一覧が別のファイルから読み込まれます (`/etc/metrika.xml`)を含む `networks` 置換。 ここにそれの断片があります:
+ユーザーアカウントは、ClickHouseで誰かを承認できるアクセスエンティティです。 ユーザーアカウ:
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+-   識別情報。
+-   [特権](../sql-reference/statements/grant.md#grant-privileges) これは、ユーザーが実行できるクエリの範囲を定義します。
+-   ClickHouseサーバーへの接続が許可されているホスト。
+-   付与された役割と既定の役割。
+-   ユーザーのログイン時にデフォルトで適用される制約を含む設定。
+-   割り当ての設定を行います。
 
-このネットワークのリストを直接 `users.xml` またはファイル内の `users.d` ディレクトリ(詳細については、セクションを参照 “[設定ファイル](configuration-files.md#configuration_files)”).
+ユーザーアカウントに対する権限は、 [GRANT](../sql-reference/statements/grant.md) クエリまたは割り当て [役割](#role-management). ユーザーから特権を取り消すために、ClickHouseは [REVOKE](../sql-reference/statements/revoke.md) クエリ。 ユーザーの権限を一覧表示するには、 - [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) 声明。
 
-コンフィグを含むコメントする方法を説明するオープンアクセスいたしました。
+管理クエリ:
 
-生産の使用のために、指定して下さいただ `ip` 要素（IPアドレスとそのマスク）、 `host` と `hoost_regexp` が原因別の待ち時間をゼロにすることに
+-   [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+-   [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+-   [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+-   [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-次のユーザー設定プロファイルが指定の項を参照 “[設定プロファイル](settings/settings-profiles.md)”. 既定のプロファイルを指定できます, `default'`. プロファイルの名前は任意です。 異なるユーザーに同じプロファイルを指定できます。 最も重要なことが書ける設定プロフィール `readonly=1` 読み取り専用アクセスを保証します。 次に、使用するクォータを指定します(セクションを参照 “[クォータ](quotas.md#quotas)”). 既定のクォータを指定できます: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+### 設定の適用 {#access-control-settings-applying}
 
-オプションで `<allow_databases>` 部を指定することもできますリストのデータベースのユーザーがアクセスできる デフォルトでは、すべてのデータベースのユーザーです。 を指定することができ `default` データベース この場合、ユーザーはデフォルトでデータベースにアクセスできます。
+設定は、さまざまな方法で設定できます。 ユーザーログイン時に、異なるアクセスエンティティで設定が設定されている場合、この設定の値および制約は、以下の優先順位によって適用されます():
 
-オプションで `<allow_dictionaries>` また、ユーザーがアクセスできる辞書のリストを指定することもできます。 デフォルトでは、すべての辞書はユーザーが使用できます。
+1.  ユーザーアカウント設定。
+2.  ユーザーアカウントの既定のロールの設定。 一部のロールで設定が設定されている場合、設定の適用順序は未定義です。
+3.  ユーザーまたはその既定のロールに割り当てられた設定プロファイルの設定。 いくつかのプロファイルで設定が設定されている場合、設定適用の順序は未定義です。
+4.  すべてのサーバーにデフォルトまたは [標準プロファイル](server-configuration-parameters/settings.md#default-profile).
 
-へのアクセス `system` データベースは常に可（このデータベースを使用して処理クエリ).
+## 役割 {#role-management}
 
-ユーザーの一覧を取得してデータベースやテーブルを用いてこれら `SHOW` クエリやシステムテーブルの場合でも、アクセス、個人データベースなのです。
+Roleは、ユーザーアカウントに付与できるaccessエンティティのコンテナです。
 
-データベースアクセスは、 [読み取り専用](settings/permissions-for-queries.md#settings_readonly) 設定。 できな助成金の全アクセスをデータベース `readonly` 別のものへのアクセス。
+ロール:
+
+-   [特権](../sql-reference/statements/grant.md#grant-privileges)
+-   設定と制約
+-   付与されたロールのリスト
+
+管理クエリ:
+
+-   [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+-   [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+-   [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+-   [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+-   [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+-   [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+ロールに対する権限は、 [GRANT](../sql-reference/statements/grant.md) クエリ。 ロールClickHouseから特権を取り消すには [REVOKE](../sql-reference/statements/revoke.md) クエリ。
+
+## 行ポリシー {#row-policy-management}
+
+行ポリシーは、ユーザーまたはロールで使用できる行または行を定義するフィルターです。 行政政策を含むィのための特定のテーブルリストの役割および/またはユーザーはこの行政政策です。
+
+管理クエリ:
+
+-   [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+-   [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+-   [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+-   [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+## 設定プロファイル {#settings-profiles-management}
+
+設定プロファイルは [設定](settings/index.md). 設定プロファイルには、設定と制約、およびこのクォータが適用されるロールやユーザーのリストが含まれます。
+
+管理クエリ:
+
+-   [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+-   [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+-   [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+-   [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+## クォータ {#quotas-management}
+
+クォータ制限資源利用に 見る [クォータ](quotas.md).
+
+定員の制限のために一部の時間、リストの役割および/またはユーザーはこの数量に達した場合。
+
+管理クエリ:
+
+-   [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+-   [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+-   [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+-   [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+## SQL駆動型アクセス制御とアカウント管理の有効化 {#enabling-access-control}
+
+-   設定ディレクトリ構成を保管します。
+
+    ClickHouseは、アクセスエンティティ設定を [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) サーバー構成パラメータ。
+
+-   SQL駆動型のアクセス制御とアカウント管理を有効にします。
+
+    デフォルトのSQL型のアクセス制御及び特別口座の口座管理オのすべてのユーザー ユーザーを設定する必要があります。 `users.xml` に1を割り当てます。 [access\_management](settings/settings-users.md#access_management-user-setting) 設定。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
