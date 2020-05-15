@@ -27,7 +27,7 @@ You can make queries to playground using any HTTP client, for example [curl](htt
 There are additional endpoints with specific ClickHouse releases to experiment with their differences (ports and user/password are the same as above):
 
 * 20.3 LTS: `play-api-v20-3.clickhouse.tech`
-* 19.14 LTS: `play-api-v19-4.clickhouse.tech`
+* 19.14 LTS: `play-api-v19-14.clickhouse.tech`
 
 ## Limitations
 
@@ -62,4 +62,3 @@ The Playground backend is just a ClickHouse cluster without any additional serve
 
 !!! warning "Warning"
     Exposing ClickHouse server to public internet in any other situation is **strongly not recommended**. Make sure it listens only on private network and is covered by properly configured firewall.
-
