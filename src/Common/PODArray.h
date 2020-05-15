@@ -287,6 +287,12 @@ public:
 
     PODArray() = default;
 
+    PODArray(size_t n)
+    {
+        this->alloc_for_num_elements(n);
+        this->c_end += this->byte_size(n);
+    }
+
     template <typename ...TAllocatorParams>
     PODArray(size_t n, alloc_tag, TAllocatorParams&& ...params)
     {
