@@ -115,16 +115,16 @@ void AsynchronousMetrics::update()
     {
         if (auto mark_cache = context.getMarkCache())
         {
-            set("MarkCacheBytes", mark_cache->weight());
-            set("MarkCacheFiles", mark_cache->count());
+            set("MarkCacheBytes", mark_cache->getSizeInUse());
+            set("MarkCacheFiles", mark_cache->getUsedRegionsCount());
         }
     }
 
     {
         if (auto uncompressed_cache = context.getUncompressedCache())
         {
-            set("UncompressedCacheBytes", uncompressed_cache->weight());
-            set("UncompressedCacheCells", uncompressed_cache->count());
+            set("UncompressedCacheBytes", uncompressed_cache->getSizeInUse());
+            set("UncompressedCacheCells", uncompressed_cache->getUsedRegionsCount());
         }
     }
 

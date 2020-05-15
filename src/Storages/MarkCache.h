@@ -2,12 +2,11 @@
 
 #include <memory>
 
-#include <Common/LRUCache.h>
+#include <Common/IGrabberAllocator.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
 #include <DataStreams/MarkInCompressedFile.h>
-
 
 namespace ProfileEvents
 {
@@ -18,31 +17,25 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// Estimate of number of bytes in cache for marks.
-struct MarksWeightFunction
+using MarkCacheBase = IGrabberAllocator<
+    /* Key */ UInt128,
+    /* Value */ CacheMarksInCompressedFile,
+    /* Key hash */ UInt128TrivialHash>;
+
+/**
+ * @brief Cache of marks for StorageMergeTree.
+ *
+ * Mark is an index structure that addresses ranges in column file corresponding to ranges of primary key.
+ */
+class MarkCache : public MarkCacheBase
 {
-    size_t operator()(const MarksInCompressedFile & marks) const
-    {
-        /// NOTE Could add extra 100 bytes for overhead of std::vector, cache structures and allocator.
-        return marks.size() * sizeof(MarkInCompressedFile);
-    }
-};
-
-
-/** Cache of 'marks' for StorageMergeTree.
-  * Marks is an index structure that addresses ranges in column file, corresponding to ranges of primary key.
-  */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
-{
-private:
-    using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
-
 public:
-    MarkCache(size_t max_size_in_bytes)
-        : Base(max_size_in_bytes) {}
+    using MarkCacheBase::ValuePtr;
+
+    constexpr explicit MarkCache(size_t max_size_in_bytes): MarkCacheBase(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & path_to_file)
+    static UInt128 hash(const String & path_to_file) noexcept
     {
         UInt128 key;
 
@@ -53,19 +46,23 @@ public:
         return key;
     }
 
-    template <typename LoadFunc>
-    MappedPtr getOrSet(const Key & key, LoadFunc && load)
+    //ValuePtr getOrSet(const Key & key, GAInitFunction auto && init_func)
+    template <class SizeFunc, class InitFunc>
+    ValuePtr getOrSet(const Key & key, SizeFunc && size_func, InitFunc && init_func)
     {
-        auto result = Base::getOrSet(key, load);
-        if (result.second)
+        auto&& [ptr, produced] = MarkCacheBase::getOrSet(key,
+                std::forward<SizeFunc>(size_func),
+                std::forward<InitFunc>(init_func));
+
+        if (produced)
             ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
 
-        return result.first;
+        return ptr;
     }
 };
 
 using MarkCachePtr = std::shared_ptr<MarkCache>;
-
 }
+

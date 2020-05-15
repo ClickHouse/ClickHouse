@@ -13,8 +13,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
+
 #include <Common/PipeFDs.h>
 #include <common/getThreadId.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
