@@ -170,7 +170,7 @@ Hierarchy of privileges:
     - `addressToLine`
     - `addressToSymbol`
     - `demangle`
-- [SOURCES](#grant-SOURCES)
+- [SOURCES](#grant-sources)
     - `FILE`
     - `URL`
     - `REMOTE`
@@ -297,7 +297,7 @@ Examples of how this hierarchy is treated:
 - The `MODIFY SETTING` privilege allows to modify table engine settings. In doesn't affect settings or server configuration parameters.
 - The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 - The `DETACH` operation needs the [DROP](#grant-drop) privilege.
-- To stop mutation by the [KILL MUTATION](misc.md#kill-mutation-statement) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
+- To stop mutation by the [KILL MUTATION](misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
 ### CREATE {#grant-create}
 
@@ -316,7 +316,7 @@ Allows to perform [CREATE](create.md) and [ATTACH](misc.md#attach) DDL-queries c
 
 ### DROP {#grant-drop}
 
-Allows to perform [DROP](misc.md#drop-statement) and [DETACH](misc.md#detach) queries corresponding to the following hierarchy of privileges:
+Allows to perform [DROP](misc.md#drop) and [DETACH](misc.md#detach) queries corresponding to the following hierarchy of privileges:
 
 - `DROP`. Level: 
     - `DROP DATABASE`. Level: `DATABASE`
@@ -436,7 +436,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 ### SOURCES {#grant-sources}
 
-Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../table-functions/index.md).
+Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../table-functions/index.md#table-functions).
 
 - `SOURCES`. Level: `GROUP`
     - `FILE`. Level: `GLOBAL`

@@ -51,7 +51,7 @@ Returns a Float64 number that is close to the number π.
 
 ## erf(x) {#erfx}
 
-もし ‘x’ is non-negative, then erf(x / σ√2)<g> 標準偏差を持つ正規分布を持つ確率変数です ‘σ’ 期待値から分離されている値を次の値よりも大きくします ‘x’.
+もし ‘x’ is non-negative, then `erf(x / σ√2)` 標準偏差を持つ正規分布を持つ確率変数です ‘σ’ 期待値から分離されている値を次の値よりも大きくします ‘x’.
 
 例(三つのシグマルール):
 

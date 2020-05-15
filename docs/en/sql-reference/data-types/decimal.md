@@ -35,9 +35,9 @@ Because modern CPU’s do not support 128-bit integers natively, operations on D
 
 Binary operations on Decimal result in wider result type (with any order of arguments).
 
--   Decimal64(S1) <op> Decimal32(S2) -\> Decimal64(S)
--   Decimal128(S1) <op> Decimal32(S2) -\> Decimal128(S)
--   Decimal128(S1) <op> Decimal64(S2) -\> Decimal128(S)
+-   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+-   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+-   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
 
 Rules for scale:
 

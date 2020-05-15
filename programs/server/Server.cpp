@@ -61,8 +61,11 @@
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
+#ifdef USE_OPENCL
+#include "Common/BitonicSort.h"
+#endif
+
 #if !defined(ARCADIA_BUILD)
-#    include <common/config_common.h>
 #    include "config_core.h"
 #    include "Common/config_version.h"
 #endif
@@ -72,7 +75,7 @@
 #    include <Common/hasLinuxCapability.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -221,6 +224,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
     registerDictionaries();
     registerDisks();
+
+#if defined (USE_OPENCL)
+        BitonicSort::getInstance().configure();
+#endif
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -824,7 +831,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// HTTPS
             create_server("https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -859,7 +866,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// TCP with SSL
             create_server("tcp_port_secure", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
@@ -892,7 +899,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("interserver_https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);

@@ -2,7 +2,7 @@
 machine_translated: true
 machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 60
-toc_title: "\u8BBE\u7F6E"
+toc_title: Settings
 ---
 
 # 设置 {#settings}
@@ -1198,5 +1198,10 @@ ClickHouse生成异常
 类型：网址
 
 默认值：空
+
+## max\_result\_rows {#setting-max_result_rows}
+
+Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+
 
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

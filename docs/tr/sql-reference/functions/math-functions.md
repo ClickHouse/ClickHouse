@@ -51,7 +51,7 @@ Sayısal bir bağımsız değişkeni kabul eder ve bağımsız değişken kübik
 
 ## erf (x) {#erfx}
 
-Eğer ‘x’ is non-negative, then erf(x / σ√2)<g> standart sapma ile normal dağılıma sahip bir rasgele değişkenin olasılığı var mı ‘σ’ beklenen değerden daha fazla ayrılan değeri alır ‘x’.
+Eğer ‘x’ is non-negative, then `erf(x / σ√2)` standart sapma ile normal dağılıma sahip bir rasgele değişkenin olasılığı var mı ‘σ’ beklenen değerden daha fazla ayrılan değeri alır ‘x’.
 
 Örnek (üç sigma kuralı):
 

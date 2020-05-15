@@ -17,7 +17,10 @@ namespace DB
             {
                 current.type = unfinalized_type->getReturnType();
                 if (current.column)
-                    current.column = typeid_cast<const ColumnAggregateFunction &>(*current.column).convertToValues();
+                {
+                    auto mut_column = (*std::move(current.column)).mutate();
+                    current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
+                }
             }
         }
     }

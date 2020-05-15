@@ -67,3 +67,24 @@ GROUP BY (Distributed-over-Distributed) distributed_group_by_no_merge
 1	1
 1	0
 1	1
+extremes
+1	0
+1	1
+1	0
+1	1
+
+1	0
+1	1
+WITH TOTALS
+2	0
+2	1
+
+4	0
+WITH ROLLUP
+2	0
+2	1
+4	0
+WITH CUBE
+2	0
+2	1
+4	0
