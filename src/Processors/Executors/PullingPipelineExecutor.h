@@ -8,7 +8,7 @@ class QueryPipeline;
 class Block;
 class Chunk;
 class LazyOutputFormat;
-class BlockStreamProfileInfo;
+struct BlockStreamProfileInfo;
 
 /// Pulling executor for QueryPipeline.
 /// Typical usage is:
