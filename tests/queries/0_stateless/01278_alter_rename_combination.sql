@@ -43,4 +43,13 @@ SHOW CREATE TABLE rename_table_polymorphic;
 
 SELECT * FROM rename_table_polymorphic FORMAT TSVWithNames;
 
+INSERT INTO rename_table_polymorphic VALUES (4, 5, 6);
+
+-- rename all columns simultaneously
+ALTER TABLE rename_table_polymorphic RENAME COLUMN old_value1 TO v1, RENAME COLUMN value1 TO v2, RENAME COLUMN key to k;
+
+SHOW CREATE TABLE rename_table_polymorphic;
+
+SELECT * FROM rename_table_polymorphic ORDER BY k FORMAT TSVWithNames;
+
 DROP TABLE IF EXISTS rename_table_polymorphic;
