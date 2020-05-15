@@ -42,7 +42,7 @@ bool CachedCompressedReadBuffer::nextImpl()
             {
                 other.compressed_size = cell.compressed_size;
                 other.additional_bytes = cell.additional_bytes;
-                other.data.resize(cell_overall_size, heap_address);
+                other.data.resize(cell_overall_size);
                 decompress(other.data.data(), size_decompressed, size_compressed_without_checksum);
             }
 

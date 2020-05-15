@@ -1112,10 +1112,11 @@ struct FakePODAllocForIG
     /// Not allocated from stack, see DB::PODArray::isAllocatedFromStack
     constexpr size_t stack_threshold() const noexcept { return 0; }
 
-    ///If called, something went wrong, so abort the program.
-    static void realloc(char *, size_t, size_t) {
-        throw Exception("Object using FakePODAllocForIG must not call realloc()",
-                        ErrorCodes::SYSTEM_ERROR);
+    constexpr static void * realloc(char *, size_t, size_t) noexcept = delete;
+
+    constexpr static void * realloc(char *, size_t, size_t, void * start) noexcept
+    {
+        return start;
     }
 };
 
@@ -1125,10 +1126,9 @@ struct FakeMemoryAllocForIG
     /// @see FakeMemoryAllocForIG
     constexpr static void * alloc(size_t, size_t, void * start) noexcept { return start; }
 
-    static void * realloc(char *, size_t, size_t, size_t)
+    static constexpr void * realloc(char *, size_t, size_t, size_t, void * start) noexcept
     {
-        throw Exception("Object using FakePODAllocForIG must not call realloc()",
-                        ErrorCodes::SYSTEM_ERROR);
+        return start;
     }
 
     constexpr static void free(char *, size_t) noexcept {}

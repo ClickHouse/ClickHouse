@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/IGrabberAllocator.h>
+#include <Common/Allocator_fwd.h>
 
 namespace DB
 {
@@ -45,7 +46,8 @@ struct MarkInCompressedFile
     }
 };
 
-class MarksInCompressedFile : public PODArray<MarkInCompressedFile>
+class MarksInCompressedFile :
+    public PODArray<MarkInCompressedFile, 0, Allocator<false>, 0, 0>
 {
 public:
     explicit MarksInCompressedFile(size_t n, void* storage_pointer_ = nullptr)
@@ -60,7 +62,8 @@ public:
 };
 
 /// Suitable for storing in IGrabberAllocator.
-class CacheMarksInCompressedFile : public PODArray<MarkInCompressedFile, /* initial_bytes */ 0, FakePODAllocForIG>
+class CacheMarksInCompressedFile :
+    public PODArray<MarkInCompressedFile, 0, FakePODAllocForIG, 0, 0>
 {
 public:
     /// @param storage_pointer See IGrabberAllocator::getOrSet and FakePODAllocForIG for detail.

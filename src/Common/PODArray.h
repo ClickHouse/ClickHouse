@@ -310,8 +310,7 @@ public:
             const PODArray<T, initial_bytes, TOtherAlloc, pad_right_, pad_left_> & other,
             alloc_tag_t, TAllocatorParams && ...params)
     {
-        this->alloc_for_num_elements(other.size(), std::forward<TAllocatorParams>(params)...);
-        insert(other.begin(), other.end());
+        insert(other.begin(), other.end(), std::forward<TAllocatorParams>(params)...);
     }
 
     PODArray(size_t n, const T & x)
