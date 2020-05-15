@@ -346,6 +346,11 @@ if (USE_BROTLI)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
 
+if (USE_OPENCL)
+    target_link_libraries (clickhouse_common_io PRIVATE ${OpenCL_LIBRARIES})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${OpenCL_INCLUDE_DIRS})
+endif ()
+
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
