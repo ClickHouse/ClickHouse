@@ -160,7 +160,7 @@ private:
     PerformanceAdaptorOptions options;
 };
 
-// The same as ExecutableFunctionPerformanceAdaptor, but combine via IFunction interface.
+/// The same as ExecutableFunctionPerformanceAdaptor, but combine via IFunction interface.
 template <typename DefaultFunction>
 class FunctionPerformanceAdaptor : public DefaultFunction
 {
