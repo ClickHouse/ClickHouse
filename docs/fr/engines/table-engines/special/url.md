@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: URL
 ---
@@ -8,15 +8,15 @@ toc_title: URL
 # URL (URL, Format) {#table_engines-url}
 
 Gère les données sur un serveur HTTP / HTTPS distant. Ce moteur est similaire
-à l’ [Fichier](file.md) moteur.
+à l' [Fichier](file.md) moteur.
 
-## Utilisation Du Moteur Dans Le Serveur Clickhouse {#using-the-engine-in-the-clickhouse-server}
+## Utilisation du moteur dans le serveur ClickHouse {#using-the-engine-in-the-clickhouse-server}
 
 Le `format` doit être celui que ClickHouse peut utiliser dans
 `SELECT` les requêtes et, si nécessaire, en `INSERTs`. Pour la liste complète des formats pris en charge, voir
 [Format](../../../interfaces/formats.md#formats).
 
-Le `URL` doit être conforme à la structure D’un Localisateur de ressources uniforme. L’URL spécifiée doit pointer vers un serveur
+Le `URL` doit être conforme à la structure D'un Localisateur de ressources uniforme. L'URL spécifiée doit pointer vers un serveur
 qui utilise le protocole HTTP ou HTTPS. Cela ne nécessite pas de
 en-têtes supplémentaires pour obtenir une réponse du serveur.
 
@@ -35,7 +35,7 @@ CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
 
-**2.** Créez un serveur HTTP de base à l’aide des outils Python 3 standard et
+**2.** Créez un serveur HTTP de base à l'aide des outils Python 3 standard et
 démarrer:
 
 ``` python3
@@ -71,7 +71,7 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## Les Détails De Mise En Œuvre {#details-of-implementation}
+## Les détails de mise en Œuvre {#details-of-implementation}
 
 -   Les lectures et les écritures peuvent être parallèles
 -   Pas pris en charge:

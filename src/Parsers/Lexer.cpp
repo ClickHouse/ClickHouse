@@ -316,7 +316,14 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::BareWord, token_begin, pos);
             }
             else
-                return Token(TokenType::Error, token_begin, ++pos);
+            {
+                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+                pos = skipWhitespacesUTF8(pos, end);
+                if (pos > token_begin)
+                    return Token(TokenType::Whitespace, token_begin, pos);
+                else
+                    return Token(TokenType::Error, token_begin, ++pos);
+            }
     }
 }
 

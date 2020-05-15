@@ -1,113 +1,143 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
-toc_title: "Eri\u015Fim Haklar\u0131"
+toc_title: "Eri\u015Fim Kontrol\xFC ve hesap y\xF6netimi"
 ---
 
-# Erişim Hakları {#access-rights}
+# Erişim Kontrolü ve hesap yönetimi {#access-control}
 
-Kullanıcılar ve erişim hakları kullanıcı yapılandırmasında ayarlanır. Bu genellikle `users.xml`.
+ClickHouse dayalı erişim kontrol yönetimini destekler [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) yaklaşmak.
 
-Kullanıcılar kaydedilir `users` bölme. İşte bir parçası `users.xml` Dosya:
+ClickHouse erişim varlıkları:
+- [Kullanıcı hesabı](#user-account-management)
+- [Rol](#role-management)
+- [Satır Politikası](#row-policy-management)
+- [Ayarlar Profili](#settings-profiles-management)
+- [Kota](#quotas-management)
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+Kullanarak erişim varlıkları yapılandırabilirsiniz:
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+-   SQL odaklı iş akışı.
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+    İhtiyacın var [etkinleştirmek](#enabling-access-control) bu işlevsellik.
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+-   Hizmetçi [yapılandırma dosyaları](configuration-files.md) `users.xml` ve `config.xml`.
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.host\.ru$.
+SQL tabanlı iş akışı kullanmanızı öneririz. Her iki yapılandırma yöntemi de aynı anda çalışır; bu nedenle, hesapları ve erişim haklarını yönetmek için sunucu yapılandırma dosyalarını kullanırsanız, SQL tabanlı iş akışına yumuşak bir şekilde geçebilirsiniz.
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+!!! note "Uyarıcı"
+    Aynı erişim varlığını her iki yapılandırma yöntemiyle aynı anda yönetemezsiniz.
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
+## Kullanma {#access-control-usage}
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+Varsayılan olarak, ClickHouse sunucusu kullanıcı hesabını sağlar `default` SQL güdümlü erişim denetimi ve hesap yönetimi kullanılarak izin verilmez, ancak tüm haklara ve izinlere sahiptir. Bu `default` kullanıcı hesabı, kullanıcı adı tanımlanmadığında, örneğin istemciden girişte veya dağıtılmış sorgularda kullanılır. Dağıtılmış sorgu işleme varsayılan kullanıcı hesabı kullanılır, sunucu veya küme yapılandırması belirtmezse [kullanıcı ve şifre](../engines/table-engines/special/distributed.md) özellikler.
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-        <allow_dictionaries>
-           <dictionary>test</dictionary>
-        </allow_dictionaries>
-    </web>
-</users>
-```
+Sadece ClickHouse kullanmaya başlarsanız, aşağıdaki senaryoyu kullanabilirsiniz:
 
-İki kullanıcıdan bir bildirim görebilirsiniz: `default`ve`web`. Ek weledik `web` kullanıcı ayrı ayrı.
+1.  [Etkinleştirmek](#enabling-access-control) SQL-driven erişim kontrolü ve hesap yönetimi için `default` kullanan.
+2.  Log underin un underder the `default` kullanıcı hesabı ve gerekli tüm kullanıcıları oluşturun. Yönetici hesabı oluşturmayı unutmayın (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+3.  [İzinleri kısıtla](settings/permissions-for-queries.md#permissions_for_queries) için `default` kullanıcı ve devre dışı SQL odaklı erişim kontrolü ve bunun için hesap yönetimi.
 
-Bu `default` kullanıcı adı geçilmez durumlarda kullanıcı seçilir. Bu `default` kullanıcı, sunucu veya kümenin yapılandırması, sunucu veya kümenin yapılandırılmasını belirtmezse, dağıtılmış sorgu işleme için de kullanılır. `user` ve `password` (on bölümüne bakın [Dağılı](../engines/table-engines/special/distributed.md) motor).
+### Mevcut çözümün özellikleri {#access-control-properties}
 
-The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+-   Olmasa bile veritabanları ve tablolar için izinler verebilirsiniz.
+-   Bir tablo silindiyse, bu tabloya karşılık gelen tüm ayrıcalıklar iptal edilmez. Bu nedenle, daha sonra aynı ada sahip yeni bir tablo oluşturulursa, tüm ayrıcalıklar tekrar gerçek olur. Silinen tabloya karşılık gelen ayrıcalıkları iptal etmek için, örneğin, `REVOKE ALL PRIVILEGES ON db.table FROM ALL` sorgu.
+-   Ayrıcalıklar için ömür boyu ayarları yoktur.
 
-Parola, açık metin (önerilmez) veya SHA-256’da belirtilir. Haşhaş tuzlu değil. Bu bağlamda, bu şifreleri potansiyel kötü amaçlı saldırılara karşı güvenlik sağlamak olarak düşünmemelisiniz. Aksine, çalışanlardan korunmak için gereklidir.
+## Kullanıcı hesabı {#user-account-management}
 
-Erişime izin verilen ağların listesi belirtilir. Bu örnekte, her iki kullanıcı için ağ listesi ayrı bir dosyadan yüklenir (`/etc/metrika.xml`) içeren `networks` ikame. İşte bunun bir parçası:
+Bir kullanıcı hesabı, Clickhouse'da birisini yetkilendirmeye izin veren bir erişim varlığıdır. Bir kullanıcı hesabı içerir:
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+-   Kimlik bilgileri.
+-   [Ayrıcalıklar](../sql-reference/statements/grant.md#grant-privileges) kullanıcı gerçekleştirebilir sorgular kapsamı tanımlayın.
+-   ClickHouse sunucusuna bağlantının izin verildiği ana bilgisayarlar.
+-   Verilen ve varsayılan roller.
+-   Kullanıcının girişinde varsayılan olarak geçerli olan kısıtlamaları olan ayarlar.
+-   Atanan ayarlar profilleri.
 
-Bu ağ listesini doğrudan tanımlayabilirsiniz `users.xml` veya bir dosyada `users.d` dizin (daha fazla bilgi için bölüme bakın “[Yapılandırma dosyaları](configuration-files.md#configuration_files)”).
+Bir kullanıcı hesabına ayrıcalıklar tarafından verilebilir [GRANT](../sql-reference/statements/grant.md) sorgu veya atama ile [roller](#role-management). Bir kullanıcının ayrıcalıklarını iptal etmek için, ClickHouse [REVOKE](../sql-reference/statements/revoke.md) sorgu. Bir kullanıcının ayrıcalıklarını listelemek için - [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) deyim.
 
-Yapılandırma, her yerden erişimin nasıl açılacağını açıklayan yorumları içerir.
+Yönetim sorguları:
 
-Üretimde kullanım için, sadece belirtin `ip` elemanları (IP adresleri ve maskeleri), kullanıl ,dığından beri `host` ve `hoost_regexp` ekstra gecikmeye neden olabilir.
+-   [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+-   [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+-   [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+-   [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-Daha sonra kullanıcı ayarları profili belirtilir (bölüme bakın “[Ayarlar profilleri](settings/settings-profiles.md)”. Varsayılan profili belirtebilirsiniz, `default'`. Profilin herhangi bir adı olabilir. Farklı kullanıcılar için aynı profili belirtebilirsiniz. Ayarlar profilinde yazabileceğiniz en önemli şey `readonly=1` sağlar okumak-sadece erişim. Ardından kullanılacak kotayı belirtin (bölüme bakın “[Kotalar](quotas.md#quotas)”). Varsayılan kotayı belirtebilirsiniz: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+### Uygulama Ayarları {#access-control-settings-applying}
 
-İsteğe bağlı `<allow_databases>` bölümünde, kullanıcının erişebileceği veritabanlarının bir listesini de belirtebilirsiniz. Varsayılan olarak, tüm veritabanları kullanıcı tarafından kullanılabilir. Belirtebilirsiniz `default` veritabanı. Bu durumda, kullanıcı varsayılan olarak veritabanına erişim alır.
+Ayarlar farklı şekillerde ayarlanabilir: bir kullanıcı hesabı için, verilen roller ve ayarlar profillerinde. Bir kullanıcı girişinde, farklı erişim varlıklarında bir ayar ayarlanırsa, bu ayarın değeri ve kısıtlamaları aşağıdaki öncelikler tarafından uygulanır (yüksekten düşüğe):
 
-İsteğe bağlı `<allow_dictionaries>` bölümünde, kullanıcının erişebileceği sözlüklerin bir listesini de belirtebilirsiniz. Varsayılan olarak, tüm sözlükler kullanıcı tarafından kullanılabilir.
+1.  Kullanıcı hesabı ayarı.
+2.  Kullanıcı hesabının varsayılan rollerinin ayarları. Bazı rollerde bir ayar ayarlanmışsa, uygulama ayarının sırası tanımsızdır.
+3.  Bir kullanıcıya veya varsayılan rollerine atanan ayarlar profilleri'ndeki ayarlar. Bazı profillerde bir ayar ayarlanmışsa, uygulama ayarı sırası tanımsızdır.
+4.  Varsayılan olarak tüm sunucuya uygulanan ayarlar veya [varsayılan profil](server-configuration-parameters/settings.md#default-profile).
 
-Erişim `system` veritabanı her zaman izin verilir (bu veritabanı sorguları işlemek için kullanıldığından).
+## Rol {#role-management}
 
-Kullanıcı kullanarak onları tüm veritabanları ve tabloların bir listesini alabilirsiniz `SHOW` tek tek veritabanlarına erişime izin verilmese bile, sorgular veya sistem tabloları.
+Rol, bir kullanıcı hesabına verilebilecek erişim varlıkları için bir kapsayıcıdır.
 
-Veritabanı erişimi ile ilgili değildir [readonly](settings/permissions-for-queries.md#settings_readonly) ayar. Bir veritabanına tam erişim izni veremezsiniz ve `readonly` başka birine erişim.
+Rol içerir:
+
+-   [Ayrıcalıklar](../sql-reference/statements/grant.md#grant-privileges)
+-   Ayarlar ve kısıtlamalar
+-   Verilen roller listesi
+
+Yönetim sorguları:
+
+-   [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+-   [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+-   [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+-   [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+-   [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+-   [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+Bir rol için ayrıcalıklar tarafından verilebilir [GRANT](../sql-reference/statements/grant.md) sorgu. Bir rolden ayrıcalıkları iptal etmek için ClickHouse şunları sağlar: [REVOKE](../sql-reference/statements/revoke.md) sorgu.
+
+## Satır Politikası {#row-policy-management}
+
+Satır ilkesi, bir kullanıcı veya rol için hangi veya satırların kullanılabilir olduğunu tanımlayan bir filtredir. Satır ilkesi, belirli bir tablo ve bu satır ilkesini kullanması gereken rollerin ve/veya kullanıcıların listesi için filtreler içerir.
+
+Yönetim sorguları:
+
+-   [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+-   [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+-   [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+-   [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+## Ayarlar Profili {#settings-profiles-management}
+
+Ayarlar profili bir koleksiyon [ayarlar](settings/index.md). Ayarlar profili, ayarları ve kısıtlamaları ve bu kotanın uygulandığı rollerin ve/veya kullanıcıların listesini içerir.
+
+Yönetim sorguları:
+
+-   [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+-   [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+-   [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+-   [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+## Kota {#quotas-management}
+
+Kota kaynak kullanımını sınırlar. Görmek [Kotalar](quotas.md).
+
+Kota, bazı süreler için bir dizi sınır ve bu kotayı kullanması gereken rollerin ve/veya kullanıcıların listesini içerir.
+
+Yönetim sorguları:
+
+-   [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+-   [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+-   [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+-   [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+## SQL tabanlı erişim denetimi ve hesap yönetimini etkinleştirme {#enabling-access-control}
+
+-   Yapılandırmaları depolama için bir dizin Kur.
+
+    ClickHouse, erişim varlık yapılandırmalarını, [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) sunucu yapılandırma parametresi.
+
+-   En az bir kullanıcı hesabı için SQL tabanlı erişim denetimi ve hesap yönetimini etkinleştirin.
+
+    Varsayılan olarak SQL güdümlü erişim denetimi ve hesap yönetimi, tüm kullanıcılar için açık. En az bir kullanıcı yapılandırmanız gerekir `users.xml` yapılandırma dosyası ve atama 1 [access\_management](settings/settings-users.md#access_management-user-setting) ayar.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

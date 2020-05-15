@@ -1,13 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: Ayarlar Profilleri
 ---
 
 # Ayarlar Profilleri {#settings-profiles}
 
-Ayarlar profili, aynı ad altında gruplandırılmış ayarlar topluluğudur. Her ClickHouse kullanıcısının bir profili vardır.
+Ayarlar profili, aynı ad altında gruplandırılmış ayarlar topluluğudur.
+
+!!! note "Bilgi"
+    ClickHouse da destekler [SQL tabanlı iş akışı](../access-rights.md#access-control) ayarları profilleri yönetmek için. Bunu kullanmanızı öneririz.
+
+Bir profilin herhangi bir adı olabilir. Profilin herhangi bir adı olabilir. Farklı kullanıcılar için aynı profili belirtebilirsiniz. Ayarlar profilinde yazabileceğiniz en önemli şey `readonly=1` sağlar okumak-sadece erişim.
+
+Ayarlar profilleri birbirinden miras alabilir. Kalıtım kullanmak için, bir veya birden fazla belirtiniz `profile` ayarlar profilde listelenen diğer ayarlardan önce. Farklı profillerde bir ayar tanımlandığında, en son tanımlı kullanılır.
+
 Bir profildeki tüm ayarları uygulamak için `profile` ayar.
 
 Örnek:
@@ -64,8 +72,10 @@ Ayarlar profilleri kullanıcı yapılandırma dosyasında bildirilir. Bu genelli
 </profiles>
 ```
 
-Örnek iki profili belirtir: `default` ve `web`. Bu `default` profilin özel bir amacı vardır: her zaman mevcut olmalı ve sunucuyu başlatırken uygulanır. Diğer bir deyişle, `default` profil varsayılan ayarları içerir. Bu `web` profil kullanılarak ayarlanabilir düzenli bir profil `SET` sorgu veya bir HTTP sorgusunda bir URL parametresi kullanma.
+Örnek iki profili belirtir: `default` ve `web`.
 
-Ayarlar profilleri birbirinden miras alabilir. Kalıtım kullanmak için, bir veya birden fazla belirtiniz `profile` ayarlar profilde listelenen diğer ayarlardan önce. Farklı profillerde bir ayar tanımlandığında, en son tanımlı kullanılır.
+Bu `default` profilin özel bir amacı vardır: her zaman mevcut olmalı ve sunucuyu başlatırken uygulanır. Diğer bir deyişle, `default` profil varsayılan ayarları içerir.
+
+Bu `web` profil kullanılarak ayarlanabilir düzenli bir profil `SET` sorgu veya bir HTTP sorgusunda bir URL parametresi kullanma.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

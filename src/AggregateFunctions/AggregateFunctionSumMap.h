@@ -242,10 +242,10 @@ public:
         }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         // Final step does compaction of keys that have zero values, this mutates the state
-        auto & merged_maps = this->data(const_cast<AggregateDataPtr>(place)).merged_maps;
+        auto & merged_maps = this->data(place).merged_maps;
         for (auto it = merged_maps.cbegin(); it != merged_maps.cend();)
         {
             // Key is not compacted if it has at least one non-zero value

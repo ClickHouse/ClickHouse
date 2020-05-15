@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: MySQL
 ---
@@ -53,7 +53,7 @@ Diğer tüm MySQL veri türleri dönüştürülür [Dize](../../sql-reference/da
 
 [Nullable](../../sql-reference/data-types/nullable.md) desteklenir.
 
-## Kullanım Örnekleri {#examples-of-use}
+## Kullanım örnekleri {#examples-of-use}
 
 MySQL tablo:
 
@@ -79,7 +79,7 @@ mysql> select * from mysql_table;
 1 row in set (0,00 sec)
 ```
 
-Clickhouse’daki veritabanı, MySQL sunucusu ile veri alışverişi:
+Clickhouse'daki veritabanı, MySQL sunucusu ile veri alışverişi:
 
 ``` sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')

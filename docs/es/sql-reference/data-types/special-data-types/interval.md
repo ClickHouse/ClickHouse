@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: Intervalo
 ---
 
 # Intervalo {#data-type-interval}
 
-La familia de tipos de datos que representan intervalos de fecha y hora. Los tipos resultantes del [INTERVAL](../../../sql-reference/operators.md#operator-interval) operador.
+La familia de tipos de datos que representan intervalos de fecha y hora. Los tipos resultantes del [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operador.
 
 !!! warning "Advertencia"
     `Interval` los valores de tipo de datos no se pueden almacenar en tablas.
@@ -40,7 +40,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Observaciones De Uso {#data-type-interval-usage-remarks}
+## Observaciones de uso {#data-type-interval-usage-remarks}
 
 Usted puede utilizar `Interval`-type valores en operaciones aritméticas con [Fecha](../../../sql-reference/data-types/date.md) y [FechaHora](../../../sql-reference/data-types/datetime.md)-type valores. Por ejemplo, puede agregar 4 días a la hora actual:
 
@@ -81,5 +81,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Ver también {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators.md#operator-interval) operador
+-   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operador
 -   [ToInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) funciones de conversión de tipo

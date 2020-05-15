@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: "\u53C2\u52A0"
 ---
 
 # 参加 {#join}
 
-Inを使用するための準備済みデータ構造 [JOIN](../../../sql-reference/statements/select.md#select-join) オペレーション
+で使用するための準備されたデータ構造 [JOIN](../../../sql-reference/statements/select/join.md#select-join) 作戦だ
 
 ## テーブルの作成 {#creating-a-table}
 
@@ -19,19 +19,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-の詳細な説明を参照してください [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) クエリ。
+の詳細な説明を見て下さい [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) クエリ。
 
 **エンジン変数**
 
--   `join_strictness` – [厳密に結合する](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [結合タイプ](../../../sql-reference/statements/select.md#select-join-types).
--   `k1[, k2, ...]` – Key columns from the `USING` その句 `JOIN` 操作はで行われる。
+-   `join_strictness` – [厳密に結合する](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_type` – [結合タイプ](../../../sql-reference/statements/select/join.md#select-join-types).
+-   `k1[, k2, ...]` – Key columns from the `USING` 句は、 `JOIN` 操作はでなされる。
 
-入力 `join_strictness` と `join_type` 引用符なしのパラメーター。, `Join(ANY, LEFT, col1)`. 彼らは `JOIN` テーブルが使用される操作。 パラメータが一致しない場合、ClickHouseは例外をスローせず、誤ったデータを返すことがあります。
+入力 `join_strictness` と `join_type` 引用符のないパラメータ, `Join(ANY, LEFT, col1)`. も一致しなければならない `JOIN` テーブルが使用される操作。 パラメーターが一致しない場合、ClickHouseは例外をスローせず、誤ったデータを返す可能性があります。
 
 ## テーブルの使用法 {#table-usage}
 
-### 例えば {#example}
+### 例 {#example}
 
 左側のテーブルの作成:
 
@@ -67,7 +67,7 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id) SETTINGS join_use_null
 └────┴─────┴─────────────────┘
 ```
 
-代わりとして、データを取り出すことができます `Join` 結合キー値を指定するテーブル:
+別の方法として、 `Join` 結合キー値を指定するテーブル:
 
 ``` sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1))
@@ -81,12 +81,12 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 ### データの選択と挿入 {#selecting-and-inserting-data}
 
-を使用することができ `INSERT` データを追加するクエリ `Join`-エンジンテーブル。 テーブルが作成された場合 `ANY` 厳密さ、重複キーのデータは無視されます。 と `ALL` 厳密さは、すべての行が追加されます。
+以下を使用できます `INSERT` にデータを追加するクエリ `Join`-エンジンテーブル。 テーブルが作成された場合 `ANY` 厳密さ、重複キーのデータは無視されます。 と `ALL` 厳密さは、すべての行が追加されます。
 
-実行することはできません `SELECT` テーブルから直接クエリします。 代わりに、次のいずれかの方法を使用します:
+を実行できません。 `SELECT` テーブルから直接クエリ。 代わりに、次のいずれかの方法を使用します:
 
--   テーブルをaの右側に置きます `JOIN` 句。
--   コールを [joinGet](../../../sql-reference/functions/other-functions.md#joinget) この関数を使用すると、テーブルからデータをディクショナリと同じ方法で抽出できます。
+-   Aの右側にテーブルを置いて下さい `JOIN` 句。
+-   コール [joinGet](../../../sql-reference/functions/other-functions.md#joinget) 辞書と同じ方法でテーブルからデータを抽出できる関数。
 
 ### 制限事項と設定 {#join-limitations-and-settings}
 
@@ -98,14 +98,14 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 -   [join\_overflow\_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode)
 -   [join\_any\_take\_last\_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 
-その `Join`-エンジンテーブルは使用できません `GLOBAL JOIN` オペレーション
+その `Join`-エンジンテーブルは使用できません `GLOBAL JOIN` 作戦だ
 
-その `Join`-エンジンは、使用 [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) の設定 `CREATE TABLE` 声明。 と [SELECT](../../../sql-reference/statements/select.md) クエリは、使用を可能に `join_use_nulls` あまりにも。 あなたが持って異なる `join_use_nulls` 設定は、テーブルを結合エラーを得ることができます。 それは結合の種類に依存します。 使用するとき [joinGet](../../../sql-reference/functions/other-functions.md#joinget) 機能、同じを使用しなければなりません `join_use_nulls` の設定 `CRATE TABLE` と `SELECT` 文。
+その `Join`-エンジンは使用を許可する [join\_use\_nulls](../../../operations/settings/settings.md#join_use_nulls) の設定 `CREATE TABLE` 声明。 と [SELECT](../../../sql-reference/statements/select/index.md) クエリを使用できる `join_use_nulls` あまりにも。 あなたが違う場合 `join_use_nulls` 設定することができるエラー入社。 それは結合の種類に依存します。 使用するとき [joinGet](../../../sql-reference/functions/other-functions.md#joinget) 関数、あなたは同じを使用する必要があります `join_use_nulls` 設定 `CRATE TABLE` と `SELECT` 声明。
 
-## データ記憶 {#data-storage}
+## データ保存 {#data-storage}
 
 `Join` テーブルデータは常にRAMにあります。 を挿入する際、列表ClickHouseに書き込みデータブロックのディレクトリのディスクできるように復元され、サーバが再起動してしまいます。
 
-場合はサーバが再起動誤り、データブロックのディスクがいます。 この場合、破損したデータを含むファイルを手動で削除する必要があります。
+場合はサーバが再起動誤り、データブロックのディスクがいます。 この場合、破損したデータを含むファイルを手動で削除する必要がある場合があります。
 
 [元の記事](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->

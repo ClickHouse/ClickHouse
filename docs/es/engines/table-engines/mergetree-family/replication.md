@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 31
 toc_title: "Replicaci\xF3n de datos"
 ---
 
-# Replicación De Datos {#table_engines-replication}
+# Replicación de datos {#table_engines-replication}
 
 La replicación solo se admite para tablas de la familia MergeTree:
 
@@ -79,7 +79,7 @@ Puede tener cualquier número de réplicas de los mismos datos. El Yandex.Metric
 
 El sistema supervisa la sincronicidad de los datos en las réplicas y puede recuperarse después de un fallo. La conmutación por error es automática (para pequeñas diferencias en los datos) o semiautomática (cuando los datos difieren demasiado, lo que puede indicar un error de configuración).
 
-## Creación De Tablas Replicadas {#creating-replicated-tables}
+## Creación de tablas replicadas {#creating-replicated-tables}
 
 El `Replicated` prefijo se agrega al nombre del motor de tabla. Por ejemplo:`ReplicatedMergeTree`.
 
@@ -149,7 +149,7 @@ Si agrega una nueva réplica después de que la tabla ya contenga algunos datos 
 
 Para eliminar una réplica, ejecute `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recuperación después De Fallos {#recovery-after-failures}
+## Recuperación después de fallos {#recovery-after-failures}
 
 Si ZooKeeper no está disponible cuando se inicia un servidor, las tablas replicadas cambian al modo de solo lectura. El sistema intenta conectarse periódicamente a ZooKeeper.
 
@@ -173,7 +173,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 A continuación, reinicie el servidor. Al iniciar, el servidor elimina estos indicadores e inicia la recuperación.
 
-## Recuperación después De La pérdida Completa De Datos {#recovery-after-complete-data-loss}
+## Recuperación después de la pérdida completa de datos {#recovery-after-complete-data-loss}
 
 Si todos los datos y metadatos desaparecieron de uno de los servidores, siga estos pasos para la recuperación:
 
@@ -188,7 +188,7 @@ Una opción de recuperación alternativa es eliminar información sobre la répl
 
 No hay restricción en el ancho de banda de la red durante la recuperación. Tenga esto en cuenta si está restaurando muchas réplicas a la vez.
 
-## La Conversión De Mergetree A Replicatedmergetree {#converting-from-mergetree-to-replicatedmergetree}
+## La conversión de MergeTree a ReplicatedMergeTree {#converting-from-mergetree-to-replicatedmergetree}
 
 Usamos el término `MergeTree` para referirse a todos los motores de mesa en el `MergeTree family`, lo mismo que para `ReplicatedMergeTree`.
 
@@ -200,7 +200,7 @@ Cambie el nombre de la tabla MergeTree existente y, a continuación, cree un `Re
 Mueva los datos de la tabla antigua a la `detached` subdirectorio dentro del directorio con los nuevos datos de la tabla (`/var/lib/clickhouse/data/db_name/table_name/`).
 Luego ejecuta `ALTER TABLE ATTACH PARTITION` en una de las réplicas para agregar estas partes de datos al conjunto de trabajo.
 
-## La Conversión De Replicatedmergetree A Mergetree {#converting-from-replicatedmergetree-to-mergetree}
+## La conversión de ReplicatedMergeTree a MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
 Cree una tabla MergeTree con un nombre diferente. Mueva todos los datos del directorio con el `ReplicatedMergeTree` datos de la tabla al directorio de datos de la nueva tabla. A continuación, elimine el `ReplicatedMergeTree` y reinicie el servidor.
 
@@ -211,7 +211,7 @@ Si desea deshacerse de un `ReplicatedMergeTree` sin iniciar el servidor:
 
 Después de esto, puede iniciar el servidor, crear un `MergeTree` tabla, mueva los datos a su directorio y, a continuación, reinicie el servidor.
 
-## Recuperación Cuando Los Metadatos En El clúster De Zookeeper Se Pierden o Se dañan {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
+## Recuperación cuando se pierden o se dañan los metadatos del clúster Zookeeper {#recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged}
 
 Si los datos de ZooKeeper se perdieron o se dañaron, puede guardar los datos moviéndolos a una tabla no duplicada como se describió anteriormente.
 

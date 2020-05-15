@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: "\u0627\u062F\u063A\u0627\u0645"
 ---
@@ -94,7 +94,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     -   `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` بایت, تاتر می خواند و می نویسد داده ها به دیسک ذخیره سازی با استفاده از رابط من/ای مستقیم (`O_DIRECT` گزینه). اگر `min_merge_bytes_to_use_direct_io = 0`, سپس مستقیم من / ای غیر فعال است. مقدار پیشفرض: `10 * 1024 * 1024 * 1024` بایت
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with TTL. Default value: 86400 (1 day).
-    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
+    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don't turn it off.
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [با استفاده از دستگاه های بلوک های متعدد برای ذخیره سازی داده ها](#table_engine-mergetree-multiple-volumes).
 
@@ -106,7 +106,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 در مثال ما مجموعه پارتیشن بندی توسط ماه.
 
-ما همچنین یک عبارت برای نمونه برداری به عنوان یک هش توسط شناسه کاربر تنظیم شده است. این اجازه می دهد تا شما را به نام مستعار داده ها در جدول برای هر `CounterID` و `EventDate`. اگر یک تعریف می کنید [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) بند هنگام انتخاب داده ClickHouse را یک به طور مساوی pseudorandom داده های نمونه به صورت زیر مجموعه ای از کاربران است.
+ما همچنین یک عبارت برای نمونه برداری به عنوان یک هش توسط شناسه کاربر تنظیم شده است. این اجازه می دهد تا شما را به نام مستعار داده ها در جدول برای هر `CounterID` و `EventDate`. اگر یک تعریف می کنید [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) بند هنگام انتخاب داده ClickHouse را یک به طور مساوی pseudorandom داده های نمونه به صورت زیر مجموعه ای از کاربران است.
 
 این `index_granularity` تنظیم می تواند حذف شود زیرا 8192 مقدار پیش فرض است.
 
@@ -387,7 +387,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-برای تعریف `interval` استفاده [فاصله زمانی](../../../sql-reference/operators.md#operators-datetime) اپراتورها.
+برای تعریف `interval` استفاده [فاصله زمانی](../../../sql-reference/operators/index.md#operators-datetime) اپراتورها.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -476,7 +476,7 @@ ALTER TABLE example_table
 
 داده ها با یک حذف شده است زمانی که محل انتخابی ادغام قطعات داده.
 
-هنگامی که کلیک خانه را ببینید که داده تمام شده است, انجام یک ادغام خارج از برنامه. برای کنترل فرکانس چنین ادغام, شما می توانید مجموعه [ادغام \_بههنگامسازی](#mergetree_setting-merge_with_ttl_timeout). اگر مقدار خیلی کم است, این بسیاری از ادغام خارج از برنامه است که ممکن است مقدار زیادی از منابع مصرف انجام.
+هنگامی که کلیک خانه را ببینید که داده تمام شده است, انجام یک ادغام خارج از برنامه. برای کنترل فرکانس چنین ادغام, شما می توانید مجموعه `merge_with_ttl_timeout`. اگر مقدار خیلی کم است, این بسیاری از ادغام خارج از برنامه است که ممکن است مقدار زیادی از منابع مصرف انجام.
 
 اگر شما انجام `SELECT` پرس و جو بین ادغام, شما ممکن است داده های منقضی شده. برای جلوگیری از استفاده از [OPTIMIZE](../../../sql-reference/statements/misc.md#misc_operations-optimize) پرسوجو قبل از `SELECT`.
 
@@ -567,7 +567,7 @@ ALTER TABLE example_table
 -   `policy_name_N` — Policy name. Policy names must be unique.
 -   `volume_name_N` — Volume name. Volume names must be unique.
 -   `disk` — a disk within a volume.
--   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks.
+-   `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks.
 -   `move_factor` — when the amount of available space gets lower than this factor, data automatically start to move on the next volume if any (by default, 0.1).
 
 Cofiguration نمونه:

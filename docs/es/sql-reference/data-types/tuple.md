@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 53
 toc_title: Tuple (T1, T2, ...)
 ---
@@ -9,11 +9,11 @@ toc_title: Tuple (T1, T2, ...)
 
 Una tupla de elementos, cada uno con un individuo [tipo](index.md#data_types).
 
-Las tuplas se utilizan para la agrupación temporal de columnas. Las columnas se pueden agrupar cuando se usa una expresión IN en una consulta y para especificar ciertos parámetros formales de las funciones lambda. Para obtener más información, consulte las secciones [IN operadores](../../sql-reference/statements/select.md) y [Funciones de orden superior](../../sql-reference/functions/higher-order-functions.md).
+Las tuplas se utilizan para la agrupación temporal de columnas. Las columnas se pueden agrupar cuando se usa una expresión IN en una consulta y para especificar ciertos parámetros formales de las funciones lambda. Para obtener más información, consulte las secciones [IN operadores](../../sql-reference/operators/in.md) y [Funciones de orden superior](../../sql-reference/functions/higher-order-functions.md).
 
 Las tuplas pueden ser el resultado de una consulta. En este caso, para formatos de texto distintos de JSON, los valores están separados por comas entre corchetes. En formatos JSON, las tuplas se generan como matrices (entre corchetes).
 
-## Creación De Una Tupla {#creating-a-tuple}
+## Creación de una tupla {#creating-a-tuple}
 
 Puedes usar una función para crear una tupla:
 
@@ -33,7 +33,7 @@ SELECT tuple(1,'a') AS x, toTypeName(x)
 └─────────┴───────────────────────────┘
 ```
 
-## Trabajar Con Tipos De Datos {#working-with-data-types}
+## Trabajar con tipos de datos {#working-with-data-types}
 
 Al crear una tupla sobre la marcha, ClickHouse detecta automáticamente el tipo de cada argumento como el mínimo de los tipos que pueden almacenar el valor del argumento. Si el argumento es [NULL](../../sql-reference/syntax.md#null-literal), el tipo del elemento de tupla es [NULL](nullable.md).
 

@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: "Tip D\xF6n\xFC\u015Ft\xFCrme"
 ---
 
 # Tip Dönüştürme Fonksiyonları {#type-conversion-functions}
 
-## Sayısal dönüşümlerin Ortak sorunları {#numeric-conversion-issues}
+## Sayısal dönüşümlerin ortak sorunları {#numeric-conversion-issues}
 
 Bir değeri birinden başka bir veri türüne dönüştürdüğünüzde, ortak durumda, veri kaybına neden olabilecek güvenli olmayan bir işlem olduğunu unutmamalısınız. Değeri daha büyük bir veri türünden daha küçük bir veri türüne sığdırmaya çalışırsanız veya değerleri farklı veri türleri arasında dönüştürürseniz, veri kaybı oluşabilir.
 
@@ -246,11 +246,11 @@ YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
 
-Özel durum olarak, uınt32, Int32, Uınt64 veya Int64 sayısal türlerinden bugüne dönüştürme ve sayı 65536’dan büyük veya eşitse, sayı Unıx zaman damgası (ve gün sayısı olarak değil) olarak yorumlanır ve tarihe yuvarlanır. Bu, yaygın yazı oluşumu için destek sağlar ‘toDate(unix\_timestamp)’, aksi takdirde bir hata olur ve daha hantal yazmayı gerektirir ‘toDate(toDateTime(unix\_timestamp))’.
+Özel durum olarak, uınt32, Int32, Uınt64 veya Int64 sayısal türlerinden bugüne dönüştürme ve sayı 65536'dan büyük veya eşitse, sayı Unıx zaman damgası (ve gün sayısı olarak değil) olarak yorumlanır ve tarihe yuvarlanır. Bu, yaygın yazı oluşumu için destek sağlar ‘toDate(unix\_timestamp)’, aksi takdirde bir hata olur ve daha hantal yazmayı gerektirir ‘toDate(toDateTime(unix\_timestamp))’.
 
 Bir tarih ve tarih ile saat arasında dönüştürme doğal bir şekilde gerçekleştirilir: boş bir zaman ekleyerek veya saati bırakarak.
 
-Sayısal türler arasındaki dönüştürme, C++ ’ daki farklı sayısal türler arasındaki atamalarla aynı kuralları kullanır.
+Sayısal türler arasındaki dönüştürme, C++ ' daki farklı sayısal türler arasındaki atamalarla aynı kuralları kullanır.
 
 Ayrıca, Tostring işlevi DateTime bağımsız değişkeni, saat dilimi adını içeren ikinci bir dize bağımsız değişkeni alabilir. Örnek: `Asia/Yekaterinburg` Bu durumda, saat belirtilen saat dilimine göre biçimlendirilir.
 
@@ -266,12 +266,12 @@ SELECT
 └─────────────────────┴─────────────────────┘
 ```
 
-Ayrıca bakınız `toUnixTimestamp` işlev.
+Ayrıca bakınız `toUnixTimestamp` İşlev.
 
 ## toFixedString(s, N) {#tofixedstrings-n}
 
 Bir dize türü bağımsız değişkeni dönüştürür bir FixedString(N) türü (sabit uzunlukta bir dize N). N sabit olmalıdır.
-Dize n’den daha az bayt varsa, sağa boş bayt ile geçirilir. Dize n’den daha fazla bayt varsa, bir özel durum atılır.
+Dize n'den daha az bayt varsa, sağa boş bayt ile doldurulur. Dize n'den daha fazla bayt varsa, bir özel durum atılır.
 
 ## tostringcuttozero (s) {#tostringcuttozeros}
 
@@ -340,7 +340,7 @@ SELECT
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Fixedstring(N) ’ ye dönüştürme yalnızca String veya FixedString(N) türünde argümanlar için çalışır.
+Fixedstring(N) ' ye dönüştürme yalnızca String veya FixedString(N) türünde argümanlar için çalışır.
 
 Type con conversionvers conversionion to [Nullable](../../sql-reference/data-types/nullable.md) ve geri desteklenmektedir. Örnek:
 
@@ -518,7 +518,7 @@ Sonuç:
 
 **Ayrıca Bakınız**
 
--   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
+-   \[ISO 8601 duyuru @xkcd\](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
