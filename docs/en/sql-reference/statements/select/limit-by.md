@@ -1,3 +1,7 @@
+---
+toc_title: LIMIT BY
+---
+
 # LIMIT BY Clause {#limit-by-clause}
 
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](../../syntax.md#syntax-expressions).
