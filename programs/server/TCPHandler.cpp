@@ -589,6 +589,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             }
         }
 
+        /// Rethrow exception if have.
+        executor.wait();
+
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
           * this information in the suffix output of stream.
