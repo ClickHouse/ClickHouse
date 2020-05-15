@@ -30,6 +30,8 @@ public:
 
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
+    /// Wait query thread and throw exception if has. If not called, possible exception may be swallowed in destructor.
+    void wait();
 
     /// Get totals and extremes. Returns empty chunk if doesn't have any.
     Chunk getTotals();
