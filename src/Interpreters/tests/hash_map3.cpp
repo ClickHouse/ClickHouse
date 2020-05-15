@@ -61,12 +61,11 @@ struct Grower : public HashTableGrower<2>
 
 int main(int, char **)
 {
-    using Map = HashMapWithDump<
+    using Map = HASH_TABLE_WITH_STACK_MEMORY(HashMapWithDump,
         StringRef,
         UInt64,
         SimpleHash,
-        Grower,
-        HashTableAllocatorWithStackMemory<4 * 24>>;
+        Grower);
 
     Map map;
 

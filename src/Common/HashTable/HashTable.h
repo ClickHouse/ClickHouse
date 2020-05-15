@@ -308,7 +308,16 @@ struct ZeroValueStorage<false, Cell>
     const Cell * zeroValue() const { return nullptr; }
 };
 
+// These templates give the initial hash table size, so that we can check
+// that it is in sync with initial allocator size.
+template <typename GenericGrower>
+constexpr size_t growerInitialCount = 0;
 
+template <size_t initial_size_degree>
+constexpr size_t growerInitialCount<HashTableGrower<initial_size_degree>>
+    = 1ULL << initial_size_degree;
+
+// The HashTable
 template
 <
     typename Key,
@@ -324,6 +333,17 @@ class HashTable :
     protected Cell::State,
     protected ZeroValueStorage<Cell::need_zero_value_storage, Cell>     /// empty base optimization
 {
+public:
+    // Export the initial buffer sizes for the ease of using allocators with
+    // inline memory.
+    static constexpr size_t initial_buffer_bytes
+        = growerInitialCount<Grower> * sizeof(Cell);
+
+    // If we use an allocator with inline memory, check that the initial
+    // size of the hash table is in sync with the amount of this memory.
+    static_assert(allocatorInitialBytes<Allocator> == 0
+        || allocatorInitialBytes<Allocator> == initial_buffer_bytes);
+
 protected:
     friend class const_iterator;
     friend class iterator;
@@ -1075,3 +1095,13 @@ public:
     }
 #endif
 };
+
+// A helper macro that declares hash table with allocator with stack memory,
+// and the initial size of the allocator is in sync with initial size of the
+// hash table.
+#define HASH_TABLE_WITH_STACK_MEMORY(HASH_TABLE_VARIANT, ...) \
+    HASH_TABLE_VARIANT<__VA_ARGS__, \
+        HashTableAllocatorWithStackMemory< \
+            HASH_TABLE_VARIANT<__VA_ARGS__>::initial_buffer_bytes \
+        > \
+    >
