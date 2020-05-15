@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "Agregar funci\xF3n (nombre, types_of_arguments)...)"
 ---
 
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
-Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [una vista materializada](../../sql-reference/statements/select.md#create-view). La forma común de producir un estado de función agregada es llamando a la función agregada con el `-State` sufijo. Para obtener el resultado final de la agregación en el futuro, debe utilizar la misma función de agregado con el `-Merge`sufijo.
+Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [una vista materializada](../../sql-reference/statements/create.md#create-view). La forma común de producir un estado de función agregada es llamando a la función agregada con el `-State` sufijo. Para obtener el resultado final de la agregación en el futuro, debe utilizar la misma función de agregado con el `-Merge`sufijo.
 
 `AggregateFunction` — parametric data type.
 
@@ -34,7 +34,7 @@ CREATE TABLE t
 
 ## Uso {#usage}
 
-### Inserción De Datos {#data-insertion}
+### Inserción de datos {#data-insertion}
 
 Para insertar datos, utilice `INSERT SELECT` con agregado `-State`- función.
 
@@ -49,7 +49,7 @@ En contraste con las funciones correspondientes `uniq` y `quantiles`, `-State`- 
 
 En los resultados de `SELECT` consulta, los valores de `AggregateFunction` tipo tiene representación binaria específica de la implementación para todos los formatos de salida de ClickHouse. Si volcar datos en, por ejemplo, `TabSeparated` formato con `SELECT` consulta, entonces este volcado se puede cargar de nuevo usando `INSERT` consulta.
 
-### Selección De Datos {#data-selection}
+### Selección de datos {#data-selection}
 
 Al seleccionar datos de `AggregatingMergeTree` mesa, uso `GROUP BY` cláusula y las mismas funciones agregadas que al insertar datos, pero usando `-Merge`sufijo.
 
@@ -63,7 +63,7 @@ SELECT uniq(UserID) FROM table
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 ```
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 Ver [AgregaciónMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) Descripción del motor.
 

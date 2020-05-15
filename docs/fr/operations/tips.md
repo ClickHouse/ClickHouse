@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: Recommandations D'Utilisation
 ---
 
-# Recommandations D’Utilisation {#usage-recommendations}
+# Recommandations D'Utilisation {#usage-recommendations}
 
-## Gouverneur De Mise à L’échelle Du Processeur {#cpu-scaling-governor}
+## Gouverneur de mise à L'échelle du processeur {#cpu-scaling-governor}
 
-Utilisez toujours la `performance` mise à l’échelle gouverneur. Le `on-demand` gouverneur de mise à l’échelle fonctionne bien pire avec une demande constamment élevée.
+Utilisez toujours la `performance` mise à l'échelle gouverneur. Le `on-demand` gouverneur de mise à l'échelle fonctionne bien pire avec une demande constamment élevée.
 
 ``` bash
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
@@ -17,14 +17,14 @@ $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gov
 
 ## CPU Limitations {#cpu-limitations}
 
-Les processeurs peuvent surchauffer. Utiliser `dmesg` pour voir si la fréquence D’horloge du processeur était limitée en raison de la surchauffe.
+Les processeurs peuvent surchauffer. Utiliser `dmesg` pour voir si la fréquence D'horloge du processeur était limitée en raison de la surchauffe.
 La restriction peut également être définie en externe au niveau du centre de données. Vous pouvez utiliser `turbostat` à surveiller sous une charge.
 
 ## RAM {#ram}
 
-Pour de petites quantités de données (jusqu’à ~200 GO en mode compressé), il est préférable d’utiliser autant de mémoire que le volume de données.
-Pour de grandes quantités de données et lors du traitement de requêtes interactives (en ligne), vous devez utiliser une quantité raisonnable de RAM (128 Go ou plus) afin que le sous-ensemble de données chaudes s’intègre dans le cache des pages.
-Même pour des volumes de données d’environ 50 To par serveur, l’utilisation de 128 Go de RAM améliore considérablement les performances des requêtes par rapport à 64 Go.
+Pour de petites quantités de données (jusqu'à ~200 GO en mode compressé), il est préférable d'utiliser autant de mémoire que le volume de données.
+Pour de grandes quantités de données et lors du traitement de requêtes interactives (en ligne), vous devez utiliser une quantité raisonnable de RAM (128 Go ou plus) afin que le sous-ensemble de données chaudes s'intègre dans le cache des pages.
+Même pour des volumes de données d'environ 50 To par serveur, l'utilisation de 128 Go de RAM améliore considérablement les performances des requêtes par rapport à 64 Go.
 
 Ne désactivez pas de surcharge. Valeur `cat /proc/sys/vm/overcommit_memory` devrait être 0 ou 1. Exécuter
 
@@ -41,12 +41,12 @@ $ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
 Utiliser `perf top` pour regarder le temps passé dans le noyau pour la gestion de la mémoire.
-Les pages énormes permanentes n’ont pas non plus besoin d’être allouées.
+Les pages énormes permanentes n'ont pas non plus besoin d'être allouées.
 
 ## Sous-Système De Stockage {#storage-subsystem}
 
-Si votre budget vous permet D’utiliser SSD, utilisez SSD.
-Sinon, utilisez un disque dur. Disques durs SATA 7200 RPM fera l’affaire.
+Si votre budget vous permet D'utiliser SSD, utilisez SSD.
+Sinon, utilisez un disque dur. Disques durs SATA 7200 RPM fera l'affaire.
 
 Donner la préférence à un grand nombre de serveurs avec des disques durs locaux sur un plus petit nombre de serveurs avec un disque attaché étagères.
 Mais pour stocker des archives avec des requêtes rares, les étagères fonctionneront.
@@ -54,12 +54,12 @@ Mais pour stocker des archives avec des requêtes rares, les étagères fonction
 ## RAID {#raid}
 
 Lorsque vous utilisez le disque dur, vous pouvez combiner leur RAID-10, RAID-5, RAID-6 ou RAID-50.
-Pour Linux, le RAID logiciel est meilleur (avec `mdadm`). Nous ne recommandons pas d’utiliser LVM.
+Pour Linux, le RAID logiciel est meilleur (avec `mdadm`). Nous ne recommandons pas d'utiliser LVM.
 Lors de la création de RAID-10, sélectionnez `far` disposition.
 Si votre budget le permet, choisissez RAID-10.
 
 Si vous avez plus de 4 disques, Utilisez RAID-6 (préféré) ou RAID-50, au lieu de RAID-5.
-Lorsque vous utilisez RAID-5, RAID-6 ou RAID-50, augmentez toujours stripe\_cache\_size, car la valeur par défaut n’est généralement pas le meilleur choix.
+Lorsque vous utilisez RAID-5, RAID-6 ou RAID-50, augmentez toujours stripe\_cache\_size, car la valeur par défaut n'est généralement pas le meilleur choix.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
@@ -71,43 +71,43 @@ Une taille de bloc de 1024 KO est suffisante pour toutes les configurations RAID
 Ne définissez jamais la taille du bloc trop petite ou trop grande.
 
 Vous pouvez utiliser RAID-0 sur SSD.
-Quelle que soit L’utilisation du RAID, utilisez toujours la réplication pour la sécurité des données.
+Quelle que soit L'utilisation du RAID, utilisez toujours la réplication pour la sécurité des données.
 
-Activer NCQ avec une longue file d’attente. Pour HDD, choisissez le planificateur CFQ, et pour SSD, choisissez noop. Ne pas réduire le ‘readahead’ paramètre.
-Pour le disque dur, activez le cache d’écriture.
+Activer NCQ avec une longue file d'attente. Pour HDD, choisissez le planificateur CFQ, et pour SSD, choisissez noop. Ne pas réduire le ‘readahead’ paramètre.
+Pour le disque dur, activez le cache d'écriture.
 
 ## Système De Fichiers {#file-system}
 
-Ext4 est l’option la plus fiable. Définir les options de montage `noatime, nobarrier`.
-XFS est également adapté, mais il n’a pas été aussi soigneusement testé avec ClickHouse.
+Ext4 est l'option la plus fiable. Définir les options de montage `noatime, nobarrier`.
+XFS est également adapté, mais il n'a pas été aussi soigneusement testé avec ClickHouse.
 La plupart des autres systèmes de fichiers devraient également fonctionner correctement. Les systèmes de fichiers avec allocation retardée fonctionnent mieux.
 
 ## Le Noyau Linux {#linux-kernel}
 
-N’utilisez pas un noyau Linux obsolète.
+N'utilisez pas un noyau Linux obsolète.
 
 ## Réseau {#network}
 
 Si vous utilisez IPv6, augmenter la taille du cache.
-Le noyau Linux avant 3.2 avait une multitude de problèmes avec l’implémentation D’IPv6.
+Le noyau Linux avant 3.2 avait une multitude de problèmes avec l'implémentation D'IPv6.
 
 Utilisez au moins un réseau de 10 Go, si possible. 1 Go fonctionnera également, mais ce sera bien pire pour patcher des répliques avec des dizaines de téraoctets de données, ou pour traiter des requêtes distribuées avec une grande quantité de données intermédiaires.
 
 ## ZooKeeper {#zookeeper}
 
-Vous utilisez probablement déjà ZooKeeper à d’autres fins. Vous pouvez utiliser la même installation de ZooKeeper, si elle n’est pas déjà surchargée.
+Vous utilisez probablement déjà ZooKeeper à d'autres fins. Vous pouvez utiliser la même installation de ZooKeeper, si elle n'est pas déjà surchargée.
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
-Vous ne devez jamais utiliser de scripts écrits manuellement pour transférer des données entre différents clusters ZooKeeper, car le résultat sera incorrect pour les nœuds séquentiels. Ne jamais utiliser de l’ “zkcopy” utilitaire pour la même raison: https://github.com/ksprojects/zkcopy/issues/15
+Vous ne devez jamais utiliser de scripts écrits manuellement pour transférer des données entre différents clusters ZooKeeper, car le résultat sera incorrect pour les nœuds séquentiels. Ne jamais utiliser de l' “zkcopy” utilitaire pour la même raison: https://github.com/ksprojects/zkcopy/issues/15
 
-Si vous souhaitez diviser un cluster Zookeeper existant en deux, le bon moyen est d’augmenter le nombre de ses répliques, puis de le reconfigurer en deux clusters indépendants.
+Si vous souhaitez diviser un cluster Zookeeper existant en deux, le bon moyen est d'augmenter le nombre de ses répliques, puis de le reconfigurer en deux clusters indépendants.
 
-N’exécutez pas ZooKeeper sur les mêmes serveurs que ClickHouse. Parce que ZooKeeper est très sensible à la latence et ClickHouse peut utiliser toutes les ressources système disponibles.
+N'exécutez pas ZooKeeper sur les mêmes serveurs que ClickHouse. Parce que ZooKeeper est très sensible à la latence et ClickHouse peut utiliser toutes les ressources système disponibles.
 
 Avec les paramètres par défaut, ZooKeeper est une bombe à retardement:
 
-> Le serveur ZooKeeper ne supprime pas les fichiers des anciens snapshots et journaux lors de l’utilisation de la configuration par défaut (voir autopurge), et c’est la responsabilité de l’opérateur.
+> Le serveur ZooKeeper ne supprime pas les fichiers des anciens snapshots et journaux lors de l'utilisation de la configuration par défaut (voir autopurge), et c'est la responsabilité de l'opérateur.
 
 Cette bombe doit être désamorcée.
 

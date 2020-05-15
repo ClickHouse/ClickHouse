@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: MySQL
 ---
 
 # Mysql {#mysql}
 
-MySQLエンジンでは、次の操作を実行できます `SELECT` リモートMySQLサーバーに格納されているデータを照会します。
+MySQLエンジンでは、次の操作を実行できます `SELECT` リモートMySQLサーバーに格納されているデータに対するクエリ。
 
 ## テーブルの作成 {#creating-a-table}
 
@@ -22,10 +22,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 の詳細な説明を参照してください [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) クエリ。
 
-テーブル構造は元のmysqlテーブル構造とは異なる場合があります:
+テーブル構造は、元のMySQLテーブル構造と異なる場合があります:
 
--   列名は元のmysqlテーブルと同じでなければなりませんが、これらの列の一部だけを任意の順序で使用できます。
--   カラムの型は、元のmysqlテーブルの型と異なる場合があります。 クリックハウスは [キャスト](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) クリックハウスのデータ型への値。
+-   カラム名は元のMySQLテーブルと同じでなければなりませんが、これらのカラムの一部だけを任意の順序で使用できます。
+-   列の型は、元のMySQLテーブルの型とは異なる場合があります。 ClickHouseは [キャスト](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) ClickHouseデータ型の値。
 
 **エンジン変数**
 
@@ -39,15 +39,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 -   `password` — User password.
 
--   `replace_query` — Flag that converts `INSERT INTO` へのクエリ `REPLACE INTO`. もし `replace_query=1` クエリは置換されます。
+-   `replace_query` — Flag that converts `INSERT INTO` へのクエリ `REPLACE INTO`. もし `replace_query=1`、クエリが代入されます。
 
 -   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` に追加される式 `INSERT` クエリ。
 
-    例えば: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`、どこ `on_duplicate_clause` は `UPDATE c2 = c2 + 1`. を見る [MySQLの文書](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) これを見つけるには `on_duplicate_clause` あなたはで使用することができ `ON DUPLICATE KEY` 句。
+    例: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`,ここで `on_duplicate_clause` は `UPDATE c2 = c2 + 1`. を参照。 [MySQLドキュメント](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) これを見つけるには `on_duplicate_clause` と使用できます `ON DUPLICATE KEY` 句。
 
-    指定するには `on_duplicate_clause` 合格する必要があります `0` に `replace_query` パラメータ。 あなたが同時に渡す場合 `replace_query = 1` と `on_duplicate_clause`、ClickHouseは例外を生成します。
+    指定するには `on_duplicate_clause` 合格する必要があります `0` に `replace_query` パラメータ。 あなたが同時に合格した場合 `replace_query = 1` と `on_duplicate_clause`,ClickHouseは例外を生成します。
 
-シンプル `WHERE` 次のような句 `=, !=, >, >=, <, <=` MySQLサーバで実行されます。
+シンプル `WHERE` 次のような句 `=, !=, >, >=, <, <=` MySQLサーバー上で実行されます。
 
 残りの条件と `LIMIT` サンプリング制約は、MySQLへのクエリが終了した後にのみClickHouseで実行されます。
 
@@ -76,7 +76,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-ClickHouseのテーブル、上記で作成したMySQLテーブルからデータを取得する:
+ClickHouseのテーブル、上で作成したMySQLテーブルからデータを取得する:
 
 ``` sql
 CREATE TABLE mysql_table
@@ -97,9 +97,9 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## また見なさい {#see-also}
+## も参照。 {#see-also}
 
--   [その ‘mysql’ テーブル機能](../../../sql-reference/table-functions/mysql.md)
--   [MySQLを外部辞書のソースとして使用する](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [その ‘mysql’ テーブル関数](../../../sql-reference/table-functions/mysql.md)
+-   [外部辞書のソースとしてMySQLを使用する](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
 [元の記事](https://clickhouse.tech/docs/en/operations/table_engines/mysql/) <!--hide-->

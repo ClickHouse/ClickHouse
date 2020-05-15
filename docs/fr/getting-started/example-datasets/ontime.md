@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 15
 toc_title: OnTime
 ---
@@ -12,7 +12,7 @@ Ce jeu de données peut être obtenu de deux façons:
 -   importation à partir de données brutes
 -   téléchargement de partitions
 
-## Importation À Partir De Données Brutes {#import-from-raw-data}
+## Importation à partir de données brutes {#import-from-raw-data}
 
 Téléchargement de données:
 
@@ -28,7 +28,7 @@ done
 
 (à partir de https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
-Création d’une table:
+Création d'une table:
 
 ``` sql
 CREATE TABLE `ontime` (
@@ -153,7 +153,7 @@ Le chargement des données:
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Téléchargement Des Partitions préparées {#download-of-prepared-partitions}
+## Téléchargement des Partitions préparées {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
@@ -180,7 +180,7 @@ FROM
 );
 ```
 
-T1. Le nombre de vols par jour de l’année 2000 à 2008
+T1. Le nombre de vols par jour de l'année 2000 à 2008
 
 ``` sql
 SELECT DayOfWeek, count(*) AS c
@@ -200,7 +200,7 @@ GROUP BY DayOfWeek
 ORDER BY c DESC;
 ```
 
-T3. Le nombre de retards par l’aéroport pour 2000-2008
+T3. Le nombre de retards par l'aéroport pour 2000-2008
 
 ``` sql
 SELECT Origin, count(*) AS c
@@ -257,7 +257,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC
 ```
 
-Q6. La demande précédente pour une plus large gamme d’années, 2000-2008
+Q6. La demande précédente pour une plus large gamme d'années, 2000-2008
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -326,7 +326,7 @@ GROUP BY Year
 ORDER BY Year;
 ```
 
-Q8. Les destinations les plus populaires par le nombre de villes directement connectées pour différentes plages d’années
+Q8. Les destinations les plus populaires par le nombre de villes directement connectées pour différentes plages d'années
 
 ``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u

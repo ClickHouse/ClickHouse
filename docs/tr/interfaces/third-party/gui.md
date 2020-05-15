@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 28
 toc_title: "G\xF6rsel Aray\xFCzler"
 ---
 
-# Üçüncü Taraf geliştiricilerin görsel arayüzleri {#visual-interfaces-from-third-party-developers}
+# Üçüncü taraf geliştiricilerin görsel arayüzleri {#visual-interfaces-from-third-party-developers}
 
 ## Açık Kaynak {#open-source}
 
@@ -93,6 +93,10 @@ ClickHouse dahil olmak üzere birden fazla veri kaynağı için destekler, Redas
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) görselleştirmek için özel bir araçtır `system.trace_log` olarak [flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
+### clickhouse-plantuml {#clickhouse-plantuml}
+
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) oluşturmak için bir komut dosyası mı [PlantUML](https://plantuml.com/) tablo şemalarının diyagramı.
+
 ## Ticari {#commercial}
 
 ### Datriagrpip {#datagrip}
@@ -103,7 +107,7 @@ ClickHouse dahil olmak üzere birden fazla veri kaynağı için destekler, Redas
 
 -   Çok hızlı kod tamamlama.
 -   ClickHouse sözdizimi vurgulama.
--   Clickhouse’a özgü özellikler için destek, örneğin iç içe geçmiş sütunlar, tablo motorları.
+-   Clickhouse'a özgü özellikler için destek, örneğin iç içe geçmiş sütunlar, tablo motorları.
 -   Veri Editörü.
 -   Refactorings.
 -   Arama ve navigasyon.

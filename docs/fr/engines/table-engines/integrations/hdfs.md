@@ -1,14 +1,14 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
-Ce moteur fournit l’intégration avec [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) l’écosystème en permettant de gérer les données sur [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. Ce moteur est similaire
-à l’ [Fichier](../special/file.md#table_engines-file) et [URL](../special/url.md#table_engines-url) moteurs, mais fournit des fonctionnalités spécifiques Hadoop.
+Ce moteur fournit l'intégration avec [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) l'écosystème en permettant de gérer les données sur [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. Ce moteur est similaire
+à l' [Fichier](../special/file.md#table_engines-file) et [URL](../special/url.md#table_engines-url) moteurs, mais fournit des fonctionnalités spécifiques Hadoop.
 
 ## Utilisation {#usage}
 
@@ -16,9 +16,9 @@ Ce moteur fournit l’intégration avec [Apache Hadoop](https://en.wikipedia.org
 ENGINE = HDFS(URI, format)
 ```
 
-Le `URI` paramètre est L’URI du fichier entier dans HDFS.
-Le `format` paramètre spécifie l’un des formats de fichier disponibles. Effectuer
-`SELECT` requêtes, le format doit être pris en charge pour l’entrée, et à effectuer
+Le `URI` paramètre est L'URI du fichier entier dans HDFS.
+Le `format` paramètre spécifie l'un des formats de fichier disponibles. Effectuer
+`SELECT` requêtes, le format doit être pris en charge pour l'entrée, et à effectuer
 `INSERT` queries – for output. The available formats are listed in the
 [Format](../../../interfaces/formats.md#formats) section.
 Le chemin le cadre de `URI` peut contenir des globules. Dans ce cas, le tableau serait en lecture seule.
@@ -60,14 +60,14 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 **Globs dans le chemin**
 
-Plusieurs composants de chemin peuvent avoir des globs. Pour être traité, le fichier devrait exister et correspondre au modèle de chemin entier. Liste des fichiers détermine pendant `SELECT` (pas à l’ `CREATE` moment).
+Plusieurs composants de chemin peuvent avoir des globs. Pour être traité, le fichier devrait exister et correspondre au modèle de chemin entier. Liste des fichiers détermine pendant `SELECT` (pas à l' `CREATE` moment).
 
 -   `*` — Substitutes any number of any characters except `/` y compris la chaîne vide.
 -   `?` — Substitutes any single character.
 -   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Les Constructions avec `{}` sont similaires à l’ [distant](../../../sql-reference/table-functions/remote.md) table de fonction.
+Les Constructions avec `{}` sont similaires à l' [distant](../../../sql-reference/table-functions/remote.md) table de fonction.
 
 **Exemple**
 

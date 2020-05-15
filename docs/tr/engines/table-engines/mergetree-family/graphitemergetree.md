@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: "Graph\u0131temergetree"
 ---
 
 # Graphıtemergetree {#graphitemergetree}
 
-Bu motor inceltme ve toplama/ortalama (toplaması) için tasarlanmıştır) [Grafit](http://graphite.readthedocs.io/en/latest/index.html) veriler. Clickhouse’u Grafit için bir veri deposu olarak kullanmak isteyen geliştiriciler için yararlı olabilir.
+Bu motor inceltme ve toplama/ortalama (toplaması) için tasarlanmıştır) [Grafit](http://graphite.readthedocs.io/en/latest/index.html) veriler. Clickhouse'u Grafit için bir veri deposu olarak kullanmak isteyen geliştiriciler için yararlı olabilir.
 
 Toplamaya ihtiyacınız yoksa Grafit verilerini depolamak için herhangi bir ClickHouse tablo motorunu kullanabilirsiniz, ancak bir toplamaya ihtiyacınız varsa `GraphiteMergeTree`. Motor, depolama hacmini azaltır ve grafitten gelen sorguların verimliliğini arttırır.
 

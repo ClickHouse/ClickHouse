@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: Para buscar cadenas
 ---
 
-# Funciones Para Buscar Cadenas {#functions-for-searching-strings}
+# Funciones para buscar cadenas {#functions-for-searching-strings}
 
 La búsqueda distingue entre mayúsculas y minúsculas de forma predeterminada en todas estas funciones. Hay variantes separadas para la búsqueda insensible a mayúsculas y minúsculas.
 

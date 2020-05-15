@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: Orden superior
 ---
 
-# Funciones De Orden Superior {#higher-order-functions}
+# Funciones de orden superior {#higher-order-functions}
 
 ## `->` operador, función lambda (params, expr) {#operator-lambdaparams-expr-function}
 
@@ -209,7 +209,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 └──────────────┘
 ```
 
-### Información De Archivo) {#arraycumsumnonnegativearr}
+### Información de archivo) {#arraycumsumnonnegativearr}
 
 Lo mismo que `arrayCumSum`, devuelve una matriz de sumas parciales de elementos en la matriz de origen (una suma en ejecución). Diferente `arrayCumSum`, cuando el valor devuelto contiene un valor menor que cero, el valor se reemplaza con cero y el cálculo posterior se realiza con cero parámetros. Por ejemplo:
 
