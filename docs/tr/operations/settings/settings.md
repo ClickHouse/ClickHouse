@@ -1,15 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
-toc_priority: 60
-toc_title: Ayarlar
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Ayarlar {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
+<<<<<<< HEAD
 Davranışını değiştirir [dağıtılmış alt sorgular](../../sql_reference/statements/select.md).
+=======
+Davranışını değiştirir [dağıtılmış alt sorgular](../../sql-reference/operators/in.md).
+>>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -18,7 +20,11 @@ Kısıtlama:
 -   Yalnızca ın ve JOIN alt sorguları için uygulanır.
 -   Yalnızca FROM bölümü birden fazla parça içeren dağıtılmış bir tablo kullanıyorsa.
 -   Alt sorgu birden fazla parça içeren dağıtılmış bir tablo ile ilgiliyse.
+<<<<<<< HEAD
 -   Bir tablo için kullanılmaz-değerli [uzak](../../sql_reference/table_functions/remote.md) işlev.
+=======
+-   Bir tablo için kullanılmaz-değerli [uzak](../../sql-reference/table-functions/remote.md) İşlev.
+>>>>>>> upstream/master
 
 Olası değerler:
 
@@ -369,7 +375,11 @@ Ayrıca bakınız:
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 Ayarlar varsayılan strictness için [Maddeleri KATILIN ](../../sql_reference/statements/select.md#select-join).
+=======
+Ayarlar varsayılan strictness için [Maddeleri KATILIN ](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 Olası değerler:
 
@@ -396,13 +406,22 @@ Varsayılan değer: 0.
 
 Ayrıca bakınız:
 
+<<<<<<< HEAD
 -   [Jo](../../sql_reference/statements/select.md#select-join)
 -   [Jo tablein table engine](../../engines/table_engines/special/join.md)
+=======
+-   [Jo](../../sql-reference/statements/select/join.md#select-join)
+-   [Jo tablein table engine](../../engines/table-engines/special/join.md)
+>>>>>>> upstream/master
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
+<<<<<<< HEAD
 Türünü ayarlar [JOIN](../../sql_reference/statements/select.md) davranış. Tabloları birleştirirken boş hücreler görünebilir. ClickHouse bu ayara göre onları farklı şekilde doldurur.
+=======
+Türünü ayarlar [JOIN](../../sql-reference/statements/select/join.md) davranış. Tabloları birleştirirken boş hücreler görünebilir. ClickHouse bu ayara göre onları farklı şekilde doldurur.
+>>>>>>> upstream/master
 
 Olası değerler:
 
@@ -516,7 +535,11 @@ Varsayılan değer: 0.
 
 Sorgu günlüğü ayarlama.
 
+<<<<<<< HEAD
 Bu kurulum ile Clickhouse'a gönderilen sorgular, [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) sunucu yapılandırma parametresi.
+=======
+Bu kurulum ile Clickhouse'a gönderilen sorgular, [query\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) sunucu yapılandırma parametresi.
+>>>>>>> upstream/master
 
 Örnek:
 
@@ -565,6 +588,31 @@ Veri SELECT sonra oluşturulan aynı blokları kullanarak eklendiğinden, INSERT
 Varsayılan değer: 1.048,576.
 
 Varsayılan biraz daha fazla `max_block_size`. Bunun nedeni, bazı tablo motorlarının (`*MergeTree`) oldukça büyük bir varlık olan eklenen her blok için diskte bir veri parçası oluşturun. Benzer bir şekilde, `*MergeTree` tablolar ekleme sırasında verileri sıralar ve yeterince büyük bir blok boyutu RAM'de daha fazla veriyi sıralamaya izin verir.
+<<<<<<< HEAD
+=======
+
+## min\_insert\_block\_size\_rows {#min-insert-block-size-rows}
+
+Bir tabloya eklenebilen blok içindeki minimum satır sayısını ayarlar. `INSERT` sorgu. Daha küçük boyutlu bloklar daha büyük olanlara ezilir.
+
+Olası değerler:
+
+-   Pozitif tamsayı.
+-   0 — Squashing disabled.
+
+Varsayılan değer: 1048576.
+
+## min\_insert\_block\_size\_bytes {#min-insert-block-size-bytes}
+
+Bir tabloya eklenebilen blok içindeki minimum bayt sayısını ayarlar. `INSERT` sorgu. Daha küçük boyutlu bloklar daha büyük olanlara ezilir.
+
+Olası değerler:
+
+-   Pozitif tamsayı.
+-   0 — Squashing disabled.
+
+Varsayılan değer: 268435456.
+>>>>>>> upstream/master
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -902,7 +950,7 @@ Olası değerler:
 
 Varsayılan değer: 1.
 
-Varsayılan olarak, çoğaltılmış tablolara eklenen bloklar `INSERT` deyim tekilleştirilir (bkz. \[Data Replication\] (../engines/table\_engines/mergetree\_family/replication.md).
+Varsayılan olarak, çoğaltılmış tablolara eklenen bloklar `INSERT` açıklama tekilleştirilmiştir (bkz [Veri Çoğaltma](../../engines/table-engines/mergetree-family/replication.md)).
 
 ## deduplicate\_blocks\_ın\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -968,7 +1016,11 @@ Varsayılan değer: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
+<<<<<<< HEAD
 Aşağıdakilerden hang theisinin `uniq*` işlevleri gerçekleştirmek için kullanılmalıdır [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) yapma.
+=======
+Aşağıdakilerden hang theisinin `uniq*` işlevleri gerçekleştirmek için kullanılmalıdır [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) yapı.
+>>>>>>> upstream/master
 
 Olası değerler:
 
@@ -1231,5 +1283,15 @@ Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/
 Type: URL
 
 Varsayılan değer: boş
+
+## background\_pool\_size {#background_pool_size}
+
+Tablo altyapılarında arka plan işlemlerini gerçekleştiren iş parçacıklarının sayısını ayarlar (örneğin, [MergeTree motoru](../../engines/table-engines/mergetree-family/index.md) Tablolar). Bu ayar ClickHouse sunucu başlangıcında uygulanır ve bir kullanıcı oturumunda değiştirilemez. Bu ayarı ayarlayarak, CPU ve disk yükünü yönetirsiniz. Daha küçük havuz boyutu daha az CPU ve disk kaynağı kullanır, ancak arka plan işlemleri daha yavaş ilerler ve bu da sorgu performansını etkileyebilir.
+
+Olası değerler:
+
+-   Herhangi bir pozitif tamsayı.
+
+Varsayılan değer: 16.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

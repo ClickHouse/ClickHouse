@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: "Giri\u015F ve \xE7\u0131k\u0131\u015F bi\xE7imleri"
 ---
@@ -42,7 +42,7 @@ Desteklenen formatlar şunlardır:
 | [ORC](#data-format-orc)                                         | ✔     | ✗     |
 | [RowBinary](#rowbinary)                                         | ✔     | ✔     |
 | [Rowbinarywithnames ve türleri](#rowbinarywithnamesandtypes)    | ✔     | ✔     |
-| [Yerel](#native)                                                | ✔     | ✔     |
+| [Yerli](#native)                                                | ✔     | ✔     |
 | [Boş](#null)                                                    | ✗     | ✔     |
 | [XML](#xml)                                                     | ✗     | ✔     |
 | [CapnProto](#capnproto)                                         | ✔     | ✗     |
@@ -643,7 +643,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Yerel {#native}
+## Yerli {#native}
 
 En verimli biçim. Veriler ikili formatta bloklar tarafından yazılır ve okunur. Her blok için satır sayısı, sütun sayısı, sütun adları ve türleri ve bu bloktaki sütunların parçaları birbiri ardına kaydedilir. Başka bir deyişle, bu format “columnar” – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
@@ -993,7 +993,11 @@ ClickHouse Avro biçimi okuma ve yazma destekler [Avro veri dosyaları](http://a
 
 ### Veri Türleri Eşleştirme {#data_types-matching}
 
+<<<<<<< HEAD
 Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql_reference/data_types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+=======
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+>>>>>>> upstream/master
 
 | Avro veri türü `INSERT`                     | ClickHouse veri türü                                                                                              | Avro veri türü `SELECT`      |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
@@ -1101,7 +1105,11 @@ SELECT * FROM topic1_stream;
 
 ### Veri Türleri Eşleştirme {#data_types-matching-2}
 
+<<<<<<< HEAD
 Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql_reference/data_types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+=======
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` ve `SELECT` sorgular.
+>>>>>>> upstream/master
 
 | Parke veri türü (`INSERT`) | ClickHouse veri türü                                      | Parke veri türü (`SELECT`) |
 |----------------------------|-----------------------------------------------------------|----------------------------|
@@ -1149,7 +1157,11 @@ Hadoop ile veri alışverişi yapmak için şunları kullanabilirsiniz [HDFS tab
 
 ### Veri Türleri Eşleştirme {#data_types-matching-3}
 
+<<<<<<< HEAD
 Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql_reference/data_types/index.md) içinde `INSERT` sorgular.
+=======
+Aşağıdaki tablo, desteklenen veri türlerini ve Clickhouse'la nasıl eşleştiğini gösterir [veri türleri](../sql-reference/data-types/index.md) içinde `INSERT` sorgular.
+>>>>>>> upstream/master
 
 | Orc veri türü (`INSERT`) | ClickHouse veri türü                                |
 |--------------------------|-----------------------------------------------------|

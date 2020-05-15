@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 69
 toc_title: "ClickHouse testleri nas\u0131l \xE7al\u0131\u015Ft\u0131r\u0131l\u0131\
   r"
@@ -200,13 +200,23 @@ Hata ayıklama sürümü `jemalloc` hata ayıklama oluşturmak için kullanılı
 
 ## Fuzzing {#fuzzing}
 
-Rastgele SQL sorguları oluşturmak ve sunucunun ölmediğini kontrol etmek için basit fuzz testi kullanıyoruz. Fuzz testi Adres dezenfektanı ile yapılır. İçinde bulabilirsiniz `00746_sql_fuzzy.pl`. Bu test sürekli olarak (gece ve daha uzun) çalıştırılmalıdır.
+ClickHouse fuzzing hem kullanılarak uygulanmaktadır [libFuzzer](https://llvm.org/docs/LibFuzzer.html) ve rastgele SQL sorguları.
+Tüm fuzz testleri sanitizers (Adres ve tanımsız) ile yapılmalıdır.
 
-Aralık 2018 itibariyle, hala kütüphane kodunun izole fuzz testini kullanmıyoruz.
+LibFuzzer kütüphane kodu izole fuzz testi için kullanılır. Fuzzers test kodunun bir parçası olarak uygulanır ve “\_fuzzer” adı postfixes.
+Fuzzer örneği bulunabilir `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer özgü yapılandırmalar, sözlükler ve corpus saklanır `tests/fuzz`.
+Kullanıcı girişini işleyen her işlevsellik için fuzz testleri yazmanızı öneririz.
+
+Fuzzers varsayılan olarak oluşturulmaz. Hem fuzzers inşa etmek `-DENABLE_FUZZING=1` ve `-DENABLE_TESTS=1` seçenekler ayarlanmalıdır.
+Fuzzers oluştururken Jemalloc'u devre dışı bırakmanızı öneririz. ClickHouse fuzzing'i entegre etmek için kullanılan yapılandırma
+Google OSS-Fuzz bulunabilir `docker/fuzz`.
+
+Ayrıca rastgele SQL sorguları oluşturmak ve sunucunun bunları çalıştırarak ölmediğini kontrol etmek için basit fuzz testi kullanıyoruz.
+İçinde bulabilirsiniz `00746_sql_fuzzy.pl`. Bu test sürekli olarak (gece ve daha uzun) çalıştırılmalıdır.
 
 ## Güvenlik Denetimi {#security-audit}
 
-Yandex Bulut departmanından insanlar, güvenlik açısından ClickHouse yeteneklerine bazı temel genel bakışlar yaparlar.
+Yandex Güvenlik ekibinden insanlar güvenlik açısından ClickHouse yetenekleri bazı temel bakış yapmak.
 
 ## Statik Analizörler {#static-analyzers}
 

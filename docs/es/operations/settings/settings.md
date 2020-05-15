@@ -1,15 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_priority: 60
-toc_title: "Configuraci\xF3n"
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 ---
 
 # Configuración {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
+<<<<<<< HEAD
 Cambia el comportamiento de [subconsultas distribuidas](../../sql_reference/statements/select.md).
+=======
+Cambia el comportamiento de [subconsultas distribuidas](../../sql-reference/operators/in.md).
+>>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -136,7 +138,11 @@ Valor predeterminado: 0.
 
 ## Nombre de la red inalámbrica (SSID): {#setting-max_http_get_redirects}
 
+<<<<<<< HEAD
 Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table_engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../query_language/create/#create-table-query) consulta y por el [URL](../../sql_reference/table_functions/url.md) función de la tabla.
+=======
+Limita el número máximo de saltos de redirección HTTP GET para [URL](../../engines/table-engines/special/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREATE TABLE](../../sql-reference/statements/create.md#create-table-query) consulta y por el [URL](../../sql-reference/table-functions/url.md) función de la tabla.
+>>>>>>> upstream/master
 
 Valores posibles:
 
@@ -222,17 +228,24 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Habilita o deshabilita la deducción de plantilla para expresiones SQL en [Valor](../../interfaces/formats.md#data-format-values) formato. Permite analizar e interpretar expresiones en `Values` mucho más rápido si las expresiones en filas consecutivas tienen la misma estructura. ClickHouse intentará deducir la plantilla de una expresión, analizar las siguientes filas utilizando esta plantilla y evaluar la expresión en un lote de filas analizadas correctamente. Para la siguiente consulta:
+Habilita o deshabilita la deducción de plantilla para expresiones SQL en [Valor](../../interfaces/formats.md#data-format-values) formato. Permite analizar e interpretar expresiones en `Values` mucho más rápido si las expresiones en filas consecutivas tienen la misma estructura. ClickHouse intenta deducir la plantilla de una expresión, analizar las siguientes filas utilizando esta plantilla y evaluar la expresión en un lote de filas analizadas correctamente.
+
+Valores posibles:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Valor predeterminado: 1.
+
+Para la siguiente consulta:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=0` Las expresiones se interpretarán por separado para cada fila (esto es muy lento para un gran número de filas)
--   si `input_format_values_interpret_expressions=0` y `format_values_deduce_templates_of_expressions=1` Las expresiones en la primera, segunda y tercera filas se analizarán usando la plantilla `lower(String)` e interpretados juntos, la expresión es la cuarta fila se analizará con otra plantilla (`upper(String)`)
--   si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=1` - lo mismo que en el caso anterior, pero también permite la alternativa a la interpretación de expresiones por separado si no es posible deducir la plantilla.
-
-Habilitado de forma predeterminada.
+-   Si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=0`, las expresiones se interpretan por separado para cada fila (esto es muy lento para un gran número de filas).
+-   Si `input_format_values_interpret_expressions=0` y `format_values_deduce_templates_of_expressions=1`, las expresiones en la primera, segunda y tercera filas se analizan usando la plantilla `lower(String)` e interpretados juntos, la expresión en la cuarta fila se analiza con otra plantilla (`upper(String)`).
+-   Si `input_format_values_interpret_expressions=1` y `format_values_deduce_templates_of_expressions=1`, lo mismo que en el caso anterior, pero también permite la alternativa a la interpretación de expresiones por separado si no es posible deducir la plantilla.
 
 ## Entrada\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
@@ -244,9 +257,17 @@ Esta configuración sólo se utiliza cuando `input_format_values_deduce_template
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-Cuando esta configuración está habilitada, ClickHouse comprobará el tipo real de literal y utilizará una plantilla de expresión del tipo correspondiente. En algunos casos, puede ralentizar significativamente la evaluación de expresiones en `Values`.
-When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` o `Int64` en lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
-Habilitado de forma predeterminada.
+Valores posibles:
+
+-   0 — Disabled.
+
+    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` o `Int64` en lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
+
+-   1 — Enabled.
+
+    En este caso, ClickHouse comprueba el tipo real de literal y utiliza una plantilla de expresión del tipo correspondiente. En algunos casos, puede ralentizar significativamente la evaluación de expresiones en `Values`.
+
+Valor predeterminado: 1.
 
 ## Entrada\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
@@ -274,7 +295,7 @@ Habilita o deshabilita el uso de valores predeterminados si los datos de entrada
 
 ## input\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
 
-Habilita o deshabilita saltarse la inserción de datos adicionales.
+Habilita o deshabilita omitir la inserción de datos adicionales.
 
 Al escribir datos, ClickHouse produce una excepción si los datos de entrada contienen columnas que no existen en la tabla de destino. Si la omisión está habilitada, ClickHouse no inserta datos adicionales y no lanza una excepción.
 
@@ -296,7 +317,7 @@ Valor predeterminado: 0.
 
 Habilita o deshabilita la inserción de datos JSON con objetos anidados.
 
-Formatos compatibles:
+Formatos soportados:
 
 -   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 
@@ -311,7 +332,7 @@ Ver también:
 
 -   [Uso de estructuras anidadas](../../interfaces/formats.md#jsoneachrow-nested) con el `JSONEachRow` formato.
 
-## input\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
+## Entrada\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
 
 Habilita o deshabilita la comprobación del orden de las columnas al insertar datos.
 
@@ -354,7 +375,11 @@ Ver también:
 
 ## Por favor, introduzca su dirección de correo electrónico {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 Establece el rigor predeterminado para [Cláusulas JOIN](../../sql_reference/statements/select.md#select-join).
+=======
+Establece el rigor predeterminado para [Cláusulas JOIN](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 Valores posibles:
 
@@ -381,6 +406,7 @@ Valor predeterminado: 0.
 
 Ver también:
 
+<<<<<<< HEAD
 -   [Cláusula JOIN](../../sql_reference/statements/select.md#select-join)
 -   [Unirse al motor de tabla](../../engines/table_engines/special/join.md)
 -   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
@@ -388,6 +414,15 @@ Ver también:
 ## Sistema abierto. {#join_use_nulls}
 
 Establece el tipo de [JOIN](../../sql_reference/statements/select.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
+=======
+-   [Cláusula JOIN](../../sql-reference/statements/select/join.md#select-join)
+-   [Unirse al motor de tabla](../../engines/table-engines/special/join.md)
+-   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
+
+## Sistema abierto {#join_use_nulls}
+
+Establece el tipo de [JOIN](../../sql-reference/statements/select/join.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
+>>>>>>> upstream/master
 
 Valores posibles:
 
@@ -412,7 +447,11 @@ Por defecto: 1,000,000. Solo funciona cuando se lee desde los motores MergeTree.
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
+<<<<<<< HEAD
 Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table_engines/mergetree_family/mergetree.md) tabla supera `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
+=======
+Si el número de filas que se leerán de un fichero [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) mesa excede `merge_tree_min_rows_for_concurrent_read` luego ClickHouse intenta realizar una lectura simultánea de este archivo en varios hilos.
+>>>>>>> upstream/master
 
 Valores posibles:
 
@@ -484,7 +523,11 @@ Valor posible:
 
 Valor predeterminado: 2013265920.
 
+<<<<<<< HEAD
 ## Todos los derechos reservados. {#settings-min-bytes-to-use-direct-io}
+=======
+## Todos los derechos reservados {#settings-min-bytes-to-use-direct-io}
+>>>>>>> upstream/master
 
 El volumen de datos mínimo necesario para utilizar el acceso directo de E/S al disco de almacenamiento.
 
@@ -507,6 +550,24 @@ Ejemplo:
 
 ``` text
 log_queries=1
+```
+
+## Nombre de la red inalámbrica (SSID): {#settings-log-queries-min-type}
+
+`query_log` tipo mínimo para iniciar sesión.
+
+Valores posibles:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Valor predeterminado: `QUERY_START`.
+
+Se puede usar para limitar a qué entiries va `query_log`, digamos que eres interesante solo en errores, entonces puedes usar `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
 ## Log\_query\_threads {#settings-log-query-threads}
@@ -532,6 +593,28 @@ La configuración tampoco tiene un propósito cuando se usa INSERT SELECT , ya q
 Valor predeterminado: 1.048.576.
 
 El valor predeterminado es ligeramente más que `max_block_size`. La razón de esto se debe a que ciertos motores de mesa (`*MergeTree`) formar una parte de datos en el disco para cada bloque insertado, que es una entidad bastante grande. Similar, `*MergeTree` las tablas ordenan los datos durante la inserción y un tamaño de bloque lo suficientemente grande permiten clasificar más datos en la RAM.
+
+## Nombre de la red inalámbrica (SSID): {#min-insert-block-size-rows}
+
+Establece el número mínimo de filas en el bloque que se pueden insertar en una tabla `INSERT` consulta. Los bloques de menor tamaño se aplastan en otros más grandes.
+
+Valores posibles:
+
+-   Entero positivo.
+-   0 — Squashing disabled.
+
+Valor predeterminado: 1048576.
+
+## Todos los derechos reservados {#min-insert-block-size-bytes}
+
+Establece el número mínimo de bytes en el bloque que se pueden insertar en una tabla `INSERT` consulta. Los bloques de menor tamaño se aplastan en otros más grandes.
+
+Valores posibles:
+
+-   Entero positivo.
+-   0 — Squashing disabled.
+
+Valor predeterminado: 268435456.
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -773,7 +856,7 @@ Si se compiló esta parte de la canalización, la consulta puede ejecutarse más
 
 ## min\_count\_to\_compile {#min-count-to-compile}
 
-¿cuántas veces usar potencialmente un fragmento de código compilado antes de ejecutar la compilación? por defecto, 3.
+¿Cuántas veces usar potencialmente un fragmento de código compilado antes de ejecutar la compilación? Por defecto, 3.
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
 Si el valor es 1 o más, la compilación se produce de forma asíncrona en un subproceso independiente. El resultado se utilizará tan pronto como esté listo, incluidas las consultas que se están ejecutando actualmente.
 
@@ -869,7 +952,7 @@ Valores posibles:
 
 Valor predeterminado: 1.
 
-De forma predeterminada, los bloques insertados en tablas replicadas `INSERT` (consulte \[Replicación de datos\] (../engines/table\_engines/mergetree\_family/replication.md).
+De forma predeterminada, los bloques insertados en tablas replicadas `INSERT` declaración se deduplican (ver [Replicación de datos](../../engines/table-engines/mergetree-family/replication.md)).
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -911,7 +994,11 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
+<<<<<<< HEAD
 ## Todos los derechos reservados. {#settings-max-network-bandwidth-for-user}
+=======
+## Todos los derechos reservados {#settings-max-network-bandwidth-for-user}
+>>>>>>> upstream/master
 
 Limita la velocidad del intercambio de datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas que se ejecutan simultáneamente realizadas por un único usuario.
 
@@ -922,7 +1009,11 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
+<<<<<<< HEAD
 ## Todos los derechos reservados. {#settings-max-network-bandwidth-for-all-users}
+=======
+## Todos los derechos reservados {#settings-max-network-bandwidth-for-all-users}
+>>>>>>> upstream/master
 
 Limita la velocidad a la que se intercambian datos a través de la red en bytes por segundo. Esta configuración se aplica a todas las consultas que se ejecutan simultáneamente en el servidor.
 
@@ -1167,7 +1258,11 @@ Habilitar el análisis paralelo de los formatos de datos para preservar el orden
 
 El tamaño mínimo de fragmento en bytes, que cada subproceso analizará en paralelo.
 
+<<<<<<< HEAD
 ## Sistema abierto. {#settings-output_format_avro_codec}
+=======
+## Sistema abierto {#settings-output_format_avro_codec}
+>>>>>>> upstream/master
 
 Establece el códec de compresión utilizado para el archivo Avro de salida.
 
@@ -1181,7 +1276,11 @@ Valores posibles:
 
 Valor predeterminado: `snappy` (si está disponible) o `deflate`.
 
+<<<<<<< HEAD
 ## Sistema abierto. {#settings-output_format_avro_sync_interval}
+=======
+## Sistema abierto {#settings-output_format_avro_sync_interval}
+>>>>>>> upstream/master
 
 Establece el tamaño mínimo de datos (en bytes) entre los marcadores de sincronización para el archivo Avro de salida.
 
@@ -1191,12 +1290,26 @@ Valores posibles: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Valor predeterminado: 32768 (32 KiB)
 
+<<<<<<< HEAD
 ## Todos los derechos reservados. {#settings-format_avro_schema_registry_url}
+=======
+## Todos los derechos reservados {#settings-format_avro_schema_registry_url}
+>>>>>>> upstream/master
 
 Establece la URL del Registro de esquemas confluentes para usar con [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) formato
 
 Tipo: URL
 
 Valor predeterminado: Vacío
+
+## background\_pool\_size {#background_pool_size}
+
+Establece el número de subprocesos que realizan operaciones en segundo plano en motores de tabla (por ejemplo, fusiona [Motor MergeTree](../../engines/table-engines/mergetree-family/index.md) tabla). Esta configuración se aplica al inicio del servidor ClickHouse y no se puede cambiar en una sesión de usuario. Al ajustar esta configuración, puede administrar la carga de la CPU y el disco. Un tamaño de grupo más pequeño utiliza menos recursos de CPU y disco, pero los procesos en segundo plano avanzan más lentamente, lo que eventualmente podría afectar el rendimiento de la consulta.
+
+Valores posibles:
+
+-   Cualquier entero positivo.
+
+Valor predeterminado: 16.
 
 [Artículo Original](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

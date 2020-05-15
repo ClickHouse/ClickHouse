@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
-toc_folder_title: Operations
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "Op\xE9rations"
 toc_priority: 41
 toc_title: Introduction
 ---
@@ -15,7 +15,11 @@ Le manuel d'exploitation de ClickHouse comprend les principales sections suivant
 -   [Dépannage](troubleshooting.md)
 -   [Recommandations D'Utilisation](tips.md)
 -   [Procédure De Mise À Jour](update.md)
+<<<<<<< HEAD
 -   [Les Droits D'Accès](access_rights.md)
+=======
+-   [Les Droits D'Accès](access-rights.md)
+>>>>>>> upstream/master
 -   [La Sauvegarde Des Données](backup.md)
 -   [Fichiers De Configuration](configuration_files.md)
 -   [Quota](quotas.md)
@@ -25,4 +29,4 @@ Le manuel d'exploitation de ClickHouse comprend les principales sections suivant
 -   [Paramètre](settings/index.md)
 -   [Utilitaire](utilities/index.md)
 
-[Article Original](https://clickhouse.tech/docs/en/operations/) <!--hide-->
+{## [Article Original](https://clickhouse.tech/docs/en/operations/) ##}

@@ -83,12 +83,12 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
+    InterpreterShowAccessEntitiesQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
+    InterpreterShowPrivilegesQuery.cpp
     InterpreterShowProcesslistQuery.cpp
-    InterpreterShowQuotasQuery.cpp
-    InterpreterShowRowPoliciesQuery.cpp
     InterpreterShowTablesQuery.cpp
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp

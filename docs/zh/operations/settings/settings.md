@@ -1,15 +1,23 @@
 ---
 machine_translated: true
+<<<<<<< HEAD
 machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 60
 toc_title: "\u8BBE\u7F6E"
+=======
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+>>>>>>> upstream/master
 ---
 
 # 设置 {#settings}
 
 ## 分布\_产品\_模式 {#distributed-product-mode}
 
+<<<<<<< HEAD
 改变的行为 [分布式子查询](../../sql_reference/statements/select.md).
+=======
+改变的行为 [分布式子查询](../../sql-reference/operators/in.md).
+>>>>>>> upstream/master
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -222,17 +230,24 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-启用或禁用以下内容中的SQL表达式的模板扣除 [值](../../interfaces/formats.md#data-format-values) 格式。 它允许解析和解释表达式 `Values` 如果连续行中的表达式具有相同的结构，速度要快得多。 ClickHouse将尝试推导表达式的模板，使用此模板解析以下行，并在一批成功解析的行上评估表达式。 对于以下查询:
+启用或禁用以下内容中的SQL表达式的模板扣除 [值](../../interfaces/formats.md#data-format-values) 格式。 它允许解析和解释表达式 `Values` 如果连续行中的表达式具有相同的结构，速度要快得多。 ClickHouse尝试推导表达式的模板，使用此模板解析以下行，并在一批成功解析的行上评估表达式。
+
+可能的值:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+默认值：1。
+
+对于以下查询:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   如果 `input_format_values_interpret_expressions=1` 和 `format_values_deduce_templates_of_expressions=0` 表达式将单独解释每行（对于大量行来说，这非常慢)
--   如果 `input_format_values_interpret_expressions=0` 和 `format_values_deduce_templates_of_expressions=1` 第一行，第二行和第三行中的表达式将使用template进行分析 `lower(String)` 并一起解释，expression是第四行将与另一个模板进行解析 (`upper(String)`)
--   如果 `input_format_values_interpret_expressions=1` 和 `format_values_deduce_templates_of_expressions=1` -与前面的情况相同，但如果无法推断模板，也可以回退到单独解释表达式。
-
-默认情况下启用。
+-   如果 `input_format_values_interpret_expressions=1` 和 `format_values_deduce_templates_of_expressions=0`，表达式为每行分别解释（对于大量行来说，这非常慢）。
+-   如果 `input_format_values_interpret_expressions=0` 和 `format_values_deduce_templates_of_expressions=1`，第一，第二和第三行中的表达式使用template解析 `lower(String)` 并一起解释，第四行中的表达式用另一个模板解析 (`upper(String)`).
+-   如果 `input_format_values_interpret_expressions=1` 和 `format_values_deduce_templates_of_expressions=1`，与前面的情况相同，但如果不可能推导出模板，也允许回退到单独解释表达式。
 
 ## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
@@ -244,9 +259,17 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-启用此设置后，ClickHouse将检查文本的实际类型，并使用相应类型的表达式模板。 在某些情况下，可能会显着减慢表达式评估 `Values`.
-When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` 或 `Int64` 而不是 `UInt64` 为 `42`），但它可能会导致溢出和精度问题。
-默认情况下启用。
+可能的值:
+
+-   0 — Disabled.
+
+    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` 或 `Int64` 而不是 `UInt64` 为 `42`），但它可能会导致溢出和精度问题。
+
+-   1 — Enabled.
+
+    在这种情况下，ClickHouse会检查文本的实际类型，并使用相应类型的表达式模板。 在某些情况下，可能会显着减慢表达式评估 `Values`.
+
+默认值：1。
 
 ## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
@@ -354,7 +377,11 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
+<<<<<<< HEAD
 设置默认严格性 [加入子句](../../sql_reference/statements/select.md#select-join).
+=======
+设置默认严格性 [加入子句](../../sql-reference/statements/select/join.md#select-join).
+>>>>>>> upstream/master
 
 可能的值:
 
@@ -381,13 +408,22 @@ When disabled, ClickHouse may use more general type for some literals (e.g. `Fl
 
 另请参阅:
 
+<<<<<<< HEAD
 -   [JOIN子句](../../sql_reference/statements/select.md#select-join)
 -   [联接表引擎](../../engines/table_engines/special/join.md)
+=======
+-   [JOIN子句](../../sql-reference/statements/select/join.md#select-join)
+-   [联接表引擎](../../engines/table-engines/special/join.md)
+>>>>>>> upstream/master
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
+<<<<<<< HEAD
 设置类型 [JOIN](../../sql_reference/statements/select.md) 行为 合并表时，可能会出现空单元格。 ClickHouse根据此设置以不同的方式填充它们。
+=======
+设置类型 [JOIN](../../sql-reference/statements/select/join.md) 行为 合并表时，可能会出现空单元格。 ClickHouse根据此设置以不同的方式填充它们。
+>>>>>>> upstream/master
 
 可能的值:
 
@@ -509,6 +545,24 @@ ClickHouse在从表中读取数据时使用此设置。 如果要读取的所有
 log_queries=1
 ```
 
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` 要记录的最小类型。
+
+可能的值:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+默认值: `QUERY_START`.
+
+可以用来限制哪些entiries将去 `query_log`，说你只有在错误中才感兴趣，那么你可以使用 `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## log\_query\_threads {#settings-log-query-threads}
 
 设置查询线程日志记录。
@@ -532,6 +586,28 @@ log_query_threads=1
 默认值：1,048,576。
 
 默认值略高于 `max_block_size`. 这样做的原因是因为某些表引擎 (`*MergeTree`）在磁盘上为每个插入的块形成一个数据部分，这是一个相当大的实体。 同样, `*MergeTree` 表在插入过程中对数据进行排序，并且足够大的块大小允许在RAM中对更多数据进行排序。
+
+## min\_insert\_block\_size\_rows {#min-insert-block-size-rows}
+
+设置块中可以通过以下方式插入到表中的最小行数 `INSERT` 查询。 较小尺寸的块被压扁成较大的块。
+
+可能的值:
+
+-   整数。
+-   0 — Squashing disabled.
+
+默认值：1048576。
+
+## min\_insert\_block\_size\_bytes {#min-insert-block-size-bytes}
+
+设置块中的最小字节数，可以通过以下方式插入到表中 `INSERT` 查询。 较小尺寸的块被压扁成较大的块。
+
+可能的值:
+
+-   整数。
+-   0 — Squashing disabled.
+
+默认值:268435456.
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -869,7 +945,7 @@ ClickHouse生成异常
 
 默认值：1。
 
-默认情况下，块插入到复制的表 `INSERT` 重复数据删除语句（请参阅\[数据复制\]（../engines/table\_engines/mergetree\_family/replication.md）。
+默认情况下，块插入到复制的表 `INSERT` 语句重复数据删除（见 [数据复制](../../engines/table-engines/mergetree-family/replication.md)).
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -1199,4 +1275,17 @@ ClickHouse生成异常
 
 默认值：空
 
+<<<<<<< HEAD
+=======
+## background\_pool\_size {#background_pool_size}
+
+设置在表引擎中执行后台操作的线程数（例如，合并 [MergeTree引擎](../../engines/table-engines/mergetree-family/index.md) 表）。 此设置在ClickHouse服务器启动时应用，不能在用户会话中更改。 通过调整此设置，您可以管理CPU和磁盘负载。 较小的池大小使用较少的CPU和磁盘资源，但后台进程推进速度较慢，最终可能会影响查询性能。
+
+可能的值:
+
+-   任何正整数。
+
+默认值：16。
+
+>>>>>>> upstream/master
 [原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

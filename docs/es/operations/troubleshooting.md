@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "Soluci\xF3n de problemas"
 ---
@@ -14,7 +14,11 @@ toc_title: "Soluci\xF3n de problemas"
 
 ## Instalación {#troubleshooting-installation-errors}
 
+<<<<<<< HEAD
 ### No puede obtener paquetes Deb del repositorio de Clickhouse con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+=======
+### No puede obtener paquetes Deb del repositorio ClickHouse con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+>>>>>>> upstream/master
 
 -   Compruebe la configuración del firewall.
 -   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting_started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.

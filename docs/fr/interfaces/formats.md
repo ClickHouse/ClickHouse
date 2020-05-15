@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: "Formats d'entr\xE9e et de sortie"
 ---
@@ -110,7 +110,11 @@ Seul un petit ensemble de symboles sont échappés. Vous pouvez facilement tombe
 
 Les tableaux sont écrits sous la forme d'une liste de valeurs séparées par des virgules entre crochets. Le nombre d'éléments dans le tableau sont formatés comme normalement. `Date` et `DateTime` les types sont écrits entre guillemets simples. Les chaînes sont écrites entre guillemets simples avec les mêmes règles d'échappement que ci-dessus.
 
+<<<<<<< HEAD
 [NULL](../sql_reference/syntax.md) est formaté en tant qu' `\N`.
+=======
+[NULL](../sql-reference/syntax.md) est formaté en tant qu' `\N`.
+>>>>>>> upstream/master
 
 Chaque élément de [Imbriqué](../sql_reference/data_types/nested_data_structures/nested.md) structures est représenté sous forme de tableau.
 
@@ -332,7 +336,11 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
+<<<<<<< HEAD
 [NULL](../sql_reference/syntax.md) est formaté en tant qu' `\N`.
+=======
+[NULL](../sql-reference/syntax.md) est formaté en tant qu' `\N`.
+>>>>>>> upstream/master
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -464,7 +472,11 @@ Si la requête contient GROUP BY, rows\_before\_limit\_at\_least est le nombre e
 
 Ce format n'est approprié que pour la sortie d'un résultat de requête, mais pas pour l'analyse (récupération des données à insérer dans une table).
 
+<<<<<<< HEAD
 Supports ClickHouse [NULL](../sql_reference/syntax.md) s'affiche à l'écran `null` dans la sortie JSON.
+=======
+Supports ClickHouse [NULL](../sql-reference/syntax.md) s'affiche à l'écran `null` dans la sortie JSON.
+>>>>>>> upstream/master
 
 Voir aussi l' [JSONEachRow](#jsoneachrow) format.
 
@@ -764,7 +776,11 @@ FixedString est représenté simplement comme une séquence d'octets.
 
 Le tableau est représenté sous la forme d'une longueur varint (non signée [LEB128](https://en.wikipedia.org/wiki/LEB128)), suivie par les éléments de la matrice.
 
+<<<<<<< HEAD
 Pour [NULL](../sql_reference/syntax.md#null-literal) un soutien, un octet supplémentaire contenant 1 ou 0 est ajouté avant chaque [Nullable](../sql_reference/data_types/nullable.md) valeur. Si la valeur est 1, alors la valeur est `NULL` et cet octet est interprétée comme une valeur distincte. Si 0, la valeur après l'octet n'est pas `NULL`.
+=======
+Pour [NULL](../sql-reference/syntax.md#null-literal) un soutien, un octet supplémentaire contenant 1 ou 0 est ajouté avant chaque [Nullable](../sql-reference/data-types/nullable.md) valeur. Si la valeur est 1, alors la valeur est `NULL` et cet octet est interprétée comme une valeur distincte. Si 0, la valeur après l'octet n'est pas `NULL`.
+>>>>>>> upstream/master
 
 ## Rowbinarywithnamesettypes {#rowbinarywithnamesandtypes}
 
@@ -776,7 +792,11 @@ Semblable à [RowBinary](#rowbinary) mais avec l'ajout de l'en-tête:
 
 ## Valeur {#data-format-values}
 
+<<<<<<< HEAD
 Imprime chaque ligne entre parenthèses. Les lignes sont séparées par des virgules. Il n'y a pas de virgule après la dernière ligne. Les valeurs entre parenthèses sont également séparées par des virgules. Les nombres sont produits dans un format décimal sans guillemets. Les tableaux sont affichés entre crochets. Les chaînes, les dates et les dates avec des heures sont affichées entre guillemets. Les règles d'échappement et l'analyse sont similaires à [TabSeparated](#tabseparated) format. Pendant le formatage, les espaces supplémentaires ne sont pas insérés, mais pendant l'analyse, ils sont autorisés et ignorés (sauf pour les espaces à l'intérieur des valeurs de tableau, qui ne sont pas autorisés). [NULL](../sql_reference/syntax.md) est représentée comme `NULL`.
+=======
+Imprime chaque ligne entre parenthèses. Les lignes sont séparées par des virgules. Il n'y a pas de virgule après la dernière ligne. Les valeurs entre parenthèses sont également séparées par des virgules. Les nombres sont produits dans un format décimal sans guillemets. Les tableaux sont affichés entre crochets. Les chaînes, les dates et les dates avec des heures sont affichées entre guillemets. Les règles d'échappement et l'analyse sont similaires à [TabSeparated](#tabseparated) format. Pendant le formatage, les espaces supplémentaires ne sont pas insérés, mais pendant l'analyse, ils sont autorisés et ignorés (sauf pour les espaces à l'intérieur des valeurs de tableau, qui ne sont pas autorisés). [NULL](../sql-reference/syntax.md) est représentée comme `NULL`.
+>>>>>>> upstream/master
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
@@ -967,7 +987,11 @@ message MessageType {
 ```
 
 ClickHouse tente de trouver une colonne nommée `x.y.z` (ou `x_y_z` ou `X.y_Z` et ainsi de suite).
+<<<<<<< HEAD
 Les messages imbriqués conviennent à l'entrée ou à la sortie d'un [structures de données imbriquées](../sql_reference/data_types/nested_data_structures/nested.md).
+=======
+Les messages imbriqués conviennent à l'entrée ou à la sortie d'un [structures de données imbriquées](../sql-reference/data-types/nested-data-structures/nested.md).
+>>>>>>> upstream/master
 
 Valeurs par défaut définies dans un schéma protobuf comme ceci
 
@@ -1030,7 +1054,11 @@ Le schéma racine du fichier Avro d'entrée doit être de `record` type.
 Pour trouver la correspondance entre les colonnes de table et les champs du schéma Avro ClickHouse compare leurs noms. Cette comparaison est sensible à la casse.
 Les champs inutilisés sont ignorés.
 
+<<<<<<< HEAD
 Les types de données des colonnes de la table ClickHouse peuvent différer des champs correspondants des données Avro insérées. Lors de l'insertion de données, ClickHouse interprète les types de données selon le tableau ci-dessus, puis [jeter](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) les données au type de colonne correspondant.
+=======
+Les types de données des colonnes de la table ClickHouse peuvent différer des champs correspondants des données Avro insérées. Lors de l'insertion de données, ClickHouse interprète les types de données selon le tableau ci-dessus, puis [jeter](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) les données au type de colonne correspondant.
+>>>>>>> upstream/master
 
 ### La Sélection De Données {#selecting-data-1}
 
@@ -1153,6 +1181,7 @@ Le tableau ci-dessous montre les types de données pris en charge et comment ils
 
 | Type de données ORC (`INSERT`) | Type de données ClickHouse                          |
 |--------------------------------|-----------------------------------------------------|
+<<<<<<< HEAD
 | `UINT8`, `BOOL`                | [UInt8](../sql_reference/data_types/int_uint.md)    |
 | `INT8`                         | [Int8](../sql_reference/data_types/int_uint.md)     |
 | `UINT16`                       | [UInt16](../sql_reference/data_types/int_uint.md)   |
@@ -1167,12 +1196,32 @@ Le tableau ci-dessous montre les types de données pris en charge et comment ils
 | `DATE64`, `TIMESTAMP`          | [DateTime](../sql_reference/data_types/datetime.md) |
 | `STRING`, `BINARY`             | [Chaîne](../sql_reference/data_types/string.md)     |
 | `DECIMAL`                      | [Décimal](../sql_reference/data_types/decimal.md)   |
+=======
+| `UINT8`, `BOOL`                | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                         | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`                       | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                        | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`                       | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                        | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`                       | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                        | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`          | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`                       | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`                       | [Date](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`          | [DateTime](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`             | [Chaîne](../sql-reference/data-types/string.md)     |
+| `DECIMAL`                      | [Décimal](../sql-reference/data-types/decimal.md)   |
+>>>>>>> upstream/master
 
 Clickhouse prend en charge la précision configurable de la `Decimal` type. Le `INSERT` requête traite de l'ORC `DECIMAL` tapez comme le ClickHouse `Decimal128` type.
 
 Types de données ORC non pris en charge: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
+<<<<<<< HEAD
 Les types de données des colonnes de la table ClickHouse ne doivent pas correspondre aux champs de données Orc correspondants. Lors de l'insertion de données, ClickHouse interprète les types de données selon le tableau ci-dessus, puis [jeter](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) les données du type de données défini pour la colonne clickhouse table.
+=======
+Les types de données des colonnes de la table ClickHouse ne doivent pas correspondre aux champs de données Orc correspondants. Lors de l'insertion de données, ClickHouse interprète les types de données selon le tableau ci-dessus, puis [jeter](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) les données du type de données défini pour la colonne clickhouse table.
+>>>>>>> upstream/master
 
 ### Insertion De Données {#inserting-data-2}
 

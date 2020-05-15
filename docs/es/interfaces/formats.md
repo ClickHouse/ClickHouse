@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 21
 toc_title: Formatos de entrada y salida
 ---
@@ -317,7 +317,7 @@ format_template_resultset = '/some/path/resultset.format', format_template_row =
 
 ## TSKV {#tskv}
 
-Similar a TabSeparated, pero las salidas de un valor en nombre=valor de formato. Los nombres se escapó de la misma manera como en TabSeparated formato, y el símbolo = es también escapó.
+Similar a TabSeparated , pero genera un valor en formato name=value . Los nombres se escapan de la misma manera que en el formato TabSeparated, y el símbolo = también se escapa.
 
 ``` text
 SearchPhrase=   count()=8267016
@@ -786,7 +786,7 @@ Ver también: [input\_format\_values\_interpret\_expressions](../operations/sett
 
 ## Vertical {#vertical}
 
-Imprime cada valor en una línea independiente con el nombre de la columna especificada. Este formato es conveniente para imprimir solo una o varias filas si cada fila consta de un gran número de columnas.
+Imprime cada valor en una línea independiente con el nombre de columna especificado. Este formato es conveniente para imprimir solo una o varias filas si cada fila consta de un gran número de columnas.
 
 [NULL](../sql_reference/syntax.md) se emite como `ᴺᵁᴸᴸ`.
 
@@ -997,6 +997,7 @@ La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con Cl
 
 | Tipo de datos Avro `INSERT`                 | Tipo de datos ClickHouse                                                                                                | Tipo de datos Avro `SELECT`  |
 |---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|------------------------------|
+<<<<<<< HEAD
 | `boolean`, `int`, `long`, `float`, `double` | [¿cómo funciona?)](../sql_reference/data_types/int_uint.md), [UInt(8\|16\|32)](../sql_reference/data_types/int_uint.md) | `int`                        |
 | `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql_reference/data_types/int_uint.md), [UInt64](../sql_reference/data_types/int_uint.md)                     | `long`                       |
 | `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql_reference/data_types/float.md)                                                                         | `float`                      |
@@ -1010,6 +1011,21 @@ La siguiente tabla muestra los tipos de datos admitidos y cómo coinciden con Cl
 | `int (date)` \*                             | [Fecha](../sql_reference/data_types/date.md)                                                                            | `int (date)` \*              |
 | `long (timestamp-millis)` \*                | [¿qué puedes encontrar en neodigit)](../sql_reference/data_types/datetime.md)                                           | `long (timestamp-millis)` \* |
 | `long (timestamp-micros)` \*                | [Cómo hacer esto?)](../sql_reference/data_types/datetime.md)                                                            | `long (timestamp-micros)` \* |
+=======
+| `boolean`, `int`, `long`, `float`, `double` | [¿Cómo funciona?)](../sql-reference/data-types/int-uint.md), [UInt(8\|16\|32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)                     | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                         | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                         | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [Cadena](../sql-reference/data-types/string.md)                                                                         | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [Cadena fija (N)](../sql-reference/data-types/fixedstring.md)                                                           | `fixed(N)`                   |
+| `enum`                                      | [Enum (8\|16)](../sql-reference/data-types/enum.md)                                                                     | `enum`                       |
+| `array(T)`                                  | [Matriz (T)](../sql-reference/data-types/array.md)                                                                      | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [Nivel de Cifrado WEP)](../sql-reference/data-types/date.md)                                                            | `union(null, T)`             |
+| `null`                                      | [Nullable (nada)](../sql-reference/data-types/special-data-types/nothing.md)                                            | `null`                       |
+| `int (date)` \*                             | [Fecha](../sql-reference/data-types/date.md)                                                                            | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [¿Qué puedes encontrar en Neodigit)](../sql-reference/data-types/datetime.md)                                           | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [Cómo hacer esto?)](../sql-reference/data-types/datetime.md)                                                            | `long (timestamp-micros)` \* |
+>>>>>>> upstream/master
 
 \* [Tipos lógicos Avro](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
@@ -1030,7 +1046,7 @@ El esquema raíz del archivo Avro de entrada debe ser de `record` tipo.
 Para encontrar la correspondencia entre las columnas de la tabla y los campos de Avro esquema ClickHouse compara sus nombres. Esta comparación distingue entre mayúsculas y minúsculas.
 Los campos no utilizados se omiten.
 
-Los tipos de datos de las columnas de tabla ClickHouse pueden diferir de los campos correspondientes de los datos de Avro insertados. Al insertar datos, ClickHouse interpreta los tipos de datos de acuerdo con la tabla anterior y luego [elenco](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) los datos al tipo de columna correspondiente.
+Los tipos de datos de las columnas de tabla ClickHouse pueden diferir de los campos correspondientes de los datos de Avro insertados. Al insertar datos, ClickHouse interpreta los tipos de datos de acuerdo con la tabla anterior y luego [elenco](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) los datos al tipo de columna correspondiente.
 
 ### Selección de datos {#selecting-data-1}
 
@@ -1063,7 +1079,7 @@ Lo mismo que [Avro](#data-format-avro)
 
 ### Uso {#usage}
 
-Para verificar rápidamente la resolución del esquema, puede usar [Método de codificación de datos:](https://github.com/edenhill/kafkacat) con [Sistema abierto.](../operations/utilities/clickhouse-local.md):
+Para verificar rápidamente la resolución del esquema, puede usar [Método de codificación de datos:](https://github.com/edenhill/kafkacat) con [Sistema abierto.](../operations/utilities/clickhouse-local.md#clickhouse-local):
 
 ``` bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
@@ -1172,7 +1188,7 @@ ClickHouse soporta la precisión configurable de la `Decimal` tipo. El `INSERT` 
 
 Tipos de datos ORC no admitidos: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Los tipos de datos de las columnas de tabla ClickHouse no tienen que coincidir con los campos de datos ORC correspondientes. Al insertar datos, ClickHouse interpreta los tipos de datos de acuerdo con la tabla anterior y luego [elenco](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) los datos al tipo de datos establecido para la columna de tabla ClickHouse.
+Los tipos de datos de las columnas de tabla ClickHouse no tienen que coincidir con los campos de datos ORC correspondientes. Al insertar datos, ClickHouse interpreta los tipos de datos de acuerdo con la tabla anterior y luego [elenco](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) los datos al tipo de datos establecido para la columna de tabla ClickHouse.
 
 ### Insertar datos {#inserting-data-2}
 
@@ -1194,7 +1210,7 @@ Si el archivo tiene la extensión estándar para el formato (por ejemplo, `.prot
 se puede omitir y en este caso, el esquema de formato se ve así `schemafile:MessageType`.
 
 Si introduce o emite datos a través del [cliente](../interfaces/cli.md) en el [modo interactivo](../interfaces/cli.md#cli_usage), el nombre de archivo especificado en el esquema de formato
-puede contener una ruta de acceso absoluta o una ruta relativa al directorio actual en el cliente.
+puede contener una ruta absoluta o una ruta relativa al directorio actual en el cliente.
 Si utiliza el cliente en el [modo por lotes](../interfaces/cli.md#cli_usage), la ruta de acceso al esquema debe ser relativa por razones de seguridad.
 
 Si introduce o emite datos a través del [Interfaz HTTP](../interfaces/http.md) el nombre de archivo especificado en el esquema de formato
