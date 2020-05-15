@@ -23,6 +23,15 @@ struct PullingPipelineExecutor::Data
         if (thread.joinable())
             thread.join();
     }
+
+    void rethrowExceptionIfHas()
+    {
+        if (has_exception)
+        {
+            has_exception = false;
+            std::rethrow_exception(std::move(exception));
+        }
+    }
 };
 
 PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
@@ -35,25 +44,12 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
 {
     try
     {
-        /// Cancel execution if it wasn't finished.
-        if (data && !data->is_executed)
-            cancel();
-
-        /// Finish lazy format. Otherwise thread.join() may hung.
-        if (!lazy_format->isFinished())
-            lazy_format->finish();
-
-        /// Join thread here to wait for possible exception.
-        if (data && data->thread.joinable())
-            data->thread.join();
+        wait();
     }
     catch (...)
     {
         tryLogCurrentException("PullingPipelineExecutor");
     }
-
-    if (data && data->has_exception)
-        tryLogException(std::move(data->exception), "PullingPipelineExecutor");
 }
 
 static void threadFunction(PullingPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
@@ -144,6 +140,25 @@ void PullingPipelineExecutor::cancel()
 {
     if (data && data->executor)
         data->executor->cancel();
+}
+
+void PullingPipelineExecutor::wait()
+{
+    /// Cancel execution if it wasn't finished.
+    if (data && !data->is_executed)
+        cancel();
+
+    /// Finish lazy format. Otherwise thread.join() may hung.
+    if (!lazy_format->isFinished())
+        lazy_format->finish();
+
+    /// Join thread here to wait for possible exception.
+    if (data && data->thread.joinable())
+        data->thread.join();
+
+    /// Rethrow exception to not swallow it in destructor.
+    if (data)
+        data->rethrowExceptionIfHas();
 }
 
 Chunk PullingPipelineExecutor::getTotals()
