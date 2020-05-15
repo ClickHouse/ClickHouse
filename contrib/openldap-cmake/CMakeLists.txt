@@ -28,6 +28,10 @@ if(
     "${_system_processor}" STREQUAL "x64"
 )
     set(_system_processor "x86_64")
+elseif(
+    "${_system_processor}" STREQUAL "arm64"
+)
+    set (_system_processor "aarch64")
 endif()
 
 set(_extra_build_dir "${CMAKE_CURRENT_SOURCE_DIR}/${_system_name}_${_system_processor}")

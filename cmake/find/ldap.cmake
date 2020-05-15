@@ -32,12 +32,17 @@ if (ENABLE_LDAP)
             "${_system_processor}" STREQUAL "x64"
         )
             set (_system_processor "x86_64")
+        elseif (
+            "${_system_processor}" STREQUAL "arm64"
+        )
+            set (_system_processor "aarch64")
         endif ()
 
         if (
-            ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64" ) OR
-            ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64" ) OR
-            ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64" )
+            ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64"  ) OR
+            ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "aarch64" ) OR
+            ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64"  ) OR
+            ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  )
         )
             set (_ldap_supported_platform TRUE)
         endif ()
