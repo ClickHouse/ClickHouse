@@ -177,7 +177,7 @@ protected:
 public:
     static MutablePtr mutate(Ptr ptr)
     {
-        return ptr.shallowMutate();
+        return ptr->shallowMutate();
     }
 
     MutablePtr assumeMutable() const
