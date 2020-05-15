@@ -131,7 +131,7 @@ SHOW CREATE USER [name | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-Shows parameters that were used at a [role creation](create.md#create-role-statement)
+Shows parameters that were used at a [role creation](create.md#create-role-statement).
 
 ### Syntax {#show-create-role-syntax}
 
@@ -143,7 +143,7 @@ SHOW CREATE ROLE name
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
 
-Shows parameters that were used at a [row policy creation](create.md#create-row-policy-statement)
+Shows parameters that were used at a [row policy creation](create.md#create-row-policy-statement).
 
 ### Syntax {#show-create-row-policy-syntax}
 
@@ -154,7 +154,7 @@ SHOW CREATE [ROW] POLICY name ON [database.]table
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
 
-Shows parameters that were used at a [quota creation](create.md#create-quota-statement)
+Shows parameters that were used at a [quota creation](create.md#create-quota-statement).
 
 ### Syntax {#show-create-row-policy-syntax}
 
@@ -165,7 +165,7 @@ SHOW CREATE QUOTA [name | CURRENT]
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
 
-Shows parameters that were used at a [settings profile creation](create.md#create-settings-profile-statement)
+Shows parameters that were used at a [settings profile creation](create.md#create-settings-profile-statement).
 
 ### Syntax {#show-create-row-policy-syntax}
 

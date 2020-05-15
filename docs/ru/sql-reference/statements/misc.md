@@ -70,7 +70,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Вложенные структуры данных выводятся в «развёрнутом» виде. То есть, каждый столбец - по отдельности, с именем через точку.
 
-## DETACH {#detach}
+## DETACH {#detach-statement}
 
 Удаляет из сервера информацию о таблице name. Сервер перестаёт знать о существовании таблицы.
 
@@ -91,15 +91,74 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
-Удаляет все таблицы внутри базы данных db, а затем саму базу данных db.
-Если указано `IF EXISTS` - не выдавать ошибку, если база данных не существует.
-
 ``` sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Удаляет таблицу.
 Если указано `IF EXISTS` - не выдавать ошибку, если таблица не существует или база данных не существует.
+
+## DROP USER {#drop-user-statement}
+
+Удаляет пользователя.
+
+### Синтаксис {#drop-user-syntax}
+
+```sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+
+## DROP ROLE {#drop-role-statement}
+
+Удаляет роль.
+
+При удалении роль отзывается у всех объектов системы доступа, которым она присвоена.
+
+### Синтаксис {#drop-role-syntax}
+
+```sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROW POLICY {#drop-row-policy-statement}
+
+Удаляет политику доступа к строкам.
+
+При удалении политика отзывается у всех объектов системы доступа, которым она присвоена.
+
+### Синтаксис {#drop-row-policy-syntax}
+
+``` sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+```
+
+
+## DROP QUOTA {#drop-quota-statement}
+
+Удаляет квоту.
+
+При удалении квота отзывается у всех объектов системы доступа, которым она присвоена.
+
+### Синтаксис {#drop-quota-syntax}
+
+``` sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
+
+Удаляет профиль настроек.
+
+При удалении профиль отзывается у всех объектов системы доступа, которым он присвоен.
+
+### Синтаксис {#drop-settings-profile-syntax}
+
+``` sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
 
 ## EXISTS {#exists}
 
@@ -109,7 +168,7 @@ EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 
 Возвращает один столбец типа `UInt8`, содержащий одно значение - `0`, если таблицы или БД не существует и `1`, если таблица в указанной БД существует.
 
-## KILL QUERY {#kill-query}
+## KILL QUERY {#kill-query-statement}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -144,7 +203,7 @@ Readonly-пользователи могут останавливать толь
 
 Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
 
-## KILL MUTATION {#kill-mutation}
+## KILL MUTATION {#kill-mutation-statement}
 
 ``` sql
 KILL MUTATION [ON CLUSTER cluster]
@@ -215,7 +274,57 @@ SET profile = 'profile-name-from-the-settings-file'
 
 Подробности смотрите в разделе [Настройки](../../operations/settings/settings.md).
 
-## TRUNCATE {#truncate}
+## SET ROLE {#set-role-statement}
+
+Активирует роли для текущего пользователя.
+
+### Синтаксис {#set-role-syntax}
+
+``` sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+## SET DEFAULT ROLE {#set-default-role-statement}
+
+Устанавливает роли по умолчанию для пользователя.
+
+Роли по умолчанию активируются автоматически при входе пользователя. Ролями по умолчанию могут быть установлены только ранее назначенные роли. Если роль не назначена пользователю, ClickHouse выбрасывает исключение.
+
+
+### Синтаксис {#set-default-role-syntax}
+
+``` sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+
+### Примеры {#set-default-role-examples}
+
+Установить несколько ролей по умолчанию для пользователя:
+
+``` sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+Установить ролями по умолчанию все назначенные пользователю роли:
+
+``` sql
+SET DEFAULT ROLE ALL TO user
+```
+
+Удалить роли по умолчанию для пользователя:
+
+``` sql
+SET DEFAULT ROLE NONE TO user
+```
+
+Установить ролями по умолчанию все назначенные пользователю роли за исключением указанных:
+
+```sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```
+
+## TRUNCATE {#truncate-statement}
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
