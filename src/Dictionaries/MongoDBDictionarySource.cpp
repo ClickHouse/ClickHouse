@@ -11,11 +11,12 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     auto create_mongo_db_dictionary = [](
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
+        const std::string & root_config_prefix,
         Block & sample_block,
         const Context &,
         bool /* check_config */)
     {
+        const auto config_prefix = root_config_prefix + ".mongodb";
         return std::make_unique<MongoDBDictionarySource>(dict_struct,
             config.getString(config_prefix + ".uri", ""),
             config.getString(config_prefix + ".host", ""),
