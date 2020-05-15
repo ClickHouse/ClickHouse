@@ -31,6 +31,8 @@ struct extractBrowserFromUserAgentImpl
         res_data.resize(data.size());
         res_offsets.assign(offsets);
         // size_t size = offsets.size();
+        // std::vector<StringRef> regex = {"aa", "bb", "cc"};
+        // auto * hyperscan_browser_base = MultiRegexps::get<true, false>(regex, 0);
 
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(context.getHyperscanBrowserBase()->getScratch(), &scratch);
@@ -49,21 +51,22 @@ struct extractBrowserFromUserAgentImpl
             *reinterpret_cast<UInt8 *>(ctx) = id;
             return 0;
         };
-        const size_t haystack_offsets_size = offsets.size();
-        UInt64 offset = 0;
-        // ColumnString::Offset prev_offset = 0;
-        ColumnString::Offset res_offset = 0;
-        for (size_t i = 0; i < haystack_offsets_size; ++i)
+        size_t prev_offset = 0;
+        size_t res_offset = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
-            UInt64 length = offsets[i] - offset - 1;
+            size_t cur_offset = offsets[i];
+
+            const char * cur_str = reinterpret_cast<const char *>(&data[prev_offset]);
+            UInt64 length = 2;
             /// Hyperscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", 1);
             /// Zero the result, scan, check, update the offset.
-            UInt8 a = 0;
+            UInt8 a = 2;
             err = hs_scan(
                 context.getHyperscanBrowserBase()->getDB(),
-                reinterpret_cast<const char *>(offsets.data()) + offset,
+                cur_str,
                 length,
                 0,
                 smart_scratch.get(),
@@ -71,7 +74,6 @@ struct extractBrowserFromUserAgentImpl
                 &a);
             if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
                 throw Exception("Failed to scan with hyperscan", 2);
-            offset = offsets[i];
             char ret[1];
             if (a == 0)
             {
@@ -97,6 +99,7 @@ struct extractBrowserFromUserAgentImpl
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], ret, 1);
             res_offset += 2;
             res_offsets[i] = res_offset;
+            prev_offset = cur_offset;
         }
     }
 
