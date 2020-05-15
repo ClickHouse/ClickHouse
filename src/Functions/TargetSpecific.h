@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Types.h>
+
 /// This file contains macros and helpers for writing platform-dependent code.
 /// 
 /// Macroses DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside them into the namespace TargetSpecific::<Arch> and enable
@@ -62,16 +64,17 @@ enum class TargetArch : int {
     SSE4    = (1 << 0),
     AVX     = (1 << 1),
     AVX2    = (1 << 2),
-    AVX512  = (1 << 3),
+    AVX512f  = (1 << 3),
 };
 
 // Runtime detection.
 bool IsArchSupported(TargetArch arch);
 
+String ToString(TargetArch arch);
+
 #if defined(__clang__)
-// TODO: There are lots of different AVX512 :(
-#   define BEGIN_AVX512_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
+#   define BEGIN_AVX512f_SPECIFIC_CODE \
+        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,avx512f\"))))")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
         _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
 #   define BEGIN_AVX_SPECIFIC_CODE \
@@ -81,8 +84,7 @@ bool IsArchSupported(TargetArch arch);
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("clang attribute pop")
 #elif defined(__GNUC__)
-// TODO: There are lots of different AVX512 :(
-#   define BEGIN_AVX512_SPECIFIC_CODE \
+#   define BEGIN_AVX512f_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,avx512f,tune=native\")")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
@@ -130,10 +132,10 @@ namespace TargetSpecific::AVX2 { \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX512_SPECIFIC_CODE(...) \
-BEGIN_AVX512_SPECIFIC_CODE \
-namespace TargetSpecific::AVX512 { \
-    using namespace DB::TargetSpecific::AVX512; \
+#define DECLARE_AVX512f_SPECIFIC_CODE(...) \
+BEGIN_AVX512f_SPECIFIC_CODE \
+namespace TargetSpecific::AVX512f { \
+    using namespace DB::TargetSpecific::AVX512f; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -143,7 +145,7 @@ DECLARE_DEFAULT_CODE        (__VA_ARGS__) \
 DECLARE_SSE4_SPECIFIC_CODE  (__VA_ARGS__) \
 DECLARE_AVX_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_AVX2_SPECIFIC_CODE  (__VA_ARGS__) \
-DECLARE_AVX512_SPECIFIC_CODE(__VA_ARGS__)
+DECLARE_AVX512f_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default;
@@ -161,8 +163,8 @@ DECLARE_AVX2_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX2;
 ) // DECLARE_AVX2_SPECIFIC_CODE
 
-DECLARE_AVX512_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::AVX512;
+DECLARE_AVX512f_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::AVX512f;
 ) // DECLARE_AVX512_SPECIFIC_CODE
 
 } // namespace DB
