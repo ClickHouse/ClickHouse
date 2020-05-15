@@ -148,10 +148,45 @@ TYPED_TEST(DiskTest, iterateDirectory)
 TEST(DiskHdfsTest, testHdfsCreation)
 {
     auto disk = DB::DiskHDFS("gtesthdfs", "hdfs://localhost:9010/gtest/", "/home/ershov-ov/metadata/");
-    auto out = disk.writeFile("keek", 1024, DB::WriteMode::Rewrite, 1024, 1024);
-    writeString("test data", *out);
-    DB::String d;
-    auto in = disk.readFile("keek", 1024, 1024, 1024, 1024);
-    readString(d, *in);
-    EXPECT_EQ("test_data", d);
+    {
+        auto out = disk.writeFile("keek", 1024, DB::WriteMode::Rewrite, 1024, 1024);
+        writeString("test data", *out);
+    }
+    {
+        DB::String d;
+        auto in = disk.readFile("keek", 1024, 1024, 1024, 1024);
+        readString(d, *in);
+        EXPECT_EQ("test data", d);
+    }
+    
+    {
+        std::unique_ptr<DB::WriteBuffer> out = disk.writeFile("test_file", 1024, DB::WriteMode::Rewrite, 1024, 1024);
+        writeString("test data", *out);
+    }
+
+    // Test SEEK_SET
+    {
+        String buf(4, '0');
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile("test_file", 1024, 1024, 1024, 1024);
+
+        in->seek(5, SEEK_SET);
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
+    }
+
+    // Test SEEK_CUR
+    {
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile("test_file", 1024, 1024, 1024, 1024);
+        String buf(4, '0');
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("test", buf);
+
+        // Skip whitespace
+        in->seek(1, SEEK_CUR);
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
+    }
 }
