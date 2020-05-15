@@ -42,6 +42,7 @@ public:
     /// Get query profile info.
     BlockStreamProfileInfo & getProfileInfo();
 
+    /// Internal executor data.
     struct Data;
 
 private:
