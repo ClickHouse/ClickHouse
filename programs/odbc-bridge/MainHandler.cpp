@@ -20,8 +20,10 @@
 #include <Columns/ColumnsNumber.h>
 #include "getIdentifierQuote.h"
 
+#if USE_ODBC
 #include <Poco/Data/ODBC/SessionImpl.h>
 #define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#endif
 
 namespace DB
 {
@@ -152,8 +154,11 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             std::string table_name = params.get("table_name");
             LOG_TRACE(log, "DB name: '" << db_name << "', table name: '" << table_name << "'");
 
+            auto quoting_style = IdentifierQuotingStyle::None;
+#if USE_ODBC
             POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-            auto quoting_style = getQuotingStyle(session.dbc().handle());
+            quoting_style = getQuotingStyle(session.dbc().handle());
+#endif
 
             auto pool = getPool(connection_string);
             ReadBufferFromIStream read_buf(request.stream());

@@ -80,6 +80,7 @@ namespace
             case ValueType::vtUUID:
                 return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
         }
+        __builtin_unreachable();
     }
 }
 
