@@ -133,7 +133,7 @@ public:
     using BaseFunctionPtr = ExecutableFunctionImplPtr;
 
     template <typename ...Args>
-    FunctionExecutor(Args ...args) : DefaultFunction(args...) {}
+    FunctionExecutor(Args&&... args) : DefaultFunction(std::forward<Args>(args)...) {}
 
     virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
 
@@ -151,7 +151,7 @@ public:
     using BaseFunctionPtr = FunctionPtr;
 
     template <typename ...Args>
-    FunctionExecutor(Args ...args) : DefaultFunction(args...) {}
+    FunctionExecutor(Args&&... args) : DefaultFunction(std::forward<Args>(args)...) {}
 
     virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
 
@@ -174,8 +174,8 @@ public:
     using BaseFunctionPtr = FunctionExecutor<DefaultFunction>::BaseFunctionPtr;
 
     template <typename ...Params>
-    FunctionPerformanceAdaptor(PerformanceAdaptorOptions options_, Params ...params)
-        : FunctionExecutor<DefaultFunction>(params...)
+    FunctionPerformanceAdaptor(PerformanceAdaptorOptions options_, Params&&... params)
+        : FunctionExecutor<DefaultFunction>(std::forward<Params>(params)...)
         , options(std::move(options_))
     {
         if (isImplementationEnabled(DefaultFunction::getImplementationTag()))
@@ -184,15 +184,17 @@ public:
 
     /// Register alternative implementation.
     template<typename Function, typename ...Params>
-    void registerImplementation(TargetArch arch, Params... params) {
+    void registerImplementation(TargetArch arch, Params&&... params)
+    {
         if (IsArchSupported(arch) && isImplementationEnabled(Function::getImplementationTag()))
         {
-            impls.emplace_back(std::make_shared<Function>(params...));
+            impls.emplace_back(std::make_shared<Function>(std::forward<Params>(params)...));
             statistics.emplace_back();
         }
     }
 
-    bool isImplementationEnabled(const String & impl_tag) {
+    bool isImplementationEnabled(const String & impl_tag)
+    {
         if (!options.implementations)
             return true;
 
