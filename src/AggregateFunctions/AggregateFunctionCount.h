@@ -57,7 +57,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
@@ -108,7 +108,7 @@ public:
         readVarUInt(data(place).count, buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }

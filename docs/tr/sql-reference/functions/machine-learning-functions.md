@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 64
 toc_title: "Makine \xD6\u011Frenme Fonksiyonlar\u0131"
 ---
@@ -9,7 +9,7 @@ toc_title: "Makine \xD6\u011Frenme Fonksiyonlar\u0131"
 
 ## evalMLMethod (tahmin) {#machine_learning_methods-evalmlmethod}
 
-Tak fittedılmış regresyon model usinglerini kullanarak tahmin `evalMLMethod` işlev. Lin seeke bakınız `linearRegression`.
+Tak fittedılmış regresyon model usinglerini kullanarak tahmin `evalMLMethod` İşlev. Lin seeke bakınız `linearRegression`.
 
 ### Stokastik Doğrusal Regresyon {#stochastic-linear-regression}
 

@@ -832,4 +832,14 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Значение по умолчанию**: 15.
 
+## access_control_path {#access_control_path}
+
+Путь к каталогу, где сервер ClickHouse хранит конфигурации пользователей и ролей, созданные командами SQL.
+
+Значение по умолчанию: `/var/lib/clickhouse/access/`.
+
+**Смотрите также**
+
+- [Управление доступом](../access-rights.md#access-control)
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->

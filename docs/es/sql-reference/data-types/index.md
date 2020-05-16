@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Data Types
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: Tipos de datos
 toc_priority: 37
 toc_title: "Implantaci\xF3n"
 ---
 
-# Tipos De Datos {#data_types}
+# Tipos de datos {#data_types}
 
 ClickHouse puede almacenar varios tipos de datos en celdas de tabla.
 

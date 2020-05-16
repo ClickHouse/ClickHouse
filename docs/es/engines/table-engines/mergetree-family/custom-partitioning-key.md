@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: "Clave de partici\xF3n personalizada"
 ---
 
-# Clave De partición Personalizada {#custom-partitioning-key}
+# Clave de partición personalizada {#custom-partitioning-key}
 
 La partición está disponible para el [Método de codificación de datos:](mergetree.md) mesas familiares (incluyendo [repetición](replication.md) tabla). [Vistas materializadas](../special/materializedview.md#materializedview) basado en tablas MergeTree soporte de particionamiento, también.
 

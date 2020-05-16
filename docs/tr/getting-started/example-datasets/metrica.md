@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
-toc_priority: 21
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 14
 toc_title: "\xDCye.Metrica Verileri"
 ---
 
@@ -11,7 +11,7 @@ Veri kümesi, isabetlerle ilgili anonimleştirilmiş verileri içeren iki tablod
 
 Veri kümesi iki tablodan oluşur, bunlardan biri sıkıştırılmış olarak indirilebilir `tsv.xz` dosya veya hazırlanmış bölümler olarak. Buna ek olarak, genişletilmiş bir sürümü `hits` 100 milyon satır içeren tablo TSV olarak mevcuttur https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz ve hazırlanan bölümler olarak https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
-## Hazırlanan bölümlerden Tablolar Elde Etme {#obtaining-tables-from-prepared-partitions}
+## Hazırlanan bölümlerden tablolar elde etme {#obtaining-tables-from-prepared-partitions}
 
 İndirme ve ithalat tablo hits:
 
@@ -33,7 +33,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Sıkıştırılmış TSV dosyasından Tablo Alma {#obtaining-tables-from-compressed-tsv-file}
+## Sıkıştırılmış TSV dosyasından Tablo alma {#obtaining-tables-from-compressed-tsv-file}
 
 Sıkıştırılmış TSV dosyasından indir ve İçe Aktar:
 

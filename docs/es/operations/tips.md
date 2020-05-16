@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: Recomendaciones de uso
 ---
 
-# Recomendaciones De Uso {#usage-recommendations}
+# Recomendaciones de uso {#usage-recommendations}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
 
@@ -15,7 +15,7 @@ Utilice siempre el `performance` gobernador de escala. El `on-demand` regulador 
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## Limitaciones De La CPU {#cpu-limitations}
+## Limitaciones de la CPU {#cpu-limitations}
 
 Los procesadores pueden sobrecalentarse. Utilizar `dmesg` para ver si la velocidad de reloj de la CPU era limitada debido al sobrecalentamiento.
 La restricción también se puede establecer externamente en el nivel del centro de datos. Usted puede utilizar `turbostat` para controlarlo bajo una carga.
@@ -32,7 +32,7 @@ No deshabilite el sobrecompromiso. Valor `cat /proc/sys/vm/overcommit_memory` de
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Páginas Enormes {#huge-pages}
+## Páginas enormes {#huge-pages}
 
 Siempre deshabilite las páginas enormes transparentes. Interfiere con los asignadores de memoria, lo que conduce a una degradación significativa del rendimiento.
 
@@ -43,10 +43,10 @@ $ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 Utilizar `perf top` para ver el tiempo pasado en el kernel para la administración de memoria.
 Las páginas enormes permanentes tampoco necesitan ser asignadas.
 
-## Subsistema De Almacenamiento {#storage-subsystem}
+## Subsistema de almacenamiento {#storage-subsystem}
 
 Si su presupuesto le permite usar SSD, use SSD.
-Si no, utilice el disco duro. Discos Duros SATA de 7200 RPM va a hacer.
+Si no, use HDD. Los discos duros SATA 7200 RPM servirán.
 
 Dar preferencia a una gran cantidad de servidores con discos duros locales sobre un número menor de servidores con estantes de discos conectados.
 Pero para almacenar archivos con consultas raras, los estantes funcionarán.
@@ -76,13 +76,13 @@ Independientemente del uso de RAID, utilice siempre la replicación para la segu
 Habilite NCQ con una cola larga. Para HDD, elija el programador CFQ, y para SSD, elija noop. No reduzca el ‘readahead’ configuración.
 Para HDD, habilite la memoria caché de escritura.
 
-## Sistema De Archivos {#file-system}
+## Sistema de archivos {#file-system}
 
 Ext4 es la opción más confiable. Establecer las opciones de montaje `noatime, nobarrier`.
 XFS también es adecuado, pero no ha sido probado tan a fondo con ClickHouse.
 La mayoría de los otros sistemas de archivos también deberían funcionar bien. Los sistemas de archivos con asignación retrasada funcionan mejor.
 
-## Núcleo De Linux {#linux-kernel}
+## Núcleo de Linux {#linux-kernel}
 
 No use un kernel de Linux obsoleto.
 
@@ -97,7 +97,7 @@ Utilice al menos una red de 10 GB, si es posible. 1 Gb también funcionará, per
 
 Probablemente ya esté utilizando ZooKeeper para otros fines. Puede usar la misma instalación de ZooKeeper, si aún no está sobrecargada.
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
 Nunca debe usar scripts escritos manualmente para transferir datos entre diferentes clústeres de ZooKeeper, ya que el resultado será incorrecto para los nodos secuenciales. Nunca utilice el “zkcopy” utilidad por la misma razón: https://github.com/ksprojects/zkcopy/issues/15
 
@@ -105,7 +105,7 @@ Si desea dividir un clúster ZooKeeper existente en dos, la forma correcta es au
 
 No ejecute ZooKeeper en los mismos servidores que ClickHouse. Porque ZooKeeper es muy sensible a la latencia y ClickHouse puede utilizar todos los recursos del sistema disponibles.
 
-Con la configuración predeterminada, Cuidador es una bomba de tiempo:
+Con la configuración predeterminada, ZooKeeper es una bomba de tiempo:
 
 > El servidor ZooKeeper no eliminará archivos de instantáneas y registros antiguos cuando utilice la configuración predeterminada (consulte autopurge), y esto es responsabilidad del operador.
 

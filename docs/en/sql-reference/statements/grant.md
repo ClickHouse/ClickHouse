@@ -7,9 +7,9 @@ toc_title: GRANT
 # GRANT
 
 - Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
-- Assigns roles to user accounts or to another roles.
+- Assigns roles to user accounts or to the other roles.
 
-To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list granted privileges by the [SHOW GRANTS](show.md#show-grants-statement) statement.
+To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list granted privileges with the [SHOW GRANTS](show.md#show-grants-statement) statement.
 
 ## Granting Privilege Syntax {#grant-privigele-syntax}
 
@@ -21,10 +21,10 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH GRANT OPTION` clause grants `user` or `role` with permission to perform the `GRANT` query. Users can grant privileges of the same scope they have and less.
+The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
 
 
-## Granting Role Syntax {#assign-role-syntax}
+## Assigning Role Syntax {#assign-role-syntax}
 
 ```sql
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
@@ -33,7 +33,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH ADMIN OPTION` clause sets [ADMIN OPTION](#admin-option-privilege) privilege for `user` or `role`.
+The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
 
 ## Usage {#grant-usage}
 
@@ -45,28 +45,28 @@ For example, administrator has granted privileges to the `john` account by the q
 GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 ```
 
-It means that `john` has the permission to perform:
+It means that `john` has the permission to execute:
 
 - `SELECT x,y FROM db.table`.
 - `SELECT x FROM db.table`.
 - `SELECT y FROM db.table`.
 
-`john` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn't return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+`john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn't return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
-Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or the smaller scope.
+Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
-Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database, for example: `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
+Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to execute the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database. For example, `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
-You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to perform the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
+You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, robin` allows accounts `john` and `robin` to execute the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
 
 ## Privileges {#grant-privileges}
 
-Privilege is a permission to perform specific kind of queries.
+Privilege is a permission to execute specific kind of queries.
 
-Privileges have an hierarchical structure. A set of permitted queries depends on the privilege scope.
+Privileges have a hierarchical structure. A set of permitted queries depends on the privilege scope.
 
 Hierarchy of privileges:
 
@@ -212,20 +212,20 @@ The special privilege [ALL](#grant-all) grants all the privileges to a user acco
 
 By default, a user account or a role has no privileges.
 
-If a user or role have no privileges it displayed as [NONE](#grant-none) privilege.
+If a user or a role has no privileges, it is displayed as [NONE](#grant-none) privilege.
 
-Some queries by their implementation require a set of privileges. For example, to perform the [RENAME](misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
+Some queries by their implementation require a set of privileges. For example, to execute the [RENAME](misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
 
 ### SELECT {#grant-select}
 
-Allows to perform [SELECT](select.md) queries.
+Allows executing [SELECT](select/index.md) queries.
 
 Privilege level: `COLUMN`.
 
 **Description**
 
-User granted with this privilege can perform `SELECT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query returns no data. 
+User granted with this privilege can execute `SELECT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query returns no data. 
 
 Consider the following privilege:
 
@@ -233,17 +233,17 @@ Consider the following privilege:
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `john` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `john` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn't return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse doesn't return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT {#grant-insert}
 
-Allows performing [INSERT](insert-into.md) queries.
+Allows executing [INSERT](insert-into.md) queries.
 
 Privilege level: `COLUMN`.
 
 **Description**
 
-User granted with this privilege can perform `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn't insert any data.
+User granted with this privilege can execute `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn't insert any data.
 
 **Example**
 
@@ -255,7 +255,7 @@ The granted privilege allows `john` to insert data to the `x` and/or `y` columns
 
 ### ALTER {#grant-alter}
 
-Allows performing [ALTER](alter.md) queries corresponding to the following hierarchy of privileges:
+Allows executing [ALTER](alter.md) queries according to the following hierarchy of privileges:
 
 - `ALTER`. Level: `COLUMN`. 
     - `ALTER TABLE`. Level: `GROUP`
@@ -294,14 +294,14 @@ Examples of how this hierarchy is treated:
 
 **Notes**
 
-- The `MODIFY SETTING` privilege allows to modify table engine settings. In doesn't affect settings or server configuration parameters.
+- The `MODIFY SETTING` privilege allows modifying table engine settings. It doesn't affect settings or server configuration parameters.
 - The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 - The `DETACH` operation needs the [DROP](#grant-drop) privilege.
 - To stop mutation by the [KILL MUTATION](misc.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
 ### CREATE {#grant-create}
 
-Allows to perform [CREATE](create.md) and [ATTACH](misc.md#attach) DDL-queries corresponding to the following hierarchy of privileges:
+Allows executing [CREATE](create.md) and [ATTACH](misc.md#attach) DDL-queries according to the following hierarchy of privileges:
 
 - `CREATE`. Level: `GROUP`
     - `CREATE DATABASE`. Level: `DATABASE`
@@ -316,7 +316,7 @@ Allows to perform [CREATE](create.md) and [ATTACH](misc.md#attach) DDL-queries c
 
 ### DROP {#grant-drop}
 
-Allows to perform [DROP](misc.md#drop) and [DETACH](misc.md#detach) queries corresponding to the following hierarchy of privileges:
+Allows executing [DROP](misc.md#drop) and [DETACH](misc.md#detach) queries according to the following hierarchy of privileges:
 
 - `DROP`. Level: 
     - `DROP DATABASE`. Level: `DATABASE`
@@ -327,19 +327,19 @@ Allows to perform [DROP](misc.md#drop) and [DETACH](misc.md#detach) queries corr
 
 ### TRUNCATE {#grant-truncate}
 
-Allows to perform [TRUNCATE](misc.md#truncate-statement) queries.
+Allows executing [TRUNCATE](misc.md#truncate-statement) queries.
 
 Privilege level: `TABLE`.
 
 ### OPTIMIZE {#grant-optimize}
 
-Allows to perform the [OPTIMIZE TABLE](misc.md#misc_operations-optimize) queries.
+Allows executing [OPTIMIZE TABLE](misc.md#misc_operations-optimize) queries.
 
 Privilege level: `TABLE`.
 
 ### SHOW {#grant-show}
 
-Allows to perform `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries, corresponding to the following hierarchy of privileges:
+Allows executing `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries according to the following hierarchy of privileges:
 
 - `SHOW`. Level: `GROUP`
     - `SHOW DATABASES`. Level: `DATABASE`. Allows to execute `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>` queries.
@@ -349,12 +349,12 @@ Allows to perform `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries, corresponding
 
 **Notes**
 
-A user has the `SHOW` privilege if it has any another privilege concerning the specified table, dictionary or database.
+A user has the `SHOW` privilege if it has any other privilege concerning the specified table, dictionary or database.
 
 
 ### KILL QUERY {#grant-kill-query}
 
-Allows to perform the [KILL](misc.md#kill-query-statement) queries corresponding to the following hierarchy of privileges:
+Allows executing [KILL](misc.md#kill-query-statement) queries according to the following hierarchy of privileges:
 
 Privilege level: `GLOBAL`.
 
@@ -365,7 +365,7 @@ Privilege level: `GLOBAL`.
 
 ### ACCESS MANAGEMENT {#grant-access-management}
 
-Allows a user to perform queries that manage users, roles and row policies.
+Allows a user to execute queries that manage users, roles and row policies.
 
 - `ACCESS MANAGEMENT`. Level: `GROUP`
     - `CREATE USER`. Level: `GLOBAL`
@@ -391,11 +391,11 @@ Allows a user to perform queries that manage users, roles and row policies.
         - `SHOW_QUOTAS`. Level: `GLOBAL`. Aliases: `SHOW CREATE QUOTA`
         - `SHOW_SETTINGS_PROFILES`. Level: `GLOBAL`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
 
-The `ROLE ADMIN` privilege allows a user to grant and revoke any roles including those which are not granted to the user with the admin option.
+The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
 
 ### SYSTEM {#grant-system}
 
-Allows a user to perform the [SYSTEM](system.md) queries corresponding to the following hierarchy of privileges.
+Allows a user to execute [SYSTEM](system.md) queries according to the following hierarchy of privileges.
 
 - `SYSTEM`. Level: `GROUP`
     - `SYSTEM SHUTDOWN`. Level: `GLOBAL`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
@@ -461,7 +461,7 @@ Examples:
 
 Allows a user to execute [dictGet](../functions/ext-dict-functions.md#dictget), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin) functions.
 
-Level of privilege: `DICTIONARY`.
+Privilege level: `DICTIONARY`.
 
 **Examples**
 
@@ -480,6 +480,6 @@ Doesn't grant any privileges.
 
 ### ADMIN OPTION {#admin-option-privilege}
 
-The `ADMIN OPTION` privilege allows a user granting their role to another user.
+The `ADMIN OPTION` privilege allows a user to grant their role to another user.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->
