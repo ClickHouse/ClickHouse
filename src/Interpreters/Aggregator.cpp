@@ -820,7 +820,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
-        if (use_shared)
+        if (use_shared && shared_result)
         {
             /// Convert to same structure (two-level shared), because it is easier to merge with shared.
             if (!result.isTwoLevel())
@@ -1967,19 +1967,27 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     /// Note - perhaps it would be more optimal not to convert single-level versions before the merge, but merge them separately, at the end.
 
     bool has_at_least_one_two_level = false;
+    bool has_at_least_one_two_level_shared = false;
     for (const auto & variant : non_empty_data)
     {
         if (variant->isTwoLevel())
-        {
             has_at_least_one_two_level = true;
+        if (variant->isTwoLevelShared())
+        {
+            has_at_least_one_two_level_shared = true;
             break;
         }
     }
 
-    if (has_at_least_one_two_level)
+    if (has_at_least_one_two_level || has_at_least_one_two_level_shared)
         for (auto & variant : non_empty_data)
             if (!variant->isTwoLevel())
-                variant->convertToTwoLevel();
+            {
+                if (has_at_least_one_two_level_shared)
+                    variant->convertToTwoLevelShared();
+                else
+                    variant->convertToTwoLevel();
+            }
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 

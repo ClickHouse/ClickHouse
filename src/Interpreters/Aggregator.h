@@ -917,6 +917,24 @@ struct AggregatedDataVariants : private boost::noncopyable
         }
     }
 
+    bool isTwoLevelShared() const
+    {
+        switch (type)
+        {
+            case Type::EMPTY:       return false;
+            case Type::without_key: return false;
+
+        #define M(NAME) \
+            case Type::NAME: return true;
+                APPLY_FOR_VARIANTS_TWO_LEVEL_SHARED(M)
+        #undef M
+            default:
+                return false;
+        }
+
+        __builtin_unreachable();
+    }
+
     void createAggregatesPoolsForShared();
 
     static HashMethodContextPtr createCache(Type type, const HashMethodContext::Settings & settings)

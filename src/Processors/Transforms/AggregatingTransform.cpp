@@ -571,7 +571,7 @@ void AggregatingTransform::initGenerate()
 
     if (!params->aggregator.hasTemporaryFiles())
     {
-        if (many_data->shared_variant && many_data->shared_variant->size() > 0)
+        if (many_data->shared_variant && many_data->shared_variant->sizeWithoutOverflowRow() > 0)
         {
             LOG_TRACE(log, "Shared method info: keys="
                           << many_data->shared_variant->size() << ", method="
