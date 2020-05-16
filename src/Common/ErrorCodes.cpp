@@ -498,6 +498,7 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
     extern const int INCORRECT_DISK_INDEX = 525;
     extern const int UNKNOWN_VOLUME_TYPE = 526;
+    extern const int NO_SUITABLE_FUNCTION_IMPLEMENTATION = 527;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

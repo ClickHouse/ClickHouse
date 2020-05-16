@@ -64,7 +64,8 @@
 namespace DB
 {
 
-enum class TargetArch : int {
+enum class TargetArch : UInt32
+{
     Default  = 0, // Without any additional compiler options.
     SSE4     = (1 << 0),
     AVX      = (1 << 1),
@@ -172,4 +173,4 @@ DECLARE_AVX512F_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX512F;
 ) // DECLARE_AVX512F_SPECIFIC_CODE
 
-} // namespace DB
+}
