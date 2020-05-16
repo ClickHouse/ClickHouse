@@ -8,33 +8,11 @@
 namespace DB
 {
 
-class VolumeType
+enum class VolumeType
 {
-public:
-    enum Value
-    {
-        JBOD,
-        SINGLE_DISK,
-        UNKNOWN
-    };
-    VolumeType() : value(UNKNOWN) {}
-    VolumeType(Value value_) : value(value_) {}
-
-    bool operator==(const VolumeType & other) const
-    {
-        return value == other.value;
-    }
-
-    bool operator!=(const VolumeType & other) const
-    {
-        return !(*this == other);
-    }
-
-    void fromString(const String & str);
-    String toString() const;
-
-private:
-    Value value;
+    JBOD,
+    SINGLE_DISK,
+    UNKNOWN
 };
 
 class IVolume;
@@ -55,7 +33,7 @@ using Volumes = std::vector<VolumePtr>;
 class IVolume : public Space
 {
 public:
-    IVolume(const String & name_, Disks disks_): disks(std::move(disks_)), name(name_)
+    IVolume(String name_, Disks disks_): disks(std::move(disks_)), name(name_)
     {
     }
 

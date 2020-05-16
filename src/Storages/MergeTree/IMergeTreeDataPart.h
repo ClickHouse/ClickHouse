@@ -29,7 +29,7 @@ struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
 class IReservation;
-using ReservationPtr = std::shared_ptr<IReservation>;
+using ReservationPtr = std::unique_ptr<IReservation>;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;

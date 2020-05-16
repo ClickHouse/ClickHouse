@@ -3,7 +3,7 @@
 namespace DB
 {
 
-VolumePtr createVolumeFromReservation(ReservationPtr reservation, VolumePtr other_volume)
+VolumePtr createVolumeFromReservation(const ReservationPtr & reservation, VolumePtr other_volume)
 {
     if (other_volume->getType() == VolumeType::JBOD || other_volume->getType() == VolumeType::SINGLE_DISK)
     {
