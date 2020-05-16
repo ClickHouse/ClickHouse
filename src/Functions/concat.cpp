@@ -117,7 +117,7 @@ private:
     void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         const size_t num_arguments = arguments.size();
-        assert(num_arguments > 2);
+        assert(num_arguments >= 2);
 
         auto c_res = ColumnString::create();
         std::vector<const ColumnString::Chars *> data(num_arguments);
