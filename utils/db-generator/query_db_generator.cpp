@@ -1156,19 +1156,13 @@ void parse_select_query(DB::ASTPtr ast, TableList& all_tables) {
 TableList get_tables_from_select(std::string query) {
     DB::ParserQueryWithOutput parser;
     DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
-    std::cout << "Success." << std::endl;
-    DB::formatAST(*ast, std::cerr);
-    std::cout << "\n\n" << std::endl;
 
     TableList result;
-
-
     for (auto select: get_select(ast)) {
         TableList local;
         parse_select_query(select, local);
         result.merge(local);
     }
-    result.print();
 
     for (auto table : result.tables) {
         std::cout << table.second.create_query();
