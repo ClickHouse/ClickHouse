@@ -318,10 +318,6 @@ if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
 
-add_subdirectory(grpc-cmake)
-
-add_subdirectory(replxx-cmake)
-
 if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
@@ -330,6 +326,3 @@ if (USE_LIBEVENT)
     add_subdirectory(libevent-cmake)
 endif()
 
-add_subdirectory(FastMemcpy)
-add_subdirectory(consistent-hashing)
-add_subdirectory(consistent-hashing-sumbur)
