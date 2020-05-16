@@ -322,6 +322,11 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries (clickhouse_common_io PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
 
+if (USE_LDAP)
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIR})
+    dbms_target_link_libraries (PRIVATE ${OPENLDAP_LIBRARIES})
+endif ()
+
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 

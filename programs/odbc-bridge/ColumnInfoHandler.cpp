@@ -16,6 +16,7 @@
 #    include <Poco/Net/HTTPServerResponse.h>
 #    include <Poco/NumberParser.h>
 #    include <common/logger_useful.h>
+#    include <Common/quoteString.h>
 #    include <ext/scope_guard.h>
 #    include "getIdentifierQuote.h"
 #    include "validateODBCConnectionString.h"
@@ -56,11 +57,6 @@ namespace
                 return factory.get("String");
         }
     }
-}
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
@@ -116,7 +112,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         const auto & context_settings = context.getSettingsRef();
 
         /// TODO Why not do SQLColumns instead?
-        std::string name = schema_name.empty() ? table_name : schema_name + "." + table_name;
+        std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);
         std::stringstream ss;
         std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
         ParserQueryWithOutput parser;
@@ -124,17 +120,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         IAST::FormatSettings settings(ss, true);
         settings.always_quote_identifiers = true;
-
-        auto identifier_quote = getIdentifierQuote(hdbc);
-        if (identifier_quote.length() == 0)
-            settings.identifier_quoting_style = IdentifierQuotingStyle::None;
-        else if (identifier_quote[0] == '`')
-            settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
-        else if (identifier_quote[0] == '"')
-            settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
-        else
-            throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+        settings.identifier_quoting_style = getQuotingStyle(hdbc);
         select->format(settings);
         std::string query = ss.str();
 
