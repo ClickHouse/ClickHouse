@@ -369,6 +369,10 @@ find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 
+find_package(Python3 COMPONENTS Interpreter Development NumPy REQUIRED)
+include_directories(${Python3_INCLUDE_DIRS})
+include_directories(${Python3_NumPy_INCLUDE_DIRS})
+
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
 endif ()
@@ -400,6 +404,9 @@ macro (add_executable target)
         target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
     endif()
 endmacro()
+
+link_libraries(${Python3_LIBRARIES})
+link_libraries(util)
 
 set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${ConfigIncludePath})

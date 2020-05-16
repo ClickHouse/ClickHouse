@@ -39,6 +39,20 @@ void FunctionFactory::registerFunction(const
 }
 
 
+void FunctionFactory::registerUserDefinedFunction(const std::string & name,
+                                                  Creator creator)
+{
+    std::unique_lock lock(udf_mutex);
+    String function_name_lowercase = Poco::toLower(name);
+    if (isAlias(name) || isAlias(function_name_lowercase))
+        throw Exception("FunctionFactory: the function name '" + name + "' is already registered as alias",
+                        ErrorCodes::LOGICAL_ERROR);
+
+    if (!user_defined_functions.emplace(name, creator).second)
+        throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
+}
+
 FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
     const std::string & name,
     const Context & context) const
@@ -84,6 +98,11 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
 
     it = case_insensitive_functions.find(Poco::toLower(name));
     if (case_insensitive_functions.end() != it)
+        return it->second(context);
+
+    std::unique_lock lock(udf_mutex);
+    it = user_defined_functions.find(name);
+    if (user_defined_functions.end() != it)
         return it->second(context);
 
     return {};

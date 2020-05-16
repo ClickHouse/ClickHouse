@@ -480,6 +480,10 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+/// String between '{' and '}'
+template <typename Vector>
+bool readBracketStringInto(Vector & s, ReadBuffer & buf);
+
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullSink
 {

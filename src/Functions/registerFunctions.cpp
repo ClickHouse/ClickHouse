@@ -38,6 +38,8 @@ void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 
+void testRegisterFunctionsPython(FunctionFactory & factory);
+
 
 void registerFunctions()
 {
@@ -78,6 +80,8 @@ void registerFunctions()
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
+
+    testRegisterFunctionsPython(factory);
 }
 
 }

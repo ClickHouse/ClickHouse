@@ -90,4 +90,24 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+
+/// CREATE TABLE or ATTACH TABLE query
+class ASTCreateFunctionQuery : public ASTQueryWithOutput
+{
+public:
+    String language;
+    String function_name;
+    String function_body;
+    String return_type;
+    ASTExpressionList * args_list = nullptr;
+
+    /** Get the text that identifies this element. */
+    String getID(char /* delim */) const override { return "CreateFunctionQuery"; }
+
+    ASTPtr clone() const override;
+
+protected:
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
 }

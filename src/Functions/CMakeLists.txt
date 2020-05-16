@@ -25,6 +25,7 @@ target_link_libraries(clickhouse_functions
     PRIVATE
         ${ZLIB_LIBRARIES}
         ${Boost_FILESYSTEM_LIBRARY}
+        ${Boost_PYTHON_LIBRARY}
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)

@@ -313,4 +313,29 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
 }
 
+
+void ASTCreateFunctionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    frame.need_parens = false;
+
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE FUNCTION " << (settings.hilite ? hilite_none : "") << function_name;
+    args_list->formatImpl(settings, state, frame);
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "RETURNS " << (settings.hilite ? hilite_none : "") << return_type;
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "LANGUAGE " << (settings.hilite ? hilite_none : "") << language;
+    settings.ostr << "{" << function_body << "}";
+}
+
+ASTPtr ASTCreateFunctionQuery::clone() const
+{
+    auto res = std::make_shared<ASTCreateFunctionQuery>(*this);
+    res->children.clear();
+
+    if (args_list)
+        res->set(res->args_list, args_list->clone());
+
+    cloneOutputOptions(*res);
+
+    return res;
+}
+
 }

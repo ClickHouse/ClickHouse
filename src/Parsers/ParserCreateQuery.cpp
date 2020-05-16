@@ -14,6 +14,8 @@
 #include <Parsers/ParserDictionary.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -885,5 +887,80 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || dictionary_p.parse(pos, node, expected)
         || live_view_p.parse(pos, node, expected);
 }
+
+
+bool ParserCreateFunctionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_function("FUNCTION");
+    ParserKeyword s_language("LANGUAGE");
+    ParserKeyword s_returns("RETURNS");
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserToken s_lcurly(TokenType::OpeningCurlyBrace);
+    ParserToken s_rcurly(TokenType::ClosingCurlyBrace);
+
+    ParserIdentifier function_name_p;
+    ParserIdentifier language_name_p;
+    ParserIdentifierWithOptionalParameters return_type_p;
+
+    ASTPtr function;
+    ASTPtr args_list;
+    ASTPtr return_type;
+    ASTPtr language;
+
+    if (!s_create.ignore(pos, expected))
+        return false;
+
+    if (!s_function.ignore(pos, expected))
+        return false;
+
+    if (!function_name_p.parse(pos, function, expected))
+        return false;
+
+    if (!s_lparen.ignore(pos, expected))
+        return false;
+
+    if (!ParserList(
+        std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, args_list, expected))
+        return false;
+
+    if (!s_rparen.ignore(pos, expected))
+        return false;
+
+    if (!s_returns.ignore(pos, expected))
+        return false;
+
+    if (!return_type_p.parse(pos, return_type, expected))
+        return false;
+
+    if (!s_language.ignore(pos, expected))
+        return false;
+
+    if (!language_name_p.parse(pos, language, expected))
+        return false;
+
+    ReadBufferFromMemory buf(pos->begin, pos->size());
+    String function_body;
+    if (!readBracketStringInto(function_body, buf)) {
+        return false;
+    }
+    ++pos;
+
+    auto query = std::make_shared<ASTCreateFunctionQuery>();
+    node = query;
+
+    tryGetIdentifierNameInto(function, query->function_name);
+    tryGetIdentifierNameInto(return_type, query->return_type);
+    tryGetIdentifierNameInto(language, query->language);
+
+    query->set(query->args_list, args_list);
+    query->function_body = function_body;
+
+    return true;
+}
+
 
 }

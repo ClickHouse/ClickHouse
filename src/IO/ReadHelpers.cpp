@@ -715,6 +715,29 @@ template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
 
+template <typename Vector>
+bool readBracketStringInto(Vector & s, ReadBuffer & buf)
+{
+    if (buf.eof() || *buf.position() != '{')
+        return false;
+    ++buf.position();
+
+    char * next_pos = find_first_symbols<'}'>(buf.position(), buf.buffer().end());
+
+    appendToStringOrVector(s, buf, next_pos);
+    buf.position() = next_pos;
+
+    if (*buf.position() == '}')
+    {
+        ++buf.position();
+        return true;
+    }
+
+    return false;
+}
+
+template bool readBracketStringInto<String>(String & s, ReadBuffer & buf);
+
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 {

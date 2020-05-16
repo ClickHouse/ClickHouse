@@ -346,6 +346,20 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** CREATE FUNCTION name
+  * (
+  *     name1 type1,
+  *     name2 type2,
+  *     ...
+  * ) RETURNS type LANGUAGE lang_name { function_body }
+  */
+class ParserCreateFunctionQuery : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CREATE FUNCTION"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** Query like this:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name

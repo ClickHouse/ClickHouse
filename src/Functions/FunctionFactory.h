@@ -39,6 +39,9 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
+    /// UDF are case sensitive
+    void registerUserDefinedFunction(const std::string & name, Creator creator);
+
     /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;
 
@@ -57,6 +60,11 @@ private:
 
     Functions functions;
     Functions case_insensitive_functions;
+
+    Functions user_defined_functions;
+
+    /// For dynamic UDF creating
+    mutable std::mutex udf_mutex;
 
     template <typename Function>
     static FunctionOverloadResolverImplPtr createDefaultFunction(const Context & context)
