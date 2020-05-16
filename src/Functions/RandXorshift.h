@@ -36,7 +36,10 @@ public:
         : FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>(
             PerformanceAdaptorOptions())
     {
-        registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>(TargetArch::AVX2);
+        if constexpr (UseMultitargetCode)
+        {
+            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>(TargetArch::AVX2);
+        }
     }
 
     static FunctionPtr create(const Context &)
