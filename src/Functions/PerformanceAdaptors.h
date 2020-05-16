@@ -92,8 +92,12 @@ struct PerformanceStatistics
             return choose_method;
     }
 
-    size_t size() {
+    size_t size() const {
         return data.size();
+    }
+
+    bool empty() const {
+        return size() == 0;
     }
 
     void emplace_back() {
@@ -106,7 +110,47 @@ struct PerformanceStatistics
 
 struct PerformanceAdaptorOptions
 {
+    std::optional<std::vector<String>> implementations;
+};
 
+// Redirects IExecutableFunctionImpl::execute() and IFunction:executeImpl() to executeFunctionImpl();
+template <typename DefaultFunction, typename Dummy = void>
+class FunctionExecutor;
+
+template <typename DefaultFunction>
+class FunctionExecutor<DefaultFunction, std::enable_if_t<std::is_base_of_v<IExecutableFunctionImpl, DefaultFunction>>>
+    : public DefaultFunction
+{
+public:
+    using BaseFunctionPtr = ExecutableFunctionImplPtr;
+
+    template <typename ...Args>
+    FunctionExecutor(Args ...args) : DefaultFunction(args...) {}
+
+    virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
+
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        executeFunctionImpl(block, arguments, result, input_rows_count);
+    }
+};
+
+template <typename DefaultFunction>
+class FunctionExecutor<DefaultFunction, std::enable_if_t<std::is_base_of_v<IFunction, DefaultFunction>>>
+    : public DefaultFunction
+{
+public:
+    using BaseFunctionPtr = FunctionPtr;
+
+    template <typename ...Args>
+    FunctionExecutor(Args ...args) : DefaultFunction(args...) {}
+
+    virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
+
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        executeFunctionImpl(block, arguments, result, input_rows_count);
+    }
 };
 
 /// Combine several IExecutableFunctionImpl into one.
@@ -116,23 +160,60 @@ struct PerformanceAdaptorOptions
 /// could use extended set of instructions (AVX, NEON, etc).
 /// It's convenient to inherit your func from this and register all alternative implementations in the constructor.
 template <typename DefaultFunction>
-class ExecutableFunctionPerformanceAdaptor : public DefaultFunction
+class FunctionPerformanceAdaptor : public FunctionExecutor<DefaultFunction>
 {
 public:
+    using BaseFunctionPtr = FunctionExecutor<DefaultFunction>::BaseFunctionPtr;
+
     template <typename ...Params>
-    ExecutableFunctionPerformanceAdaptor(Params ...params) : DefaultFunction(params...)
+    FunctionPerformanceAdaptor(PerformanceAdaptorOptions options_, Params ...params)
+        : FunctionExecutor<DefaultFunction>(params...)
+        , options(std::move(options_))
     {
-        statistics.emplace_back();
+        if (isImplementationEnabled(DefaultFunction::getImplementationTag())) {
+            statistics.emplace_back();
+        }
     }
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    // Register alternative implementation.
+    template<typename Function, typename ...Params>
+    void registerImplementation(TargetArch arch, Params... params) {
+        if (IsArchSupported(arch) && isImplementationEnabled(Function::getImplementationTag())) {
+            impls.emplace_back(std::make_shared<Function>(params...));
+            statistics.emplace_back();
+        }
+    }
+
+    bool isImplementationEnabled(const String & impl_tag) {
+        if (!options.implementations) {
+            return true;
+        }
+        for (const auto & tag : *options.implementations) {
+            if (tag == impl_tag) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+protected:
+    virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments,
+                                     size_t result, size_t input_rows_count) override
     {
+        if (statistics.empty())
+            throw "No implementations";
         auto id = statistics.select();
         Stopwatch watch;
-        if (id == 0) {
-            DefaultFunction::execute(block, arguments, result, input_rows_count);
+        if (id == impls.size()) {
+            if constexpr (std::is_base_of_v<IFunction, FunctionPerformanceAdaptor>)
+                DefaultFunction::executeImpl(block, arguments, result, input_rows_count);
+            else
+                DefaultFunction::execute(block, arguments, result, input_rows_count);
         } else {
-            impls[id - 1]->execute(block, arguments, result, input_rows_count);
+            if constexpr (std::is_base_of_v<IFunction, FunctionPerformanceAdaptor>)
+                impls[id]->executeImpl(block, arguments, result, input_rows_count);
+            else
+                impls[id]->execute(block, arguments, result, input_rows_count);
         }
         watch.stop();
         // TODO(dakovalkov): Calculate something more informative.
@@ -145,63 +226,8 @@ public:
         }
     }
 
-    // Register alternative implementation.
-    template<typename Function, typename ...Params>
-    void registerImplementation(TargetArch arch, Params... params) {
-        if (arch == TargetArch::Default || IsArchSupported(arch)) {
-            impls.emplace_back(std::make_shared<Function>(params...));
-            statistics.emplace_back();
-        }
-    }
-
 private:
-    std::vector<ExecutableFunctionImplPtr> impls; // Alternative implementations.
-    PerformanceStatistics statistics;
-    PerformanceAdaptorOptions options;
-};
-
-/// The same as ExecutableFunctionPerformanceAdaptor, but combine via IFunction interface.
-template <typename DefaultFunction>
-class FunctionPerformanceAdaptor : public DefaultFunction
-{
-public:
-    template <typename ...Params>
-    FunctionPerformanceAdaptor(Params ...params) : DefaultFunction(params...)
-    {
-        statistics.emplace_back();
-    }
-
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        auto id = statistics.select();
-        Stopwatch watch;
-        if (id == 0) {
-            DefaultFunction::executeImpl(block, arguments, result, input_rows_count);
-        } else {
-            impls[id - 1]->executeImpl(block, arguments, result, input_rows_count);
-        }
-        watch.stop();
-        // TODO(dakovalkov): Calculate something more informative.
-        size_t rows_summary = 0;
-        for (auto i : arguments) {
-            rows_summary += block.getByPosition(i).column->size();
-        }
-        if (rows_summary >= 1000) {
-            statistics.data[id].update(watch.elapsedSeconds(), rows_summary);
-        }
-    }
-
-    // Register alternative implementation.
-    template<typename Function, typename ...Params>
-    void registerImplementation(TargetArch arch, Params... params) {
-        if (arch == TargetArch::Default || IsArchSupported(arch)) {
-            impls.emplace_back(std::make_shared<Function>(params...));
-            statistics.emplace_back();
-        }
-    }
-
-private:
-    std::vector<FunctionPtr> impls; // Alternative implementations.
+    std::vector<BaseFunctionPtr> impls; // Alternative implementations.
     PerformanceStatistics statistics;
     PerformanceAdaptorOptions options;
 };

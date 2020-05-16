@@ -42,6 +42,7 @@ DECLARE_MULTITARGET_CODE(
 struct RandImpl
 {
     static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch); }
 };
 
 ) // DECLARE_MULTITARGET_CODE
@@ -55,6 +56,11 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    static String getImplementationTag()
+    {
+        return RandImpl::getImplementationTag();
     }
 
     bool isDeterministic() const override { return false; }
@@ -91,14 +97,18 @@ template <typename ToType, typename Name>
 class FunctionRandom : public FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>
 {
 public:
-    FunctionRandom() {
+    FunctionRandom()
+        : FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>(
+            PerformanceAdaptorOptions())
+    {
         registerImplementation<FunctionRandomImpl<TargetSpecific::SSE4::RandImpl,    ToType, Name>>(TargetArch::SSE4);
         registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,     ToType, Name>>(TargetArch::AVX);
         registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,    ToType, Name>>(TargetArch::AVX2);
         registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>(TargetArch::AVX512F);
     }
 
-    static FunctionPtr create(const Context &) {
+    static FunctionPtr create(const Context &)
+    {
         return std::make_shared<FunctionRandom<ToType, Name>>();
     }
 };

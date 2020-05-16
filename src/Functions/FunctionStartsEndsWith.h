@@ -41,6 +41,11 @@ public:
         return name;
     }
 
+    static String getImplementationTag()
+    {
+        return ToString(BuildArch);
+    }
+
     size_t getNumberOfArguments() const override
     {
         return 2;
@@ -143,7 +148,9 @@ class FunctionStartsEndsWith
 {
 public:
     FunctionStartsEndsWith(const Context &)
-        : FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>()
+        : FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>(
+            PerformanceAdaptorOptions()
+        )
     {
         registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>   (TargetArch::SSE4);
         registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>    (TargetArch::AVX);

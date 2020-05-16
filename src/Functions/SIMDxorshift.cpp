@@ -4,8 +4,6 @@
 #include <Common/randomSeed.h>
 #include <common/unaligned.h>
 
-#include <Functions/FunctionFactory.h>
-
 #include <Functions/SIMDxorshift.h>
 
 extern "C"
