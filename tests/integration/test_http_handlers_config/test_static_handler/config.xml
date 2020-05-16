@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <test_get_config_static_handler>Test get static handler and config content</test_get_config_static_handler>
+
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_get_fixed_static_handler</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>Test get static handler and fix content</response_content>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_get_config_static_handler</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://test_get_config_static_handler</response_content>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_get_absolute_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file:///absolute_path_file.html</response_content>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_get_relative_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://./relative_path_file.html</response_content>
+            </handler>
+        </rule>
+
+    </http_handlers>
+</yandex>

@@ -16,7 +16,8 @@ class FilterTransform : public ISimpleTransform
 {
 public:
     FilterTransform(
-        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_);
+        const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
+        bool remove_filter_column_, bool on_totals_ = false);
 
     String getName() const override { return "FilterTransform"; }
 
@@ -29,6 +30,7 @@ private:
     ExpressionActionsPtr expression;
     String filter_column_name;
     bool remove_filter_column;
+    bool on_totals;
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
@@ -38,7 +40,7 @@ private:
 
     bool are_prepared_sets_initialized = false;
 
-    void removeFilterIfNeed(Chunk & chunk);
+    void removeFilterIfNeed(Chunk & chunk) const;
 };
 
 }

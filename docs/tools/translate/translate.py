@@ -2,6 +2,7 @@
 
 import os
 import random
+import re
 import sys
 import time
 import urllib.parse
@@ -15,11 +16,12 @@ import typograph_ru
 
 translator = googletrans.Translator()
 default_target_language = os.environ.get('TARGET_LANGUAGE', 'ru')
+curly_braces_re = re.compile('({[^}]+})')
 
 is_yandex = os.environ.get('YANDEX') is not None
 
 
-def translate(text, target_language=None):
+def translate_impl(text, target_language=None):
     target_language = target_language or default_target_language
     if target_language == 'en':
         return text
@@ -46,6 +48,16 @@ def translate(text, target_language=None):
         return translator.translate(text, target_language).text
 
 
+def translate(text, target_language=None):
+    result = []
+    for part in re.split(curly_braces_re, text):
+        if part.startswith('{') and part.endswith('}'):
+            result.append(part)
+        else:
+            result.append(translate_impl(part, target_language=target_language))
+    return ''.join(result)
+
+
 def translate_toc(root, lang):
     global is_yandex
     is_yandex = True
@@ -63,8 +75,8 @@ def translate_toc(root, lang):
 
 def translate_po():
     import babel.messages.pofile
-    base_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'website', 'locale')
-    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja', 'fa']:
+    base_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'website', 'locale')
+    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja', 'tr', 'fa']:
         po_path = os.path.join(base_dir, lang, 'LC_MESSAGES', 'messages.po')
         with open(po_path, 'r') as f:
             po_file = babel.messages.pofile.read_po(f, locale=lang, domain='messages')

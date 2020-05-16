@@ -160,7 +160,7 @@ struct StringComparisonImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            c[i] = Op::apply(memcmpSmallAllowOverflow15(
+            c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
                 b_data.data() + i * b_n, b_n), 0);
 
@@ -168,7 +168,7 @@ struct StringComparisonImpl
         }
     }
 
-    static void NO_INLINE string_vectorConstant(
+    static void NO_INLINE string_vector_constant(
         const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -239,11 +239,11 @@ struct StringComparisonImpl
             size_t size = a_data.size() / a_n;
 
             for (size_t i = 0; i < size; ++i)
-                c[i] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n), 0);
+                c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n), 0);
         }
     }
 
-    static void NO_INLINE fixed_string_vectorConstant(
+    static void NO_INLINE fixed_string_vector_constant(
         const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -262,7 +262,7 @@ struct StringComparisonImpl
         {
             size_t size = a_data.size();
             for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size), 0);
+                c[j] = Op::apply(0, memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size));
         }
     }
 
@@ -271,7 +271,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
-        StringComparisonImpl<typename Op::SymmetricOp>::string_vectorConstant(b_data, b_offsets, a_data, a_size, c);
+        StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a_data, a_size, c);
     }
 
     static void constant_fixed_string_vector(
@@ -279,15 +279,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
-        StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vectorConstant(b_data, b_n, a_data, a_size, c);
-    }
-
-    static void constantConstant(
-        const ColumnString::Chars & a_data, ColumnString::Offset a_size,
-        const ColumnString::Chars & b_data, ColumnString::Offset b_size,
-        UInt8 & c)
-    {
-        c = Op::apply(memcmpSmallAllowOverflow15(a_data.data(), a_size, b_data.data(), b_size), 0);
+        StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a_data, a_size, c);
     }
 };
 
@@ -331,7 +323,7 @@ struct StringEqualsImpl
         {
             auto a_size = a_offsets[i] - prev_a_offset - 1;
 
-            c[i] = positive == memequalSmallAllowOverflow15(
+            c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
                 b_data.data() + b_n * i, b_n);
 
@@ -339,7 +331,7 @@ struct StringEqualsImpl
         }
     }
 
-    static void NO_INLINE string_vectorConstant(
+    static void NO_INLINE string_vector_constant(
         const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -397,15 +389,21 @@ struct StringEqualsImpl
         {
             fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
         }
+        else if (a_n == b_n)
+        {
+            size_t size = a_data.size() / a_n;
+            for (size_t i = 0; i < size; ++i)
+                c[i] = positive == memequalSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * a_n, a_n);
+        }
         else
         {
             size_t size = a_data.size() / a_n;
             for (size_t i = 0; i < size; ++i)
-                c[i] = positive == memequalSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n);
+                c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n);
         }
     }
 
-    static void NO_INLINE fixed_string_vectorConstant(
+    static void NO_INLINE fixed_string_vector_constant(
         const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -418,7 +416,7 @@ struct StringEqualsImpl
         {
             size_t size = a_data.size() / a_n;
             for (size_t i = 0; i < size; ++i)
-                c[i] = positive == memequalSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data(), b_size);
+                c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data(), b_size);
         }
     }
 
@@ -435,7 +433,7 @@ struct StringEqualsImpl
         const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
-        string_vectorConstant(b_data, b_offsets, a_data, a_size, c);
+        string_vector_constant(b_data, b_offsets, a_data, a_size, c);
     }
 
     static void constant_fixed_string_vector(
@@ -443,15 +441,7 @@ struct StringEqualsImpl
         const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
-        fixed_string_vectorConstant(b_data, b_n, a_data, a_size, c);
-    }
-
-    static void constantConstant(
-        const ColumnString::Chars & a_data, ColumnString::Offset a_size,
-        const ColumnString::Chars & b_data, ColumnString::Offset b_size,
-        UInt8 & c)
-    {
-        c = positive == memequalSmallAllowOverflow15(a_data.data(), a_size, b_data.data(), b_size);
+        fixed_string_vector_constant(b_data, b_n, a_data, a_size, c);
     }
 };
 
@@ -758,9 +748,11 @@ private:
 
         if (c0_const && c1_const)
         {
-            UInt8 res = 0;
-            StringImpl::constantConstant(*c0_const_chars, c0_const_size, *c1_const_chars, c1_const_size, res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(c0_const->size(), toField(res));
+            auto res = executeString(block, result, &c0_const->getDataColumn(), &c1_const->getDataColumn());
+            if (!res)
+                return false;
+
+            block.getByPosition(result).column = ColumnConst::create(block.getByPosition(result).column, c0_const->size());
             return true;
         }
         else
@@ -780,7 +772,7 @@ private:
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else if (c0_string && c1_const)
-                StringImpl::string_vectorConstant(
+                StringImpl::string_vector_constant(
                     c0_string->getChars(), c0_string->getOffsets(),
                     *c1_const_chars, c1_const_size,
                     c_res->getData());
@@ -795,7 +787,7 @@ private:
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else if (c0_fixed_string && c1_const)
-                StringImpl::fixed_string_vectorConstant(
+                StringImpl::fixed_string_vector_constant(
                     c0_fixed_string->getChars(), c0_fixed_string->getN(),
                     *c1_const_chars, c1_const_size,
                     c_res->getData());
@@ -857,7 +849,7 @@ private:
         {
             time_t date_time;
             ReadBufferFromMemory in(string_value.data, string_value.size);
-            readDateTimeText(date_time, in);
+            readDateTimeText(date_time, in, dynamic_cast<const DataTypeDateTime &>(*number_type).getTimeZone());
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
@@ -1105,8 +1097,8 @@ private:
     {
         DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
 
-        ColumnPtr c0_converted = castColumn(c0, common_type, context);
-        ColumnPtr c1_converted = castColumn(c1, common_type, context);
+        ColumnPtr c0_converted = castColumn(c0, common_type);
+        ColumnPtr c1_converted = castColumn(c1, common_type);
 
         executeGenericIdenticalTypes(block, result, c0_converted.get(), c1_converted.get());
     }
@@ -1133,12 +1125,10 @@ public:
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
             || (left.isStringOrFixedString() && right.isStringOrFixedString())
-            || (left.isDate() && right.isDate())
-            || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.
-            || (left.isString() && right.isDate())
-            || (left.isDateTime() && right.isDateTime())
-            || (left.isDateTime() && right.isString())
-            || (left.isString() && right.isDateTime())
+            /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
+            || (left.isString() && right.isDateOrDateTime())
+            || (left.isDateOrDateTime() && right.isString())
+            || (left.isDateOrDateTime() && right.isDateOrDateTime() && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || (left.isUUID() && right.isString())
             || (left.isString() && right.isUUID())
@@ -1235,6 +1225,65 @@ public:
         else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
+        else if (which_left.idx != which_right.idx
+                 && (which_left.isDateTime64() || which_right.isDateTime64())
+                 && (which_left.isStringOrFixedString() || which_right.isStringOrFixedString()))
+        {
+            /** Special case of comparing DateTime64 against a string.
+             *
+             * Can't be moved to executeDateOrDateTimeOrEnumOrUUIDWithConstString()
+             * since DateTime64 is basically a Decimal, but we do similar things, except type inference.
+             * Outline:
+             * - Extract string content
+             * - Parse it as a ColumnDateTime64 value (same type as DateTime64, means same precision)
+             * - Fabricate a column with type and name
+             * - Compare left and right comlumns as DateTime64 columns.
+             */
+
+            const size_t datetime64_col_index = which_left.isDateTime64() ? 0 : 1;
+            const size_t string_col_index = which_left.isStringOrFixedString() ? 0 : 1;
+
+            const auto & datetime64_col_with_type_and_name = block.getByPosition(arguments[datetime64_col_index]);
+            const auto & string_col_with_type_and_name = block.getByPosition(arguments[string_col_index]);
+
+            if (!isColumnConst(*string_col_with_type_and_name.column))
+                throw Exception(getName() + ", illegal column type of argument #" + std::to_string(string_col_index)
+                        + " '" + string_col_with_type_and_name.name + "'"
+                        " expected const String or const FixedString,"
+                        " got " + string_col_with_type_and_name.type->getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+
+            if (datetime64_col_with_type_and_name.column->size() == 0 || string_col_with_type_and_name.column->size() == 0)
+            {
+                // For some reason, when both left and right columns are empty (dry run while building a header block)
+                // executeDecimal() fills result column with bogus value.
+                block.getByPosition(result).column = ColumnUInt8::create();
+                return;
+            }
+
+            auto parsed_tmp_column_holder = datetime64_col_with_type_and_name.type->createColumn();
+
+            {
+                const StringRef string_value = string_col_with_type_and_name.column->getDataAt(0);
+                ReadBufferFromMemory in(string_value.data, string_value.size);
+                datetime64_col_with_type_and_name.type->deserializeAsWholeText(*parsed_tmp_column_holder, in, FormatSettings{});
+
+                if (!in.eof())
+                    throw Exception(getName() + ": String is too long for " + datetime64_col_with_type_and_name.type->getName() + " : " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+            }
+
+            // It is necessary to wrap tmp column in ColumnConst to avoid overflow when comparing.
+            // (non-const columns are expected to have same number of rows as every other column in block).
+            const ColumnWithTypeAndName parsed_tmp_col_with_type_and_name{
+                    ColumnConst::create(std::move(parsed_tmp_column_holder), 1),
+                    datetime64_col_with_type_and_name.type,
+                    string_col_with_type_and_name.name};
+
+            executeDecimal(block, result,
+                which_left.isDateTime64() ? datetime64_col_with_type_and_name : parsed_tmp_col_with_type_and_name,
+                which_right.isDateTime64() ? datetime64_col_with_type_and_name : parsed_tmp_col_with_type_and_name);
+
         }
         else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
         {

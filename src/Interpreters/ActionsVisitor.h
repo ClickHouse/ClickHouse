@@ -80,6 +80,13 @@ public:
         size_t visit_depth;
         ScopeStack actions_stack;
 
+        /*
+         * Remember the last unique column suffix to avoid quadratic behavior
+         * when we add lots of column with same prefix. One counter for all
+         * prefixes is good enough.
+         */
+        int next_unique_suffix;
+
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                 const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
@@ -95,7 +102,8 @@ public:
             only_consts(only_consts_),
             no_storage_or_local(no_storage_or_local_),
             visit_depth(0),
-            actions_stack(actions, context)
+            actions_stack(actions, context),
+            next_unique_suffix(actions_stack.getSampleBlock().columns() + 1)
         {}
 
         void updateActions(ExpressionActionsPtr & actions)
@@ -117,6 +125,26 @@ public:
         bool hasColumn(const String & columnName) const
         {
             return actions_stack.getSampleBlock().has(columnName);
+        }
+
+        /*
+         * Generate a column name that is not present in the sample block, using
+         * the given prefix and an optional numeric suffix.
+         */
+        String getUniqueName(const String & prefix)
+        {
+            const auto & block = getSampleBlock();
+            auto result = prefix;
+
+            // First, try the name without any suffix, because it is currently
+            // used both as a display name and a column id.
+            while (block.has(result))
+            {
+                result = prefix + "_" + toString(next_unique_suffix);
+                ++next_unique_suffix;
+            }
+
+            return result;
         }
     };
 

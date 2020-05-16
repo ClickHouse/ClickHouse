@@ -204,6 +204,13 @@ public:
     char * allocContinue(size_t additional_bytes, char const *& range_start,
                          size_t start_alignment = 0)
     {
+        /*
+         * Allocating zero bytes doesn't make much sense. Also, a zero-sized
+         * range might break the invariant that the range begins at least before
+         * the current chunk end.
+         */
+        assert(additional_bytes > 0);
+
         if (!range_start)
         {
             // Start a new memory range.
@@ -220,7 +227,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current Chunk.
-        assert(range_start >= head->begin && range_start < head->end);
+        assert(range_start >= head->begin);
+        assert(range_start < head->end);
 
         if (head->pos + additional_bytes <= head->end)
         {
@@ -297,6 +305,9 @@ public:
         return size_in_bytes;
     }
 
+    /// Bad method, don't use it -- the chunks are not your business, the entire
+    /// purpose of the arena code is to manage them for you, so if you find
+    /// yourself having to use this method, probably you're doing something wrong.
     size_t remainingSpaceInCurrentChunk() const
     {
         return head->remaining();

@@ -33,7 +33,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
 {
-    if (!claimed)
+    if (!buffer)
         return;
 
     if (broken)
@@ -51,7 +51,6 @@ void KafkaBlockInputStream::readPrefixImpl()
 {
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
-    claimed = !!buffer;
 
     if (!buffer)
         return;
@@ -190,7 +189,6 @@ Block KafkaBlockInputStream::readImpl()
         result_block.insert(column);
 
     return ConvertingBlockInputStream(
-               context,
                std::make_shared<OneBlockInputStream>(result_block),
                getHeader(),
                ConvertingBlockInputStream::MatchColumnsMode::Name)

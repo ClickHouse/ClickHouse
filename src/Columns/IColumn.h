@@ -44,7 +44,7 @@ public:
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
-    /** If column isn't constant, returns nullptr (or itself).
+    /** If column isn't constant, returns itself.
       * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */
     virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }

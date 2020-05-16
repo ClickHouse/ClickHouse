@@ -14,12 +14,12 @@
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
+#include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -331,7 +331,9 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 
+    /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
+
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
@@ -361,31 +363,9 @@ public:
     }
 
     bool supportsSettings() const override { return true; }
+    NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
-
-    NameAndTypePair getColumn(const String & column_name) const override
-    {
-        if (column_name == "_part")
-            return NameAndTypePair("_part", std::make_shared<DataTypeString>());
-        if (column_name == "_part_index")
-            return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
-        if (column_name == "_partition_id")
-            return NameAndTypePair("_partition_id", std::make_shared<DataTypeString>());
-        if (column_name == "_sample_factor")
-            return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
-
-        return getColumns().getPhysical(column_name);
-    }
-
-    bool hasColumn(const String & column_name) const override
-    {
-        return getColumns().hasPhysical(column_name)
-            || column_name == "_part"
-            || column_name == "_part_index"
-            || column_name == "_partition_id"
-            || column_name == "_sample_factor";
-    }
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -521,8 +501,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_table_path, const String & new_database_name,
-        const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -560,7 +539,7 @@ public:
     bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const;
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -619,6 +598,8 @@ public:
     {
         return storage_settings.get();
     }
+
+    String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
@@ -682,7 +663,8 @@ public:
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
-    /// Names of columns for primary key + secondary sorting columns.
+    /// Names of sorting key columns in ORDER BY expression. For example: 'a',
+    /// 'x * y', 'toStartOfMonth(date)', etc.
     Names sorting_key_columns;
     ASTPtr sorting_key_expr_ast;
     ExpressionActionsPtr sorting_key_expr;
@@ -869,14 +851,14 @@ protected:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
+    void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
     void initPartitionKey();
 
     void setTTLExpressions(const ColumnsDescription & columns,
         const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
-    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
+    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
@@ -956,7 +938,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
 };
 
 }

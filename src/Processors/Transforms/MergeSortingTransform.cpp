@@ -1,6 +1,6 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -8,7 +8,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 
 namespace ProfileEvents
@@ -191,6 +191,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         {
             bool quiet = false;
             bool have_all_inputs = false;
+            bool use_average_block_sizes = false;
 
             external_merging_sorted = std::make_shared<MergingSortedTransform>(
                     header_without_constants,
@@ -198,7 +199,9 @@ void MergeSortingTransform::consume(Chunk chunk)
                     description,
                     max_merged_block_size,
                     limit,
+                    nullptr,
                     quiet,
+                    use_average_block_sizes,
                     have_all_inputs);
 
             processors.emplace_back(external_merging_sorted);

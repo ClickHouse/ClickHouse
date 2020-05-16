@@ -24,5 +24,6 @@ INSERT INTO quorum2 VALUES (4, toDate('2020-12-16')); -- { serverError 319 }
 SELECT x FROM quorum1 ORDER BY x;
 SELECT x FROM quorum2 ORDER BY x;
 
-DROP TABLE IF EXISTS quorum1;
-DROP TABLE IF EXISTS quorum2;
+DROP TABLE quorum1 NO DELAY;
+DROP TABLE quorum2 NO DELAY;
+SELECT sleep(1) FORMAT Null;

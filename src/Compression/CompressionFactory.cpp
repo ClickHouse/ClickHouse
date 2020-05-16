@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_CODEC;
+    extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
@@ -29,22 +30,22 @@ CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level) const
+CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level, bool sanity_check) const
 {
     if (level)
     {
         auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)));
+        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)), {}, sanity_check);
     }
     else
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        return get(makeASTFunction("CODEC", identifier));
+        return get(makeASTFunction("CODEC", identifier), {}, sanity_check);
     }
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type) const
+CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -60,10 +61,22 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
         }
 
+        CompressionCodecPtr res;
+
         if (codecs.size() == 1)
-            return codecs.back();
+            res = codecs.back();
         else if (codecs.size() > 1)
-            return std::make_shared<CompressionCodecMultiple>(codecs);
+            res = std::make_shared<CompressionCodecMultiple>(codecs, sanity_check);
+
+        /// Allow to explicitly specify single NONE codec if user don't want any compression.
+        /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
+        if (sanity_check && !res->isCompression() && !res->isNone())
+            throw Exception("Compression codec " + res->getCodecDesc() + " does not compress anything."
+                " You may want to add generic compression algorithm after other transformations, like: " + res->getCodecDesc() + ", LZ4."
+                " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
+                ErrorCodes::BAD_ARGUMENTS);
+
+        return res;
     }
 
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
