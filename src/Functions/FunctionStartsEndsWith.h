@@ -152,7 +152,7 @@ public:
             PerformanceAdaptorOptions()
         )
     {
-        registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>   (TargetArch::SSE4);
+        registerImplementation<TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>  (TargetArch::SSE42);
         registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>    (TargetArch::AVX);
         registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>   (TargetArch::AVX2);
         registerImplementation<TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>(TargetArch::AVX512F);

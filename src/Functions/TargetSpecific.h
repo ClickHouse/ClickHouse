@@ -46,7 +46,7 @@
 /// DECLARE_MULTITARGET_CODE(
 /// int funcImpl(int size, ...) {
 ///     int iteration_size = 1;
-///     if constexpr (BuildArch == TargetArch::SSE4)
+///     if constexpr (BuildArch == TargetArch::SSE42)
 ///         iteration_size = 2
 ///     else if constexpr (BuildArch == TargetArch::AVX || BuildArch == TargetArch::AVX2)
 ///         iteration_size = 4;
@@ -66,8 +66,8 @@ namespace DB
 
 enum class TargetArch : UInt32
 {
-    Default  = 0, // Without any additional compiler options.
-    SSE4     = (1 << 0),
+    Default  = 0,        /// Without any additional compiler options.
+    SSE42    = (1 << 0), /// SSE4.2
     AVX      = (1 << 1),
     AVX2     = (1 << 2),
     AVX512F  = (1 << 3),
@@ -85,7 +85,7 @@ String ToString(TargetArch arch);
         "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx,avx2\"))),apply_to=function)")
 #   define BEGIN_AVX_SPECIFIC_CODE _Pragma(\
         "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx\"))),apply_to=function)")
-#   define BEGIN_SSE4_SPECIFIC_CODE _Pragma(\
+#   define BEGIN_SSE42_SPECIFIC_CODE _Pragma(\
         "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx\"))),apply_to=function)")
 #   define END_TARGET_SPECIFIC_CODE _Pragma("clang attribute pop")
 #elif defined(__GNUC__)
@@ -98,7 +98,7 @@ String ToString(TargetArch arch);
 #   define BEGIN_AVX_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,tune=native\")")
-#   define BEGIN_SSE4_SPECIFIC_CODE \
+#   define BEGIN_SSE42_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,tune=native\")")
 #   define END_TARGET_SPECIFIC_CODE \
@@ -113,10 +113,10 @@ namespace TargetSpecific::Default { \
     __VA_ARGS__ \
 }
 
-#define DECLARE_SSE4_SPECIFIC_CODE(...) \
-BEGIN_SSE4_SPECIFIC_CODE \
-namespace TargetSpecific::SSE4 { \
-    using namespace DB::TargetSpecific::SSE4; \
+#define DECLARE_SSE42_SPECIFIC_CODE(...) \
+BEGIN_SSE42_SPECIFIC_CODE \
+namespace TargetSpecific::SSE42 { \
+    using namespace DB::TargetSpecific::SSE42; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -147,7 +147,7 @@ END_TARGET_SPECIFIC_CODE
 
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
-DECLARE_SSE4_SPECIFIC_CODE   (__VA_ARGS__) \
+DECLARE_SSE42_SPECIFIC_CODE  (__VA_ARGS__) \
 DECLARE_AVX_SPECIFIC_CODE    (__VA_ARGS__) \
 DECLARE_AVX2_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_AVX512F_SPECIFIC_CODE(__VA_ARGS__)
@@ -156,9 +156,9 @@ DECLARE_DEFAULT_CODE(
     constexpr auto BuildArch = TargetArch::Default;
 ) // DECLARE_DEFAULT_CODE
 
-DECLARE_SSE4_SPECIFIC_CODE(
-    constexpr auto BuildArch = TargetArch::SSE4;
-) // DECLARE_SSE4_SPECIFIC_CODE
+DECLARE_SSE42_SPECIFIC_CODE(
+    constexpr auto BuildArch = TargetArch::SSE42;
+) // DECLARE_SSE42_SPECIFIC_CODE
 
 DECLARE_AVX_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX;
