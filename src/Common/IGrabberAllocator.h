@@ -564,7 +564,7 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
-    void onSharedValueCreate(const std::lock_guard&, RegionMetadata& metadata) noexcept
+    void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
         ++metadata.refcount;
 
