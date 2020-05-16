@@ -4,7 +4,7 @@
 #include <Common/randomSeed.h>
 #include <common/unaligned.h>
 
-#include <Functions/SIMDxorshift.h>
+#include <Functions/RandXorshift.h>
 
 extern "C"
 {

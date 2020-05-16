@@ -4,7 +4,7 @@
 
 /// This file contains macros and helpers for writing platform-dependent code.
 /// 
-/// Macroses DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside them into the 
+/// Macros DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside them into the 
 /// namespace TargetSpecific::<Arch> and enable Arch-specific compile options.
 /// Thus, it's allowed to call functions inside these namespaces only after
 /// checking platform in runtime (see IsArchSupported() below).
