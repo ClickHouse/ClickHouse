@@ -28,7 +28,8 @@ struct AggregateFunctionDistinctData
     > data;
     std::mutex mutex;
 
-    bool ALWAYS_INLINE TryToInsert(const Key& key) {
+    bool ALWAYS_INLINE TryToInsert(const Key& key)
+    {
         std::lock_guard lock(mutex);
         return data.insert(key).second;
     }
