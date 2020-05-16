@@ -44,6 +44,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
@@ -314,7 +315,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
-        if (context->hasQueryContext())
+        if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext().addScalar(it.first, it.second);
 
@@ -422,11 +423,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
 
     /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system" &&
-        ((left_table_id.table_name == "quotas") || (left_table_id.table_name == "quota_usage") || (left_table_id.table_name == "one")))
+    if (left_table_id.database_name == "system")
     {
-        options.ignore_quota = true;
-        options.ignore_limits = true;
+        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        {
+            options.ignore_quota = true;
+            options.ignore_limits = true;
+        }
     }
 
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
@@ -632,6 +636,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
+    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -645,10 +650,10 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, true, fill_desc);
+                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
     }
 
     return order_descr;
@@ -1210,7 +1215,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
                 if (is_alias)
-                    column_expr = setAlias(column_default->expression->clone(), column);
+                {
+                    auto column_decl = storage_columns.get(column);
+                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
+                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+                    column_expr = setAlias(cast_column_default->clone(), column);
+                }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
 

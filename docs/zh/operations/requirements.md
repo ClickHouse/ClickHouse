@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: "\u8981\u6C42"
 ---
@@ -24,9 +24,9 @@ RAM所需的体积取决于:
 -   查询的复杂性。
 -   在查询中处理的数据量。
 
-要计算所需的RAM体积，您应该估计临时数据的大小 [GROUP BY](../sql-reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select.md#select-distinct), [JOIN](../sql-reference/statements/select.md#select-join) 和您使用的其他操作。
+要计算所需的RAM体积，您应该估计临时数据的大小 [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) 和您使用的其他操作。
 
-ClickHouse可以使用外部存储器来存储临时数据。 看 [在外部存储器中分组](../sql-reference/statements/select.md#select-group-by-in-external-memory) 有关详细信息。
+ClickHouse可以使用外部存储器来存储临时数据。 看 [在外部存储器中分组](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) 有关详细信息。
 
 ## 交换文件 {#swap-file}
 

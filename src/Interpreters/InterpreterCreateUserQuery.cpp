@@ -48,7 +48,7 @@ namespace
         if (default_roles)
         {
             if (!query.alter && !default_roles->all)
-                boost::range::copy(default_roles->getMatchingIDs(), std::inserter(user.granted_roles, user.granted_roles.end()));
+                user.granted_roles.grant(default_roles->getMatchingIDs());
 
             InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, *default_roles);
         }

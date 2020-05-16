@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: Para reemplazar en cadenas
 ---
 
-# Funciones Para Buscar y Reemplazar En Cadenas {#functions-for-searching-and-replacing-in-strings}
+# Funciones para buscar y reemplazar en cadenas {#functions-for-searching-and-replacing-in-strings}
 
 ## replaceOne(pajar, patrón, reemplazo) {#replaceonehaystack-pattern-replacement}
 
@@ -84,10 +84,10 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
-## Sistema Abierto.) {#regexpquotemetas}
+## Sistema abierto.) {#regexpquotemetas}
 
 La función agrega una barra invertida antes de algunos caracteres predefinidos en la cadena.
-Caracteres predefinidos: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, ‘\]’, ‘?’, ‘\*‘,’+‘,’{‘,’:‘,’-’.
+Caracteres predefinidos: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, '\]', ‘?’, '\*‘,’+‘,’{‘,’:‘,’-'.
 Esta implementación difiere ligeramente de re2::RE2::QuoteMeta. Escapa de byte cero como \\0 en lugar de 00 y escapa solo de los caracteres requeridos.
 Para obtener más información, consulte el enlace: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 

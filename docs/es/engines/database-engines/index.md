@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Database Engines
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: Motores de base de datos
 toc_priority: 27
 toc_title: "Implantaci\xF3n"
 ---
 
-# Motores De Base De Datos {#database-engines}
+# Motores de base de datos {#database-engines}
 
 Los motores de bases de datos le permiten trabajar con tablas.
 

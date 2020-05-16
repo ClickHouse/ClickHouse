@@ -1087,7 +1087,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         auto indices_to_recalc = getIndicesToRecalculate(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
 
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
-        NameToNameMap files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
+        NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
@@ -1099,7 +1099,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 continue;
 
             String destination = new_part_tmp_path + "/";
-            auto rename_it = files_to_rename.find(it->name());
+            String file_name = it->name();
+            auto rename_it = std::find_if(files_to_rename.begin(), files_to_rename.end(), [&file_name](const auto & rename_pair) { return rename_pair.first == file_name; });
             if (rename_it != files_to_rename.end())
             {
                 if (rename_it->second.empty())
@@ -1330,7 +1331,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 }
 
 
-NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
+NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
@@ -1345,14 +1346,14 @@ NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
             {});
     }
 
-    NameToNameMap rename_map;
+    NameToNameVector rename_vector;
     /// Remove old indices
     for (const auto & command : commands_for_removes)
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            rename_map.emplace("skp_idx_" + command.column_name + ".idx", "");
-            rename_map.emplace("skp_idx_" + command.column_name + mrk_extension, "");
+            rename_vector.emplace_back("skp_idx_" + command.column_name + ".idx", "");
+            rename_vector.emplace_back("skp_idx_" + command.column_name + mrk_extension, "");
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
@@ -1362,8 +1363,8 @@ NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
-                    rename_map.emplace(stream_name + ".bin", "");
-                    rename_map.emplace(stream_name + mrk_extension, "");
+                    rename_vector.emplace_back(stream_name + ".bin", "");
+                    rename_vector.emplace_back(stream_name + mrk_extension, "");
                 }
             };
 
@@ -1385,8 +1386,8 @@ NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
 
                 if (stream_from != stream_to)
                 {
-                    rename_map.emplace(stream_from + ".bin", stream_to + ".bin");
-                    rename_map.emplace(stream_from + mrk_extension, stream_to + mrk_extension);
+                    rename_vector.emplace_back(stream_from + ".bin", stream_to + ".bin");
+                    rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
                 }
             };
             IDataType::SubstreamPath stream_path;
@@ -1396,7 +1397,7 @@ NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
         }
     }
 
-    return rename_map;
+    return rename_vector;
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(

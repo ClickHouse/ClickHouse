@@ -225,15 +225,15 @@ public:
         }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        const AggregateFunctionForEachData & state = data(place);
+        AggregateFunctionForEachData & state = data(place);
 
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
-        const char * nested_state = state.array_of_aggregate_datas;
+        char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
             nested_func->insertResultInto(nested_state, elems_to);

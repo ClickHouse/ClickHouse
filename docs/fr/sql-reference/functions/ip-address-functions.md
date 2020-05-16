@@ -1,19 +1,19 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 55
 toc_title: Travailler avec des adresses IP
 ---
 
-# Fonctions Pour Travailler Avec Des Adresses IP {#functions-for-working-with-ip-addresses}
+# Fonctions pour travailler avec des adresses IP {#functions-for-working-with-ip-addresses}
 
 ## IPv4NumToString (num) {#ipv4numtostringnum}
 
-Prend un numéro UInt32. Interprète comme une adresse IPv4 dans big endian. Renvoie une chaîne contenant l’adresse IPv4 correspondante au format A. B. C. d (Nombres séparés par des points sous forme décimale).
+Prend un numéro UInt32. Interprète comme une adresse IPv4 dans big endian. Renvoie une chaîne contenant l'adresse IPv4 correspondante au format A. B. C. d (Nombres séparés par des points sous forme décimale).
 
 ## IPv4StringToNum (s) {#ipv4stringtonums}
 
-La fonction inverse de IPv4NumToString. Si L’adresse IPv4 a un format non valide, elle renvoie 0.
+La fonction inverse de IPv4NumToString. Si L'adresse IPv4 a un format non valide, elle renvoie 0.
 
 ## IPv4NumToStringClassC(num) {#ipv4numtostringclasscnum}
 
@@ -46,11 +46,11 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Depuis l’utilisation de ‘xxx’ est très inhabituel, cela peut être changé à l’avenir. Nous vous recommandons de ne pas compter sur le format exact de ce fragment.
+Depuis l'utilisation de ‘xxx’ est très inhabituel, cela peut être changé à l'avenir. Nous vous recommandons de ne pas compter sur le format exact de ce fragment.
 
 ### IPv6NumToString (x) {#ipv6numtostringx}
 
-Accepte une valeur FixedString (16) contenant L’adresse IPv6 au format binaire. Renvoie une chaîne contenant cette adresse au format texte.
+Accepte une valeur FixedString (16) contenant L'adresse IPv6 au format binaire. Renvoie une chaîne contenant cette adresse au format texte.
 Les adresses IPv4 mappées IPv6 sont sorties au format:: ffff: 111.222.33.44. Exemple:
 
 ``` sql
@@ -117,12 +117,12 @@ LIMIT 10
 
 ## IPv6StringToNum (s) {#ipv6stringtonums}
 
-La fonction inverse de IPv6NumToString. Si L’adresse IPv6 a un format non valide, elle renvoie une chaîne d’octets null.
+La fonction inverse de IPv6NumToString. Si L'adresse IPv6 a un format non valide, elle renvoie une chaîne d'octets null.
 HEX peut être en majuscules ou en minuscules.
 
 ## IPv4ToIPv6 (x) {#ipv4toipv6x}
 
-Prend un `UInt32` nombre. Interprète comme une adresse IPv4 dans [big endian](https://en.wikipedia.org/wiki/Endianness). Retourne un `FixedString(16)` valeur contenant l’adresse IPv6 au format binaire. Exemple:
+Prend un `UInt32` nombre. Interprète comme une adresse IPv4 dans [big endian](https://en.wikipedia.org/wiki/Endianness). Retourne un `FixedString(16)` valeur contenant l'adresse IPv6 au format binaire. Exemple:
 
 ``` sql
 SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
@@ -134,9 +134,9 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 └────────────────────┘
 ```
 
-## cutIPv6 (x, bitsToCutForIPv6, bitsToCutForIPv4) {#cutipv6x-bitstocutforipv6-bitstocutforipv4}
+## cutIPv6 (x, bytesToCutForIPv6, bytesToCutForIPv4) {#cutipv6x-bytestocutforipv6-bytestocutforipv4}
 
-Accepte une valeur FixedString (16) contenant L’adresse IPv6 au format binaire. Renvoie une chaîne contenant l’adresse du nombre spécifié de bits retiré au format texte. Exemple:
+Accepte une valeur FixedString (16) contenant L'adresse IPv6 au format binaire. Renvoie une chaîne contenant l'adresse du nombre spécifié d'octets retiré au format texte. Exemple:
 
 ``` sql
 WITH
@@ -183,7 +183,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toipv4 (chaîne) {#toipv4string}
 
-Un alias `IPv4StringToNum()` cela prend une forme de chaîne D’adresse IPv4 et renvoie la valeur de [IPv4](../../sql-reference/data-types/domains/ipv4.md) type, qui est binaire égal à la valeur renvoyée par `IPv4StringToNum()`.
+Un alias `IPv4StringToNum()` cela prend une forme de chaîne D'adresse IPv4 et renvoie la valeur de [IPv4](../../sql-reference/data-types/domains/ipv4.md) type, qui est binaire égal à la valeur renvoyée par `IPv4StringToNum()`.
 
 ``` sql
 WITH
@@ -215,7 +215,7 @@ SELECT
 
 ## toipv6 (chaîne) {#toipv6string}
 
-Un alias `IPv6StringToNum()` cela prend une forme de chaîne D’adresse IPv6 et renvoie la valeur de [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, qui est binaire égal à la valeur renvoyée par `IPv6StringToNum()`.
+Un alias `IPv6StringToNum()` cela prend une forme de chaîne D'adresse IPv6 et renvoie la valeur de [IPv6](../../sql-reference/data-types/domains/ipv6.md) type, qui est binaire égal à la valeur renvoyée par `IPv6StringToNum()`.
 
 ``` sql
 WITH

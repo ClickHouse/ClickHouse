@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: SHOW
 ---
@@ -100,6 +100,70 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+## SHOW GRANTS {#show-grants-statement}
+
+نشان می دهد امتیازات برای یک کاربر.
+
+### نحو {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+اگر کاربر مشخص نشده است, پرس و جو امتیازات برای کاربر فعلی را برمی گرداند.
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+پارامترهای که در یک مورد استفاده قرار گرفت را نشان می دهد [ایجاد کاربر](create.md#create-user-statement).
+
+`SHOW CREATE USER` رمزهای عبور کاربر خروجی نیست.
+
+### نحو {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+پارامترهای که در یک مورد استفاده قرار گرفت را نشان می دهد [ایجاد نقش](create.md#create-role-statement)
+
+### نحو {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+پارامترهای که در یک مورد استفاده قرار گرفت را نشان می دهد [ایجاد خط مشی سطر](create.md#create-row-policy-statement)
+
+### نحو {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+پارامترهای که در یک مورد استفاده قرار گرفت را نشان می دهد [ایجاد سهمیه](create.md#create-quota-statement)
+
+### نحو {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+پارامترهای که در یک مورد استفاده قرار گرفت را نشان می دهد [تنظیمات ایجاد پروفایل](create.md#create-settings-profile-statement)
+
+### نحو {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

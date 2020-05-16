@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: uzak
 ---
@@ -78,6 +78,6 @@ Bu `remote` tablo işlevi aşağıdaki durumlarda yararlı olabilir:
 Kullanıcı belirtilmemişse, `default` kullanılır.
 Parola belirtilmezse, boş bir parola kullanılır.
 
-`remoteSecure` - aynı `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) yapılandırma veya 9440’ten.
+`remoteSecure` - aynı `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) yapılandırma veya 9440'ten.
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

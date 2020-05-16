@@ -28,7 +28,9 @@
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
@@ -681,14 +683,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 std::shared_ptr<const User> Context::getUser() const
 {
-    auto lock = getLock();
-    return access->getUser();
+    return getAccess()->getUser();
 }
 
 String Context::getUserName() const
 {
-    auto lock = getLock();
-    return access->getUserName();
+    return getAccess()->getUserName();
 }
 
 std::optional<UUID> Context::getUserID() const
@@ -698,7 +698,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -718,24 +718,19 @@ void Context::setCurrentRolesDefault()
     calculateAccessRights();
 }
 
-std::vector<UUID> Context::getCurrentRoles() const
+boost::container::flat_set<UUID> Context::getCurrentRoles() const
 {
-    return getAccess()->getCurrentRoles();
+    return getRolesInfo()->current_roles;
 }
 
-Strings Context::getCurrentRolesNames() const
+boost::container::flat_set<UUID> Context::getEnabledRoles() const
 {
-    return getAccess()->getCurrentRolesNames();
+    return getRolesInfo()->enabled_roles;
 }
 
-std::vector<UUID> Context::getEnabledRoles() const
+std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 {
-    return getAccess()->getEnabledRoles();
-}
-
-Strings Context::getEnabledRolesNames() const
-{
-    return getAccess()->getEnabledRolesNames();
+    return getAccess()->getRolesInfo();
 }
 
 
@@ -780,11 +775,6 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
     return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
 }
 
-std::shared_ptr<const EnabledRowPolicies> Context::getRowPolicies() const
-{
-    return getAccess()->getRowPolicies();
-}
-
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
@@ -798,6 +788,12 @@ void Context::setInitialRowPolicy()
 std::shared_ptr<const EnabledQuota> Context::getQuota() const
 {
     return getAccess()->getQuota();
+}
+
+
+std::optional<QuotaUsage> Context::getQuotaUsage() const
+{
+    return getAccess()->getQuotaUsage();
 }
 
 
@@ -1011,8 +1007,7 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
-    auto lock = getLock();
-    return access->getSettingsConstraints();
+    return getAccess()->getSettingsConstraints();
 }
 
 

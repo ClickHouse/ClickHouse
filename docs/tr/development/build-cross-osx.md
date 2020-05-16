@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
 toc_title: "Mac OS X i\xE7in Linux'ta ClickHouse nas\u0131l olu\u015Fturulur"
 ---
 
-# Mac OS X için Linux’ta ClickHouse nasıl oluşturulur {#how-to-build-clickhouse-on-linux-for-mac-os-x}
+# Mac OS X için Linux'ta ClickHouse nasıl oluşturulur {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
-Bu, Linux makineniz olduğunda ve onu oluşturmak için kullanmak istediğinizde geçerlidir `clickhouse` OS X üzerinde çalışacak ikili. bu, Linux sunucularında çalışan sürekli entegrasyon kontrolleri için tasarlanmıştır. Clickhouse’u doğrudan Mac OS X’te oluşturmak istiyorsanız, devam edin [başka bir talimat](build-osx.md).
+Bu, Linux makineniz olduğunda ve onu oluşturmak için kullanmak istediğinizde geçerlidir `clickhouse` OS X üzerinde çalışacak ikili. bu, Linux sunucularında çalışan sürekli entegrasyon kontrolleri için tasarlanmıştır. Clickhouse'u doğrudan Mac OS X'te oluşturmak istiyorsanız, devam edin [başka bir talimat](build-osx.md).
 
 Mac OS X için çapraz yapı, [Inşa talimatları](build.md) önce onları takip et.
 
-# Clang-8’i Yükle {#install-clang-8}
+# Clang-8'i Yükle {#install-clang-8}
 
 Yönergeleri izleyin https://apt.llvm.org / Ubuntu veya Debian kurulumunuz için.
 Örneğin biyonik için komutlar gibidir:
@@ -40,7 +40,7 @@ cd cctools-port/cctools
 make install
 ```
 
-Ayrıca, MacOS X SDK’YI çalışma ağacına indirmemiz gerekiyor.
+Ayrıca, MacOS X SDK'YI çalışma ağacına indirmemiz gerekiyor.
 
 ``` bash
 cd ClickHouse

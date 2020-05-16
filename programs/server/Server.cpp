@@ -61,6 +61,10 @@
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
+#if USE_OPENCL
+#include "Common/BitonicSort.h"
+#endif
+
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #    include "Common/config_version.h"
@@ -220,6 +224,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
     registerDictionaries();
     registerDisks();
+
+#if USE_OPENCL
+        BitonicSort::getInstance().configure();
+#endif
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());

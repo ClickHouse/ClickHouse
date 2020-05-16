@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: "\u7528\u6237\u8BBE\u7F6E"
 ---
@@ -8,6 +8,9 @@ toc_title: "\u7528\u6237\u8BBE\u7F6E"
 # 用户设置 {#user-settings}
 
 该 `users` 一节 `user.xml` 配置文件包含用户设置。
+
+!!! note "信息"
+    ClickHouse还支持 [SQL驱动的工作流](../access-rights.md#access-control) 用于管理用户。 我们建议使用它。
 
 的结构 `users` 科:
 
@@ -18,6 +21,8 @@ toc_title: "\u7528\u6237\u8BBE\u7F6E"
         <password></password>
         <!-- Or -->
         <password_sha256_hex></password_sha256_hex>
+
+        <access_management>0|1</access_management>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -69,6 +74,17 @@ toc_title: "\u7528\u6237\u8BBE\u7F6E"
           PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
     结果的第一行是密码。 第二行是相应的双SHA1哈希。
+
+### 访问管理 {#access_management-user-setting}
+
+此设置启用禁用使用SQL驱动 [访问控制和帐户管理](../access-rights.md#access-control) 对于用户。
+
+可能的值:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+默认值：0。
 
 ### 用户名称/网络 {#user-namenetworks}
 

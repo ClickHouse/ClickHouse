@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_folder_title: "\u0130\xE7 \u0130\xE7e Veri Yap\u0131lar\u0131"
 toc_hidden: true
 toc_priority: 54

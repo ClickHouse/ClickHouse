@@ -1,20 +1,20 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: "Dizelerde de\u011Fi\u015Ftirilmesi i\xE7in"
 ---
 
-# Dizelerde Arama Ve değiştirme işlevleri {#functions-for-searching-and-replacing-in-strings}
+# Dizelerde arama ve değiştirme işlevleri {#functions-for-searching-and-replacing-in-strings}
 
 ## replaceOne(Samanlık, desen, değiştirme) {#replaceonehaystack-pattern-replacement}
 
-Varsa, ilk oluş replacesumun yerini ‘pattern’ substring içinde ‘haystack’ ile… ‘replacement’ dize.
+Varsa, ilk oluş replacesumun yerini ‘pattern’ substring içinde ‘haystack’ ile... ‘replacement’ dize.
 Ahiret, ‘pattern’ ve ‘replacement’ sabitleri olması gerekir.
 
 ## replaceAll (Samanlık, desen, değiştirme), değiştirin (Samanlık, desen, değiştirme) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
 
-Tüm oluşumları değiştirir ‘pattern’ substring içinde ‘haystack’ ile… ‘replacement’ dize.
+Tüm oluşumları değiştirir ‘pattern’ substring içinde ‘haystack’ ile... ‘replacement’ dize.
 
 ## replaceRegexpOne(Samanlık, desen, değiştirme) {#replaceregexponehaystack-pattern-replacement}
 
@@ -87,7 +87,7 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ## regexpQuoteMeta (s) {#regexpquotemetas}
 
 İşlev, dizedeki bazı önceden tanımlanmış karakterlerden önce bir ters eğik çizgi ekler.
-Önceden tanımlanmış karakterler: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, ‘\]’, ‘?’, ‘\*‘,’+‘,’{‘,’:‘,’-’.
+Önceden tanımlanmış karakterler: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’, '\]', ‘?’, '\*‘,’+‘,’{‘,’:‘,’-'.
 Bu uygulama biraz re2::RE2::QuoteMeta farklıdır. Sıfır bayttan 00 yerine \\0 olarak çıkar ve yalnızca gerekli karakterlerden kaçar.
 Daha fazla bilgi için bağlantıya bakın: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
