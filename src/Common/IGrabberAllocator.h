@@ -527,7 +527,7 @@ public:
 
         try
         {
-            onSharedValueCreate(*region);
+            onSharedValueCreate(cache_lock, *region);
 
             // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>(
@@ -564,10 +564,8 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
-    void onSharedValueCreate(RegionMetadata& metadata) noexcept
+    void onSharedValueCreate(const std::lock_guard&, RegionMetadata& metadata) noexcept
     {
-        std::lock_guard cache_lock(mutex);
-
         ++metadata.refcount;
 
         if (metadata.refcount == 1 && metadata.TUnusedRegionHook::is_linked())
@@ -618,7 +616,7 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                onSharedValueCreate(metadata);
+                onSharedValueCreate(cache_lock, metadata);
 
                 // can't use std::make_shared due to custom deleter.
                 return std::shared_ptr<Value>(
