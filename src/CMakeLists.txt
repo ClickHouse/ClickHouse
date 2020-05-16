@@ -365,7 +365,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     endmacro()
 
     # attach all dbms gtest sources
-    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
+    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/src dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
