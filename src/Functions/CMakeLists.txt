@@ -83,6 +83,12 @@ if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
+option(ENABLE_MULTITARGET_CODE "" ON)
+if (ENABLE_MULTITARGET_CODE)
+    add_definitions(-DUSE_MULTITARGET_CODE=1)
+else()
+    add_definitions(-DUSE_MULTITARGET_CODE=0)
+endif()
 
 target_link_libraries(clickhouse_functions PUBLIC "simdxorshift")
 message(STATUS "Using SIMDXORSHIFT ${SIMDXORSHIFT_LIBRARY}")

@@ -78,6 +78,10 @@ bool IsArchSupported(TargetArch arch);
 
 String ToString(TargetArch arch);
 
+#if USE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+
+constexpr bool UseMultitargetCode = true;
+
 #if defined(__clang__)
 #   define BEGIN_AVX512F_SPECIFIC_CODE _Pragma(\
         "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx,avx2,avx512f\"))),apply_to=function)")
@@ -88,7 +92,7 @@ String ToString(TargetArch arch);
 #   define BEGIN_SSE42_SPECIFIC_CODE _Pragma(\
         "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx\"))),apply_to=function)")
 #   define END_TARGET_SPECIFIC_CODE _Pragma("clang attribute pop")
-#elif defined(__GNUC__)
+#else
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,avx512f,tune=native\")")
@@ -103,15 +107,7 @@ String ToString(TargetArch arch);
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,tune=native\")")
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("GCC pop_options")
-#else
-#   error "Only CLANG and GCC compilers are supported for vectorized code generation"
 #endif
-
-#define DECLARE_DEFAULT_CODE(...) \
-namespace TargetSpecific::Default { \
-    using namespace DB::TargetSpecific::Default; \
-    __VA_ARGS__ \
-}
 
 #define DECLARE_SSE42_SPECIFIC_CODE(...) \
 BEGIN_SSE42_SPECIFIC_CODE \
@@ -144,6 +140,23 @@ namespace TargetSpecific::AVX512F { \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
+
+#else
+
+constexpr bool UseMultitargetCode = false;
+
+#define DECLARE_SSE42_SPECIFIC_CODE(...)
+#define DECLARE_AVX_SPECIFIC_CODE(...)
+#define DECLARE_AVX2_SPECIFIC_CODE(...)
+#define DECLARE_AVX512F_SPECIFIC_CODE(...)
+
+#endif
+
+#define DECLARE_DEFAULT_CODE(...) \
+namespace TargetSpecific::Default { \
+    using namespace DB::TargetSpecific::Default; \
+    __VA_ARGS__ \
+}
 
 #define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
