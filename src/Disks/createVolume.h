@@ -7,6 +7,6 @@
 namespace DB
 {
 
-VolumePtr createVolumeFromReservation(ReservationPtr reservation, VolumePtr other_volume);
+VolumePtr createVolumeFromReservation(const ReservationPtr & reservation, VolumePtr other_volume);
 
 }
