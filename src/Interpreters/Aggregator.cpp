@@ -126,29 +126,12 @@ void AggregatedDataVariants::convertToTwoLevelShared()
     }
 }
 
-void AggregatedDataVariants::createAggregatesPoolsForShared() {
+void AggregatedDataVariants::createAggregatesPoolsForShared()
+{
     /// Create arena for each bucket. One is already created.
     size_t num_buckets = getNumBuckets();
-    for (size_t i = 0; i + 1 < num_buckets; ++i) {
+    for (size_t i = 0; i + 1 < num_buckets; ++i)
         aggregates_pools.push_back(std::make_shared<Arena>());
-    }
-}
-
-size_t AggregatedDataVariants::getNumBuckets() const
-{
-    switch (type)
-    {
-    #define M(NAME) \
-        case Type::NAME: \
-            return decltype(NAME)::element_type::Data::NUM_BUCKETS;
-
-        APPLY_FOR_VARIANTS_TWO_LEVEL_OR_SHARED(M)
-
-    #undef M
-
-        default:
-            return 0;
-    }
 }
 
 Block Aggregator::getHeader(bool final) const
@@ -685,7 +668,7 @@ void NO_INLINE Aggregator::executeImplBatchShared(
     if (!places.empty())
     {
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
-            if (inst->offsets )
+            if (inst->offsets)
                 inst->batch_that->addBatchArrayCustomRows(places.size(), places.data(), inst->state_offset,
                     inst->batch_arguments, inst->offsets, aggregates_pool, num_rows.data());
             else
@@ -873,6 +856,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
 
     if (first_iteration && result.type != AggregatedDataVariants::Type::without_key &&
+        shared_result &&
         params.group_by_shared_method_proportion_threshold != 0 &&
         1.0 * result.size() / num_rows >= params.group_by_shared_method_proportion_threshold)
     {

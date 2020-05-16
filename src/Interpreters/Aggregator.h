@@ -900,8 +900,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         }
     }
 
-    size_t getNumBuckets() const;
-    /*size_t getNumBuckets() const
+    size_t getNumBuckets() const
     {
         switch (type)
         {
@@ -916,7 +915,7 @@ struct AggregatedDataVariants : private boost::noncopyable
             default:
                 return 0;
         }
-    }*/
+    }
 
     void createAggregatesPoolsForShared();
 
