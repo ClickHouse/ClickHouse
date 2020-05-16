@@ -7,7 +7,7 @@ toc_title: Implementing the IN Operator
 
 ## in, notIn, globalIn, globalNotIn {#in-functions}
 
-See the section [IN operators](../statements/select.md#select-in-operators).
+See the section [IN operators](../operators/in.md#select-in-operators).
 
 ## tuple(x, y, …), operator (x, y, …) {#tuplex-y-operator-x-y}
 

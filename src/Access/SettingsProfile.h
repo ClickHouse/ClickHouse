@@ -18,6 +18,8 @@ struct SettingsProfile : public IAccessEntity
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<SettingsProfile>(); }
+    static constexpr const Type TYPE = Type::SETTINGS_PROFILE;
+    Type getType() const override { return TYPE; }
 };
 
 using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;

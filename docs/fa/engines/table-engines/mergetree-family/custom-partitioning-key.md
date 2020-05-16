@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: "\u06A9\u0644\u06CC\u062F \u067E\u0627\u0631\u062A\u06CC\u0634\u0646 \u0628\
   \u0646\u062F\u06CC \u0633\u0641\u0627\u0631\u0634\u06CC"
@@ -119,7 +119,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 پوشهها ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ و به همین ترتیب دایرکتوری از قطعات هستند. هر بخش مربوط به پارتیشن مربوطه و شامل داده ها فقط برای یک ماه خاص (جدول در این مثال پارتیشن بندی توسط ماه).
 
-این `detached` دایرکتوری شامل قطعات است که از جدول با استفاده از جدا شد [DETACH](#alter_detach-partition) پرس و جو. قطعات خراب نیز به این دایرکتوری منتقل, به جای اینکه حذف. سرور از قطعات از `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) پرس و جو.
+این `detached` دایرکتوری شامل قطعات است که از جدول با استفاده از جدا شد [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) پرس و جو. قطعات خراب نیز به این دایرکتوری منتقل, به جای اینکه حذف. سرور از قطعات از `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) پرس و جو.
 
 توجه داشته باشید که در سرور عامل شما نمی توانید به صورت دستی مجموعه ای از قطعات یا داده های خود را بر روی سیستم فایل تغییر دهید زیرا سرور در این مورد نمی داند. برای جداول غیر تکرار, شما می توانید این کار را انجام زمانی که سرور متوقف شده است, اما توصیه نمی شود. برای جداول تکرار, مجموعه ای از قطعات را نمی توان در هر صورت تغییر.
 

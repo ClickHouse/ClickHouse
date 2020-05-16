@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: MySQL
 ---
@@ -49,7 +49,7 @@ Tablo yapısı orijinal MySQL tablo yapısından farklı olabilir:
 
 Basit `WHERE` gibi maddeler `=, !=, >, >=, <, <=` MySQL sunucusunda yürütülür.
 
-Geri kalan şartlar ve `LIMIT` örnekleme kısıtlaması, yalnızca MySQL sorgusu bittikten sonra Clickhouse’da yürütülür.
+Geri kalan şartlar ve `LIMIT` örnekleme kısıtlaması, yalnızca MySQL sorgusu bittikten sonra Clickhouse'da yürütülür.
 
 ## Kullanım Örneği {#usage-example}
 
@@ -76,7 +76,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Clickhouse’daki tablo, yukarıda oluşturulan MySQL tablosundan veri alma:
+Clickhouse'daki tablo, yukarıda oluşturulan MySQL tablosundan veri alma:
 
 ``` sql
 CREATE TABLE mysql_table

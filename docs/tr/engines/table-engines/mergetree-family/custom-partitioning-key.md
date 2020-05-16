@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: "\xD6zel B\xF6l\xFCmleme Anahtar\u0131"
 ---
@@ -40,7 +40,7 @@ Bir tabloya yeni veri eklerken, bu veriler birincil anahtara göre sıralanmış
 !!! info "Bilgin"
     Birleştirme yalnızca bölümleme ifadesi için aynı değere sahip veri parçaları için çalışır. Bu demektir **aşırı granüler bölümler yapmamalısınız** (yaklaşık binden fazla bölüm). Aksi takdirde, `SELECT` sorgu, dosya sistemindeki ve açık dosya tanımlayıcılarındaki makul olmayan sayıda dosya nedeniyle yetersiz performans gösterir.
 
-Kullan… [sistem.parçalar](../../../operations/system-tables.md#system_tables-parts) tablo tablo parçaları ve bölümleri görüntülemek için. Örneğin, bir var varsayalım `visits` aya göre bölümleme ile tablo. Hadi gerçekleştirelim `SELECT` sorgu için `system.parts` Tablo:
+Kullan... [sistem.parçalar](../../../operations/system-tables.md#system_tables-parts) tablo tablo parçaları ve bölümleri görüntülemek için. Örneğin, bir var varsayalım `visits` aya göre bölümleme ile tablo. Hadi gerçekleştirelim `SELECT` sorgu için `system.parts` Tablo:
 
 ``` sql
 SELECT
@@ -118,7 +118,7 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 Klasör ‘201901\_1\_1\_0’, ‘201901\_1\_7\_1’ ve böylece parçaların dizinleri vardır. Her bölüm karşılık gelen bir bölümle ilgilidir ve yalnızca belirli bir ay için veri içerir (Bu örnekteki tabloda aylara göre bölümleme vardır).
 
-Bu `detached` dizin kullanarak tablodan ayrılmış parçaları içerir [DETACH](#alter_detach-partition) sorgu. Bozuk parçalar da silinmek yerine bu dizine taşınır. Sunucu parçaları kullanmaz `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) sorgu.
+Bu `detached` dizin kullanarak tablodan ayrılmış parçaları içerir [DETACH](../../../sql-reference/statements/alter.md#alter_detach-partition) sorgu. Bozuk parçalar da silinmek yerine bu dizine taşınır. Sunucu parçaları kullanmaz `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter.md#alter_attach-partition) sorgu.
 
 İşletim sunucusunda, sunucu bunu bilmediğinden, dosya sistemindeki parça kümesini veya verilerini el ile değiştiremeyeceğinizi unutmayın. Çoğaltılmamış tablolar için, sunucu durdurulduğunda bunu yapabilirsiniz, ancak önerilmez. Çoğaltılmış tablolar için, parça kümesi her durumda değiştirilemez.
 

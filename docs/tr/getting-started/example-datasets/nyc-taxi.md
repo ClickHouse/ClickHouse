@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 16
 toc_title: New York Taksi Verileri
 ---
@@ -12,7 +12,7 @@ Bu veri kümesi iki şekilde elde edilebilir:
 -   ham verilerden içe aktarma
 -   hazırlanan bölüm downloadlerin indir downloadilmesi
 
-## Ham Veri nasıl alınır {#how-to-import-the-raw-data}
+## Ham veri nasıl alınır {#how-to-import-the-raw-data}
 
 Bkz. https://github.com/toddwschneider/nyc-taxi-data ve http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html bir veri kümesinin açıklaması ve indirme talimatları için.
 
@@ -28,11 +28,11 @@ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
 mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
-Daha sonra veriler Postgresql’de önceden işlenmelidir. Bu, çokgenlerdeki noktaların seçimlerini oluşturacaktır (Haritadaki noktaları New York şehrinin ilçeleriyle eşleştirmek için) ve tüm verileri bir birleştirme kullanarak tek bir denormalize düz tabloda birleştirecektir. Bunu yapmak için Postgresql’i Postgıs desteği ile yüklemeniz gerekir.
+Daha sonra veriler Postgresql'de önceden işlenmelidir. Bu, çokgenlerdeki noktaların seçimlerini oluşturacaktır (Haritadaki noktaları New York şehrinin ilçeleriyle eşleştirmek için) ve tüm verileri bir birleştirme kullanarak tek bir denormalize düz tabloda birleştirecektir. Bunu yapmak için Postgresql'i Postgıs desteği ile yüklemeniz gerekir.
 
 Çalışırken dikkatli olun `initialize_database.sh` ve tüm tabloların doğru şekilde oluşturulduğunu manuel olarak yeniden kontrol edin.
 
-Postgresql’deki her ayın verilerini işlemek yaklaşık 20-30 dakika sürer, toplam yaklaşık 48 saat sürer.
+Postgresql'deki her ayın verilerini işlemek yaklaşık 20-30 dakika sürer, toplam yaklaşık 48 saat sürer.
 
 İndirilen satır sayısını aşağıdaki gibi kontrol edebilirsiniz:
 
@@ -47,7 +47,7 @@ real    7m9.164s
 
 (Bu, Mark Litwintschik tarafından bir dizi blog gönderisinde bildirilen 1.1 milyar satırdan biraz daha fazladır .)
 
-Postgresql’deki veriler 370 GB alan kullanıyor.
+Postgresql'deki veriler 370 GB alan kullanıyor.
 
 PostgreSQL veri verme:
 
@@ -124,7 +124,7 @@ COPY
 Veri anlık görüntüsü saniyede yaklaşık 50 MB hızında oluşturulur. Anlık görüntü oluştururken, PostgreSQL diskten saniyede yaklaşık 28 MB hızında okur.
 Bu yaklaşık 5 saat sürer. Elde edilen TSV dosyası 590612904969 bayttır.
 
-Clickhouse’da geçici bir tablo oluşturma:
+Clickhouse'da geçici bir tablo oluşturma:
 
 ``` sql
 CREATE TABLE trips
@@ -195,7 +195,7 @@ Veri 112-140 Mb/saniye hızında okunur.
 Bir akışta bir günlük türü tablosuna veri yükleme 76 dakika sürdü.
 Bu tablodaki veriler 142 GB kullanır.
 
-(Verileri doğrudan Postgres’ten içe aktarmak da mümkündür `COPY ... TO PROGRAM`.)
+(Verileri doğrudan Postgres'ten içe aktarmak da mümkündür `COPY ... TO PROGRAM`.)
 
 Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
@@ -282,7 +282,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 
 Diğer şeylerin yanı sıra, MERGETREE üzerinde en iyi duruma getirme sorgusunu çalıştırabilirsiniz. Ama her şey onsuz iyi olacak çünkü gerekli değildir.
 
-## Hazırlanan Bölüm Downloadlerin Indir Downloadilmesi {#download-of-prepared-partitions}
+## Hazırlanan Bölüm downloadlerin indir downloadilmesi {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
@@ -295,7 +295,7 @@ $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 !!! info "Bilgin"
     Aşağıda açıklanan sorguları çalıştıracaksanız, tam tablo adını kullanmanız gerekir, `datasets.trips_mergetree`.
 
-## Tek Server Ile Ilgili sonuçlar {#results-on-single-server}
+## Tek Server ile ilgili sonuçlar {#results-on-single-server}
 
 Q1:
 
@@ -377,7 +377,7 @@ Q3: 0.051 sn.
 Q4: 0.072 sn.
 
 Bu durumda, sorgu işleme süresi her şeyden önce ağ gecikmesi ile belirlenir.
-Finlandiya’daki bir Yandex veri merkezinde bulunan ve Rusya’daki bir kümede bulunan ve yaklaşık 20 ms gecikme süresi ekleyen bir istemci kullanarak sorgular çalıştırdık.
+Finlandiya'daki bir Yandex veri merkezinde bulunan ve Rusya'daki bir kümede bulunan ve yaklaşık 20 ms gecikme süresi ekleyen bir istemci kullanarak sorgular çalıştırdık.
 
 ## Özet {#summary}
 

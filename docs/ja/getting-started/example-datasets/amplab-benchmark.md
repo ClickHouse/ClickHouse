@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 17
 toc_title: "AMPLab Big Data\u30D9\u30F3\u30C1\u30DE\u30FC\u30AF"
 ---
 
 # AMPLab Big Dataベンチマーク {#amplab-big-data-benchmark}
 
-見るhttps://amplab.cs.berkeley.edu/benchmark/
+参照https://amplab.cs.berkeley.edu/benchmark/
 
 で無料アカウントにサインアップhttps://aws.amazon.com.それはクレジットカード、電子メール、および電話番号が必要です。 新しいアクセスキーを取得するhttps://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
@@ -26,7 +26,7 @@ $ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
 $ cd ..
 ```
 
-次のclickhouseクエリを実行します:
+次のClickHouseクエリを実行します:
 
 ``` sql
 CREATE TABLE rankings_tiny
@@ -101,7 +101,7 @@ $ for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | 
 $ for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
 ```
 
-デー:
+クエリデータの取得サンプル:
 
 ``` sql
 SELECT pageURL, pageRank FROM rankings_1node WHERE pageRank > 1000

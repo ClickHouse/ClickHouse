@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: "S\xF6zl\xFCk"
 ---
@@ -66,7 +66,7 @@ WHERE name = 'products'
 
 Kullanabilirsiniz [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) sözlük verilerini bu formatta almak için işlev.
 
-Bu görünüm, ham veri almanız gerektiğinde veya bir `JOIN` işleyiş. Bu durumlar için şunları kullanabilirsiniz `Dictionary` bir tabloda sözlük verilerini görüntüleyen motor.
+Bu görünüm, ham veri almanız gerektiğinde veya bir `JOIN` operasyon. Bu durumlar için şunları kullanabilirsiniz `Dictionary` bir tabloda sözlük verilerini görüntüleyen motor.
 
 Sözdizimi:
 

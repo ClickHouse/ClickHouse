@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: "S\xF6zl\xFCk anahtar\u0131 ve alanlar\u0131"
 ---
 
-# Sözlük anahtarı Ve alanları {#dictionary-key-and-fields}
+# Sözlük anahtarı ve alanları {#dictionary-key-and-fields}
 
 Bu `<structure>` yan tümcesi sözlük anahtarı ve sorgular için kullanılabilir alanları açıklar.
 
@@ -161,7 +161,7 @@ Yapılandırma alanları:
 | Etiket                                               | Açıklama                                                                                                                                                                                                                                                                                                                                                     | Gerekli |
 |------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
 | `name`                                               | Sütun adı.                                                                                                                                                                                                                                                                                                                                                   | Evet    |
-| `type`                                               | ClickHouse veri türü.<br/>ClickHouse, sözlükten belirtilen veri türüne değer atmaya çalışır. Örneğin, MySQL için alan olabilir `TEXT`, `VARCHAR`, veya `BLOB` MySQL kaynak tablosunda, ancak şu şekilde yüklenebilir `String` Clickhouse’da.<br/>[Nullable](../../../sql-reference/data-types/nullable.md) desteklenmiyor.                                   | Evet    |
+| `type`                                               | ClickHouse veri türü.<br/>ClickHouse, sözlükten belirtilen veri türüne değer atmaya çalışır. Örneğin, MySQL için alan olabilir `TEXT`, `VARCHAR`, veya `BLOB` MySQL kaynak tablosunda, ancak şu şekilde yüklenebilir `String` Clickhouse'da.<br/>[Nullable](../../../sql-reference/data-types/nullable.md) desteklenmiyor.                                   | Evet    |
 | `null_value`                                         | Varolan olmayan bir öğe için varsayılan değer.<br/>Örnekte, boş bir dizedir. Kullanamazsınız `NULL` bu alanda.                                                                                                                                                                                                                                               | Evet    |
 | `expression`                                         | [İfade](../../syntax.md#syntax-expressions) bu ClickHouse değeri yürütür.<br/>İfade, uzak SQL veritabanında bir sütun adı olabilir. Bu nedenle, uzak sütun için bir diğer ad oluşturmak için kullanabilirsiniz.<br/><br/>Varsayılan değer: ifade yok.                                                                                                        | Hayır   |
 | <a name="hierarchical-dict-attr"></a> `hierarchical` | Eğer `true`, öznitelik, geçerli anahtar için bir üst anahtarın değerini içerir. Görmek [Hiyerarşik Sözlükler](external-dicts-dict-hierarchical.md).<br/><br/>Varsayılan değer: `false`.                                                                                                                                                                      | Hayır   |

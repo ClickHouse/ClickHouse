@@ -1,13 +1,4 @@
 (function () {
-    var logo_text = $('#logo-text');
-    if (logo_text.length) {
-        var name = logo_text.attr('alt').trim().toLowerCase();
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        var feedback_email = $('#feedback_email');
-        feedback_email.attr('href', 'mailto:' + feedback_address);
-        feedback_email.html(feedback_address);
-    }
-
     $(document).click(function (event) {
         var target = $(event.target);
         var target_id = target.attr('id');
@@ -54,24 +45,40 @@
         }
     });
 
-    function copy_to_clipboard(element) {
-        var temp = $('<textarea></textarea>');
-        $('body').append(temp);
-        temp.val($(element).text());
-        temp.select();
-        document.execCommand('copy');
-        temp.remove();
+    if (window.location.hostname.endsWith('clickhouse.tech')) {
+        $('a.favicon').each(function () {
+            $(this).css({
+                background: 'url(/favicon/' + this.hostname + ') left center no-repeat',
+                'padding-left': '20px'
+            });
+        });
+
+        function copy_to_clipboard(element) {
+            var temp = $('<textarea></textarea>');
+            $('body').append(temp);
+            temp.val($(element).text());
+            temp.select();
+            document.execCommand('copy');
+            temp.remove();
+        }
+
+        $('pre').each(function(_, element) {
+           $(element).prepend('<img src="/images/mkdocs/copy.svg" class="code-copy btn float-right m-0 p-0" />');
+        });
+
+        $('.code-copy').each(function(_, element) {
+           element = $(element);
+           element.click(function() {
+               copy_to_clipboard(element.parent());
+           })
+        });
     }
 
-    $('pre').each(function(_, element) {
-       $(element).prepend('<img src="/images/mkdocs/copy.svg" class="code-copy btn float-right m-0 p-0" />');
-    });
-
-    $('.code-copy').each(function(_, element) {
-       element = $(element);
-       element.click(function() {
-           copy_to_clipboard(element.parent());
-       })
+    $('#feedback_email, .feedback-email').each(function() {
+        var name = window.location.host.substring(0, 10)
+        var feedback_address = name + '-feedback' + '@yandex-team.com';
+        $(this).attr('href', 'mailto:' + feedback_address);
+        $(this).html(feedback_address);
     });
 
     (function (d, w, c) {

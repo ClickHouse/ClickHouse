@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_folder_title: "\u8868\u51FD\u6570"
 toc_priority: 34
 toc_title: "\u5BFC\u8A00"
@@ -12,7 +12,7 @@ toc_title: "\u5BFC\u8A00"
 
 您可以使用表函数:
 
--   [FROM](../statements/select.md#select-from) 《公约》条款 `SELECT` 查询。
+-   [FROM](../statements/select/from.md) 《公约》条款 `SELECT` 查询。
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 

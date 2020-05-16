@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: "\u0648\u0627\u0698\u0647\u0646\u0627\u0645\u0647"
 ---
@@ -74,7 +74,7 @@ WHERE name = 'products'
 CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 ```
 
-به عنوان مثال استفاده:
+مثال طریقه استفاده:
 
 ``` sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);

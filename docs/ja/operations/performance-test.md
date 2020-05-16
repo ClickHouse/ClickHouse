@@ -1,21 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
 ---
 
 # ClickHouseでハードウェアをテストする方法 {#how-to-test-your-hardware-with-clickhouse}
 
-この命令を実行できますが基本的なclickhouse性能試験はサーバーなしでの設置clickhouseパッケージ。
+この命令を実行できますが基本的なClickHouse性能試験はサーバーなしでの設置ClickHouseパッケージ。
 
 1.  に行く “commits” ページ:https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  最初の緑色のチェックマークまたは緑色の赤い十字をクリックします “ClickHouse Build Check” とをクリック “Details” リンク近く “ClickHouse Build Check”.
+2.  最初の緑色のチェックマークまたは緑色の赤十字をクリックします “ClickHouse Build Check” をクリックして “Details” 近くのリンク “ClickHouse Build Check”. いくつかのコミットにはそのようなリンクはありません。 この場合、このリンクを持つ最も近いコミットを選択します。
 
 3.  リンクをコピーする “clickhouse” amd64またはaarch64のバイナリ。
 
-4.  サーバーにsshを実行し、wgetでダウンロードします:
+4.  サーバーにsshし、wgetでダウンロードします:
 
 <!-- -->
 
@@ -36,7 +36,7 @@ toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
-1.  Benchmarkファイル:
+1.  ダウンロードファイルのベンチマーク:
 
 <!-- -->
 
@@ -44,7 +44,7 @@ toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
       chmod a+x benchmark-new.sh
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
-1.  ダウンロード試験データによると [Yandexの。Metricaデータセット](../getting-started/example-datasets/metrica.md) 指示 (“hits” 100万行を含むテーブル）。
+1.  に従うダウンロードテストデータ [Yandex.メトリカデータセット](../getting-started/example-datasets/metrica.md) 命令 (“hits” 100万行を含むテーブル）。
 
 <!-- -->
 
@@ -58,14 +58,14 @@ toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
 
       ./clickhouse server
 
-1.  データを確認する：別のターミナルのサーバーへのssh
+1.  データを確認する：別の端末のサーバーへのssh
 
 <!-- -->
 
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  編集するbenchmark-new.sh,変更 “clickhouse-client” に “./clickhouse client” と追加 “–max\_memory\_usage 100000000000” パラメータ。
+1.  編集benchmark-new.sh,変更 `clickhouse-client` に `./clickhouse client` と追加 `–-max_memory_usage 100000000000` パラメータ。
 
 <!-- -->
 
@@ -77,6 +77,6 @@ toc_title: "\u30CF\u30FC\u30C9\u30A6\u30A7\u30A2\u8A66\u9A13"
 
       ./benchmark-new.sh hits_100m_obfuscated
 
-1.  ハードウェア構成に関する番号と情報を以下に送信しますclickhouse-feedback@yandex-team.com
+1.  ハードウェア構成に関する番号と情報を次の宛先に送信しますclickhouse-feedback@yandex-team.com
 
-すべての結果はここに掲載されています：https://clickhouse。ﾂつｨﾂ姪“ﾂつ”ﾂ債ﾂづｭﾂつｹhtml
+すべての結果をこちらに発表します:https://clickhouse.技術/基準/ハードウェア/

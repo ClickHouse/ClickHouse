@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
 toc_title: Comment Construire ClickHouse sur Linux pour Mac OS X
 ---
 
-# Comment Construire ClickHouse Sur Linux Pour Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
+# Comment Construire ClickHouse sur Linux pour Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
-C’est pour le cas où vous avez machine Linux et que vous voulez utiliser pour construire `clickhouse` binaire qui s’exécutera sur OS X. Ceci est destiné aux contrôles d’intégration continus qui s’exécutent sur des serveurs Linux. Si vous voulez construire ClickHouse directement sur Mac OS X, puis procéder à [une autre instruction](build-osx.md).
+C'est pour le cas où vous avez machine Linux et que vous voulez utiliser pour construire `clickhouse` binaire qui s'exécutera sur OS X. Ceci est destiné aux contrôles d'intégration continus qui s'exécutent sur des serveurs Linux. Si vous voulez construire ClickHouse directement sur Mac OS X, puis procéder à [une autre instruction](build-osx.md).
 
-Le cross-build pour Mac OS X est basé sur le [Instructions de construction](build.md), suivez d’abord.
+Le cross-build pour Mac OS X est basé sur le [Instructions de construction](build.md), suivez d'abord.
 
 # Installer Clang-8 {#install-clang-8}
 
@@ -21,7 +21,7 @@ sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8
 sudo apt-get install clang-8
 ```
 
-# Installer Un Ensemble D’Outils De Compilation Croisée {#install-cross-compilation-toolset}
+# Installer Un Ensemble D'Outils De Compilation Croisée {#install-cross-compilation-toolset}
 
 Souvenons nous du chemin où nous installons `cctools` comme ${CCTOOLS}
 
@@ -40,7 +40,7 @@ cd cctools-port/cctools
 make install
 ```
 
-En outre, nous devons télécharger macOS X SDK dans l’arbre de travail.
+En outre, nous devons télécharger macOS X SDK dans l'arbre de travail.
 
 ``` bash
 cd ClickHouse

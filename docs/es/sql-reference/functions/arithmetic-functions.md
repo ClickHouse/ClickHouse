@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: "Aritm\xE9tica"
 ---
@@ -46,12 +46,12 @@ Calcula el cociente de los números. El tipo de resultado es siempre un tipo de 
 No es una división entera. Para la división de enteros, use el ‘intDiv’ función.
 Al dividir por cero obtienes ‘inf’, ‘-inf’, o ‘nan’.
 
-## Información De Uso) {#intdiva-b}
+## Información de uso) {#intdiva-b}
 
 Calcula el cociente de los números. Se divide en enteros, redondeando hacia abajo (por el valor absoluto).
 Se produce una excepción al dividir por cero o al dividir un número negativo mínimo por menos uno.
 
-## IntDivOrZero (a, B) {#intdivorzeroa-b}
+## IntDivOrZero (a, b) {#intdivorzeroa-b}
 
 Difiere de ‘intDiv’ en que devuelve cero al dividir por cero o al dividir un número negativo mínimo por menos uno.
 
@@ -74,12 +74,12 @@ Calcula un número con el signo inverso. El resultado siempre está firmado.
 
 Calcula el valor absoluto del número (a). Es decir, si un \<0, devuelve -a . Para los tipos sin firmar no hace nada. Para los tipos de enteros con signo, devuelve un número sin signo.
 
-## GCD (a, B) {#gcda-b}
+## GCD (a, b) {#gcda-b}
 
 Devuelve el mayor divisor común de los números.
 Se produce una excepción al dividir por cero o al dividir un número negativo mínimo por menos uno.
 
-## Lcm(a, B) {#lcma-b}
+## Lcm(a, b) {#lcma-b}
 
 Devuelve el mínimo múltiplo común de los números.
 Se produce una excepción al dividir por cero o al dividir un número negativo mínimo por menos uno.

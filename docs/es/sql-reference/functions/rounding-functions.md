@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: Redondeo
 ---
 
-# Funciones De Redondeo {#rounding-functions}
+# Funciones de redondeo {#rounding-functions}
 
 ## piso(x\[, N\]) {#floorx-n}
 
@@ -19,7 +19,7 @@ Ejemplos: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 Para argumentos enteros, tiene sentido redondear con un negativo `N` valor no negativo `N` la función no hace nada).
 Si el redondeo causa desbordamiento (por ejemplo, floor(-128, -1)), se devuelve un resultado específico de la implementación.
 
-## Por Ejemplo:\]) {#ceilx-n-ceilingx-n}
+## Por ejemplo:\]) {#ceilx-n-ceilingx-n}
 
 Devuelve el número redondo más pequeño que es mayor o igual que `x`. En todos los demás sentidos, es lo mismo que el `floor` función (véase más arriba).
 

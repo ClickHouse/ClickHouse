@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: CREATE
 ---
@@ -18,7 +18,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 ### Yanlar {#clauses}
 
 -   `IF NOT EXISTS`
-    Eğer… `db_name` veritabanı zaten var, daha sonra ClickHouse yeni bir veritabanı oluşturmuyor ve:
+    Eğer... `db_name` veritabanı zaten var, daha sonra ClickHouse yeni bir veritabanı oluşturmuyor ve:
 
     -   If yan tümcesi belirtilmişse bir istisna atmaz.
     -   Bir istisna atar if yan tümcesi belirtilmemiş.
@@ -84,7 +84,7 @@ Varsayılan ifade tanımlanmışsa, sütun türü isteğe bağlıdır. Açıkça
 
 Veri türü ve varsayılan ifade açıkça tanımlanırsa, bu ifade type casting işlevleri kullanılarak belirtilen türe aktarılır. Örnek: `Hits UInt32 DEFAULT 0` aynı şeyi ifade eder `Hits UInt32 DEFAULT toUInt32(0)`.
 
-Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don’t contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
+Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don't contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
 `DEFAULT expr`
 
@@ -126,7 +126,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Büyük miktarda kısıtlama eklemek, büyük `INSERT` sorgular.
 
-### TTL Ifadesi {#ttl-expression}
+### TTL ifadesi {#ttl-expression}
 
 Değerler için depolama süresini tanımlar. Sadece MergeTree-family tabloları için belirtilebilir. Ayrıntılı açıklama için, bkz. [Sütunlar ve tablolar için TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
@@ -147,7 +147,7 @@ ENGINE = <Engine>
 ...
 ```
 
-Bir codec bileşeni belirtilmişse, varsayılan codec bileşeni geçerli değildir. Kodekler bir boru hattında birleştirilebilir, örneğin, `CODEC(Delta, ZSTD)`. Projeniz için en iyi codec kombinasyonunu seçmek için, Altınlıkta açıklanana benzer kriterler geçirin [ClickHouse verimliliğini artırmak için yeni Kodlamalar](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) makale.
+Bir codec bileşeni belirtilmişse, varsayılan codec bileşeni geçerli değildir. Kodekler bir boru hattında birleştirilebilir, örneğin, `CODEC(Delta, ZSTD)`. Projeniz için en iyi codec kombinasyonunu seçmek için, Altınlıkta açıklanana benzer kriterler geçirin [ClickHouse verimliliğini artırmak için yeni Kodlamalar](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) Makale.
 
 !!! warning "Uyarıcı"
     ClickHouse veritabanı dosyalarını harici yardımcı programlarla açamazsınız `lz4`. Bunun yerine, özel kullanın [clickhouse-kompresör](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) program.
@@ -167,12 +167,12 @@ Bu kodekler, verilerin belirli özelliklerini kullanarak sıkıştırmayı daha 
 
 Özel kodekler:
 
--   `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` delta değerlerini saklamak için kullanılır, böylece `delta_bytes` ham değerlerin maksimum boyutudur. Olası `delta_bytes` değerler: 1, 2, 4, 8. İçin varsayılan değer `delta_bytes` oluyor `sizeof(type)` 1, 2, 4 veya 8’e eşitse. Diğer tüm durumlarda, 1.
+-   `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` delta değerlerini saklamak için kullanılır, böylece `delta_bytes` ham değerlerin maksimum boyutudur. Mümkün `delta_bytes` değerler: 1, 2, 4, 8. İçin varsayılan değer `delta_bytes` oluyor `sizeof(type)` 1, 2, 4 veya 8'e eşitse. Diğer tüm durumlarda, 1.
 -   `DoubleDelta` — Calculates delta of deltas and writes it in compact binary form. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: Hızlı, Ölçeklenebilir, Bellek İçi Zaman Serisi Veritabanı](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 -   `Gorilla` — Calculates XOR between current and previous value and writes it in compact binary form. Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: Hızlı, Ölçeklenebilir, Bellek İçi Zaman Serisi Veritabanı](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 -   `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` ve `DateTime`). Algoritmasının her adımında, codec 64 değerden oluşan bir blok alır, 64x64 bit matrisine koyar, aktarır, kullanılmayan değer bitlerini kırpar ve gerisini bir dizi olarak döndürür. Kullanılmayan bitler, sıkıştırmanın kullanıldığı tüm veri bölümündeki maksimum ve minimum değerler arasında farklılık göstermeyen bitlerdir.
 
-`DoubleDelta` ve `Gorilla` kodekler, Gorilla TSDB’DE sıkıştırma algoritmasının bileşenleri olarak kullanılır. Gorilla yaklaşımı, zaman damgaları ile yavaş yavaş değişen değerler dizisi olduğunda senaryolarda etkilidir. Zaman damgaları tarafından etkili bir şekilde sıkıştırılır `DoubleDelta` codec ve değerler etkin bir şekilde sıkıştırılır `Gorilla` codec. Örneğin, etkili bir şekilde saklanan bir tablo elde etmek için, aşağıdaki yapılandırmada oluşturabilirsiniz:
+`DoubleDelta` ve `Gorilla` kodekler, Gorilla TSDB'DE sıkıştırma algoritmasının bileşenleri olarak kullanılır. Gorilla yaklaşımı, zaman damgaları ile yavaş yavaş değişen değerler dizisi olduğunda senaryolarda etkilidir. Zaman damgaları tarafından etkili bir şekilde sıkıştırılır `DoubleDelta` codec ve değerler etkin bir şekilde sıkıştırılır `Gorilla` codec. Örneğin, etkili bir şekilde saklanan bir tablo elde etmek için, aşağıdaki yapılandırmada oluşturabilirsiniz:
 
 ``` sql
 CREATE TABLE codec_example
@@ -183,9 +183,9 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-#### Ortak Amaç {#create-query-common-purpose-codecs}
+#### Genel Amaçlı Kodekler {#create-query-general-purpose-codecs}
 
-Cod codecsec codecs’ler:
+Cod codecsec codecs'ler:
 
 -   `NONE` — No compression.
 -   `LZ4` — Lossless [veri sıkıştırma algoritması](https://github.com/lz4/lz4) varsayılan olarak kullanılır. Lz4 hızlı sıkıştırma uygular.
@@ -220,7 +220,7 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 İle tabloları kullanmak mümkündür [Motor = bellek](../../engines/table-engines/special/memory.md) geçici tablolar yerine.
 
-## Dağıtılmış DDL sorguları (küme Yan tümcesinde) {#distributed-ddl-queries-on-cluster-clause}
+## Dağıtılmış DDL sorguları (küme yan tümcesinde) {#distributed-ddl-queries-on-cluster-clause}
 
 Bu `CREATE`, `DROP`, `ALTER`, ve `RENAME` sorgular, bir kümede dağıtılmış yürütmeyi destekler.
 Örneğin, aşağıdaki sorgu oluşturur `all_hits` `Distributed` her ana bilgisayarda tablo `cluster`:
@@ -229,7 +229,7 @@ Bu `CREATE`, `DROP`, `ALTER`, ve `RENAME` sorgular, bir kümede dağıtılmış 
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 
-Bu sorguları doğru bir şekilde çalıştırmak için, her ana bilgisayarın aynı küme tanımına sahip olması gerekir (senkronizasyon yapılandırmalarını basitleştirmek için zookeeper’dan değiştirmeleri kullanabilirsiniz). Ayrıca ZooKeeper sunucularına bağlanmaları gerekir.
+Bu sorguları doğru bir şekilde çalıştırmak için, her ana bilgisayarın aynı küme tanımına sahip olması gerekir (senkronizasyon yapılandırmalarını basitleştirmek için zookeeper'dan değiştirmeleri kullanabilirsiniz). Ayrıca ZooKeeper sunucularına bağlanmaları gerekir.
 Bazı ana bilgisayarlar şu anda mevcut olmasa bile, sorgunun yerel sürümü sonunda kümedeki her ana bilgisayarda uygulanır. Tek bir ana makine içinde sorguları yürütme sırası garanti edilir.
 
 ## CREATE VIEW {#create-view}
@@ -300,6 +300,203 @@ Dış sözlük yapısı özniteliklerden oluşur. Sözlük öznitelikleri tablo 
 
 Sözlüğe bağlı olarak [düzen](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) bir veya daha fazla öznitelik sözlük anahtarları olarak belirtilebilir.
 
-Daha fazla bilgi için, bkz. [Dış Söz Dictionarieslükler](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) bölme.
+Daha fazla bilgi için, bkz. [Dış Söz Dictionarieslükler](../dictionaries/external-dictionaries/external-dicts.md) bölme.
+
+## CREATE USER {#create-user-statement}
+
+Oluşturur bir [kullanıcı hesabı](../../operations/access-rights.md#user-account-management).
+
+### Sözdizimi {#create-user-syntax}
+
+``` sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+#### Tanıma {#identification}
+
+Kullanıcı tanımlama birden çok yolu vardır:
+
+-   `IDENTIFIED WITH no_password`
+-   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+-   `IDENTIFIED WITH sha256_password BY 'qwerty'` veya `IDENTIFIED BY 'password'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'`
+-   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+-   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+
+#### Kullanıcı Host {#user-host}
+
+Kullanıcı ana bilgisayar, ClickHouse sunucusuna bağlantı kurulabilen bir ana bilgisayardır. Ev sahibi belirtilebilir `HOST` aşağıdaki yollarla sorgu bölümü:
+
+-   `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [alt ağ](https://en.wikipedia.org/wiki/Subnetwork). Örnekler: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. Üretimde kullanım için, sadece belirtin `HOST IP` elemanları (IP adresleri ve maskeleri), kullanıl ,dığından beri `host` ve `host_regexp` ekstra gecikmeye neden olabilir.
+-   `HOST ANY` — User can connect from any location. This is default option.
+-   `HOST LOCAL` — User can connect only locally.
+-   `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+-   `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) kullanıcı ana bilgisayarlarını belirtirken düzenli ifadeler. Mesela, `HOST NAME REGEXP '.*\.mysite\.com'`.
+-   `HOST LIKE 'template'` — Allows you use the [LIKE](../functions/string-search-functions.md#function-like) kullanıcı ana filtrelemek için operatör. Mesela, `HOST LIKE '%'` eşdeğ toer equivalentdir `HOST ANY`, `HOST LIKE '%.mysite.com'` tüm host filtersları filtreler `mysite.com` etki.
+
+Host belirtme başka bir yolu kullanmaktır `@` kullanıcı adı ile sözdizimi. Örnekler:
+
+-   `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` sözdizimi.
+-   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` sözdizimi.
+-   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` sözdizimi.
+
+!!! info "Uyarıcı"
+    ClickHouse davranır `user_name@'address'` bir bütün olarak bir kullanıcı adı olarak. Böylece, teknik olarak birden fazla kullanıcı oluşturabilirsiniz `user_name` ve sonra farklı yapılar `@`. Ben bunu tavsiye etmiyoruz.
+
+### Örnekler {#create-user-examples}
+
+Kullanıcı hesabı oluşturma `mira` şifre ile korunmaktadır `qwerty`:
+
+``` sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
+```
+
+`mira` ClickHouse sunucusunun çalıştığı ana bilgisayarda istemci uygulamasını başlatmalıdır.
+
+Kullanıcı hesabı oluşturma `john`, ona roller atayın ve bu rolleri varsayılan yapın:
+
+``` sql
+CREATE USER john DEFAULT ROLE role1, role2
+```
+
+Kullanıcı hesabı oluşturma `john` ve gelecekteki tüm rollerini varsayılan hale getirin:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+Ne zaman bazı rol atanacak `john` gelecekte otomatik olarak varsayılan hale gelecektir.
+
+Kullanıcı hesabı oluşturma `john` ve gelecekteki tüm rollerini varsayılan olarak yapın `role1` ve `role2`:
+
+``` sql
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+## CREATE ROLE {#create-role-statement}
+
+Oluşturur bir [rol](../../operations/access-rights.md#role-management).
+
+### Sözdizimi {#create-role-syntax}
+
+``` sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### Açıklama {#create-role-description}
+
+Rol bir dizi [ayrıcalıklar](grant.md#grant-privileges). Bir rolle verilen bir kullanıcı, bu rolün tüm ayrıcalıklarını alır.
+
+Bir kullanıcı birden çok rolle atanabilir. Kullanıcılar tarafından keyfi kombinasyonlarda verilen rolleri uygulayabilirsiniz [SET ROLE](misc.md#set-role-statement) deyim. Ayrıcalıkların son kapsamı, uygulanan tüm rollerin tüm ayrıcalıklarının birleştirilmiş kümesidir. Bir kullanıcının doğrudan kullanıcı hesabına verilen ayrıcalıkları varsa, bunlar roller tarafından verilen ayrıcalıklarla da birleştirilir.
+
+Kullanıcı, kullanıcı girişinde geçerli olan varsayılan rollere sahip olabilir. Varsayılan rolleri ayarlamak için [SET DEFAULT ROLE](misc.md#set-default-role-statement) beyan veya [ALTER USER](alter.md#alter-user-statement) deyim.
+
+Bir rolü iptal etmek için [REVOKE](revoke.md) deyim.
+
+Rolü silmek için [DROP ROLE](misc.md#drop-role-statement) deyim. Silinen rol, kendisine verilen tüm kullanıcılardan ve rollerden otomatik olarak iptal edilir.
+
+### Örnekler {#create-role-examples}
+
+``` sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+Bu sorgu sırası rolü oluşturur `accountant` bu veri okuma ayrıcalığına sahip `accounting` veritabanı.
+
+Kullanıcıya rol verilmesi `mira`:
+
+``` sql
+GRANT accountant TO mira;
+```
+
+Rol verildikten sonra kullanıcı bunu kullanabilir ve izin verilen sorguları gerçekleştirebilir. Mesela:
+
+``` sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```
+
+## CREATE ROW POLICY {#create-row-policy-statement}
+
+Oluşturur bir [satırlar için filtre](../../operations/access-rights.md#row-policy-management), bir kullanıcı bir tablodan okuyabilir.
+
+### Sözdizimi {#create-row-policy-syntax}
+
+``` sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING condition]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+#### Bölüm olarak {#create-row-policy-as}
+
+Bu bölümü kullanarak izin veren veya kısıtlayıcı ilkeler oluşturabilirsiniz.
+
+İzin verme ilkesi satırlara erişim sağlar. Aynı tabloya uygulanan izin veren politikalar boolean kullanılarak birlikte birleştirilir `OR` operatör. İlkeler varsayılan olarak izinlidir.
+
+Kısıtlayıcı ilke satıra erişimi kısıtlar. Aynı tabloya uygulanan kısıtlayıcı ilkeler, boolean kullanılarak birlikte birleştirilir `AND` operatör.
+
+Kısıtlayıcı ilkeler, izin veren süzgeçleri geçen satırlara uygulanır. Kısıtlayıcı ilkeler ayarlarsanız, ancak izin veren ilkeler yoksa, kullanıcı tablodan herhangi bir satır alamaz.
+
+#### Bölüm için {#create-row-policy-to}
+
+Bölümünde `TO` örneğin, rollerin ve kullanıcıların karışık bir listesini verebilirsiniz, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+Kelime `ALL` geçerli kullanıcı dahil olmak üzere tüm ClickHouse kullanıcıları anlamına gelir. Kelimeler `ALL EXCEPT` bazı kullanıcıları tüm kullanıcılar listesinden çıkarmak için izin ver, örneğin `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+### Örnekler {#examples}
+
+-   `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
+-   `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
+
+## CREATE QUOTA {#create-quota-statement}
+
+Oluşturur bir [kota](../../operations/access-rights.md#quotas-management) bu bir kullanıcıya veya bir role atanabilir.
+
+### Sözdizimi {#create-quota-syntax}
+
+``` sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+### Örnek {#create-quota-example}
+
+15 ay içinde 123 Sorgu ile geçerli kullanıcı için sorgu sayısını sınır constraintlayın:
+
+``` sql
+CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
+```
+
+## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
+
+Oluşturur bir [ayarlar profili](../../operations/access-rights.md#settings-profiles-management) bu bir kullanıcıya veya bir role atanabilir.
+
+### Sözdizimi {#create-settings-profile-syntax}
+
+``` sql
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
+
+# Örnek {#create-settings-profile-syntax}
+
+Create the `max_memory_usage_profile` ayar profili için değer ve kısıtlamalarla `max_memory_usage` ayar. At itayın `robin`:
+
+``` sql
+CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
+```
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->

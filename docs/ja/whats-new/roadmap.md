@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 74
-toc_title: "\u30ED\u30FC\u30C9\u30DE\u30C3\u30D7"
+toc_title: "\u30ED\u30FC\u30C9"
 ---
 
-# ロードマップ {#roadmap}
+# ロード {#roadmap}
 
 ## Q1 2020 {#q1-2020}
 
