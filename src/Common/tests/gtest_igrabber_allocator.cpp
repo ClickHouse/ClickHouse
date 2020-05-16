@@ -5,7 +5,7 @@ using namespace DB;
 
 using IntToInt = IGrabberAllocator<int, int>;
 
-TEST(Common, IGrabberAllocatorInvalidMaxSize)
+TEST(IGrabberAllocator, InvalidMaxSize)
 {
     /// Default case.
     EXPECT_ANY_THROW(IntToInt(ga::defaultMinChunkSize - 10000));
@@ -16,7 +16,7 @@ TEST(Common, IGrabberAllocatorInvalidMaxSize)
     EXPECT_ANY_THROW(Explt{800});
 }
 
-TEST(Common, IGrabberAllocatorSingleInsertionMultipleRetrieval)
+TEST(IGrabberAllocator, SingleInsertionDoubleRetrieval)
 {
     IntToInt cache(ga::defaultMinChunkSize);
 
