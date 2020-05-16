@@ -49,8 +49,8 @@ target_link_libraries (pod_array PRIVATE clickhouse_common_io)
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
 
-add_executable (array_cache array_cache.cpp)
-target_link_libraries (array_cache PRIVATE clickhouse_common_io)
+add_executable (igrabber_allocator igrabber_allocator.cpp)
+target_link_libraries (igrabber_allocator PRIVATE clickhouse_common_io)
 
 add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)

@@ -24,6 +24,8 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 
+#include <common/logger_useful.h>
+
 /// Old Darwin builds lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
@@ -188,6 +190,8 @@ private:
     static constexpr auto getSize = SizeFunction();
     static constexpr auto initValue = InitFunction();
 
+    Logger& log;
+
 /**
  * Constructing, destructing, and usings.
  */
@@ -200,7 +204,12 @@ public:
      */
     using ValuePtr = std::shared_ptr<Value>;
 
-    constexpr IGrabberAllocator(size_t max_cache_size_) noexcept: max_cache_size(max_cache_size_) {}
+    constexpr IGrabberAllocator(size_t max_cache_size_) noexcept
+        : log(Logger::get("IGrabberAllocator")),
+          max_cache_size(max_cache_size_)
+        {
+
+        }
 
     ~IGrabberAllocator() noexcept
     {
@@ -485,8 +494,12 @@ public:
             region = allocate(size);
         }
 
-        /// Cannot allocate memory.
-        if (!region) return {};
+        /// Cannot allocate memory, special case.
+        if (!region)
+        {
+            LOG_WARNING(&log, "IGrabberAllocator is full and used, failed to allocate memory");
+            return {nullptr, true};
+        }
 
         region->init_key(key);
 

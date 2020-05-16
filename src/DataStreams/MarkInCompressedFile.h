@@ -66,7 +66,7 @@ class CacheMarksInCompressedFile :
     public PODArray<MarkInCompressedFile, 0, FakePODAllocForIG, 0, 0>
 {
 public:
-    /// @param storage_pointer See IGrabberAllocator::getOrSet and FakePODAllocForIG for detail.
+    /// for storage_pointer origin See IGrabberAllocator::getOrSet and FakePODAllocForIG for detail.
     CacheMarksInCompressedFile(const MarksInCompressedFile& other) :
         PODArray(other, alloc_tag, other.storage_pointer) {} //calling copy-ctor as intended
 
