@@ -11,7 +11,6 @@
 
 #include <Common/Stopwatch.h>
 
-
 int main(int argc, char ** argv)
 {
     using namespace DB;
@@ -45,7 +44,7 @@ int main(int argc, char ** argv)
             std::cerr << "Elapsed: " << watch.elapsedSeconds() << std::endl;
         }
 
-        ga::Stats stats = cache.getStats()
+        ga::Stats stats = cache.getStats();
         std::cerr << "Hits: " << stats.hits << ", misses: " << stats.misses << std::endl;
 
         {
