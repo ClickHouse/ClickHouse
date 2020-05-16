@@ -858,6 +858,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     if (first_iteration && result.type != AggregatedDataVariants::Type::without_key &&
         shared_result &&
         params.group_by_shared_method_proportion_threshold != 0 &&
+        !params.max_bytes_before_external_group_by &&
         1.0 * result.size() / num_rows >= params.group_by_shared_method_proportion_threshold)
     {
         #define M(NAME) \
@@ -1981,13 +1982,12 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
 
     if (has_at_least_one_two_level || has_at_least_one_two_level_shared)
         for (auto & variant : non_empty_data)
-            if (!variant->isTwoLevel())
-            {
-                if (has_at_least_one_two_level_shared)
-                    variant->convertToTwoLevelShared();
-                else
-                    variant->convertToTwoLevel();
-            }
+        {
+            if (has_at_least_one_two_level_shared && !variant->isTwoLevelShared())
+                variant->convertToTwoLevelShared();
+            else if (has_at_least_one_two_level && !variant->isTwoLevel())
+                variant->convertToTwoLevel();
+        }
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 
