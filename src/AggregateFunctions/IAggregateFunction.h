@@ -141,6 +141,9 @@ public:
       */
     virtual void addBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const = 0;
 
+    virtual void addBatchCustomRows(size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns,
+        Arena * arena, size_t * custom_rows) const = 0;
+
     /** The same for single place.
       */
     virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
@@ -152,6 +155,10 @@ public:
       */
     virtual void addBatchArray(
         size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
+
+    virtual void addBatchArrayCustomRows(
+        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena,
+        size_t * custom_rows) const = 0;
 
     /** By default all NULLs are skipped during aggregation.
      *  If it returns nullptr, the default one will be used.
@@ -195,6 +202,14 @@ public:
             static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
     }
 
+    void addBatchCustomRows(
+        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena, size_t * custom_rows)
+        const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, custom_rows[i], arena);
+    }
+
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
@@ -212,6 +227,19 @@ public:
             for (size_t j = current_offset; j < next_offset; ++j)
                 static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
+        }
+    }
+
+    void addBatchArrayCustomRows(
+        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena,
+        size_t * custom_rows) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            size_t current_offset = i == 0 ? 0 : offsets[custom_rows[i] - 1];
+            size_t next_offset = offsets[custom_rows[i]];
+            for (size_t j = current_offset; j < next_offset; ++j)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
         }
     }
 };

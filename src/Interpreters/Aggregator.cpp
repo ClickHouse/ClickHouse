@@ -96,6 +96,61 @@ void AggregatedDataVariants::convertToTwoLevel()
 }
 
 
+void AggregatedDataVariants::init()
+{
+    if (aggregator)
+    {
+        init(aggregator->method_chosen);
+        keys_size = aggregator->params.keys_size;
+        key_sizes = aggregator->key_sizes;
+    }
+}
+
+void AggregatedDataVariants::convertToTwoLevelShared()
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            NAME ## _two_level_shared = std::make_unique<decltype(NAME ## _two_level_shared)::element_type>(*(NAME)); \
+            (NAME).reset(); \
+            type = Type::NAME ## _two_level_shared; \
+            break;
+
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+
+    #undef M
+
+        default:
+            throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+void AggregatedDataVariants::createAggregatesPoolsForShared() {
+    /// Create arena for each bucket. One is already created.
+    size_t num_buckets = getNumBuckets();
+    for (size_t i = 0; i + 1 < num_buckets; ++i) {
+        aggregates_pools.push_back(std::make_shared<Arena>());
+    }
+}
+
+size_t AggregatedDataVariants::getNumBuckets() const
+{
+    switch (type)
+    {
+    #define M(NAME) \
+        case Type::NAME: \
+            return decltype(NAME)::element_type::Data::NUM_BUCKETS;
+
+        APPLY_FOR_VARIANTS_TWO_LEVEL_OR_SHARED(M)
+
+    #undef M
+
+        default:
+            return 0;
+    }
+}
+
 Block Aggregator::getHeader(bool final) const
 {
     Block res;
@@ -408,6 +463,29 @@ void NO_INLINE Aggregator::executeImpl(
 }
 
 
+template <typename Method>
+void NO_INLINE Aggregator::executeImplShared(
+    Method & method,
+    Arena * aggregates_pool,
+    size_t rows,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    AggregateDataPtr overflow_row,
+    Method & method_shared,
+    Arenas * aggregates_pools_shared,
+    std::vector<AlignedSmallLock> * shared_mutexes) const
+{
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+
+    if (!no_more_keys)
+        executeImplBatchShared(method, method_shared, state, aggregates_pool, aggregates_pools_shared, rows,
+            aggregate_instructions, shared_mutexes);
+    else
+        executeImplCase<true>(method, state, aggregates_pool, rows, aggregate_instructions, overflow_row);
+}
+
+
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
     Method & method,
@@ -511,6 +589,111 @@ void NO_INLINE Aggregator::executeImplBatch(
 }
 
 
+template <typename Method>
+void NO_INLINE Aggregator::executeImplBatchShared(
+    Method & method,
+    Method & method_shared,
+    typename Method::State & state,
+    Arena * aggregates_pool,
+    Arenas * aggregates_pools_shared,
+    size_t rows,
+    AggregateFunctionInstruction * aggregate_instructions,
+    std::vector<AlignedSmallLock> * shared_mutexes) const
+{
+    PODArray<AggregateDataPtr> places;
+    PODArray<size_t> num_rows;
+
+    std::vector<std::vector<size_t>> buffer_shared(Method::Data::NUM_BUCKETS);
+    std::vector<size_t> buffer_shared_idx(Method::Data::NUM_BUCKETS);
+
+    /// For all rows.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        AggregateDataPtr aggregate_data = nullptr;
+
+        /// Calculate bucket number from row hash.
+        auto hash = state.getHash(method_shared.data, i, *aggregates_pool);
+        auto bucket = method_shared.data.getBucketFromHash(hash);
+
+        /// Try lock shared table for current bucket.
+        if (buffer_shared[bucket].size() - buffer_shared_idx[bucket] >= params.group_by_shared_method_buffer_bucket_max_size &&
+            shared_mutexes->at(bucket).try_lock())
+        {
+            /// Select pool of shared table for current bucket.
+            Arena * aggregates_pool_shared = aggregates_pools_shared->at(bucket).get();
+
+            buffer_shared[bucket].push_back(i);
+
+            PODArray<AggregateDataPtr> places_shared(buffer_shared[bucket].size() - buffer_shared_idx[bucket]);
+
+            for (size_t idx = buffer_shared_idx[bucket]; idx < buffer_shared[bucket].size(); ++idx)
+            {
+                auto emplace_result = state.emplaceKey(method_shared.data, buffer_shared[bucket][idx], *aggregates_pool_shared);
+                /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+                if (emplace_result.isInserted())
+                {
+                    /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                    emplace_result.setMapped(nullptr);
+
+                    aggregate_data = aggregates_pool_shared->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                    createAggregateStates(aggregate_data);
+
+                    emplace_result.setMapped(aggregate_data);
+                }
+                else
+                    aggregate_data = emplace_result.getMapped();
+
+                places_shared[idx - buffer_shared_idx[bucket]] = aggregate_data;
+            }
+
+            for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+                if (inst->offsets)
+                    inst->batch_that->addBatchArrayCustomRows(places_shared.size(), places_shared.data(), inst->state_offset,
+                        inst->batch_arguments, inst->offsets, aggregates_pool_shared, &buffer_shared[bucket][buffer_shared_idx[bucket]]);
+                else
+                    inst->batch_that->addBatchCustomRows(places_shared.size(), places_shared.data(), inst->state_offset,
+                        inst->batch_arguments, aggregates_pool_shared, &buffer_shared[bucket][buffer_shared_idx[bucket]]);
+
+            buffer_shared_idx[bucket] = buffer_shared[bucket].size();
+            shared_mutexes->at(bucket).unlock();
+        } else
+            buffer_shared[bucket].push_back(i);
+    }
+
+    /// Put remaining keys from buffers to local table.
+    for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+        for (size_t i = buffer_shared_idx[bucket]; i < buffer_shared[bucket].size(); ++i)
+        {
+            AggregateDataPtr aggregate_data = nullptr;
+            auto emplace_result = state.emplaceKey(method.data, buffer_shared[bucket][i], *aggregates_pool);
+
+            if (emplace_result.isInserted())
+            {
+                emplace_result.setMapped(nullptr);
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(aggregate_data);
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+
+            places.push_back(aggregate_data);
+            num_rows.push_back(buffer_shared[bucket][i]);
+        }
+
+    /// Add local values to the aggregate functions.
+    if (!places.empty())
+    {
+        for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+            if (inst->offsets )
+                inst->batch_that->addBatchArrayCustomRows(places.size(), places.data(), inst->state_offset,
+                    inst->batch_arguments, inst->offsets, aggregates_pool, num_rows.data());
+            else
+                inst->batch_that->addBatchCustomRows(places.size(), places.data(), inst->state_offset,
+                    inst->batch_arguments, aggregates_pool, num_rows.data());
+    }
+}
+
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t rows,
@@ -530,14 +713,16 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
 
 bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys, bool & use_shared)
 {
     UInt64 num_rows = block.rows();
-    return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys);
+    return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys, use_shared,
+        nullptr, nullptr);
 }
 
 bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
-    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys)
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys,
+    bool & use_shared, AggregatedDataVariants * shared_result, std::vector<AlignedSmallLock> * shared_mutexes)
 {
     if (isCancelled())
         return true;
@@ -545,9 +730,13 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
+    /// True if it is first block for current thread
+    bool first_iteration = false;
+
     /// How to perform the aggregation?
     if (result.empty())
     {
+        first_iteration = true;
         result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
@@ -648,15 +837,31 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     {
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
+        if (use_shared)
+        {
+            /// Convert to same structure (two-level shared), because it is easier to merge with shared.
+            if (!result.isTwoLevel())
+                result.convertToTwoLevelShared();
+            #define M(NAME) \
+                else if (result.type == AggregatedDataVariants::Type::NAME) \
+                    executeImplShared(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
+                        no_more_keys, overflow_row_ptr, *shared_result->NAME, &shared_result->aggregates_pools, shared_mutexes);
 
-        #define M(NAME, IS_TWO_LEVEL) \
-            else if (result.type == AggregatedDataVariants::Type::NAME) \
-                executeImpl(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
-                    no_more_keys, overflow_row_ptr);
+            if (false) {} // NOLINT
+            APPLY_FOR_VARIANTS_TWO_LEVEL_SHARED(M)
+            #undef M
+        }
+        else
+        {
+            #define M(NAME, IS_TWO_LEVEL) \
+                else if (result.type == AggregatedDataVariants::Type::NAME) \
+                    executeImpl(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
+                        no_more_keys, overflow_row_ptr);
 
-        if (false) {} // NOLINT
-        APPLY_FOR_AGGREGATED_VARIANTS(M)
-        #undef M
+            if (false) {} // NOLINT
+            APPLY_FOR_AGGREGATED_VARIANTS(M)
+            #undef M
+        }
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
@@ -667,9 +872,24 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
 
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
 
+    if (first_iteration && result.type != AggregatedDataVariants::Type::without_key &&
+        params.group_by_shared_method_proportion_threshold != 0 &&
+        1.0 * result.size() / num_rows >= params.group_by_shared_method_proportion_threshold)
+    {
+        #define M(NAME) \
+            else if (result.type == AggregatedDataVariants::Type::NAME) \
+                use_shared = true;
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+        #undef M
+        if (use_shared)
+            LOG_TRACE(log, "Use shared method: " << shared_result->getMethodName());
+    }
+
     bool worth_convert_to_two_level
-        = (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
-        || (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes));
+        = !use_shared && ((params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
+        || (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes)));
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
@@ -822,7 +1042,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket); \
     }
 
-    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+    APPLY_FOR_VARIANTS_TWO_LEVEL_OR_SHARED(M)
 #undef M
 
     return block;
@@ -911,6 +1131,7 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
       *  keys that have already managed to get into the set.
       */
     bool no_more_keys = false;
+    bool use_shared = false;
 
     LOG_TRACE(log, "Aggregating");
 
@@ -928,14 +1149,14 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
         src_rows += block.rows();
         src_bytes += block.bytes();
 
-        if (!executeOnBlock(block, result, key_columns, aggregate_columns, no_more_keys))
+        if (!executeOnBlock(block, result, key_columns, aggregate_columns, no_more_keys, use_shared))
             break;
     }
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (result.empty() && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, no_more_keys);
+        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, no_more_keys, use_shared);
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();

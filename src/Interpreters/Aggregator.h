@@ -48,6 +48,27 @@ class IBlockOutputStream;
 class VolumeJBOD;
 using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
+struct SmallLock
+{
+    std::atomic<int> locked {false};
+
+    bool try_lock()
+    {
+        int expected = 0;
+        return locked.compare_exchange_strong(expected, 1, std::memory_order_acquire);
+    }
+
+    void unlock()
+    {
+        locked.store(0, std::memory_order_release);
+    }
+};
+
+struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
+{
+    char dummy[64 - sizeof(SmallLock)];
+};
+
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
   * Data and pool ownership (states of aggregate functions)
@@ -91,6 +112,16 @@ using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringR
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
+
+using AggregatedDataWithUInt32KeyTwoLevelShared = TwoLevelSharedHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
+using AggregatedDataWithUInt64KeyTwoLevelShared = TwoLevelSharedHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
+
+using AggregatedDataWithShortStringKeyTwoLevelShared = TwoLevelSharedStringHashMap<AggregateDataPtr>;
+
+using AggregatedDataWithStringKeyTwoLevelShared = TwoLevelSharedHashMapWithSavedHash<StringRef, AggregateDataPtr>;
+
+using AggregatedDataWithKeys128TwoLevelShared = TwoLevelSharedHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
+using AggregatedDataWithKeys256TwoLevelShared = TwoLevelSharedHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
 /** Variants with better hash function, using more than 32 bits for hash.
   * Using for merging phase of external aggregation, where number of keys may be far greater than 4 billion,
@@ -521,6 +552,15 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
 
+    std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevelShared>> key32_two_level_shared;
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevelShared>> key64_two_level_shared;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevelShared>>       key_string_two_level_shared;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevelShared>>  key_fixed_string_two_level_shared;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevelShared>>           keys32_two_level_shared;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevelShared>>           keys64_two_level_shared;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevelShared>>           keys128_two_level_shared;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevelShared>>           keys256_two_level_shared;
+
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;
     std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyHash64>>         key_fixed_string_hash64;
@@ -533,6 +573,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>>             nullable_keys256;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>>     nullable_keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>     nullable_keys256_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevelShared, true>>     nullable_keys128_two_level_shared;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevelShared, true>>     nullable_keys256_two_level_shared;
 
     /// Support for low cardinality.
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>>> low_cardinality_key8;
@@ -575,6 +617,14 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level,          true) \
         M(keys256_two_level,          true) \
         M(serialized_two_level,       true) \
+        M(key32_two_level_shared,     true) \
+        M(key64_two_level_shared,     true) \
+        M(key_string_two_level_shared, true) \
+        M(key_fixed_string_two_level_shared, true) \
+        M(keys32_two_level_shared,    true) \
+        M(keys64_two_level_shared,    true) \
+        M(keys128_two_level_shared,   true) \
+        M(keys256_two_level_shared,   true) \
         M(key64_hash64,               false) \
         M(key_string_hash64,          false) \
         M(key_fixed_string_hash64,    false) \
@@ -585,6 +635,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_keys256,           false) \
         M(nullable_keys128_two_level, true) \
         M(nullable_keys256_two_level, true) \
+        M(nullable_keys128_two_level_shared, true) \
+        M(nullable_keys256_two_level_shared, true) \
         M(low_cardinality_key8, false) \
         M(low_cardinality_key16, false) \
         M(low_cardinality_key32, false) \
@@ -632,6 +684,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 
         type = type_;
     }
+
+    void init();
 
     /// Number of rows (different keys).
     size_t size() const
@@ -718,6 +772,18 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
 
+    #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
+        M(key32)            \
+        M(key64)            \
+        M(key_string)       \
+        M(key_fixed_string) \
+        M(keys32)           \
+        M(keys64)           \
+        M(keys128)          \
+        M(keys256)          \
+        M(nullable_keys128) \
+        M(nullable_keys256) \
+
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
@@ -750,7 +816,24 @@ struct AggregatedDataVariants : private boost::noncopyable
         }
     }
 
+    bool isConvertibleToTwoLevelShared() const
+    {
+        switch (type)
+        {
+        #define M(NAME) \
+            case Type::NAME: return true;
+
+            APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+
+        #undef M
+            default:
+                return false;
+        }
+    }
+
     void convertToTwoLevel();
+
+    void convertToTwoLevelShared();
 
     #define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
         M(key32_two_level)            \
@@ -770,6 +853,22 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level) \
+
+    #define APPLY_FOR_VARIANTS_TWO_LEVEL_SHARED(M) \
+        M(key32_two_level_shared)            \
+        M(key64_two_level_shared)            \
+        M(key_string_two_level_shared)       \
+        M(key_fixed_string_two_level_shared) \
+        M(keys32_two_level_shared)           \
+        M(keys64_two_level_shared)           \
+        M(keys128_two_level_shared)          \
+        M(keys256_two_level_shared)          \
+        M(nullable_keys128_two_level_shared) \
+        M(nullable_keys256_two_level_shared) \
+
+    #define APPLY_FOR_VARIANTS_TWO_LEVEL_OR_SHARED(M) \
+        APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
+        APPLY_FOR_VARIANTS_TWO_LEVEL_SHARED(M) \
 
     #define APPLY_FOR_LOW_CARDINALITY_VARIANTS(M) \
         M(low_cardinality_key8) \
@@ -800,6 +899,26 @@ struct AggregatedDataVariants : private boost::noncopyable
                 return false;
         }
     }
+
+    size_t getNumBuckets() const;
+    /*size_t getNumBuckets() const
+    {
+        switch (type)
+        {
+        #define M(NAME) \
+            case Type::NAME: \
+                return decltype(NAME)::element_type::Data::NUM_BUCKETS;
+
+            APPLY_FOR_VARIANTS_TWO_LEVEL_OR_SHARED(M)
+
+        #undef M
+
+            default:
+                return 0;
+        }
+    }*/
+
+    void createAggregatesPoolsForShared();
 
     static HashMethodContextPtr createCache(Type type, const HashMethodContext::Settings & settings)
     {
@@ -884,6 +1003,13 @@ public:
         size_t max_threads;
 
         const size_t min_free_disk_space;
+
+        /// If the proportion of unique keys in the first block is greater than use_shared_method_proportion_threshold,
+        /// then shared aggregation method is used.
+        const double group_by_shared_method_proportion_threshold;
+        /// After how many accumulated keys in the buffer for a certain bucket try to insert into the shared table.
+        const size_t group_by_shared_method_buffer_bucket_max_size;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -892,7 +1018,9 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             VolumeJBODPtr tmp_volume_, size_t max_threads_,
-            size_t min_free_disk_space_)
+            size_t min_free_disk_space_,
+            double group_by_shared_method_proportion_threshold_,
+            size_t group_by_shared_method_buffer_bucket_max_size_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -900,14 +1028,16 @@ public:
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
             tmp_volume(tmp_volume_), max_threads(max_threads_),
-            min_free_disk_space(min_free_disk_space_)
+            min_free_disk_space(min_free_disk_space_),
+            group_by_shared_method_proportion_threshold(group_by_shared_method_proportion_threshold_),
+            group_by_shared_method_buffer_bucket_max_size(group_by_shared_method_buffer_bucket_max_size_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, 0, 0)
         {
             intermediate_header = intermediate_header_;
         }
@@ -926,11 +1056,12 @@ public:
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        bool & no_more_keys);
+        bool & no_more_keys, bool & use_shared);
 
     bool executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
-        bool & no_more_keys);
+        bool & no_more_keys,
+        bool & use_shared, AggregatedDataVariants * shared_result, std::vector<AlignedSmallLock> * shared_mutexes);
 
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
@@ -1080,6 +1211,20 @@ protected:
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
+    /// Process one data block, aggregate the data into a hash table.
+    template <typename Method>
+    void executeImplShared(
+        Method & method,
+        Arena * aggregates_pool,
+        size_t rows,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys,
+        AggregateDataPtr overflow_row,
+        Method & method_shared,
+        Arenas * aggregates_pools_shared,
+        std::vector<AlignedSmallLock> * shared_mutexes) const;
+
     /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
     void executeImplCase(
@@ -1097,6 +1242,17 @@ protected:
         Arena * aggregates_pool,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions) const;
+
+    template <typename Method>
+    void executeImplBatchShared(
+        Method & method,
+        Method & method_shared,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        Arenas * aggregates_pools_shared,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions,
+        std::vector<AlignedSmallLock> * shared_mutexes) const;
 
     /// For case when there are no keys (all aggregate into one row).
     static void executeWithoutKeyImpl(

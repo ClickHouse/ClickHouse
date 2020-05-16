@@ -3,13 +3,19 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashTable.h>
 
-template <typename TMapped, typename Allocator = HashTableAllocator, template <typename...> typename ImplTable = StringHashMap>
-class TwoLevelStringHashMap : public TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, ImplTable<TMapped, Allocator>>
+template
+<
+    typename TMapped,
+    typename Allocator = HashTableAllocator,
+    template <typename...> typename ImplTable = StringHashMap,
+    size_t BITS_FOR_BUCKET = 8
+>
+class TwoLevelStringHashMap : public TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, ImplTable<TMapped, Allocator>, BITS_FOR_BUCKET>
 {
 public:
     using Key = StringRef;
     using Self = TwoLevelStringHashMap;
-    using Base = TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, StringHashMap<TMapped, Allocator>>;
+    using Base = TwoLevelStringHashTable<StringHashMapSubMaps<TMapped, Allocator>, StringHashMap<TMapped, Allocator>, BITS_FOR_BUCKET>;
     using LookupResult = typename Base::LookupResult;
 
     using Base::Base;
@@ -31,3 +37,12 @@ public:
         return it->getMapped();
     }
 };
+
+template
+<
+    typename TMapped,
+    typename Allocator = HashTableAllocator,
+    template <typename...> typename ImplTable = StringHashMap,
+    size_t BITS_FOR_BUCKET = 11
+>
+using TwoLevelSharedStringHashMap = TwoLevelStringHashMap<TMapped, Allocator, ImplTable, BITS_FOR_BUCKET>;

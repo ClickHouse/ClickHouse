@@ -34,10 +34,16 @@ struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
     std::vector<std::unique_ptr<std::mutex>> mutexes;
+    AggregatedDataVariantsPtr shared_variant;
+    std::vector<AlignedSmallLock> shared_mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0, AggregatedDataVariantsPtr shared_variant_ = nullptr)
+        : variants(num_threads), mutexes(num_threads), shared_variant(std::move(shared_variant_))
     {
+        if (shared_variant)
+            shared_mutexes = std::vector<AlignedSmallLock>(shared_variant->getNumBuckets());
+
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
 
@@ -93,6 +99,7 @@ private:
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
     bool no_more_keys = false;
+    bool use_shared = false;
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;

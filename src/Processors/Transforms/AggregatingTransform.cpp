@@ -91,16 +91,16 @@ namespace
 class ConvertingAggregatedToChunksSource : public ISource
 {
 public:
-    static constexpr UInt32 NUM_BUCKETS = 256;
-
     struct SharedData
     {
         std::atomic<UInt32> next_bucket_to_merge = 0;
-        std::array<std::atomic<bool>, NUM_BUCKETS> is_bucket_processed;
+        UInt32 num_buckets;
+        std::vector<std::atomic<bool>> is_bucket_processed;
         std::atomic<bool> is_cancelled = false;
 
-        SharedData()
+        explicit SharedData(UInt32 num_buckets_) : num_buckets(num_buckets_)
         {
+            is_bucket_processed = std::vector<std::atomic<bool>>(num_buckets);
             for (auto & flag : is_bucket_processed)
                 flag = false;
         }
@@ -127,7 +127,7 @@ protected:
     {
         UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
 
-        if (bucket_num >= NUM_BUCKETS)
+        if (bucket_num >= shared_data->num_buckets)
             return {};
 
         Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
@@ -159,7 +159,14 @@ class ConvertingAggregatedToChunksTransform : public IProcessor
 public:
     ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)
         : IProcessor({}, {params_->getHeader()})
-        , params(std::move(params_)), data(std::move(data_)), num_threads(num_threads_) {}
+        , params(std::move(params_)), data(std::move(data_)), num_threads(num_threads_)
+    {
+        if (!data->empty())
+        {
+            num_buckets = data->at(0)->getNumBuckets();
+            chunks.resize(num_buckets);
+        }
+    }
 
     String getName() const override { return "ConvertingAggregatedToChunksTransform"; }
 
@@ -284,7 +291,7 @@ private:
         output.push(std::move(chunks[current_bucket_num]));
 
         ++current_bucket_num;
-        if (current_bucket_num == NUM_BUCKETS)
+        if (current_bucket_num == num_buckets)
         {
             output.finish();
             /// Do not close inputs, they must be finished.
@@ -307,8 +314,8 @@ private:
     Chunk current_chunk;
 
     UInt32 current_bucket_num = 0;
-    static constexpr Int32 NUM_BUCKETS = 256;
-    std::array<Chunk, NUM_BUCKETS> chunks;
+    UInt32 num_buckets = 0;
+    std::vector<Chunk> chunks;
 
     Processors processors;
 
@@ -376,7 +383,7 @@ private:
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-        shared_data = std::make_shared<ConvertingAggregatedToChunksSource::SharedData>();
+        shared_data = std::make_shared<ConvertingAggregatedToChunksSource::SharedData>(first->getNumBuckets());
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
@@ -519,11 +526,14 @@ void AggregatingTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    src_rows += chunk.getNumRows();
+    src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys))
+    if (!params->aggregator.executeOnBlock(chunk.detachColumns(), num_rows, variants, key_columns, aggregate_columns, no_more_keys,
+        use_shared, many_data->shared_variant.get(), &many_data->shared_mutexes))
+    {
         is_consume_finished = true;
+    }
 }
 
 void AggregatingTransform::initGenerate()
@@ -536,7 +546,8 @@ void AggregatingTransform::initGenerate()
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
-        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys,
+            use_shared);
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
@@ -560,6 +571,14 @@ void AggregatingTransform::initGenerate()
 
     if (!params->aggregator.hasTemporaryFiles())
     {
+        if (many_data->shared_variant && many_data->shared_variant->size() > 0)
+        {
+            LOG_TRACE(log, "Shared method info: keys="
+                          << many_data->shared_variant->size() << ", method="
+                          << many_data->shared_variant->getMethodName());
+            many_data->variants.push_back(many_data->shared_variant);
+        }
+
         auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
         auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
         processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));

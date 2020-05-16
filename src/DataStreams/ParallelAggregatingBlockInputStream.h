@@ -57,6 +57,8 @@ private:
       */
     bool no_more_keys = false;
 
+    bool use_shared = false;
+
     std::atomic<bool> executed {false};
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
 

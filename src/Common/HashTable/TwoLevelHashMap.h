@@ -11,15 +11,16 @@ template
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable
+    template <typename ...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = 8
 >
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>
+class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
 {
 public:
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
     using LookupResult = typename Impl::LookupResult;
 
-    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
+    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>::TwoLevelHashTable;
 
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
@@ -49,9 +50,22 @@ template
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable
+    template <typename ...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = 8
 >
-using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
+using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
+
+template
+<
+    typename Key,
+    typename Mapped,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator,
+    template <typename ...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = 11
+>
+using TwoLevelSharedHashMap = TwoLevelHashMap<Key, Mapped, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
 
 
 template
@@ -61,6 +75,19 @@ template
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable
+    template <typename ...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = 8
 >
-using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
+using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
+
+template
+<
+    typename Key,
+    typename Mapped,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator,
+    template <typename ...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = 11
+>
+using TwoLevelSharedHashMapWithSavedHash = TwoLevelHashMapWithSavedHash<Key, Mapped, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
