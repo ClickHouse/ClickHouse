@@ -11,6 +11,7 @@
 
 #include <common/unaligned.h>
 
+#include <pdqsort.h>
 
 namespace DB
 {
@@ -318,9 +319,9 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
     {
         const auto &[first, last] = equal_range[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, less_false);
+            pdqsort(res.begin() + first, res.begin() + last, less_false);
         else
-            std::sort(res.begin() + first, res.begin() + last, less_true);
+            pdqsort(res.begin() + first, res.begin() + last, less_true);
         size_t new_first = first;
         for (size_t j = first + 1; j < last; ++j)
         {
@@ -534,9 +535,9 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, boo
     {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, lessWithCollation<false>(*this, collator));
+            pdqsort(res.begin() + first, res.begin() + last, lessWithCollation<false>(*this, collator));
         else
-            std::sort(res.begin() + first, res.begin() + last, lessWithCollation<true>(*this, collator));
+            pdqsort(res.begin() + first, res.begin() + last, lessWithCollation<true>(*this, collator));
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {

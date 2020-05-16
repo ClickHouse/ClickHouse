@@ -20,6 +20,8 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <pdqsort.h>
+
 
 namespace DB
 {
@@ -753,9 +755,9 @@ void ColumnArray::updatePermutation(bool reverse, size_t limit, int nan_directio
     {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
+            pdqsort(res.begin() + first, res.begin() + last, Less<false>(*this, nan_direction_hint));
         else
-            std::sort(res.begin() + first, res.begin() + last, Less<true>(*this, nan_direction_hint));
+            pdqsort(res.begin() + first, res.begin() + last, Less<true>(*this, nan_direction_hint));
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {

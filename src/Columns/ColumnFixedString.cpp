@@ -13,6 +13,8 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <pdqsort.h>
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -178,9 +180,9 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
     {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, less<false>(*this));
+            pdqsort(res.begin() + first, res.begin() + last, less<false>(*this));
         else
-            std::sort(res.begin() + first, res.begin() + last, less<true>(*this));
+            pdqsort(res.begin() + first, res.begin() + last, less<true>(*this));
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {

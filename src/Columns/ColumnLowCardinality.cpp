@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 
+#include <pdqsort.h>
 
 namespace DB
 {
@@ -330,11 +331,11 @@ void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan
     {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
+            pdqsort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
                       {
                 return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) > 0; });
         else
-            std::sort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
+            pdqsort(res.begin() + first, res.begin() + last, [this, nan_direction_hint](size_t a, size_t b)
                       {
                 return getDictionary().compareAt(getIndexes().getUInt(a), getIndexes().getUInt(b), getDictionary(), nan_direction_hint) < 0; });
         auto new_first = first;

@@ -9,9 +9,11 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
+
+#include <pdqsort.h>
 
 
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -125,9 +127,9 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
     {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last, [this](size_t a, size_t b) { return data[a] > data[b]; });
+            pdqsort(res.begin() + first, res.begin() + last, [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last, [this](size_t a, size_t b) { return data[a] < data[b]; });
+            pdqsort(res.begin() + first, res.begin() + last, [this](size_t a, size_t b) { return data[a] < data[b]; });
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
