@@ -31,6 +31,13 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
+#if __linux__
+#include <linux/version.h>
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,22)
+#define _MAP_POPULATE_AVAILABLE
+#endif
+#endif
+
 namespace DB::ErrorCodes
 {
 extern const int CANNOT_ALLOCATE_MEMORY;
@@ -766,8 +773,11 @@ private:
                 size,
                 PROT_READ | PROT_WRITE,
                 MAP_PRIVATE |
-                MAP_ANONYMOUS |
-                MAP_POPULATE, /*possible speedup on read-ahead*/
+                MAP_ANONYMOUS
+#ifdef _MAP_POPULATE_AVAILABLE
+                | MAP_POPULATE /*possible speedup on read-ahead*/
+#else
+                ,
                 /**fd */ -1,
                 /**offset*/ 0);
 
