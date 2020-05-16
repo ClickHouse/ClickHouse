@@ -223,7 +223,7 @@ add_subdirectory (Compression)
 
 
 set(dbms_headers)
-set(dbms_sources)
+set(dbms_sources Common/UatraitsFast/types/Browser.h Common/UatraitsFast/types/Browser.cpp Common/UatraitsFast/types/BrowserBase.h Common/UatraitsFast/types/BrowserBase.cpp Common/UatraitsFast/types/OperatingSystem.h Common/UatraitsFast/types/OperatingSystem.cpp)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -301,6 +301,8 @@ add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
+add_object_library(clickhouse_common Common)
+add_object_library(clickhouse_common-uatraitsfast Common/UatraitsFast)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
@@ -381,6 +383,7 @@ target_link_libraries (clickhouse_common_io
     common
         PRIVATE
     string_utils
+    uatraits_fast
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
@@ -441,6 +444,7 @@ dbms_target_link_libraries (
     clickhouse_common_config
     clickhouse_common_zookeeper
     string_utils # FIXME: not sure if it's private
+    uatraits_fast
         PUBLIC
     clickhouse_common_io
         PRIVATE
@@ -599,6 +603,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils uatraits_fast)
     add_check(unit_tests_dbms)
 endif ()
