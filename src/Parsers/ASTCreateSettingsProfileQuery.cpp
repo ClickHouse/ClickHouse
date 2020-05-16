@@ -74,7 +74,7 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
 }
 
 
-void ASTCreateSettingsProfileQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+void ASTCreateSettingsProfileQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (to_roles)
         to_roles->replaceCurrentUserTagWithName(current_user_name);

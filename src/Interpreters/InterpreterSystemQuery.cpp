@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
-#include "config_core.h"
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
@@ -22,6 +21,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Access/ContextAccess.h>
+#include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -31,6 +31,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace DB
@@ -140,7 +144,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         auto access = context.getAccess();
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
                     continue;
@@ -195,6 +199,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DNS_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
+            AllowedClientHosts::dropDNSCaches();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
@@ -327,7 +332,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        create_ast = database->getCreateTableQuery(system_context, replica.table_name);
+        create_ast = database->getCreateTableQuery(replica.table_name);
 
         database->detachTable(replica.table_name);
     }
@@ -338,18 +343,19 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
+    auto data_path = database->getTableDataPath(create);
 
     table = StorageFactory::instance().get(create,
-        database->getTableDataPath(create),
+        data_path,
         system_context,
         system_context.getGlobalContext(),
         columns,
         constraints,
         false);
 
-    database->createTable(system_context, replica.table_name, table, create_ast);
+    database->attachTable(replica.table_name, table, data_path);
 
     table->startup();
     return table;
@@ -363,7 +369,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     for (auto & elem : catalog.getDatabases())
     {
         DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});
@@ -390,7 +396,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
     context.checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
-    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
@@ -410,7 +416,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
         storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

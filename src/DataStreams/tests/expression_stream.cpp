@@ -33,9 +33,10 @@ try
     std::string input = "SELECT number, number / 3, number * number";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};

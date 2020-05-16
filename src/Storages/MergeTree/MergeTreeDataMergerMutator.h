@@ -49,9 +49,8 @@ struct FutureMergedMutatedPart
 class MergeTreeDataMergerMutator
 {
 public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
+    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
 
-public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
@@ -144,10 +143,11 @@ private:
         MutationCommands & for_interpreter,
         MutationCommands & for_file_renames);
 
-
-    /// Apply commands to source_part i.e. remove some columns in source_part
-    /// and return set of files, that have to be removed from filesystem and checksums
-    static NameToNameMap collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
+    /// Apply commands to source_part i.e. remove and rename some columns in
+    /// source_part and return set of files, that have to be removed or renamed
+    /// from filesystem and in-memory checksums. Ordered result is important,
+    /// because we can apply renames that affects each other: x -> z, y -> x.
+    static NameToNameVector collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.

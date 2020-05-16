@@ -356,19 +356,26 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
     const auto & storage_columns = storage.getColumns().getAllPhysical();
-    const std::string * minimum_size_column = nullptr;
+    auto alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
+
+    std::optional<std::string> minimum_size_column;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
     for (const auto & column : storage_columns)
     {
-        if (!hasColumnFiles(column.name, *column.type))
+        auto column_name = column.name;
+        auto column_type = column.type;
+        if (alter_conversions.isColumnRenamed(column.name))
+            column_name = alter_conversions.getColumnOldName(column.name);
+
+        if (!hasColumnFiles(column_name, *column_type))
             continue;
 
-        const auto size = getColumnSize(column.name, *column.type).data_compressed;
+        const auto size = getColumnSize(column_name, *column_type).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
-            minimum_size_column = &column.name;
+            minimum_size_column = column_name;
         }
     }
 
@@ -731,34 +738,42 @@ void IMergeTreeDataPart::remove() const
         return;
     }
 
-    try
+    if (checksums.empty())
     {
-        /// Remove each expected file in directory, then remove directory itself.
-
-#if !__clang__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
-        for (const auto & [file, _] : checksums.files)
-            disk->remove(to + "/" + file);
-#if !__clang__
-#    pragma GCC diagnostic pop
-#endif
-
-        for (const auto & file : {"checksums.txt", "columns.txt"})
-            disk->remove(to + "/" + file);
-        disk->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
-
-        disk->remove(to);
-    }
-    catch (...)
-    {
-        /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
-        LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(disk, to) << " by removing files; fallback to recursive removal. Reason: "
-            << getCurrentExceptionMessage(false));
-
+        /// If the part is not completely written, we cannot use fast path by listing files.
         disk->removeRecursive(to + "/");
+    }
+    else
+    {
+        try
+        {
+            /// Remove each expected file in directory, then remove directory itself.
+
+    #if !__clang__
+    #    pragma GCC diagnostic push
+    #    pragma GCC diagnostic ignored "-Wunused-variable"
+    #endif
+            for (const auto & [file, _] : checksums.files)
+                disk->remove(to + "/" + file);
+    #if !__clang__
+    #    pragma GCC diagnostic pop
+    #endif
+
+            for (const auto & file : {"checksums.txt", "columns.txt"})
+                disk->remove(to + "/" + file);
+            disk->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+
+            disk->remove(to);
+        }
+        catch (...)
+        {
+            /// Recursive directory removal does many excessive "stat" syscalls under the hood.
+
+            LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(disk, to) << " by removing files; fallback to recursive removal. Reason: "
+                << getCurrentExceptionMessage(false));
+
+            disk->removeRecursive(to + "/");
+        }
     }
 }
 

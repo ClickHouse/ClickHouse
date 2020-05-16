@@ -63,10 +63,14 @@ public:
             <node>
                 <host>example1</host>
                 <port>2181</port>
+                <!-- Optional. Enables communication over SSL . -->
+                <secure>1</secure>
             </node>
             <node>
                 <host>example2</host>
                 <port>2181</port>
+                <!-- Optional. Enables communication over SSL . -->
+                <secure>1</secure>
             </node>
             <session_timeout_ms>30000</session_timeout_ms>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -181,8 +185,11 @@ public:
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
 
+    using WaitCondition = std::function<bool()>;
     /// Wait for the node to disappear or return immediately if it doesn't exist.
-    void waitForDisappear(const std::string & path);
+    /// If condition is speficied, it is used to return early (when condition returns false)
+    /// The function returns true if waited and false if waiting was interrupted by condition.
+    bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
 
     /// Async interface (a small subset of operations is implemented).
     ///

@@ -1,7 +1,7 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -28,6 +28,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
+#include <Common/createHardLink.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -57,15 +58,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_LINK;
 }
 
-static void writeBlockConvert(const Context & context, const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
 {
     if (!blocksHaveEqualStructure(out->getHeader(), block))
     {
-        ConvertingBlockInputStream convert(context,
+        ConvertingBlockInputStream convert(
             std::make_shared<OneBlockInputStream>(block),
             out->getHeader(),
             ConvertingBlockInputStream::MatchColumnsMode::Name);
@@ -264,7 +263,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             for (size_t j = 0; j < current_block.columns(); ++j)
             {
-                auto & src_column = current_block.getByPosition(j).column;
+                const auto & src_column = current_block.getByPosition(j).column;
                 auto & dst_column = job.current_shard_block.getByPosition(j).column;
 
                 /// Zero permutation size has special meaning in IColumn::permute
@@ -333,7 +332,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 job.stream->writePrefix();
             }
 
-            writeBlockConvert(context, job.stream, shard_block, shard_info.getLocalNodeCount());
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
         }
 
         job.blocks_written += 1;
@@ -457,34 +456,14 @@ void DistributedBlockOutputStream::writeSuffix()
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block)
+IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block) const
 {
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
-    const auto & slot_to_shard = cluster->getSlotToShard();
 
-// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
-#define CREATE_FOR_TYPE(TYPE) \
-    if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
-    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
-        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
-            return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
+    return storage.createSelector(cluster, key_column);
 }
 
 
@@ -568,80 +547,86 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     auto block_io = interp.execute();
 
     block_io.out->writePrefix();
-    writeBlockConvert(context, block_io.out, block, repeats);
+    writeBlockConvert(block_io.out, block, repeats);
     block_io.out->writeSuffix();
 }
 
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
-    /** tmp directory is used to ensure atomicity of transactions
-      *  and keep monitor thread out from reading incomplete data
-      */
+    /// tmp directory is used to ensure atomicity of transactions
+    /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto first = true;
+    const auto & [disk, data_path] = storage.getPath();
 
-    /// write first file, hardlink the others
-    for (const auto & dir_name : dir_names)
+    auto it = dir_names.begin();
+    /// on first iteration write block to a temporary directory for subsequent
+    /// hardlinking to ensure the inode is not freed until we're done
     {
-        const auto & [disk, data_path] = storage.getPath();
-        const std::string path(disk + data_path + dir_name + '/');
+        const std::string path(disk + data_path + *it);
+        Poco::File(path).createDirectory();
 
-        /// ensure shard subdirectory creation and notify storage
-        if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(disk, dir_name);
+        const std::string tmp_path(path + "/tmp/");
+        Poco::File(tmp_path).createDirectory();
 
-        const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
-        const auto & block_file_path = path + file_name;
+        const std::string file_name(toString(storage.file_names_increment.get()) + ".bin");
 
-        /** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
-            *  the inode is not freed until we're done */
-        if (first)
-        {
-            first = false;
+        first_file_tmp_path = tmp_path + file_name;
 
-            const auto & tmp_path = path + "tmp/";
-            Poco::File(tmp_path).createDirectory();
-            const auto & block_file_tmp_path = tmp_path + file_name;
+        WriteBufferFromFile out{first_file_tmp_path};
+        CompressedWriteBuffer compress{out};
+        NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
-            first_file_tmp_path = block_file_tmp_path;
+        /// Prepare the header.
+        /// We wrap the header into a string for compatibility with older versions:
+        /// a shard will able to read the header partly and ignore other parts based on its version.
+        WriteBufferFromOwnString header_buf;
+        writeVarUInt(ClickHouseRevision::get(), header_buf);
+        writeStringBinary(query_string, header_buf);
+        context.getSettingsRef().serialize(header_buf);
+        context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
-            WriteBufferFromFile out{block_file_tmp_path};
-            CompressedWriteBuffer compress{out};
-            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
+        /// Add new fields here, for example:
+        /// writeVarUInt(my_new_data, header_buf);
 
-            /// Prepare the header.
-            /// We wrap the header into a string for compatibility with older versions:
-            /// a shard will able to read the header partly and ignore other parts based on its version.
-            WriteBufferFromOwnString header_buf;
-            writeVarUInt(ClickHouseRevision::get(), header_buf);
-            writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().serialize(header_buf);
-            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
+        /// Write the header.
+        const StringRef header = header_buf.stringRef();
+        writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+        writeStringBinary(header, out);
+        writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-            /// Add new fields here, for example:
-            /// writeVarUInt(my_new_data, header_buf);
+        stream.writePrefix();
+        stream.write(block);
+        stream.writeSuffix();
 
-            /// Write the header.
-            const StringRef header = header_buf.stringRef();
-            writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-            writeStringBinary(header, out);
-            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
+        // Create hardlink here to reuse increment number
+        const std::string block_file_path(path + '/' + file_name);
+        createHardLink(first_file_tmp_path, block_file_path);
+    }
+    ++it;
 
-            stream.writePrefix();
-            stream.write(block);
-            stream.writeSuffix();
-        }
+    /// Make hardlinks
+    for (; it != dir_names.end(); ++it)
+    {
+        const std::string path(disk + data_path + *it);
+        Poco::File(path).createDirectory();
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
 
-        if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
-                                   ErrorCodes::CANNOT_LINK);
+        createHardLink(first_file_tmp_path, block_file_path);
     }
 
-    /** remove the temporary file, enabling the OS to reclaim inode after all threads
-        *  have removed their corresponding files */
+    /// remove the temporary file, enabling the OS to reclaim inode after all threads
+    /// have removed their corresponding files
     Poco::File(first_file_tmp_path).remove();
+
+    /// Notify
+    auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+    for (const auto & dir_name : dir_names)
+    {
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
+        directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
+    }
 }
 
 

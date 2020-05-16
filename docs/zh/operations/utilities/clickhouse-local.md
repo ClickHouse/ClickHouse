@@ -1,3 +1,8 @@
+---
+toc_priority: 60
+toc_title: clickhouse-local
+---
+
 # ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-local}
 
 该 `clickhouse-local` 程序使您能够对本地文件执行快速处理，而无需部署和配置ClickHouse服务器。

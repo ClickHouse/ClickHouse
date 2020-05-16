@@ -51,14 +51,14 @@ struct SyntaxAnalyzerResult
 
     bool maybe_optimize_trivial_count = false;
 
-    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_virtuals = true)
+    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_special = true)
         : storage(storage_)
         , source_columns(source_columns_)
     {
-        collectSourceColumns(add_virtuals);
+        collectSourceColumns(add_special);
     }
 
-    void collectSourceColumns(bool add_virtuals);
+    void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
     const Scalars & getScalars() const { return scalars; }
@@ -94,7 +94,8 @@ public:
         SyntaxAnalyzerResult && result,
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
-        const Names & required_result_columns = {}) const;
+        const Names & required_result_columns = {},
+        std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
     const Context & context;

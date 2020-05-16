@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-30 15:12+0300\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,24 +17,43 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr ""
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr ""
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr ""
 
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
+#: templates/common_meta.html:21
+msgid "open-source"
 msgstr ""
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:21
+msgid "relational"
+msgstr ""
+
+#: templates/common_meta.html:21
+msgid "analytics"
+msgstr ""
+
+#: templates/common_meta.html:21
+msgid "analytical"
+msgstr ""
+
+#: templates/common_meta.html:21
+msgid "Big Data"
+msgstr ""
+
+#: templates/common_meta.html:21
+msgid "web-analytics"
 msgstr ""
 
 #: templates/footer.html:8
@@ -51,11 +70,23 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr ""
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr ""
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr ""
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -64,12 +95,12 @@ msgid ""
 "readable."
 msgstr ""
 
-#: templates/docs/content.html:10
-msgid "Help ClickHouse documentation by editing this page"
+#: templates/docs/machine-translated.html:4
+msgid "You can also use the original English version as a reference."
 msgstr ""
 
-#: templates/docs/content.html:31
-msgid "Built from"
+#: templates/docs/machine-translated.html:7
+msgid "Help ClickHouse documentation by editing this page"
 msgstr ""
 
 #: templates/docs/sidebar.html:3
@@ -168,15 +199,15 @@ msgstr ""
 msgid "Like ClickHouse?"
 msgstr ""
 
-#: templates/index/community.html:142
+#: templates/index/community.html:143
 msgid "Help to spread the word about it via"
 msgstr ""
 
-#: templates/index/community.html:143
+#: templates/index/community.html:144
 msgid "and"
 msgstr ""
 
-#: templates/index/community.html:155
+#: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
 msgstr ""
 
