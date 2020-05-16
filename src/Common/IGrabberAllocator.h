@@ -566,12 +566,12 @@ public:
 private:
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
-        ++metadata.refcount;
-
-        if (metadata.refcount == 1 && metadata.TUnusedRegionHook::is_linked())
+        if (++metadata.refcount == 1)
         {
+            if (metadata.TUnusedRegionHook::is_linked())
+                unused_allocated_regions.erase(unused_allocated_regions.iterator_to(metadata));
+
             value_to_region.emplace(metadata.value(), &metadata);
-            unused_allocated_regions.erase(unused_allocated_regions.iterator_to(metadata));
         }
 
         total_size_in_use += metadata.size;
