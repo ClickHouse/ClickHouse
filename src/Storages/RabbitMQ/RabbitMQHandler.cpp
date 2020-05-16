@@ -13,10 +13,9 @@ RabbitMQHandler::RabbitMQHandler(event_base * evbase_, Poco::Logger * log_) :
 {
 }
 
-void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char * message) 
+void RabbitMQHandler::onError(AMQP::TcpConnection * /*connection*/, const char * message) 
 {
     LOG_ERROR(log, "Library error report: " << message);
-    connection_error = true;
     stop();
 }
 
@@ -29,7 +28,7 @@ void RabbitMQHandler::start()
 
 void RabbitMQHandler::startNonBlock()
 {
-    event_base_loop(evbase, EVLOOP_NONBLOCK);
+    event_base_loop(evbase, EVLOOP_NONBLOCK); 
 }
 
 

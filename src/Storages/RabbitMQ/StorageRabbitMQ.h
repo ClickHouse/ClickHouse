@@ -79,24 +79,17 @@ private:
     size_t num_queues;
 
     Poco::Logger * log;
-
     std::pair<std::string, UInt16> parsed_address;
 
     Poco::Semaphore semaphore;
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    event_base * consumersEvbase;
     event_base * producersEvbase;
-
-    RabbitMQHandler consumersEventHandler;
     RabbitMQHandler producersEventHandler;
-
-    AMQP::TcpConnection consumersConnection;
     AMQP::TcpConnection producersConnection;
 
-    ChannelPtr consumer_channel;
-    bool set_consumer_channel = true;
+    bool set_producer_connection = true;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};

@@ -23,8 +23,7 @@ class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
 public:
     ReadBufferFromRabbitMQConsumer(
-            ChannelPtr channel_,
-            RabbitMQHandler & eventHandler_,
+            std::pair<std::string, UInt16> & parsed_address,
             const String & exchange_name_,
             const String & routing_key_,
             Poco::Logger * log_,
@@ -34,15 +33,18 @@ public:
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
-
+    void allowNext() { allowed = true; } // Allow to read next message.
     void subscribeConsumer();
 
 private:
     using Messages = std::vector<String>;
     using Queues = std::vector<String>;
 
+    event_base * evbase;
+    RabbitMQHandler eventHandler;
+    AMQP::TcpConnection connection;
+
     ChannelPtr consumer_channel;
-    RabbitMQHandler & eventHandler;
     const String & exchange_name;
     const String & routing_key;
 
@@ -50,16 +52,16 @@ private:
     char row_delimiter;
     const bool hash_exchange;
     bool stalled = false;
+    bool allowed = true;
     const std::atomic<bool> & stopped;
-    std::atomic<bool> exchange_declared = false;
 
+    std::atomic<bool> exchange_declared = false;
     const size_t num_queues;
     String consumerTag; // ID for the consumer
     Queues queues;
     bool bindings_created = false;
     bool subscribed = false;
-    //Queues::iterator queue_name;
-    String hash_exchange_name;
+    String current_exchange_name;
 
     Messages received;
     Messages messages;
@@ -71,7 +73,9 @@ private:
     void subscribe(const String & queue_name);
     void unsubscribe();
 
+    void startEventLoop();
     void startNonBlockEventLoop();
     void stopEventLoop();
+
 };
 }

@@ -69,15 +69,11 @@ StorageRabbitMQ::StorageRabbitMQ(
         , num_consumers(num_consumers_)
         , hash_exchange(hash_exchange_)
         , num_queues(num_queues_)
-        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
-        , consumersEvbase(event_base_new())
+        , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , producersEvbase(event_base_new())
-        , consumersEventHandler(consumersEvbase, log)
         , producersEventHandler(producersEvbase, log)
-        , consumersConnection(&consumersEventHandler,
-          AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
         , producersConnection(&producersEventHandler,
           AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
 {
@@ -87,29 +83,14 @@ StorageRabbitMQ::StorageRabbitMQ(
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
-    /* There are several reasons for making separate connections: to limit the number of channels per connection, to make
-     * event loops more deterministic and not shared between publishers and consumers. 
-     * And it is simply recommended to use separate connections to publish and consume.
-     */
-    while (!consumersConnection.ready())
-    {
-        event_base_loop(consumersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
-    }
-
-    while (!producersConnection.ready())
-    {
-        event_base_loop(producersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
-    }
-
      /* Firstly, the routing key of the message published - should be the same as the routing_key parameter of the
      * CREATE TABLE query (it is important in order to be able to make queue bindings: messages are published to exchange 
      * and, before they are published, queues should be initialized and bound to that exchange with the binding 
-     * key - otherwise messages will be routed nowhere). In simple cases with one queue and one consumer direct 
-     * exchange type is used.
+     * key - otherwise messages will be routed nowhere).      
      *
      * In case when many queues (~ consumers) are potential recievers of one message - consistent-hash exchange is used.
      * As only consistent-hash exchange type enables a proper rebalance of messages between queues (and therefore between consumers)
-     * - use hash_exchange flag to enable rebalance (the chosen scheme for rebalance is explained in consumer class).
+     * - use hash_exchange flag to enable rebalance.
      */
     hash_exchange = hash_exchange || num_consumers > 1 || num_queues > 1;
 }
@@ -142,6 +123,17 @@ Pipes StorageRabbitMQ::read(
 
 BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
 {
+    /// Make one connection for all publishers - they will also share one event loop.
+    if (set_producer_connection)
+    {
+        while (!producersConnection.ready())
+        {
+            event_base_loop(producersEvbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        }
+
+        set_producer_connection = false;
+    }
+
     return std::make_shared<RabbitMQBlockOutputStream>(*this, context);
 }
 
@@ -174,7 +166,6 @@ void StorageRabbitMQ::shutdown()
         auto buffer = popReadBuffer();
     }
 
-    consumersConnection.close();
     producersConnection.close();
 
     task->deactivate();
@@ -225,8 +216,8 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&consumersConnection), 
-            consumersEventHandler, exchange_name, routing_key, log, row_delimiter, hash_exchange, num_queues, stream_cancelled);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(parsed_address,exchange_name, routing_key,
+            log, row_delimiter, hash_exchange, num_queues, stream_cancelled);
 }
 
 

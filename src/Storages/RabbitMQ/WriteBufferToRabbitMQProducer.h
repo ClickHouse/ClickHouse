@@ -30,7 +30,7 @@ public:
 
 private:
     void nextImpl() override;
-    void initExchange();
+    void checkExchange();
 
     ChannelPtr producer_channel;
     RabbitMQHandler & eventHandler;

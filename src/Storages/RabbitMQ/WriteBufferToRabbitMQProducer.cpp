@@ -31,9 +31,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
 {
-    initExchange();
-
     channel_id = std::to_string(producer_channel->id());
+    checkExchange();
 }
 
 
@@ -45,9 +44,8 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 }
 
 
-void WriteBufferToRabbitMQProducer::initExchange()
+void WriteBufferToRabbitMQProducer::checkExchange()
 {
-    /// hash exchange is used if num_consumers > 1 or if hash_exchange param is set
     if (hash_exchange)
     {
         /* The AMQP::passive flag indicates that it should only be checked if such exchange already exists.
@@ -62,12 +60,12 @@ void WriteBufferToRabbitMQProducer::initExchange()
         .onError([&](const char * message)
         {
             exchange_error = true;
-            LOG_ERROR(log, "Failed to declare exchange: " << message);
+            LOG_ERROR(log, "Exchange was not declared: " << message);
         });
     }
     else
     {
-        producer_channel->declareExchange(exchange_name, AMQP::direct, AMQP::passive)
+        producer_channel->declareExchange(exchange_name + "_direct", AMQP::direct, AMQP::passive)
         .onSuccess([&]()
         {
             exchange_declared = true;
@@ -75,7 +73,7 @@ void WriteBufferToRabbitMQProducer::initExchange()
         .onError([&](const char * message)
         {
             exchange_error = true;
-            LOG_ERROR(log, "Failed to declare exchange: " << message);
+            LOG_ERROR(log, "Exchange was not declared: " << message);
         });
     }
 }

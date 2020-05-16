@@ -128,6 +128,7 @@ Block RabbitMQBlockInputStream::readImpl()
         }
 
         total_rows = total_rows + new_rows;
+        buffer->allowNext();
 
         if (!new_rows || !checkTimeLimit())
             break;

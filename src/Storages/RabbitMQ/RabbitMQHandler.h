@@ -27,8 +27,8 @@ public:
     void free();
 
 private:
-    event_base * evbase;
 
+    event_base * evbase;
     bool connection_error = false;
 
     Poco::Logger * log;
