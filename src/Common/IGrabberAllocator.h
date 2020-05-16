@@ -776,7 +776,7 @@ private:
                 MAP_ANONYMOUS
 #ifdef _MAP_POPULATE_AVAILABLE
                 | MAP_POPULATE /*possible speedup on read-ahead*/
-#else
+#endif
                 ,
                 /**fd */ -1,
                 /**offset*/ 0);
