@@ -1,16 +1,16 @@
 #pragma once
 
-#include "types/Browser.h"
-#include "types/BrowserBase.h"
-#include "types/OperatingSystem.h"
-#include <boost/serialization/singleton.hpp>
-#include <Common/UatraitsFast/uatraits-fast.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <chrono>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
 #include <string>
+#include <Core/UatraitsFast/uatraits-fast.h>
+#include <boost/serialization/singleton.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include "Core/UatraitsFast/types/Browser.h"
+#include "Core/UatraitsFast/types/BrowserBase.h"
+#include "Core/UatraitsFast/types/OperatingSystem.h"
 
 namespace components
 {

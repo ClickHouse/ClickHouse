@@ -223,7 +223,7 @@ add_subdirectory (Compression)
 
 
 set(dbms_headers)
-set(dbms_sources Common/UatraitsFast/types/Browser.h Common/UatraitsFast/types/Browser.cpp Common/UatraitsFast/types/BrowserBase.h Common/UatraitsFast/types/BrowserBase.cpp Common/UatraitsFast/types/OperatingSystem.h Common/UatraitsFast/types/OperatingSystem.cpp)
+set(dbms_sources Core/UatraitsFast/types/Browser.h Core/UatraitsFast/types/Browser.cpp Core/UatraitsFast/types/BrowserBase.h Core/UatraitsFast/types/BrowserBase.cpp Core/UatraitsFast/types/OperatingSystem.h Core/UatraitsFast/types/OperatingSystem.cpp)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -302,7 +302,7 @@ add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_common Common)
-add_object_library(clickhouse_common-uatraitsfast Common/UatraitsFast)
+add_object_library(clickhouse_common_uatraitsfast Core/UatraitsFast)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)

@@ -1,14 +1,14 @@
 #pragma once
 
 #include <algorithm>
-#include <common/StringRef.h>
 #include <iterator>
 #include <memory>
-#include <Common/UatraitsFast/uatraits-fast.h>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <Core/UatraitsFast/uatraits-fast.h>
+#include <common/StringRef.h>
 
 
 bool operator>=(const StringRef & lhs, const StringRef & rhs)

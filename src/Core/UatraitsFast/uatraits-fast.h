@@ -17,9 +17,6 @@
 
 #include <common/logger_useful.h>
 
-#include <library/cpp/on_disk/aho_corasick/reader.h>
-#include <library/cpp/on_disk/aho_corasick/writer.h>
-
 /** Более быстрый вариант реализации библиотеки uatraits.
   * Использует те же исходные данные, что и библиотека uatraits.
   * Всё остальное сделано по-другому.

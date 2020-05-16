@@ -18,8 +18,8 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/Exception.h>
 
-#include <Common/UatraitsFast/rules.h>
-#include <Common/UatraitsFast/uatraits-fast.h>
+#include <Core/UatraitsFast/rules.h>
+#include <Core/UatraitsFast/uatraits-fast.h>
 #include "Actions.h"
 #include "ActionsHelpers.h"
 
@@ -864,7 +864,7 @@ void UATraits::detectByUserAgent(const StringRef & user_agent_lower, Result & re
     matched_substrings.resize(substrings_count);
 
     /// Выполняем автомат Ахо-Корасик для всех собранных подстрок. Байтовая маска найденных подстрок будет записана в matched_substrings;
-    const auto search_result = automata->AhoSearch(TStringBuf{user_agent_lower.data, user_agent_lower.size});
+    const auto search_result = automata->AhoSearch(std::string_view{user_agent_lower.data, user_agent_lower.size});
 
     for (const auto & [position, index] : search_result)
     {

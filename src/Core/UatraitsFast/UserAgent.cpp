@@ -1,7 +1,7 @@
-#include <Common/UatraitsFast/UserAgent.h>
+#include <Core/UatraitsFast/UserAgent.h>
 
-#include "types/OperatingSystem.h"
 #include <boost/algorithm/string/case_conv.hpp>
+#include "Core/UatraitsFast/types/OperatingSystem.h"
 
 namespace components
 {

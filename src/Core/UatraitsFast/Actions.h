@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/UatraitsFast/uatraits-fast.h>
+#include <Core/UatraitsFast/uatraits-fast.h>
 #include <re2/re2.h>
 #include <common/StringRef.h>
 
