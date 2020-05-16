@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NO_SUITABLE_FUNCTION_IMPLEMENTATION;
+}
+
 // TODO(dakovalkov): This is copied and pasted struct from LZ4_decompress_faster.h with little changes.
 struct PerformanceStatistics
 {
@@ -92,15 +97,18 @@ struct PerformanceStatistics
             return choose_method;
     }
 
-    size_t size() const {
+    size_t size() const
+    {
         return data.size();
     }
 
-    bool empty() const {
+    bool empty() const
+    {
         return size() == 0;
     }
 
-    void emplace_back() {
+    void emplace_back()
+    {
         data.emplace_back();
     }
 
@@ -113,7 +121,7 @@ struct PerformanceAdaptorOptions
     std::optional<std::vector<String>> implementations;
 };
 
-// Redirects IExecutableFunctionImpl::execute() and IFunction:executeImpl() to executeFunctionImpl();
+/// Redirects IExecutableFunctionImpl::execute() and IFunction:executeImpl() to executeFunctionImpl();
 template <typename DefaultFunction, typename Dummy = void>
 class FunctionExecutor;
 
@@ -170,28 +178,28 @@ public:
         : FunctionExecutor<DefaultFunction>(params...)
         , options(std::move(options_))
     {
-        if (isImplementationEnabled(DefaultFunction::getImplementationTag())) {
+        if (isImplementationEnabled(DefaultFunction::getImplementationTag()))
             statistics.emplace_back();
-        }
     }
 
-    // Register alternative implementation.
+    /// Register alternative implementation.
     template<typename Function, typename ...Params>
     void registerImplementation(TargetArch arch, Params... params) {
-        if (IsArchSupported(arch) && isImplementationEnabled(Function::getImplementationTag())) {
+        if (IsArchSupported(arch) && isImplementationEnabled(Function::getImplementationTag()))
+        {
             impls.emplace_back(std::make_shared<Function>(params...));
             statistics.emplace_back();
         }
     }
 
     bool isImplementationEnabled(const String & impl_tag) {
-        if (!options.implementations) {
+        if (!options.implementations)
             return true;
-        }
-        for (const auto & tag : *options.implementations) {
-            if (tag == impl_tag) {
+
+        for (const auto & tag : *options.implementations)
+        {
+            if (tag == impl_tag)
                 return true;
-            }
         }
         return false;
     }
@@ -201,27 +209,37 @@ protected:
                                      size_t result, size_t input_rows_count) override
     {
         if (statistics.empty())
-            throw "No implementations";
+            throw Exception("All available implementations are disabled by user config",
+                            ErrorCodes::NO_SUITABLE_FUNCTION_IMPLEMENTATION);
+
         auto id = statistics.select();
         Stopwatch watch;
-        if (id == impls.size()) {
+
+        if (id == impls.size())
+        {
             if constexpr (std::is_base_of_v<IFunction, FunctionPerformanceAdaptor>)
                 DefaultFunction::executeImpl(block, arguments, result, input_rows_count);
             else
                 DefaultFunction::execute(block, arguments, result, input_rows_count);
-        } else {
+        }
+        else
+        {
             if constexpr (std::is_base_of_v<IFunction, FunctionPerformanceAdaptor>)
                 impls[id]->executeImpl(block, arguments, result, input_rows_count);
             else
                 impls[id]->execute(block, arguments, result, input_rows_count);
         }
         watch.stop();
+
         // TODO(dakovalkov): Calculate something more informative.
         size_t rows_summary = 0;
-        for (auto i : arguments) {
+        for (auto i : arguments)
+        {
             rows_summary += block.getByPosition(i).column->size();
         }
-        if (rows_summary >= 1000) {
+
+        if (rows_summary >= 1000)
+        {
             statistics.data[id].update(watch.elapsedSeconds(), rows_summary);
         }
     }
@@ -232,4 +250,4 @@ private:
     PerformanceAdaptorOptions options;
 };
 
-} // namespace DB
+}

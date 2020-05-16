@@ -45,4 +45,4 @@ public:
     }
 };
 
-} // namespace DB
+}

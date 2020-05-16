@@ -113,4 +113,4 @@ public:
     }
 };
 
-} // namespace DB
+}
