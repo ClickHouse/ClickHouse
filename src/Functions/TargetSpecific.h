@@ -79,16 +79,15 @@ bool IsArchSupported(TargetArch arch);
 String ToString(TargetArch arch);
 
 #if defined(__clang__)
-#   define BEGIN_AVX512F_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,avx512f\"))))")
-#   define BEGIN_AVX2_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
-#   define BEGIN_AVX_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx\"))))")
-#   define BEGIN_SSE4_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx\"))))")
-#   define END_TARGET_SPECIFIC_CODE \
-        _Pragma("clang attribute pop")
+#   define BEGIN_AVX512F_SPECIFIC_CODE _Pragma(\
+        "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx,avx2,avx512f\"))),apply_to=function)")
+#   define BEGIN_AVX2_SPECIFIC_CODE _Pragma(\
+        "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx,avx2\"))),apply_to=function)")
+#   define BEGIN_AVX_SPECIFIC_CODE _Pragma(\
+        "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx\"))),apply_to=function)")
+#   define BEGIN_SSE4_SPECIFIC_CODE _Pragma(\
+        "clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx\"))),apply_to=function)")
+#   define END_TARGET_SPECIFIC_CODE _Pragma("clang attribute pop")
 #elif defined(__GNUC__)
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
