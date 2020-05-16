@@ -9,6 +9,7 @@
 #include <functional>
 #include <unordered_map>
 #include <list>
+#include <compare>
 
 #include <sys/mman.h>
 
@@ -42,6 +43,7 @@ namespace DB::ErrorCodes
 {
 extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int CANNOT_MUNMAP;
+extern const int INVALID_SETTING_VALUE;
 }
 
 namespace ga
@@ -50,7 +52,7 @@ namespace ga
 /// Default parameter for two of allocator's template parameters, serves as a placeholder.
 struct runtime {};
 
-static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024;
+static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024; // About 75MB.
 
 template <class Value>
 static constexpr size_t const defaultValueAlignment = std::max(16lu, alignof(Value));
@@ -101,7 +103,21 @@ struct Stats
     size_t evictions {0};
     size_t evicted_bytes {0};
     size_t secondary_evictions {0};
+
+/// Waiting for gcc-9 to port this
+//    constexpr operator <=> (const Stats& other)
+//    {
+//        return memcmp(this, &other, sizeof(Stats))
+//            ? std::partial_ordering::unordered 
+//            : std::partial_ordering::equivalent;
+//
+//    }
 };
+
+constexpr bool operator == (const Stats &one, const Stats& other) noexcept
+{
+    return !memcmp(&one, &other, sizeof(Stats));
+}
 }
 
 namespace DB
@@ -211,10 +227,17 @@ public:
      */
     using ValuePtr = std::shared_ptr<Value>;
 
-    constexpr IGrabberAllocator(size_t max_cache_size_) noexcept
+    /**
+     * @param max_cache_size upper bound on cache size. Must be >= #MinChunkSize (or, if it is not specified,
+     *        ga::defaultMinChunkSize). If this constraint is not satisfied, a POCO Exception is thrown.
+     */
+    constexpr IGrabberAllocator(size_t max_cache_size_)
         : log(Logger::get("IGrabberAllocator")),
           max_cache_size(max_cache_size_)
         {
+            if (max_cache_size < MinChunkSize)
+                throw Exception("Cache max size must not be less than MinChunkSize",
+                        ErrorCodes::INVALID_SETTING_VALUE);
 
         }
 
@@ -465,6 +488,10 @@ public:
      * @note Exceptions that occur in callback functors (#get_size and #initialize) will be propagated to the caller.
      *       Another thread from the set of concurrent threads will then try to call its callbacks et cetera.
      *
+     * @note This function does NOT throw on invalid input (e.g. when #get_size result is 0). It simply returns a
+     *       {nullptr, false}. However, there is a special case when the allocator failed to allocate the desired size 
+     *       (e.g. when #get_size result is greater than #max_cache_size). In this case {nullptr, true} is returned.
+     *
      * @note During insertion, each key is locked - to avoid parallel initialization of regions for same key.
      *
      * @param key Key that is used to find the target value.
@@ -478,7 +505,7 @@ public:
      *      <li>Allocator did not fail to allocate another memory region.</li>
      *      </ul>
      *
-     * @return Cached value.
+     * @return Cached value or nullptr if the cache is full and used.
      * @return Bool indicating whether the value was produced during the call. <br>
      *      False on cache hit (including a concurrent cache hit), true on cache miss).
      */
