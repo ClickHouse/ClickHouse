@@ -29,7 +29,7 @@ public:
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
         const UUID & user_id,
         const SettingsProfileElements & settings_from_user_,
-        const std::vector<UUID> & enabled_roles,
+        const boost::container::flat_set<UUID> & enabled_roles,
         const SettingsProfileElements & settings_from_enabled_roles_);
 
     std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name);

@@ -209,7 +209,7 @@ HTTP経由でサーバーに接続するためのポート。
 **例**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}

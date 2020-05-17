@@ -1,3 +1,7 @@
+---
+toc_title: PREWHERE
+---
+
 # PREWHERE Clause {#prewhere-clause}
 
 Prewhere is an optimization to apply filtering more efficiently. It is enabled by default even if `PREWHERE` clause is not specified explicitly. It works by automatically moving part of [WHERE](where.md) condition to prewhere stage. The role of `PREWHERE` clause is only to control this optimization if you think that you know how to do it better than it happens by default.
