@@ -85,13 +85,6 @@
 
 #endif
 
-namespace DB::ErrorCodes
-{
-extern const int CANNOT_ALLOCATE_MEMORY;
-extern const int CANNOT_MUNMAP;
-extern const int BAD_ARGUMENTS;
-}
-
 /**
  * If on, provides hints to mmap (first parameter).
  */

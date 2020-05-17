@@ -20,6 +20,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
 extern const int SYSTEM_ERROR;
