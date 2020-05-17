@@ -33,8 +33,8 @@ std::string random_string(size_t length) {
 }
 
 
-std::string random_integer(int max = 4294967295) {
-    int32_t r = rand() % max;
+std::string random_integer(unsigned int max=4294967295) {
+    int r = rand() % max;
     return std::to_string(r);
 }
 
@@ -441,7 +441,7 @@ public:
     bool generate_values() {
         if (values.size() > 1)
             return false;
-        for (size_t i = 0; i < 2; ++i) {
+        while (values.size() < 3) {
             if (is_array) {
                 std::string v = "[";
                 for (int i = 0; i < rand() % 10; ++i) {
@@ -543,7 +543,7 @@ public:
         std::string create;
         std::string db, _;
         std::tie(db, _) = get_table_a_column(name);
-        create = "CREATE DATABASE IF NOT EXISTS " + db + ";\n";
+        create = "CREATE DATABASE IF NOT EXISTS " + db + ";\n\n";
         create += "CREATE TABLE IF NOT EXISTS " + name + " (\n";
         for (auto column = columns.begin(); column != columns.end(); ++column) {
             if (column != columns.begin())
@@ -934,13 +934,13 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
                     }
                     if (type & type::d) {
                         values.insert(value);
-                        values.insert("toDate(" + value + ") + (" + random_integer() + " % 100)");
-                        values.insert("toDate(" + value + ") - (" + random_integer() + " % 100)");
+                        values.insert("toDate(" + value + ") + " + random_integer(10));
+                        values.insert("toDate(" + value + ") - " + random_integer(10));
                     }
                     else if (type & type::dt) {
                         values.insert(value);
-                        values.insert("toDateTime(" + value + ") + (" + random_integer() + "% 10000)");
-                        values.insert("toDateTime(" + value + ") - (" + random_integer() + "% 10000)");
+                        values.insert("toDateTime(" + value + ") + " + random_integer(10000));
+                        values.insert("toDateTime(" + value + ") - " + random_integer(10000));
                     }
                 }
             }
