@@ -28,8 +28,17 @@ using etcdserverpb::ResponseOp;
 using etcdserverpb::TxnRequest;
 using etcdserverpb::TxnResponse;
 using etcdserverpb::Compare;
+using etcdserverpb::LeaseKeepAliveRequest;
+using etcdserverpb::LeaseKeepAliveResponse;
+using etcdserverpb::LeaseGrantRequest;
+using etcdserverpb::LeaseGrantResponse;
+using etcdserverpb::LeaseRevokeRequest;
+using etcdserverpb::LeaseRevokeResponse;
+using etcdserverpb::WatchRequest;
+using etcdserverpb::WatchCreateRequest;
 using etcdserverpb::KV;
 using etcdserverpb::Watch;
+using etcdserverpb::Lease;
 using grpc::Channel;
 using grpc::ClientAsyncResponseReader;
 using grpc::ClientAsyncReaderWriter;
@@ -48,11 +57,11 @@ class EtcdKeeper : public IKeeper
 public:
     using XID = int32_t;
 
-    EtcdKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
+    EtcdKeeper(const String & root_path_, const String & host_, Poco::Timespan operation_timeout_);
     ~EtcdKeeper() override;
 
     bool isExpired() const override { return expired; }
-    int64_t getSessionID() const override { return 0; }
+    int64_t getSessionID() const override;
 
     void create(
             const String & path,
@@ -147,6 +156,8 @@ private:
             clock::time_point time;
         };
 
+        String host;
+
         String root_path;
         ACLs default_acls;
 
@@ -160,6 +171,7 @@ private:
         Watches watches;
         Watches list_watches;
         std::mutex watches_mutex;
+        std::mutex watche_write_mutex;
 
         void createWatchCallBack(const String & path);
 
@@ -184,9 +196,8 @@ private:
         ThreadFromGlobalPool watch_complete_thread;
         void watchCompleteThread();
 
-        std::unique_ptr<ClientAsyncReaderWriter<etcdserverpb::WatchRequest, etcdserverpb::WatchResponse>> stream;
-        ClientContext context;
-        etcdserverpb::WatchResponse watch_response;
+        ThreadFromGlobalPool lease_complete_thread;
+        void leaseCompleteThread();
 
         std::unique_ptr<KV::Stub> kv_stub;
         CompletionQueue kv_cq;
@@ -194,8 +205,16 @@ private:
         std::unique_ptr<Watch::Stub> watch_stub;
         CompletionQueue watch_cq;
 
-        std::unique_ptr<KV::Stub> lease_stub;
+        std::unique_ptr<ClientAsyncReaderWriter<WatchRequest, etcdserverpb::WatchResponse>> watch_stream;
+        ClientContext watch_context;
+        etcdserverpb::WatchResponse watch_response;
+
+        std::unique_ptr<Lease::Stub> lease_stub;
         CompletionQueue lease_cq;
+        LeaseKeepAliveResponse keep_alive_response;
+
+        std::unique_ptr<ClientAsyncReaderWriter<LeaseKeepAliveRequest, LeaseKeepAliveResponse>> keep_alive_stream;
+        ClientContext keep_alive_context;
 
         void callWatchRequest(
             const std::string & key,
@@ -204,6 +223,10 @@ private:
             CompletionQueue & cq);
 
         void readWatchResponse();
+
+        void readLeaseKeepAliveResponse();
+
+        void requestLease(std::chrono::seconds ttl);
 
         std::unique_ptr<PutRequest> preparePutRequest(const String &, const String &);
         std::unique_ptr<RangeRequest> prepareRangeRequest(const String &);
