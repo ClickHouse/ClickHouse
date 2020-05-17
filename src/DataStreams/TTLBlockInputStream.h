@@ -45,7 +45,7 @@ private:
     AggregatedDataVariants agg_result;
     ColumnRawPtrs agg_key_columns;
     Aggregator::AggregateColumns agg_aggregate_columns;
-    bool agg_no_more_keys;
+    bool agg_no_more_keys = false;
 
     IMergeTreeDataPart::TTLInfos old_ttl_infos;
     IMergeTreeDataPart::TTLInfos new_ttl_infos;
