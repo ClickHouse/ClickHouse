@@ -1,27 +1,27 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Aggregate Functions
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u96C6\u8A08\u95A2\u6570"
 toc_priority: 33
-toc_title: "\u5C0E\u5165"
+toc_title: "\u306F\u3058\u3081\u306B"
 ---
 
 # 集計関数 {#aggregate-functions}
 
-集計関数は、 [通常の](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) 方法として期待されデータベースの専門家です。
+集計関数は、 [標準](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) データベースの専門家が予想通りの方法。
 
 ClickHouseはまた支えます:
 
--   [パラメトリックに集計機能](parametric-functions.md#aggregate_functions_parametric) 列に加えて他のパラメータを受け入れる。
--   [Combinators](combinators.md#aggregate_functions_combinators)、集計関数の動作を変更します。
+-   [パラメトリック集計関数](parametric-functions.md#aggregate_functions_parametric) 列に加えて他のパラメータを受け入れます。
+-   [コンビネータ](combinators.md#aggregate_functions_combinators)、集計関数の動作を変更します。
 
-## NULLの場合の処理 {#null-processing}
+## ヌル処理 {#null-processing}
 
 集計中、すべて `NULL`sはスキップされます。
 
 **例:**
 
-この表を考慮する:
+次の表を考えます:
 
 ``` text
 ┌─x─┬────y─┐
@@ -43,9 +43,9 @@ SELECT sum(y) FROM t_null_big
     │      7 │
     └────────┘
 
-その `sum` 関数の解釈 `NULL` として `0`. 特に、これは、関数がすべての値がある選択の入力を受け取った場合 `NULL` その後、結果は次のようになります `0`、ない `NULL`.
+その `sum` 関数は解釈します `NULL` として `0`. 特に、これは、関数がすべての値が次のような選択範囲の入力を受け取った場合 `NULL` 結果は次のようになります `0` ない `NULL`.
 
-今すぐ使用できます `groupArray` から配列を作成する関数 `y` 列:
+今すぐ使用することができます `groupArray` から配列を作成する関数 `y` 列:
 
 ``` sql
 SELECT groupArray(y) FROM t_null_big
@@ -57,6 +57,6 @@ SELECT groupArray(y) FROM t_null_big
 └───────────────┘
 ```
 
-`groupArray` 含まれていません `NULL` 結果の配列です。
+`groupArray` 含まない `NULL` 結果の配列で。
 
 [元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->

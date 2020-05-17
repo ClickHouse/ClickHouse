@@ -1,14 +1,22 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "Les Param\xE8tres Des Profils"
 ---
 
 # Les Paramètres Des Profils {#settings-profiles}
 
-Un profil de paramètres est une collection de paramètres regroupés sous le même nom. Chaque utilisateur de ClickHouse a un profil.
-Pour appliquer tous les paramètres d’un profil, définissez `profile` paramètre.
+Un profil de paramètres est une collection de paramètres regroupés sous le même nom.
+
+!!! note "Information"
+    Clickhouse prend également en charge [Flux de travail piloté par SQL](../access-rights.md#access-control) pour gérer les profils de paramètres. Nous vous conseillons de l'utiliser.
+
+Un profil peut avoir n'importe quel nom. Le profil peut avoir n'importe quel nom. Vous pouvez spécifier le même profil pour différents utilisateurs. La chose la plus importante que vous pouvez écrire dans les paramètres de profil `readonly=1` qui assure un accès en lecture seule.
+
+Paramètres les profils peuvent hériter les uns des autres. Pour utiliser l'héritage, indiquer un ou plusieurs `profile` paramètres avant les autres paramètres répertoriés dans le profil. Dans le cas où un paramètre est défini dans les différents profils, les dernières définie est utilisée.
+
+Pour appliquer tous les paramètres d'un profil, définissez `profile` paramètre.
 
 Exemple:
 
@@ -18,7 +26,7 @@ Installer le `web` profil.
 SET profile = 'web'
 ```
 
-Les profils de paramètres sont déclarés dans le fichier de configuration utilisateur. Ce n’est généralement `users.xml`.
+Les profils de paramètres sont déclarés dans le fichier de configuration utilisateur. Ce n'est généralement `users.xml`.
 
 Exemple:
 
@@ -64,8 +72,10 @@ Exemple:
 </profiles>
 ```
 
-L’exemple spécifie deux profils: `default` et `web`. Le `default` profil a un but particulier: il doit toujours être présent et est appliquée lors du démarrage du serveur. En d’autres termes, l’ `default` profil contient les paramètres par défaut. Le `web` profil est un profil régulier qui peut être défini à l’aide `SET` requête ou en utilisant un paramètre URL dans une requête HTTP.
+L'exemple spécifie deux profils: `default` et `web`.
 
-Paramètres les profils peuvent hériter les uns des autres. Pour utiliser l’héritage, indiquer un ou plusieurs `profile` paramètres avant les autres paramètres répertoriés dans le profil. Dans le cas où un paramètre est défini dans les différents profils, les dernières définie est utilisée.
+Le `default` profil a un but particulier: il doit toujours être présent et est appliquée lors du démarrage du serveur. En d'autres termes, l' `default` profil contient les paramètres par défaut.
+
+Le `web` profil est un profil régulier qui peut être défini à l'aide `SET` requête ou en utilisant un paramètre URL dans une requête HTTP.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

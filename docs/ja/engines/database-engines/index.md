@@ -1,16 +1,16 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
-toc_folder_title: Database Engines
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "\u30C7\u30FC\u30BF\u30D9\u30FC\u30B9"
 toc_priority: 27
-toc_title: "\u5C0E\u5165"
+toc_title: "\u306F\u3058\u3081\u306B"
 ---
 
 # データベース {#database-engines}
 
-データベースエンジンできる仕事です。
+データベースエ
 
-既定では、clickhouseはネイティブのデータベースエンジンを使用します。 [表エンジン](../../engines/table-engines/index.md) と [SQLダイアレクト](../../sql-reference/syntax.md).
+既定では、ClickHouseはネイティブのデータベースエンジンを使用します。 [表エンジン](../../engines/table-engines/index.md) そして [SQL方言](../../sql-reference/syntax.md).
 
 次のデータベースエンジンも使用できます:
 

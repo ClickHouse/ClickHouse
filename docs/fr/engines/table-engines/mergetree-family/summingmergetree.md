@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: SummingMergeTree
 ---
 
-# Summingmergetree {#summingmergetree}
+# SummingMergeTree {#summingmergetree}
 
-Le moteur hérite de [MergeTree](mergetree.md#table_engines-mergetree). La différence est que lors de la fusion de parties de données pour `SummingMergeTree` tables ClickHouse remplace toutes les lignes avec la même clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md)) avec une ligne qui contient des valeurs résumées pour les colonnes avec le type de données numériques. Si la clé de tri est composée de telle sorte qu’une seule valeur de clé correspond à un grand nombre de lignes, cela réduit considérablement le volume de stockage et accélère la sélection des données.
+Le moteur hérite de [MergeTree](mergetree.md#table_engines-mergetree). La différence est que lors de la fusion de parties de données pour `SummingMergeTree` tables ClickHouse remplace toutes les lignes avec la même clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md)) avec une ligne qui contient des valeurs résumées pour les colonnes avec le type de données numériques. Si la clé de tri est composée de telle sorte qu'une seule valeur de clé correspond à un grand nombre de lignes, cela réduit considérablement le volume de stockage et accélère la sélection des données.
 
-Nous vous recommandons d’utiliser le moteur avec `MergeTree`. Stocker des données complètes dans `MergeTree` table, et l’utilisation `SummingMergeTree` pour le stockage de données agrégées, par exemple, lors de la préparation de rapports. Une telle approche vous empêchera de perdre des données précieuses en raison d’une clé primaire mal composée.
+Nous vous recommandons d'utiliser le moteur avec `MergeTree`. Stocker des données complètes dans `MergeTree` table, et l'utilisation `SummingMergeTree` pour le stockage de données agrégées, par exemple, lors de la préparation de rapports. Une telle approche vous empêchera de perdre des données précieuses en raison d'une clé primaire mal composée.
 
-## Création d’une Table {#creating-a-table}
+## Création d'une Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,20 +31,20 @@ Pour une description des paramètres de requête, voir [demande de description](
 **Paramètres de SummingMergeTree**
 
 -   `columns` - un n-uplet avec les noms de colonnes où les valeurs seront résumées. Paramètre facultatif.
-    Les colonnes doivent être d’un type numérique et ne doit pas être dans la clé primaire.
+    Les colonnes doivent être d'un type numérique et ne doit pas être dans la clé primaire.
 
     Si `columns` non spécifié, ClickHouse résume les valeurs dans toutes les colonnes avec un type de données numérique qui ne sont pas dans la clé primaire.
 
 **Les clauses de requête**
 
-Lors de la création d’un `SummingMergeTree` la table de la même [clause](mergetree.md) sont nécessaires, comme lors de la création d’un `MergeTree` table.
+Lors de la création d'un `SummingMergeTree` la table de la même [clause](mergetree.md) sont nécessaires, comme lors de la création d'un `MergeTree` table.
 
 <details markdown="1">
 
 <summary>Méthode obsolète pour créer une Table</summary>
 
 !!! attention "Attention"
-    N’utilisez pas cette méthode dans les nouveaux projets et, si possible, remplacez les anciens projets par la méthode décrite ci-dessus.
+    N'utilisez pas cette méthode dans les nouveaux projets et, si possible, remplacez les anciens projets par la méthode décrite ci-dessus.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -61,7 +61,7 @@ Tous les paramètres excepté `columns` ont la même signification que dans `Mer
 
 </details>
 
-## Exemple D’Utilisation {#usage-example}
+## Exemple D'Utilisation {#usage-example}
 
 Considérons le tableau suivant:
 
@@ -81,7 +81,7 @@ Insérer des données:
 INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
-ClickHouse peut résumer toutes les lignes pas complètement ([voir ci-dessous](#data-processing)), nous utilisons donc une fonction d’agrégation `sum` et `GROUP BY` la clause dans la requête.
+ClickHouse peut résumer toutes les lignes pas complètement ([voir ci-dessous](#data-processing)), nous utilisons donc une fonction d'agrégation `sum` et `GROUP BY` la clause dans la requête.
 
 ``` sql
 SELECT key, sum(value) FROM summtt GROUP BY key
@@ -96,32 +96,32 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 ## Le Traitement Des Données {#data-processing}
 
-Lorsque les données sont insérées dans une table, elles sont enregistrées telles quelles. Clickhouse fusionne périodiquement les parties de données insérées et c’est à ce moment que les lignes avec la même clé primaire sont additionnées et remplacées par une pour chaque partie de données résultante.
+Lorsque les données sont insérées dans une table, elles sont enregistrées telles quelles. Clickhouse fusionne périodiquement les parties de données insérées et c'est à ce moment que les lignes avec la même clé primaire sont additionnées et remplacées par une pour chaque partie de données résultante.
 
-ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) une fonction d’agrégation [somme()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) et `GROUP BY` la clause doit être utilisé dans une requête comme décrit dans l’exemple ci-dessus.
+ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) une fonction d'agrégation [somme()](../../../sql-reference/aggregate-functions/reference.md#agg_function-sum) et `GROUP BY` la clause doit être utilisé dans une requête comme décrit dans l'exemple ci-dessus.
 
-### Règles Communes Pour La Sommation {#common-rules-for-summation}
+### Règles communes pour la sommation {#common-rules-for-summation}
 
-Les valeurs dans les colonnes avec le type de données numériques sont résumées. L’ensemble des colonnes est défini par le paramètre `columns`.
+Les valeurs dans les colonnes avec le type de données numériques sont résumées. L'ensemble des colonnes est défini par le paramètre `columns`.
 
 Si les valeurs étaient 0 dans toutes les colonnes pour la sommation, la ligne est supprimée.
 
-Si la colonne n’est pas dans la clé primaire et n’est pas résumée, une valeur arbitraire est sélectionnée parmi celles existantes.
+Si la colonne n'est pas dans la clé primaire et n'est pas résumée, une valeur arbitraire est sélectionnée parmi celles existantes.
 
 Les valeurs ne sont pas résumés des colonnes de la clé primaire.
 
-### La Somme Dans Les Colonnes Aggregatefunction {#the-summation-in-the-aggregatefunction-columns}
+### La somme dans les colonnes Aggregatefunction {#the-summation-in-the-aggregatefunction-columns}
 
-Pour les colonnes de [Type AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse se comporte comme [AggregatingMergeTree](aggregatingmergetree.md) moteur d’agrégation selon la fonction.
+Pour les colonnes de [Type AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse se comporte comme [AggregatingMergeTree](aggregatingmergetree.md) moteur d'agrégation selon la fonction.
 
 ### Structures Imbriquées {#nested-structures}
 
-Table peut avoir des structures de données imbriquées qui sont traitées d’une manière spéciale.
+Table peut avoir des structures de données imbriquées qui sont traitées d'une manière spéciale.
 
-Si le nom d’une table imbriquée se termine avec `Map` et il contient au moins deux colonnes qui répondent aux critères suivants:
+Si le nom d'une table imbriquée se termine avec `Map` et il contient au moins deux colonnes qui répondent aux critères suivants:
 
--   la première colonne est numérique `(*Int*, Date, DateTime)` ou une chaîne de caractères `(String, FixedString)`, nous allons l’appeler `key`,
--   les autres colonnes sont arithmétique `(*Int*, Float32/64)`, nous allons l’appeler `(values...)`,
+-   la première colonne est numérique `(*Int*, Date, DateTime)` ou une chaîne de caractères `(String, FixedString)`, nous allons l'appeler `key`,
+-   les autres colonnes sont arithmétique `(*Int*, Float32/64)`, nous allons l'appeler `(values...)`,
 
 ensuite, cette table imbriquée est interprétée comme un mappage de `key => (values...)` et lors de la fusion de ses lignes, les éléments de deux ensembles de données sont regroupées par `key` avec une sommation du correspondant `(values...)`.
 
@@ -134,8 +134,8 @@ Exemple:
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-Lorsque vous demandez des données, utilisez [sumMap (clé, valeur)](../../../sql-reference/aggregate-functions/reference.md) fonction pour l’agrégation de `Map`.
+Lorsque vous demandez des données, utilisez [sumMap (clé, valeur)](../../../sql-reference/aggregate-functions/reference.md) fonction pour l'agrégation de `Map`.
 
-Pour la structure de données imbriquée, vous n’avez pas besoin de spécifier ses colonnes dans le tuple de colonnes pour la sommation.
+Pour la structure de données imbriquée, vous n'avez pas besoin de spécifier ses colonnes dans le tuple de colonnes pour la sommation.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

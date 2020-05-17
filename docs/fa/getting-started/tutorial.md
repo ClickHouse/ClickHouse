@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 12
 toc_title: "\u0627\u0645\u0648\u0632\u0634"
 ---
@@ -48,6 +48,7 @@ sudo /etc/init.d/clickhouse-server start
 <details markdown="1">
 
 <summary>راهنمایی سریع برای کلیک-مشتری</summary>
+
 حالت تعاملی:
 
 ``` bash
@@ -94,7 +95,7 @@ curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unx
 
 ### ایجاد جداول {#create-tables}
 
-همانطور که در بسیاری از سیستم های مدیریت پایگاه داده, تاتر منطقی جداول گروه به “databases”. تاپیک `default` پایگاه داده, اما ما یکی از جدید به نام ایجاد `tutorial`:
+همانطور که در بسیاری از سیستم های مدیریت پایگاه داده, تاتر منطقی جداول گروه به “databases”. یک `default` پایگاه داده, اما ما یکی از جدید به نام ایجاد `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
@@ -104,7 +105,7 @@ clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 
 1.  نام جدول برای ایجاد.
 2.  Table schema, i.e. list of columns and their [انواع داده ها](../sql-reference/data-types/index.md).
-3.  [موتور جدول](../engines/table-engines/index.md) و این تنظیمات است, که تعیین تمام اطلاعات در مورد نحوه نمایش داده شد به این جدول خواهد شد از لحاظ جسمی اجرا.
+3.  [موتور جدول](../engines/table-engines/index.md) و تنظیمات خود را, که تعیین تمام اطلاعات در مورد نحوه نمایش داده شد به این جدول خواهد شد از لحاظ جسمی اجرا.
 
 یاندکسمتریکا یک سرویس تجزیه و تحلیل وب است و مجموعه داده نمونه قابلیت های کامل خود را پوشش نمی دهد بنابراین تنها دو جدول برای ایجاد وجود دارد:
 
@@ -456,7 +457,7 @@ SETTINGS index_granularity = 8192
 
 شما می توانید این پرسش ها را با استفاده از حالت تعاملی اجرا کنید `clickhouse-client` (فقط در یک ترمینال راه اندازی بدون مشخص کردن یک پرس و جو در پیش) و یا سعی کنید برخی از [رابط جایگزین](../interfaces/index.md) اگر شما می خواهید.
 
-همانطور که می بینیم, `hits_v1` با استفاده از [موتور ادغام عمومی](../engines/table-engines/mergetree-family/mergetree.md) در حالی که `visits_v1` با استفاده از [سقوط](../engines/table-engines/mergetree-family/collapsingmergetree.md) نوع.
+همانطور که می بینیم, `hits_v1` با استفاده از [موتور ادغام عمومی](../engines/table-engines/mergetree-family/mergetree.md) در حالی که `visits_v1` با استفاده از [سقوط](../engines/table-engines/mergetree-family/collapsingmergetree.md) گزینه.
 
 ### وارد کردن داده {#import-data}
 
@@ -480,7 +481,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-در صورت تمایل شما می توانید [OPTIMIZE](../query_language/misc/#misc_operations-optimize) جداول پس از واردات. جداول است که با یک موتور از ادغام خانواده پیکربندی همیشه ادغام قطعات داده ها در پس زمینه برای بهینه سازی ذخیره سازی داده ها (یا حداقل چک کنید اگر حس می کند). این نمایش داده شد نیروی موتور جدول به انجام بهینه سازی ذخیره سازی در حال حاضر به جای برخی از زمان بعد:
+در صورت تمایل شما می توانید [OPTIMIZE](../sql-reference/statements/misc.md#misc_operations-optimize) جداول پس از واردات. جداول است که با یک موتور از ادغام خانواده پیکربندی همیشه ادغام قطعات داده ها در پس زمینه برای بهینه سازی ذخیره سازی داده ها (یا حداقل چک کنید اگر حس می کند). این نمایش داده شد نیروی موتور جدول به انجام بهینه سازی ذخیره سازی در حال حاضر به جای برخی از زمان بعد:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"

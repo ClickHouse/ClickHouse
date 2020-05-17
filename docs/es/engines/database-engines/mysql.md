@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 30
 toc_title: MySQL
 ---
 
-# Mysql {#mysql}
+# MySQL {#mysql}
 
 Permite conectarse a bases de datos en un servidor MySQL remoto y realizar `INSERT` y `SELECT` consultas para intercambiar datos entre ClickHouse y MySQL.
 
@@ -17,11 +17,11 @@ No puede realizar las siguientes consultas:
 -   `CREATE TABLE`
 -   `ALTER`
 
-## Creación De Una Base De Datos {#creating-a-database}
+## Creación de una base de datos {#creating-a-database}
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
 
 **Parámetros del motor**
@@ -31,7 +31,7 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 -   `user` — MySQL user.
 -   `password` — User password.
 
-## Soporte De Tipos De Datos {#data_types-support}
+## Soporte de tipos de datos {#data_types-support}
 
 | MySQL                            | Haga clic en Casa                                            |
 |----------------------------------|--------------------------------------------------------------|
@@ -53,7 +53,7 @@ Todos los demás tipos de datos MySQL se convierten en [Cadena](../../sql-refere
 
 [NULL](../../sql-reference/data-types/nullable.md) se admite.
 
-## Ejemplos De Uso {#examples-of-use}
+## Ejemplos de uso {#examples-of-use}
 
 Tabla en MySQL:
 
