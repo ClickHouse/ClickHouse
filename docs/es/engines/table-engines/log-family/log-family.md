@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 31
 toc_title: "Implantaci\xF3n"
 ---
 
-# Familia Del Motor De Registro {#log-engine-family}
+# Familia del motor de registro {#log-engine-family}
 
 Estos motores fueron desarrollados para escenarios en los que necesita escribir rápidamente muchas tablas pequeñas (hasta aproximadamente 1 millón de filas) y leerlas más tarde en su conjunto.
 
@@ -15,7 +15,7 @@ Motores de la familia:
 -   [Registro](log.md)
 -   [TinyLog](tinylog.md)
 
-## Propiedades Comunes {#common-properties}
+## Propiedades comunes {#common-properties}
 
 Motor:
 

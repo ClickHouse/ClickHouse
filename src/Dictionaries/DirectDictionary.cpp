@@ -28,6 +28,9 @@ DirectDictionary::DirectDictionary(
     , source_ptr{std::move(source_ptr_)}
     , saved_block{std::move(saved_block_)}
 {
+    if (!this->source_ptr->supportsSelectiveLoad())
+        throw Exception{full_name + ": source cannot be used with DirectDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+
     createAttributes();
 }
 

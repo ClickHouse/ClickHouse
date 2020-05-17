@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Guides
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: Guiar
 toc_priority: 38
 toc_title: "Descripci\xF3n"
 ---
 
-# Guías De ClickHouse {#clickhouse-guides}
+# Guías de ClickHouse {#clickhouse-guides}
 
 Lista de instrucciones detalladas paso a paso que ayudan a resolver varias tareas usando ClickHouse:
 

@@ -347,7 +347,10 @@ void RemoteBlockInputStream::sendQuery()
     established = true;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-    multiplexed_connections->sendQuery(timeouts, query, query_id, stage, &context.getClientInfo(), true);
+    ClientInfo modified_client_info = context.getClientInfo();
+    modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
     established = false;
     sent_query = true;

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 55
 toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u0646\u0634\u0627\u0646\u06CC\u0647\u0627\
   \u06CC \u0627\u06CC\u0646\u062A\u0631\u0646\u062A\u06CC"
@@ -10,7 +10,7 @@ toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u0646\u0634\u0627\u0646\u06CC\u0647
 
 ## اطلاعات دقیق) {#ipv4numtostringnum}
 
-طول می کشد یک uint32 شماره. به عنوان یک نشانی اینترنتی 4 در اندی بزرگ تفسیر می کند. بازده یک رشته حاوی مربوطه آدرس ipv4 در قالب a. b. c. d (نقطه جدا کردن اعداد در شکل اعشاری).
+طول می کشد یک UInt32 شماره. به عنوان یک نشانی اینترنتی 4 در اندی بزرگ تفسیر می کند. بازده یک رشته حاوی مربوطه آدرس IPv4 در قالب A. B. C. d (نقطه جدا کردن اعداد در شکل اعشاری).
 
 ## مدت 4 ساعت) {#ipv4stringtonums}
 
@@ -18,7 +18,7 @@ toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u0646\u0634\u0627\u0646\u06CC\u0647
 
 ## اطلاعات دقیق) {#ipv4numtostringclasscnum}
 
-شبیه به ipv4numtostring اما با استفاده از \<url\> به جای گذشته هشت تایی.
+شبیه به IPv4NumToString اما با استفاده از \<url\> به جای گذشته هشت تایی.
 
 مثال:
 
@@ -135,9 +135,9 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 └────────────────────┘
 ```
 
-## cutIPv6(x bitsToCutForIPv6, bitsToCutForIPv4) {#cutipv6x-bitstocutforipv6-bitstocutforipv4}
+## cutIPv6(x bytesToCutForIPv6, bytesToCutForIPv4) {#cutipv6x-bytestocutforipv6-bytestocutforipv4}
 
-یک رشته ثابت(16) مقدار حاوی نشانی اینترنتی6 را در قالب باینری می پذیرد. بازگرداندن یک رشته حاوی نشانی از تعداد مشخصی از بیت در قالب متن حذف. به عنوان مثال:
+یک رشته ثابت(16) مقدار حاوی نشانی اینترنتی6 را در قالب باینری می پذیرد. بازگرداندن یک رشته حاوی نشانی از تعداد مشخصی از بایت حذف شده در قالب متن. به عنوان مثال:
 
 ``` sql
 WITH
@@ -156,7 +156,7 @@ SELECT
 
 ## IPv4CIDRToRange(ipv4, Cidr), {#ipv4cidrtorangeipv4-cidr}
 
-قبول یک ipv4 و uint8 ارزش شامل [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). یک تاپل را با دو لیگ4 حاوی محدوده پایین تر و محدوده بالاتر زیر شبکه باز کنید.
+قبول یک IPv4 و UInt8 ارزش شامل [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). یک تاپل را با دو لیگ4 حاوی محدوده پایین تر و محدوده بالاتر زیر شبکه باز کنید.
 
 ``` sql
 SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
@@ -170,7 +170,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 
 ## IPv6CIDRToRange(ipv6 Cidr), {#ipv6cidrtorangeipv6-cidr}
 
-قبول یک ipv6 و uint8 ارزش حاوی cidr. یک تاپل را با دو ایپو6 حاوی محدوده پایین تر و محدوده بالاتر زیر شبکه باز کنید.
+قبول یک IPv6 و UInt8 ارزش حاوی CIDR. یک تاپل را با دو ایپو6 حاوی محدوده پایین تر و محدوده بالاتر زیر شبکه باز کنید.
 
 ``` sql
 SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);

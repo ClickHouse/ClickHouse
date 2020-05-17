@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 11
 toc_title: "Instalaci\xF3n"
 ---
 
 # Instalación {#installation}
 
-## Requisitos Del Sistema {#system-requirements}
+## Requisitos del sistema {#system-requirements}
 
 ClickHouse puede ejecutarse en cualquier Linux, FreeBSD o Mac OS X con arquitectura de CPU x86\_64, AArch64 o PowerPC64LE.
 
@@ -19,9 +19,9 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 Para ejecutar ClickHouse en procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe [construir ClickHouse a partir de fuentes](#from-sources) con los ajustes de configuración adecuados.
 
-## Opciones De instalación Disponibles {#available-installation-options}
+## Opciones de instalación disponibles {#available-installation-options}
 
-### De Paquetes DEB {#install-from-deb-packages}
+### De paquetes DEB {#install-from-deb-packages}
 
 Se recomienda utilizar pre-compilado oficial `deb` Paquetes para Debian o Ubuntu. Ejecute estos comandos para instalar paquetes:
 
@@ -31,7 +31,7 @@ Se recomienda utilizar pre-compilado oficial `deb` Paquetes para Debian o Ubuntu
 
 Si desea utilizar la versión más reciente, reemplace `stable` con `testing` (esto se recomienda para sus entornos de prueba).
 
-También puede descargar e instalar paquetes manualmente desde aquí: https://repo.clickhouse.tech/deb/stable/main/.
+También puede descargar e instalar paquetes manualmente desde [aqui](https://repo.clickhouse.tech/deb/stable/main/).
 
 #### Paquete {#packages}
 
@@ -40,7 +40,7 @@ También puede descargar e instalar paquetes manualmente desde aquí: https://re
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` y otras herramientas relacionadas con el cliente. e instala los archivos de configuración del cliente.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-### De Paquetes RPM {#from-rpm-packages}
+### De paquetes RPM {#from-rpm-packages}
 
 Se recomienda utilizar pre-compilado oficial `rpm` También puede utilizar los paquetes para CentOS, RedHat y todas las demás distribuciones de Linux basadas en rpm.
 
@@ -60,9 +60,9 @@ A continuación, ejecute estos comandos para instalar paquetes:
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-También puede descargar e instalar paquetes manualmente desde aquí: https://repo.casa de clic.tecnología / rpm / estable / x86\_64.
+También puede descargar e instalar paquetes manualmente desde [aqui](https://repo.clickhouse.tech/rpm/stable/x86_64).
 
-### De Archivos Tgz {#from-tgz-archives}
+### De archivos Tgz {#from-tgz-archives}
 
 Se recomienda utilizar pre-compilado oficial `tgz` para todas las distribuciones de Linux, donde la instalación de `deb` o `rpm` paquetes no es posible.
 
@@ -96,7 +96,7 @@ Para los entornos de producción, se recomienda utilizar las últimas `stable`-v
 
 Para ejecutar ClickHouse dentro de Docker, siga la guía en [Eje de acoplador](https://hub.docker.com/r/yandex/clickhouse-server/). Esas imágenes usan oficial `deb` paquetes dentro.
 
-### De Fuentes {#from-sources}
+### De fuentes {#from-sources}
 
 Para compilar manualmente ClickHouse, siga las instrucciones para [Linux](../development/build.md) o [Mac OS X](../development/build-osx.md).
 

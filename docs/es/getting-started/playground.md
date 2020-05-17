@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 14
 toc_title: Infantil
 ---
 
-# Zona De Juegos ClickHouse {#clickhouse-playground}
+# Zona de juegos ClickHouse {#clickhouse-playground}
 
 [Zona de juegos ClickHouse](https://play.clickhouse.tech?file=welcome) permite a las personas experimentar con ClickHouse ejecutando consultas al instante, sin configurar su servidor o clúster.
 Varios conjuntos de datos de ejemplo están disponibles en Playground, así como consultas de ejemplo que muestran las características de ClickHouse.

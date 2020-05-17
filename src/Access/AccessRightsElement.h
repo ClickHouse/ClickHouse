@@ -71,6 +71,14 @@ struct AccessRightsElement
     {
     }
 
+    auto toTuple() const { return std::tie(access_flags, database, any_database, table, any_table, columns, any_column); }
+    friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
+    friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() != right.toTuple(); }
+    friend bool operator<(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() < right.toTuple(); }
+    friend bool operator>(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() > right.toTuple(); }
+    friend bool operator<=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() <= right.toTuple(); }
+    friend bool operator>=(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() >= right.toTuple(); }
+
     /// Sets the database.
     void setDatabase(const String & new_database);
 
@@ -82,6 +90,7 @@ struct AccessRightsElement
     /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
     /// The returned string isn't prefixed with the "GRANT" keyword.
     String toString() const;
+    String toStringWithoutON() const;
 };
 
 
@@ -94,7 +103,11 @@ public:
 
     /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
     /// The returned string isn't prefixed with the "GRANT" keyword.
-    String toString() const;
+    String toString() const { return AccessRightsElements(*this).toString(); }
+    String toString();
+
+    /// Reorder and group elements to show them in more readable form.
+    void normalize();
 };
 
 }

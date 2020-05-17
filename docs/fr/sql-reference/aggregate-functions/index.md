@@ -1,23 +1,23 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
-toc_folder_title: Aggregate Functions
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: "Les Fonctions D'Agr\xE9gation"
 toc_priority: 33
 toc_title: Introduction
 ---
 
-# Les Fonctions d’agrégation {#aggregate-functions}
+# Les Fonctions D'Agrégation {#aggregate-functions}
 
-Les fonctions d’agrégation fonctionnent dans le [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) comme prévu par les experts de la base de données.
+Les fonctions d'agrégation fonctionnent dans le [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) comme prévu par les experts de la base de données.
 
 Clickhouse prend également en charge:
 
--   [Fonctions d’agrégat paramétriques](parametric-functions.md#aggregate_functions_parametric) qui acceptent d’autres paramètres en plus des colonnes.
--   [Combinators](combinators.md#aggregate_functions_combinators), qui modifient le comportement des fonctions d’agrégation.
+-   [Fonctions d'agrégat paramétriques](parametric-functions.md#aggregate_functions_parametric) qui acceptent d'autres paramètres en plus des colonnes.
+-   [Combinators](combinators.md#aggregate_functions_combinators), qui modifient le comportement des fonctions d'agrégation.
 
 ## Le Traitement NULL {#null-processing}
 
-Au cours de l’agrégation, tous les `NULL`s sont ignorés.
+Au cours de l'agrégation, tous les `NULL`s sont ignorés.
 
 **Exemple:**
 
@@ -43,7 +43,7 @@ SELECT sum(y) FROM t_null_big
     │      7 │
     └────────┘
 
-Le `sum` la fonction d’interprète `NULL` comme `0`. En particulier, cela signifie que si la fonction reçoit en entrée d’une sélection où toutes les valeurs sont `NULL`, alors le résultat sera `0`, pas `NULL`.
+Le `sum` la fonction d'interprète `NULL` comme `0`. En particulier, cela signifie que si la fonction reçoit en entrée d'une sélection où toutes les valeurs sont `NULL`, alors le résultat sera `0`, pas `NULL`.
 
 Maintenant, vous pouvez utiliser le `groupArray` fonction pour créer un tableau à partir `y` colonne:
 

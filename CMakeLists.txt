@@ -211,7 +211,8 @@ if (COMPILER_CLANG)
     endif()
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
     option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
 
@@ -330,6 +331,7 @@ include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
+include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
 include (cmake/find/boost.cmake)
 include (cmake/find/zlib.cmake)
@@ -345,6 +347,7 @@ include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -379,6 +382,16 @@ include (cmake/find/mysqlclient.cmake)
 
 if (OS_LINUX AND NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
+endif ()
+
+if (USE_OPENCL)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_OPENCL=1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_OPENCL=1")
+
+    if (OS_DARWIN)
+        set(OPENCL_LINKER_FLAGS "-framework OpenCL")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCL_LINKER_FLAGS}")
+    endif ()
 endif ()
 
 include (cmake/print_flags.cmake)

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: Diccionarios internos
 ---
 
-# Diccionarios Internos {#internal_dicts}
+# Diccionarios internos {#internal_dicts}
 
 ClickHouse contiene una función integrada para trabajar con una geobase.
 
@@ -39,7 +39,7 @@ También puede crear estos archivos usted mismo. El formato de archivo es el sig
 `regions_names_*.txt`: TabSeparated (sin encabezado), columnas:
 
 -   ID de la región (`UInt32`)
--   nombre de la región (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   nombre de la región (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
 Una matriz plana se usa para almacenar en RAM. Por esta razón, los ID no deberían ser más de un millón.
 
