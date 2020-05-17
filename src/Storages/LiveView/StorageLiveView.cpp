@@ -468,6 +468,10 @@ void StorageLiveView::shutdown()
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
 
+    /// WATCH queries should be stopped after setting shutdown_called to true.
+    /// Otherwise livelock is possible for LiveView table in Atomic database:
+    /// WATCH query will wait for table to be dropped and DatabaseCatalog will wait for queries to finish
+
     {
         std::lock_guard no_users_thread_lock(no_users_thread_mutex);
         if (no_users_thread.joinable())

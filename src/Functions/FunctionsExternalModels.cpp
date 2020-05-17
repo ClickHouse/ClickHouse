@@ -100,7 +100,7 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
                 null_map = col_nullable->getNullMapColumnPtr();
             else
             {
-                auto mut_null_map = (*std::move(null_map)).mutate();
+                auto mut_null_map = IColumn::mutate(std::move(null_map));
 
                 NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mut_null_map).getData();
                 const NullMap & src_null_map = col_nullable->getNullMapColumn().getData();

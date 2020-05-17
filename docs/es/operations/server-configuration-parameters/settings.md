@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: "Configuraci\xF3n del servidor"
 ---
 
-# Configuración Del Servidor {#server-settings}
+# Configuración del servidor {#server-settings}
 
 ## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}
 
@@ -209,7 +209,7 @@ Si `http_port` se especifica, la configuración de OpenSSL se ignora incluso si 
 **Ejemplo**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
@@ -249,7 +249,7 @@ Puerto para el intercambio de datos entre servidores ClickHouse.
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-## Sistema Abierto {#interserver-http-host}
+## Sistema abierto {#interserver-http-host}
 
 El nombre de host que pueden utilizar otros servidores para acceder a este servidor.
 
@@ -364,7 +364,7 @@ Para obtener más información, consulte la sección “[Creación de tablas rep
 <macros incl="macros" optional="true" />
 ```
 
-## Método De codificación De Datos: {#server-mark-cache-size}
+## Método de codificación de datos: {#server-mark-cache-size}
 
 Tamaño aproximado (en bytes) de la memoria caché de marcas utilizadas por los motores de [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) familia.
 
@@ -402,7 +402,7 @@ El número máximo de archivos abiertos.
 
 Predeterminada: `maximum`.
 
-Recomendamos el uso de esta opción en Mac OS X desde la `getrlimit()` la función devuelve un valor incorrecto.
+Recomendamos usar esta opción en Mac OS X desde el `getrlimit()` función devuelve un valor incorrecto.
 
 **Ejemplo**
 
@@ -414,7 +414,7 @@ Recomendamos el uso de esta opción en Mac OS X desde la `getrlimit()` la funci�
 
 Restricción en la eliminación de tablas.
 
-Si el tamaño de un [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) tabla supera `max_table_size_to_drop` (en bytes), no puede eliminarlo usando una consulta DROP.
+Si el tamaño de un [Método de codificación de datos:](../../engines/table-engines/mergetree-family/mergetree.md) mesa excede `max_table_size_to_drop` (en bytes), no puede eliminarlo usando una consulta DROP.
 
 Si aún necesita eliminar la tabla sin reiniciar el servidor ClickHouse, cree el `<clickhouse-path>/flags/force_drop_table` y ejecute la consulta DROP.
 
@@ -453,7 +453,7 @@ Claves para la configuración del servidor/cliente:
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 -   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contiene el certificado.
 -   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Contexto](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) clase. Valores posibles: `none`, `relaxed`, `strict`, `once`.
+-   verificationMode – The method for checking the node's certificates. Details are in the description of the [Contexto](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) clase. Valores posibles: `none`, `relaxed`, `strict`, `once`.
 -   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 -   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
 -   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
@@ -465,7 +465,7 @@ Claves para la configuración del servidor/cliente:
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
 -   disableProtocols – Protocols that are not allowed to use.
@@ -538,13 +538,37 @@ La ruta de acceso al directorio que contiene los datos.
 <path>/var/lib/clickhouse/</path>
 ```
 
+## prometeo {#server_configuration_parameters-prometheus}
+
+Exponer datos de métricas para raspar desde [Prometeo](https://prometheus.io).
+
+Configuración:
+
+-   `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
+-   `port` – Port for `endpoint`.
+-   `metrics` – Flag that sets to expose metrics from the [sistema.métricas](../system-tables.md#system_tables-metrics) tabla.
+-   `events` – Flag that sets to expose metrics from the [sistema.evento](../system-tables.md#system_tables-events) tabla.
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [sistema.asynchronous\_metrics](../system-tables.md#system_tables-asynchronous_metrics) tabla.
+
+**Ejemplo**
+
+``` xml
+ <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+```
+
 ## query\_log {#server_configuration_parameters-query-log}
 
 Configuración de las consultas de registro recibidas con [log\_queries=1](../settings/settings.md) configuración.
 
 Las consultas se registran en el [sistema.query\_log](../../operations/system-tables.md#system_tables-query_log) tabla, no en un archivo separado. Puede cambiar el nombre de la tabla en el `table` parámetro (ver más abajo).
 
-Utilice los siguientes parámetros para configurar el inicio de sesión:
+Utilice los siguientes parámetros para configurar el registro:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table the queries will be logged in.
@@ -564,13 +588,13 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de c
 </query_log>
 ```
 
-## Sistema Abierto {#server_configuration_parameters-query-thread-log}
+## Sistema abierto {#server_configuration_parameters-query-thread-log}
 
 Configuración de subprocesos de registro de consultas recibidas con [Log\_query\_threads = 1](../settings/settings.md#settings-log-query-threads) configuración.
 
 Las consultas se registran en el [sistema.Sistema abierto.](../../operations/system-tables.md#system_tables-query-thread-log) tabla, no en un archivo separado. Puede cambiar el nombre de la tabla en el `table` parámetro (ver más abajo).
 
-Utilice los siguientes parámetros para configurar el inicio de sesión:
+Utilice los siguientes parámetros para configurar el registro:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table the queries will be logged in.
@@ -592,7 +616,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de s
 
 ## trace\_log {#server_configuration_parameters-trace_log}
 
-La configuración para el [trace\_log](../../operations/system-tables.md#system_tables-trace_log) operación de la tabla del sistema.
+Ajustes para el [trace\_log](../../operations/system-tables.md#system_tables-trace_log) operación de la tabla del sistema.
 
 Parámetros:
 
@@ -659,7 +683,7 @@ Para el valor de la `incl` atributo, consulte la sección “[Archivos de config
 
 -   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## Zona Horaria {#server_configuration_parameters-timezone}
+## Zona horaria {#server_configuration_parameters-timezone}
 
 La zona horaria del servidor.
 
@@ -868,5 +892,15 @@ El período de actualización de las direcciones IP almacenadas en la caché DNS
 La actualización se realiza de forma asíncrona, en un subproceso del sistema separado.
 
 **Valor predeterminado**: 15.
+
+## access\_control\_path {#access_control_path}
+
+Ruta de acceso a una carpeta donde un servidor ClickHouse almacena configuraciones de usuario y rol creadas por comandos SQL.
+
+Valor predeterminado: `/var/lib/clickhouse/access/`.
+
+**Ver también**
+
+-   [Control de acceso y gestión de cuentas](../access-rights.md#access-control)
 
 [Artículo Original](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

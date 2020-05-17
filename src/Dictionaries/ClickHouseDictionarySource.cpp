@@ -74,11 +74,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
-    context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
+    context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0));
     context = copyContextAndApplySettings(path_to_settings, context, config);
-
-    /// Processors are not supported here yet.
-    context.setSetting("experimental_use_processors", false);
 
     /// Query context is needed because some code in executeQuery function may assume it exists.
     /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
@@ -134,7 +131,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       */
     if (is_local)
     {
-        BlockIO res = executeQuery(load_all_query, context, true);
+        BlockIO res = executeQuery(load_all_query, context, true, QueryProcessingStage::Complete, false, false);
         /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
         res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
@@ -147,7 +144,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
     std::string load_update_query = getUpdateFieldAndDate();
     if (is_local)
     {
-        auto res = executeQuery(load_update_query, context, true);
+        auto res = executeQuery(load_update_query, context, true, QueryProcessingStage::Complete, false, false);
         res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
@@ -194,7 +191,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 {
     if (is_local)
     {
-        auto res = executeQuery(query, context, true);
+        auto res = executeQuery(query, context, true, QueryProcessingStage::Complete, false, false);
         res.in = std::make_shared<ConvertingBlockInputStream>(
             res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
@@ -209,7 +206,8 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (is_local)
     {
         Context query_context = context;
-        auto input_block = executeQuery(request, query_context, true).in;
+        auto input_block = executeQuery(request, query_context, true,
+                                        QueryProcessingStage::Complete, false, false).in;
         return readInvalidateQuery(*input_block);
     }
     else

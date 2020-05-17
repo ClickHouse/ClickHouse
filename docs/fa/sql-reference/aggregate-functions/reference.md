@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: "\u0645\u0631\u062C\u0639"
 ---
 
-# مرجع عملکرد {#function-reference}
+# مرجع عملکرد کامل {#aggregate-functions-reference}
 
 ## شمارش {#agg_function-count}
 
@@ -13,7 +13,7 @@ toc_title: "\u0645\u0631\u062C\u0639"
 
 ClickHouse زیر پشتیبانی می کند syntaxes برای `count`:
 - `count(expr)` یا `COUNT(DISTINCT expr)`.
-- `count()` یا `COUNT(*)`. این `count()` نحو ClickHouse خاص.
+- `count()` یا `COUNT(*)`. این `count()` نحو تاتر خاص است.
 
 **پارامترها**
 
@@ -31,7 +31,7 @@ ClickHouse زیر پشتیبانی می کند syntaxes برای `count`:
 
 **اطلاعات دقیق**
 
-تاتر از `COUNT(DISTINCT ...)` نحو. رفتار این ساخت و ساز بستگی به [ا\_فزونهها](../../operations/settings/settings.md#settings-count_distinct_implementation) تنظیمات. این تعریف می کند که کدام یک از [uniq\*](#agg_function-uniq) توابع برای انجام عملیات استفاده می شود. به طور پیش فرض است [قرارداد اتحادیه](#agg_function-uniqexact) تابع.
+تاتر از `COUNT(DISTINCT ...)` نحو. رفتار این ساخت و ساز بستگی به [ا\_فزونهها](../../operations/settings/settings.md#settings-count_distinct_implementation) تنظیمات. این تعریف می کند که کدام یک از [دانشگاه\*](#agg_function-uniq) توابع برای انجام عملیات استفاده می شود. به طور پیش فرض است [قرارداد اتحادیه](#agg_function-uniqexact) تابع.
 
 این `SELECT count() FROM table` پرس و جو بهینه سازی شده نیست, چرا که تعداد ورودی در جدول به طور جداگانه ذخیره نمی. این ستون کوچک را از جدول انتخاب می کند و تعداد مقادیر موجود را شمارش می کند.
 
@@ -203,7 +203,7 @@ binary     decimal
 
 ## گروهبیتکسور {#groupbitxor}
 
-شامل اعضای اتحادیه اروپا `XOR` برای مجموعه ای از اعداد.
+اعمال بیتی `XOR` برای مجموعه ای از اعداد.
 
 ``` sql
 groupBitXor(expr)
@@ -246,7 +246,7 @@ binary     decimal
 
 ## نگاشت گروهی {#groupbitmap}
 
-بیت مپ و یا کل محاسبات از یک unsigned integer ستون بازگشت cardinality از نوع uint64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md).
+بیت مپ و یا کل محاسبات از یک unsigned integer ستون بازگشت cardinality از نوع UInt64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmap(expr)
@@ -332,9 +332,10 @@ SELECT argMin(user, salary) FROM salary
 
 فقط برای اعداد کار می کند.
 
-## sumMap(key, value) {#agg_functions-summap}
+## sumMap(key, value), sumMap(تاپل(key, value)) {#agg_functions-summap}
 
 مجموع ‘value’ تنظیم با توجه به کلید های مشخص شده در ‘key’ صف کردن.
+عبور تاپل از کلید ها و ارزش های عرریس مترادف به عبور از دو مجموعه از کلید ها و ارزش است.
 تعداد عناصر در ‘key’ و ‘value’ باید همین کار را برای هر سطر است که بالغ بر شود.
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -347,25 +348,28 @@ CREATE TABLE sum_map(
     statusMap Nested(
         status UInt16,
         requests UInt64
-    )
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
 SELECT
     timeslot,
-    sumMap(statusMap.status, statusMap.requests)
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
 FROM sum_map
 GROUP BY timeslot
 ```
 
 ``` text
-┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
-└─────────────────────┴──────────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
 ## سیخ کباب {#skewpop}
@@ -514,10 +518,10 @@ FROM (
 
 ## هشدار داده می شود) {#agg-function-timeseriesgroupratesum}
 
-به طور مشابه timeseriesgroupratesum, timeseriesgroupratesum را محاسبه نرخ سری زمانی و سپس مجموع نرخ با هم.
+به طور مشابه به `timeSeriesGroupSum`, `timeSeriesGroupRateSum` محاسبه نرخ زمان سری و سپس مجموع نرخ با هم.
 همچنین, برچسب زمان باید در جهت صعود قبل از استفاده از این تابع باشد.
 
-با استفاده از این تابع نتیجه مورد بالا خواهد بود:
+استفاده از این تابع به داده ها از `timeSeriesGroupSum` مثال, شما نتیجه زیر را دریافت کنید:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
@@ -529,7 +533,48 @@ FROM (
 فقط برای اعداد کار می کند.
 نتیجه این است که همیشه شناور64.
 
-## uniq {#agg_function-uniq}
+## کشتی کج {#avgweighted}
+
+محاسبه [میانگین ریاضی وزنی](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+
+**نحو**
+
+``` sql
+avgWeighted(x, weight)
+```
+
+**پارامترها**
+
+-   `x` — Values. [عدد صحیح](../data-types/int-uint.md) یا [شناور نقطه](../data-types/float.md).
+-   `weight` — Weights of the values. [عدد صحیح](../data-types/int-uint.md) یا [شناور نقطه](../data-types/float.md).
+
+نوع `x` و `weight` باید مثل قبل باشه
+
+**مقدار بازگشتی**
+
+-   وزن متوسط.
+-   `NaN`. اگر تمام وزن به برابر هستند 0.
+
+نوع: [جسم شناور64](../data-types/float.md).
+
+**مثال**
+
+پرسوجو:
+
+``` sql
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
+```
+
+نتیجه:
+
+``` text
+┌─avgWeighted(x, weight)─┐
+│                      8 │
+└────────────────────────┘
+```
+
+## دانشگاه {#agg_function-uniq}
 
 محاسبه تعداد تقریبی مقادیر مختلف استدلال.
 
@@ -543,7 +588,7 @@ uniq(x[, ...])
 
 **مقدار بازگشتی**
 
--   A [UInt64](../../sql-reference/data-types/int-uint.md)-نوع شماره.
+-   A [UInt64](../../sql-reference/data-types/int-uint.md)- نوع شماره .
 
 **پیاده سازی اطلاعات**
 
@@ -551,7 +596,7 @@ uniq(x[, ...])
 
 -   هش را برای تمام پارامترها در مجموع محاسبه می کند و سپس در محاسبات استفاده می شود.
 
--   با استفاده از یک تطبیقی نمونه الگوریتم. برای محاسبه دولت تابع با استفاده از یک نمونه از عنصر هش ارزش تا 65536.
+-   با استفاده از یک الگوریتم نمونه تطبیقی. برای محاسبه دولت تابع با استفاده از یک نمونه از عناصر هش ارزش تا 65536.
 
         This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
@@ -559,14 +604,14 @@ uniq(x[, ...])
 
 ما توصیه می کنیم با استفاده از این تابع تقریبا در تمام حالات.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [مخلوط نشده](#agg_function-uniqcombined)
 -   [نیم قرن 64](#agg_function-uniqcombined64)
 -   [یونقلل12](#agg_function-uniqhll12)
 -   [قرارداد اتحادیه](#agg_function-uniqexact)
 
-## uniqCombined {#agg_function-uniqcombined}
+## مخلوط نشده {#agg_function-uniqcombined}
 
 محاسبه تعداد تقریبی مقادیر استدلال های مختلف.
 
@@ -580,7 +625,7 @@ uniqCombined(HLL_precision)(x[, ...])
 
 تابع طول می کشد تعداد متغیر از پارامترهای. پارامترها می توانند باشند `Tuple`, `Array`, `Date`, `DateTime`, `String`, یا انواع عددی.
 
-`HLL_precision` پایه-2 لگاریتم تعداد سلول ها در [جمع شدن](https://en.wikipedia.org/wiki/HyperLogLog). اختیاری, شما می توانید تابع به عنوان استفاده `uniqCombined(x[, ...])`. مقدار پیش فرض برای `HLL_precision` است 17, که به طور موثر 96 کیلوبایت فضا (2^17 سلول ها, 6 بیت در هر).
+`HLL_precision` پایه 2 لگاریتم تعداد سلول ها در است [جمع شدن](https://en.wikipedia.org/wiki/HyperLogLog). اختیاری, شما می توانید تابع به عنوان استفاده `uniqCombined(x[, ...])`. مقدار پیش فرض برای `HLL_precision` است 17, که به طور موثر 96 کیلوبایت فضا (2^17 سلول ها, 6 بیت در هر).
 
 **مقدار بازگشتی**
 
@@ -601,13 +646,13 @@ uniqCombined(HLL_precision)(x[, ...])
 !!! note "یادداشت"
     از هش 32 بیتی برای غیر استفاده می کند-`String` نوع, نتیجه خطا بسیار بالا برای کاریت به طور قابل توجهی بزرگتر از اند `UINT_MAX` (خطا به سرعت پس از چند ده میلیارد ارزش متمایز افزایش خواهد یافت), از این رو در این مورد شما باید استفاده کنید [نیم قرن 64](#agg_function-uniqcombined64)
 
-در مقایسه با [uniq](#agg_function-uniq) عملکرد `uniqCombined`:
+در مقایسه با [دانشگاه](#agg_function-uniq) عملکرد `uniqCombined`:
 
 -   مصرف چندین بار حافظه کمتر.
 -   محاسبه با دقت چند بار بالاتر است.
 -   معمولا عملکرد کمی پایین تر است. در برخی از حالات, `uniqCombined` می توانید بهتر از انجام `uniq` برای مثال با توزیع نمایش داده شد که انتقال تعداد زیادی از جمع متحده بر روی شبکه.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [دانشگاه](#agg_function-uniq)
 -   [نیم قرن 64](#agg_function-uniqcombined64)
@@ -628,11 +673,11 @@ uniqHLL12(x[, ...])
 
 **پارامترها**
 
-این تابع یک متغیر تعدادی از پارامترهای. پارامترهای می تواند `Tuple`, `Array`, `Date`, `DateTime`, `String`, یا انواع عددی.
+تابع طول می کشد تعداد متغیر از پارامترهای. پارامترها می توانند باشند `Tuple`, `Array`, `Date`, `DateTime`, `String`, یا انواع عددی.
 
 **مقدار بازگشتی**
 
--   A [UInt64](../../sql-reference/data-types/int-uint.md)-نوع شماره.
+-   A [UInt64](../../sql-reference/data-types/int-uint.md)- نوع شماره .
 
 **پیاده سازی اطلاعات**
 
@@ -648,7 +693,7 @@ uniqHLL12(x[, ...])
 
 ما توصیه نمی کنیم با استفاده از این تابع. در اغلب موارد از [دانشگاه](#agg_function-uniq) یا [مخلوط نشده](#agg_function-uniqcombined) تابع.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [دانشگاه](#agg_function-uniq)
 -   [مخلوط نشده](#agg_function-uniqcombined)
@@ -662,7 +707,7 @@ uniqHLL12(x[, ...])
 uniqExact(x[, ...])
 ```
 
-استفاده از `uniqExact` تابع اگر شما کاملا نیاز به یک نتیجه دقیق. در غیر این صورت استفاده از [uniq](#agg_function-uniq) تابع.
+استفاده از `uniqExact` تابع اگر شما کاملا نیاز به یک نتیجه دقیق. در غیر این صورت استفاده از [دانشگاه](#agg_function-uniq) تابع.
 
 این `uniqExact` تابع با استفاده از حافظه بیش از `uniq`, چرا که اندازه دولت رشد گشوده است به عنوان تعدادی از ارزش های مختلف را افزایش می دهد.
 
@@ -672,7 +717,7 @@ uniqExact(x[, ...])
 
 **همچنین نگاه کنید به**
 
--   [uniq](#agg_function-uniq)
+-   [دانشگاه](#agg_function-uniq)
 -   [مخلوط نشده](#agg_function-uniqcombined)
 -   [یونقلل12](#agg_function-uniqhll12)
 
@@ -686,19 +731,93 @@ uniqExact(x[, ...])
 
 در بعضی موارد, شما هنوز هم می توانید در جهت اعدام تکیه. این امر در مورد مواردی که `SELECT` همراه از یک خرده فروشی که با استفاده از `ORDER BY`.
 
-## ارزش موقعیت) {#grouparrayinsertatvalue-position}
+## هشدار داده می شود {#grouparrayinsertat}
 
 مقدار را به مجموعه ای در موقعیت مشخص شده وارد می کند.
 
-!!! note "یادداشت"
-    این تابع با استفاده از موقعیت های مبتنی بر صفر, بر خلاف موقعیت های معمولی مبتنی بر یک برای فرود میدان.
+**نحو**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+``` sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-پارامترهای اختیاری:
+اگر در یک پرس و جو چند مقدار به همان موقعیت قرار داده, تابع رفتار در روش های زیر:
 
--   مقدار پیش فرض برای جایگزینی در موقعیت های خالی.
--   طول مجموعه حاصل. این اجازه می دهد تا شما را به دریافت مجموعه ای از همان اندازه برای تمام کلید های کل. هنگام استفاده از این پارامتر, مقدار پیش فرض باید مشخص شود.
+-   اگر پرس و جو در یک موضوع اجرا, یکی از اولین از مقادیر درج شده استفاده شده است.
+-   اگر یک پرس و جو در موضوعات مختلف اجرا, ارزش حاصل یکی نامشخص از مقادیر درج شده است.
+
+**پارامترها**
+
+-   `x` — Value to be inserted. [عبارت](../syntax.md#syntax-expressions) در نتیجه یکی از [انواع داده های پشتیبانی شده](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` قرار داده می شود. شماره شاخص در مجموعه از صفر شروع می شود. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [عبارت](../syntax.md#syntax-expressions) در نتیجه نوع داده پیکربندی شده برای `x` پارامتر. اگر `default_x` تعریف نشده است [مقادیر پیشفرض](../../sql-reference/statements/create.md#create-default-values) استفاده می شود.
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` باید مشخص شود. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**مقدار بازگشتی**
+
+-   مجموعه ای با مقادیر درج شده.
+
+نوع: [& حذف](../../sql-reference/data-types/array.md#data-type-array).
+
+**مثال**
+
+پرسوجو:
+
+``` sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+نتیجه:
+
+``` text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+پرسوجو:
+
+``` sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+نتیجه:
+
+``` text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+پرسوجو:
+
+``` sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+نتیجه:
+
+``` text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+درج چند رشته ای از عناصر را به یک موقعیت.
+
+پرسوجو:
+
+``` sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+به عنوان یک نتیجه از این پرس و جو شما عدد صحیح تصادفی در `[0,9]` محدوده. به عنوان مثال:
+
+``` text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
 
 ## هشدار داده می شود {#agg_function-grouparraymovingsum}
 
@@ -977,7 +1096,7 @@ SELECT quantileDeterministic(val, 1) FROM t
 └───────────────────────────────┘
 ```
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [میانه](#median)
 -   [quantiles](#quantiles)
@@ -1029,7 +1148,7 @@ SELECT quantileExact(number) FROM numbers(10)
 └───────────────────────┘
 ```
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [میانه](#median)
 -   [quantiles](#quantiles)
@@ -1118,7 +1237,7 @@ quantileTiming(level)(expr)
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` مقدار در محدوده `[0.01, 0.99]`. مقدار پیش فرض: 0.5. در `level=0.5` تابع محاسبه می کند [میانه](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [عبارت](../syntax.md#syntax-expressions) بیش از یک مقادیر ستون بازگشت [شناور\*](../../sql-reference/data-types/float.md)-نوع شماره.
+-   `expr` — [عبارت](../syntax.md#syntax-expressions) بیش از یک مقادیر ستون بازگشت [شناور\*](../../sql-reference/data-types/float.md)- نوع شماره .
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
@@ -1142,7 +1261,7 @@ quantileTiming(level)(expr)
 نوع: `Float32`.
 
 !!! note "یادداشت"
-    اگر هیچ ارزش به تابع منتقل می شود (هنگام استفاده از `quantileTimingIf`), [نان](../../sql-reference/data-types/float.md#data_type-float-nan-inf) بازگشته است. هدف از این است که افتراق این موارد از مواردی که منجر به صفر. ببینید [ORDER BY](../statements/select.md#select-order-by) برای یادداشت ها در مرتب سازی `NaN` ارزشهای خبری عبارتند از:
+    اگر هیچ ارزش به تابع منتقل می شود (هنگام استفاده از `quantileTimingIf`), [نان](../../sql-reference/data-types/float.md#data_type-float-nan-inf) بازگشته است. هدف از این است که افتراق این موارد از مواردی که منجر به صفر. ببینید [ORDER BY](../statements/select/order-by.md#select-order-by) برای یادداشت ها در مرتب سازی `NaN` ارزشهای خبری عبارتند از:
 
 **مثال**
 
@@ -1227,7 +1346,7 @@ quantileTimingWeighted(level)(expr, weight)
 نوع: `Float32`.
 
 !!! note "یادداشت"
-    اگر هیچ ارزش به تابع منتقل می شود (هنگام استفاده از `quantileTimingIf`), [نان](../../sql-reference/data-types/float.md#data_type-float-nan-inf) بازگشته است. هدف از این است که افتراق این موارد از مواردی که منجر به صفر. ببینید [ORDER BY](../statements/select.md#select-order-by) برای یادداشت ها در مرتب سازی `NaN` ارزشهای خبری عبارتند از:
+    اگر هیچ ارزش به تابع منتقل می شود (هنگام استفاده از `quantileTimingIf`), [نان](../../sql-reference/data-types/float.md#data_type-float-nan-inf) بازگشته است. هدف از این است که افتراق این موارد از مواردی که منجر به صفر. ببینید [ORDER BY](../statements/select/order-by.md#select-order-by) برای یادداشت ها در مرتب سازی `NaN` ارزشهای خبری عبارتند از:
 
 **مثال**
 
@@ -1258,7 +1377,7 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 └───────────────────────────────────────────────┘
 ```
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [میانه](#median)
 -   [quantiles](#quantiles)
@@ -1426,19 +1545,31 @@ SELECT medianDeterministic(val, 1) FROM t
 
 بازگشت `Float64`. چه زمانی `n <= 1`, بازگشت `+∞`.
 
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `varSampStable` تابع. این کار کندتر, فراهم می کند اما خطای محاسباتی کمتر.
+
 ## هشدار داده می شود) {#varpopx}
 
 محاسبه مقدار `Σ((x - x̅)^2) / n` کجا `n` اندازه نمونه است و `x̅`مقدار متوسط است `x`.
 
 به عبارت دیگر, پراکندگی برای مجموعه ای از ارزش. بازگشت `Float64`.
 
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `varPopStable` تابع. این کار کندتر, فراهم می کند اما خطای محاسباتی کمتر.
+
 ## اطلاعات دقیق) {#stddevsampx}
 
 نتیجه برابر با ریشه مربع است `varSamp(x)`.
 
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `stddevSampStable` تابع. این کار کندتر, فراهم می کند اما خطای محاسباتی کمتر.
+
 ## اطلاعات دقیق) {#stddevpopx}
 
 نتیجه برابر با ریشه مربع است `varPop(x)`.
+
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `stddevPopStable` تابع. این کار کندتر, فراهم می کند اما خطای محاسباتی کمتر.
 
 ## topK(N)(x) {#topknx}
 
@@ -1462,7 +1593,7 @@ topK(N)(column)
 
 **نشانوندها**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
 **مثال**
 
@@ -1522,15 +1653,24 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 
 محاسبه ارزش `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
-را برمی گرداند شناور64. زمانی که `n <= 1`, returns +∞.
+را برمی گرداند شناور64. چه زمانی `n <= 1`, returns +∞.
+
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `covarSampStable` تابع. این کار کندتر, فراهم می کند اما خطای محاسباتی کمتر.
 
 ## نمایش سایت) {#covarpopx-y}
 
 محاسبه ارزش `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `covarPopStable` تابع. این کار کندتر فراهم می کند اما یک خطای محاسباتی کمتر.
+
 ## هشدار داده می شود) {#corrx-y}
 
 محاسبه ضریب همبستگی پیرسون: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "یادداشت"
+    این تابع با استفاده از الگوریتم عددی ناپایدار. اگر شما نیاز دارید [پایداری عددی](https://en.wikipedia.org/wiki/Numerical_stability) در محاسبات, استفاده از `corrStable` تابع. این کار کندتر, فراهم می کند اما خطای محاسباتی کمتر.
 
 ## طبقه بندی فرمول بندی {#categoricalinformationvalue}
 
@@ -1648,7 +1788,7 @@ evalMLMethod(model, param1, param2) FROM test_data
     `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
     چنین پرس و جو خواهد مدل مناسب و بازگشت وزن خود را - برای اولین بار وزن هستند, که به پارامترهای مدل مطابقت, یکی از گذشته تعصب است. بنابراین در مثال بالا پرس و جو یک ستون با 3 مقدار بازگشت.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [سرکوب مقررات عمومی](#agg_functions-stochasticlogisticregression)
 -   [تفاوت رگرسیون خطی و لجستیک](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
@@ -1700,14 +1840,14 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
     `test_data` is a table like `train_data` but may not contain target value.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [تنظیم مقررات](#agg_functions-stochasticlinearregression)
 -   [تفاوت بین رگرسیون خطی و لجستیک.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 ## گروهبیتمافند {#groupbitmapand}
 
-محاسبات و یک بیت مپ ستون بازگشت cardinality از نوع uint64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md).
+محاسبات و یک بیت مپ ستون بازگشت cardinality از نوع UInt64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapAnd(expr)
@@ -1750,7 +1890,7 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 
 ## گروهبیتمافور {#groupbitmapor}
 
-محاسبات و یا یک بیت مپ ستون بازگشت cardinality از نوع uint64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md). این معادل است `groupBitmapMerge`.
+محاسبات و یا یک بیت مپ ستون بازگشت cardinality از نوع UInt64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md). این معادل است `groupBitmapMerge`.
 
 ``` sql
 groupBitmapOr(expr)
@@ -1793,7 +1933,7 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
 
 ## گروهبیتمافکر {#groupbitmapxor}
 
-محاسبات xor یک بیت مپ ستون بازگشت cardinality از نوع uint64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md).
+محاسبات XOR یک بیت مپ ستون بازگشت cardinality از نوع UInt64 اگر اضافه کردن پسوند -دولت بازگشت [شی نگاشت بیت](../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapOr(expr)

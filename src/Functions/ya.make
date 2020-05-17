@@ -127,8 +127,6 @@ SRCS(
     cos.cpp
     CRC.cpp
     currentDatabase.cpp
-    currentQuota.cpp
-    currentRowPolicies.cpp
     currentUser.cpp
     dateDiff.cpp
     defaultValueOfArgumentType.cpp
@@ -207,7 +205,6 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
-    ignoreExceptNull.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp

@@ -201,6 +201,7 @@ public:
 
     Field operator[](size_t n) const override
     {
+        assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
 
@@ -263,7 +264,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
+    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), byteSize()); }
 
 
     bool structureEquals(const IColumn & rhs) const override

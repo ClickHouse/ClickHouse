@@ -1,28 +1,28 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: Travailler avec Yandex.Dictionnaires Metrica
 ---
 
-# Fonctions Pour Travailler Avec Yandex.Dictionnaires Metrica {#functions-for-working-with-yandex-metrica-dictionaries}
+# Fonctions pour travailler avec Yandex.Dictionnaires Metrica {#functions-for-working-with-yandex-metrica-dictionaries}
 
-Pour que les fonctions ci-dessous fonctionnent, la configuration du serveur doit spécifier les chemins et les adresses pour obtenir tous les Yandex.Dictionnaires Metrica. Les dictionnaires sont chargés au premier appel de l’une de ces fonctions. Si les listes de référence ne peuvent pas être chargées, une exception est levée.
+Pour que les fonctions ci-dessous fonctionnent, la configuration du serveur doit spécifier les chemins et les adresses pour obtenir tous les Yandex.Dictionnaires Metrica. Les dictionnaires sont chargés au premier appel de l'une de ces fonctions. Si les listes de référence ne peuvent pas être chargées, une exception est levée.
 
-Pour plus d’informations sur la création de listes de références, consultez la section “Dictionaries”.
+Pour plus d'informations sur la création de listes de références, consultez la section “Dictionaries”.
 
 ## Plusieurs Geobases {#multiple-geobases}
 
 ClickHouse soutient le travail avec plusieurs géobases alternatives (hiérarchies régionales) simultanément, afin de soutenir diverses perspectives sur les pays auxquels appartiennent certaines régions.
 
-Le ‘clickhouse-server’ config spécifie le fichier avec l’échelon régional::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
+Le ‘clickhouse-server’ config spécifie le fichier avec l'échelon régional::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-Outre ce fichier, il recherche également les fichiers à proximité qui ont le symbole \_ et tout suffixe ajouté au nom (avant l’extension de fichier).
+Outre ce fichier, il recherche également les fichiers à proximité qui ont le symbole \_ et tout suffixe ajouté au nom (avant l'extension de fichier).
 Par exemple, il trouvera également le fichier `/opt/geo/regions_hierarchy_ua.txt` si présente.
 
 `ua` est appelée la clé du dictionnaire. Pour un dictionnaire sans suffixe, la clé est une chaîne vide.
 
-Tous les dictionnaires sont rechargés dans l’exécution (une fois toutes les secondes, comme défini dans le paramètre de configuration builtin\_dictionaries\_reload\_interval, ou une fois par heure par défaut). Cependant, la liste des dictionnaires disponibles est définie une fois, lorsque le serveur démarre.
+Tous les dictionnaires sont rechargés dans l'exécution (une fois toutes les secondes, comme défini dans le paramètre de configuration builtin\_dictionaries\_reload\_interval, ou une fois par heure par défaut). Cependant, la liste des dictionnaires disponibles est définie une fois, lorsque le serveur démarre.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Exemple:
@@ -125,20 +125,20 @@ regionToTopContinent(id[, geobase]);
 **Valeur renvoyée**
 
 -   Identifiant du continent de haut niveau (ce dernier lorsque vous grimpez dans la hiérarchie des régions).
--   0, si il n’y a aucun.
+-   0, si il n'y a aucun.
 
 Type: `UInt32`.
 
 ### regionToPopulation (id \[, geobase\]) {#regiontopopulationid-geobase}
 
-Obtient la population d’une région.
+Obtient la population d'une région.
 La population peut être enregistrée dans des fichiers avec la géobase. Voir la section “External dictionaries”.
-Si la population n’est pas enregistrée pour la région, elle renvoie 0.
+Si la population n'est pas enregistrée pour la région, elle renvoie 0.
 Dans la géobase Yandex, la population peut être enregistrée pour les régions enfants, mais pas pour les régions parentes.
 
 ### regionIn(lhs, rhs \[, géobase\]) {#regioninlhs-rhs-geobase}
 
-Vérifie si un ‘lhs’ région appartient à une ‘rhs’ région. Renvoie un nombre UInt8 égal à 1 s’il appartient, Ou 0 s’il n’appartient pas.
+Vérifie si un ‘lhs’ région appartient à une ‘rhs’ région. Renvoie un nombre UInt8 égal à 1 s'il appartient, Ou 0 s'il n'appartient pas.
 The relationship is reflexive – any region also belongs to itself.
 
 ### regionHierarchy (id \[, geobase\]) {#regionhierarchyid-geobase}
@@ -148,7 +148,7 @@ Exemple: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### regionToName(id \[, lang\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn't exist, an empty string is returned.
 
 `ua` et `uk` les deux signifient ukrainien.
 

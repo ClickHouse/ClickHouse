@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: "\u0628\u0647 \u0631\u0648\u0632 \u0631\u0633\u0627\u0646\u06CC \u0641\u0631\
   \u0647\u0646\u06AF \u0644\u063A\u062A"
@@ -51,6 +51,11 @@ LIFETIME(300)
 ``` sql
 LIFETIME(MIN 300 MAX 360)
 ```
+
+اگر `<min>0</min>` و `<max>0</max>`, کلیک می کند فرهنگ لغت توسط ایست بارگذاری مجدد نیست.
+در این مورد, تاتر می توانید فرهنگ لغت زودتر بارگذاری مجدد اگر فایل پیکربندی فرهنگ لغت تغییر یافت و یا `SYSTEM RELOAD DICTIONARY` فرمان اعدام شد.
+
+هنگام به روز رسانی لغت نامه, سرور کلیک اعمال منطق مختلف بسته به نوع [متن](external-dicts-dict-sources.md):
 
 هنگام به روز رسانی لغت نامه, سرور کلیک اعمال منطق مختلف بسته به نوع [متن](external-dicts-dict-sources.md):
 

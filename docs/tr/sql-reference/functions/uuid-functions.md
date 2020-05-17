@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 53
 toc_title: "UUID ile \xE7al\u0131\u015Fma"
 ---
 
-# UUID Ile çalışmak için Fonksiyonlar {#functions-for-working-with-uuid}
+# UUID ile çalışmak için fonksiyonlar {#functions-for-working-with-uuid}
 
 UUID ile çalışmak için işlevler aşağıda listelenmiştir.
 
@@ -115,7 +115,7 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## Ayrıca bakınız {#see-also}
+## Ayrıca Bakınız {#see-also}
 
 -   [dictGetUUİD](ext-dict-functions.md#ext_dict_functions-other)
 

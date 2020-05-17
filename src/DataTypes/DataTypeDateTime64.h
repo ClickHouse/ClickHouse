@@ -64,14 +64,6 @@ template <typename Transform>
 class TransformDateTime64 : public Transform
 {
 private:
-    // ExtractName::name is Transform::name or default.
-    struct ExtractName
-    {
-        template<typename U> static constexpr auto getName(...) { return ""; }
-        template<typename U, typename = std::void_t<decltype(U::name)>> static constexpr auto getName(void*) { return U::name; }
-        static constexpr auto name = getName<Transform>(nullptr);
-    };
-
     // Detect if Transform::execute is const or static method
     // with signature defined by template args (ignoring result type).
     template<typename = void, typename... Args>
@@ -85,7 +77,7 @@ private:
     static constexpr bool TransformHasExecuteOverload_v = TransformHasExecuteOverload<void, Args...>::value;
 
 public:
-    static constexpr auto name = ExtractName::name;
+    static constexpr auto name = Transform::name;
 
     using Transform::execute;
 

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: GraphiteMergeTree
 ---
 
-# Graphitemergetree {#graphitemergetree}
+# GraphiteMergeTree {#graphitemergetree}
 
 Este motor está diseñado para el adelgazamiento y la agregación / promedio (rollup) [Grafito](http://graphite.readthedocs.io/en/latest/index.html) datos. Puede ser útil para los desarrolladores que desean usar ClickHouse como almacén de datos para Graphite.
 
@@ -13,7 +13,7 @@ Puede usar cualquier motor de tabla ClickHouse para almacenar los datos de Graph
 
 El motor hereda propiedades de [Método de codificación de datos:](mergetree.md).
 
-## Creación De Una Tabla {#creating-table}
+## Creación de una tabla {#creating-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -79,7 +79,7 @@ Todos los parámetros excepto `config_section` el mismo significado que en `Merg
 
 </details>
 
-## Configuración Acumulativa {#rollup-configuration}
+## Configuración acumulativa {#rollup-configuration}
 
 La configuración del paquete acumulativo está definida por [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) parámetro en la configuración del servidor. El nombre del parámetro podría ser cualquiera. Puede crear varias configuraciones y usarlas para diferentes tablas.
 
@@ -88,7 +88,7 @@ Estructura de configuración Rollup:
       required-columns
       patterns
 
-### Columnas Requeridas {#required-columns}
+### Columnas requeridas {#required-columns}
 
 -   `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 -   `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
@@ -136,7 +136,7 @@ Campos para `pattern` y `default` apartado:
 -   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
 -   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
-### Ejemplo De configuración {#configuration-example}
+### Ejemplo de configuración {#configuration-example}
 
 ``` xml
 <graphite_rollup>
