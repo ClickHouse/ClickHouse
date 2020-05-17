@@ -97,9 +97,8 @@ template <typename ToType, typename Name>
 class FunctionRandom : public FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>
 {
 public:
-    FunctionRandom()
-        : FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>(
-            PerformanceAdaptorOptions())
+    FunctionRandom(const Context & context_)
+        : FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>(context_)
     {
         if constexpr (UseMultitargetCode)
         {
@@ -110,9 +109,9 @@ public:
         }
     }
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionRandom<ToType, Name>>();
+        return std::make_shared<FunctionRandom<ToType, Name>>(context);
     }
 };
 

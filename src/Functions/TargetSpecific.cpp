@@ -8,13 +8,13 @@ namespace DB
 UInt32 GetSupportedArches()
 {
     UInt32 result = 0;
-    if (Cpu::haveSSE42())
+    if (Cpu::CpuFlagsCache::have_SSE42)
         result |= static_cast<UInt32>(TargetArch::SSE42);
-    if (Cpu::haveAVX())
+    if (Cpu::CpuFlagsCache::have_AVX)
         result |= static_cast<UInt32>(TargetArch::AVX);
-    if (Cpu::haveAVX2())
+    if (Cpu::CpuFlagsCache::have_AVX2)
         result |= static_cast<UInt32>(TargetArch::AVX2);
-    if (Cpu::haveAVX512F())
+    if (Cpu::CpuFlagsCache::have_AVX512F)
         result |= static_cast<UInt32>(TargetArch::AVX512F);
     return result;
 }
