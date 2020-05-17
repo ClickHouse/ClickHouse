@@ -1,0 +1,17 @@
+CREATE DATABASE test_01114_1\nENGINE = Atomic
+CREATE DATABASE test_01114_2\nENGINE = Atomic
+CREATE DATABASE test_01114_3\nENGINE = Ordinary
+test_01114_1	Atomic	store	metadata	test_01114_1
+test_01114_2	Atomic	store	metadata	test_01114_2
+test_01114_3	Ordinary	test_01114_3	metadata	test_01114_3
+20
+100
+CREATE TABLE test_01114_2.mt UUID \'00001114-0000-4000-8000-000000000002\'\n(\n    `n` UInt64\n)\nENGINE = MergeTree()\nPARTITION BY n % 5\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+mt	00001114-0000-4000-8000-000000000002	CREATE TABLE test_01114_2.mt UUID \'00001114-0000-4000-8000-000000000002\' (`n` UInt64) ENGINE = MergeTree() PARTITION BY n % 5 ORDER BY tuple() SETTINGS index_granularity = 8192
+20
+CREATE TABLE test_01114_1.mt UUID \'00001114-0000-4000-8000-000000000001\'\n(\n    `n` UInt64\n)\nENGINE = MergeTree()\nPARTITION BY n % 5\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE test_01114_2.mt UUID \'00001114-0000-4000-8000-000000000002\'\n(\n    `n` UInt64\n)\nENGINE = MergeTree()\nPARTITION BY n % 5\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+5
+dropped
+20	190
+30	435

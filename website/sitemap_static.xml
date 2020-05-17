@@ -5,23 +5,15 @@
   <changefreq>daily</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.tech/benchmark.html</loc>
-  <changefreq>daily</changefreq>
+  <loc>https://clickhouse.tech/benchmark/dbms/</loc>
+  <changefreq>weekly</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.tech/benchmark_hardware.html</loc>
-  <changefreq>daily</changefreq>
+  <loc>https://clickhouse.tech/benchmark/hardware/</loc>
+  <changefreq>weekly</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.tech/tutorial.html</loc>
-  <changefreq>daily</changefreq>
-</url>
-<url>
-  <loc>https://clickhouse.tech/blog/en</loc>
-  <changefreq>daily</changefreq>
-</url>
-<url>
-  <loc>https://clickhouse.tech/blog/ru</loc>
+  <loc>https://clickhouse.tech/codebrowser/html_report/ClickHouse/index.html</loc>
   <changefreq>daily</changefreq>
 </url>
 </urlset>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <sstream>
-#include <ostream>
 
 #include <mysqlxx/UseQueryResult.h>
 #include <mysqlxx/StoreQueryResult.h>
@@ -28,7 +27,7 @@ namespace mysqlxx
   *
   * Внимание! Один объект запроса можно использовать только из одного потока.
   */
-class Query : public std::ostream
+class Query
 {
 public:
     Query(Connection * conn_, const std::string & query_string = "");
@@ -64,9 +63,21 @@ public:
         return query_buf.str();
     }
 
+    auto rdbuf() const
+    {
+        return query_buf.rdbuf();
+    }
+
+    template <typename T>
+    inline Query & operator<< (T && x)
+    {
+        query_buf << std::forward<T>(x);
+        return *this;
+    }
+
 private:
     Connection * conn;
-    std::stringbuf query_buf;
+    std::ostringstream query_buf;
 
     void executeImpl();
 };
