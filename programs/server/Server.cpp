@@ -923,11 +923,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             create_server("grpc_port", [&](UInt16 port)
-             {   
-                 Poco::Net::SocketAddress server_address(listen_host, port);
-                 gRPCServers.emplace_back(new GRPCServer(server_address.toString(), *this));
-                 LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
-             });
+            {   
+                Poco::Net::SocketAddress server_address(listen_host, port);
+                gRPCServers.emplace_back(new GRPCServer(server_address.toString(), *this));
+                LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
+            });
 
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
@@ -950,10 +950,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
-        for (auto & server : gRPCServers) {
-            if (server) {
+        for (auto & server : gRPCServers)
+        {
+            if (server)
                 server_pool.start(*server);
-            }
         }
 
         {
@@ -991,10 +991,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 server->stop();
                 current_connections += server->currentConnections();
             }
-            for (auto & server : gRPCServers) {
-                if (server) {
+            for (auto & server : gRPCServers)
+            {
+                if (server)
                     server->stop();
-                }
             }
 
             LOG_INFO(log,

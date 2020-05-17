@@ -10,17 +10,23 @@
 #include <grpc++/security/credentials.h>
 #include "GrpcConnection.grpc.pb.h"
 
-class GRPCClient {
+class GRPCClient
+{
     public:
         explicit GRPCClient(std::shared_ptr<grpc::Channel> channel)
-            : stub_(GRPCConnection::GRPC::NewStub(channel)) {}
+            : stub_(GRPCConnection::GRPC::NewStub(channel))
+            {}
          std::string Query(const GRPCConnection::User& userInfo,
                             const std::string& query,
-                            std::vector<std::string> insert_data = {}) {
+                            std::vector<std::string> insert_data = {})
+         {
             GRPCConnection::QueryRequest request;
             grpc::Status status;
             GRPCConnection::QueryResponse reply;
             grpc::ClientContext context;
+            auto deadline = std::chrono::system_clock::now() + std::chrono::milliseconds(10000);
+            // context.set_deadline(deadline);
+
             auto user = std::make_unique<GRPCConnection::User>(userInfo);
             auto querySettigs = std::make_unique<GRPCConnection::QuerySettings>();
             int id = rand();
@@ -47,7 +53,8 @@ class GRPCClient {
             auto write = [&reply, &reader, &insert_data]()
             {
                 GRPCConnection::QueryRequest request_insert;
-                for (const auto& data : insert_data) {                
+                for (const auto& data : insert_data)
+                {                
                     request_insert.set_insert_data(data);
                     if(reply.exception_occured().empty())
                     {
@@ -68,8 +75,8 @@ class GRPCClient {
             std::thread write_thread(write);
             write_thread.detach();
 
-            
-            while (reader->Read(&reply)) {
+            while (reader->Read(&reply))
+            {
 
                 if (!reply.output().empty())
                 {
@@ -99,7 +106,8 @@ class GRPCClient {
                 }
             }
 
-            if (status.ok() && reply.exception_occured().empty()) {
+            if (status.ok() && reply.exception_occured().empty())
+            {
                 return "";
             } else if (status.ok() && !reply.exception_occured().empty()) {
                 return reply.exception_occured();
@@ -117,7 +125,6 @@ int main(int argc, char** argv) {
     userInfo1.set_user("default");
     userInfo1.set_password("");
     userInfo1.set_quota("default");
-
 
     std::cout << "Try: " << argv[1] << std::endl;
     grpc::ChannelArguments ch_args;
@@ -158,7 +165,6 @@ int main(int argc, char** argv) {
         std::cout << client.Query(userInfo1, "SELECT sum(x), y FROM tabl GROUP BY y WITH TOTALS") << std::endl;
         std::cout << client.Query(userInfo1, "DROP TABLE tabl") << std::endl;
     }
-    
 
     return 0;
 }

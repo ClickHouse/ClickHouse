@@ -44,9 +44,14 @@ finally:
                 query_info = GrpcConnection_pb2.QuerySettings(query=query, query_id='123', insert_data=False, settings={'default_format':'TabSeparated'})
                 yield GrpcConnection_pb2.QueryRequest(user_info=user_info, query_info=query_info)
             
-            for response in stub.Query(write_query()):
-                output += response.output.split()
-                totals += response.totals.split()
+            try:
+                for response in stub.Query(write_query(), 10.0):
+                    output += response.output.split()
+                    totals += response.totals.split()
+            except grpc.RpcError as e: #retry if no conection
+                for response in stub.Query(write_query(), 10.0):
+                    output += response.output.split()
+                    totals += response.totals.split()
         if mode == "output":
             return output
         elif mode == "totals":

@@ -1,22 +1,20 @@
 #include "GRPCHandler.h"
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/executeQuery.h>
 #include <ext/scope_guard.h>
 #include <common/getFQDNOrHostName.h>
-#include <Common/SettingsChanges.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ParserQuery.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <Common/CurrentThread.h>
-#include <IO/copyData.h>
-#include <IO/ConcatReadBuffer.h>
+#include <Common/SettingsChanges.h>
 #include <DataStreams/copyData.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Interpreters/executeQuery.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Storages/IStorage.h>
 
 using GRPCConnection::QueryRequest;
@@ -33,12 +31,65 @@ namespace ErrorCodes
     extern const int NO_DATA_TO_INSERT;
 }
 
-std::string ParseGrpcPeer(const grpc::ServerContext& context_) {
+std::string ParseGrpcPeer(const grpc::ServerContext& context_)
+{
     String info = context_.peer();
     return info.substr(info.find(":") + 1);
 }
 
-void CallDataQuery::ParseQuery() {
+void CallDataQuery::respond()
+{
+   try
+   {
+        switch(status)
+        {
+            case START_QUERY:
+            {
+                new CallDataQuery(service, notification_cq, new_call_cq, iServer, log);
+                status = PARSE_QUERY;
+                responder.Read(&request, (void*)this);
+                break;
+            }
+            case PARSE_QUERY:
+            {
+                ParseQuery();
+                ParseData();
+                break;
+            }
+            case READ_DATA:
+            {
+                ReadData();
+                break;
+            }
+            case PROGRESS:
+            {
+                ProgressQuery();
+                break;
+            }
+            case FINISH_QUERY:
+            {
+                delete this;
+            }
+        }
+                  
+    } 
+    catch(...)
+    {
+        if (executor)
+            executor->cancel();
+        io.onException();
+        
+        tryLogCurrentException(log);
+        std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
+        int exception_code = getCurrentExceptionCode();
+        response.set_exception_occured(exception_message);
+        status = FINISH_QUERY;
+        responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), (void*)this);
+    }
+}
+
+void CallDataQuery::ParseQuery()
+{
     LOG_TRACE(log, "Process query");
     
     Poco::Net::SocketAddress user_adress(ParseGrpcPeer(gRPCcontext));
@@ -92,7 +143,8 @@ void CallDataQuery::ParseQuery() {
     client_info.initial_address = client_info.current_address;
 }       
 
-void CallDataQuery::ParseData() {
+void CallDataQuery::ParseData()
+{
     LOG_TRACE(log, "ParseData");
     const char * begin = request.query_info().query().data();
     const char * end = begin + request.query_info().query().size();
@@ -110,7 +162,8 @@ void CallDataQuery::ParseData() {
     }
     String query(begin, query_end);
     io = executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
-    if (io.out) {
+    if (io.out)
+    {
 
         if (!insert_query || !(insert_query->data || request.query_info().insert_data() || !request.insert_data().empty()))
         {
@@ -150,10 +203,10 @@ void CallDataQuery::ParseData() {
                 res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, *query_context);
         }
         io.out->writePrefix();
-        while(auto block = res_stream->read()) {
+        while(auto block = res_stream->read())
             io.out->write(block);
-        }
-        if (request.query_info().insert_data()) {
+        if (request.query_info().insert_data())
+        {
             status = READ_DATA;
             responder.Read(&request, (void*)this);
             return;
@@ -163,12 +216,15 @@ void CallDataQuery::ParseData() {
 
     ExecuteQuery();
 }
-void CallDataQuery::ReadData() {
-    LOG_TRACE(log, "Read data" << request.insert_data() << " dsdc");
-    if (request.insert_data().empty()) {
+void CallDataQuery::ReadData()
+{
+    if (request.insert_data().empty())
+    {
         io.out->writeSuffix();
         ExecuteQuery();
-    } else {
+    }
+    else
+    {
         const char * begin = request.insert_data().data();
         const char * end = begin + request.insert_data().size();
         ReadBufferFromMemory data_in(begin, end - begin);
@@ -179,9 +235,11 @@ void CallDataQuery::ReadData() {
         responder.Read(&request, (void*)this);
     }
 }
-void CallDataQuery::ExecuteQuery(){
-    LOG_TRACE(log, "ExecuteQuery");
-    if (io.pipeline.initialized()) {
+void CallDataQuery::ExecuteQuery()
+{
+    LOG_TRACE(log, "Execute Query");
+    if (io.pipeline.initialized())
+    {
         auto & header = io.pipeline.getHeader();
         auto thread_group = CurrentThread::getGroup();
 
@@ -204,18 +262,19 @@ void CallDataQuery::ExecuteQuery(){
         query_watch.start();
         progress_watch.start();
         ProgressQuery();
-    } else {
+    }
+    else
+    {
         FinishQuery();
     }
 }
 
-void CallDataQuery::ProgressQuery() {
-    LOG_TRACE(log, "Proccess");
+void CallDataQuery::ProgressQuery()
+{
     status = PROGRESS;
     bool sent = false;
     while (!lazy_format->isFinished() && !exception)
     {
-        
         if (auto block = lazy_format->getBlock(query_watch.elapsedMilliseconds()))
         {
             query_watch.restart();
@@ -224,7 +283,10 @@ void CallDataQuery::ProgressQuery() {
                 sent = sendData(block); 
                 break;
             }
-        } 
+        }
+        //To make detached thread do something
+        LOG_TRACE(log, "Progress Query");
+
         // interactive_delay in miliseconds
         if (progress_watch.elapsedMilliseconds() >= interactive_delay)
         {
@@ -233,6 +295,7 @@ void CallDataQuery::ProgressQuery() {
             break;
         }
     }
+    
     if ((lazy_format->isFinished() || exception) && !sent)
     {
         lazy_format->finish();
@@ -240,10 +303,13 @@ void CallDataQuery::ProgressQuery() {
         SendDetails();
     }
 }
-void CallDataQuery::SendDetails() {
+void CallDataQuery::SendDetails()
+{
     bool sent = false;
-    while (!sent) {
-        switch( detailsStatus ) {
+    while (!sent)
+    {
+        switch(detailsStatus)
+        {
             case SEND_TOTALS:
             {
                 sent = sendTotals(lazy_format->getTotals());
@@ -265,15 +331,18 @@ void CallDataQuery::SendDetails() {
     }
 }
 
-void CallDataQuery::FinishQuery() {
+void CallDataQuery::FinishQuery()
+{
     io.onFinish();
     query_scope->logPeakMemoryUsage();
     status = FINISH_QUERY;
     out->finalize();
 }
 
-bool CallDataQuery::sendData(const Block & block) {
-    out->setResponse([](const String& buffer) {
+bool CallDataQuery::sendData(const Block & block)
+{
+    out->setResponse([](const String& buffer)
+                    {
                          QueryResponse tmp_response;
                          tmp_response.set_output(buffer);
                          return tmp_response;
@@ -285,21 +354,24 @@ bool CallDataQuery::sendData(const Block & block) {
     return true;
 }
 
-bool CallDataQuery::sendProgress() {
-    auto grpcProgress = [](const String& buffer) {
-        auto in = std::make_unique<ReadBufferFromString>(buffer);
-        ProgressValues progressValues;
-        progressValues.read(*in, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
-        GRPCConnection::Progress progress;
-        progress.set_read_rows(progressValues.read_rows);
-        progress.set_read_bytes(progressValues.read_bytes);
-        progress.set_total_rows_to_read(progressValues.total_rows_to_read);
-        progress.set_written_rows(progressValues.written_rows);
-        progress.set_written_bytes(progressValues.written_bytes);
-        return progress;
-    };
+bool CallDataQuery::sendProgress()
+{
+    auto grpcProgress = [](const String& buffer)
+        {
+            auto in = std::make_unique<ReadBufferFromString>(buffer);
+            ProgressValues progressValues;
+            progressValues.read(*in, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
+            GRPCConnection::Progress progress;
+            progress.set_read_rows(progressValues.read_rows);
+            progress.set_read_bytes(progressValues.read_bytes);
+            progress.set_total_rows_to_read(progressValues.total_rows_to_read);
+            progress.set_written_rows(progressValues.written_rows);
+            progress.set_written_bytes(progressValues.written_bytes);
+            return progress;
+        };
 
-    out->setResponse([&grpcProgress](const String& buffer) {
+    out->setResponse([&grpcProgress](const String& buffer)
+                    {
                         QueryResponse tmp_response;
                         auto progress = std::make_unique<GRPCConnection::Progress>(grpcProgress(buffer));
                         tmp_response.set_allocated_progress(progress.release());
@@ -311,14 +383,16 @@ bool CallDataQuery::sendProgress() {
     return true;
 }
 
-bool CallDataQuery::sendTotals(const Block & totals) {
-    if (totals) {
-        out->setResponse([](const String& buffer) {
+bool CallDataQuery::sendTotals(const Block & totals)
+{
+    if (totals)
+    {
+        out->setResponse([](const String& buffer)
+                    {
                          QueryResponse tmp_response;
                          tmp_response.set_totals(buffer);
                          return tmp_response;
                     });
-        //TODO IF NOT JSON*, TabSeparated*, Pretty*
         auto my_block_out_stream = query_context->getOutputFormat(format_output, *out, totals);
         my_block_out_stream->write(totals);
         my_block_out_stream->flush();
@@ -328,15 +402,17 @@ bool CallDataQuery::sendTotals(const Block & totals) {
     return false;
 }
 
-bool CallDataQuery::sendExtremes(const Block & extremes) {
-    if (extremes) {
-        out->setResponse([](const String& buffer) {
+bool CallDataQuery::sendExtremes(const Block & extremes)
+{
+    if (extremes)
+    {
+        out->setResponse([](const String& buffer)
+                    {
                          QueryResponse tmp_response;
                          tmp_response.set_extremes(buffer);
                          return tmp_response;
                     });
-        //TODO IF NOT JSON*, TabSeparated*, Pretty*
-        auto my_block_out_stream = context.getOutputFormat(format_output, *out, extremes);
+        auto my_block_out_stream = query_context->getOutputFormat(format_output, *out, extremes);
         my_block_out_stream->write(extremes);
         my_block_out_stream->flush();
         out->next();

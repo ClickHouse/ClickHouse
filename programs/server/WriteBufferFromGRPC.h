@@ -24,7 +24,8 @@ protected:
     std::function<QueryResponse(const String& buffer)> setResposeDetails;
 
 
-    void nextImpl() override {
+    void nextImpl() override
+    {
         progress = true;
         
         String buffer(working_buffer.begin(), working_buffer.begin() + offset());
@@ -33,22 +34,29 @@ protected:
     }
 
 public:
-    WriteBufferFromGRPC(grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_) : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) {}
+    WriteBufferFromGRPC(grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_)
+        : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) 
+        {}
 
     ~WriteBufferFromGRPC() override {}
-    bool onProgress() {
+    bool onProgress()
+    {
         return progress;
     }
-    bool isFinished() {
+    bool isFinished()
+    {
         return finished;
     }
-    void setFinish(bool fl) {
+    void setFinish(bool fl)
+    {
         finished = fl;
     }
-    void setResponse(std::function<QueryResponse(const String& buffer)> function) {
+    void setResponse(std::function<QueryResponse(const String& buffer)> function)
+    {
         setResposeDetails = function;
     }
-    void finalize() override {
+    void finalize() override
+    {
         progress = false;
         finished = true;
         responder->Finish(grpc::Status(), tag);
