@@ -99,7 +99,7 @@ public:
     template <typename Source>
     TwoLevelHashTable(const Source & src)
     {
-        if constexpr(Source::IS_TWO_LEVEL)
+        if constexpr (Source::IS_TWO_LEVEL)
         {
             for (size_t i = 0; i < Source::NUM_BUCKETS; ++i)
                 initFromSingleLevel(src.impls[i]);

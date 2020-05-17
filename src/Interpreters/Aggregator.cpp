@@ -89,6 +89,16 @@ void AggregatedDataVariants::convertToTwoLevel()
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
 
     #undef M
+    #define M(NAME) \
+        case Type::NAME ## _shared: \
+            NAME = std::make_unique<decltype(NAME)::element_type>(*(NAME ## _shared)); \
+            (NAME ## _shared).reset(); \
+            type = Type::NAME; \
+            break;
+
+        APPLY_FOR_VARIANTS_TWO_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+
+    #undef M
 
         default:
             throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
@@ -1986,12 +1996,36 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
         }
     }
 
+    /// This will work slowly if the sizes of two-level and two-level shared are approximately equal.
+    if (has_at_least_one_two_level && has_at_least_one_two_level_shared)
+    {
+        size_t shared_size = 0;
+        size_t two_level_size = 0;
+        for (auto & variant : non_empty_data)
+            if (variant->isTwoLevelShared())
+                shared_size += variant->sizeWithoutOverflowRow();
+            else if (variant->isTwoLevel())
+                two_level_size += variant->sizeWithoutOverflowRow();
+
+        LOG_TRACE(log, "Shared size: " << shared_size << ", two-level size: " << two_level_size << ".");
+        if (shared_size > two_level_size)
+        {
+            LOG_TRACE(log, "Convert all two-level methods to two-level shared.");
+            has_at_least_one_two_level = false;
+        }
+        else
+        {
+            LOG_TRACE(log, "Convert all two-level shared methods to two-level.");
+            has_at_least_one_two_level_shared = false;
+        }
+    }
+
     if (has_at_least_one_two_level || has_at_least_one_two_level_shared)
         for (auto & variant : non_empty_data)
         {
             if (has_at_least_one_two_level_shared && !variant->isTwoLevelShared())
                 variant->convertToTwoLevelShared();
-            else if (has_at_least_one_two_level && !variant->isTwoLevel())
+            else if (has_at_least_one_two_level && (!variant->isTwoLevel() || variant->isTwoLevelShared()))
                 variant->convertToTwoLevel();
         }
 
