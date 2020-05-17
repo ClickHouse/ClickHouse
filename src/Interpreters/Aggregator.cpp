@@ -91,7 +91,7 @@ void AggregatedDataVariants::convertToTwoLevel()
     #undef M
     #define M(NAME) \
         case Type::NAME ## _shared: \
-            NAME = std::make_unique<decltype(NAME)::element_type>(*(NAME ## _shared)); \
+            (NAME) = std::make_unique<decltype(NAME)::element_type>(*(NAME ## _shared)); \
             (NAME ## _shared).reset(); \
             type = Type::NAME; \
             break;
