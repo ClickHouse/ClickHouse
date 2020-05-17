@@ -80,23 +80,28 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
-    T NO_SANITIZE_UNDEFINED getPopulation() const
+    T getPopulation() const
     {
+        if (m[0] == 0)
+            return std::numeric_limits<T>::quiet_NaN();
+
         /// Due to numerical errors, the result can be slightly less than zero,
         /// but it should be impossible. Trim to zero.
 
         return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / m[0]);
     }
 
-    T NO_SANITIZE_UNDEFINED getSample() const
+    T getSample() const
     {
         if (m[0] <= 1)
             return std::numeric_limits<T>::quiet_NaN();
         return std::max(T{}, (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1));
     }
 
-    T NO_SANITIZE_UNDEFINED getMoment3() const
+    T getMoment3() const
     {
+        if (m[0] == 0)
+            return std::numeric_limits<T>::quiet_NaN();
         // to avoid accuracy problem
         if (m[0] == 1)
             return 0;
@@ -107,8 +112,10 @@ struct VarMoments
         ) / m[0];
     }
 
-    T NO_SANITIZE_UNDEFINED getMoment4() const
+    T getMoment4() const
     {
+        if (m[0] == 0)
+            return std::numeric_limits<T>::quiet_NaN();
         // to avoid accuracy problem
         if (m[0] == 1)
             return 0;
