@@ -109,7 +109,7 @@ struct Stats
 
 }
 
-bool operator == (const Stats &one, const Stats& other) noexcept
+bool operator == (const ga::Stats &one, const ga::Stats& other) noexcept
 {
     return !memcmp(&one, &other, sizeof(Stats));
 }
