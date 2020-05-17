@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: ALTER
 ---
@@ -26,7 +26,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
 
 下面详细描述这些动作。
 
@@ -38,7 +38,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 
 将一个新列添加到表中，并指定 `name`, `type`, [`codec`](create.md#codecs) 和 `default_expr` （请参阅部分 [默认表达式](create.md#create-default-values)).
 
-如果 `IF NOT EXISTS` 如果列已经存在，则查询不会返回错误。 如果您指定 `AFTER name_after` （另一列的名称），该列被添加在表列表中指定的一列之后。 否则，该列将添加到表的末尾。 请注意，没有办法将列添加到表的开头。 为了一系列的行动, `name_after` 可将该名称一栏，加入一个以前的行动。
+如果 `IF NOT EXISTS` 如果列已经存在，则查询不会返回错误。 如果您指定 `AFTER name_after` （另一列的名称），该列被添加在表列表中指定的一列之后。 否则，该列将添加到表的末尾。 请注意，没有办法将列添加到表的开头。 为了一系列的行动, `name_after` 可以是在以前的操作之一中添加的列的名称。
 
 添加列只是更改表结构，而不对数据执行任何操作。 数据不会出现在磁盘上后 `ALTER`. 如果从表中读取某一列的数据缺失，则将使用默认值填充该列（如果存在默认表达式，则执行默认表达式，或使用零或空字符串）。 合并数据部分后，该列将出现在磁盘上（请参阅 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)).
 
@@ -206,10 +206,9 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` 目录和忘记它。
 -   [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` 目录到表。
--   [REPLACE PARTITION](#alter_replace-partition) -将数据分区从一个表复制到另一个表。
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) -将数据分区从一个表复制到另一个表并替换。
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition)-将数据分区从一个表移动到另一个表。
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition)-将数据分区从一个表移动到另一个表。
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) -重置分区中指定列的值。
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) -重置分区中指定的二级索引。
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -501,5 +500,103 @@ For\*MergeTree表的突变通过重写整个数据部分来执行。 没有原�
 Mutation查询在添加mutation条目后立即返回（如果将复制的表复制到ZooKeeper，则将非复制的表复制到文件系统）。 突变本身使用系统配置文件设置异步执行。 要跟踪突变的进度，您可以使用 [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) 桌子 即使重新启动ClickHouse服务器，成功提交的突变仍将继续执行。 一旦提交，没有办法回滚突变，但如果突变由于某种原因被卡住，可以使用 [`KILL MUTATION`](misc.md#kill-mutation) 查询。
 
 已完成突变的条目不会立即删除（保留条目的数量由 `finished_mutations_to_keep` 存储引擎参数）。 旧的突变条目将被删除。
+
+## ALTER USER {#alter-user-statement}
+
+更改ClickHouse用户帐户.
+
+### 语法 {#alter-user-syntax}
+
+``` sql
+ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### 产品描述 {#alter-user-dscr}
+
+使用 `ALTER USER` 你必须有 [ALTER USER](grant.md#grant-access-management) 特权
+
+### 例 {#alter-user-examples}
+
+将授予的角色设置为默认值:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+如果以前未向用户授予角色，ClickHouse将引发异常。
+
+将所有授予的角色设置为默认值:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+如果将来将某个角色授予某个用户，它将自动成为默认值。
+
+将所有授予的角色设置为默认值，除非 `role1` 和 `role2`:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+## ALTER ROLE {#alter-role-statement}
+
+更改角色。
+
+### 语法 {#alter-role-syntax}
+
+``` sql
+ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+更改行策略。
+
+### 语法 {#alter-row-policy-syntax}
+
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER QUOTA {#alter-quota-statement}
+
+更改配额。
+
+### 语法 {#alter-quota-syntax}
+
+``` sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+
+更改配额。
+
+### 语法 {#alter-settings-profile-syntax}
+
+``` sql
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
 
 [原始文章](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

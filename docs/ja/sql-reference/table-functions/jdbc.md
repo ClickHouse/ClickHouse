@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: jdbc
 ---
@@ -9,8 +9,8 @@ toc_title: jdbc
 
 `jdbc(jdbc_connection_uri, schema, table)` -JDBCドライバ経由で接続されたテーブルを返します。
 
-このテーブル関数は、個別の `clickhouse-jdbc-bridge` 実行するプログラム。
-でnullable種類に基づくddlのリモートテーブルが照会される).
+このテーブル関数には、別々の `clickhouse-jdbc-bridge` 実行するプログラム。
+Null許容型をサポートします(照会されるリモートテーブルのDDLに基づきます)。
 
 **例**
 

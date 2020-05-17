@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_priority: 39
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 41
 toc_title: Otro
 ---
 
@@ -113,7 +113,65 @@ Si `IF EXISTS` se especifica, no devuelve un error si la tabla no existe o la ba
 Elimina el diccionario.
 Si `IF EXISTS` se especifica, no devuelve un error si la tabla no existe o la base de datos no existe.
 
-## EXISTS {#exists}
+## DROP USER {#drop-user-statement}
+
+Elimina un usuario.
+
+### Sintaxis {#drop-user-syntax}
+
+``` sql
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROLE {#drop-role-statement}
+
+Elimina un rol.
+
+El rol eliminado se revoca de todas las entidades donde se concedió.
+
+### Sintaxis {#drop-role-syntax}
+
+``` sql
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP ROW POLICY {#drop-row-policy-statement}
+
+Elimina una directiva de fila.
+
+La directiva de filas eliminadas se revoca de todas las entidades a las que se asignó.
+
+### Sintaxis {#drop-row-policy-syntax}
+
+``` sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP QUOTA {#drop-quota-statement}
+
+Elimina una cuota.
+
+La cuota eliminada se revoca de todas las entidades a las que se asignó.
+
+### Sintaxis {#drop-quota-syntax}
+
+``` sql
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
+
+Elimina una cuota.
+
+La cuota eliminada se revoca de todas las entidades a las que se asignó.
+
+### Sintaxis {#drop-settings-profile-syntax}
+
+``` sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
+```
+
+## EXISTS {#exists-statement}
 
 ``` sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -121,7 +179,7 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT 
 
 Devuelve una sola `UInt8`columna -type, que contiene el valor único `0` si la tabla o base de datos no existe, o `1` si la tabla existe en la base de datos especificada.
 
-## KILL QUERY {#kill-query}
+## KILL QUERY {#kill-query-statement}
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -152,7 +210,7 @@ La respuesta contiene el `kill_status` columna, que puede tomar los siguientes v
 
 1.  ‘finished’ – The query was terminated successfully.
 2.  ‘waiting’ – Waiting for the query to end after sending it a signal to terminate.
-3.  The other values ​​explain why the query can’t be stopped.
+3.  The other values ​​explain why the query can't be stopped.
 
 Una consulta de prueba (`TEST`) sólo comprueba los derechos del usuario y muestra una lista de consultas para detener.
 
@@ -229,7 +287,55 @@ SET profile = 'profile-name-from-the-settings-file'
 
 Para obtener más información, consulte [Configuración](../../operations/settings/settings.md).
 
-## TRUNCATE {#truncate}
+## SET ROLE {#set-role-statement}
+
+Activa roles para el usuario actual.
+
+### Sintaxis {#set-role-syntax}
+
+``` sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+## SET DEFAULT ROLE {#set-default-role-statement}
+
+Establece roles predeterminados para un usuario.
+
+Los roles predeterminados se activan automáticamente al iniciar sesión del usuario. Puede establecer como predeterminado sólo los roles concedidos anteriormente. Si el rol no se concede a un usuario, ClickHouse produce una excepción.
+
+### Sintaxis {#set-default-role-syntax}
+
+``` sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+### Ejemplos {#set-default-role-examples}
+
+Establecer varios roles predeterminados para un usuario:
+
+``` sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+Establezca todos los roles concedidos como predeterminados para un usuario:
+
+``` sql
+SET DEFAULT ROLE ALL TO user
+```
+
+Borrar roles predeterminados de un usuario:
+
+``` sql
+SET DEFAULT ROLE NONE TO user
+```
+
+Establezca todos los roles concedidos como predeterminados excepto algunos de ellos:
+
+``` sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```
+
+## TRUNCATE {#truncate-statement}
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]

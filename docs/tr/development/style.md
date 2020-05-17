@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 68
 toc_title: "C++ kodu nas\u0131l yaz\u0131l\u0131r"
 ---
 
-# C++ Kodu nasıl yazılır {#how-to-write-c-code}
+# C++ kodu nasıl yazılır {#how-to-write-c-code}
 
 ## Genel Öneriler {#general-recommendations}
 
@@ -88,7 +88,7 @@ Gerekirse, operatör bir sonraki satıra sarılabilir. Bu durumda, önündeki of
 
 **11.** Tekli operatörleri ayırmak için boşluk kullanmayın (`--`, `++`, `*`, `&`, …) from the argument.
 
-**12.** Virgülden sonra bir boşluk koyun, ancak ondan önce değil. Aynı kural, bir içindeki noktalı virgül için de geçerlidir `for` ifade.
+**12.** Virgülden sonra bir boşluk koyun, ancak ondan önce değil. Aynı kural, bir içindeki noktalı virgül için de geçerlidir `for` İfade.
 
 **13.** Ayırmak için boşluk kullanmayın `[]` operatör.
 
@@ -270,7 +270,7 @@ void executeQuery(
 
 **8.** Tek satırlı yorumlar üç eğik çizgi ile başlar: `///` ve çok satırlı yorumlar ile başlar `/**`. Bu yorumlar dikkate alınır “documentation”.
 
-Not: bu yorumlardan belgeler oluşturmak için Doxygen kullanabilirsiniz. Ancak DOXYGEN genellikle kullanılmaz, çünkü IDE’DEKİ kodda gezinmek daha uygundur.
+Not: bu yorumlardan belgeler oluşturmak için Doxygen kullanabilirsiniz. Ancak DOXYGEN genellikle kullanılmaz, çünkü IDE'DEKİ kodda gezinmek daha uygundur.
 
 **9.** Çok satırlı açıklamaların başında ve sonunda (çok satırlı bir açıklamayı kapatan satır hariç) boş satırları olmamalıdır.
 
@@ -396,7 +396,7 @@ Bağımsız değişken yapıcı gövdesinde kullanılmazsa, alt çizgi soneki at
 timer (not m_timer)
 ```
 
-**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL\_CAPS da kabul edilebilir. Eğer… `enum` yerel olmayan, bir `enum class`.
+**14.** Bir de SAB theitler için `enum`, büyük harfle CamelCase kullanın. ALL\_CAPS da kabul edilebilir. Eğer... `enum` yerel olmayan, bir `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -410,7 +410,7 @@ enum class CompressionMethod
 
     not Stroka
 
-**16.** Kısaltmalar iyi biliniyorsa kabul edilebilir (kısaltmanın anlamını Wikipedia’da veya bir arama motorunda kolayca bulabilirsiniz).
+**16.** Kısaltmalar iyi biliniyorsa kabul edilebilir (kısaltmanın anlamını Wikipedia'da veya bir arama motorunda kolayca bulabilirsiniz).
 
     `AST`, `SQL`.
 
@@ -656,13 +656,13 @@ Günlüğünde UTF-8 kodlamasını kullanın. Nadir durumlarda, günlüğünde A
 
 Kullanmayın `iostreams` uygulama performansı için kritik olan iç döngülerde (ve asla kullanmayın `stringstream`).
 
-Kullan… `DB/IO` kütüphane yerine.
+Kullan... `DB/IO` kütüphane yerine.
 
 **21.** Tarih ve zaman.
 
 Görmek `DateLUT` kitaplık.
 
-**22.** içermek.
+**22.** İçermek.
 
 Her zaman kullanın `#pragma once` korumaları dahil etmek yerine.
 
@@ -689,7 +689,7 @@ auto s = std::string{"Hello"};
 
 **26.** Sanal işlevler için yaz `virtual` temel sınıfta, ama yaz `override` yerine `virtual` soyundan gelen sınıflarda.
 
-## C++ ’ ın kullanılmayan özellikleri {#unused-features-of-c}
+## C++ ' ın kullanılmayan özellikleri {#unused-features-of-c}
 
 **1.** Sanal devralma kullanılmaz.
 
@@ -727,7 +727,7 @@ CPU komut seti, sunucularımız arasında desteklenen minimum kümedir. Şu anda
 
 **3.** Profilleme için kullanın `Linux Perf`, `valgrind` (`callgrind`), veya `strace -cf`.
 
-**4.** Kaynaklar Git’te.
+**4.** Kaynaklar Git'te.
 
 **5.** Montaj kullanımları `CMake`.
 
@@ -795,7 +795,7 @@ Yazar yousan `std::memcpy` yerine `memcpy` her yerde, o zaman `memmem` olarak `s
 
 Yine de, hala kullanabilirsiniz `std::` eğer tercih ederseniz edin.
 
-**3.** Aynı olanlar standart C++ kütüphanesinde mevcut olduğunda C’den işlevleri kullanma.
+**3.** Aynı olanlar standart C++ kütüphanesinde mevcut olduğunda C'den işlevleri kullanma.
 
 Daha verimli ise bu kabul edilebilir.
 

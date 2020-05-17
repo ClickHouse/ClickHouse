@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 50
 toc_title: Enum
 ---
@@ -89,7 +89,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 └─────────────────────────────────────────────────────┘
 ```
 
-## Genel Kurallar Ve kullanım {#general-rules-and-usage}
+## Genel Kurallar ve kullanım {#general-rules-and-usage}
 
 Değerlerin her birine aralıkta bir sayı atanır `-128 ... 127` için `Enum8` veya aralık inta `-32768 ... 32767` için `Enum16`. Tüm dizeler ve sayılar farklı olmalıdır. Boş bir dize izin verilir. Bu tür belirtilmişse (bir tablo tanımında), sayılar rasgele bir sırada olabilir. Ancak, sipariş önemli değil.
 
@@ -124,7 +124,7 @@ Enum değerleri sayılarla karşılaştırılamaz. Enums sabit bir dize ile kar�
 Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum.
 Ancak, Enum doğal bir `toString` dize değerini döndüren işlev.
 
-Enum değerleri de kullanarak sayısal türlere dönüştürülebilir `toT` fonksiyon, burada t sayısal bir türdür. T enum’un temel sayısal türüne karşılık geldiğinde, bu dönüşüm sıfır maliyetlidir.
+Enum değerleri de kullanarak sayısal türlere dönüştürülebilir `toT` fonksiyon, burada t sayısal bir türdür. T enum'un temel sayısal türüne karşılık geldiğinde, bu dönüşüm sıfır maliyetlidir.
 Enum türü, yalnızca değer kümesi değiştirilirse, alter kullanılarak maliyet olmadan değiştirilebilir. Her iki ekleme ve Alter kullanarak Enum üyeleri kaldırmak mümkündür (kaldırma yalnızca kaldırılan değer tabloda hiç kullanılmadıysa güvenlidir). Bir koruma olarak, önceden tanımlanmış bir Enum üyesinin sayısal değerini değiştirmek bir istisna atar.
 
 ALTER kullanarak, bir Enum8 için bir Enum16 veya tam tersi, Int8 için Int16 değiştirme gibi değiştirmek mümkündür.

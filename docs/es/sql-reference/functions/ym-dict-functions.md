@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: Trabajando con Yandex.Diccionarios de Metrica
 ---
 
-# Funciones Para Trabajar Con Yandex.Metrica, Diccionarios {#functions-for-working-with-yandex-metrica-dictionaries}
+# Funciones para trabajar con Yandex.Diccionarios de Metrica {#functions-for-working-with-yandex-metrica-dictionaries}
 
 Para que las funciones a continuación funcionen, la configuración del servidor debe especificar las rutas y direcciones para obtener todo el Yandex.Diccionarios Metrica. Los diccionarios se cargan en la primera llamada de cualquiera de estas funciones. Si las listas de referencia no se pueden cargar, se lanza una excepción.
 
@@ -102,12 +102,12 @@ LIMIT 15
 Convierte una región en un país. En todos los demás sentidos, esta función es la misma que ‘regionToCity’.
 Ejemplo: `regionToCountry(toUInt32(213)) = 225` convierte Moscú (213) a Rusia (225).
 
-### Aquí está El código De identificación.\]) {#regiontocontinentid-geobase}
+### Aquí está el código de identificación.\]) {#regiontocontinentid-geobase}
 
 Convierte una región en un continente. En todos los demás sentidos, esta función es la misma que ‘regionToCity’.
 Ejemplo: `regionToContinent(toUInt32(213)) = 10001` convierte Moscú (213) a Eurasia (10001).
 
-### Nuestra misiÃ³n Es Brindarle Un Servicio De Calidad y Confianza a Nuestros Clientes.) {#regiontotopcontinent-regiontotopcontinent}
+### Nuestra misiÃ³n es brindarle un servicio de calidad y confianza a nuestros clientes.) {#regiontotopcontinent-regiontotopcontinent}
 
 Encuentra el continente más alto en la jerarquía de la región.
 
@@ -129,7 +129,7 @@ regionToTopContinent(id[, geobase]);
 
 Tipo: `UInt32`.
 
-### Aquí está El código De identificación De La población.\]) {#regiontopopulationid-geobase}
+### Aquí está el código de identificación de la población.\]) {#regiontopopulationid-geobase}
 
 Obtiene la población de una región.
 La población se puede registrar en archivos con la geobase. Vea la sección “External dictionaries”.
@@ -141,14 +141,14 @@ En la geobase de Yandex, la población podría registrarse para las regiones sec
 Comprueba si un ‘lhs’ región pertenece a un ‘rhs’ regi. Devuelve un número UInt8 igual a 1 si pertenece, o 0 si no pertenece.
 The relationship is reflexive – any region also belongs to itself.
 
-### RegiónJerarquía (id\[, Geobase\]) {#regionhierarchyid-geobase}
+### RegiónJerarquía (id\[, geobase\]) {#regionhierarchyid-geobase}
 
 Accepts a UInt32 number – the region ID from the Yandex geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
 Ejemplo: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### ¿Cómo puedo hacerlo?\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn't exist, an empty string is returned.
 
 `ua` y `uk` ambos significan ucraniano.
 

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: Comparaison
 ---
@@ -26,7 +26,7 @@ Les chaînes sont comparées par octets. Une courte chaîne est plus petite que 
 
 ## notEquals, a ! opérateur= b et a \<\> b {#function-notequals}
 
-## moins, opérateur \< {#function-less}
+## moins, opérateur \<  {#function-less}
 
 ## de plus, \> opérateur {#function-greater}
 

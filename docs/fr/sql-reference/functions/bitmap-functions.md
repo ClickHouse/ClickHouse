@@ -1,23 +1,23 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: Bitmap
 ---
 
 # Fonctions De Bitmap {#bitmap-functions}
 
-Les fonctions Bitmap fonctionnent pour le calcul de la valeur de L’objet de deux bitmaps, il s’agit de renvoyer un nouveau bitmap ou une cardinalité tout en utilisant le calcul de la formule, tel que and, or, xor, and not, etc.
+Les fonctions Bitmap fonctionnent pour le calcul de la valeur de L'objet de deux bitmaps, il s'agit de renvoyer un nouveau bitmap ou une cardinalité tout en utilisant le calcul de la formule, tel que and, or, xor, and not, etc.
 
-Il existe 2 types de méthodes de construction pour L’objet Bitmap. L’un doit être construit par la fonction d’agrégation groupBitmap avec-State, l’autre doit être construit par L’objet Array. Il est également de convertir L’objet Bitmap en objet tableau.
+Il existe 2 types de méthodes de construction pour L'objet Bitmap. L'un doit être construit par la fonction d'agrégation groupBitmap avec-State, l'autre doit être construit par L'objet Array. Il est également de convertir L'objet Bitmap en objet tableau.
 
-RoaringBitmap est enveloppé dans une structure de données pendant le stockage réel des objets Bitmap. Lorsque la cardinalité est inférieure ou égale à 32, elle utilise Set objet. Lorsque la cardinalité est supérieure à 32, elle utilise l’objet RoaringBitmap. C’est pourquoi le stockage de faible cardinalité jeu est plus rapide.
+RoaringBitmap est enveloppé dans une structure de données pendant le stockage réel des objets Bitmap. Lorsque la cardinalité est inférieure ou égale à 32, elle utilise Set objet. Lorsque la cardinalité est supérieure à 32, elle utilise l'objet RoaringBitmap. C'est pourquoi le stockage de faible cardinalité jeu est plus rapide.
 
-Pour plus d’informations sur RoaringBitmap, voir: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
+Pour plus d'informations sur RoaringBitmap, voir: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
 ## bitmapBuild {#bitmap_functions-bitmapbuild}
 
-Construire un bitmap à partir d’un tableau entier non signé.
+Construire un bitmap à partir d'un tableau entier non signé.
 
 ``` sql
 bitmapBuild(array)
@@ -65,7 +65,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetInRange {#bitmap-functions-bitmapsubsetinrange}
 
-Retourne le sous-ensemble dans la plage spécifiée (n’inclut pas le range\_end).
+Retourne le sous-ensemble dans la plage spécifiée (n'inclut pas le range\_end).
 
 ``` sql
 bitmapSubsetInRange(bitmap, range_start, range_end)
@@ -167,7 +167,7 @@ Vérifie si deux bitmaps ont une intersection par certains éléments.
 bitmapHasAny(bitmap1, bitmap2)
 ```
 
-Si vous êtes sûr que `bitmap2` contient strictement un élément, envisagez d’utiliser le [bitmapContains](#bitmap_functions-bitmapcontains) fonction. Cela fonctionne plus efficacement.
+Si vous êtes sûr que `bitmap2` contient strictement un élément, envisagez d'utiliser le [bitmapContains](#bitmap_functions-bitmapcontains) fonction. Cela fonctionne plus efficacement.
 
 **Paramètre**
 
@@ -241,7 +241,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMin {#bitmapmin}
 
-Retrun la plus petite valeur de type UInt64 dans l’ensemble, UINT32\_MAX si l’ensemble est vide.
+Retrun la plus petite valeur de type UInt64 dans l'ensemble, UINT32\_MAX si l'ensemble est vide.
 
     bitmapMin(bitmap)
 
@@ -261,7 +261,7 @@ SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMax {#bitmapmax}
 
-Retrun la plus grande valeur de type UInt64 dans l’ensemble, 0 si l’ensemble est vide.
+Retrun la plus grande valeur de type UInt64 dans l'ensemble, 0 si l'ensemble est vide.
 
     bitmapMax(bitmap)
 
@@ -281,7 +281,7 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapTransform {#bitmaptransform}
 
-Transformer un tableau de valeurs d’une image à l’autre tableau de valeurs, le résultat est une nouvelle image.
+Transformer un tableau de valeurs d'une image à l'autre tableau de valeurs, le résultat est une nouvelle image.
 
     bitmapTransform(bitmap, from_array, to_array)
 

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
-toc_title: "\u30CC\u30EB\u53EF\u80FD\u306A\u5F15\u6570\u306E\u64CD\u4F5C"
+toc_title: "Null\u8A31\u5BB9\u5F15\u6570\u306E\u64CD\u4F5C"
 ---
 
-# Null可能な集計を操作するための関数 {#functions-for-working-with-nullable-aggregates}
+# Null許容集計を操作するための関数 {#functions-for-working-with-nullable-aggregates}
 
 ## isNull {#isnull}
 
@@ -22,9 +22,9 @@ isNull(x)
 **戻り値**
 
 -   `1` もし `x` は `NULL`.
--   `0` もし `x` はない `NULL`.
+-   `0` もし `x` ではない `NULL`.
 
-**例えば**
+**例**
 
 入力テーブル
 
@@ -62,9 +62,9 @@ isNotNull(x)
 **戻り値**
 
 -   `0` もし `x` は `NULL`.
--   `1` もし `x` はない `NULL`.
+-   `1` もし `x` ではない `NULL`.
 
-**例えば**
+**例**
 
 入力テーブル
 
@@ -89,7 +89,7 @@ SELECT x FROM t_null WHERE isNotNull(y)
 
 ## 合体 {#coalesce}
 
-左から右にチェックするかどうか `NULL` 引数が渡され、最初の非を返します-`NULL` 引数。
+左から右にチェックするかどうか `NULL` 引数が渡され、最初のnonを返します-`NULL` 引数。
 
 ``` sql
 coalesce(x,...)
@@ -97,16 +97,16 @@ coalesce(x,...)
 
 **パラメータ:**
 
--   非化合物タイプの任意の数のパラメーター。 すべてのパラメータに対応していることが必要となるデータ型になります。
+-   非複合型の任意の数のパラメーター。 すべてのパラメータに対応していることが必要となるデータ型になります。
 
 **戻り値**
 
 -   最初の非-`NULL` 引数。
 -   `NULL` すべての引数が `NULL`.
 
-**例えば**
+**例**
 
-顧客に連絡する複数の方法を指定する可能性のある連絡先のリストを考えてみましょう。
+顧客に連絡する複数の方法を指定できる連絡先のリストを検討してください。
 
 ``` text
 ┌─name─────┬─mail─┬─phone─────┬──icq─┐
@@ -115,9 +115,9 @@ coalesce(x,...)
 └──────────┴──────┴───────────┴──────┘
 ```
 
-その `mail` と `phone` フィールドの型はStringですが、 `icq` フィールドは `UInt32`、それはに変換する必要があります `String`.
+その `mail` と `phone` フィールドはString型ですが、 `icq` フィールドは `UInt32` したがって、変換する必要があります `String`.
 
-コンタクトリストから顧客の最初の利用可能なコンタクトメソッドを取得する:
+連絡先リストから顧客に対して最初に使用可能な連絡先方法を取得する:
 
 ``` sql
 SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
@@ -132,7 +132,7 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 
 ## ifNull {#ifnull}
 
-メイン引数がある場合は、代替値を返します `NULL`.
+Main引数が次の場合、代替値を返します `NULL`.
 
 ``` sql
 ifNull(x,alt)
@@ -145,10 +145,10 @@ ifNull(x,alt)
 
 **戻り値**
 
--   を値 `x`,もし `x` はない `NULL`.
--   を値 `alt`,もし `x` は `NULL`.
+-   値 `x`,if `x` ではない `NULL`.
+-   値 `alt`,if `x` は `NULL`.
 
-**例えば**
+**例**
 
 ``` sql
 SELECT ifNull('a', 'b')
@@ -170,9 +170,9 @@ SELECT ifNull(NULL, 'b')
 └───────────────────┘
 ```
 
-## nullifname {#nullif}
+## ヌリフ {#nullif}
 
-を返します `NULL` 引数が等しい場合。
+ﾂづｩﾂ。 `NULL` 引数が等しい場合。
 
 ``` sql
 nullIf(x, y)
@@ -184,10 +184,10 @@ nullIf(x, y)
 
 **戻り値**
 
--   `NULL` 引数が等しい場合。
+-   `NULL`、引数が等しい場合。
 -   その `x` 引数が等しくない場合の値。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT nullIf(1, 1)
@@ -211,7 +211,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull {#assumenotnull}
 
-結果はtypeの値になります [Nullable](../../sql-reference/data-types/nullable.md) 非のために- `Nullable` 値がない場合、 `NULL`.
+結果はtypeの値になります [Null可能](../../sql-reference/data-types/nullable.md) 非のため- `Nullable` 値が `NULL`.
 
 ``` sql
 assumeNotNull(x)
@@ -223,12 +223,12 @@ assumeNotNull(x)
 
 **戻り値**
 
--   元の値から非-`Nullable` そうでない場合はタイプします `NULL`.
--   のデフォルト値。-`Nullable` 元の値が `NULL`.
+-   非からの元の値-`Nullable` そうでない場合は、タイプ `NULL`.
+-   非のデフォルト値-`Nullable` 元の値が `NULL`.
 
-**例えば**
+**例**
 
-考慮する `t_null` テーブル。
+を考える `t_null` テーブル。
 
 ``` sql
 SHOW CREATE TABLE t_null
@@ -247,7 +247,7 @@ SHOW CREATE TABLE t_null
 └───┴──────┘
 ```
 
-を適用 `assumeNotNull` に機能 `y` コラム
+を適用する `assumeNotNull` に対する関数 `y` 列。
 
 ``` sql
 SELECT assumeNotNull(y) FROM t_null
@@ -285,9 +285,9 @@ toNullable(x)
 
 **戻り値**
 
--   Aの入力値 `Nullable` タイプ。
+-   Aを持つ入力値 `Nullable` タイプ。
 
-**例えば**
+**例**
 
 ``` sql
 SELECT toTypeName(10)

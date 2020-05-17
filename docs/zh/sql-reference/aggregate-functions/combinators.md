@@ -1,8 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
-toc_title: "\u805A\u5408\u51FD\u6570\u7EC4\u5408\u5668"
+toc_title: "\u7EC4\u5408\u5668"
 ---
 
 # 聚合函数组合器 {#aggregate_functions_combinators}
@@ -53,11 +53,37 @@ The suffix -If can be appended to the name of any aggregate function. In this ca
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
-如果没有要聚合的内容，则填充聚合函数的返回类型的默认值。
+更改聚合函数的行为。
+
+如果聚合函数没有输入值，则使用此combinator，它返回其返回数据类型的默认值。 适用于可以采用空输入数据的聚合函数。
+
+`-OrDefault` 可与其他组合器一起使用。
+
+**语法**
+
+``` sql
+<aggFunction>OrDefault(x)
+```
+
+**参数**
+
+-   `x` — Aggregate function parameters.
+
+**返回值**
+
+如果没有要聚合的内容，则返回聚合函数返回类型的默认值。
+
+类型取决于所使用的聚合函数。
+
+**示例**
+
+查询:
 
 ``` sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
+
+结果:
 
 ``` text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
@@ -65,21 +91,72 @@ SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 └─────────────┴──────────────────────┘
 ```
 
-## -OrNull {#agg-functions-combinator-ornull}
+还有 `-OrDefault` 可与其他组合器一起使用。 当聚合函数不接受空输入时，它很有用。
 
-填充 `null` 如果没有什么聚合。 返回列将为空。
+查询:
 
 ``` sql
-SELECT avg(number), avgOrNull(number) FROM numbers(0)
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
 ```
+
+结果:
 
 ``` text
-┌─avg(number)─┬─avgOrNull(number)─┐
-│         nan │              ᴺᵁᴸᴸ │
-└─────────────┴───────────────────┘
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
 ```
 
--OrDefault和-OrNull可以与其他组合器相结合。 当聚合函数不接受空输入时，它很有用。
+## -OrNull {#agg-functions-combinator-ornull}
+
+更改聚合函数的行为。
+
+此组合器将聚合函数的结果转换为 [可为空](../data-types/nullable.md) 数据类型。 如果聚合函数没有值来计算它返回 [NULL](../syntax.md#null-literal).
+
+`-OrNull` 可与其他组合器一起使用。
+
+**语法**
+
+``` sql
+<aggFunction>OrNull(x)
+```
+
+**参数**
+
+-   `x` — Aggregate function parameters.
+
+**返回值**
+
+-   聚合函数的结果，转换为 `Nullable` 数据类型。
+-   `NULL`，如果没有什么聚合。
+
+类型: `Nullable(aggregate function return type)`.
+
+**示例**
+
+添加 `-orNull` 到聚合函数的末尾。
+
+查询:
+
+``` sql
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+结果:
+
+``` text
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+还有 `-OrNull` 可与其他组合器一起使用。 当聚合函数不接受空输入时，它很有用。
+
+查询:
 
 ``` sql
 SELECT avgOrNullIf(x, x > 10)
@@ -88,6 +165,8 @@ FROM
     SELECT toDecimal32(1.23, 2) AS x
 )
 ```
+
+结果:
 
 ``` text
 ┌─avgOrNullIf(x, greater(x, 10))─┐

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 16
 toc_title: "New York Taxi Donn\xE9es"
 ---
@@ -12,11 +12,11 @@ Ce jeu de données peut être obtenu de deux façons:
 -   importation à partir de données brutes
 -   téléchargement de partitions
 
-## Comment Importer Les données Brutes {#how-to-import-the-raw-data}
+## Comment importer les données brutes {#how-to-import-the-raw-data}
 
-Tu vois https://github.com/toddwschneider/nyc-taxi-data et http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html pour la description d’un ensemble de données et les instructions de téléchargement.
+Tu vois https://github.com/toddwschneider/nyc-taxi-data et http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html pour la description d'un ensemble de données et les instructions de téléchargement.
 
-Le téléchargement entraînera environ 227 Go de données non compressées dans des fichiers CSV. Le téléchargement prend environ une heure sur une connexion 1 Gbit (téléchargement parallèle depuis s3.amazonaws.com récupère au moins la moitié d’un canal 1 Gbit).
+Le téléchargement entraînera environ 227 Go de données non compressées dans des fichiers CSV. Le téléchargement prend environ une heure sur une connexion 1 Gbit (téléchargement parallèle depuis s3.amazonaws.com récupère au moins la moitié d'un canal 1 Gbit).
 Certains fichiers peuvent ne pas télécharger entièrement. Vérifiez la taille des fichiers et re-télécharger tout ce qui semble douteux.
 
 Certains fichiers peuvent contenir des lignes invalides. Vous pouvez les corriger comme suit:
@@ -28,11 +28,11 @@ mv data/yellow_tripdata_2010-02.csv_ data/yellow_tripdata_2010-02.csv
 mv data/yellow_tripdata_2010-03.csv_ data/yellow_tripdata_2010-03.csv
 ```
 
-Ensuite, les données doivent être pré-traitées dans PostgreSQL. Cela créera des sélections de points dans les polygones (pour faire correspondre les points sur la carte avec les arrondissements de New York) et combinera toutes les données en une seule table plate dénormalisée à l’aide d’une jointure. Pour ce faire, vous devrez installer PostgreSQL avec le support PostGIS.
+Ensuite, les données doivent être pré-traitées dans PostgreSQL. Cela créera des sélections de points dans les polygones (pour faire correspondre les points sur la carte avec les arrondissements de New York) et combinera toutes les données en une seule table plate dénormalisée à l'aide d'une jointure. Pour ce faire, vous devrez installer PostgreSQL avec le support PostGIS.
 
-Soyez prudent lors de l’exécution `initialize_database.sh` et vérifiez à nouveau manuellement que toutes les tables ont été créées correctement.
+Soyez prudent lors de l'exécution `initialize_database.sh` et vérifiez à nouveau manuellement que toutes les tables ont été créées correctement.
 
-Il faut environ 20-30 minutes pour traiter la valeur de chaque mois de données dans PostgreSQL, pour un total d’environ 48 heures.
+Il faut environ 20-30 minutes pour traiter la valeur de chaque mois de données dans PostgreSQL, pour un total d'environ 48 heures.
 
 Vous pouvez vérifier le nombre de téléchargé lignes comme suit:
 
@@ -45,9 +45,9 @@ $ time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
 real    7m9.164s
 ```
 
-(C’est un peu plus de 1,1 milliard de lignes rapportées par Mark Litwintschik dans une série de billets de blog.)
+(C'est un peu plus de 1,1 milliard de lignes rapportées par Mark Litwintschik dans une série de billets de blog.)
 
-Les données de PostgreSQL utilisent 370 GO d’espace.
+Les données de PostgreSQL utilisent 370 GO d'espace.
 
 Exportation des données depuis PostgreSQL:
 
@@ -121,7 +121,7 @@ COPY
 ) TO '/opt/milovidov/nyc-taxi-data/trips.tsv';
 ```
 
-L’instantané de données est créé à une vitesse d’environ 50 Mo par seconde. Lors de la création de l’instantané, PostgreSQL lit à partir du disque à une vitesse d’environ 28 Mo par seconde.
+L'instantané de données est créé à une vitesse d'environ 50 Mo par seconde. Lors de la création de l'instantané, PostgreSQL lit à partir du disque à une vitesse d'environ 28 Mo par seconde.
 Cela prend environ 5 heures. Le fichier TSV résultant est 590612904969 octets.
 
 Créer une table temporaire dans ClickHouse:
@@ -195,7 +195,7 @@ Les données sont lues à une vitesse de 112-140 Mo/seconde.
 Le chargement de données dans une table de type de journal dans un flux a pris 76 minutes.
 Les données de ce tableau utilisent 142 GO.
 
-(L’importation de données directement depuis Postgres est également possible en utilisant `COPY ... TO PROGRAM`.)
+(L'importation de données directement depuis Postgres est également possible en utilisant `COPY ... TO PROGRAM`.)
 
 Unfortunately, all the fields associated with the weather (precipitation…average\_wind\_speed) were filled with NULL. Because of this, we will remove them from the final data set.
 
@@ -265,10 +265,10 @@ toUInt16(ifNull(dropoff_puma, '0')) AS dropoff_puma
 FROM trips
 ```
 
-Cela prend 3030 secondes à une vitesse d’environ 428 000 lignes par seconde.
+Cela prend 3030 secondes à une vitesse d'environ 428 000 lignes par seconde.
 Pour le charger plus rapidement, vous pouvez créer la table avec le `Log` le moteur de `MergeTree`. Dans ce cas, le téléchargement fonctionne plus rapidement que 200 secondes.
 
-La table utilise 126 GO d’espace disque.
+La table utilise 126 GO d'espace disque.
 
 ``` sql
 SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mergetree' AND active
@@ -280,9 +280,9 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 └────────────────────────────────┘
 ```
 
-Entre autres choses, vous pouvez exécuter la requête OPTIMIZE sur MergeTree. Mais ce n’est pas nécessaire puisque tout ira bien sans elle.
+Entre autres choses, vous pouvez exécuter la requête OPTIMIZE sur MergeTree. Mais ce n'est pas nécessaire puisque tout ira bien sans elle.
 
-## Téléchargement Des Partitions préparées {#download-of-prepared-partitions}
+## Téléchargement des Partitions préparées {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
@@ -295,7 +295,7 @@ $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 !!! info "Info"
     Si vous exécutez les requêtes décrites ci-dessous, vous devez utiliser le nom complet de la table, `datasets.trips_mergetree`.
 
-## Résultats Sur Un Seul Serveur {#results-on-single-server}
+## Résultats sur un seul serveur {#results-on-single-server}
 
 Q1:
 
@@ -336,9 +336,9 @@ Le serveur suivant a été utilisé:
 
 Deux Intel (R) Xeon (R) CPU E5-2650 v2 @ 2.60 GHz, 16 noyaux physiques total, 128 GiB RAM, 8x6 TB HD sur le matériel RAID-5
 
-Temps d’exécution est le meilleur des trois pistes. Mais à partir de la deuxième exécution, les requêtes lisent les données du cache du système de fichiers. Aucune autre mise en cache ne se produit: les données sont lues et traitées à chaque exécution.
+Temps d'exécution est le meilleur des trois pistes. Mais à partir de la deuxième exécution, les requêtes lisent les données du cache du système de fichiers. Aucune autre mise en cache ne se produit: les données sont lues et traitées à chaque exécution.
 
-La création d’un tableau sur trois serveurs:
+La création d'un tableau sur trois serveurs:
 
 Sur chaque serveur:
 
@@ -369,7 +369,7 @@ Q4: 1.241 secondes.
 
 Pas de surprise ici, depuis les requêtes sont réparties linéairement.
 
-Nous avons également les résultats d’un cluster de 140 serveurs:
+Nous avons également les résultats d'un cluster de 140 serveurs:
 
 Q1: 0,028 sec.
 Q2: 0,043 sec.

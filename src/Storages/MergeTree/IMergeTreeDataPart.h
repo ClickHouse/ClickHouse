@@ -128,6 +128,10 @@ public:
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
     /// Returns column position in part structure or std::nullopt if it's missing in part.
+    ///
+    /// NOTE: Doesn't take column renames into account, if some column renames
+    /// take place, you must take original name of column for this part from
+    /// storage and pass it to this method.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
@@ -291,7 +295,11 @@ public:
     /// Makes full clone of part in detached/ on another disk
     void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
 
-    /// Checks that .bin and .mrk files exist
+    /// Checks that .bin and .mrk files exist.
+    ///
+    /// NOTE: Doesn't take column renames into account, if some column renames
+    /// take place, you must take original name of column for this part from
+    /// storage and pass it to this method.
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);

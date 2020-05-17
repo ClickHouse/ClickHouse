@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: JDBC
 ---
@@ -59,7 +59,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-ClickHouse Server’da bir tablo oluşturma ve ondan veri seçme:
+ClickHouse Server'da bir tablo oluşturma ve ondan veri seçme:
 
 ``` sql
 CREATE TABLE jdbc_table
