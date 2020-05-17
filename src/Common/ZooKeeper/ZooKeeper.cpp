@@ -55,8 +55,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     session_timeout_ms = session_timeout_ms_;
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
-    // implementation = implementation_;
-    implementation = "etcdkeeper";
+    implementation = implementation_;
 
     if (implementation == "zookeeper")
     {
@@ -86,7 +85,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
         }
 
         if (nodes.empty())
-            throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::ZBADARGUMENTS);
+            throw KeeperException("Cannot use any of provided ZooKeeper(Etcd) nodes", Coordination::ZBADARGUMENTS);
 
         impl = std::make_unique<Coordination::ZooKeeper>(
                 nodes,
@@ -110,8 +109,12 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     }
     else if (implementation == "etcdkeeper")
     {
+        if (hosts.empty())
+            throw KeeperException("No hosts passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
+
         impl = std::make_unique<Coordination::EtcdKeeper>(
                 chroot,
+                hosts.substr(0, hosts.find(',')),
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
     }
     else
@@ -169,6 +172,7 @@ struct ZooKeeperArgs
             }
             else if (key == "implementation")
             {
+                std::cout << "IMPLEMENT" << config_name << config.getString(config_name + "." + key) << std::endl;
                 implementation = config.getString(config_name + "." + key);
             }
             else
