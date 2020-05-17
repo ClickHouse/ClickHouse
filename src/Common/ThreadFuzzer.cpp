@@ -127,10 +127,10 @@ void ThreadFuzzer::initConfiguration()
     pthread_mutex_unlock_before_sleep_probability = 0.001;
     pthread_mutex_unlock_after_sleep_probability = 0.001;
 
-    pthread_mutex_lock_before_sleep_time_us = 1000;
-    pthread_mutex_lock_after_sleep_time_us = 1000;
-    pthread_mutex_unlock_before_sleep_time_us = 1000;
-    pthread_mutex_unlock_after_sleep_time_us = 1000;
+    pthread_mutex_lock_before_sleep_time_us = 10000;
+    pthread_mutex_lock_after_sleep_time_us = 10000;
+    pthread_mutex_unlock_before_sleep_time_us = 10000;
+    pthread_mutex_unlock_after_sleep_time_us = 10000;
 }
 
 
