@@ -147,10 +147,8 @@ class FunctionStartsEndsWith
     : public FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>
 {
 public:
-    FunctionStartsEndsWith(const Context &)
-        : FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>(
-            PerformanceAdaptorOptions()
-        )
+    FunctionStartsEndsWith(const Context & context_)
+        : FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>(context_)
     {
         if constexpr (UseMultitargetCode)
         {

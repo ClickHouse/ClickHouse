@@ -4,6 +4,7 @@
 #include <Functions/IFunctionImpl.h>
 
 #include <Common/Stopwatch.h>
+#include <Interpreters/Context.h>
 
 #include <random>
 
@@ -174,9 +175,9 @@ public:
     using BaseFunctionPtr = FunctionExecutor<DefaultFunction>::BaseFunctionPtr;
 
     template <typename ...Params>
-    FunctionPerformanceAdaptor(PerformanceAdaptorOptions options_, Params&&... params)
+    FunctionPerformanceAdaptor(const Context & context_, Params&&... params)
         : FunctionExecutor<DefaultFunction>(std::forward<Params>(params)...)
-        , options(std::move(options_))
+        , context(context_)
     {
         if (isImplementationEnabled(DefaultFunction::getImplementationTag()))
             statistics.emplace_back();
@@ -195,15 +196,17 @@ public:
 
     bool isImplementationEnabled(const String & impl_tag)
     {
-        if (!options.implementations)
-            return true;
+        const String & tag = context.getSettingsRef().function_implementation.value;
+        return tag.empty() || tag == impl_tag;
+        // if (!options.implementations)
+        //     return true;
 
-        for (const auto & tag : *options.implementations)
-        {
-            if (tag == impl_tag)
-                return true;
-        }
-        return false;
+        // for (const auto & tag : *options.implementations)
+        // {
+        //     if (tag == impl_tag)
+        //         return true;
+        // }
+        // return false;
     }
 
 protected:
@@ -249,7 +252,7 @@ protected:
 private:
     std::vector<BaseFunctionPtr> impls; // Alternative implementations.
     PerformanceStatistics statistics;
-    PerformanceAdaptorOptions options;
+    const Context & context;
 };
 
 }
