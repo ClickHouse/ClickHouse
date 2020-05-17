@@ -78,9 +78,9 @@ public:
 
         size_t size_in_bytes_with_margin = summary_utf8_len * 4 + input_rows_count;
         data_to.resize(size_in_bytes_with_margin);
-        pcg64_fast rng(randomSeed()); /// TODO It is inefficient. We should use SIMD PRNG instead.
+        pcg64_fast rng(randomSeed()); // TODO It is inefficient. We should use SIMD PRNG instead.
 
-        auto generate_code_point = [](UInt32 rand) {
+        const auto generate_code_point = [](UInt32 rand) -> UInt32 {
             /// We want to generate number in [0x0, 0x70000) and shift it if need
 
             /// Generate highest byte in [0, 6]
@@ -97,6 +97,7 @@ public:
 
             if (0xD7FF < code_point && code_point < 0xE000) // this range will not be valid in isValidUTF8
             {
+                /// The distribution will be slightly non-uniform but we don't care.
                 return 0u;
             }
 
