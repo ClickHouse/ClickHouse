@@ -9,7 +9,7 @@
 #include <limits>
 
 #include <common/preciseExp10.h>
-#include <common/Types.h>
+#include <common/types.h>
 #include <common/DateLUT.h>
 
 #include <mysqlxx/Types.h>

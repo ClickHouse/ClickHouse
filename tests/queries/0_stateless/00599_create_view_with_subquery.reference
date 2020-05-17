@@ -1,0 +1,1 @@
+CREATE VIEW default.test_view_00599\n(\n    `id` UInt64\n) AS\nSELECT *\nFROM default.test_00599\nWHERE id = \n(\n    SELECT 1\n)

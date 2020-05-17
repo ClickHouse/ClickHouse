@@ -1,4 +1,3 @@
-# Operations 
+# 操作 {#operations}
 
-
-[Original article](https://clickhouse.tech/docs/en/operations/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/) <!--hide-->

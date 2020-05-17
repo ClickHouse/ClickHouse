@@ -1,6 +1,4 @@
-if (NOT OS_FREEBSD AND NOT ARCH_32)
-    option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
-endif ()
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT MSVC)
     set (INTERNAL_ZLIB_NAME "zlib-ng" CACHE INTERNAL "")

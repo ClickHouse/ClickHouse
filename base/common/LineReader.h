@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <atomic>
 #include <vector>
@@ -14,6 +14,7 @@ public:
         using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
         Words words;
+        Words words_no_case;
         std::atomic<bool> ready{false};
 
         /// Get iterators for the matched range of words if any.

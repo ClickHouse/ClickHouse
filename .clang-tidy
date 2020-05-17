@@ -57,6 +57,7 @@ Checks: '-*,
     readability-simplify-subscript-expr,
     readability-simplify-boolean-expr,
     readability-inconsistent-declaration-parameter-name,
+    readability-identifier-naming,
     
     bugprone-undelegated-constructor,
     bugprone-argument-comment,
@@ -123,6 +124,82 @@ Checks: '-*,
     
     hicpp-exception-baseclass,
     
+    clang-analyzer-core.CallAndMessage,
+    clang-analyzer-core.DivideZero,
+    clang-analyzer-core.NonNullParamChecker,
+    clang-analyzer-core.NullDereference,
+    clang-analyzer-core.StackAddressEscape,
+    clang-analyzer-core.UndefinedBinaryOperatorResult,
+    clang-analyzer-core.VLASize,
+    clang-analyzer-core.uninitialized.ArraySubscript,
+    clang-analyzer-core.uninitialized.Assign,
+    clang-analyzer-core.uninitialized.Branch,
+    clang-analyzer-core.uninitialized.CapturedBlockVariable,
+    clang-analyzer-core.uninitialized.UndefReturn,
+    clang-analyzer-cplusplus.InnerPointer,
+    clang-analyzer-cplusplus.NewDelete,
+    clang-analyzer-cplusplus.NewDeleteLeaks,
+    clang-analyzer-cplusplus.PlacementNewChecker,
+    clang-analyzer-cplusplus.SelfAssignment,
+    clang-analyzer-deadcode.DeadStores,
+    clang-analyzer-optin.cplusplus.VirtualCall,
+    clang-analyzer-security.insecureAPI.UncheckedReturn,
+    clang-analyzer-security.insecureAPI.bcmp,
+    clang-analyzer-security.insecureAPI.bcopy,
+    clang-analyzer-security.insecureAPI.bzero,
+    clang-analyzer-security.insecureAPI.getpw,
+    clang-analyzer-security.insecureAPI.gets,
+    clang-analyzer-security.insecureAPI.mkstemp,
+    clang-analyzer-security.insecureAPI.mktemp,
+    clang-analyzer-security.insecureAPI.rand,
+    clang-analyzer-security.insecureAPI.strcpy,
+    clang-analyzer-unix.Malloc,
+    clang-analyzer-unix.MallocSizeof,
+    clang-analyzer-unix.MismatchedDeallocator,
+    clang-analyzer-unix.Vfork,
+    clang-analyzer-unix.cstring.BadSizeArg,
+    clang-analyzer-unix.cstring.NullArg,
+
     boost-use-to-string,
 '
 WarningsAsErrors: '*'
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.StaticConstantCase
+    value: aNy_CasE
+  - key: readability-identifier-naming.MemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberPrefix
+    value: ''
+  - key: readability-identifier-naming.ProtectedMemberPrefix
+    value: ''
+  - key: readability-identifier-naming.PublicMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.MethodCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMethodPrefix
+    value: ''
+  - key: readability-identifier-naming.ProtectedMethodPrefix
+    value: ''
+  - key: readability-identifier-naming.ParameterPackCase
+    value: lower_case
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateTemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateUsingCase
+    value: lower_case
+  - key: readability-identifier-naming.TypeTemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.UnionCase
+    value: CamelCase
+  - key: readability-identifier-naming.UsingCase
+    value: CamelCase

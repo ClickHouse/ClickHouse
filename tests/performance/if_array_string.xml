@@ -1,0 +1,8 @@
+<test max_ignored_relative_change="0.2">
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? ['Hello', 'World'] : ['a', 'b', 'c'])</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? materialize(['Hello', 'World']) : ['a', 'b', 'c'])</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? ['Hello', 'World'] : materialize(['a', 'b', 'c']))</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? materialize(['Hello', 'World']) : materialize(['a', 'b', 'c']))</query>
+    <query>SELECT count() FROM zeros(10000000) WHERE NOT ignore(rand() % 2 ? materialize(['', '']) : emptyArrayString())</query>
+    <query>SELECT count() FROM zeros(1000000) WHERE NOT ignore(rand() % 2 ? materialize(['https://github.com/ClickHouse/ClickHouse/pull/1070', 'https://www.google.ru/search?newwindow=1&amp;site=&amp;source=hp&amp;q=zookeeper+wire+protocol+exists&amp;oq=zookeeper+wire+protocol+exists&amp;gs_l=psy-ab.3...330.6300.0.6687.33.28.0.0.0.0.386.4838.0j5j9j5.19.0....0...1.1.64.psy-ab..14.17.4448.0..0j35i39k1j0i131k1j0i22i30k1j0i19k1j33i21k1.r_3uFoNOrSU']) : emptyArrayString())</query>
+</test>

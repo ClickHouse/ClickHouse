@@ -17,7 +17,7 @@
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Version.h>
-#include <common/Types.h>
+#include <common/types.h>
 #include <common/logger_useful.h>
 #include <common/getThreadId.h>
 #include <daemon/GraphiteWriter.h>
@@ -58,7 +58,7 @@ public:
     void reloadConfiguration();
 
     /// Определяет параметр командной строки
-    void defineOptions(Poco::Util::OptionSet & _options) override;
+    void defineOptions(Poco::Util::OptionSet & new_options) override;
 
     /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
     void exitOnTaskError();
