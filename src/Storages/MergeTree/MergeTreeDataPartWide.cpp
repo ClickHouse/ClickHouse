@@ -1,7 +1,7 @@
 #include "MergeTreeDataPartWide.h"
 #include <Poco/File.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
-#include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterWideSingleDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 
 
@@ -14,7 +14,6 @@ namespace ErrorCodes
     extern const int NO_FILE_IN_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
-
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
        MergeTreeData & storage_,
@@ -58,7 +57,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
 {
-    return std::make_unique<MergeTreeDataPartWriterWide>(
+    return std::make_unique<MergeTreeDataPartWriterWideSingleDisk>(
         shared_from_this(), columns_list, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec, writer_settings, computed_index_granularity);

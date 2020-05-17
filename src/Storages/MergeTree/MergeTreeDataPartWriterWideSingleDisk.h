@@ -1,18 +1,14 @@
 #pragma once
 
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 
 namespace DB
 {
 
-/// Writes data part in wide format.
-class MergeTreeDataPartWriterWide : public IMergeTreeDataPartWriter
+class MergeTreeDataPartWriterWideSingleDisk : public MergeTreeDataPartWriterWide
 {
 public:
-
-    using ColumnToSize = std::map<std::string, UInt64>;
-
-    MergeTreeDataPartWriterWide(
+    MergeTreeDataPartWriterWideSingleDisk(
         const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -21,18 +17,20 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
+    void write(const Block & block, const IColumn::Permutation * permutation,
+                       const Block & primary_key_block, const Block & skip_indexes_block) override;
+
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
+
 protected:
-    /// Write data of one column.
-    /// Return how many marks were written and
-    /// how many rows were written for last mark
-    virtual void writeColumn(
+    void writeColumn(
         const String & name,
         const IDataType & type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns) = 0;
+        WrittenOffsetColumns & offset_columns) override;
 
     /// Write single granule of one column (rows between 2 marks)
-    virtual size_t writeSingleGranule(
+    size_t writeSingleGranule(
         const String & name,
         const IDataType & type,
         const IColumn & column,
@@ -41,21 +39,36 @@ protected:
         IDataType::SerializeBinaryBulkSettings & serialize_settings,
         size_t from_row,
         size_t number_of_rows,
-        bool write_marks) = 0;
+        bool write_marks) override;
 
     /// Write mark for column
-    virtual void writeSingleMark(
+    void writeSingleMark(
         const String & name,
         const IDataType & type,
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows,
-        DB::IDataType::SubstreamPath & path) = 0;
+        DB::IDataType::SubstreamPath & path) override;
 
-    virtual void writeFinalMark(
+    void writeFinalMark(
         const std::string & column_name,
         const DataTypePtr column_type,
         WrittenOffsetColumns & offset_columns,
-        DB::IDataType::SubstreamPath & path) = 0;
+        DB::IDataType::SubstreamPath & path) override;
+
+    void addStreams(
+        const String & name,
+        const IDataType & type,
+        const CompressionCodecPtr & effective_codec,
+        size_t estimated_size);
+
+private:
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns);
+
+    SerializationStates serialization_states;
+
+    using ColumnStreams = std::map<String, StreamPtr>;
+    ColumnStreams column_streams;
+
 };
 
 }
