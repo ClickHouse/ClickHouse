@@ -29,7 +29,6 @@ SRCS(
     ClusterProxy/executeQuery.cpp
     ClusterProxy/SelectStreamFactory.cpp
     CollectJoinOnKeysVisitor.cpp
-    ColumnNamesContext.cpp
     Context.cpp
     convertFieldToType.cpp
     createBlockSelector.cpp
@@ -37,6 +36,7 @@ SRCS(
     DatabaseAndTableWithAlias.cpp
     DatabaseCatalog.cpp
     DDLWorker.cpp
+    DictionaryReader.cpp
     DNSCacheUpdater.cpp
     EmbeddedDictionaries.cpp
     evaluateConstantExpression.cpp
@@ -83,12 +83,12 @@ SRCS(
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
     InterpreterSetRoleQuery.cpp
+    InterpreterShowAccessEntitiesQuery.cpp
     InterpreterShowCreateAccessEntityQuery.cpp
     InterpreterShowCreateQuery.cpp
     InterpreterShowGrantsQuery.cpp
+    InterpreterShowPrivilegesQuery.cpp
     InterpreterShowProcesslistQuery.cpp
-    InterpreterShowQuotasQuery.cpp
-    InterpreterShowRowPoliciesQuery.cpp
     InterpreterShowTablesQuery.cpp
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
@@ -118,11 +118,13 @@ SRCS(
     QueryThreadLog.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
+    RequiredSourceColumnsData.cpp
     RequiredSourceColumnsVisitor.cpp
     RowRefs.cpp
     Set.cpp
     SetVariants.cpp
     sortBlock.cpp
+    SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
     SyntaxAnalyzer.cpp

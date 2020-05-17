@@ -133,7 +133,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     if unbundled:
         # TODO: fix build with ENABLE_RDKAFKA
-        cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 -DENABLE_REPLXX=0 -DENABLE_RDKAFKA=0')
+        cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_ODBC=0 -DENABLE_REPLXX=0 -DENABLE_RDKAFKA=0')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
@@ -162,10 +162,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ClickHouse building script using prebuilt Docker image")
     # 'performance' creates a combined .tgz with server and configs to be used for performance test.
     parser.add_argument("--package-type", choices=['deb', 'binary', 'performance'], required=True)
-    parser.add_argument("--clickhouse-repo-path", default="../../")
+    parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-8", "clang-8-darwin", "clang-9-aarch64", "clang-9-freebsd", "gcc-8", "gcc-9", "clang-9"), default="gcc-8")
+    parser.add_argument("--compiler", choices=("clang-10-darwin", "clang-10-aarch64", "clang-10-freebsd", "gcc-9", "clang-10"), default="gcc-9")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")

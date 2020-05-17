@@ -13,6 +13,7 @@ PEERDIR(
     clickhouse/base/widechar_width
     contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
+    contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
     contrib/restricted/ryu
 )
@@ -63,6 +64,7 @@ SRCS(
     isLocalAddress.cpp
     Macros.cpp
     malloc.cpp
+    MemoryStatisticsOS.cpp
     MemoryTracker.cpp
     new_delete.cpp
     OptimizedRegularExpression.cpp
@@ -71,11 +73,13 @@ SRCS(
     parseRemoteDescription.cpp
     PipeFDs.cpp
     PODArray.cpp
+    ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
     QueryProfiler.cpp
     quoteString.cpp
     randomSeed.cpp
     RemoteHostFilter.cpp
+    renameat2.cpp
     RWLock.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp
@@ -92,6 +96,7 @@ SRCS(
     TerminalSize.cpp
     thread_local_rng.cpp
     ThreadFuzzer.cpp
+    ThreadProfileEvents.cpp
     ThreadPool.cpp
     ThreadStatus.cpp
     TraceCollector.cpp

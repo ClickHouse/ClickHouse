@@ -138,7 +138,8 @@ private:
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
@@ -621,11 +622,19 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
-                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
+            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+
+            if (client_version_tuple < server_version_tuple)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
+            else if (client_version_tuple > server_version_tuple)
+            {
+                std::cout << "ClickHouse server version is older than ClickHouse client. "
+                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -814,7 +823,7 @@ private:
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function))
+            if (insert && (!insert->select || input_function) && !insert->watch)
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);

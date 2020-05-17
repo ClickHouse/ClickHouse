@@ -65,7 +65,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
 template <typename T>
 void checkTablesWithColumns(const std::vector<T> & tables_with_columns, const Context & context)
 {
-    auto & settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (auto & t : tables_with_columns)
@@ -104,7 +104,7 @@ private:
             return;
 
         bool rewritten = false;
-        for (auto & table : data)
+        for (const auto & table : data)
         {
             /// Table has an alias. We do not need to rewrite qualified names with table alias (match == ColumnMatch::TableName).
             auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
@@ -125,7 +125,7 @@ private:
     {
         ASTIdentifier & identifier = *node.children[0]->as<ASTIdentifier>();
         bool rewritten = false;
-        for (auto & table : data)
+        for (const auto & table : data)
         {
             if (identifier.name == table.table)
             {
@@ -185,7 +185,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
     if (auto view_source = context.getViewSource())
     {
-        auto & storage_values = static_cast<const StorageValues &>(*view_source);
+        const auto & storage_values = static_cast<const StorageValues &>(*view_source);
         auto tmp_table_id = storage_values.getStorageID();
         if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
         {
@@ -216,7 +216,7 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(storage_columns.getVirtuals());
+        table.addHiddenColumns(storage->getVirtuals());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());

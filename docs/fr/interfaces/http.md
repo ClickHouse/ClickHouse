@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 19
 toc_title: Interface HTTP
 ---
@@ -11,7 +11,7 @@ L'interface HTTP vous permet D'utiliser ClickHouse sur n'importe quelle plate-fo
 
 Par défaut, clickhouse-server écoute HTTP sur le port 8123 (cela peut être modifié dans la configuration).
 
-Si vous faites une requête GET / sans Paramètres, elle renvoie le code de réponse 200 et la chaîne définie dans [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) valeur par défaut “Ok.” (avec un saut de ligne à la fin)
+Si vous faites une requête GET / sans Paramètres, elle renvoie le code de réponse 200 et la chaîne définie dans [http\_server\_default\_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) valeur par défaut “Ok.” (avec un saut de ligne à la fin)
 
 ``` bash
 $ curl 'http://localhost:8123/'
@@ -303,13 +303,16 @@ Exemple:
 
 ``` xml
 <http_handlers>
-  <predefine_query_handler>
-      <url>/metrics</url>
-        <method>GET</method>
-        <queries>
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
             <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
-        </queries>
-  </predefine_query_handler>
+        </handler>
+    </rule>
+    <rule>...</rule>
+    <rule>...</rule>
 </http_handlers>
 ```
 
@@ -318,21 +321,23 @@ Exemple:
 <!-- -->
 
 ``` bash
-curl -vvv 'http://localhost:8123/metrics'
+$ curl -v 'http://localhost:8123/predefined_query'
 *   Trying ::1...
 * Connected to localhost (::1) port 8123 (#0)
-> GET /metrics HTTP/1.1
+> GET /predefined_query HTTP/1.1
 > Host: localhost:8123
 > User-Agent: curl/7.47.0
 > Accept: */*
 >
 < HTTP/1.1 200 OK
-< Date: Wed, 27 Nov 2019 08:54:25 GMT
+< Date: Tue, 28 Apr 2020 08:52:56 GMT
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
-< X-ClickHouse-Server-Display-Name: i-tl62qd0o
+< X-ClickHouse-Server-Display-Name: i-mloy5trc
 < Transfer-Encoding: chunked
-< X-ClickHouse-Query-Id: f39235f6-6ed7-488c-ae07-c7ceafb960f6
+< X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
+< X-ClickHouse-Format: Template
+< X-ClickHouse-Timezone: Asia/Shanghai
 < Keep-Alive: timeout=3
 < X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
 <
@@ -357,116 +362,61 @@ curl -vvv 'http://localhost:8123/metrics'
 "ReplicatedSend" 0
 
 * Connection #0 to host localhost left intact
+
+
+* Connection #0 to host localhost left intact
 ```
 
-Comme vous pouvez le voir dans l'exemple, si `<http_handlers>` est configuré dans la configuration.fichier xml, ClickHouse fera correspondre les requêtes HTTP reçues au type prédéfini dans `<http_handlers>`, puis ClickHouse exécutera la requête prédéfinie correspondante si la correspondance est réussie.
+Comme vous pouvez le voir dans l'exemple, si `<http_handlers>` est configuré dans la configuration.fichier xml et `<http_handlers>` peut contenir beaucoup `<rule>s`. ClickHouse fera correspondre les requêtes HTTP reçues au type prédéfini `<rule>` et la première appariés exécute le gestionnaire. Ensuite, ClickHouse exécutera la requête prédéfinie correspondante si la correspondance est réussie.
 
-Maintenant `<http_handlers>` pouvez configurer `<root_handler>`, `<ping_handler>`, `<replicas_status_handler>`, `<dynamic_query_handler>` et `<no_handler_description>` .
+> Maintenant `<rule>` pouvez configurer `<method>`, `<headers>`, `<url>`,`<handler>`:
+> `<method>` est responsable de la correspondance de la partie méthode de la requête HTTP. `<method>` entièrement conforme à la définition de [méthode](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) dans le protocole HTTP. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie méthode de la requête HTTP.
+>
+> `<url>` est responsable de la correspondance de la partie url de la requête HTTP. Il est compatible avec [RE2](https://github.com/google/re2)s 'expressions régulières. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie url de la requête HTTP.
+>
+> `<headers>` est responsable de la correspondance de la partie d'en-tête de la requête HTTP. Il est compatible avec les expressions régulières de RE2. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie d'en-tête de la requête HTTP.
+>
+> `<handler>` contient la partie de traitement principale. Maintenant `<handler>` pouvez configurer `<type>`, `<status>`, `<content_type>`, `<response_content>`, `<query>`, `<query_param_name>`.
+> \> `<type>` prend actuellement en charge trois types: **predefined\_query\_handler**, **dynamic\_query\_handler**, **statique**.
+> \>
+> \> `<query>` - utiliser avec le type predefined\_query\_handler, exécute la requête lorsque le gestionnaire est appelé.
+> \>
+> \> `<query_param_name>` - utiliser avec le type dynamic\_query\_handler, extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans les paramètres de requête HTTP.
+> \>
+> \> `<status>` - utiliser avec le type statique, code d'état de réponse.
+> \>
+> \> `<content_type>` - utiliser avec statique type, réponse [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
+> \>
+> \> `<response_content>` - utiliser avec le type statique, le contenu de la réponse envoyé au client, lors de l'utilisation du préfixe ‘file://’ ou ‘config://’, trouver le contenu du fichier ou de la configuration envoyer au client.
 
-## root\_handler {#root_handler}
-
-`<root_handler>` renvoie le contenu spécifié pour la requête de chemin racine. Le contenu de retour spécifique est configuré par `http_server_default_response` dans la configuration.XML. si non spécifié, le retour **OK.**
-
-`http_server_default_response` n'est pas défini et une requête HTTP est envoyée à ClickHouse. Le résultat est comme suit:
-
-``` xml
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    Ok.
-
-`http_server_default_response` est défini et une requête HTTP est envoyée à ClickHouse. Le résultat est comme suit:
-
-``` xml
-<http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
-
-<http_handlers>
-    <root_handler/>
-</http_handlers>
-```
-
-    $ curl 'http://localhost:8123'
-    <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
-
-## ping\_handler {#ping_handler}
-
-`<ping_handler>` peut être utilisé pour sonder la santé du serveur clickhouse actuel. Lorsque le serveur HTTP ClickHouse est normal, l'accès à ClickHouse via `<ping_handler>` sera de retour **OK.**.
-
-Exemple:
-
-``` xml
-<http_handlers>
-    <ping_handler>/ping</ping_handler>
-</http_handlers>
-```
-
-``` bash
-$ curl 'http://localhost:8123/ping'
-Ok.
-```
-
-## replicas\_status\_handler {#replicas_status_handler}
-
-`<replicas_status_handler>` est utilisé pour détecter l'état du nœud de réplica et le retour **OK.** si le nœud réplique n'a pas de délai. S'il y a un retard, renvoyez le retard spécifique. La valeur de `<replicas_status_handler>` prend en charge la personnalisation. Si vous ne spécifiez pas `<replicas_status_handler>`, ClickHouse réglage par défaut `<replicas_status_handler>` être **/ replicas\_status**.
-
-Exemple:
-
-``` xml
-<http_handlers>
-    <replicas_status_handler>/replicas_status</replicas_status_handler>
-</http_handlers>
-```
-
-Aucun retard de cas:
-
-``` bash
-$ curl 'http://localhost:8123/replicas_status'
-Ok.
-```
-
-Retard de cas:
-
-``` bash
-$ curl 'http://localhost:8123/replicas_status'
-db.stats:  Absolute delay: 22. Relative delay: 22.
-```
+Viennent ensuite les méthodes de configuration pour les différents `<type>`.
 
 ## predefined\_query\_handler {#predefined_query_handler}
 
-Vous pouvez configurer `<method>`, `<headers>`, `<url>` et `<queries>` dans `<predefined_query_handler>`.
+`<predefined_query_handler>` prend en charge les paramètres de réglage et les valeurs query\_params. Vous pouvez configurer `<query>` dans le type de `<predefined_query_handler>`.
 
-`<method>` est responsable de la correspondance de la partie méthode de la requête HTTP. `<method>` entièrement conforme à la définition de [méthode](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) dans le protocole HTTP. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie méthode de la requête HTTP
-
-`<url>` est responsable de la correspondance de la partie url de la requête HTTP. Il est compatible avec [RE2](https://github.com/google/re2)s 'expressions régulières. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie url de la requête HTTP
-
-`<headers>` est responsable de la correspondance de la partie d'en-tête de la requête HTTP. Il est compatible avec les expressions régulières de RE2. C'est une option de configuration. S'il n'est pas défini dans le fichier de configuration, il ne correspond pas à la partie d'en-tête de la requête HTTP
-
-`<queries>` la valeur est une requête prédéfinie de `<predefined_query_handler>`, qui est exécuté par ClickHouse lorsqu'une requête HTTP est mise en correspondance et que le résultat de la requête est renvoyé. C'est une configuration incontournable.
-
-`<predefined_query_handler>` prend en charge les paramètres de réglage et les valeurs query\_params.
+`<query>` la valeur est une requête prédéfinie de `<predefined_query_handler>`, qui est exécuté par ClickHouse lorsqu'une requête HTTP est mise en correspondance et que le résultat de la requête est renvoyé. C'est une configuration incontournable.
 
 L'exemple suivant définit les valeurs de `max_threads` et `max_alter_threads` Paramètres, puis interroge la table système pour vérifier si ces paramètres ont été définis avec succès.
 
 Exemple:
 
 ``` xml
-<root_handlers>
-    <predefined_query_handler>
+<http_handlers>
+    <rule>
+        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
         <method>GET</method>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
             <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
         </headers>
-        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
-        <queries>
+        <handler>
+            <type>predefined_query_handler</type>
             <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
-        </queries>
-    </predefined_query_handler>
-</root_handlers>
+        </handler>
+    </rule>
+</http_handlers>
 ```
 
 ``` bash
@@ -475,37 +425,193 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_alter_threads   2
 ```
 
-!!! note "Note"
-    Dans un `<predefined_query_handler>`, un `<queries>` prend en charge un seul `<query>` d'un type d'insertion.
+!!! note "précaution"
+    Dans un `<predefined_query_handler>` prend en charge un seul `<query>` d'un type d'insertion.
 
 ## dynamic\_query\_handler {#dynamic_query_handler}
 
-`<dynamic_query_handler>` que `<predefined_query_handler>` augmenter `<query_param_name>` .
+Dans `<dynamic_query_handler>`, la requête est écrite sous la forme de param de la requête HTTP. La différence est que dans `<predefined_query_handler>`, la requête est écrite dans le fichier de configuration. Vous pouvez configurer `<query_param_name>` dans `<dynamic_query_handler>`.
 
-Clickhouse extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans l'url de la requête HTTP.
-ClickHouse réglage par défaut `<query_param_name>` être `/query` . C'est une option de configuration. Si il n'y a pas de définition dans le fichier de configuration, le paramètre n'est pas passé.
+Clickhouse extrait et exécute la valeur correspondant au `<query_param_name>` valeur dans l'url de la requête HTTP. La valeur par défaut de `<query_param_name>` être `/query` . C'est une option de configuration. Si il n'y a pas de définition dans le fichier de configuration, le paramètre n'est pas passé.
 
 Pour expérimenter cette fonctionnalité, l'exemple définit les valeurs de max\_threads et max\_alter\_threads et demande si les paramètres ont été définis avec succès.
-La différence est que dans `<predefined_query_handler>`, la requête est écrite dans le fichier de configuration. Mais dans `<dynamic_query_handler>`, la requête est écrite sous la forme de param de la requête HTTP.
 
 Exemple:
 
 ``` xml
-<root_handlers>
-    <dynamic_query_handler>
-        <headers>
-            <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>
-            <PARAMS_XXX><![CDATA[(?P<param_name_1>[^/]+)(/(?P<param_name_2>[^/]+))?]]></PARAMS_XXX>
-        </headers>
+<http_handlers>
+    <rule>
+    <headers>
+        <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>    </headers>
+    <handler>
+        <type>dynamic_query_handler</type>
         <query_param_name>query_param</query_param_name>
-    </dynamic_query_handler>
-</root_handlers>
+    </handler>
+    </rule>
+</http_handlers>
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/?query_param=SELECT%20value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D&max_threads=1&max_alter_threads=2&param_name_2=max_alter_threads'
-1
-2
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+max_threads 1
+max_alter_threads   2
+```
+
+## statique {#static}
+
+`<static>` peut-retour [content\_type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [statut](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) et response\_content. response\_content peut renvoyer le contenu spécifié
+
+Exemple:
+
+De retour d'un message.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+<http_handlers>
+```
+
+``` bash
+$ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /hi HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 402 Payment Required
+< Date: Wed, 29 Apr 2020 03:51:26 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+Say Hi!%
+```
+
+Trouvez le contenu de la configuration envoyer au client.
+
+``` xml
+<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_config_static_handler</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://get_config_static_handler</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_config_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:01:24 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+* Connection #0 to host localhost left intact
+<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+```
+
+Trouvez le contenu du fichier envoyé au client.
+
+``` xml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_absolute_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file:///absolute_path_file.html</response_content>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_relative_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <response_content>file://./relative_path_file.html</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+``` bash
+$ user_files_path='/var/lib/clickhouse/user_files'
+$ sudo echo "<html><body>Relative Path File</body></html>" > $user_files_path/relative_path_file.html
+$ sudo echo "<html><body>Absolute Path File</body></html>" > $user_files_path/absolute_path_file.html
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_absolute_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:16 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Absolute Path File</body></html>
+* Connection #0 to host localhost left intact
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_relative_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:31 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=3
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+<
+<html><body>Relative Path File</body></html>
+* Connection #0 to host localhost left intact
 ```
 
 [Article Original](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

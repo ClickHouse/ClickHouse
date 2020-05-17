@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-15 13:19+0000\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -18,29 +18,44 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:16
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr "ClickHouseがオープンソース列指向データベース管理システムで生成解析データ報告をリアルタイムのSQLクエリー"
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr "ﾂ環板篠ｮﾂ嘉ｯﾂ偲青エﾂδﾂ-ﾂエﾂスﾂ-ﾂシﾂ"
+
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "クリックハウスDBMS"
 
-#: templates/common_meta.html:11
-msgid ""
-"ClickHouse is an open source column-oriented database management system "
-"that allows generating analytical data reports in real time using SQL "
-"queries."
-msgstr "ClickHouseオープンソース列指向データベース管理システムで生成解析データをリアルタイムのレポート用のSQLクエリ."
+#: templates/common_meta.html:21
+msgid "open-source"
+msgstr "オープンソース"
 
-#: templates/common_meta.html:19
-msgid ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
-msgstr ""
-"ClickHouse is an open source distributed column-oriented database "
-"management system that allows generating analytical data reports in real "
-"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
-"large volumes of data in a stable and sustainable manner."
+#: templates/common_meta.html:21
+msgid "relational"
+msgstr "関係"
+
+#: templates/common_meta.html:21
+msgid "analytics"
+msgstr "analytics"
+
+#: templates/common_meta.html:21
+msgid "analytical"
+msgstr "分析"
+
+#: templates/common_meta.html:21
+msgid "Big Data"
+msgstr "ビッグデータ"
+
+#: templates/common_meta.html:21
+msgid "web-analytics"
+msgstr "ウェブ分析"
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
@@ -56,11 +71,23 @@ msgstr "ソフトウェアは、明示または黙示を問わず、いかなる
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "から構築"
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr "掲載され"
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr "に変更"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "助けが欲しかった！"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -71,17 +98,13 @@ msgstr ""
 "このドキュメントページの以下の内容は機械翻訳されています。 異な他のウェブサイトで行われませんができます。 "
 "この翻訳テキスト生活をGitHubリポジトリとClickHouseコードベース、待ち員ネイティブスピーカーで人間が読む."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr "また、参照として、元の英語版を使用することができます。"
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "このページを編集してClickHouseの文書を編集する"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "から構築"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -254,4 +277,34 @@ msgstr "これ以上の考えや質問がある場合は、Yandex ClickHouseチ�
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
 msgstr "turn on JavaScriptを見るメールアドレス"
+
+#~ msgid ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+#~ msgstr "ClickHouseオープンソース列指向データベース管理システムで生成解析データをリアルタイムのレポート用のSQLクエリ."
+
+#~ msgid ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+#~ msgstr ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "で公開"
+
+#~ msgid "modified at"
+#~ msgstr "で変更"
 

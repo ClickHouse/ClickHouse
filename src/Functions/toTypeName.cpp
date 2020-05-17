@@ -74,7 +74,7 @@ public:
     {
         DataTypes types;
         types.reserve(arguments.size());
-        for (auto & elem : arguments)
+        for (const auto & elem : arguments)
             types.emplace_back(elem.type);
 
         return std::make_unique<BaseFunctionToTypeName>(types, return_type);

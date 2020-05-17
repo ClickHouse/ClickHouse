@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: Gereksinimler
 ---
@@ -24,9 +24,9 @@ Gerekli RAM hacmi Aşağıdakilere bağlıdır:
 -   Sorguların karmaşıklığı.
 -   Sorgularda işlenen veri miktarı.
 
-Gerekli RAM hacmini hesaplamak için, aşağıdakiler için geçici verilerin boyutunu tahmin etmelisiniz [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) ve kullandığınız diğer işlemler.
+Gerekli RAM hacmini hesaplamak için, aşağıdakiler için geçici verilerin boyutunu tahmin etmelisiniz [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) ve kullandığınız diğer işlemler.
 
-ClickHouse geçici veriler için harici bellek kullanabilirsiniz. Görmek [Harici bellekte grupla](../sql_reference/statements/select.md#select-group-by-in-external-memory) ayrıntılar için.
+ClickHouse geçici veriler için harici bellek kullanabilirsiniz. Görmek [Harici bellekte grupla](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) ayrıntılar için.
 
 ## Takas Dosyası {#swap-file}
 
@@ -58,4 +58,4 @@ Ağ bant genişliği, büyük miktarda Ara veriyle dağıtılmış sorguları i�
 
 ClickHouse öncelikle Linux işletim sistemleri ailesi için geliştirilmiştir. Önerilen Linux dağıtımı Ubuntu'dur. Bu `tzdata` paket sisteme kurulmalıdır.
 
-ClickHouse diğer işletim sistemi ailelerinde de çalışabilir. Ayrıntıları görün [Başlarken](../getting_started/index.md) belgelerin bölümü.
+ClickHouse diğer işletim sistemi ailelerinde de çalışabilir. Ayrıntıları görün [Başlarken](../getting-started/index.md) belgelerin bölümü.

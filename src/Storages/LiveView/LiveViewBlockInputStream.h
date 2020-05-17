@@ -46,7 +46,7 @@ public:
 
     void cancel(bool kill) override
     {
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage->shutdown_called)
             return;
         IBlockInputStream::cancel(kill);
         std::lock_guard lock(storage->mutex);
@@ -115,7 +115,7 @@ protected:
             end = blocks->end();
         }
 
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage->shutdown_called)
         {
             return { Block(), true };
         }
@@ -155,7 +155,7 @@ protected:
                         bool signaled = std::cv_status::no_timeout == storage->condition.wait_for(lock,
                             std::chrono::microseconds(std::max(UInt64(0), heartbeat_interval_usec - (timestamp_usec - last_event_timestamp_usec))));
 
-                        if (isCancelled() || storage->is_dropped)
+                        if (isCancelled() || storage->shutdown_called)
                         {
                             return { Block(), true };
                         }

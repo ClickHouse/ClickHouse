@@ -370,7 +370,7 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
     zero_tails.resize(0);
     zero_tails.reserve(rows_per_granule.size());
 
-    auto filter_data = filter_vec.data();
+    const auto * filter_data = filter_vec.data();
 
     size_t total_zero_rows_in_tails = 0;
 
@@ -390,8 +390,8 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
 
 void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter & filter_vec, IColumn::Filter & new_filter_vec)
 {
-    auto filter_data = filter_vec.data();
-    auto new_filter_data = new_filter_vec.data();
+    const auto * filter_data = filter_vec.data();
+    auto * new_filter_data = new_filter_vec.data();
 
     for (auto i : ext::range(0, rows_per_granule.size()))
     {
@@ -412,7 +412,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     while (end - begin >= 64)
     {
         end -= 64;
-        auto pos = end;
+        const auto * pos = end;
         UInt64 val =
                 static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                         _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
@@ -498,7 +498,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
 
-    for (auto & name_and_type : merge_tree_reader->getColumns())
+    for (const auto & name_and_type : merge_tree_reader->getColumns())
         sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
     if (prewhere)
@@ -761,8 +761,8 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
 
     columns.resize(merge_tree_reader->numColumnsInResult());
 
-    auto & rows_per_granule = result.rowsPerGranule();
-    auto & started_ranges = result.startedRanges();
+    const auto & rows_per_granule = result.rowsPerGranule();
+    const auto & started_ranges = result.startedRanges();
 
     size_t next_range_to_start = 0;
 
@@ -773,7 +773,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
             && i == started_ranges[next_range_to_start].num_granules_read_before_start)
         {
             num_rows += stream.finalize(columns);
-            auto & range = started_ranges[next_range_to_start].range;
+            const auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
             stream = Stream(range.begin, range.end, merge_tree_reader);
         }
@@ -798,7 +798,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (!prewhere)
         return;
 
-    auto & header = merge_tree_reader->getColumns();
+    const auto & header = merge_tree_reader->getColumns();
     size_t num_columns = header.size();
 
     if (result.columns.size() != num_columns)
@@ -816,7 +816,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         if (prev_reader)
         {
-            for (auto & col : prev_reader->getSampleBlock())
+            for (const auto & col : prev_reader->getSampleBlock())
             {
                 block.insert({result.columns[pos], col.type, col.name});
                 ++pos;
@@ -866,7 +866,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// If there is a filter and without optimized
         if (result.getFilter() && last_reader_in_chain)
         {
-            auto result_filter = result.getFilter();
+            const auto * result_filter = result.getFilter();
             /// optimize is not called, need to check const 1 and const 0
             size_t bytes_in_filter = result.countBytesInResultFilter(result_filter->getData());
             if (bytes_in_filter == 0)
@@ -879,7 +879,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         if (result.getFilter())
         {
             /// filter might be shrinked while columns not
-            auto result_filter = result.getFilterOriginal();
+            const auto * result_filter = result.getFilterOriginal();
             filterColumns(result.columns, result_filter->getData());
             result.need_filter = true;
 

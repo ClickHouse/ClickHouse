@@ -11,6 +11,7 @@ import subprocess
 import time
 import urllib
 import httplib
+import requests
 import xml.dom.minidom
 import logging
 import docker
@@ -28,6 +29,8 @@ from .client import Client
 from .hdfs_api import HDFSApi
 
 HELPERS_DIR = p.dirname(__file__)
+CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
+DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/compose/")
 DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
@@ -174,14 +177,14 @@ class ClickHouseCluster:
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
             self.with_net_trics = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
 
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
             if not zookeeper_docker_compose_path:
-                zookeeper_docker_compose_path = p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')
+                zookeeper_docker_compose_path = p.join(DOCKER_COMPOSE_DIR, 'docker_compose_zookeeper.yml')
 
             self.with_zookeeper = True
             self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
@@ -191,72 +194,72 @@ class ClickHouseCluster:
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
                 self.with_mysql = True
-                self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
-                self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
+                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                           self.project_name, '--file',
-                                          p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                          p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
             for cmd in cmds:
-                cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+                cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
 
         if with_redis and not self.with_redis:
             self.with_redis = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')])
             self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         return instance
@@ -296,6 +299,41 @@ class ClickHouseCluster:
         docker_id = self.get_instance_docker_id(instance_name)
         handle = self.docker_client.containers.get(docker_id)
         return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+
+    def get_container_id(self, instance_name):
+        docker_id = self.get_instance_docker_id(instance_name)
+        handle = self.docker_client.containers.get(docker_id)
+        return handle.attrs['Id']
+
+    def get_container_logs(self, instance_name):
+        container_id = self.get_container_id(instance_name)
+        return self.docker_client.api.logs(container_id)
+
+    def exec_in_container(self, container_id, cmd, detach=False, **kwargs):
+        exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
+        output = self.docker_client.api.exec_start(exec_id, detach=detach)
+
+        output = output.decode('utf8')
+        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
+        if exit_code:
+            container_info = self.docker_client.api.inspect_container(container_id)
+            image_id = container_info.get('Image')
+            image_info = self.docker_client.api.inspect_image(image_id)
+            print("Command failed in container {}: ".format(container_id))
+            pprint.pprint(container_info)
+            print("")
+            print("Container {} uses image {}: ".format(container_id, image_id))
+            pprint.pprint(image_info)
+            print("")
+            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container_id, exit_code, output))
+        return output
+
+    def copy_file_to_container(self, container_id, local_path, dest_path):
+        with open(local_path, 'r') as fdata:
+            data = fdata.read()
+            encoded_data = base64.b64encode(data)
+            self.exec_in_container(container_id, ["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
+                                   user='root')
 
     def wait_mysql_to_start(self, timeout=60):
         start = time.time()
@@ -687,7 +725,7 @@ class ClickHouseInstance:
 
         def http_code_and_message():
             return str(open_result.getcode()) + " " + httplib.responses[open_result.getcode()] + ": " + open_result.read()
-            
+
         if expect_fail_and_get_error:
             if open_result.getcode() == 200:
                 raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read())
@@ -696,6 +734,11 @@ class ClickHouseInstance:
             if open_result.getcode() != 200:
                 raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
             return open_result.read()
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_request(self, url, method='GET', params=None, data=None, headers=None):
+        url = "http://" + self.ip_address + ":8123/"+url
+        return requests.request(method=method, url=url, params=params, data=data, headers=headers)
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):
@@ -729,24 +772,8 @@ class ClickHouseInstance:
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_start_wait_sec / 0.5), sleep_time=0.5)
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
-        container = self.get_docker_handle()
-        exec_id = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
-        output = self.docker_client.api.exec_start(exec_id, detach=detach)
-
-        output = output.decode('utf8')
-        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
-        if exit_code:
-            container_info = self.docker_client.api.inspect_container(container.id)
-            image_id = container_info.get('Image')
-            image_info = self.docker_client.api.inspect_image(image_id)
-            print("Command failed in container {}: ".format(container.id))
-            pprint.pprint(container_info)
-            print("")
-            print("Container {} uses image {}: ".format(container.id, image_id))
-            pprint.pprint(image_info)
-            print("")
-            raise Exception('Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(' '.join(cmd), container.id, exit_code, output))
-        return output
+        container_id = self.get_docker_handle().id
+        return self.cluster.exec_in_container(container_id, cmd, detach, **kwargs)
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
@@ -754,11 +781,8 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):
-        with open(local_path, 'r') as fdata:
-            data = fdata.read()
-            encoded_data = base64.b64encode(data)
-            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)],
-                                   user='root')
+        container_id = self.get_docker_handle().id
+        return self.cluster.copy_file_to_container(container_id, local_path, dest_path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c",

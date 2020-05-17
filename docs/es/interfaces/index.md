@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_folder_title: Interfaces
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_folder_title: Interfaz
 toc_priority: 14
 toc_title: "Implantaci\xF3n"
 ---
@@ -22,7 +22,7 @@ En la mayoría de los casos, se recomienda utilizar la herramienta o biblioteca 
 
 También hay una amplia gama de bibliotecas de terceros para trabajar con ClickHouse:
 
--   [Bibliotecas de clientes](third-party/client_libraries.md)
+-   [Bibliotecas de clientes](third-party/client-libraries.md)
 -   [Integración](third-party/integrations.md)
 -   [Interfaces visuales](third-party/gui.md)
 

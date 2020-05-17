@@ -1,7 +1,7 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -28,6 +28,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
+#include <Common/createHardLink.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -57,8 +58,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_LINK;
 }
 
 static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
@@ -264,7 +263,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             for (size_t j = 0; j < current_block.columns(); ++j)
             {
-                auto & src_column = current_block.getByPosition(j).column;
+                const auto & src_column = current_block.getByPosition(j).column;
                 auto & dst_column = job.current_shard_block.getByPosition(j).column;
 
                 /// Zero permutation size has special meaning in IColumn::permute
@@ -457,34 +456,14 @@ void DistributedBlockOutputStream::writeSuffix()
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block)
+IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block) const
 {
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
-    const auto & slot_to_shard = cluster->getSlotToShard();
 
-// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
-#define CREATE_FOR_TYPE(TYPE) \
-    if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
-    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
-        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
-            return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
+    return storage.createSelector(cluster, key_column);
 }
 
 
@@ -575,39 +554,29 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
-    /** tmp directory is used to ensure atomicity of transactions
-      *  and keep monitor thread out from reading incomplete data
-      */
+    /// tmp directory is used to ensure atomicity of transactions
+    /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto first = true;
+    const auto & [disk, data_path] = storage.getPath();
 
-    /// write first file, hardlink the others
-    for (const auto & dir_name : dir_names)
+    auto it = dir_names.begin();
+    /// on first iteration write block to a temporary directory for subsequent
+    /// hardlinking to ensure the inode is not freed until we're done
     {
-        const auto & [disk, data_path] = storage.getPath();
-        const std::string path(disk + data_path + dir_name + '/');
-
-        /// ensure shard subdirectory creation and notify storage
+        const std::string path(disk + data_path + *it);
         Poco::File(path).createDirectory();
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
 
-        const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
-        const auto & block_file_path = path + file_name;
+        const std::string tmp_path(path + "/tmp/");
+        Poco::File(tmp_path).createDirectory();
 
-        /** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
-            *  the inode is not freed until we're done */
-        if (first)
+        const std::string file_name(toString(storage.file_names_increment.get()) + ".bin");
+
+        first_file_tmp_path = tmp_path + file_name;
+
+        /// Write batch to temporary location
         {
-            first = false;
-
-            const auto & tmp_path = path + "tmp/";
-            Poco::File(tmp_path).createDirectory();
-            const auto & block_file_tmp_path = tmp_path + file_name;
-
-            first_file_tmp_path = block_file_tmp_path;
-
-            WriteBufferFromFile out{block_file_tmp_path};
+            WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out};
             NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
@@ -632,19 +601,35 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
-
-            auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-            directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
         }
 
-        if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
-                                   ErrorCodes::CANNOT_LINK);
+        // Create hardlink here to reuse increment number
+        const std::string block_file_path(path + '/' + file_name);
+        createHardLink(first_file_tmp_path, block_file_path);
+    }
+    ++it;
+
+    /// Make hardlinks
+    for (; it != dir_names.end(); ++it)
+    {
+        const std::string path(disk + data_path + *it);
+        Poco::File(path).createDirectory();
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
+
+        createHardLink(first_file_tmp_path, block_file_path);
     }
 
-    /** remove the temporary file, enabling the OS to reclaim inode after all threads
-        *  have removed their corresponding files */
+    /// remove the temporary file, enabling the OS to reclaim inode after all threads
+    /// have removed their corresponding files
     Poco::File(first_file_tmp_path).remove();
+
+    /// Notify
+    auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+    for (const auto & dir_name : dir_names)
+    {
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
+        directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
+    }
 }
 
 

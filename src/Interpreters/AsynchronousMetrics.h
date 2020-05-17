@@ -45,7 +45,10 @@ private:
     Container container;
     mutable std::mutex container_mutex;
 
+#if defined(OS_LINUX)
     MemoryStatisticsOS memory_stat;
+#endif
+
     ThreadFromGlobalPool thread;
 
     void run();

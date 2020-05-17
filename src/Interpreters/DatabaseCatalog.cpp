@@ -4,9 +4,14 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Parsers/formatAST.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
@@ -20,6 +25,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int NULL_POINTER_DEREFERENCE;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
@@ -81,7 +87,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder &&
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-        temporary_tables->removeTable(*global_context, "_tmp_" + toString(id));
+        temporary_tables->dropTable(*global_context, "_tmp_" + toString(id));
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -91,7 +97,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable(*global_context, "_tmp_" + toString(id));
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id));
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
@@ -100,13 +106,22 @@ StoragePtr TemporaryTableHolder::getTable() const
 
 void DatabaseCatalog::loadDatabases()
 {
+    drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
+
+    loadMarkedAsDroppedTables();
+    auto task_holder = global_context->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
+    (*drop_task)->activateAndSchedule();
 }
 
-void DatabaseCatalog::shutdown()
+void DatabaseCatalog::shutdownImpl()
 {
+    if (drop_task)
+        (*drop_task)->deactivate();
+
     /** At this point, some tables may have threads that block our mutex.
       * To shutdown them correctly, we will copy the current list of tables,
       *  and ask them all to finish their work.
@@ -124,13 +139,8 @@ void DatabaseCatalog::shutdown()
     for (auto & database : current_databases)
         database.second->shutdown();
 
-
     std::lock_guard lock(databases_mutex);
-    for (auto & elem : uuid_map)
-    {
-        std::lock_guard map_lock(elem.mutex);
-        elem.map.clear();
-    }
+    assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
     databases.clear();
     view_dependencies.clear();
 }
@@ -149,7 +159,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
-    const Context & local_context,
     std::optional<Exception> * exception) const
 {
     if (!table_id)
@@ -197,7 +206,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(local_context, table_id.table_name);
+    auto table = database->tryGetTable(table_id.table_name);
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
@@ -250,8 +259,15 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
         assertDatabaseExistsUnlocked(database_name);
         db = databases.find(database_name)->second;
 
-        if (check_empty && !db->empty(*global_context))
-            throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
+        if (check_empty)
+        {
+            if (!db->empty())
+                throw Exception("New table appeared in database being dropped or detached. Try again.",
+                                ErrorCodes::DATABASE_NOT_EMPTY);
+            auto * database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
+            if (!drop && database_atomic)
+                database_atomic->assertCanBeDetached(false);
+        }
 
         databases.erase(database_name);
     }
@@ -315,7 +331,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id) const
         if (iter != databases.end())
             db = iter->second;
     }
-    return db && db->isTableExist(*global_context, table_id.table_name);
+    return db && db->isTableExist(table_id.table_name);
 }
 
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id) const
@@ -353,14 +369,25 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
         throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 }
 
-DatabaseCatalog::DatabaseCatalog(const Context * global_context_)
+void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end())
+        throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+    it->second = std::make_pair(std::move(database), std::move(table));
+}
+
+DatabaseCatalog::DatabaseCatalog(Context * global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
     if (!global_context)
-        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::NULL_POINTER_DEREFERENCE);
 }
 
-DatabaseCatalog & DatabaseCatalog::init(const Context * global_context_)
+DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
 {
     static DatabaseCatalog database_catalog(global_context_);
     return database_catalog;
@@ -369,6 +396,23 @@ DatabaseCatalog & DatabaseCatalog::init(const Context * global_context_)
 DatabaseCatalog & DatabaseCatalog::instance()
 {
     return init(nullptr);
+}
+
+void DatabaseCatalog::shutdown()
+{
+    try
+    {
+        instance().shutdownImpl();
+    }
+    catch (const Exception & e)
+    {
+        /// If catalog was not initialized yet by init(global_context), instance() throws NULL_POINTER_DEREFERENCE.
+        /// It can happen if some exception was thrown on first steps of startup (e.g. command line arguments parsing).
+        /// Ignore it.
+        if (e.code() == ErrorCodes::NULL_POINTER_DEREFERENCE)
+            return;
+        throw;
+    }
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Context & local_context) const
@@ -421,13 +465,13 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
     auto db = tryGetDatabase(table_id.getDatabaseName());
-    return db && db->isDictionaryExist(*global_context, table_id.getTableName());
+    return db && db->isDictionaryExist(table_id.getTableName());
 }
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, *global_context, &exc);
+    auto res = getTableImpl(table_id, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
@@ -435,12 +479,224 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
 {
-    return getTableImpl(table_id, *global_context, nullptr).second;
+    return getTableImpl(table_id, nullptr).second;
+}
+
+DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id) const
+{
+    std::optional<Exception> exc;
+    auto res = getTableImpl(table_id, &exc);
+    if (!res.second)
+        throw Exception(*exc);
+    return res;
 }
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id) const
 {
-    return getTableImpl(table_id, *global_context, nullptr);
+    return getTableImpl(table_id, nullptr);
+}
+
+void DatabaseCatalog::loadMarkedAsDroppedTables()
+{
+    /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
+    /// which where marked as dropped by Atomic databases.
+    /// Data directories of such tables still exists in store/
+    /// and metadata still exists in ZooKeeper for ReplicatedMergeTree tables.
+    /// If server restarts before such tables was completely dropped,
+    /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
+
+    std::map<String, StorageID> dropped_metadata;
+    String path = global_context->getPath() + "metadata_dropped/";
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
+    {
+        /// File name has the following format:
+        /// database_name.table_name.uuid.sql
+
+        /// Ignore unexpected files
+        if (!it.name().ends_with(".sql"))
+            continue;
+
+        /// Process .sql files with metadata of tables which were marked as dropped
+        StorageID dropped_id = StorageID::createEmpty();
+        size_t dot_pos = it.name().find('.');
+        if (dot_pos == std::string::npos)
+            continue;
+        dropped_id.database_name = unescapeForFileName(it.name().substr(0, dot_pos));
+
+        size_t prev_dot_pos = dot_pos;
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
+        if (dot_pos == std::string::npos)
+            continue;
+        dropped_id.table_name = unescapeForFileName(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+
+        prev_dot_pos = dot_pos;
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
+        if (dot_pos == std::string::npos)
+            continue;
+        dropped_id.uuid = parse<UUID>(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+
+        String full_path = path + it.name();
+        dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
+    }
+
+    ThreadPool pool(SettingMaxThreads().getAutoValue());
+    for (const auto & elem : dropped_metadata)
+    {
+        pool.scheduleOrThrowOnError([&]()
+        {
+            this->enqueueDroppedTableCleanup(elem.second, nullptr, elem.first);
+        });
+    }
+    pool.wait();
+}
+
+String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
+{
+    return global_context->getPath() + "metadata_dropped/" +
+           escapeForFileName(table_id.getDatabaseName()) + "." +
+           escapeForFileName(table_id.getTableName()) + "." +
+           toString(table_id.uuid) + ".sql";
+}
+
+void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
+{
+    assert(table_id.hasUUID());
+    assert(!table || table->getStorageID().uuid == table_id.uuid);
+    assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
+
+    /// Table was removed from database. Enqueue removal of its data from disk.
+    time_t drop_time;
+    if (table)
+        drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    else
+    {
+        /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
+        LOG_INFO(log, "Trying load partially dropped table " << table_id.getNameForLogs() << " from " << dropped_metadata_path);
+        ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(log, *global_context, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/false);
+        auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
+        assert(!create || create->uuid == table_id.uuid);
+
+        if (create)
+        {
+            String data_path = "store/" + getPathForUUID(table_id.uuid);
+            create->database = table_id.database_name;
+            create->table = table_id.table_name;
+            try
+            {
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, *global_context, false).second;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot load partially dropped table " + table_id.getNameForLogs() +
+                                            " from: " + dropped_metadata_path +
+                                            ". Parsed query: " + serializeAST(*create) +
+                                            ". Will remove metadata and " + data_path +
+                                            ". Garbage may be left in ZooKeeper.");
+            }
+        }
+        else
+        {
+            LOG_WARNING(log, "Cannot parse metadata of partially dropped table "
+                    << table_id.getNameForLogs() << " from " << dropped_metadata_path
+                    << ". Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.");
+        }
+
+        drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
+    }
+
+    std::lock_guard lock(tables_marked_dropped_mutex);
+    if (ignore_delay)
+        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
+    else
+        tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
+    /// If list of dropped tables was empty, start a drop task
+    if (drop_task && tables_marked_dropped.size() == 1)
+        (*drop_task)->schedule();
+}
+
+void DatabaseCatalog::dropTableDataTask()
+{
+    /// Background task that removes data of tables which were marked as dropped by Atomic databases.
+    /// Table can be removed when it's not used by queries and drop_delay_sec elapsed since it was marked as dropped.
+
+    bool need_reschedule = true;
+    TableMarkedAsDropped table;
+    try
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
+        {
+            bool not_in_use = !elem.table || elem.table.unique();
+            bool old_enough = elem.drop_time + drop_delay_sec < current_time;
+            return not_in_use && old_enough;
+        });
+        if (it != tables_marked_dropped.end())
+        {
+            table = std::move(*it);
+            LOG_INFO(log, "Will try drop " + table.table_id.getNameForLogs());
+            tables_marked_dropped.erase(it);
+        }
+        need_reschedule = !tables_marked_dropped.empty();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
+
+    if (table.table_id)
+    {
+
+        try
+        {
+            dropTableFinally(table);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot drop table " + table.table_id.getNameForLogs() +
+                                        ". Will retry later.");
+            {
+                std::lock_guard lock(tables_marked_dropped_mutex);
+                tables_marked_dropped.emplace_back(std::move(table));
+                /// If list of dropped tables was empty, schedule a task to retry deletion.
+                if (tables_marked_dropped.size() == 1)
+                    need_reschedule = true;
+            }
+        }
+    }
+
+    /// Do not schedule a task if there is no tables to drop
+    if (need_reschedule)
+        (*drop_task)->scheduleAfter(reschedule_time_ms);
+}
+
+void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
+{
+    if (table.table)
+    {
+        table.table->drop();
+        table.table->is_dropped = true;
+    }
+
+    /// Even if table is not loaded, try remove its data from disk.
+    /// TODO remove data from all volumes
+    String data_path = global_context->getPath() + "store/" + getPathForUUID(table.table_id.uuid);
+    Poco::File table_data_dir{data_path};
+    if (table_data_dir.exists())
+    {
+        LOG_INFO(log, "Removing data directory " << data_path << " of dropped table " << table.table_id.getNameForLogs());
+        table_data_dir.remove(true);
+    }
+
+    LOG_INFO(log, "Removing metadata " << table.metadata_path << " of dropped table " << table.table_id.getNameForLogs());
+    Poco::File(table.metadata_path).remove();
+}
+
+String DatabaseCatalog::getPathForUUID(const UUID & uuid)
+{
+    const size_t uuid_prefix_len = 3;
+    return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
 

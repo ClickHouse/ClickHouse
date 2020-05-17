@@ -38,7 +38,7 @@
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration)
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - оптимизирует партиции таблиц [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) согласно правилам в [конфигурации rollup](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration)
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -70,7 +70,7 @@
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (использует [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -78,7 +78,7 @@
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (использует [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-    -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (использует [JDBC](../../sql_reference/table_functions/jdbc.md))
+    -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (использует [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
     -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)

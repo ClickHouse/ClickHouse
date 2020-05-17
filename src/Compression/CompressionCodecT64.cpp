@@ -167,7 +167,7 @@ TypeIndex typeIdx(const DataTypePtr & data_type)
 
 void transpose64x8(UInt64 * src_dst)
 {
-    auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
+    const auto * src8 = reinterpret_cast<const UInt8 *>(src_dst);
     UInt64 dst[8] = {};
 
     for (UInt32 i = 0; i < 64; ++i)
@@ -234,7 +234,7 @@ void transposeBytes(T value, UInt64 * matrix, UInt32 col)
 template <typename T>
 void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 {
-    auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
+    const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
 
     if constexpr (sizeof(T) > 4)
     {
@@ -423,8 +423,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     T min, max;
     findMinMax<T>(src, bytes_size, min, max);
-    MinMaxType min64 = min;
-    MinMaxType max64 = max;
+    MinMaxType min64 = min; // NOLINT
+    MinMaxType max64 = max; // NOLINT
 
     /// Write header
     {

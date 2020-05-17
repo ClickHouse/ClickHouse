@@ -73,6 +73,8 @@ public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
     virtual void flush() = 0;
+    virtual void prepareTable() = 0;
+    virtual void startup() = 0;
     virtual void shutdown() = 0;
     virtual ~ISystemLog() = default;
 };
@@ -129,6 +131,9 @@ public:
     /// Flush data in the buffer to disk
     void flush() override;
 
+    /// Start the background thread.
+    void startup() override;
+
     /// Stop the background flush thread before destructor. No more data will be written.
     void shutdown() override
     {
@@ -177,7 +182,7 @@ private:
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
-    void prepareTable();
+    void prepareTable() override;
 
     /// flushImpl can be executed only in saving_thread.
     void flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end);
@@ -197,7 +202,13 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+}
 
+
+template <typename LogElement>
+void SystemLog<LogElement>::startup()
+{
+    std::unique_lock lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -277,6 +288,11 @@ void SystemLog<LogElement>::stopFlushThread()
 {
     {
         std::unique_lock lock(mutex);
+
+        if (!saving_thread.joinable())
+        {
+            return;
+        }
 
         if (is_shutdown)
         {

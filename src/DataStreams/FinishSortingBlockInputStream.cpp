@@ -119,7 +119,7 @@ Block FinishSortingBlockInputStream::readImpl()
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
 
-                auto it = std::upper_bound(perm.begin(), perm.end(), last_block.rows() - 1, less);
+                auto * it = std::upper_bound(perm.begin(), perm.end(), last_block.rows() - 1, less);
 
                 /// We need to save tail of block, because next block may starts with the same key as in tail
                 /// and we should sort these rows in one chunk.
