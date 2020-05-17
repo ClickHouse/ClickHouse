@@ -12,7 +12,6 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
 #include <fstream>
@@ -51,11 +50,14 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/config_version.h>
 
-#ifdef __APPLE__
-// ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE 700
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config_version.h>
+#endif
+
+#if defined(OS_DARWIN)
+#   pragma GCC diagnostic ignored "-Wunused-macros"
+#   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
 
@@ -75,7 +77,7 @@ static void call_default_signal_handler(int sig)
 
 static constexpr size_t max_query_id_size = 127;
 
-static const size_t buf_size =
+static const size_t signal_pipe_buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
     + sizeof(ucontext_t)
@@ -90,8 +92,8 @@ static void writeSignalIDtoSignalPipe(int sig)
 {
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
+    char buf[signal_pipe_buf_size];
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
 
@@ -116,8 +118,8 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 {
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
-    char buf[buf_size];
-    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], buf_size, buf);
+    char buf[signal_pipe_buf_size];
+    DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
     const StackTrace stack_trace(signal_context);
@@ -165,10 +167,10 @@ public:
     {
     }
 
-    void run()
+    void run() override
     {
-        char buf[buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
+        char buf[signal_pipe_buf_size];
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], signal_pipe_buf_size, buf);
 
         while (!in.eof())
         {
@@ -177,7 +179,8 @@ public:
             // We may log some specific signals afterwards, with different log
             // levels and more info, but for completeness we log all signals
             // here at trace level.
-            LOG_TRACE(log, "Received signal " << strsignal(sig) << " (" << sig << ")");
+            // Don't use strsignal here, because it's not thread-safe.
+            LOG_TRACE(log, "Received signal " << sig);
 
             if (sig == Signals::StopThread)
             {
@@ -231,7 +234,6 @@ private:
     Logger * log;
     BaseDaemon & daemon;
 
-private:
     void onTerminate(const std::string & message, UInt32 thread_num) const
     {
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
@@ -281,19 +283,56 @@ private:
 };
 
 
+#if defined(SANITIZER)
+extern "C" void __sanitizer_set_death_callback(void (*)());
+
+static void sanitizerDeathCallback()
+{
+    Logger * log = &Logger::get("BaseDaemon");
+
+    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+
+    {
+        std::stringstream message;
+        message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        message << " (from thread " << getThreadId() << ")";
+        if (query_id.size == 0)
+            message << " (no query)";
+        else
+            message << " (query_id: " << query_id << ")";
+        message << " Sanitizer trap.";
+
+        LOG_FATAL(log, message.rdbuf());
+    }
+
+    /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
+    StackTrace stack_trace;
+    if (stack_trace.getSize())
+    {
+        std::stringstream bare_stacktrace;
+        bare_stacktrace << "Stack trace:";
+        for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+            bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+
+        LOG_FATAL(log, bare_stacktrace.rdbuf());
+    }
+
+    /// Write symbolized stack trace line by line for better grep-ability.
+    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+}
+#endif
+
+
 /** To use with std::set_terminate.
   * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
   *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
   * Look at libstdc++-v3/libsupc++/vterminate.cc for example.
   */
-static void terminate_handler()
+[[noreturn]] static void terminate_handler()
 {
     static thread_local bool terminating = false;
     if (terminating)
-    {
         abort();
-        return; /// Just for convenience.
-    }
 
     terminating = true;
 
@@ -366,137 +405,7 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-namespace
-{
-
-enum class InstructionFail
-{
-    NONE = 0,
-    SSE3 = 1,
-    SSSE3 = 2,
-    SSE4_1 = 3,
-    SSE4_2 = 4,
-    AVX = 5,
-    AVX2 = 6,
-    AVX512 = 7
-};
-
-std::string instructionFailToString(InstructionFail fail)
-{
-    switch (fail)
-    {
-        case InstructionFail::NONE:
-            return "NONE";
-        case InstructionFail::SSE3:
-            return "SSE3";
-        case InstructionFail::SSSE3:
-            return "SSSE3";
-        case InstructionFail::SSE4_1:
-            return "SSE4.1";
-        case InstructionFail::SSE4_2:
-            return "SSE4.2";
-        case InstructionFail::AVX:
-            return "AVX";
-        case InstructionFail::AVX2:
-            return "AVX2";
-        case InstructionFail::AVX512:
-            return "AVX512";
-    }
-    __builtin_unreachable();
-}
-
-
-sigjmp_buf jmpbuf;
-
-void sigIllCheckHandler(int, siginfo_t *, void *)
-{
-    siglongjmp(jmpbuf, 1);
-}
-
-/// Check if necessary sse extensions are available by trying to execute some sse instructions.
-/// If instruction is unavailable, SIGILL will be sent by kernel.
-void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
-{
-#if __SSE3__
-    fail = InstructionFail::SSE3;
-    __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
-#endif
-
-#if __SSSE3__
-    fail = InstructionFail::SSSE3;
-    __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
-
-#endif
-
-#if __SSE4_1__
-    fail = InstructionFail::SSE4_1;
-    __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
-#endif
-
-#if __SSE4_2__
-    fail = InstructionFail::SSE4_2;
-    __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
-#endif
-
-#if __AVX__
-    fail = InstructionFail::AVX;
-    __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
-#endif
-
-#if __AVX2__
-    fail = InstructionFail::AVX2;
-    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
-#endif
-
-#if __AVX512__
-    fail = InstructionFail::AVX512;
-    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
-#endif
-
-    fail = InstructionFail::NONE;
-}
-
-/// Check SSE and others instructions availability
-/// Calls exit on fail
-void checkRequiredInstructions()
-{
-    struct sigaction sa{};
-    struct sigaction sa_old{};
-    sa.sa_sigaction = sigIllCheckHandler;
-    sa.sa_flags = SA_SIGINFO;
-    auto signal = SIGILL;
-    if (sigemptyset(&sa.sa_mask) != 0
-        || sigaddset(&sa.sa_mask, signal) != 0
-        || sigaction(signal, &sa, &sa_old) != 0)
-    {
-        std::cerr << "Can not set signal handler\n";
-        exit(1);
-    }
-
-    volatile InstructionFail fail = InstructionFail::NONE;
-
-    if (sigsetjmp(jmpbuf, 1))
-    {
-        std::cerr << "Instruction check fail. There is no " << instructionFailToString(fail) << " instruction set\n";
-        exit(1);
-    }
-
-    checkRequiredInstructionsImpl(fail);
-
-    if (sigaction(signal, &sa_old, nullptr))
-    {
-        std::cerr << "Can not set signal handler\n";
-        exit(1);
-    }
-}
-
-}
-
-
-BaseDaemon::BaseDaemon()
-{
-    checkRequiredInstructions();
-}
+BaseDaemon::BaseDaemon() = default;
 
 
 BaseDaemon::~BaseDaemon()
@@ -540,7 +449,7 @@ std::string BaseDaemon::getDefaultCorePath() const
 
 void BaseDaemon::closeFDs()
 {
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(__MACH__))
+#if defined(OS_FREEBSD) || defined(OS_DARWIN)
     Poco::File proc_path{"/dev/fd"};
 #else
     Poco::File proc_path{"/proc/self/fd"};
@@ -560,7 +469,7 @@ void BaseDaemon::closeFDs()
     else
     {
         int max_fd = -1;
-#ifdef _SC_OPEN_MAX
+#if defined(_SC_OPEN_MAX)
         max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
@@ -578,7 +487,7 @@ namespace
 /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
 /// whatever errors that occur, because it's just a debugging aid and we don't
 /// care if it breaks.
-#if defined(__linux__) && !defined(NDEBUG)
+#if defined(OS_LINUX) && !defined(NDEBUG)
 void debugIncreaseOOMScore()
 {
     const std::string new_score = "555";
@@ -653,12 +562,12 @@ void BaseDaemon::initialize(Application & self)
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
-        const std::string timezone = config().getString("timezone");
-        if (0 != setenv("TZ", timezone.data(), 1))
+        const std::string config_timezone = config().getString("timezone");
+        if (0 != setenv("TZ", config_timezone.data(), 1))
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
-        DateLUT::setDefaultTimezone(timezone);
+        DateLUT::setDefaultTimezone(config_timezone);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -676,6 +585,9 @@ void BaseDaemon::initialize(Application & self)
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
+
+        /// Disable buffering for stderr
+        setbuf(stderr, nullptr);
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
@@ -762,12 +674,18 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
             sa.sa_flags = SA_SIGINFO;
 
             {
+#if defined(OS_DARWIN)
+                sigemptyset(&sa.sa_mask);
+                for (auto signal : signals)
+                    sigaddset(&sa.sa_mask, signal);
+#else
                 if (sigemptyset(&sa.sa_mask))
                     throw Poco::Exception("Cannot set signal handler.");
 
                 for (auto signal : signals)
                     if (sigaddset(&sa.sa_mask, signal))
                         throw Poco::Exception("Cannot set signal handler.");
+#endif
 
                 for (auto signal : signals)
                     if (sigaction(signal, &sa, nullptr))
@@ -780,6 +698,10 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
+
+#if defined(SANITIZER)
+    __sanitizer_set_death_callback(sanitizerDeathCallback);
+#endif
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
@@ -816,37 +738,37 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
     ServerApplication::terminate();
 }
 
-void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
+void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
 {
-    Poco::Util::ServerApplication::defineOptions (_options);
-
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("config-file", "C", "load configuration from a given file")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("config-file"));
 
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("log-file", "L", "use given log file")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("logger.log"));
 
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("errorlog-file", "E", "use given log file for errors only")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("logger.errorlog"));
 
-    _options.addOption(
+    new_options.addOption(
         Poco::Util::Option("pid-file", "P", "use given pidfile")
             .required(false)
             .repeatable(false)
             .argument("<file>")
             .binding("pid"));
+
+    Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
 bool isPidRunning(pid_t pid)

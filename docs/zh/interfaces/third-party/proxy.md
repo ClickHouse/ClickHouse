@@ -22,9 +22,9 @@
 
 在Go中实现。
 
-## ClickHouse-Bulk {#clickhouse-bulk}
+## ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-bulk}
 
-[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) 是一个简单的ClickHouse插入收集器。
+[ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/nikepan/clickhouse-bulk) 是一个简单的ClickHouse插入收集器。
 
 特征：
 

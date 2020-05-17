@@ -1,4 +1,8 @@
-# Hoja de ruta {#roadmap}
+---
+machine_translated: true
+---
+
+# Hoja De Ruta {#roadmap}
 
 ## Q1 2020 {#q1-2020}
 

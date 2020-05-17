@@ -1,0 +1,20 @@
+<yandex>
+    <kafka>
+        <auto_offset_reset>earliest</auto_offset_reset>
+        <!-- Debugging of possible issues, like:
+             - https://github.com/edenhill/librdkafka/issues/2077
+             - https://github.com/edenhill/librdkafka/issues/1778
+             - #5615
+
+             XXX: for now this messages will appears in stderr.
+        -->
+        <debug>cgrp,consumer,topic,protocol</debug>
+    </kafka>
+
+    <kafka_consumer_hang>
+        <!-- default: 3000 -->
+        <heartbeat_interval_ms>300</heartbeat_interval_ms>
+        <!-- default: 10000 -->
+        <session_timeout_ms>6000</session_timeout_ms>
+    </kafka_consumer_hang>
+</yandex>
