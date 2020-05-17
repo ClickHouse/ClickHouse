@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: Unir
 ---
 
 # Unir {#join}
 
-Estructura de datos preparada para usar en [JOIN](../../../sql-reference/statements/select.md#select-join) operación.
+Estructura de datos preparada para usar en [JOIN](../../../sql-reference/statements/select/join.md#select-join) operación.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -23,13 +23,13 @@ Vea la descripción detallada del [CREATE TABLE](../../../sql-reference/statemen
 
 **Parámetros del motor**
 
--   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select.md#select-join-strictness).
--   `join_type` – [Tipo de unión](../../../sql-reference/statements/select.md#select-join-types).
+-   `join_strictness` – [ÚNETE a la rigurosidad](../../../sql-reference/statements/select/join.md#select-join-strictness).
+-   `join_type` – [Tipo de unión](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` cláusula que el `JOIN` operación se hace con.
 
 Entrar `join_strictness` y `join_type` parámetros sin comillas, por ejemplo, `Join(ANY, LEFT, col1)`. Deben coincidir con el `JOIN` operación para la que se utilizará la tabla. Si los parámetros no coinciden, ClickHouse no lanza una excepción y puede devolver datos incorrectos.
 
-## Uso De La Tabla {#table-usage}
+## Uso de la tabla {#table-usage}
 
 ### Ejemplo {#example}
 
@@ -79,7 +79,7 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 └────────────────────────────────────────────┘
 ```
 
-### Selección e inserción De Datos {#selecting-and-inserting-data}
+### Selección e inserción de datos {#selecting-and-inserting-data}
 
 Usted puede utilizar `INSERT` consultas para agregar datos al `Join`-mesas de motor. Si la tabla se creó con el `ANY` estricta, se ignoran los datos de las claves duplicadas. Con el `ALL` estricta, se agregan todas las filas.
 
@@ -88,7 +88,7 @@ No se puede realizar una `SELECT` consulta directamente desde la tabla. En su lu
 -   Coloque la mesa hacia el lado derecho en un `JOIN` clausula.
 -   Llame al [joinGet](../../../sql-reference/functions/other-functions.md#joinget) función, que le permite extraer datos de la tabla de la misma manera que de un diccionario.
 
-### Limitaciones y Ajustes {#join-limitations-and-settings}
+### Limitaciones y ajustes {#join-limitations-and-settings}
 
 Al crear una tabla, se aplican los siguientes valores:
 
@@ -100,9 +100,9 @@ Al crear una tabla, se aplican los siguientes valores:
 
 El `Join`-las tablas del motor no se pueden usar en `GLOBAL JOIN` operación.
 
-El `Join`-motor permite el uso [Sistema abierto.](../../../operations/settings/settings.md#join_use_nulls) ajuste en el `CREATE TABLE` instrucción. Y [SELECT](../../../sql-reference/statements/select.md) consulta permite el uso `join_use_nulls` demasiado. Si tienes diferentes `join_use_nulls` configuración, puede obtener un error al unirse a la tabla. Depende del tipo de JOIN. Cuando se utiliza [joinGet](../../../sql-reference/functions/other-functions.md#joinget) función, usted tiene que utilizar el mismo `join_use_nulls` ajuste en `CRATE TABLE` y `SELECT` instrucción.
+El `Join`-motor permite el uso [Sistema abierto.](../../../operations/settings/settings.md#join_use_nulls) ajuste en el `CREATE TABLE` instrucción. Y [SELECT](../../../sql-reference/statements/select/index.md) consulta permite el uso `join_use_nulls` demasiado. Si tienes diferentes `join_use_nulls` configuración, puede obtener un error al unirse a la tabla. Depende del tipo de JOIN. Cuando se utiliza [joinGet](../../../sql-reference/functions/other-functions.md#joinget) función, usted tiene que utilizar el mismo `join_use_nulls` ajuste en `CRATE TABLE` y `SELECT` instrucción.
 
-## Almacenamiento De Datos {#data-storage}
+## Almacenamiento de datos {#data-storage}
 
 `Join` datos de la tabla siempre se encuentra en la memoria RAM. Al insertar filas en una tabla, ClickHouse escribe bloques de datos en el directorio del disco para que puedan restaurarse cuando se reinicie el servidor.
 

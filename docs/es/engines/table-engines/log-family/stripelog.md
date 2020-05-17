@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: StripeLog
 ---
 
-# Lista De Stripelog {#stripelog}
+# Lista de Stripelog {#stripelog}
 
 Este motor pertenece a la familia de motores de registro. Consulte las propiedades comunes de los motores de registro y sus diferencias en [Familia del motor de registro](log-family.md) artículo.
 
 Utilice este motor en escenarios en los que necesite escribir muchas tablas con una pequeña cantidad de datos (menos de 1 millón de filas).
 
-## Creación De Una Tabla {#table_engines-stripelog-creating-a-table}
+## Creación de una tabla {#table_engines-stripelog-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Vea la descripción detallada del [CREATE TABLE](../../../sql-reference/statements/create.md#create-table-query) consulta.
 
-## Escribir Los Datos {#table_engines-stripelog-writing-the-data}
+## Escribir los datos {#table_engines-stripelog-writing-the-data}
 
 El `StripeLog` el motor almacena todas las columnas en un archivo. Para cada `INSERT` consulta, ClickHouse agrega el bloque de datos al final de un archivo de tabla, escribiendo columnas una por una.
 
@@ -35,11 +35,11 @@ Para cada tabla, ClickHouse escribe los archivos:
 
 El `StripeLog` el motor no soporta el `ALTER UPDATE` y `ALTER DELETE` operación.
 
-## Lectura De Los Datos {#table_engines-stripelog-reading-the-data}
+## Lectura de los datos {#table_engines-stripelog-reading-the-data}
 
 El archivo con marcas permite ClickHouse paralelizar la lectura de datos. Esto significa que un `SELECT` query devuelve filas en un orden impredecible. Utilice el `ORDER BY` cláusula para ordenar filas.
 
-## Ejemplo De Uso {#table_engines-stripelog-example-of-use}
+## Ejemplo de uso {#table_engines-stripelog-example-of-use}
 
 Creación de una tabla:
 

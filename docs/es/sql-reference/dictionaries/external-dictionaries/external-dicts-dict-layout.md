@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: Almacenamiento de diccionarios en la memoria
 ---
 
-# Almacenamiento De Diccionarios En La Memoria {#dicts-external-dicts-dict-layout}
+# Almacenamiento de diccionarios en la memoria {#dicts-external-dicts-dict-layout}
 
 Hay una variedad de formas de almacenar diccionarios en la memoria.
 
@@ -50,12 +50,13 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Maneras De Almacenar Diccionarios En La Memoria {#ways-to-store-dictionaries-in-memory}
+## Maneras de almacenar diccionarios en la memoria {#ways-to-store-dictionaries-in-memory}
 
 -   [plano](#flat)
 -   [Hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [Sistema abierto.](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [directo](#direct)
 -   [range\_hashed](#range-hashed)
 -   [Método de codificación de datos:](#complex-key-hashed)
 -   [complejo\_key\_cache](#complex-key-cache)
@@ -105,7 +106,7 @@ o
 LAYOUT(HASHED())
 ```
 
-### Sistema Abierto {#dicts-external_dicts_dict_layout-sparse_hashed}
+### Sistema abierto {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar a `hashed`, pero usa menos memoria a favor más uso de CPU.
 
@@ -121,7 +122,7 @@ Ejemplo de configuración:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### Método De codificación De Datos: {#complex-key-hashed}
+### Método de codificación de datos: {#complex-key-hashed}
 
 Este tipo de almacenamiento es para su uso con material compuesto [claves](external-dicts-dict-structure.md). Similar a `hashed`.
 
@@ -296,7 +297,29 @@ Establezca un tamaño de caché lo suficientemente grande. Necesitas experimenta
 
 Este tipo de almacenamiento es para su uso con material compuesto [claves](external-dicts-dict-structure.md). Similar a `cache`.
 
-### Método De codificación De Datos: {#ip-trie}
+### directo {#direct}
+
+El diccionario no se almacena en la memoria y va directamente a la fuente durante el procesamiento de una solicitud.
+
+La clave del diccionario tiene el `UInt64` tipo.
+
+Todos los tipos de [fuente](external-dicts-dict-sources.md), excepto los archivos locales, son compatibles.
+
+Ejemplo de configuración:
+
+``` xml
+<layout>
+  <direct />
+</layout>
+```
+
+o
+
+``` sql
+LAYOUT(DIRECT())
+```
+
+### Método de codificación de datos: {#ip-trie}
 
 Este tipo de almacenamiento sirve para asignar prefijos de red (direcciones IP) a metadatos como ASN.
 

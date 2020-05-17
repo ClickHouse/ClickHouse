@@ -127,8 +127,6 @@ SRCS(
     cos.cpp
     CRC.cpp
     currentDatabase.cpp
-    currentQuota.cpp
-    currentRowPolicies.cpp
     currentUser.cpp
     dateDiff.cpp
     defaultValueOfArgumentType.cpp
@@ -380,6 +378,7 @@ SRCS(
     toStartOfMinute.cpp
     toStartOfMonth.cpp
     toStartOfQuarter.cpp
+    toStartOfSecond.cpp
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp

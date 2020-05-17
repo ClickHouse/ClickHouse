@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 40
 toc_title: "Configuraci\xF3n de un diccionario externo"
 ---
 
-# Configuración De Un Diccionario Externo {#dicts-external-dicts-dict}
+# Configuración de un diccionario externo {#dicts-external-dicts-dict}
 
 Si el diccionario se configura usando un archivo xml, la configuración del diccionario tiene la siguiente estructura:
 

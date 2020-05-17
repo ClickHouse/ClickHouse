@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: "Ondal\u0131k"
 ---
@@ -19,7 +19,7 @@ P parametre değerine bağlı olarak ondalık (P, S) bir eşanlamlıdır:
 - P \[ 10 : 18\] - Decimal64(ler) için)
 - P \[ 19 : 38\] - Decimal128(ler) için)
 
-## Ondalık değer aralıkları {#decimal-value-ranges}
+## Ondalık Değer Aralıkları {#decimal-value-ranges}
 
 -   Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9-S) )
 -   Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18-S) )
@@ -31,9 +31,9 @@ P parametre değerine bağlı olarak ondalık (P, S) bir eşanlamlıdır:
 
 Dahili veri, ilgili bit genişliğine sahip normal imzalı tamsayılar olarak temsil edilir. Bellekte saklanabilen gerçek değer aralıkları, yukarıda belirtilenden biraz daha büyüktür ve yalnızca bir dizeden dönüştürmede kontrol edilir.
 
-Modern CPU 128-bit tamsayıları doğal olarak desteklemediğinden, Decimal128 üzerindeki işlemler öykünülür. Bu Decimal128 nedeniyle Decimal32/Decimal64’ten önemli ölçüde daha yavaş çalışır.
+Modern CPU 128-bit tamsayıları doğal olarak desteklemediğinden, Decimal128 üzerindeki işlemler öykünülür. Bu Decimal128 nedeniyle Decimal32/Decimal64'ten önemli ölçüde daha yavaş çalışır.
 
-## İşlemler Ve sonuç türü {#operations-and-result-type}
+## İşlemler ve sonuç türü {#operations-and-result-type}
 
 Ondalık sonuçtaki ikili işlemler daha geniş sonuç türünde (herhangi bir bağımsız değişken sırası ile) sonuçlanır.
 

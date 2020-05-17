@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "\u0628\u0631\u0627\u06CC \u062C\u0633\u062A\u062C\u0648\u06CC \u0631\u0634\
   \u062A\u0647\u0647\u0627"
@@ -279,13 +279,13 @@ SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 
 ## مقالههای جدید مرتبط با تحقیق این نویسنده<sub>1</sub> سوزن<sub>2</sub>, …, needle<sub>نه</sub>\]) {#multisearchfirstindexhaystack-needle1-needle2-needlen}
 
-بازگرداندن شاخص `i` (شروع از 1) سوزن چپ پیدا شده است<sub>من … </sub> در رشته `haystack` و 0 در غیر این صورت.
+بازگرداندن شاخص `i` (شروع از 1) سوزن چپ پیدا شده است<sub>من ... </sub> در رشته `haystack` و 0 در غیر این صورت.
 
 برای یک جستجوی غیر حساس مورد و یا / و در توابع استفاده از فرمت جی تی اف 8 `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
 ## مولسیرچانی (هیستک, \[سوزن<sub>1</sub> سوزن<sub>2</sub>, …, needle<sub>نه</sub>\]) {#function-multisearchany}
 
-بازده 1, اگر حداقل یک سوزن رشته<sub>من … </sub> مسابقات رشته `haystack` و 0 در غیر این صورت.
+بازده 1, اگر حداقل یک سوزن رشته<sub>من ... </sub> مسابقات رشته `haystack` و 0 در غیر این صورت.
 
 برای یک جستجوی غیر حساس مورد و یا / و در توابع استفاده از فرمت جی تی اف 8 `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 

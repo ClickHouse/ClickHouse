@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: ALTER
 ---
@@ -26,7 +26,7 @@ Aşağıdaki eylemler desteklenir:
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
 
 Bu eylemler aşağıda ayrıntılı olarak açıklanmıştır.
 
@@ -38,7 +38,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 
 Belirtilen tabloya yeni bir sütun ekler `name`, `type`, [`codec`](create.md#codecs) ve `default_expr` (bkz [Varsayılan ifadeler](create.md#create-default-values)).
 
-Eğer… `IF NOT EXISTS` yan tümcesi dahil, sütun zaten varsa sorgu bir hata döndürmez. Belirtir specifyseniz `AFTER name_after` (başka bir sütunun adı), sütun tablo sütunları listesinde belirtilen sonra eklenir. Aksi takdirde, sütun tablonun sonuna eklenir. Bir tablonun başına bir sütun eklemek için bir yol olduğunu unutmayın. Bir eylem zinciri için, `name_after` önceki eylemlerden birine eklenen bir sütunun adı olabilir.
+Eğer... `IF NOT EXISTS` yan tümcesi dahil, sütun zaten varsa sorgu bir hata döndürmez. Belirtir specifyseniz `AFTER name_after` (başka bir sütunun adı), sütun tablo sütunları listesinde belirtilen sonra eklenir. Aksi takdirde, sütun tablonun sonuna eklenir. Bir tablonun başına bir sütun eklemek için bir yol olduğunu unutmayın. Bir eylem zinciri için, `name_after` önceki eylemlerden birine eklenen bir sütunun adı olabilir.
 
 Bir sütun eklemek, verilerle herhangi bir işlem yapmadan tablo yapısını değiştirir. Sonra veriler diskte görünmüyor `ALTER`. Tablodan okurken bir sütun için veri eksikse, varsayılan değerlerle doldurulur (varsa, varsayılan ifadeyi gerçekleştirerek veya sıfır veya boş dizeler kullanarak). Sütun, veri parçalarını birleştirdikten sonra diskte görünür (bkz. [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)).
 
@@ -56,7 +56,7 @@ ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 DROP COLUMN [IF EXISTS] name
 ```
 
-Sütun adı ile siler `name`. Eğer… `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
+Sütun adı ile siler `name`. Eğer... `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
 
 Dosya sisteminden veri siler. Bu, tüm dosyaları sildiğinden, sorgu neredeyse anında tamamlanır.
 
@@ -74,7 +74,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 
 Belirtilen bölüm için bir sütundaki tüm verileri sıfırlar. Bölümdeki bölüm adını ayarlama hakkında daha fazla bilgi edinin [Bölüm ifadesi nasıl belirlenir](#alter-how-to-specify-part-expr).
 
-Eğer… `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
+Eğer... `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
 
 Örnek:
 
@@ -88,7 +88,7 @@ ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 COMMENT COLUMN [IF EXISTS] name 'comment'
 ```
 
-Sütuna bir yorum ekler. Eğer… `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
+Sütuna bir yorum ekler. Eğer... `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
 
 Her sütunun bir yorumu olabilir. Sütun için bir yorum zaten varsa, yeni bir yorum önceki yorumun üzerine yazar.
 
@@ -116,7 +116,7 @@ Bu sorgu değişiklikleri `name` sütun özellikleri:
 
         For examples of columns TTL modifying, see [Column TTL](../engines/table_engines/mergetree_family/mergetree.md#mergetree-column-ttl).
 
-Eğer… `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
+Eğer... `IF EXISTS` yan tümcesi belirtilir, sütun yoksa sorgu bir hata döndürmez.
 
 Türü değiştirirken, değerler sanki [toType](../../sql-reference/functions/type-conversion-functions.md) fonksiyonlar onlara uygulandı. Yalnızca varsayılan ifade değiştirilirse, sorgu karmaşık bir şey yapmaz ve neredeyse anında tamamlanır.
 
@@ -146,13 +146,13 @@ Bu `ALTER` sorgu oluşturmak ve iç içe veri yapıları, ancak tüm iç içe ve
 
 Birincil anahtardaki veya örnekleme anahtarındaki sütunları silmek için destek yoktur. `ENGINE` ifade). Birincil anahtarda bulunan sütunların türünü değiştirmek, yalnızca bu değişiklik verilerin değiştirilmesine neden olmazsa mümkündür (örneğin, bir numaraya değer eklemenize veya bir türden değiştirmenize izin verilir `DateTime` -e doğru `UInt32`).
 
-Eğer… `ALTER` sorgu, ihtiyacınız olan tablo değişikliklerini yapmak için yeterli değildir, yeni bir tablo oluşturabilir, verileri kullanarak kopyalayabilirsiniz. [INSERT SELECT](insert-into.md#insert_query_insert-select) sorgu, daha sonra tabloları kullanarak geçiş [RENAME](misc.md#misc_operations-rename) sorgu ve eski tabloyu silin. Kullanabilirsiniz [clickhouse-fotokopi makinesi](../../operations/utilities/clickhouse-copier.md) bir alternatif olarak `INSERT SELECT` sorgu.
+Eğer... `ALTER` sorgu, ihtiyacınız olan tablo değişikliklerini yapmak için yeterli değildir, yeni bir tablo oluşturabilir, verileri kullanarak kopyalayabilirsiniz. [INSERT SELECT](insert-into.md#insert_query_insert-select) sorgu, daha sonra tabloları kullanarak geçiş [RENAME](misc.md#misc_operations-rename) sorgu ve eski tabloyu silin. Kullanabilirsiniz [clickhouse-fotokopi makinesi](../../operations/utilities/clickhouse-copier.md) bir alternatif olarak `INSERT SELECT` sorgu.
 
 Bu `ALTER` sorgu tüm okur ve tablo için yazar engeller. Başka bir deyişle, Eğer uzun `SELECT` zamanda çalışıyor `ALTER` sorgu `ALTER` sorgu tamamlanmasını bekleyecektir. Aynı zamanda, aynı tablodaki tüm yeni sorgular bu sırada bekleyecektir `ALTER` çalışıyor.
 
 Verileri kendileri saklamayan tablolar için (örneğin `Merge` ve `Distributed`), `ALTER` sadece tablo yapısını değiştirir ve alt tabloların yapısını değiştirmez. Örneğin, ALTER for a çalıştırırken `Distributed` tablo, ayrıca çalıştırmak gerekir `ALTER` tüm uzak sunuculardaki tablolar için.
 
-### Anahtar İfadelerle Manipülasyonlar {#manipulations-with-key-expressions}
+### Anahtar ifadelerle manipülasyonlar {#manipulations-with-key-expressions}
 
 Aşağıdaki komut desteklenir:
 
@@ -169,7 +169,7 @@ Komut, yalnızca meta verileri değiştirdiği bir anlamda hafiftir. Veri parça
 satırlar sıralama anahtarı ifadesi tarafından sıralanır varolan sütunları içeren ifadeler ekleyemezsiniz
 sıralama anahtarına (yalnızca sütun tarafından eklenen `ADD COLUMN` aynı komut `ALTER` sorgu).
 
-### Veri Atlama Endeksleri İle Manipülasyonlar {#manipulations-with-data-skipping-indices}
+### Veri atlama endeksleri ile manipülasyonlar {#manipulations-with-data-skipping-indices}
 
 Sadece tablolar için çalışır [`*MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) aile (dahil
 [çoğaltıyordu](../../engines/table-engines/mergetree-family/replication.md) Tablolar). Aşağıdaki işlemler
@@ -182,7 +182,7 @@ mevcuttur:
 Bu komutlar, yalnızca meta verileri değiştirdikleri veya dosyaları kaldırdıkları bir anlamda hafiftir.
 Ayrıca, çoğaltılırlar (ZooKeeper aracılığıyla indeks meta verilerini senkronize etme).
 
-### Kısıtlamalar İle Manipülasyonlar {#manipulations-with-constraints}
+### Kısıtlamalar ile manipülasyonlar {#manipulations-with-constraints}
 
 Daha fazla görmek [kısıtlamalar](create.md#constraints)
 
@@ -197,9 +197,9 @@ Sorgular eklemek veya hemen işlenir, böylece tablodan kısıtlamaları hakkın
 
 Kısıtlama kontrolü *idam edilm willeyecek* eklen .mişse mevcut ver .ilerde
 
-Çoğaltılmış tablolardaki tüm değişiklikler Zookeeper’a yayınlanır, bu nedenle diğer kopyalara uygulanır.
+Çoğaltılmış tablolardaki tüm değişiklikler Zookeeper'a yayınlanır, bu nedenle diğer kopyalara uygulanır.
 
-### Bölümler Ve parçalar Ile manipülasyonlar {#alter_manipulations-with-partitions}
+### Bölümler ve parçalar ile manipülasyonlar {#alter_manipulations-with-partitions}
 
 Aşağıdaki işlemler ile [bölümler](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) mevcuttur:
 
@@ -208,7 +208,7 @@ Aşağıdaki işlemler ile [bölümler](../../engines/table-engines/mergetree-fa
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` tabloya dizin.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Veri bölümünü bir tablodan diğerine kopyalar ve değiştirir.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - veri bölümünü bir tablodan diğerine taşıyın.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#alter\_move\_to\_table-partition) - veri bölümünü bir tablodan diğerine taşıyın.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Bir bölümdeki belirtilen sütunun değerini sıfırlar.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Bir bölümde belirtilen ikincil dizini sıfırlar.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -324,7 +324,7 @@ Sorgunun başarıyla çalışması için aşağıdaki koşulların karşılanmas
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
-Bir bölümdeki belirtilen sütundaki tüm değerleri sıfırlar. Eğer… `DEFAULT` bir tablo oluştururken yan tümcesi belirlendi, bu sorgu sütun değerini belirtilen varsayılan değere ayarlar.
+Bir bölümdeki belirtilen sütundaki tüm değerleri sıfırlar. Eğer... `DEFAULT` bir tablo oluştururken yan tümcesi belirlendi, bu sorgu sütun değerini belirtilen varsayılan değere ayarlar.
 
 Örnek:
 
@@ -338,7 +338,7 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-Bu sorgu, belirtilen bir bölümün yerel yedeğini oluşturur. Eğer… `PARTITION` yan tümcesi atlandı, sorgu aynı anda tüm bölümlerin yedeğini oluşturur.
+Bu sorgu, belirtilen bir bölümün yerel yedeğini oluşturur. Eğer... `PARTITION` yan tümcesi atlandı, sorgu aynı anda tüm bölümlerin yedeğini oluşturur.
 
 !!! note "Not"
     Tüm yedekleme işlemi sunucuyu durdurmadan gerçekleştirilir.
@@ -351,7 +351,7 @@ Yürütme sırasında, bir veri anlık görüntüsü için sorgu, bir tablo veri
 -   `N` yedeklemenin artımlı sayısıdır.
 
 !!! note "Not"
-    Kullanıyorsanız [bir tablodaki veri depolama için disk kümesi](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), bu `shadow/N` dizin tarafından eşleşen veri parçalarını depolamak, her diskte görünür `PARTITION` ifade.
+    Kullanıyorsanız [bir tablodaki veri depolama için disk kümesi](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), bu `shadow/N` dizin tarafından eşleşen veri parçalarını depolamak, her diskte görünür `PARTITION` İfade.
 
 Dizinlerin aynı yapısı, içinde olduğu gibi yedek içinde oluşturulur `/var/lib/clickhouse/`. Sorgu gerçekleştirir ‘chmod’ tüm dosyalar için, onlara yazmayı yasaklamak.
 
@@ -390,7 +390,7 @@ Başka bir sunucudan bir bölüm indirir. Bu sorgu yalnızca çoğaltılmış ta
 Sorgu aşağıdakileri yapar:
 
 1.  Bölümü belirtilen parçadan indirir. İçinde ‘path-in-zookeeper’ zookeeper içinde shard için bir yol belirtmeniz gerekir.
-2.  Sonra sorgu indirilen verileri `detached` directory of the `table_name` Tablo. Kullan… [ATTACH PARTITION\|PART](#alter_attach-partition) tabloya veri eklemek için sorgu.
+2.  Sonra sorgu indirilen verileri `detached` directory of the `table_name` Tablo. Kullan... [ATTACH PARTITION\|PART](#alter_attach-partition) tabloya veri eklemek için sorgu.
 
 Mesela:
 
@@ -429,13 +429,13 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-#### Bölüm İfadesi Nasıl Ayarlanır {#alter-how-to-specify-part-expr}
+#### Bölüm ifadesi nasıl ayarlanır {#alter-how-to-specify-part-expr}
 
 Bölüm ifadesini şu şekilde belirtebilirsiniz `ALTER ... PARTITION` farklı şekillerde sorgular:
 
 -   Bu gibi bir değer `partition` sütun `system.parts` Tablo. Mesela, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   Tablo sütunundan ifade olarak. Sabitler ve sabit ifadeler desteklenir. Mesela, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
--   Bölüm kimliğini kullanma. Partition ID, dosya sistemindeki ve Zookeeper’daki bölümlerin adları olarak kullanılan bölümün (mümkünse insan tarafından okunabilir) bir dize tanımlayıcısıdır. Bölüm kimliği belirtilmelidir `PARTITION ID` fık .ra, tek tırnak içinde. Mesela, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
+-   Bölüm kimliğini kullanma. Partition ID, dosya sistemindeki ve Zookeeper'daki bölümlerin adları olarak kullanılan bölümün (mümkünse insan tarafından okunabilir) bir dize tanımlayıcısıdır. Bölüm kimliği belirtilmelidir `PARTITION ID` fık .ra, tek tırnak içinde. Mesela, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 -   İn the [ALTER ATTACH PART](#alter_attach-partition) ve [DROP DETACHED PART](#alter_drop-detached) sorgu, bir parçanın adını belirtmek için, bir değer ile dize literal kullanın `name` sütun [sistem.detached\_parts](../../operations/system-tables.md#system_tables-detached_parts) Tablo. Mesela, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Bölüm belirtilirken tırnak kullanımı bölüm ifadesi türüne bağlıdır. Örneğin, için `String` yazın, adını tırnak içinde belirtmeniz gerekir (`'`). İçin `Date` ve `Int*` türleri hiçbir tırnak gereklidir.
@@ -450,7 +450,7 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 
 Örnekleri `ALTER ... PARTITION` sorgular testlerde gösterilmiştir [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) ve [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
-### Tablo TTL Ile manipülasyonlar {#manipulations-with-table-ttl}
+### Tablo TTL ile manipülasyonlar {#manipulations-with-table-ttl}
 
 Değiştirebilirsiniz [tablo TTL](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) aşağıdaki formun bir isteği ile:
 
@@ -497,8 +497,106 @@ Bir sorgu virgülle ayrılmış birkaç komut içerebilir.
 
 Mutasyonlar tamamen yaratılış sırasına göre sıralanır ve her bir parçaya bu sırayla uygulanır. Mutasyonlar da kısmen ekler ile sıralanır-mutasyon gönderilmeden önce tabloya eklenen veriler mutasyona uğrayacak ve bundan sonra eklenen veriler mutasyona uğramayacaktır. Mutasyonların ekleri hiçbir şekilde engellemediğini unutmayın.
 
-Mutasyon girişi eklendikten hemen sonra bir mutasyon sorgusu döner(çoğaltılmış tablolar Zookeeper’a, çoğaltılmamış tablolar için-dosya sistemine). Mutasyonun kendisi sistem profili ayarlarını kullanarak eşzamansız olarak yürütür. Mutasyonların ilerlemesini izlemek için kullanabilirsiniz [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) Tablo. Başarıyla gönderilen BIR mutasyon, ClickHouse sunucuları yeniden başlatılmış olsa bile yürütmeye devam edecektir. Gönderildikten sonra mutasyonu geri almanın bir yolu yoktur, ancak mutasyon herhangi bir nedenle sıkışmışsa, [`KILL MUTATION`](misc.md#kill-mutation) sorgu.
+Mutasyon girişi eklendikten hemen sonra bir mutasyon sorgusu döner(çoğaltılmış tablolar Zookeeper'a, çoğaltılmamış tablolar için-dosya sistemine). Mutasyonun kendisi sistem profili ayarlarını kullanarak eşzamansız olarak yürütür. Mutasyonların ilerlemesini izlemek için kullanabilirsiniz [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) Tablo. Başarıyla gönderilen BIR mutasyon, ClickHouse sunucuları yeniden başlatılmış olsa bile yürütmeye devam edecektir. Gönderildikten sonra mutasyonu geri almanın bir yolu yoktur, ancak mutasyon herhangi bir nedenle sıkışmışsa, [`KILL MUTATION`](misc.md#kill-mutation) sorgu.
 
 Bitmiş mutasyonlar için girişler hemen silinmez (korunmuş girişlerin sayısı, `finished_mutations_to_keep` depolama motoru parametresi). Eski mutasyon girişleri silinir.
+
+## ALTER USER {#alter-user-statement}
+
+ClickHouse kullanıcı hesaplarını değiştirir.
+
+### Sözdizimi {#alter-user-syntax}
+
+``` sql
+ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### Açıklama {#alter-user-dscr}
+
+Kullanmak `ALTER USER` sen olmalı [ALTER USER](grant.md#grant-access-management) ayrıcalık.
+
+### Örnekler {#alter-user-examples}
+
+Verilen rolleri varsayılan olarak ayarla:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+Roller daha önce bir kullanıcıya verilmezse, ClickHouse bir istisna atar.
+
+Verilen tüm rolleri varsayılan olarak ayarlayın:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+Gelecekte bir kullanıcıya bir rol verilecekse, otomatik olarak varsayılan hale gelecektir.
+
+Verilen tüm rolleri varsayılan olarak ayarlama `role1` ve `role2`:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+## ALTER ROLE {#alter-role-statement}
+
+Rolleri değiştirir.
+
+### Sözdizimi {#alter-role-syntax}
+
+``` sql
+ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+Satır ilkesini değiştirir.
+
+### Sözdizimi {#alter-row-policy-syntax}
+
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER QUOTA {#alter-quota-statement}
+
+Kotaları değiştirir.
+
+### Sözdizimi {#alter-quota-syntax}
+
+``` sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+
+Kotaları değiştirir.
+
+### Sözdizimi {#alter-settings-profile-syntax}
+
+``` sql
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
