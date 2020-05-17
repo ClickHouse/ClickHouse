@@ -250,7 +250,8 @@ public:
 
     /// Sets the current user, checks the password and that the specified host is allowed.
     /// Must be called before getClientInfo.
-    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+    void setQuotaKey(String quota_key_);
 
     UserPtr getUser() const;
     String getUserName() const;
