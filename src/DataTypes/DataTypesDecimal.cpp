@@ -58,24 +58,30 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 }
 
 template <typename T>
-bool NO_SANITIZE_UNDEFINED DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
 {
     UInt32 unread_scale = scale;
     bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    if (!done)
+        return false;
 
-    x *= T::getScaleMultiplier(unread_scale);
-    return done;
+    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+        return false;
+
+    return true;
 }
 
 template <typename T>
-void NO_SANITIZE_UNDEFINED DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
 {
     UInt32 unread_scale = scale;
     if (csv)
         readCSVDecimalText(istr, x, precision, unread_scale);
     else
         readDecimalText(istr, x, precision, unread_scale);
-    x *= T::getScaleMultiplier(unread_scale);
+
+    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
 template <typename T>
@@ -95,13 +101,15 @@ void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 }
 
 template <typename T>
-T NO_SANITIZE_UNDEFINED DataTypeDecimal<T>::parseFromString(const String & str) const
+T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
     T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
-    x *= T::getScaleMultiplier(unread_scale);
+
+    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
 }
