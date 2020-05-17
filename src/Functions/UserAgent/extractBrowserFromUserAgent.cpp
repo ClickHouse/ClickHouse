@@ -28,77 +28,31 @@ struct extractBrowserFromUserAgentImpl
                        ColumnString::Chars & res_data,
                        ColumnString::Offsets & res_offsets, const Context & context)
     {
-        res_data.resize(data.size());
-        res_offsets.assign(offsets);
-        // size_t size = offsets.size();
-        // std::vector<StringRef> regex = {"aa", "bb", "cc"};
-        // auto * hyperscan_browser_base = MultiRegexps::get<true, false>(regex, 0);
+        res_data.reserve(data.size());
+        res_offsets.resize(offsets.size());
 
-        hs_scratch_t * scratch = nullptr;
-        hs_error_t err = hs_clone_scratch(context.getHyperscanBrowserBase()->getScratch(), &scratch);
-
-        if (err != HS_SUCCESS)
-            throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-        MultiRegexps::ScratchPtr smart_scratch(scratch);
-
-        auto on_match = []([[maybe_unused]] unsigned int id,
-                           unsigned long long /* from */, // NOLINT
-                           unsigned long long /* to */, // NOLINT
-                           unsigned int /* flags */,
-                           void * ctx) -> int
-        {
-            *reinterpret_cast<UInt8 *>(ctx) = id;
-            return 0;
-        };
         size_t prev_offset = 0;
         size_t res_offset = 0;
+
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             size_t cur_offset = offsets[i];
 
-            const char * cur_str = reinterpret_cast<const char *>(&data[prev_offset]);
-            UInt64 length = 2;
-            /// Hyperscan restriction.
-            if (length > std::numeric_limits<UInt32>::max())
-                throw Exception("Too long string to search", 1);
-            /// Zero the result, scan, check, update the offset.
-            UInt8 a = 2;
-            err = hs_scan(
-                context.getHyperscanBrowserBase()->getDB(),
-                cur_str,
-                length,
-                0,
-                smart_scratch.get(),
-                on_match,
-                &a);
-            if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-                throw Exception("Failed to scan with hyperscan", 2);
-            char ret[1];
-            if (a == 0)
+            const char * user_agent_string = reinterpret_cast<const char *>(&data[prev_offset]);
+            const auto browser = context.getUserAgent()->detect(user_agent_string).getBrowser();
+            const auto browser_name_optional = browser.getName();
+
+            if (!browser_name_optional.has_value())
             {
-                ret[0] = 'a'; 
-            }
-            else if (a == 1)
-            {
-                ret[0] = 'b'; 
-            }
-            else if (a == 2)
-            {
-                ret[0] = 'c'; 
-            }
-            else if (a == 3)
-            {
-                ret[0] = 'd'; 
-            }
-            else
-            {
-                ret[0] = 'x';
+                throw Exception("Could not find browser name", 12);
             }
 
-            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], ret, 1);
-            res_offset += 2;
+            std::string browser_name = uatraits::types::toString(browser_name_optional);
+
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], browser_name.c_str(), browser_name.length());
+            res_offset += browser_name.length() + 1;
             res_offsets[i] = res_offset;
+
             prev_offset = cur_offset;
         }
     }
