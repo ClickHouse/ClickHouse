@@ -44,7 +44,9 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
 
         if (limits.mode == LimitsMode::LIMITS_CURRENT &&
             !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
+        {
             stopReading();
+        }
 
         if (quota)
             checkQuota(chunk);
@@ -62,7 +64,10 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
         case LimitsMode::LIMITS_CURRENT:
         {
             UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
-            quota->used({Quota::RESULT_ROWS, chunk.getNumRows()}, {Quota::RESULT_BYTES, chunk.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
+            quota->used(
+                {Quota::RESULT_ROWS, chunk.getNumRows()},
+                {Quota::RESULT_BYTES, chunk.bytes()},
+                {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }
