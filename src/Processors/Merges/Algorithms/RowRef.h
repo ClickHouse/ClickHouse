@@ -109,11 +109,6 @@ private:
             return;
         }
 
-        /// Release memory. It is not obligatory.
-//        ptr->clear();
-//        ptr->all_columns.clear();
-//        ptr->sort_columns.clear();
-
         free_chunks.push_back(ptr->position);
     }
 
