@@ -5,6 +5,13 @@ using namespace DB;
 
 using IntToInt = IGrabberAllocator<int, int>;
 
+namespace ga {
+bool operator == (const Stats &one, const Stats& other) noexcept
+{
+    return !memcmp(&one, &other, sizeof(Stats));
+}
+}
+
 TEST(IGrabberAllocator, InvalidMaxSize)
 {
     /// Default case.
