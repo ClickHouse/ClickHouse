@@ -33,6 +33,7 @@
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <librdkafka/rdkafka.h>
 
 
 namespace DB
@@ -67,6 +68,46 @@ namespace
             const String key_name = boost::replace_all_copy(key, "_", ".");
             conf.set(key_name, config.getString(key_path));
         }
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+
+        const auto & storage_id = self->getStorageID();
+        const auto & table = storage_id.getTableName();
+
+        switch (thread_type)
+        {
+            case RD_KAFKA_THREAD_MAIN:
+                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BACKGROUND:
+                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BROKER:
+                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+                break;
+        }
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnNew(rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
+    {
+        return rd_kafka_interceptor_add_on_thread_start(rk, "setThreadName", rdKafkaOnThreadStart, ctx);
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnConfDup(rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
+    {
+        rd_kafka_resp_err_t status;
+
+        // cppkafka copies configuration multiple times
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "setThreadName", rdKafkaOnConfDup, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            return status;
+
+        status = rd_kafka_conf_interceptor_add_on_new(new_conf, "setThreadName", rdKafkaOnNew, ctx);
+        return status;
     }
 }
 
@@ -286,6 +327,26 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
         LOG_SIMPLE(log, message, client_logs_level, poco_level);
     });
+
+    // Configure interceptor to change thread name
+    //
+    // TODO: add interceptors support into the cppkafka.
+    // XXX:  rdkafka uses pthread_set_name_np(), but glibc-compatibliity overrides it to noop.
+    {
+        // This should be safe, since we wait the rdkafka object anyway.
+        void * self = reinterpret_cast<void *>(this);
+
+        int status;
+
+        status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(), "setThreadName", rdKafkaOnNew, self);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            LOG_ERROR(log, "Cannot set new interceptor");
+
+        // cppkafka always copy the configuration
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(), "setThreadName", rdKafkaOnConfDup, self);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            LOG_ERROR(log, "Cannot set dup conf interceptor");
+    }
 }
 
 bool StorageKafka::checkDependencies(const StorageID & table_id)
