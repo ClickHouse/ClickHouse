@@ -1474,7 +1474,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             {
                 throw Exception(
                     "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
         }
         else if (command.isModifyingData(getInMemoryMetadata()))
