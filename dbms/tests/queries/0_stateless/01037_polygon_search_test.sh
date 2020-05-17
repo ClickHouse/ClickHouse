@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_01037.points;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "./points.out"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "./01037_test_data"
 
 for type in ${SearchTypes[@]};
 do
@@ -29,7 +29,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(FILE(path './user_files/test.json' format 'JSONEachRow'))
+    SOURCE(FILE(path '/tmp/test.json' format 'JSONEachRow'))
     LIFETIME(MIN 1 MAX 10)
     LAYOUT($type());"
 
@@ -45,7 +45,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(FILE(path './user_files/test.json' format 'JSONEachRow'))
+    SOURCE(FILE(path '/tmp/test.json' format 'JSONEachRow'))
     LIFETIME(MIN 1 MAX 10)
     LAYOUT($type());"
 
