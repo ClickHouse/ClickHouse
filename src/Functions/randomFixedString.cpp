@@ -42,7 +42,7 @@ public:
         if (!arguments[0].column || !isColumnConst(*arguments[0].column))
             throw Exception("First argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
-        const size_t n = arguments[0].column->getUInt(0);
+        const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
         return std::make_shared<DataTypeFixedString>(n);
     }
 
@@ -51,7 +51,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto n = block.getByPosition(arguments[0]).column->getUInt(0);
+        const size_t n = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[0]).column).getValue<UInt64>();
 
         auto col_to = ColumnFixedString::create(n);
         ColumnFixedString::Chars & data_to = col_to->getChars();
