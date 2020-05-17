@@ -380,6 +380,7 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("TEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("TINYTEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("MEDIUMTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("LONG", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("LONGTEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("TINYBLOB", "String", DataTypeFactory::CaseInsensitive);
