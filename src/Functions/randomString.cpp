@@ -4,8 +4,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
-#include <common/unaligned.h>
 #include <Common/randomSeed.h>
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -44,9 +44,8 @@ public:
                 "Function " + getName() + " requires at most two arguments: the size of resulting string and optional disambiguation tag",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        const IDataType & length_type = *arguments[0];
-        if (!isNumber(length_type))
-            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isUnsignedInteger(*arguments[0]))
+            throw Exception("First argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
