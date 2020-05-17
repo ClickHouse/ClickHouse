@@ -7,6 +7,7 @@
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
+#include <filesystem>
 
 
 namespace DB
@@ -227,7 +228,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
-    SCOPE_EXIT({ Poco::File(table_metadata_tmp_path).remove(); });
+    SCOPE_EXIT({ std::error_code code; std::filesystem::remove(table_metadata_tmp_path, code); });
 
     std::unique_lock lock{mutex};
     auto actual_table_id = getTableUnlocked(table_id.table_name, lock)->getStorageID();

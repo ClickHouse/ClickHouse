@@ -195,7 +195,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 **Пример**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
@@ -831,5 +831,15 @@ ClickHouse использует ZooKeeper для хранения метадан
 Обновление выполняется асинхронно, отдельным системным потоком.
 
 **Значение по умолчанию**: 15.
+
+## access_control_path {#access_control_path}
+
+Путь к каталогу, где сервер ClickHouse хранит конфигурации пользователей и ролей, созданные командами SQL.
+
+Значение по умолчанию: `/var/lib/clickhouse/access/`.
+
+**Смотрите также**
+
+- [Управление доступом](../access-rights.md#access-control)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->
