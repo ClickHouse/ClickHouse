@@ -2,7 +2,7 @@
 #include <cstring>
 #include <thread>
 #include <pcg_random.hpp>
-#include <Common/IGrabberAllocator.h>
+#include <Common/Allocators/IGrabberAllocator.h>
 #include <IO/ReadHelpers.h>
 
 using namespace DB;
