@@ -1,4 +1,5 @@
 #include <Storages/Kafka/StorageKafka.h>
+#include <Storages/Kafka/parseSyslogLevel.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
@@ -278,6 +279,13 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
+
+    // No need to add any prefix, messages can be distinguished
+    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & /* facility */, const std::string & message)
+    {
+        auto [poco_level, client_logs_level] = parseSyslogLevel(level);
+        LOG_SIMPLE(log, message, client_logs_level, poco_level);
+    });
 }
 
 bool StorageKafka::checkDependencies(const StorageID & table_id)
