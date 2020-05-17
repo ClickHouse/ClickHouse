@@ -1740,19 +1740,11 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
         AggregatedDataVariantsPtr shared_variant = nullptr;
         /// We can't use shared method for external aggregation yet.
-        if (settings.max_bytes_before_external_group_by == 0)
+        if (settings.max_bytes_before_external_group_by == 0 &&
+            AggregatedDataVariants::canInitiateTwoLevelShared(transform_params->aggregator.getMethodType()))
         {
             shared_variant = std::make_shared<AggregatedDataVariants>();
-            shared_variant->aggregator = &transform_params->aggregator;
-            shared_variant->init();
-
-            if (shared_variant->isConvertibleToTwoLevelShared())
-            {
-                shared_variant->convertToTwoLevelShared();
-                shared_variant->createAggregatesPoolsForShared();
-            }
-            else
-                shared_variant.reset();
+            shared_variant->initShared(&transform_params->aggregator);
         }
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams(), shared_variant);

@@ -685,7 +685,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         type = type_;
     }
 
-    void init();
+    void initShared(Aggregator * aggregator_);
 
     /// Number of rows (different keys).
     size_t size() const
@@ -842,6 +842,21 @@ struct AggregatedDataVariants : private boost::noncopyable
             APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
 
         #undef M
+            default:
+                return false;
+        }
+    }
+
+    static bool canInitiateTwoLevelShared(const Type & type_)
+    {
+        switch (type_)
+        {
+    #define M(NAME) \
+            case Type::NAME: return true;
+
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+
+    #undef M
             default:
                 return false;
         }
@@ -1164,6 +1179,11 @@ public:
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
+
+    AggregatedDataVariants::Type getMethodType() const
+    {
+        return method_chosen;
+    }
 
 protected:
     friend struct AggregatedDataVariants;

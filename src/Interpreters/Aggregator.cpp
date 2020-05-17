@@ -106,13 +106,31 @@ void AggregatedDataVariants::convertToTwoLevel()
 }
 
 
-void AggregatedDataVariants::init()
+void AggregatedDataVariants::initShared(Aggregator * aggregator_)
 {
-    if (aggregator)
+    if (aggregator_)
     {
-        init(aggregator->method_chosen);
+        aggregator = aggregator_;
+        switch (aggregator->method_chosen)
+        {
+        #define M(NAME) \
+            case Type::NAME: \
+                init(Type::NAME ## _two_level_shared); \
+                break;
+
+            APPLY_FOR_VARIANTS_SINGLE_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+
+        #undef M
+            default:
+                throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
+        }
         keys_size = aggregator->params.keys_size;
         key_sizes = aggregator->key_sizes;
+
+        /// Create arena for each bucket. One is already created.
+        size_t num_buckets = getNumBuckets();
+        for (size_t i = 0; i + 1 < num_buckets; ++i)
+            aggregates_pools.push_back(std::make_shared<Arena>());
     }
 }
 
@@ -146,13 +164,6 @@ void AggregatedDataVariants::convertToTwoLevelShared()
     }
 }
 
-void AggregatedDataVariants::createAggregatesPoolsForShared()
-{
-    /// Create arena for each bucket. One is already created.
-    size_t num_buckets = getNumBuckets();
-    for (size_t i = 0; i + 1 < num_buckets; ++i)
-        aggregates_pools.push_back(std::make_shared<Arena>());
-}
 
 Block Aggregator::getHeader(bool final) const
 {
