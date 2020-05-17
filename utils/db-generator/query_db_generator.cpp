@@ -15,7 +15,6 @@
 
 using column_type = uint32_t;
 using table_a_column = std::pair<std::string, std::string>;
-typedef FuncRet (*funchandler) (DB::ASTPtr ch, std::map<std::string, Column>& columns);
 
 
 std::string random_string(size_t length) {
@@ -34,14 +33,14 @@ std::string random_string(size_t length) {
 }
 
 
-std::string random_integer() {
-    int32_t r = rand() % 4294967295;
+std::string random_integer(int max = 4294967295) {
+    int32_t r = rand() % max;
     return std::to_string(r);
 }
 
 
-std::string random_float() {
-    float r = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/4294967295));
+std::string random_float(int max = 4294967295) {
+    float r = static_cast <float> (rand() % max) / (static_cast <float> (rand() % 100));
     return std::to_string(r);
 }
 
@@ -64,7 +63,7 @@ std::string random_datetime() {
     int32_t seconds = rand() % 60;
     char ans[22];
     sprintf(ans, "'%04u-%02u-%02u %02u:%02u:%02u'", year, month, day, hours, minutes, seconds);
-    return std::string(ans);std::pair<std::string, std::string>
+    return std::string(ans);
 }
 
 
@@ -681,6 +680,8 @@ std::string get_alias(DB::ASTPtr ch) {
     return "";
 }
 
+
+typedef FuncRet (*funchandler) (DB::ASTPtr ch, std::map<std::string, Column>& columns);
 std::map<std::string, funchandler> handlers = {};
 
 FuncRet array_join_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
@@ -916,13 +917,13 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
             if (value != "") {
                 if (type == type::i) {
                     values.insert(value);
-                    values.insert(value + " + " + random_integer());
-                    values.insert(value + " - " + random_integer());
+                    values.insert(value + " + " + random_integer(10));
+                    values.insert(value + " - " + random_integer(10));
                 }
                 if (type == type::f) {
                     values.insert(value);
-                    values.insert(value + " + " + random_float());
-                    values.insert(value + " - " + random_float());
+                    values.insert(value + " + " + random_float(10));
+                    values.insert(value + " - " + random_float(10));
                 }
                 if (type & type::s || type & type::d || type & type::dt) {
                     if (type == type::s) {
@@ -1156,6 +1157,35 @@ void parse_select_query(DB::ASTPtr ast, TableList& all_tables) {
 
 }
 
+std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex) {
+    auto X = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
+    std::vector<DB::ASTPtr> result;
+    if (X) {
+        result.push_back(vertex);
+        return result;
+    }
+
+    for (const auto & child: (*vertex).children) {
+        auto v = get_select(child);
+        result.insert(result.end(), v.begin(), v.end());
+    }
+    return result;
+}
+
+TableList get_tables_from_select(std::string query) {
+    DB::ParserQueryWithOutput parser;
+    DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
+
+    TableList result;
+    for (auto select: get_select(ast)) {
+        TableList local;
+        parse_select_query(select, local);
+        result.merge(local);
+    }
+
+    return result;
+}
+
 int main(int, char **) {
 
     using namespace DB;
@@ -1166,17 +1196,23 @@ int main(int, char **) {
     handlers["array"] = array_func;
     handlers[""] = simple_func;
 
-    std::string sql = "";
+    std::string query = "";
 
     std::string in;
     while(1) {
         std::cin >> in;
-        sql += " " + in;
+        query += " " + in;
         if (in.find(';') != std::string::npos)
             break;
     }
     try {
-        get_tables_from_select(sql);
+        auto result = get_tables_from_select(query);
+
+        for (auto table : result.tables) {
+            std::cout << table.second.create_query();
+            std::cout << table.second.insert_query();
+        }
+        std::cout << query << std::endl;
     }
     catch (std::string e)
     {
