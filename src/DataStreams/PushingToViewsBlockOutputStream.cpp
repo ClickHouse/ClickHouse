@@ -50,13 +50,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert_context->setSetting("insert_deduplicate", false);
 
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
-        if (insert_settings.min_insert_block_size_rows_for_materialized_views.changed || insert_settings.min_insert_block_size_bytes_for_materialized_views.changed)
-        {
-            if (insert_settings.min_insert_block_size_rows_for_materialized_views.changed)
-                insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
-            if (insert_settings.min_insert_block_size_bytes_for_materialized_views.changed)
-                insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
-        }
+        if (insert_settings.min_insert_block_size_rows_for_materialized_views.changed)
+            insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
+        if (insert_settings.min_insert_block_size_bytes_for_materialized_views.changed)
+            insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
     for (const auto & database_table : dependencies)
