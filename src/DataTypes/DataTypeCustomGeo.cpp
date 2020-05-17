@@ -82,18 +82,23 @@ public:
 
 void registerDataTypeDomainGeo(DataTypeFactory & factory)
 {
+    // Custom type for point represented as its coordinates stored as Tuple(Float64, Float64)
     factory.registerSimpleDataTypeCustom("Point", []
     {
         return std::make_pair(DataTypeFactory::instance().get("Tuple(Float64, Float64)"),
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("Point"), std::make_unique<DataTypeCustomPointSerialization>()));
     });
 
+    // Custom type for polygon with holes stored as Array(Array(Point))
+    // Each element of outer array represents a simple polygon without holes stored as array of points
+    // First element of outer array is outer shape of polygon and all the following are holes
     factory.registerSimpleDataTypeCustom("Polygon", []
     {
         return std::make_pair(DataTypeFactory::instance().get("Array(Array(Point))"),
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("Polygon"), std::make_unique<DataTypeCustomPolygonSerialization>()));
     });
 
+    // Custom type for multiple polygons with holes stored as Array(Polygon)
     factory.registerSimpleDataTypeCustom("MultiPolygon", []
     {
         return std::make_pair(DataTypeFactory::instance().get("Array(Polygon)"),
