@@ -1,3 +1,9 @@
+---
+toc_folder_title: Interfaces
+toc_priority: 14
+toc_title: Introduction
+---
+
 # Interfaces {#interfaces}
 
 ClickHouse provides two network interfaces (both can be optionally wrapped in TLS for additional security):
@@ -14,7 +20,7 @@ In most cases it is recommended to use appropriate tool or library instead of in
 
 There are also a wide range of third-party libraries for working with ClickHouse:
 
--   [Client libraries](third-party/client_libraries.md)
+-   [Client libraries](third-party/client-libraries.md)
 -   [Integrations](third-party/integrations.md)
 -   [Visual interfaces](third-party/gui.md)
 

@@ -185,7 +185,7 @@ public:
     ~Pool();
 
     /// Allocates connection.
-    Entry Get();
+    Entry get();
 
     /// Allocates connection.
     /// If database is not accessible, returns empty Entry object.

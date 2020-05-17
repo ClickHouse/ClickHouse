@@ -154,7 +154,7 @@ double Value::readFloatText(const char * buf, size_t length) const
 
 void Value::throwException(const char * text) const
 {
-    static constexpr size_t MYSQLXX_QUERY_PREVIEW_LENGTH = 1000;
+    static constexpr size_t preview_length = 1000;
 
     std::stringstream info;
     info << text;
@@ -166,7 +166,7 @@ void Value::throwException(const char * text) const
     }
 
     if (res && res->getQuery())
-        info << ", query: " << res->getQuery()->str().substr(0, MYSQLXX_QUERY_PREVIEW_LENGTH);
+        info << ", query: " << res->getQuery()->str().substr(0, preview_length);
 
     throw CannotParseValue(info.str());
 }
