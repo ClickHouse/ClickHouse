@@ -399,21 +399,10 @@ void Connection::sendQuery(
     /// Client info.
     if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
     {
-        ClientInfo client_info_to_send;
-
-        if (!client_info || client_info->empty())
-        {
-            /// No client info passed - means this query initiated by me.
-            client_info_to_send.setInitialQuery();
-        }
+        if (client_info && !client_info->empty())
+            client_info->write(*out, server_revision);
         else
-        {
-            /// This query is initiated by another query.
-            client_info_to_send = *client_info;
-            client_info_to_send.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        }
-
-        client_info_to_send.write(*out, server_revision);
+            ClientInfo().write(*out, server_revision);
     }
 
     /// Per query settings.
