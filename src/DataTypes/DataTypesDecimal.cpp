@@ -22,9 +22,9 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int DECIMAL_OVERFLOW;
 }
 
-//
 
 template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
@@ -61,10 +61,13 @@ template <typename T>
 bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
 {
     UInt32 unread_scale = scale;
-    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    if (!tryReadDecimalText(istr, x, precision, unread_scale))
+        return false;
 
-    x *= T::getScaleMultiplier(unread_scale);
-    return done;
+    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+        return false;
+
+    return true;
 }
 
 template <typename T>
@@ -75,7 +78,9 @@ void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UI
         readCSVDecimalText(istr, x, precision, unread_scale);
     else
         readDecimalText(istr, x, precision, unread_scale);
-    x *= T::getScaleMultiplier(unread_scale);
+
+    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 }
 
 template <typename T>
@@ -101,7 +106,9 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
-    x *= T::getScaleMultiplier(unread_scale);
+
+    if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
     return x;
 }
