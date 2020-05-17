@@ -1,5 +1,2 @@
-add_executable (db_generator DBGenerator.cpp)
-target_link_libraries(db_generator PRIVATE clickhouse_parsers)
-
 add_executable (query_db_generator query_db_generator.cpp)
 target_link_libraries(query_db_generator PRIVATE clickhouse_parsers)
