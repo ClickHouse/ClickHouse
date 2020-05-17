@@ -666,7 +666,10 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.send();
     }
 
-    Poco::File{current_batch_file_path}.remove();
+    /// current_batch.txt will not exist if there was no send
+    /// (this is the case when all batches that was pending has been marked as pending)
+    if (Poco::File{current_batch_file_path}.exists())
+        Poco::File{current_batch_file_path}.remove();
 }
 
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)

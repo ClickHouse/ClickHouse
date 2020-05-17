@@ -1,3 +1,7 @@
+---
+toc_title: FROM
+---
+
 # FROM Clause {#select-from}
 
 The `FROM` clause specifies the source to read data from:
