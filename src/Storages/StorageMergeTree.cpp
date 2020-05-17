@@ -101,7 +101,7 @@ void StorageMergeTree::startup()
 
     if (areBackgroundMovesNeeded())
     {
-        auto & move_pool = global_context.getBackgroundMovePool()
+        auto & move_pool = global_context.getBackgroundMovePool();
         moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
         move_pool.startTask(moving_task_handle);
     }
