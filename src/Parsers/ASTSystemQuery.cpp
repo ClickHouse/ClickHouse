@@ -39,6 +39,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RESTART REPLICAS";
         case Type::RESTART_REPLICA:
             return "RESTART REPLICA";
+        case Type::DROP_REPLICA:
+            return "DROP REPLICA";
         case Type::SYNC_REPLICA:
             return "SYNC REPLICA";
         case Type::FLUSH_DISTRIBUTED:
@@ -116,6 +118,19 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
+    auto print_drop_replica = [&] {
+        settings.ostr << " " << (settings.hilite ? hilite_identifier : "")
+                    << quoteString(replica) << (settings.hilite ? hilite_none : "")
+                    << " FROM ";
+        if (!table.empty())
+            print_database_table();
+        else
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << quoteString(replica_zk_path)
+                      << (settings.hilite ? hilite_none : "");
+        }
+    };
+
     if (!cluster.empty())
         formatOnCluster(settings);
 
@@ -143,6 +158,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::RELOAD_DICTIONARY)
         print_database_dictionary();
+    else if (type == Type::DROP_REPLICA)
+        print_drop_replica();
 }
 
 

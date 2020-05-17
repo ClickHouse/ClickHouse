@@ -57,6 +57,27 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::DROP_REPLICA:
+        {
+            ASTPtr ast;
+            if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                return false;
+            res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
+            if (!ParserKeyword{"FROM"}.ignore(pos, expected))
+                return false;
+            // way 1. parse database and tables
+            // way 2. parse replica zk path
+            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+            {
+                ASTPtr path_ast;
+                if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
+                    return false;
+                res->replica_zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+
+            break;
+        }
+
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))

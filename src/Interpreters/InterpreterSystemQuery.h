@@ -51,6 +51,7 @@ private:
 
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
+    void dropReplica(ASTSystemQuery & query);
     void flushDistributed(ASTSystemQuery & query);
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
