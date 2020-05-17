@@ -41,4 +41,3 @@ static void dummyFunctionForInterposing()
     ignore(memalign(0, 0)); // -V575 NOLINT
     ignore(pvalloc(0)); // -V575 NOLINT
 }
-#endif

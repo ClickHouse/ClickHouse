@@ -5,7 +5,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/ProfileEvents.h>
-#include <Common/Allocator.h>
+#include <Common/Allocators/Allocator.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>

@@ -11,7 +11,7 @@
 
 #include <common/strong_typedef.h>
 
-#include <Common/Allocator.h>
+#include <Common/Allocators/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/BitHelpers.h>
 #include <Common/memcpySmall.h>

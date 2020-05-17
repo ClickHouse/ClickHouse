@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Common/IGrabberAllocator.h>
+#include <Common/Allocators/IGrabberAllocator_fwd.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
+
 #include <IO/BufferWithOwnMemory.h>
 
 #include <cstddef>
