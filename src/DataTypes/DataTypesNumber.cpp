@@ -27,12 +27,11 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("BOOLEAN", "Int8", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INT1", "Int8", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT2", "Int16", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INT", "Int32", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("INT4", "Int32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER", "Int32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT", "Int64", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("FLOAT", "Float32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("REAL", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
 }
 
