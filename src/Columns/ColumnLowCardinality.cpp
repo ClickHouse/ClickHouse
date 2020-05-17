@@ -190,7 +190,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
 
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 
-        auto sub_idx = (*low_cardinality_src->getIndexes().cut(start, length)).mutate();
+        auto sub_idx = IColumn::mutate(low_cardinality_src->getIndexes().cut(start, length));
         auto idx_map = mapUniqueIndex(*sub_idx);
 
         auto src_nested = low_cardinality_src->getDictionary().getNestedColumn();
@@ -268,7 +268,7 @@ MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
-    return ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
+    return ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), getIndexes().cloneResized(size));
 }
 
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
@@ -320,7 +320,7 @@ std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_colu
     for (auto & column : columns)
     {
         auto unique_ptr = dictionary.getColumnUniquePtr();
-        column = ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), std::move(column));
+        column = ColumnLowCardinality::create(IColumn::mutate(std::move(unique_ptr)), std::move(column));
     }
 
     return columns;
@@ -337,7 +337,7 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
-    auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
+    auto sub_positions = IColumn::mutate(idx.getPositions()->cut(start, length));
     /// Create column with new indexes and old dictionary.
     /// Dictionary is shared, but will be recreated after compactInplace call.
     auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
@@ -364,7 +364,7 @@ void ColumnLowCardinality::compactIfSharedDictionary()
 ColumnLowCardinality::DictionaryEncodedColumn
 ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const
 {
-    MutableColumnPtr sub_indexes = (*std::move(idx.getPositions()->cut(offset, limit))).mutate();
+    MutableColumnPtr sub_indexes = IColumn::mutate(idx.getPositions()->cut(offset, limit));
     auto indexes_map = mapUniqueIndex(*sub_indexes);
     auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
 
@@ -710,7 +710,7 @@ void ColumnLowCardinality::Dictionary::compact(ColumnPtr & positions)
     auto sub_keys = unique.getNestedColumn()->index(*indexes, 0);
     auto new_indexes = new_unique.uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
 
-    positions = (*new_indexes->index(*positions, 0)).mutate();
+    positions = IColumn::mutate(new_indexes->index(*positions, 0));
     column_unique = std::move(new_column_unique);
 
     shared = false;
