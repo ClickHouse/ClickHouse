@@ -1,6 +1,7 @@
-#include <Common/Arena.h>
-#include <Common/Allocator.h>
+#pragma once
 
+#include <Common/Arena.h>
+#include "Allocator_fwd.h"
 
 namespace DB
 {
@@ -82,14 +83,18 @@ protected:
 
 
 /// Switches to ordinary Allocator after REAL_ALLOCATION_TRESHOLD bytes to avoid fragmentation and trash in Arena.
-template <size_t REAL_ALLOCATION_TRESHOLD = 4096, typename TRealAllocator = Allocator<false>, typename TArenaAllocator = ArenaAllocator, size_t alignment = 0>
+template <size_t REAL_ALLOCATION_TRESHOLD = 4096,
+          typename TRealAllocator = Allocator<false>,
+          typename TArenaAllocator = ArenaAllocator,
+          size_t alignment = 0>
 class MixedArenaAllocator : private TRealAllocator
 {
 public:
-
     void * alloc(size_t size, Arena * arena)
     {
-        return (size < REAL_ALLOCATION_TRESHOLD) ? TArenaAllocator::alloc(size, arena) : TRealAllocator::alloc(size, alignment);
+        return (size < REAL_ALLOCATION_TRESHOLD)
+            ? TArenaAllocator::alloc(size, arena)
+            : TRealAllocator::alloc(size, alignment);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size, Arena * arena)
@@ -122,8 +127,11 @@ protected:
 
 
 template <size_t alignment, size_t REAL_ALLOCATION_TRESHOLD = 4096>
-using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>, alignment>;
-
+using MixedAlignedArenaAllocator =
+    MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD,
+                        Allocator<false>,
+                        AlignedArenaAllocator<alignment>,
+                        alignment>;
 
 template <size_t N = 64, typename Base = ArenaAllocator>
 class ArenaAllocatorWithStackMemory : public Base
@@ -131,7 +139,6 @@ class ArenaAllocatorWithStackMemory : public Base
     char stack_memory[N];
 
 public:
-
     void * alloc(size_t size, Arena * arena)
     {
         return (size > N) ? Base::alloc(size, arena) : stack_memory;
@@ -161,5 +168,5 @@ protected:
         return N;
     }
 };
-
 }
+

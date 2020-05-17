@@ -6,111 +6,20 @@
 #include <memory>
 #include <random>
 #include <type_traits>
-#include <functional>
 #include <unordered_map>
 #include <list>
-#include <compare>
-
-#include <sys/mman.h>
 
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
 
-#include <ext/scope_guard.h>
-
-#include <pcg_random.hpp>
-
-#include <Common/Exception.h>
-#include <Common/randomSeed.h>
-#include <Common/formatReadable.h>
-
 #include <common/logger_useful.h>
 
-/// Old Darwin builds lack definition of MAP_ANONYMOUS
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS MAP_ANON
-#endif
-
-namespace DB::ErrorCodes
-{
-extern const int CANNOT_ALLOCATE_MEMORY;
-extern const int CANNOT_MUNMAP;
-extern const int INVALID_SETTING_VALUE;
-}
-
-namespace ga
-{
-
-/// Default parameter for two of allocator's template parameters, serves as a placeholder.
-struct runtime {};
-
-static constexpr size_t const defaultMinChunkSize = 64 * 1024 * 1024; // About 75MB.
-
-template <class Value>
-static constexpr size_t const defaultValueAlignment = std::max(16lu, alignof(Value));
-
-struct DefaultASLR
-{
-    [[nodiscard, gnu::const]] void * operator()(pcg64& rng) const noexcept
-    {
-        return reinterpret_cast<void *>(
-                std::uniform_int_distribution<size_t>(
-                    0x100000000000UL,
-                    0x700000000000UL)(rng));
-
-    }
-};
-
-[[nodiscard, gnu::const]] static constexpr size_t roundUp(size_t x, size_t rounding) noexcept
-{
-    return (x + (rounding - 1)) / rounding * rounding;
-}
-
-/// Not in std for some sake.
-template<class T, class... Args>
-constexpr T* construct_at(void* p, Args&&... args)
-{
-    return ::new (p) T(std::forward<Args>(args)...);
-}
-
-struct Stats
-{
-    size_t total_chunks_size {0};
-    size_t total_allocated_size {0};
-    size_t total_currently_initialized_size {0};
-    size_t total_currently_used_size {0};
-
-    size_t chunks_count{0};
-    size_t all_regions_count {0};
-    size_t free_regions_count {0};
-    size_t used_regions_count {0};
-    size_t keyed_regions_count {0};
-
-    size_t hits {0};
-    size_t concurrent_hits {0};
-    size_t misses {0};
-
-    size_t allocations {0};
-    size_t allocated_bytes {0};
-    size_t evictions {0};
-    size_t evicted_bytes {0};
-    size_t secondary_evictions {0};
-
-/// Waiting for gcc-9 to port this
-//    constexpr operator <=> (const Stats& other)
-//    {
-//        return memcmp(this, &other, sizeof(Stats))
-//            ? std::partial_ordering::unordered 
-//            : std::partial_ordering::equivalent;
-//
-//    }
-};
-}
+#include "IGrabberAllocator_fwd.h"
+#include "allocatorCommon.h"
 
 namespace DB
 {
-
 /**
  * @brief This class represents a tool combining a reference-counted memory block cache integrated with a mmap-backed
  *        memory allocator. Overall memory limit, begin set by the user, is constant, so this tool also performs
@@ -156,33 +65,29 @@ namespace DB
  * always possible, so IGrabberAllocator::getOrSet has an overload taking this functor. For example, on new item
  * insertion (if not found) the code could do so metrics update.
  *
- *
  * @tparam TKey Object that will be used to @e quickly address #Value.
  * @tparam TValue Type of objects being stored (usually thought to be some child of PODArray).
  *
  * @tparam KeyHash Struct generating a compile-time size_t hash for #Key. By default, std::hash is used.
- *         See @ref ga_key_hash for signature requirements.
  *
  * @tparam SizeFunction Struct generating a size_t that approximates (as an upper bound) #Value's size.
- *         See @ref ga_size_func for signature requirements.
  *
  * @tparam ASLRFunction Function that, given a random number generator, outputs the address in heap, which
  *         will be used as a starting point to place the object.
  *         Must meet the requirements of gnu::pure function attribute.
- *         See @ref ga_aslt_func for signature requirements.
+ *         By default, AllocatorsASLR is used.
  *
  * @note Cache is not NUMA friendly.
  */
 template <
     class TKey,
     class TValue,
-    class KeyHash = std::hash<TKey>,
-    class SizeFunction = ga::runtime,
-    class InitFunction = ga::runtime,
-    class ASLRFunction = ga::DefaultASLR,
-
-    size_t MinChunkSize = ga::defaultMinChunkSize,
-    size_t ValueAlignment = ga::defaultValueAlignment<TValue>>
+    class KeyHash,
+    class SizeFunction,
+    class InitFunction,
+    class ASLRFunction,
+    size_t MinChunkSize,
+    size_t ValueAlignment>
 class IGrabberAllocator : private boost::noncopyable
 {
 private:
@@ -194,8 +99,6 @@ private:
     struct RegionMetadata;
 
     mutable std::mutex mutex;
-
-    pcg64 rng{randomSeed()};
 
     static constexpr auto ASLR = ASLRFunction();
     static constexpr auto getSize = SizeFunction();
@@ -225,8 +128,7 @@ public:
         {
             if (max_cache_size < MinChunkSize)
                 throw Exception("Cache max size must not be less than MinChunkSize",
-                        ErrorCodes::INVALID_SETTING_VALUE);
-
+                        ErrorCodes::BAD_ARGUMENTS);
         }
 
     ~IGrabberAllocator() noexcept
@@ -442,24 +344,24 @@ public:
     using GetOrSetRet = std::pair<ValuePtr, bool>;
 
     template<class S = SizeFunction, class I = InitFunction>
-    inline typename std::enable_if<!std::is_same_v<S, ga::runtime> &&
-                                   !std::is_same_v<I, ga::runtime>,
+    inline typename std::enable_if<!std::is_same_v<S, ga::Runtime> &&
+                                   !std::is_same_v<I, ga::Runtime>,
         GetOrSetRet>::type getOrSet(const Key & key)
     {
         return getOrSet(key, getSize, initValue);
     }
 
     template<class Init, class S = SizeFunction, class I = InitFunction>
-    inline typename std::enable_if<!std::is_same_v<S, ga::runtime> &&
-                                    std::is_same_v<I, ga::runtime>,
+    inline typename std::enable_if<!std::is_same_v<S, ga::Runtime> &&
+                                    std::is_same_v<I, ga::Runtime>,
         GetOrSetRet>::type getOrSet(const Key & key, Init /* GAInitFunction auto */ && init_func)
     {
         return getOrSet(key, getSize, init_func);
     }
 
     template<class Size, class S = SizeFunction, class I = InitFunction>
-    inline typename std::enable_if<std::is_same_v<S, ga::runtime> &&
-                                   !std::is_same_v<I, ga::runtime>,
+    inline typename std::enable_if<std::is_same_v<S, ga::Runtime> &&
+                                  !std::is_same_v<I, ga::Runtime>,
         GetOrSetRet>::type getOrSet(const Key & key, Size /* GASizeFunction auto */ && size_func)
     {
         return getOrSet(key, size_func, initValue);
@@ -638,6 +540,11 @@ private:
 
                 RegionMetadata& metadata = *it;
 
+                if (metadata.value() == nullptr) // unobtainable result, just for clang's static analysis tool
+                    throw Exception("Cache corruption",
+                            ErrorCodes::BAD_ARGUMENTS);
+
+
                 onSharedValueCreate(cache_lock, metadata);
 
                 // can't use std::make_shared due to custom deleter.
@@ -783,6 +690,8 @@ private:
 
         constexpr MemoryChunk(size_t size_, void * address_hint) : size(size_)
         {
+            CurrentMemoryTracker::alloc(size_);
+
             ptr = mmap(
                 __builtin_assume_aligned(address_hint, ValueAlignment),
                 size,
@@ -805,11 +714,13 @@ private:
 
         ~MemoryChunk()
         {
-            if (ptr && 0 != munmap(ptr, size))
+            if (ptr && munmap(ptr, size))
                 DB::throwFromErrno(
                     "Allocator: Cannot munmap " +
                     formatReadableSizeWithBinarySuffix(size) + ".",
                     DB::ErrorCodes::CANNOT_MUNMAP);
+
+            CurrentMemoryTracker::free(size);
         }
 
         constexpr MemoryChunk(MemoryChunk && other) noexcept : ptr(other.ptr), size(other.size)
@@ -998,7 +909,7 @@ private:
      */
     constexpr RegionMetadata * addNewChunk(size_t size)
     {
-        chunks.emplace_back(size, ASLR(rng));
+        chunks.emplace_back(size, ASLR());
         MemoryChunk & chunk = chunks.back();
 
         total_chunks_size += size;

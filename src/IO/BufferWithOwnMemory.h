@@ -5,7 +5,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/ProfileEvents.h>
-#include <Common/Allocator.h>
+#include <Common/Allocators/Allocator.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
@@ -57,7 +57,9 @@ struct Memory : boost::noncopyable, Allocator
         : m_capacity(other.size()), m_size(m_capacity), alignment(other.alignment)
     {
         alloc(std::forward<TAllocatorParams>(params)...);
-        memcpy(m_data, other.data(), m_size);
+
+        if (m_data) //false if other.size() == 0
+            memcpy(m_data, other.data(), m_size);
     }
 
     Memory & operator=(Memory && rhs) noexcept

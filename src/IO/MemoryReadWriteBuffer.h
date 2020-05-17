@@ -3,7 +3,7 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/IReadableWriteBuffer.h>
-#include <Common/Allocator.h>
+#include <Common/Allocators/Allocator.h>
 #include <Core/Defines.h>
 #include <boost/noncopyable.hpp>
 

@@ -1,11 +1,12 @@
 #include <gtest/gtest.h>
-#include <Common/IGrabberAllocator.h>
+#include <Common/Allocators/IGrabberAllocator.h>
 
 using namespace DB;
 
 using IntToInt = IGrabberAllocator<int, int>;
 
-namespace ga {
+namespace ga
+{
 bool operator == (const Stats &one, const Stats& other) noexcept
 {
     return !memcmp(&one, &other, sizeof(Stats));
@@ -15,9 +16,13 @@ bool operator == (const Stats &one, const Stats& other) noexcept
 TEST(IGrabberAllocator, InvalidMaxSize)
 {
     /// Default case.
-    EXPECT_ANY_THROW(IntToInt(ga::defaultMinChunkSize - 10000));
+    EXPECT_ANY_THROW(IntToInt(MMAP_THRESHOLD - 10000));
 
-    using Explt = IGrabberAllocator<int, int, std::hash<int>, ga::runtime, ga::runtime, ga::DefaultASLR, 10000>;
+    using Explt = IGrabberAllocator<int, int,
+          std::hash<int>,
+          ga::Runtime,
+          ga::Runtime,
+          AllocatorsASLR, 10000>;
 
     /// Explicit MinChunkSize specialization
     EXPECT_ANY_THROW(Explt{800});
@@ -25,7 +30,7 @@ TEST(IGrabberAllocator, InvalidMaxSize)
 
 TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
 {
-    IntToInt cache(ga::defaultMinChunkSize);
+    IntToInt cache(MMAP_THRESHOLD);
 
     EXPECT_EQ(cache.getStats(), ga::Stats{});
 

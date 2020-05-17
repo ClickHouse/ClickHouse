@@ -1,101 +1,143 @@
-# Права доступа {#prava-dostupa}
+# Управление доступом {#access-control}
 
-Пользователи и права доступа настраиваются в конфиге пользователей. Обычно это `users.xml`.
+ClickHouse поддерживает управление доступом на основе подхода [RBAC](https://ru.wikipedia.org/wiki/Управление_доступом_на_основе_ролей).
 
-Пользователи прописаны в секции `users`. Рассмотрим фрагмент файла `users.xml`:
+Объекты системы доступа в ClickHouse:
 
-``` xml
-<!-- Пользователи и ACL. -->
-<users>
-    <!-- Если имя пользователя не указано, используется пользователь default. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+- [Аккаунт пользователя](#user-account-management)
+- [Роль](#role-management)
+- [Политика доступа к строкам](#row-policy-management)
+- [Профиль настроек](#settings-profiles-management)
+- [Квота](#quotas-management)
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+Вы можете настроить объекты системы доступа, используя:
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+- SQL-ориентированный воркфлоу.
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+    Функциональность необходимо [включить](#enabling-access-control).
 
-        <!-- Список сетей, из которых разрешён доступ.
-            Каждый элемент списка имеет одну из следующих форм:
-            <ip> IP-адрес или маска подсети. Например, 198.51.100.0/24 или 2001:DB8::/32.
-            <host> Имя хоста. Например: example01. Для проверки делается DNS-запрос, и все полученные адреса сравниваются с адресом клиента.
-            <host_regexp> Регулярное выражение для имён хостов. Например, ^example\d\d-\d\d-\d\.host\.ru$
-                Для проверки, для адреса клиента делается DNS PTR-запрос и к результату применяется регулярное выражение.
-                Потом для результата PTR-запроса делается снова DNS-запрос, и все полученные адреса сравниваются с адресом клиента.
-                Настоятельно рекомендуется, чтобы регулярное выражение заканчивалось на \.host\.ru$.
+- [Конфигурационные файлы](configuration-files.md) сервера: `users.xml` и `config.xml`.
 
-            Если вы устанавливаете ClickHouse самостоятельно, укажите здесь:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+Рекомендуется использовать SQL-воркфлоу. Оба метода конфигурации работают одновременно, поэтому, если для управления доступом вы используете конфигурационные файлы, вы можете плавно перейти на SQL-воркфлоу.
 
-        <!-- Профиль настроек, использующийся для пользователя. -->
-        <profile>default</profile>
+!!! note "Внимание"
+    Нельзя одновременно использовать оба метода для управления одним и тем же объектом системы доступа.
 
-        <!-- Квота, использующаяся для пользователя. -->
-        <quota>default</quota>
-    </default>
 
-    <!-- Для запросов из пользовательского интерфейса Метрики через API для данных по отдельным счётчикам. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-    </web>
-```
+## Использование {#access-control-usage}
 
-Здесь видно объявление двух пользователей - `default` и `web`. Пользователя `web` мы добавили самостоятельно.
+По умолчанию сервер ClickHouse предоставляет аккаунт пользователя `default`, для которого выключена функция SQL-ориентированного управления доступом, но у него есть все права и разрешения. Аккаунт `default` используется во всех случаях, когда имя пользователя не определено. Например, при входе с клиента или в распределенных запросах. При распределенной обработке запроса `default` используется, если в конфигурации сервера или кластера не указаны свойства [user и password](../engines/table-engines/special/distributed.md).
 
-Пользователь `default` выбирается в случаях, когда имя пользователя не передаётся. Также пользователь `default` может использоваться при распределённой обработке запроса - если в конфигурации кластера для сервера не указаны `user` и `password`. (см. раздел о движке [Distributed](../engines/table-engines/special/distributed.md)).
+Если вы начали пользоваться ClickHouse недавно, попробуйте следующий сценарий:
 
-Пользователь, который используется для обмена информацией между серверами, объединенными в кластер, не должен иметь существенных ограничений или квот - иначе распределённые запросы сломаются.
+1. [Включите](#enabling-access-control) SQL-ориентированное управление доступом для пользователя `default`.
+2. Войдите под пользователем `default` и создайте всех необходимых пользователей. Не забудьте создать аккаунт администратора (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+3. [Ограничьте разрешения](settings/permissions-for-queries.md#permissions_for_queries) для пользователя `default` и отключите для него SQL-ориентированное управление доступом.
 
-Пароль указывается либо в открытом виде (не рекомендуется), либо в виде SHA-256. Хэш не содержит соль. В связи с этим, не следует рассматривать такие пароли, как защиту от потенциального злоумышленника. Скорее, они нужны для защиты от сотрудников.
+### Особенности реализации {#access-control-properties}
 
-Указывается список сетей, из которых разрешён доступ. В этом примере, список сетей для обеих пользователей, загружается из отдельного файла (`/etc/metrika.xml`), содержащего подстановку `networks`. Вот его фрагмент:
+- Вы можете выдавать разрешения на базы данных или таблицы, даже если они не существуют.
+- При удалении таблицы все связанные с ней привилегии не отзываются. Если вы затем создадите новую таблицу с таким же именем, все привилегии останутся действительными. Чтобы отозвать привилегии, связанные с удаленной таблицей, необходимо выполнить, например, запрос `REVOKE ALL PRIVILEGES ON db.table FROM ALL`.
+- У привилегий нет настроек времени жизни.
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+## Аккаунт пользователя {#user-account-management}
 
-Можно было бы указать этот список сетей непосредственно в `users.xml`, или в файле в директории `users.d` (подробнее смотрите раздел «[Конфигурационные файлы](configuration-files.md#configuration_files)»).
+Аккаунт пользователя — это объект системы доступа, позволяющий авторизовать кого-либо в ClickHouse. Аккаунт содержит:
 
-В конфиге приведён комментарий, указывающий, как можно открыть доступ отовсюду.
+- Идентификационную информацию.
+- [Привилегии](../sql-reference/statements/grant.md#grant-privileges), определяющие область действия запросов, которые могут быть выполнены пользователем.
+- Хосты, которые могут подключаться к серверу ClickHouse.
+- Назначенные роли и роли по умолчанию.
+- Настройки и их ограничения, которые применяются по умолчанию при входе пользователя.
+- Присвоенные профили настроек.
 
-Для продакшен использования, указывайте только элементы вида `ip` (IP-адреса и их маски), так как использование `host` и `host_regexp` может вызывать лишние задержки.
+Привилегии присваиваются аккаунту пользователя с помощью запроса [GRANT](../sql-reference/statements/grant.md) или через назначение [ролей](#role-management). Отозвать привилегию можно с помощью запроса [REVOKE](../sql-reference/statements/revoke.md). Чтобы вывести список присвоенных привилегий, используется выражение [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement).
 
-Далее указывается используемый профиль настроек пользователя (смотрите раздел «[Профили настроек](settings/settings-profiles.md)»). Вы можете указать профиль по умолчанию - `default`. Профиль может называться как угодно; один и тот же профиль может быть указан для разных пользователей. Наиболее важная вещь, которую вы можете прописать в профиле настроек `readonly=1`, что обеспечивает доступ только на чтение.
-Затем указывается используемая квота (смотрите раздел «[Квоты](quotas.md#quotas)»). Вы можете указать квоту по умолчанию — `default`. Она настроена в конфиге по умолчанию так, что только считает использование ресурсов, но никак их не ограничивает. Квота может называться как угодно. Одна и та же квота может быть указана для разных пользователей, в этом случае подсчёт использования ресурсов делается для каждого пользователя по отдельности.
+Запросы управления:
 
-Также, в необязательном разделе `<allow_databases>` можно указать перечень баз, к которым у пользователя будет доступ. По умолчанию пользователю доступны все базы. Можно указать базу данных `default`, в этом случае пользователь получит доступ к базе данных по умолчанию.
+- [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+- [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+- [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+- [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-Доступ к БД `system` всегда считается разрешённым (так как эта БД используется для выполнения запросов).
+### Применение настроек {#access-control-settings-applying}
 
-Пользователь может получить список всех БД и таблиц в них с помощью запросов `SHOW` или системных таблиц, даже если у него нет доступа к отдельным БД.
+Настройки могут быть заданы разными способами: для аккаунта пользователя, для назначенных ему ролей или в профилях настроек. При входе пользователя, если настройка задана для разных объектов системы доступа, значение настройки и ее ограничения применяются в следующем порядке (от высшего приоритета к низшему):
 
-Доступ к БД не связан с настройкой [readonly](settings/permissions-for-queries.md#settings_readonly). Невозможно дать полный доступ к одной БД и `readonly` к другой.
+1. Настройки аккаунта.
+2. Настройки ролей по умолчанию для аккаунта. Если настройка задана для нескольких ролей, порядок применения не определен.
+3. Настройки из профилей настроек, присвоенных пользователю или его ролям по умолчанию. Если настройка задана в нескольких профилях, порядок применения не определен.
+4. Настройки, которые по умолчанию применяются ко всему серверу, или настройки из [профиля по умолчанию](server-configuration-parameters/settings.md#default-profile).
+
+
+## Роль {#role-management}
+
+Роль — это контейнер объектов системы доступа, которые можно присвоить аккаунту пользователя.
+
+Роль содержит:
+
+- [Привилегии](../sql-reference/statements/grant.md#grant-privileges)
+- Настройки и ограничения
+- Список назначенных ролей
+
+Запросы управления:
+
+- [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+- [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+- [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+- [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+- [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+- [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+Привилегии можно присвоить роли с помощью запроса [GRANT](../sql-reference/statements/grant.md). Для отзыва привилегий у роли ClickHouse предоставляет запрос [REVOKE](../sql-reference/statements/revoke.md).
+
+## Политика доступа к строкам {#row-policy-management}
+
+Политика доступа к строкам — это фильтр, определяющий, какие строки доступны пользователю или роли. Политика содержит фильтры для конкретной таблицы, а также список ролей и/или пользователей, которые должны использовать данную политику.
+
+Запросы управления:
+
+- [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+- [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+- [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+- [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+
+## Профиль настроек {#settings-profiles-management}
+
+Профиль настроек — это набор [настроек](settings/index.md). Профиль настроек содержит настройки и ограничения, а также список ролей и/или пользователей, по отношению к которым применяется данный профиль.
+
+Запросы управления:
+
+- [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+- [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+- [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+- [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+
+## Квота {#quotas-management}
+
+Квота ограничивает использование ресурсов. См. [Квоты](quotas.md).
+
+Квота содержит набор ограничений определенной длительности, а также список ролей и/или пользователей, на которых распространяется данная квота.
+
+Запросы управления:
+
+- [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+- [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+- [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+- [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+
+## Включение SQL-ориентированного управления доступом {#enabling-access-control}
+
+- Настройте каталог для хранения конфигураций.
+
+    ClickHouse хранит конфигурации объектов системы доступа в каталоге, установленном в конфигурационном параметре сервера [access_control_path](server-configuration-parameters/settings.md#access_control_path).
+
+- Включите SQL-ориентированное управление доступом как минимум для одного аккаунта.
+
+    По умолчанию управление доступом на основе SQL выключено для всех пользователей. Вам необходимо настроить хотя бы одного пользователя в файле конфигурации `users.xml` и присвоить значение 1 параметру [access_management](settings/settings-users.md#access_management-user-setting).
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/access_rights/) <!--hide-->

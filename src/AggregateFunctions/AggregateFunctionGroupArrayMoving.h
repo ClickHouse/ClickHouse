@@ -10,7 +10,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 
-#include <Common/ArenaAllocator.h>
+#include <Common/Allocators/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>

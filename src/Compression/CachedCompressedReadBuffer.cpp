@@ -38,10 +38,10 @@ bool CachedCompressedReadBuffer::nextImpl()
         {
             UncompressedCell other{}; //also ordinary allocator, tmp value that will pass the data and die.
             other.heap_storage = heap_address;
+            other.compressed_size = cell.compressed_size;
 
-            if (cell.compressed_size)
+            if (other.compressed_size)
             {
-                other.compressed_size = cell.compressed_size;
                 other.additional_bytes = cell.additional_bytes;
                 other.data.resize(cell_overall_size);
                 decompress(other.data.data(), size_decompressed, size_compressed_without_checksum);

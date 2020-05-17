@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <Common/IGrabberAllocator.h>
+#include <Common/Allocators/IGrabberAllocator_fwd.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>

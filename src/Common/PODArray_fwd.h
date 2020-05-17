@@ -4,7 +4,7 @@
   */
 #pragma once
 
-#include <Common/Allocator_fwd.h>
+#include <Common/Allocators/Allocator_fwd.h>
 
 namespace DB
 {

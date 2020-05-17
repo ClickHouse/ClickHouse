@@ -42,3 +42,4 @@ static void dummyFunctionForInterposing()
     ignore(pvalloc(0)); // -V575 NOLINT
 }
 #endif
+

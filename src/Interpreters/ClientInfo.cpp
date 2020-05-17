@@ -116,6 +116,14 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
 }
 
 
+void ClientInfo::setInitialQuery()
+{
+    query_kind = QueryKind::INITIAL_QUERY;
+    fillOSUserHostNameAndVersionInfo();
+    client_name = (DBMS_NAME " ") + client_name;
+}
+
+
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {
     os_user.resize(256, '\0');
