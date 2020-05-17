@@ -117,8 +117,17 @@ namespace
     struct RadixSortTraits : RadixSortNumTraits<T>
     {
         using Element = ValueWithIndex<T>;
+        using Index = size_t;
         static T & extractKey(Element & elem) { return elem.value; }
+        static size_t extractIndex(Element & elem) { return elem.index; }
     };
+}
+
+template <typename T>
+void inplacePartialSwapHelper(T& arr, size_t bound, bool reverse) {
+    std::reverse(std::begin(arr), std::begin(arr) + bound);
+    std::reverse(std::begin(arr) + bound, std::end(arr));
+    if (!reverse) std::reverse(std::begin(arr), std::end(arr));
 }
 
 template <typename T>
@@ -179,7 +188,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                 for (UInt32 i = 0; i < UInt32(s); ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s);
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, res.data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
@@ -188,42 +197,17 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                 {
                     for (ssize_t i = s - 1; i >= 0; --i)
                     {
-                        if (isNaN(pairs[i].value))
+                        if (isNaN(data[res[i]]))
                             ++nans_to_move;
                         else
                             break;
                     }
                 }
 
-                if (reverse)
-                {
-                    if (nans_to_move)
-                    {
-                        for (size_t i = 0; i < s - nans_to_move; ++i)
-                            res[i] = pairs[s - nans_to_move - 1 - i].index;
-                        for (size_t i = s - nans_to_move; i < s; ++i)
-                            res[i] = pairs[s - 1 - (i - (s - nans_to_move))].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[s - 1 - i] = pairs[i].index;
-                    }
-                }
-                else
-                {
-                    if (nans_to_move)
-                    {
-                        for (size_t i = 0; i < nans_to_move; ++i)
-                            res[i] = pairs[i + s - nans_to_move].index;
-                        for (size_t i = nans_to_move; i < s; ++i)
-                            res[i] = pairs[i - nans_to_move].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[i] = pairs[i].index;
-                    }
+                if (nans_to_move) {
+                    inplacePartialSwapHelper(res, s - nans_to_move, reverse);
+                } else if (reverse) {
+                    std::reverse(std::begin(res), std::end(res));
                 }
 
                 return;

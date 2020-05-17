@@ -71,6 +71,7 @@ template <typename TElement>
 struct RadixSortFloatTraits
 {
     using Element = TElement;     /// The type of the element. It can be a structure with a key and some other payload. Or just a key.
+    using Index = Element;        /// The index type to store permutation if needed
     using Key = Element;          /// The key to sort by.
     using CountType = uint32_t;   /// Type for calculating histograms. In the case of a known small number of elements, it can be less than size_t.
 
@@ -89,6 +90,9 @@ struct RadixSortFloatTraits
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
+
+    /// The function to get the index from an array.
+    static Index & extractIndex(Element & elem) { return elem; }
 
     /// Used when fallback to comparison based sorting is needed.
     /// TODO: Correct handling of NaNs, NULLs, etc
@@ -113,6 +117,7 @@ template <typename TElement>
 struct RadixSortUIntTraits
 {
     using Element = TElement;
+    using Index = Element;
     using Key = Element;
     using CountType = uint32_t;
     using KeyBits = Key;
@@ -123,6 +128,7 @@ struct RadixSortUIntTraits
     using Allocator = RadixSortMallocAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
+    static Index & extractIndex(Element & elem) { return elem; }
 
     static bool less(Key x, Key y)
     {
@@ -145,6 +151,7 @@ template <typename TElement>
 struct RadixSortIntTraits
 {
     using Element = TElement;
+    using Index = Element;
     using Key = Element;
     using CountType = uint32_t;
     using KeyBits = std::make_unsigned_t<Key>;
@@ -155,6 +162,7 @@ struct RadixSortIntTraits
     using Allocator = RadixSortMallocAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
+    static Index & extractIndex(Element & elem) { return elem; }
 
     static bool less(Key x, Key y)
     {
@@ -175,6 +183,7 @@ struct RadixSort
 {
 private:
     using Element     = typename Traits::Element;
+    using Index       = typename Traits::Index;
     using Key         = typename Traits::Key;
     using CountType   = typename Traits::CountType;
     using KeyBits     = typename Traits::KeyBits;
@@ -304,7 +313,7 @@ private:
 
 public:
     /// Least significant digit radix sort (stable)
-    static void executeLSD(Element * arr, size_t size)
+    static void executeLSD(Element * arr, size_t size, Index * destination = NULL)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
@@ -344,8 +353,10 @@ public:
             }
         }
 
+        bool direct_copy_to_destination = (destination);
+
         /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
-        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        for (size_t pass = 0; pass < NUM_PASSES - direct_copy_to_destination; ++pass)
         {
             Element * writer = pass % 2 ? arr : swap_buffer;
             Element * reader = pass % 2 ? swap_buffer : arr;
@@ -364,10 +375,25 @@ public:
             }
         }
 
-        /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
-        /// NOTE Sometimes it will be more optimal to provide non-destructive interface, that will not modify original array.
-        if (NUM_PASSES % 2)
+        if (direct_copy_to_destination)
+        {
+            size_t pass = NUM_PASSES - 1;
+            Index * writer = destination;
+            Element * reader = pass % 2 ? swap_buffer : arr;
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
+
+                /// Place the element on the next free position.
+                writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractIndex(reader[i]);
+            }
+        } else if (NUM_PASSES % 2)
+        {
+            /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
+            /// NOTE Sometimes it will be more optimal to provide non-destructive interface, that will not modify original array.
             memcpy(arr, swap_buffer, size * sizeof(Element));
+        }
 
         allocator.deallocate(swap_buffer, size * sizeof(Element));
     }
