@@ -106,11 +106,6 @@ struct Stats
 //
 //    }
 };
-
-bool operator == (const Stats &one, const Stats& other) noexcept
-{
-    return !memcmp(&one, &other, sizeof(Stats));
-}
 }
 
 namespace DB
