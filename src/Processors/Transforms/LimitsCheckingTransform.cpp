@@ -58,7 +58,7 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
     switch (limits.mode)
     {
         case LimitsMode::LIMITS_TOTAL:
-            /// Checked in `progress` method.
+            /// Checked in SourceWithProgress::progress method.
             break;
 
         case LimitsMode::LIMITS_CURRENT:
