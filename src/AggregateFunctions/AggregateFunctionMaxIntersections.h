@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/ArenaAllocator.h>
+#include <Common/Allocators/ArenaAllocator.h>
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 
