@@ -13,6 +13,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
+using column_type = uint32_t;
+using table_a_column = std::pair<std::string, std::string>;
+typedef FuncRet (*funchandler) (DB::ASTPtr ch, std::map<std::string, Column>& columns);
+
 
 std::string random_string(size_t length) {
     auto randchar = []() -> char
@@ -29,10 +33,12 @@ std::string random_string(size_t length) {
     return str;
 }
 
+
 std::string random_integer() {
     int32_t r = rand() % 4294967295;
     return std::to_string(r);
 }
+
 
 std::string random_float() {
     float r = static_cast <float> (rand()) / (static_cast <float> (RAND_MAX/4294967295));
@@ -48,6 +54,7 @@ std::string random_date() {
     return std::string(ans);
 }
 
+
 std::string random_datetime() {
     int32_t year = rand() % 136 + 1970;
     int32_t month = rand() % 12 + 1;
@@ -57,11 +64,11 @@ std::string random_datetime() {
     int32_t seconds = rand() % 60;
     char ans[22];
     sprintf(ans, "'%04u-%02u-%02u %02u:%02u:%02u'", year, month, day, hours, minutes, seconds);
-    return std::string(ans);
+    return std::string(ans);std::pair<std::string, std::string>
 }
 
 
-std::pair<std::string, std::string> get_table_a_column(const std::string& c) {
+table_a_column get_table_a_column(const std::string& c) {
     auto point_place = c.rfind('.');
     std::string db = "";
     std::string column = "";
@@ -75,7 +82,7 @@ std::pair<std::string, std::string> get_table_a_column(const std::string& c) {
 }
 
 
-enum type : uint32_t {
+enum type : column_type {
     i = 1, // int
     f = 2, // float
     s = 4, // string
@@ -86,7 +93,8 @@ enum type : uint32_t {
     a = 64, // array
 };
 
-std::map<uint32_t, std::string> type_definition  = {
+
+std::map<column_type, std::string> type_definition  = {
         {type::i, "Int64"},
         {type::f, "Float64"},
         {type::s, "String"},
@@ -95,7 +103,8 @@ std::map<uint32_t, std::string> type_definition  = {
         {type::b, "UInt8"}
 };
 
-uint32_t time_type(std::string value) {
+
+column_type time_type(std::string value) {
     if (value.length() == 12) {
         if (value[0] != '\'')
             goto not_date;
@@ -166,7 +175,9 @@ uint32_t time_type(std::string value) {
     return type::s;
 }
 
-uint32_t type_cast(int t) {
+
+// Casting inner clickhouse parser type to our type
+column_type type_cast(int t) {
     switch (t) {
         case 1:
         case 2:
@@ -186,26 +197,28 @@ uint32_t type_cast(int t) {
     return type::all;
 }
 
+
 class FuncRet
 {
 public:
     FuncRet() {};
 
-    FuncRet(uint32_t t, std::string v)
+    FuncRet(column_type t, std::string v)
             : value(v)
             , type(t)
     {}
 
-    FuncRet(uint32_t t, std::string v, bool is_a)
+    FuncRet(column_type t, std::string v, bool is_a)
             : value(v)
             , type(t)
             , is_array(is_a)
     {}
 
     std::string value = "";
-    uint32_t type = type::all;
+    column_type type = type::all;
     bool is_array = false;
 };
+
 
 std::map<std::string, FuncRet> func_to_return_type = {
         {"divide", FuncRet(type::f, "")},
@@ -263,9 +276,11 @@ std::map<std::string, FuncRet> func_to_return_type = {
         {"yesterday",  FuncRet(type::d | type::dt, "yesterday()")}
 };
 
+
 std::set<std::string> func_args_same_types = {"equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "multiply"};
 
-std::map<std::string, uint32_t> func_to_param_type = {
+
+std::map<std::string, column_type> func_to_param_type = {
         {"tostartofminute", type::dt},
         {"plus", type::i | type::f | type::d | type::dt},
         {"multiply", type::i | type::f},
@@ -337,13 +352,14 @@ std::map<std::string, uint32_t> func_to_param_type = {
 
 };
 
+
 class Column
 {
 public:
-    std::pair<std::string, std::string> name;
-    std::set<std::pair<std::string, std::string>> equals;
+    table_a_column name;
+    std::set<table_a_column> equals;
     std::set<std::string> values;
-    uint32_t type = type::all;
+    column_type type = type::all;
     bool is_array = false;
 
     Column(){}
@@ -464,9 +480,6 @@ public:
 };
 
 
-
-typedef FuncRet (*funchandler) (DB::ASTPtr ch, std::map<std::string, Column>& columns);
-
 std::set<std::vector<std::string>> decart_mul(std::set<std::vector<std::string>>& prev, std::set<std::string>& mul) {
     std::set<std::vector<std::string>> result;
     for (auto v : prev) {
@@ -478,6 +491,7 @@ std::set<std::vector<std::string>> decart_mul(std::set<std::vector<std::string>>
     }
     return result;
 }
+
 
 class Table
 {
@@ -503,7 +517,6 @@ public:
     void set_description(Column other) {
         column_description[other.name.second].merge(other);
     }
-
 
     void print() {
         std::cout << "Table\n";
@@ -623,7 +636,7 @@ public:
         }
     }
 
-    std::pair<std::string, std::string> get_table(std::string full_column) const {
+    table_a_column get_table(std::string full_column) const {
         std::string table, column;
         std::tie(table, column) = get_table_a_column(full_column);
         if (table != "") {
@@ -654,7 +667,6 @@ public:
 };
 
 
-
 std::string get_alias(DB::ASTPtr ch) {
     auto X = std::dynamic_pointer_cast<DB::ASTWithAlias>(ch);
     if (X) {
@@ -668,6 +680,7 @@ std::string get_alias(DB::ASTPtr ch) {
     }
     return "";
 }
+
 std::map<std::string, funchandler> handlers = {};
 
 FuncRet array_join_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
@@ -701,7 +714,7 @@ FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
     if (X) {
         std::set<std::string> indents = {};
         std::string value = "[";
-        uint32_t type_value = type::i | type::f | type::d | type::dt | type::s;
+        column_type type_value = type::i | type::f | type::d | type::dt | type::s;
         bool no_indent = true;
         for (auto arg : X->arguments->children) {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
@@ -711,7 +724,7 @@ FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
             }
             auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
             if (literal) {
-                uint32_t type = type_cast(literal->value.getType());
+                column_type type = type_cast(literal->value.getType());
                 if (type == type::s || type == type::d || type == type::dt) {
                     type = time_type(value);
                 }
@@ -747,11 +760,11 @@ FuncRet arithmetic_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
     if (X) {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        uint32_t type_value = type::i | type::f | type::d | type::dt;
-        uint32_t args_types = 0;
+        column_type type_value = type::i | type::f | type::d | type::dt;
+        column_type args_types = 0;
         bool no_indent = true;
         for (auto arg : X->arguments->children) {
-            uint32_t type = 0;
+            column_type type = 0;
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident) {
                 no_indent = false;
@@ -791,7 +804,7 @@ FuncRet arithmetic_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
                 columns[indent] = c;
             }
         }
-        uint32_t ret_type = 0;
+        column_type ret_type = 0;
         if (args_types & type::dt) {
             ret_type = type::dt;
         } else if (args_types & type::d) {
@@ -817,7 +830,7 @@ FuncRet like_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
     if (X) {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        uint32_t type_value = type::s;
+        column_type type_value = type::s;
         for (auto arg : X->arguments->children) {
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident) {
@@ -861,7 +874,7 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
     if (X) {
         std::set<std::string> indents = {};
         std::set<std::string> values = {};
-        uint32_t type_value = type::all;
+        column_type type_value = type::all;
         bool is_array = false;
         bool no_indent = true;
         if (func_to_param_type.count(boost::algorithm::to_lower_copy(X->name))) {
@@ -869,7 +882,7 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
             is_array = func_to_param_type[boost::algorithm::to_lower_copy(X->name)] & type::a;
         }
         for (auto arg : X->arguments->children) {
-            uint32_t type = type::all;
+            column_type type = type::all;
             std::string value;
             auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
             if (ident) {
@@ -977,6 +990,7 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column>& columns) {
     return FuncRet();
 }
 
+
 std::set<std::string> get_indent(DB::ASTPtr ch){
     if (!ch) {
         return {};
@@ -994,6 +1008,7 @@ std::set<std::string> get_indent(DB::ASTPtr ch){
 
 }
 
+
 std::set<std::string> get_select_indent(DB::ASTPtr asp, std::set<std::string>& column_alias){
     std::set<std::string> ret = {};
     for (auto ch : asp->children) {
@@ -1009,26 +1024,12 @@ std::set<std::string> get_select_indent(DB::ASTPtr asp, std::set<std::string>& c
 }
 
 
-std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex) {
-    auto X = std::dynamic_pointer_cast<DB::ASTSelectQuery>(vertex);
-    std::vector<DB::ASTPtr> result;
-    if (X) {
-        result.push_back(vertex);
-        return result;
-    }
-    for (const auto & child: (*vertex).children) {
-        auto v = get_select(child);
-        result.insert(result.end(), v.begin(), v.end());
-    }
-    return result;
-}
-
-std::set<std::pair<std::string, std::string>> equality_find(const Column& now, std::map<std::string, Column>& columns_descriptions, std::set<std::pair<std::string, std::string>>& visited) {
-    std::set<std::pair<std::string, std::string>> result;
+std::set<table_a_column> connected_equality_find(const Column& now, std::map<std::string, Column>& columns_descriptions, std::set<table_a_column>& visited) {
+    std::set<table_a_column> result;
     for (auto column : now.equals) {
         if (!visited.count(column)) {
             visited.insert(column);
-            auto sub_r = equality_find(columns_descriptions[column.first + "." + column.second], columns_descriptions, visited);
+            auto sub_r = connected_equality_find(columns_descriptions[column.first + "." + column.second], columns_descriptions, visited);
             result.insert(sub_r.begin(), sub_r.end());
         }
     }
@@ -1036,9 +1037,10 @@ std::set<std::pair<std::string, std::string>> equality_find(const Column& now, s
     return result;
 }
 
+
 std::map<std::string, Column> unificate_columns(std::map<std::string, Column> columns_descriptions, const TableList& all_tables) {
     for (auto& column: columns_descriptions) {
-        std::set<std::pair<std::string, std::string>> changed_equals;
+        std::set<table_a_column> changed_equals;
         for (auto& eq : column.second.equals) {
             std::string t, c;
             std::tie(t, c) = all_tables.get_table(eq.second);
@@ -1053,10 +1055,10 @@ std::map<std::string, Column> unificate_columns(std::map<std::string, Column> co
         column.second.name = std::make_pair(t, c);
         result[t + "." + c].merge(column.second);
     }
-    std::set<std::pair<std::string, std::string>> visited;
+    std::set<table_a_column> visited;
     for (auto& column: result) {
         if (!visited.count(column.second.name)) {
-            auto equal = equality_find(result[column.second.name.first + "." + column.second.name.second], result, visited);
+            auto equal = connected_equality_find(result[column.second.name.first + "." + column.second.name.second], result, visited);
             for (auto c: equal) {
                 result[c.first + "." + c.second].equals = equal;
             }
@@ -1077,6 +1079,7 @@ std::map<std::string, Column> unificate_columns(std::map<std::string, Column> co
     }
     return result;
 }
+
 
 void parse_select_query(DB::ASTPtr ast, TableList& all_tables) {
     auto sast = std::dynamic_pointer_cast<DB::ASTSelectQuery>(ast);
@@ -1153,26 +1156,6 @@ void parse_select_query(DB::ASTPtr ast, TableList& all_tables) {
 
 }
 
-TableList get_tables_from_select(std::string query) {
-    DB::ParserQueryWithOutput parser;
-    DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
-
-    TableList result;
-    for (auto select: get_select(ast)) {
-        TableList local;
-        parse_select_query(select, local);
-        result.merge(local);
-    }
-
-    for (auto table : result.tables) {
-        std::cout << table.second.create_query();
-        std::cout << table.second.insert_query();
-    }
-    std::cout << query << std::endl;
-
-    return result;
-}
-
 int main(int, char **) {
 
     using namespace DB;
@@ -1183,46 +1166,6 @@ int main(int, char **) {
     handlers["array"] = array_func;
     handlers[""] = simple_func;
 
-    std::string input =
-            " SELECT 18446744073709551615 as some_number, f(1), '\\\\', [a, b, c], (a, b, c), 1 + 2 * -3, a = b OR c > d.1 + 2 * -g[0] AND NOT e < f * (x + y), kek.lol"
-            " FROM default.hits"
-            " LEFT JOIN default.kek as kek"
-            " ON default.hits.kekos = default.kek.kekosik"
-            " WHERE CounterID = 101500 AND UniqID % 3 = 0 AND c = 5"
-            " GROUP BY UniqID"
-            " HAVING SUM(Refresh) > 100"
-            " ORDER BY Visits, PageViews"
-            " LIMIT LENGTH('STRING OF 20 SYMBOLS') - 20 + 1000, 10.05 / 5.025 * 5"
-            " INTO OUTFILE 'test.out'"
-            " FORMAT TabSeparated";
-
-    std::string simple =
-            " SELECT 18446744073709551615, f(1), '\\\\',kek.lol, [a, b, c], (a, b, c), 1 + 2 * -3, a = b OR c > d.1 + 2 * -g[0] AND NOT e < f * (x + y)"
-            " FROM default.hits"
-            " LEFT JOIN default.kek as kek"
-            " ON default.hits.kekos = default.kek.kekosik"
-            " WHERE CounterID = 1015 * 100 AND UniqID % 3 = 0";
-
-    std::string input3 = "SELECT value AS val FROM data2013 WHERE name = 'Alice' UNION /*comment*/ ALL SELECT value AS val FROM data2014 WHERE name = 'Alice'";
-
-    std::string input4 = "    select "
-                         "       task.errcode as errcode, "
-                         "        task.errcategory as errcategory,"
-                         "        count() as errors_count,"
-                         "        toStartOfMinute(uts) as minute"
-                         "    from dist_elog ARRAY JOIN tasks as task"
-                         "    WHERE"
-                         "        date = today()"
-                         "        and uts > '2019-02-01 01:00:30'"
-                         "        and uts <= '2019-02-03 01:00:50'"
-                         "        and (rtb_type = 1)"
-                         "  and dynmon_version = 'unknown'"
-                         "    GROUP BY"
-                         "        errcode,"
-                         "        errcategory,"
-                         "        minute";
-
-    std::string very_simple =  "SELECT number, arrayJoin(ar), string, lol.kek, base.other.date from base.kek join base.other as lol on number = lol.numberkek where number > 5 and string = 'hahhaa' and string like 'l_m%.ru' and lol.date = today()";
     std::string sql = "";
 
     std::string in;
