@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <Common/IGrabberAllocator.h>
+#include <Common/Allocators/IGrabberAllocator.h>
 
 #include <Common/Stopwatch.h>
 
