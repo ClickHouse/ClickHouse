@@ -20,6 +20,7 @@ cluster = ClickHouseCluster(__file__)
 
 node_1_1 = cluster.add_instance('node_1_1', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
 node_1_2 = cluster.add_instance('node_1_2', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
+node_1_3 = cluster.add_instance('node_1_3', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
 
 
 @pytest.fixture(scope="module")
@@ -43,17 +44,24 @@ def test_drop_replica(start_cluster):
 
     zk = cluster.get_kazoo_client('zoo1')
 
-    assert "can't drop local replica" in node_1_1.query_and_get_error("ALTER TABLE test.test_table drop replica 'node_1_1'")
-    assert "can't drop local replica" in node_1_2.query_and_get_error("ALTER TABLE test.test_table drop replica 'node_1_2'")
-    assert "it's active" in node_1_1.query_and_get_error("ALTER TABLE test.test_table drop replica 'node_1_2'")
+    assert "can't drop local replica" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_1' FROM test.test_table")
+    assert "can't drop local replica" in node_1_2.query_and_get_error("SYSTEM DROP REPLICA 'node_1_2' FROM test.test_table")
+    assert "it's active" in node_1_1.query_and_get_error("SYSTEM DROP REPLICA 'node_1_2' FROM test.test_table")
 
     with PartitionManager() as pm:
-        node_1_2.kill_clickhouse()
         pm.drop_instance_zk_connections(node_1_2)
+
+        ## make node_1_2 dead
+        node_1_2.kill_clickhouse()
         time.sleep(120)
-        node_1_1.query("ALTER TABLE test.test_table drop replica 'node_1_2'")
+        node_1_1.query("SYSTEM DROP REPLICA 'node_1_2' FROM test.test_table")
         exists_replica_1_2 = zk.exists("/clickhouse/tables/test/{shard}/replicated/replicas/{replica}".format(shard=1, replica='node_1_2'))
         assert (exists_replica_1_2 == None)
-        node_1_1.query("DROP TABLE test.test_table")
+
+        ## make node_1_1 dead
+        node_1_1.kill_clickhouse()
+        time.sleep(120)
+
+        node_1_3.query("SYSTEM DROP REPLICA 'node_1_1' FROM '/clickhouse/tables/test/{shard}/replicated'".format(shard=1))
         exists_base_path = zk.exists("/clickhouse/tables/test/{shard}/replicated".format(shard=1))
         assert(exists_base_path == None)
