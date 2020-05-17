@@ -11,7 +11,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 
-#include <Common/ArenaAllocator.h>
+#include <Common/Allocators/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
