@@ -276,7 +276,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ClientInfo client_info;
         readHeader(in, insert_settings, insert_query, client_info, log);
 
-        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings, &client_info};
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -465,7 +465,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings, &client_info);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, insert_settings, client_info);
                     remote->writePrefix();
                 }
 
