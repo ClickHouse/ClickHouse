@@ -1044,15 +1044,15 @@ void Context::setCurrentDatabase(const String & name)
 }
 
 
-void Context::setUserAgent(const components::UserAgent * useragent)
+void Context::setHyperscanBrowserBase(const MultiRegexps::Regexps * regexps)
 {
-    userAgent = useragent;
+    hyperscan_browser_base = regexps;
 }
 
 
-const components::UserAgent * Context::getUserAgent() const
+const MultiRegexps::Regexps * Context::getHyperscanBrowserBase() const
 {
-    return userAgent;
+    return hyperscan_browser_base;
 }
 
 

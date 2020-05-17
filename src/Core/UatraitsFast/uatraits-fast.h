@@ -17,8 +17,6 @@
 
 #include <common/logger_useful.h>
 
-#include <Functions/Regexps.h>
-
 /** Более быстрый вариант реализации библиотеки uatraits.
   * Использует те же исходные данные, что и библиотека uatraits.
   * Всё остальное сделано по-другому.
@@ -465,7 +463,8 @@ private:
     Node root_node;
 
     size_t substrings_count = 0;
-    std::unique_ptr<DB::MultiRegexps::Regexps> regex_engine;
+    std::unique_ptr<TDefaultAhoCorasickBuilder> automata_builder;
+    std::unique_ptr<const TDefaultMappedAhoCorasick> automata;
 
     using SubstringsToIndices = std::map<std::string, size_t>;
     SubstringsToIndices substrings_to_indices;
@@ -497,8 +496,4 @@ private:
     Poco::Logger * log = &Poco::Logger::get("UATraits");
 
     std::unique_ptr<RootRule<Result>> root_rule;
-
-    std::vector<StringRef> regexp_patterns;
-
-    DB::MultiRegexps::Regexps * regexps_engine;
 };
