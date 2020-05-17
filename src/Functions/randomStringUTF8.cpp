@@ -38,8 +38,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isUnsignedInteger(*arguments[0]))
-            throw Exception("First argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isNumber(*arguments[0]))
+            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -86,7 +86,7 @@ public:
             /// Generate highest byte in [0, 6]
             /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
             UInt32 code_point = (rand >> 16) * 7u;
-            code_point &= ((-1) ^ 0xFFFF);
+            code_point &= ~0xFFFF;
             code_point |= rand & 0xFFFF; // and other bytes obtaining in a simple way
 
             if (code_point >= 0x40000)
@@ -97,14 +97,9 @@ public:
 
             if (0xD7FF < code_point && code_point < 0xE000) // this range will not be valid in isValidUTF8
             {
-                /* TODO(reviewer) choose with @axolm variant:
-                 * 1. Not to do this if (isValidUTF8 can return 0)
-                 * 2. just return 0
-                 * 3. capture rng in lambda and do while(code_point is bad) { recalc... }
-                 * 4. ...
-                 * */
                 return 0u;
             }
+
             return code_point;
         };
 
@@ -114,7 +109,7 @@ public:
             size_t utf8_len = length_column.getUInt(row_num);
             auto * pos = data_to.data() + offset;
 
-            size_t last_writed_bytes = 0;
+            size_t last_writen_bytes = 0;
             size_t i = 0;
             for (; i < utf8_len; i += 2)
             {
@@ -125,13 +120,13 @@ public:
 
                 /// We have padding in column buffers that we can overwrite.
                 pos += UTF8::convert(*reinterpret_cast<int *>(&code_point1), pos, sizeof(int));
-                last_writed_bytes = UTF8::convert(*reinterpret_cast<int *>(&code_point2), pos, sizeof(int));
-                pos += last_writed_bytes;
+                last_writen_bytes = UTF8::convert(*reinterpret_cast<int *>(&code_point2), pos, sizeof(int));
+                pos += last_writen_bytes;
             }
             offset = pos - data_to.data() + 1;
             if (i > utf8_len)
             {
-                offset -= last_writed_bytes;
+                offset -= last_writen_bytes;
             }
             offsets_to[row_num] = offset;
         }
