@@ -20,6 +20,11 @@
 
 namespace DB
 {
+namespace ErrorCodes 
+{
+extern const int SYSTEM_ERROR;
+}
+
 /**
  * @brief This class represents a tool combining a reference-counted memory block cache integrated with a mmap-backed
  *        memory allocator. Overall memory limit, begin set by the user, is constant, so this tool also performs
@@ -501,7 +506,7 @@ private:
         total_size_in_use += metadata.size;
     }
 
-    void onValueDelete(Value * value) noexcept
+    void onValueDelete(Value * value)
     {
         std::lock_guard cache_lock(mutex);
 
@@ -509,6 +514,9 @@ private:
 
         // it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
         // invoking this function), thus value_to_region contains a metadata struct associated with #value.
+        if (value_to_region.end() == it)
+            throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
+
 
         RegionMetadata& metadata = *(it->second);
 
