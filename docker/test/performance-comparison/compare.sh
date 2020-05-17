@@ -14,8 +14,8 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
@@ -93,54 +93,51 @@ function run_tests
     # Just check that the script runs at all
     "$script_dir/perf.py" --help > /dev/null
 
-    # When testing commits from master, use the older test files. This allows the
-    # tests to pass even when we add new functions and tests for them, that are
-    # not supported in the old revision.
-    # When testing a PR, use the test files from the PR so that we can test their
-    # changes.
-    test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
+    # Find the directory with test files.
+    if [ -v CHPC_TEST_PATH ]
+    then
+        # Use the explicitly set path to directory with test files.
+        test_prefix="$CHPC_TEST_PATH"
+    elif [ "$PR_TO_TEST" = "0" ]
+    then
+        # When testing commits from master, use the older test files. This
+        # allows the tests to pass even when we add new functions and tests for
+        # them, that are not supported in the old revision.
+        test_prefix=left/performance
+    elif [ "$PR_TO_TEST" != "" ] && [ "$PR_TO_TEST" != "0" ]
+    then
+        # For PRs, use newer test files so we can test these changes.
+        test_prefix=right/performance
 
-    for x in {test-times,skipped-tests}.tsv
+        # If some tests were changed in the PR, we may want to run only these
+        # ones. The list of changed tests in changed-test.txt is prepared in
+        # entrypoint.sh from git diffs, because it has the cloned repo.  Used
+        # to use rsync for that but it was really ugly and not always correct
+        # (e.g. when the reference SHA is really old and has some other
+        # differences to the tested SHA, besides the one introduced by the PR).
+        changed_test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
+    fi
+
+    # Determine which tests to run.
+    if [ -v CHPC_TEST_GREP ]
+    then
+        # Run only explicitly specified tests, if any.
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
+    elif [ "$changed_test_files" != "" ]
+    then
+        # Use test files that changed in the PR.
+        test_files="$changed_test_files"
+    else
+        # The default -- run all tests found in the test dir.
+        test_files=$(ls "$test_prefix"/*.xml)
+    fi
+
+    # Delete old report files.
+    for x in {test-times,skipped-tests,wall-clock-times,report-thresholds,client-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
     done
-
-
-    # FIXME a quick crutch to bring the run time down for the unstable tests --
-    # if some performance tests xmls were changed in a PR, run only these ones.
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        # changed-test.txt prepared in entrypoint.sh from git diffs, because it
-        # has the cloned repo. Used to use rsync for that but it was really ugly
-        # and not always correct (e.g. when the reference SHA is really old and
-        # has some other differences to the tested SHA, besides the one introduced
-        # by the PR).
-        test_files_override=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
-        if [ "$test_files_override" != "" ]
-        then
-            test_files=$test_files_override
-        fi
-    fi
-
-    # Run only explicitly specified tests, if any
-    if [ -v CHPC_TEST_GLOB ]
-    then
-        # I do want to expand the globs in the variable.
-        # shellcheck disable=SC2086
-        test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
-    fi
-
-    if [ "$test_files" == "" ]
-    then
-        # FIXME remove some broken long tests
-        for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
-        do
-            printf "%s\tMarked as broken (see compare.sh)\n" "$test_name">> skipped-tests.tsv
-            rm "$test_prefix/$test_name.xml" ||:
-        done
-        test_files=$(ls "$test_prefix"/*.xml)
-    fi
 
     # Run the tests.
     test_name="<none>"
@@ -161,19 +158,33 @@ function run_tests
 
         # The test completed with zero status, so we treat stderr as warnings
         mv "$test_name-err.log" "$test_name-warn.log"
-
-        grep ^query "$test_name-raw.tsv" | cut -f2- > "$test_name-queries.tsv"
-        grep ^client-time "$test_name-raw.tsv" | cut -f2- > "$test_name-client-time.tsv"
-        skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
-        if [ "$skipped" != "" ]
-        then
-            printf "%s\t%s\n" "$test_name" "$skipped">> skipped-tests.tsv
-        fi
     done
 
     unset TIMEFORMAT
 
     wait
+}
+
+function get_profiles_watchdog
+{
+    sleep 6000
+
+    echo "The trace collection did not finish in time." >> profile-errors.log
+
+    for pid in $(pgrep -f clickhouse)
+    do
+        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+    done
+    wait
+
+    for _ in {1..10}
+    do
+        if ! pkill -f clickhouse
+        then
+            break
+        fi
+        sleep 1
+    done
 }
 
 function get_profiles
@@ -199,22 +210,167 @@ function get_profiles
     clickhouse-client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
+
+    # Just check that the servers are alive so that we return a proper exit code.
+    # We don't consistently check the return codes of the above background jobs.
+    clickhouse-client --port 9001 --query "select 1"
+    clickhouse-client --port 9002 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-    find . -maxdepth 1 -name "*-queries.tsv" -print0 | \
-        xargs -0 -n1 -I% basename % -queries.tsv | \
-        parallel --verbose clickhouse-local --file "{}-queries.tsv" \
-            --structure "\"query text, run int, version UInt32, time float\"" \
-            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
-            ">" {}-report.tsv
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv client-times.tsv report-thresholds.tsv ||:
+
+# Split the raw test output into files suitable for analysis.
+IFS=$'\n'
+for test_file in $(find . -maxdepth 1 -name "*-raw.tsv" -print)
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^query\t//p" < "$test_file" > "$test_name-queries.tsv"
+    sed -n "s/^client-time/$test_name/p" < "$test_file" >> "client-times.tsv"
+    sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "report-thresholds.tsv"
+    sed -n "s/^skipped/$test_name/p" < "$test_file" >> "skipped-tests.tsv"
+done
+unset IFS
+
+# This is a lateral join in bash... please forgive me.
+# We don't have arrayPermute(), so I have to make random permutations with 
+# `order by rand`, and it becomes really slow if I do it for more than one
+# query. We also don't have lateral joins. So I just put all runs of each
+# query into a separate file, and then compute randomization distribution
+# for each file. I do this in parallel using GNU parallel.
+IFS=$'\n'
+for test_file in $(find . -maxdepth 1 -name "*-queries.tsv" -print)
+do
+    test_name=$(basename "$test_file" "-queries.tsv")
+    query_index=1
+    for query in $(cut -d'	' -f1 "$test_file" | sort | uniq)
+    do
+        query_prefix="$test_name.q$query_index"
+        query_index=$((query_index + 1))
+        grep -F "$query	" "$test_file" > "$query_prefix.tmp"
+        printf "%s\0\n" \
+            "clickhouse-local \
+                --file \"$query_prefix.tmp\" \
+                --structure 'query text, run int, version UInt32, time float' \
+                --query \"$(cat "$script_dir/eqmed.sql")\" \
+                >> \"$test_name-report.tsv\"" \
+                2>> analyze-errors.log \
+            >> analyze-commands.txt
+    done
+done
+wait
+unset IFS
+
+parallel --verbose --null < analyze-commands.txt
 }
 
 # Analyze results
 function report
 {
+
+rm -r report ||:
+mkdir report ||:
+
+
+rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
+cat analyze-errors.log >> report/errors.log ||:
+cat profile-errors.log >> report/errors.log ||:
+
+clickhouse-local --query "
+create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
+    as select
+        -- FIXME Comparison mode doesn't make sense for queries that complete
+        -- immediately, so for now we pretend they don't exist. We don't want to
+        -- remove them altogether because we want to be able to detect regressions,
+        -- but the right way to do this is not yet clear.
+        (left + right) / 2 < 0.02 as short,
+
+        not short and abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
+        not short and abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
+        
+        not short and not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
+        not short and not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
+        
+        left, right, diff, stat_threshold,
+        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
+        reports.test,
+        query
+    from
+        (
+            select *,
+                replaceAll(_file, '-report.tsv', '') test
+            from file('*-report.tsv', TSV, 'left float, right float, diff float, stat_threshold float, query text')
+        ) reports
+        left join file('report-thresholds.tsv', TSV, 'test text, report_threshold float') thresholds
+        using test
+        ;
+
+-- keep the table in old format so that we can analyze new and old data together
+create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
+    as select short, changed_fail, unstable_fail, left, right, diff, stat_threshold, test, query
+    from queries
+    ;
+
+create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
+    select left, right, diff, stat_threshold, changed_fail, test, query from queries where changed_show
+    order by abs(diff) desc;
+
+create table unstable_queries_tsv engine File(TSV, 'report/unstable-queries.tsv') as
+    select left, right, diff, stat_threshold, unstable_fail, test, query from queries where unstable_show
+    order by stat_threshold desc;
+
+create table queries_for_flamegraph engine File(TSVWithNamesAndTypes, 'report/queries-for-flamegraph.tsv') as
+    select query, test from queries where unstable_show or changed_show
+    ;
+
+create table unstable_tests_tsv engine File(TSV, 'report/bad-tests.tsv') as
+    select test, sum(unstable_fail) u, sum(changed_fail) c, u + c s from queries
+    group by test having s > 0 order by s desc;
+
+create table query_time engine Memory as select *
+    from file('client-times.tsv', TSV, 'test text, query text, client float, server float');
+
+create table wall_clock engine Memory as select *
+    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
+
+create table slow_on_client_tsv engine File(TSV, 'report/slow-on-client.tsv') as
+    select client, server, floor(client/server, 3) p, query
+    from query_time where p > 1.02 order by p desc;
+
+create table test_time engine Memory as
+    select test, sum(client) total_client_time,
+        maxIf(client, not short) query_max,
+        minIf(client, not short) query_min,
+        count(*) queries,
+        sum(short) short_queries
+    from query_time full join queries
+    using test, query
+    group by test;
+
+create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
+    select wall_clock.test, real,
+        floor(total_client_time, 3),
+        queries,
+        short_queries,
+        floor(query_max, 3),
+        floor(real / queries, 3) avg_real_per_query,
+        floor(query_min, 3)
+    from test_time
+        -- wall clock times are also measured for skipped tests, so don't
+        -- do full join
+        left join wall_clock using test
+    order by avg_real_per_query desc;
+
+create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
+    select changed_fail, unstable_fail,
+        left, right, diff,
+        floor(left > right ? left / right : right / left, 3),
+        stat_threshold, test, query
+    from queries order by test, query;
+" 2> >(tee -a report/errors.log 1>&2)
 
 for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
 do
@@ -226,87 +382,12 @@ do
         | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
 done
 
-rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
-
-clickhouse-local --query "
-create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
-    as select
-        -- FIXME Comparison mode doesn't make sense for queries that complete
-        -- immediately, so for now we pretend they don't exist. We don't want to
-        -- remove them altogether because we want to be able to detect regressions,
-        -- but the right way to do this is not yet clear.
-        left + right < 0.05 as short,
-
-        -- Difference > 15% and > rd(99%) -- changed. We can't filter out flaky
-        -- queries by rd(5%), because it can be zero when the difference is smaller
-        -- than a typical distribution width. The difference is still real though.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[4] as changed,
-        
-        -- Not changed but rd(99%) > 10% -- unstable.
-        not short and not changed and rd[4] > 0.10 as unstable,
-        
-        left, right, diff, rd,
-        replaceAll(_file, '-report.tsv', '') test,
-        query
-    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
-
-create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
-    select left, right, diff, rd, test, query from queries where changed
-    order by rd[3] desc;
-
-create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
-    select left, right, diff, rd, test, query from queries where unstable
-    order by rd[3] desc;
-
-create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
-    select test, sum(unstable) u, sum(changed) c, u + c s from queries
-    group by test having s > 0 order by s desc;
-
-create table query_time engine Memory as select *, replaceAll(_file, '-client-time.tsv', '') test
-    from file('*-client-time.tsv', TSV, 'query text, client float, server float');
-
-create table wall_clock engine Memory as select *
-    from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
-
-create table slow_on_client_tsv engine File(TSV, 'slow-on-client.tsv') as
-    select client, server, floor(client/server, 3) p, query
-    from query_time where p > 1.02 order by p desc;
-
-create table test_time engine Memory as
-    select test, sum(client) total_client_time,
-        maxIf(client, not short) query_max,
-        minIf(client, not short) query_min,
-        count(*) queries,
-        sum(short) short_queries
-    from query_time, queries
-    where query_time.query = queries.query
-    group by test;
-
-create table test_times_tsv engine File(TSV, 'test-times.tsv') as
-    select wall_clock.test, real,
-        floor(total_client_time, 3),
-        queries,
-        short_queries,
-        floor(query_max, 3),
-        floor(real / queries, 3) avg_real_per_query,
-        floor(query_min, 3)
-    from test_time join wall_clock using test
-    order by avg_real_per_query desc;
-
-create table all_tests_tsv engine File(TSV, 'all-queries.tsv') as
-    select left, right, diff,
-        floor(left > right ? left / right : right / left, 3),
-        rd, test, query
-    from queries order by test, query;
-" 2> >(head -2 >> report-errors.rep) ||:
-
 for version in {right,left}
 do
 clickhouse-local --query "
-create view queries as
-    select * from file('queries.rep', TSVWithNamesAndTypes,
-        'short int, unstable int, changed int, left float, right float,
-            diff float, rd Array(float), test text, query text');
+create view queries_for_flamegraph as
+    select * from file('report/queries-for-flamegraph.tsv', TSVWithNamesAndTypes,
+        'query text, test text');
 
 create view query_log as select *
     from file('$version-query-log.tsv', TSVWithNamesAndTypes,
@@ -320,14 +401,14 @@ create view addresses_src as select *
     from file('$version-addresses.tsv', TSVWithNamesAndTypes,
         '$(cat "$version-addresses.tsv.columns")');
 
-create table addresses_join engine Join(any, left, address) as
+create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes,
         'unstable-query-runs.$version.rep') as
-    select query_id, query from query_log
-    join queries using query
-    where query_id not like 'prewarm %' and (unstable or changed)
+    select query, query_id from query_log
+    where query in (select query from queries_for_flamegraph)
+        and query_id not like 'prewarm %'
     ;
 
 create table unstable_query_log engine File(Vertical,
@@ -359,7 +440,7 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
         'unstable-run-traces.$version.rep') as
     select
         count() value,
-        joinGet(addresses_join, 'name', arrayJoin(trace)) metric,
+        joinGet(addresses_join_$version, 'name', arrayJoin(trace)) metric,
         unstable_query_runs.query_id,
         any(unstable_query_runs.query) query
     from unstable_query_runs
@@ -370,22 +451,22 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
         'metric-deviation.$version.rep') as
-    select floor((q[3] - q[1])/q[2], 3) d,
-        quantilesExact(0, 0.5, 1)(value) q, metric, query
+    select query, floor((q[3] - q[1])/q[2], 3) d,
+        quantilesExact(0, 0.5, 1)(value) q, metric
     from (select * from unstable_run_metrics
         union all select * from unstable_run_traces
         union all select * from unstable_run_metrics_2) mm
-    join queries using query
+    join queries_for_flamegraph using query
     group by query, metric
     having d > 0.5
-    order by any(rd[3]) desc, query desc, d desc
+    order by query desc, d desc
     ;
 
 create table stacks engine File(TSV, 'stacks.$version.rep') as
     select
         query,
         arrayStringConcat(
-            arrayMap(x -> joinGet(addresses_join, 'name', x),
+            arrayMap(x -> joinGet(addresses_join_$version, 'name', x),
                 arrayReverse(trace)
             ),
             ';'
@@ -395,7 +476,7 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
     join unstable_query_runs using query_id
     group by query, trace
     ;
-" 2> >(head -2 >> report-errors.rep) ||: # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
+" 2> >(tee -a report/errors.log 1>&2) # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
 done
 wait
 
@@ -405,11 +486,17 @@ do
     for query in $(cut -d'	' -f1 "stacks.$version.rep" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
+
+        # Build separate .svg flamegraph for each query.
         grep -F "$query	" "stacks.$version.rep" \
             | cut -d'	' -f 2- \
             | sed 's/\t/ /g' \
             | tee "$query_file.stacks.$version.rep" \
             | ~/fg/flamegraph.pl > "$query_file.$version.svg" &
+
+        # Copy metric stats into separate files as well.
+        grep -F "$query	" "metric-deviation.$version.rep" \
+            | cut -f2- > "$query_file.$version.metrics.rep" &
     done
 done
 wait
@@ -417,7 +504,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
 # Check that local and client are in PATH
@@ -438,10 +525,28 @@ case "$stage" in
     time run_tests ||:
     ;&
 "get_profiles")
+    # Getting profiles inexplicably hangs sometimes, so try to save some logs if
+    # this happens again. Give the servers some time to collect all info, then
+    # trace and kill. Start in a subshell, so that both function don't interfere
+    # with each other's jobs through `wait`. Also make the subshell have its own
+    # process group, so that we can then kill it with all its child processes.
+    # Somehow it doesn't kill the children by itself when dying.
+    set -m
+    ( get_profiles_watchdog ) &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog started OK.
+    kill -0 $watchdog_pid
+
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
-    # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles ||:
+    # and we won't be able to process trace_log data. Start in a subshell, so that
+    # it doesn't interfere with the watchdog through `wait`.
+    ( time get_profiles || restart || get_profiles ||: )
+
+    # Kill the whole process group, because somehow when the subshell is killed,
+    # the sleep inside remains alive and orphaned.
+    while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
@@ -453,7 +558,11 @@ case "$stage" in
 "report")
     time report ||:
 
-    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(head -2 >> report-errors.rep) ||:
+    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(tee -a report/errors.log 1>&2) ||:
     time "$script_dir/report.py" > report.html
     ;&
 esac
+
+# Print some final debug info to help debug Weirdness, of which there is plenty.
+jobs
+pstree -apgT

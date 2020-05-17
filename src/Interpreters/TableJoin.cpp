@@ -13,11 +13,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
-TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumeJBODPtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
@@ -25,6 +21,8 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
+    , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
     if (settings.partial_merge_join)
@@ -252,7 +250,7 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     if (right_keys.size() != 1)
         return false;
 
-    for (auto & col : sample_block)
+    for (const auto & col : sample_block)
     {
         String original = original_names.find(col.name)->second;
         if (col.name == right_keys[0])

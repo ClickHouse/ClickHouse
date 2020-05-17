@@ -44,7 +44,7 @@ namespace ErrorCodes
 }
 
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, bool sanity_check_compression_codecs)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
     const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
@@ -75,7 +75,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -131,7 +131,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.ttl;
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type, sanity_check_compression_codecs);
 
         command.if_exists = command_ast->if_exists;
 
@@ -257,7 +257,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
 {
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type, false);
+        ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
             column.default_desc.kind = default_kind;
@@ -455,7 +455,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
-        for (auto & column : metadata.columns)
+        for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
             {
@@ -467,16 +467,29 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         }
         if (metadata.ttl_for_table_ast)
             rename_visitor.visit(metadata.ttl_for_table_ast);
+
+        for (auto & constraint : metadata.constraints.constraints)
+            rename_visitor.visit(constraint);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::isModifyingData() const
+bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     /// Possible change data representation on disk
     if (type == MODIFY_COLUMN)
-        return data_type != nullptr;
+    {
+        if (data_type == nullptr)
+            return false;
+
+        /// It is allowed to ALTER data type to the same type as before.
+        for (const auto & column : metadata.columns.getAllPhysical())
+            if (column.name == column_name)
+                return !column.type->equals(*data_type);
+
+        return true;
+    }
 
     return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
         || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
@@ -496,7 +509,7 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->getName() == to->getName())
+    if (from->equals(*to))
         return true;
 
     static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
@@ -720,10 +733,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
-    NameToNameMap renames_map;
     for (size_t i = 0; i < size(); ++i)
     {
-        auto & command = (*this)[i];
+        const auto & command = (*this)[i];
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -741,7 +753,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Data type have to be specified for column " + backQuote(column_name) + " to add",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            all_columns.add(ColumnDescription(column_name, command.data_type, false));
+            all_columns.add(ColumnDescription(column_name, command.data_type));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -796,30 +808,39 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
+           for (size_t j = i + 1; j < size(); ++j)
+           {
+               auto next_command = (*this)[j];
+               if (next_command.type == AlterCommand::RENAME_COLUMN)
+               {
+                   if (next_command.column_name == command.rename_to)
+                       throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sense)",
+                                                            ErrorCodes::NOT_IMPLEMENTED};
+                   else if (next_command.column_name == command.column_name)
+                       throw Exception{"Cannot rename column '" + backQuote(command.column_name)
+                                           + "' to two different names in a single ALTER query",
+                                       ErrorCodes::BAD_ARGUMENTS};
+               }
+           }
+
             /// TODO Implement nested rename
-            if (metadata.columns.hasNested(command.column_name))
+            if (all_columns.hasNested(command.column_name))
             {
                 throw Exception{"Cannot rename whole Nested struct", ErrorCodes::NOT_IMPLEMENTED};
             }
 
-            if (!metadata.columns.has(command.column_name))
+            if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
                     throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to rename",
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                else
+                    continue;
             }
 
-            if (metadata.columns.has(command.rename_to))
+            if (all_columns.has(command.rename_to))
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
-
-
-            if (renames_map.count(command.column_name))
-                throw Exception{"Cannot rename column '" + backQuote(command.column_name) + "' to two different names in a single ALTER query", ErrorCodes::BAD_ARGUMENTS};
-
-            if (renames_map.count(command.rename_to))
-                throw Exception{"Rename loop detected in ALTER query",
-                                ErrorCodes::BAD_ARGUMENTS};
 
             String from_nested_table_name = Nested::extractTableName(command.column_name);
             String to_nested_table_name = Nested::extractTableName(command.rename_to);
@@ -833,7 +854,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
             }
             else if (!from_nested && !to_nested)
             {
-                renames_map[command.column_name] = command.rename_to;
+                all_columns.rename(command.column_name, command.rename_to);
             }
             else
             {
@@ -888,11 +909,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::isModifyingData() const
+bool AlterCommands::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     for (const auto & param : *this)
     {
-        if (param.isModifyingData())
+        if (param.isModifyingData(metadata))
             return true;
     }
 

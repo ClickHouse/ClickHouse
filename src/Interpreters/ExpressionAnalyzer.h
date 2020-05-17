@@ -213,8 +213,8 @@ struct ExpressionAnalysisResult
     bool hasHaving() const { return before_having.get(); }
     bool hasLimitBy() const { return before_limit_by.get(); }
 
-    void removeExtraColumns();
-    void checkActions();
+    void removeExtraColumns() const;
+    void checkActions() const;
     void finalize(const ExpressionActionsChain & chain, const Context & context, size_t where_step_num);
 };
 

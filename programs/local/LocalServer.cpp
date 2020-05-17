@@ -148,7 +148,8 @@ try
         return Application::EXIT_OK;
     }
 
-    context = std::make_unique<Context>(Context::createGlobal());
+    shared_context = Context::createShared();
+    context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
     context->makeGlobalContext();
     context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();

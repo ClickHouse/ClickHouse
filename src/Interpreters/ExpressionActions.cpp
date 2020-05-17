@@ -1055,7 +1055,7 @@ bool ExpressionActions::resultIsAlwaysEmpty() const
 {
     /// Check that has join which returns empty result.
 
-    for (auto & action : actions)
+    for (const auto & action : actions)
     {
         if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
             return true;
@@ -1072,7 +1072,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
-        auto & action = *it;
+        const auto & action = *it;
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
@@ -1088,12 +1088,12 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     if (!set_to_check.empty())
     {
-        for (auto & action : actions)
+        for (const auto & action : actions)
         {
             if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
             {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
+                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
                 {
                     if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;

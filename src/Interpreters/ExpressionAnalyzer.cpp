@@ -88,7 +88,7 @@ bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings
     if (!settings.enable_early_constant_folding)
         return false;
 
-    for (auto & action : actions.getActions())
+    for (const auto & action : actions.getActions())
     {
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
@@ -409,7 +409,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            getRootActions(arguments[i], true, actions);
+            getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
             types[i] = actions->getSampleBlock().getByName(name).type;
             aggregate.argument_names[i] = name;
@@ -522,7 +522,7 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
 
 static bool allowDictJoin(StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
 {
-    auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
+    const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
     if (!dict)
         return false;
 
@@ -878,7 +878,34 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
-            result_columns.emplace_back(ast->getColumnName(), result_name);
+            std::string source_name = ast->getColumnName();
+
+            /*
+             * For temporary columns created by ExpressionAnalyzer for literals,
+             * use the correct source column. Using the default display name
+             * returned by getColumnName is not enough, and we have to use the
+             * column id set by EA. In principle, this logic applies to all kinds
+             * of columns, not only literals. Literals are especially problematic
+             * for two reasons:
+             * 1) confusing different literal columns leads to weird side
+             *    effects (see 01101_literal_columns_clash);
+             * 2) the disambiguation mechanism in SyntaxAnalyzer, that, among
+             *    other things, creates unique aliases for columns with same
+             *    names from different tables, is applied before these temporary
+             *    columns are created by ExpressionAnalyzer.
+             * Similar problems should also manifest for function columns, which
+             * are likewise created at a later stage by EA.
+             * In general, we need to have explicit separation between display
+             * names and identifiers for columns. This code is a workaround for
+             * a particular subclass of problems, and not a proper solution.
+             */
+            if (const auto * as_literal = ast->as<ASTLiteral>())
+            {
+                source_name = as_literal->unique_column_name;
+                assert(!source_name.empty());
+            }
+
+            result_columns.emplace_back(source_name, result_name);
             step.required_output.push_back(result_columns.back().second);
         }
     }
@@ -1159,7 +1186,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, co
         remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
 }
 
-void ExpressionAnalysisResult::removeExtraColumns()
+void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
         filter_info->actions->prependProjectInput();
@@ -1169,7 +1196,7 @@ void ExpressionAnalysisResult::removeExtraColumns()
         before_having->prependProjectInput();
 }
 
-void ExpressionAnalysisResult::checkActions()
+void ExpressionAnalysisResult::checkActions() const
 {
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (hasPrewhere())

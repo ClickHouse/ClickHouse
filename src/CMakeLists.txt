@@ -27,168 +27,6 @@ configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h)
 
-if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
-endif ()
-
-if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
-endif ()
-
-# Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
-
-option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
-
-if (COMPILER_CLANG)
-    add_warning(pedantic)
-    no_warning(gnu-anonymous-struct)
-    no_warning(nested-anon-types)
-    no_warning(vla-extension)
-    no_warning(zero-length-array)
-
-    add_warning(comma)
-    add_warning(conditional-uninitialized)
-    add_warning(covered-switch-default)
-    add_warning(deprecated)
-    add_warning(embedded-directive)
-    add_warning(empty-init-stmt) # linux-only
-    add_warning(extra-semi-stmt) # linux-only
-    add_warning(extra-semi)
-    add_warning(gnu-case-range)
-    add_warning(inconsistent-missing-destructor-override)
-    add_warning(newline-eof)
-    add_warning(old-style-cast)
-    add_warning(range-loop-analysis)
-    add_warning(redundant-parens)
-    add_warning(reserved-id-macro)
-    add_warning(shadow-field) # clang 8+
-    add_warning(shadow-uncaptured-local)
-    add_warning(shadow)
-    add_warning(string-plus-int) # clang 8+
-    add_warning(undef)
-    add_warning(unreachable-code-return)
-    add_warning(unreachable-code)
-    add_warning(unused-exception-parameter)
-    add_warning(unused-macros)
-    add_warning(unused-member-function)
-    add_warning(zero-as-null-pointer-constant)
-
-    if (WEVERYTHING)
-        add_warning(everything)
-        no_warning(c++98-compat-pedantic)
-        no_warning(c++98-compat)
-        no_warning(c99-extensions)
-        no_warning(conversion)
-        no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
-        no_warning(deprecated-dynamic-exception-spec)
-        no_warning(disabled-macro-expansion)
-        no_warning(documentation-unknown-command)
-        no_warning(double-promotion)
-        no_warning(exit-time-destructors)
-        no_warning(float-equal)
-        no_warning(global-constructors)
-        no_warning(gnu-anonymous-struct)
-        no_warning(missing-prototypes)
-        no_warning(missing-variable-declarations)
-        no_warning(nested-anon-types)
-        no_warning(packed)
-        no_warning(padded)
-        no_warning(return-std-move-in-c++11) # clang 7+
-        no_warning(shift-sign-overflow)
-        no_warning(sign-conversion)
-        no_warning(switch-enum)
-        no_warning(undefined-func-template)
-        no_warning(unused-template)
-        no_warning(vla-extension)
-        no_warning(vla)
-        no_warning(weak-template-vtables)
-        no_warning(weak-vtables)
-        no_warning(zero-length-array)
-
-        # TODO Enable conversion, sign-conversion, double-promotion warnings.
-    endif ()
-elseif (COMPILER_GCC)
-    # Add compiler options only to c++ compiler
-    function(add_cxx_compile_options option)
-        add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
-    endfunction()
-    # Warn about boolean expression compared with an integer value different from true/false
-    add_cxx_compile_options(-Wbool-compare)
-    # Warn whenever a pointer is cast such that the required alignment of the target is increased.
-    add_cxx_compile_options(-Wcast-align)
-    # Warn whenever a pointer is cast so as to remove a type qualifier from the target type.
-    add_cxx_compile_options(-Wcast-qual)
-    # Warn when deleting a pointer to incomplete type, which may cause undefined behavior at runtime
-    add_cxx_compile_options(-Wdelete-incomplete)
-    # Warn if a requested optimization pass is disabled. Code is too big or too complex
-    add_cxx_compile_options(-Wdisabled-optimization)
-    # Warn about duplicated conditions in an if-else-if chain
-    add_cxx_compile_options(-Wduplicated-cond)
-    # Warn about a comparison between values of different enumerated types
-    add_cxx_compile_options(-Wenum-compare)
-    # Warn about uninitialized variables that are initialized with themselves
-    add_cxx_compile_options(-Winit-self)
-    # Warn about logical not used on the left hand side operand of a comparison
-    add_cxx_compile_options(-Wlogical-not-parentheses)
-    # Warn about suspicious uses of logical operators in expressions
-    add_cxx_compile_options(-Wlogical-op)
-    # Warn if there exists a path from the function entry to a use of the variable that is uninitialized.
-    add_cxx_compile_options(-Wmaybe-uninitialized)
-    # Warn when the indentation of the code does not reflect the block structure
-    add_cxx_compile_options(-Wmisleading-indentation)
-    # Warn if a global function is defined without a previous declaration - disabled because of build times
-    # add_cxx_compile_options(-Wmissing-declarations)
-    # Warn if a user-supplied include directory does not exist
-    add_cxx_compile_options(-Wmissing-include-dirs)
-    # Obvious
-    add_cxx_compile_options(-Wnon-virtual-dtor)
-    # Obvious
-    add_cxx_compile_options(-Wno-return-local-addr)
-    # This warning is disabled due to false positives if compiled with libc++: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=90037
-    #add_cxx_compile_options(-Wnull-dereference)
-    # Obvious
-    add_cxx_compile_options(-Wodr)
-    # Obvious
-    add_cxx_compile_options(-Wold-style-cast)
-    # Warn when a function declaration hides virtual functions from a base class
-    # add_cxx_compile_options(-Woverloaded-virtual)
-    # Warn about placement new expressions with undefined behavior
-    add_cxx_compile_options(-Wplacement-new=2)
-    # Warn about anything that depends on the “size of” a function type or of void
-    add_cxx_compile_options(-Wpointer-arith)
-    # Warn if anything is declared more than once in the same scope
-    add_cxx_compile_options(-Wredundant-decls)
-    # Member initialization reordering
-    add_cxx_compile_options(-Wreorder)
-    # Obvious
-    add_cxx_compile_options(-Wshadow)
-    # Warn if left shifting a negative value
-    add_cxx_compile_options(-Wshift-negative-value)
-    # Warn about a definition of an unsized deallocation function
-    add_cxx_compile_options(-Wsized-deallocation)
-    # Warn when the sizeof operator is applied to a parameter that is declared as an array in a function definition
-    add_cxx_compile_options(-Wsizeof-array-argument)
-    # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
-    add_cxx_compile_options(-Wsizeof-pointer-memaccess)
-
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
-        # Warn about overriding virtual functions that are not marked with the override keyword
-        add_cxx_compile_options(-Wsuggest-override)
-    endif ()
-
-    # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
-    add_cxx_compile_options(-Wswitch-bool)
-    # Warn if a self-comparison always evaluates to true or false
-    add_cxx_compile_options(-Wtautological-compare)
-    # Warn about trampolines generated for pointers to nested functions
-    add_cxx_compile_options(-Wtrampolines)
-    # Obvious
-    add_cxx_compile_options(-Wunused)
-    # Warn if vector operation is not implemented via SIMD capabilities of the architecture
-    add_cxx_compile_options(-Wvector-operation-performance)
-endif ()
-
 if (COMPILER_GCC)
     # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
     # It leads to slow code. This is compiler bug. It looks like this:
@@ -234,6 +72,9 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if (USE_AWS_S3)
+    add_headers_and_sources(dbms Disks/S3)
+endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -311,6 +152,8 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
+add_object_library(clickhouse_processors_merges Processors/Merges)
+add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
@@ -372,20 +215,14 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
-        PUBLIC
-    common
         PRIVATE
-    string_utils
-    widechar_width
-    ${LINK_LIBRARIES_ONLY_ON_X86_64}
+            string_utils
+            widechar_width
+            ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
-    ${DOUBLE_CONVERSION_LIBRARIES}
-    ryu
-        PUBLIC
-    ${Poco_Net_LIBRARY}
-    ${Poco_Util_LIBRARY}
-    ${Poco_Foundation_LIBRARY}
-    ${Poco_XML_LIBRARY}
+            common
+            ${DOUBLE_CONVERSION_LIBRARIES}
+            ryu
 )
 
 if(RE2_LIBRARY)
@@ -396,18 +233,17 @@ if(RE2_ST_LIBRARY)
 endif()
 
 target_link_libraries(clickhouse_common_io
-        PUBLIC
-    ${CITYHASH_LIBRARIES}
-    pcg_random
         PRIVATE
-    ${Poco_XML_LIBRARY}
-    ${ZLIB_LIBRARIES}
-    ${EXECINFO_LIBRARIES}
+            ${EXECINFO_LIBRARIES}
+            cpuid
         PUBLIC
-    ${Boost_SYSTEM_LIBRARY}
-    ${Boost_PROGRAM_OPTIONS_LIBRARY}
-        PUBLIC
-    roaring
+            ${Boost_PROGRAM_OPTIONS_LIBRARY}
+            ${Boost_SYSTEM_LIBRARY}
+            ${CITYHASH_LIBRARIES}
+            ${ZLIB_LIBRARIES}
+            pcg_random
+            Poco::Foundation
+            roaring
 )
 
 if (USE_RDKAFKA)
@@ -422,33 +258,22 @@ if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
 
-if(CPUID_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
-endif()
-
-if(CPUINFO_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${CPUINFO_LIBRARY})
-endif()
-
 dbms_target_link_libraries (
-        PRIVATE
-    clickhouse_parsers
-    clickhouse_common_config
-    clickhouse_common_zookeeper
-    string_utils # FIXME: not sure if it's private
-        PUBLIC
-    clickhouse_common_io
-        PRIVATE
-    clickhouse_dictionaries_embedded
-    ${LZ4_LIBRARY}
-        PUBLIC
-    ${MYSQLXX_LIBRARY}
-        PRIVATE
-    ${BTRIE_LIBRARIES}
-    ${Boost_PROGRAM_OPTIONS_LIBRARY}
-    ${Boost_FILESYSTEM_LIBRARY}
-        PUBLIC
-    ${Boost_SYSTEM_LIBRARY}
+    PRIVATE
+        ${BTRIE_LIBRARIES}
+        ${Boost_PROGRAM_OPTIONS_LIBRARY}
+        ${Boost_FILESYSTEM_LIBRARY}
+        ${LZ4_LIBRARY}
+        clickhouse_parsers
+        clickhouse_common_config
+        clickhouse_common_zookeeper
+        clickhouse_dictionaries_embedded
+        Poco::JSON
+        string_utils
+    PUBLIC
+        ${Boost_SYSTEM_LIBRARY}
+        ${MYSQLXX_LIBRARY}
+        clickhouse_common_io
 )
 
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include) # uses some includes from core
@@ -470,52 +295,6 @@ endif()
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
-
-if (Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-    dbms_target_include_directories (SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-endif()
-
-if (USE_POCO_SQLODBC)
-    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_SQL_LIBRARY})
-    dbms_target_link_libraries (PRIVATE ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
-    if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQL_INCLUDE_DIR})
-        dbms_target_include_directories (SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR} SYSTEM PUBLIC ${Poco_SQL_INCLUDE_DIR})
-    endif()
-endif()
-
-if (Poco_Data_FOUND)
-    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-    dbms_target_include_directories (SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-endif()
-
-if (USE_POCO_DATAODBC)
-    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_Data_LIBRARY})
-    dbms_target_link_libraries (PRIVATE ${Poco_DataODBC_LIBRARY})
-    if (NOT USE_INTERNAL_POCO_LIBRARY)
-        dbms_target_include_directories (SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
-    endif()
-endif()
-
-if (USE_POCO_MONGODB)
-    dbms_target_link_libraries (PRIVATE ${Poco_MongoDB_LIBRARY})
-endif()
-
-if (USE_POCO_REDIS)
-    dbms_target_link_libraries (PRIVATE ${Poco_Redis_LIBRARY})
-endif()
-
-if (USE_POCO_NETSSL)
-    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
-    dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
-endif()
-
-if (USE_POCO_JSON)
-    dbms_target_link_libraries (PRIVATE ${Poco_JSON_LIBRARY})
-endif()
-
-dbms_target_link_libraries (PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
     dbms_target_link_libraries (PRIVATE ${ICU_LIBRARIES})
@@ -543,6 +322,11 @@ if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries (clickhouse_common_io PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
 
+if (USE_LDAP)
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIR})
+    dbms_target_link_libraries (PRIVATE ${OPENLDAP_LIBRARIES})
+endif ()
+
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
@@ -567,6 +351,11 @@ if (USE_BROTLI)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
 
+if (USE_OPENCL)
+    target_link_libraries (clickhouse_common_io PRIVATE ${OpenCL_LIBRARIES})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${OpenCL_INCLUDE_DIRS})
+endif ()
+
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
@@ -581,7 +370,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     endmacro()
 
     # attach all dbms gtest sources
-    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
+    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/src dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code

@@ -81,11 +81,6 @@ StorageBuffer::StorageBuffer(
     setConstraints(constraints_);
 }
 
-StorageBuffer::~StorageBuffer()
-{
-    flush_handle->deactivate();
-}
-
 
 /// Reads from one buffer (from one block) under its mutex.
 class BufferSource : public SourceWithProgress
@@ -168,8 +163,10 @@ Pipes StorageBuffer::read(
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
-            return destination->hasColumn(column_name) &&
-                   destination->getColumn(column_name).type->equals(*getColumn(column_name).type);
+            const auto & dest_columns = destination->getColumns();
+            const auto & our_columns = getColumns();
+            return dest_columns.hasPhysical(column_name) &&
+                   dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
         });
 
         if (dst_has_same_structure)
@@ -186,17 +183,19 @@ Pipes StorageBuffer::read(
             const Block header = getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
+            const auto & dest_columns = destination->getColumns();
+            const auto & our_columns = getColumns();
             for (const String & column_name : column_names)
             {
-                if (!destination->hasColumn(column_name))
+                if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
                         << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
-                const auto & dst_col = destination->getColumn(column_name);
-                const auto & col = getColumn(column_name);
+                const auto & dst_col = dest_columns.getPhysical(column_name);
+                const auto & col = our_columns.getPhysical(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
@@ -464,6 +463,9 @@ void StorageBuffer::startup()
 
 void StorageBuffer::shutdown()
 {
+    if (!flush_handle)
+        return;
+
     flush_handle->deactivate();
 
     try
@@ -755,7 +757,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
         return underlying_rows;
 
     UInt64 rows = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         rows += buffer.data.rows();
@@ -766,7 +768,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
 std::optional<UInt64> StorageBuffer::totalBytes() const
 {
     UInt64 bytes = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         bytes += buffer.data.bytes();
@@ -786,7 +788,7 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 
