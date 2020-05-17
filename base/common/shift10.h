@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Types.h>
+#include <common/types.h>
 
 /** Almost the same as x = x * exp10(exponent), but gives more accurate result.
   * Example:

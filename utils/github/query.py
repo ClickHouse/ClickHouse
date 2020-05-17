@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import requests
+import time
 
 
 class Query:
@@ -394,20 +395,28 @@ class Query:
                 }}
             }}
             '''
-        request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
-        if request.status_code == 200:
-            result = request.json()
-            if 'errors' in result:
-                raise Exception(f'Errors occured: {result["errors"]}')
 
-            if not is_mutation:
-                import inspect
-                caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
-                if caller not in self.api_costs.keys():
-                    self.api_costs[caller] = 0
-                self.api_costs[caller] += result['data']['rateLimit']['cost']
+        while True:
+            request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
+            if request.status_code == 200:
+                result = request.json()
+                if 'errors' in result:
+                    raise Exception(f'Errors occured: {result["errors"]}')
 
-            return result['data']
-        else:
-            import json
-            raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(request.json(), indent=4)}')
+                if not is_mutation:
+                    import inspect
+                    caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
+                    if caller not in self.api_costs.keys():
+                        self.api_costs[caller] = 0
+                    self.api_costs[caller] += result['data']['rateLimit']['cost']
+
+                return result['data']
+            else:
+                import json
+                resp = request.json()
+                if resp and len(resp) > 0 and resp[0] and 'type' in resp[0] and resp[0]['type'] == 'RATE_LIMITED':
+                    print("API rate limit exceeded. Waiting for 1 second.")
+                    time.sleep(1)
+                    continue
+
+                raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(resp, indent=4)}')

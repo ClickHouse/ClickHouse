@@ -1,0 +1,29 @@
+<test>
+
+
+
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+    </preconditions>
+
+    <create_query>CREATE TABLE hits_10m_words (word String, UserID UInt64) ENGINE Memory</create_query>
+    <create_query>CREATE TABLE strings (short String, long String) ENGINE Memory</create_query>
+
+    <fill_query>INSERT INTO hits_10m_words SELECT DISTINCT arrayJoin(splitByString(' ', SearchPhrase)) AS word, UserID FROM hits_10m_single WHERE length(word) > 0</fill_query>
+    <fill_query>INSERT INTO strings SELECT toString(rand()) a, a || a || a || a || a || a || a || a || a || a || a || a FROM zeros(1000000)</fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT 1 FROM hits_10m_words WHERE word IN (SELECT word FROM hits_10m_words) FORMAT Null</query>
+    <query>SELECT 1 FROM strings WHERE short IN (SELECT short FROM strings) FORMAT Null</query>
+    <query>SELECT 1 FROM strings WHERE long IN (SELECT long FROM strings) FORMAT Null</query>
+    <query>SELECT 1 FROM strings WHERE short IN (SELECT long FROM strings) FORMAT Null</query>
+    <query>SELECT 1 FROM strings WHERE long IN (SELECT short FROM strings) FORMAT Null</query>
+    <query>SELECT 1 FROM hits_10m_words WHERE word IN (SELECT short FROM strings) FORMAT Null</query>
+    <query>SELECT 1 FROM hits_10m_words WHERE word IN (SELECT long FROM strings) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS hits_10m_words</drop_query>
+    <drop_query>DROP TABLE IF EXISTS strings</drop_query>
+</test>

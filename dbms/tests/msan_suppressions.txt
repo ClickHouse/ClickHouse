@@ -1,6 +1,0 @@
-# https://github.com/google/oss-fuzz/issues/1099
-fun:__gxx_personality_*
-
-# We apply std::tolower to uninitialized padding, but don't use the result, so
-# it is OK. Reproduce with "select ngramDistanceCaseInsensitive(materialize(''), '')"
-fun:tolower

@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <functional>
 
 namespace
 {
@@ -18,18 +19,31 @@ void trim(String & s)
 ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & history_file_path_, char extender_, char delimiter_)
     : LineReader(history_file_path_, extender_, delimiter_)
 {
+    using namespace std::placeholders;
+    using Replxx = replxx::Replxx;
+
     if (!history_file_path.empty())
         rx.history_load(history_file_path);
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
         auto range = suggest.getCompletions(context, context_size);
-        return replxx::Replxx::completions_t(range.first, range.second);
+        return Replxx::completions_t(range.first, range.second);
     };
 
     rx.set_completion_callback(callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
+
+    /// By default C-p/C-n binded to COMPLETE_NEXT/COMPLETE_PREV,
+    /// bind C-p/C-n to history-previous/history-next like readline.
+    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
+    /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
+    /// it also binded to M-p/M-n).
+    rx.bind_key(Replxx::KEY::meta('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_NEXT, code); });
+    rx.bind_key(Replxx::KEY::meta('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_PREVIOUS, code); });
 }
 
 ReplxxLineReader::~ReplxxLineReader()
