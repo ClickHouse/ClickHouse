@@ -60,7 +60,7 @@ int main(int argc, char ** argv) noexcept
     {
         threads.emplace_back([&]
         {
-            pcg64 generator(randomSeed());
+            pcg64 generator(42);
 
             for (size_t j = 0; j < num_iterations; ++j)
             {
