@@ -454,9 +454,7 @@ void UATraits::loadBrowsers(std::istream & istr)
 
     addBranch(*branch, root_node);
 
-    /// Доделываем автомат Ахо-Корасик для всех собранных подстрок.
-    automata = std::make_unique<const TDefaultMappedAhoCorasick>(automata_builder->Save());
-    automata->CheckData();
+    regexps_engine = DB::MultiRegexps::get<true, false>(regexp_patterns, 0);
 
     LOG_INFO(log, "Loaded browsers");
 }
@@ -689,7 +687,7 @@ void UATraits::processPattern(Poco::XML::Node & pattern, Node & node, std::strin
         {
             const std::string & str = substrings_to_indices.insert(std::make_pair(text, substrings_count)).first->first;
 
-            automata_builder->AddString(std::string{str}, substrings_count);
+            regexp_patterns.push_back(std::string{str});
             node.patterns.push_back(Pattern(substrings_count, false, false));
             node.patterns.back().substring = str;
             ++substrings_count;
@@ -725,7 +723,7 @@ void UATraits::processPattern(Poco::XML::Node & pattern, Node & node, std::strin
             {
                 const std::string & str = substrings_to_indices.insert(std::make_pair(required_substring, substrings_count)).first->first;
 
-                automata_builder->AddString(std::string{str}, substrings_count);
+                regexp_patterns.push_back(std::string{str});
                 node.patterns.push_back(Pattern(substrings_count, !is_trivial, required_substring_is_prefix));
                 node.patterns.back().substring = str;
                 if (!is_trivial)

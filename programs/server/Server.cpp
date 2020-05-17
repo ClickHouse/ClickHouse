@@ -31,6 +31,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Core/UatraitsFast/UserAgent.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -680,9 +681,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
-    std::vector<StringRef> regex = {R"(aa)", R"(bb)", R"(cc)"};
-    auto * hyperscan_browser_base = MultiRegexps::get<true, false>(regex, 0);
-    global_context->setHyperscanBrowserBase(hyperscan_browser_base);
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config = new Poco::Util::MapConfiguration;
+    config->setInt("reload_frequency_sec", 600);
+    config->setString("browsers_path", "data/browser.xml");
+    config->setString("profiles_path", "data/profiles.xml");
+    config->setString("extra_path", "data/extra.xml");
+
+    components::UserAgent::get_mutable_instance().create(*config);
+    components::UserAgent::get_mutable_instance().reload();
+    global_context->setUserAgent(&components::UserAgent::get_mutable_instance());
 
 #if defined(OS_LINUX)
     if (!TasksStatsCounters::checkIfAvailable())
