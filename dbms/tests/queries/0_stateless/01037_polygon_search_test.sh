@@ -29,7 +29,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(FILE(path '/tmp/test.json' format 'JSONEachRow'))
+    SOURCE(FILE(path './user_files/test.json' format 'JSONEachRow'))
     LIFETIME(MIN 1 MAX 10)
     LAYOUT($type());"
 
@@ -45,7 +45,7 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(FILE(path '/tmp/test.json' format 'JSONEachRow'))
+    SOURCE(FILE(path './user_files/test.json' format 'JSONEachRow'))
     LIFETIME(MIN 1 MAX 10)
     LAYOUT($type());"
 
