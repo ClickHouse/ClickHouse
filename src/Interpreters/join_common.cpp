@@ -43,7 +43,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
     {
         const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
         ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
+        MutableColumnPtr mutable_column = (*std::move(nested_column)).mutate();
         column.column = std::move(mutable_column);
     }
 }

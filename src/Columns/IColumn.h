@@ -304,10 +304,10 @@ public:
     }
 
 
-    static MutablePtr mutate(Ptr ptr)
+    MutablePtr mutate() const &&
     {
-        MutablePtr res = ptr->shallowMutate();
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn)); });
+        MutablePtr res = shallowMutate();
+        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
         return res;
     }
 

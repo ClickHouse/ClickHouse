@@ -107,8 +107,6 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
         columns[i++]->insertDefault();
         columns[i++]->insertDefault();
     }
-
-    block.setColumns(std::move(columns));
 }
 
 }

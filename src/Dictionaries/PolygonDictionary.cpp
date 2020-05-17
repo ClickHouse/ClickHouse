@@ -200,7 +200,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block &block)
         const auto & column = block.safeGetByPosition(i + 1);
         if (attributes[i])
         {
-            MutableColumnPtr mutated = IColumn::mutate(std::move(attributes[i]));
+            MutableColumnPtr mutated = std::move(*attributes[i]).mutate();
             mutated->insertRangeFrom(*column.column, 0, column.column->size());
             attributes[i] = std::move(mutated);
         }

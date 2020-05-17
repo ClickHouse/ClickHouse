@@ -108,7 +108,7 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
         JoinCommon::convertColumnToNullable(column);
         if (column.type->isNullable() && !negative_null_map.empty())
         {
-            MutableColumnPtr mutable_column = IColumn::mutate(std::move(column.column));
+            MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
             assert_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
             column.column = std::move(mutable_column);
         }
@@ -127,7 +127,7 @@ static void changeNullability(MutableColumnPtr & mutable_column)
     else
         column = makeNullable(column);
 
-    mutable_column = IColumn::mutate(std::move(column));
+    mutable_column = (*std::move(column)).mutate();
 }
 
 static ColumnPtr emptyNotNullableClone(const ColumnPtr & column)

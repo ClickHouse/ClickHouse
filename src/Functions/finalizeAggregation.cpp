@@ -65,7 +65,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         /// Column is copied here, because there is no guarantee that we own it.
-        auto mut_column = IColumn::mutate(std::move(column));
+        auto mut_column = (*std::move(column)).mutate();
         block.getByPosition(result).column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
     }
 };
