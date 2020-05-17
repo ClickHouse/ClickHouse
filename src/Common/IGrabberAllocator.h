@@ -32,13 +32,6 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
-#if __linux__
-#include <linux/version.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,22)
-#define _MAP_POPULATE_AVAILABLE
-#endif
-#endif
-
 namespace DB::ErrorCodes
 {
 extern const int CANNOT_ALLOCATE_MEMORY;
@@ -114,10 +107,11 @@ struct Stats
 //    }
 };
 
-constexpr bool operator == (const Stats &one, const Stats& other) noexcept
+}
+
+bool operator == (const Stats &one, const Stats& other) noexcept
 {
     return !memcmp(&one, &other, sizeof(Stats));
-}
 }
 
 namespace DB
@@ -228,7 +222,7 @@ public:
     using ValuePtr = std::shared_ptr<Value>;
 
     /**
-     * @param max_cache_size upper bound on cache size. Must be >= #MinChunkSize (or, if it is not specified,
+     * @param max_cache_size_ upper bound on cache size. Must be >= #MinChunkSize (or, if it is not specified,
      *        ga::defaultMinChunkSize). If this constraint is not satisfied, a POCO Exception is thrown.
      */
     constexpr IGrabberAllocator(size_t max_cache_size_)
