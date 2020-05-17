@@ -3,8 +3,6 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-
-USER_PATH="/home/greatkorn/project/ClickHouse/build/dbms/programs"
 TMP_DIR="/tmp"
 
 declare -a SearchTypes=("POLYGON" "GRID_POLYGON" "BUCKET_POLYGON" "ONE_BUCKET_POLYGON")
@@ -17,7 +15,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_01037.points;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < $USER_PATH/user_files/points.out
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "./points.out"
 
 for type in ${SearchTypes[@]};
 do
@@ -78,9 +76,9 @@ done
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_01037.points;"
 $CLICKHOUSE_CLIENT --query="DROP DATABASE test_01037;"
 
-for ((i = 0; i <= 3; i++))
+for ((i = 0; i < ${#SearchTypes[@]}; i++))
 do
-   for ((j = ($i + 1); j <= 3; j++))
+   for ((j = ($i + 1); j < ${#SearchTypes[@]}; j++))
    do
       type1="${TMP_DIR}/results${SearchTypes[$i]}.out"
       type2="${TMP_DIR}/results${SearchTypes[$j]}.out"
