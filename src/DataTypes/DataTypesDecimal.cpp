@@ -61,8 +61,7 @@ template <typename T>
 bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
 {
     UInt32 unread_scale = scale;
-    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
-    if (!done)
+    if (!tryReadDecimalText(istr, x, precision, unread_scale))
         return false;
 
     if (common::mulOverflow(x.value, T::getScaleMultiplier(unread_scale), x.value))
