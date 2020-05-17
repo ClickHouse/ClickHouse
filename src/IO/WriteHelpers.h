@@ -17,6 +17,8 @@
 #include <Core/UUID.h>
 
 #include <Common/Exception.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UInt128.h>
 
@@ -821,6 +823,8 @@ inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const BFloat16 & x, WriteBuffer & buf) { writeFloatBinary(x.asFloat(), buf); }
+inline void writeBinary(const Float16 & x, WriteBuffer & buf) { writeFloatBinary(x.asFloat(), buf); }
 
 
 /// Methods for outputting the value in text form for a tab-separated format.
@@ -846,6 +850,8 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
+inline void writeText(const BFloat16 & x, WriteBuffer & buf) { writeFloatText(x.asFloat(), buf); }
+inline void writeText(const Float16 & x, WriteBuffer & buf) { writeFloatText(x.asFloat(), buf); }
 
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)

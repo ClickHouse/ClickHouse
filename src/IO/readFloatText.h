@@ -2,6 +2,8 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 #include <common/shift10.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
@@ -579,10 +581,35 @@ template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFl
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
 
 template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
+template <typename T> void readFloatTextFast(BFloat16 & x, ReadBuffer & in) {
+    float floatX;
+    readFloatTextFastImpl<T, void>(floatX, in);
+    x = BFloat16(floatX);
+}
+
+template <typename T> void readFloatTextFast(Float16 & x, ReadBuffer & in) {
+    float floatX;
+    readFloatTextFastImpl<T, void>(floatX, in);
+    x = Float16(floatX);
+}
+
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
 
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
+template <typename T> bool tryReadFloatTextSimple(BFloat16 & x, ReadBuffer & in) {
+    float floatX;
+    bool answer = readFloatTextSimpleImpl<float, bool>(floatX, in);
+    x = BFloat16(x);
+    return answer;
+}
+
+template <typename T> bool tryReadFloatTextSimple(Float16 & x, ReadBuffer & in) {
+    float floatX;
+    bool answer = readFloatTextSimpleImpl<float, bool>(floatX, in);
+    x = Float16(x);
+    return answer;
+}
 
 
 /// Implementation that is selected as default.

@@ -444,6 +444,16 @@ public:
         cannotConvertType("UInt128");
     }
 
+     bool readBFloat16(BFloat16 &) override
+    {
+        cannotConvertType("BFloat16");
+    }
+
+    bool readFloat16(Float16 &) override
+    {
+        cannotConvertType("Float16");
+    }
+
     bool readFloat32(Float32 &) override
     {
         cannotConvertType("Float32");

@@ -17,6 +17,8 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerSimpleDataType("Int32", [] { return DataTypePtr(std::make_shared<DataTypeInt32>()); });
     factory.registerSimpleDataType("Int64", [] { return DataTypePtr(std::make_shared<DataTypeInt64>()); });
 
+    factory.registerSimpleDataType("BFloat16", [] { return DataTypePtr(std::make_shared<DataTypeBFloat16>()); });
+    factory.registerSimpleDataType("Float16", [] { return DataTypePtr(std::make_shared<DataTypeFloat16>()); });
     factory.registerSimpleDataType("Float32", [] { return DataTypePtr(std::make_shared<DataTypeFloat32>()); });
     factory.registerSimpleDataType("Float64", [] { return DataTypePtr(std::make_shared<DataTypeFloat64>()); });
 
@@ -29,6 +31,8 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("BIGINT", "Int64", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("FLOAT", "Float32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BFLOAT16", "BFloat16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("HALF", "Float16", DataTypeFactory::CaseInsensitive);
 }
 
 }

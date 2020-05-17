@@ -7,6 +7,8 @@
 #include <functional>
 
 #include <Common/Exception.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Common/UInt128.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
@@ -184,6 +186,8 @@ template <> struct NearestFieldTypeImpl<Decimal128> { using Type = DecimalField<
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldTypeImpl<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldTypeImpl<BFloat16> { using Type = Float64; };
+template <> struct NearestFieldTypeImpl<Float16> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float32> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<Float64> { using Type = Float64; };
 template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };

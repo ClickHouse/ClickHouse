@@ -21,6 +21,8 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Common/UInt128.h>
 #include <Common/intExp.h>
 
@@ -744,6 +746,16 @@ inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(BFloat16 & x, ReadBuffer & buf) {
+    float floatX;
+    readFloatBinary(floatX, buf);
+    x = BFloat16(floatX);
+}
+inline void readBinary(Float16 & x, ReadBuffer & buf) {
+    float floatX;
+    readFloatBinary(floatX, buf);
+    x = Float16(floatX);
+}
 
 
 template <typename T>
@@ -785,6 +797,16 @@ inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
+inline void readText(BFloat16 & x, ReadBuffer & buf) {
+    float floatX;
+    readFloatText(floatX, buf);
+    x = BFloat16(floatX);
+}
+inline void readText(Float16 & x, ReadBuffer & buf) {
+    float floatX;
+    readFloatText(floatX, buf);
+    x = Float16(floatX);
+}
 [[noreturn]] inline void readText(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
@@ -864,6 +886,8 @@ inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & se
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(BFloat16 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(Float16 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 [[noreturn]] inline void readCSV(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-

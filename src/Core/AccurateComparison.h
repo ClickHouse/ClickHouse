@@ -250,7 +250,7 @@ inline bool greaterOp<DB::Float16, DB::UInt64>(DB::Float16 f, DB::UInt64 u)
 }
 
 template <>
-inline bool greaterOp(DB::UInt64, DB::Float16)(DB::UInt64 u, DB::Float16 f)
+inline bool greaterOp<DB::UInt64, DB::Float16>(DB::UInt64 u, DB::Float16 f)
 {
     return greaterOp(u, static_cast<DB::Float32>(f));
 }
@@ -274,7 +274,7 @@ inline bool greaterOp<DB::BFloat16, DB::UInt64>(DB::BFloat16 f, DB::UInt64 u)
 }
 
 template <>
-inline bool greaterOp(DB::UInt64, DB::BFloat16)(DB::UInt64 u, DB::BFloat16 f)
+inline bool greaterOp<DB::UInt64, DB::BFloat16>(DB::UInt64 u, DB::BFloat16 f)
 {
     return greaterOp(u, static_cast<DB::Float32>(f));
 }
@@ -454,7 +454,7 @@ inline bool equalsOp<DB::UInt128, DB::Float16>(DB::UInt128 u, DB::Float16 f)
 }
 
 template <>
-inline bool equalsOp<DB::UInt128, DB::BFloat16>(DB::UInt128 u, DB::Float16 f)
+inline bool equalsOp<DB::UInt128, DB::BFloat16>(DB::UInt128 u, DB::BFloat16 f)
 {
     return equalsOp(u, static_cast<DB::Float32>(f));
 }
@@ -516,10 +516,8 @@ inline bool equalsOp(DB::Int128 i, DB::Float16 f) { return equalsOp(i, static_ca
 inline bool equalsOp(DB::Int128 i, DB::BFloat16 f) { return equalsOp(i, static_cast<DB::Float32>(f)); }
 inline bool equalsOp(DB::Float64 f, DB::Int128 i) { return equalsOp(i, f); }
 inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
-inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
+inline bool equalsOp(DB::Float16 f, DB::Int128 i) { return equalsOp(i, f); }
 inline bool equalsOp(DB::BFloat16 f, DB::Int128 i) { return equalsOp(i, f); }
-
-inline bool 
 
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> notEqualsOp(A a, B b)

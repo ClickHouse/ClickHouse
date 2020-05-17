@@ -501,9 +501,12 @@ struct WhichDataType
     bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
     bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128(); }
 
+    bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
+    bool isFloat16() const { return idx == TypeIndex::Float16; }
     bool isFloat32() const { return idx == TypeIndex::Float32; }
     bool isFloat64() const { return idx == TypeIndex::Float64; }
-    bool isFloat() const { return isFloat32() || isFloat64(); }
+    bool isFloat() const { return isBFloat16() || isFloat16() || isFloat32() || isFloat64(); }
+    bool isNativeFloat() const { return isFloat32() || isFloat64(); }
 
     bool isEnum8() const { return idx == TypeIndex::Enum8; }
     bool isEnum16() const { return idx == TypeIndex::Enum16; }
@@ -574,12 +577,19 @@ inline bool isNativeInteger(const T & data_type)
     return which.isNativeInt() || which.isNativeUInt();
 }
 
+template <typename T>
+inline bool isNativeFloat(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNativeFloat();
+}
+
 
 template <typename T>
 inline bool isNativeNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isNativeInt() || which.isNativeUInt() || which.isFloat();
+    return which.isNativeInt() || which.isNativeUInt() || which.isNativeFloat();
 }
 
 template <typename T>

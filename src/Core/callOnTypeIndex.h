@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -57,6 +59,8 @@ bool callOnBasicType(TypeIndex number, F && f)
     {
         switch (number)
         {
+            case TypeIndex::BFloat16:      return f(TypePair<T, BFloat16>());
+            case TypeIndex::Float16:      return f(TypePair<T, Float16>());
             case TypeIndex::Float32:      return f(TypePair<T, Float32>());
             case TypeIndex::Float64:      return f(TypePair<T, Float64>());
             default:
@@ -122,6 +126,8 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
     {
         switch (type_num1)
         {
+            case TypeIndex::BFloat16: return callOnBasicType<BFloat16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Float16: return callOnBasicType<Float16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Float32: return callOnBasicType<Float32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Float64: return callOnBasicType<Float64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
@@ -171,6 +177,8 @@ bool callOnIndexAndDataType(TypeIndex number, F && f)
         case TypeIndex::Int32:          return f(TypePair<DataTypeNumber<Int32>, T>());
         case TypeIndex::Int64:          return f(TypePair<DataTypeNumber<Int64>, T>());
 
+        case TypeIndex::BFloat16:        return f(TypePair<DataTypeNumber<BFloat16>, T>());
+        case TypeIndex::Float16:        return f(TypePair<DataTypeNumber<Float16>, T>());
         case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>());
         case TypeIndex::Float64:        return f(TypePair<DataTypeNumber<Float64>, T>());
 

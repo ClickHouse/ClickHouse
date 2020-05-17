@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Core/Types.h>
 #include <Columns/ColumnVector.h>
 
@@ -20,6 +22,8 @@ using ColumnInt16 = ColumnVector<Int16>;
 using ColumnInt32 = ColumnVector<Int32>;
 using ColumnInt64 = ColumnVector<Int64>;
 
+using ColumnBFloat16 = ColumnVector<BFloat16>;
+using ColumnFloat16 = ColumnVector<Float16>;
 using ColumnFloat32 = ColumnVector<Float32>;
 using ColumnFloat64 = ColumnVector<Float64>;
 

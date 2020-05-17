@@ -4,6 +4,8 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -262,6 +264,8 @@ template class DataTypeNumberBase<Int8>;
 template class DataTypeNumberBase<Int16>;
 template class DataTypeNumberBase<Int32>;
 template class DataTypeNumberBase<Int64>;
+template class DataTypeNumberBase<BFloat16>;
+template class DataTypeNumberBase<Float16>;
 template class DataTypeNumberBase<Float32>;
 template class DataTypeNumberBase<Float64>;
 

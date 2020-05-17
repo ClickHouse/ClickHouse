@@ -318,6 +318,8 @@ public:
     virtual void writeInt64(Int64) override { cannotConvertType("Int64"); }
     virtual void writeUInt64(UInt64) override { cannotConvertType("UInt64"); }
     virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
+    virtual void writeBFloat16(BFloat16) override { cannotConvertType("BFloat16"); }
+    virtual void writeFloat16(Float16) override { cannotConvertType("Float16"); }
     virtual void writeFloat32(Float32) override { cannotConvertType("Float32"); }
     virtual void writeFloat64(Float64) override { cannotConvertType("Float64"); }
     virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}
@@ -525,6 +527,8 @@ public:
     void writeUInt32(UInt32 value) override { castNumericAndWriteField(value); }
     void writeInt64(Int64 value) override { castNumericAndWriteField(value); }
     void writeUInt64(UInt64 value) override { castNumericAndWriteField(value); }
+    void writeBFloat16(BFloat16 value) override { castNumericAndWriteField(value); }
+    void writeFloat16(Float16 value) override { castNumericAndWriteField(value); }
     void writeFloat32(Float32 value) override { castNumericAndWriteField(value); }
     void writeFloat64(Float64 value) override { castNumericAndWriteField(value); }
 

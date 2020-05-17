@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdio.h>
 #include <stdint.h>
 #include <limits.h>
@@ -36,6 +38,12 @@ struct Float16 {
         value = fl16;
     }
 
+    explicit Float16(const double fl) {
+        value = Float16((float) fl).getValue();
+    }
+
+    Float16(const Float16 &) = default;
+
     unsigned short getValue() const {
         return value;
     }
@@ -53,11 +61,13 @@ struct Float16 {
     }
 
     bool isInfinity() const {
-        return !((bool)(value << 6)) && (((value >> 10) & 0x1f) == 0x1f);
+        bool isNullFraction = (value << 6) == 0;
+        return isNullFraction && (((value >> 10) & 0x1f) == 0x1f);
     }
 
     bool isNan() const {
-        return ((bool)(value << 6)) && (((value >> 10) & 0x1f) == 0x1f);
+        bool isNullFraction = (value << 6) == 0;
+        return !isNullFraction && (((value >> 10) & 0x1f) == 0x1f);
     }
 
 
@@ -93,7 +103,21 @@ struct Float16 {
         return asFloat() >= fl.asFloat();
     }
 
-    Float16 inline operator+(const Float16 fl) const {
+    Float16 & operator= (const Float16 &fl) {
+        value = fl.getValue();
+        return *this;
+    }
+
+    Float16 & operator= (const bool &b) {
+        if (b) {
+            value = 0x3c00;
+        } else {
+            value = 0;
+        }
+        return *this;
+    }
+
+    const Float16 inline operator+(const Float16 fl) const {
         if (isNull()) {
             return Float16(fl.getValue());
         }
@@ -166,11 +190,11 @@ struct Float16 {
         return Float16(exponent);
     }
 
-    Float16 inline operator-(const Float16 fl) const {
+    const Float16 inline operator-(const Float16 fl) const {
         return Float16(getValue()) + Float16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
     }
 
-    Float16 inline operator*(const Float16 fl) const {
+    const Float16 inline operator*(const Float16 fl) const {
         if (isNull() || fl.isNull()) {
             return Float16((unsigned short) 0);
         }
@@ -286,9 +310,6 @@ template <> struct TypeId<Float16> { static constexpr const TypeIndex value = Ty
 
 }
 
-namespace std
-{
-
 template <> struct is_signed<DB::Float16>
 {
     static constexpr bool value = false;
@@ -308,4 +329,3 @@ template <> struct is_arithmetic<DB::Float16>
 {
     static constexpr bool value = false;
 };
-}

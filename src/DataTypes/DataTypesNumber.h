@@ -3,8 +3,8 @@
 #include <type_traits>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
-#include <Commons/Floats/Float16>
-#include <Commons/Floats/BFloat16>
+#include <Common/Floats/Float16.h>
+#include <Common/Floats/BFloat16.h>
 
 
 namespace DB
@@ -37,8 +37,8 @@ using DataTypeInt8 = DataTypeNumber<Int8>;
 using DataTypeInt16 = DataTypeNumber<Int16>;
 using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
+using DataTypeBFloat16 = DataTypeNumber<BFloat16>;
+using DataTypeFloat16 = DataTypeNumber<Float16>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
-using DataTypeFloat16 = DataTypeNumber<Float16>;
-using DataTypeBFloat16 = DataTypeNumber<BFloat16>;
 }

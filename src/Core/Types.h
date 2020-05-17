@@ -28,8 +28,8 @@ enum class TypeIndex
     Int32,
     Int64,
     Int128,
-    Float16,
     BFloat16,
+    Float16,
     Float32,
     Float64,
     Date,
@@ -195,13 +195,13 @@ inline const char * getTypeName(TypeIndex idx)
         case TypeIndex::UInt32:     return TypeName<UInt32>::get();
         case TypeIndex::UInt64:     return TypeName<UInt64>::get();
         case TypeIndex::UInt128:    return "UInt128";
-        case TypeIndex::Float16:    return "Float16";
-        case TypeIndex::BFloat16:   return "BFloat16";
         case TypeIndex::Int8:       return TypeName<Int8>::get();
         case TypeIndex::Int16:      return TypeName<Int16>::get();
         case TypeIndex::Int32:      return TypeName<Int32>::get();
         case TypeIndex::Int64:      return TypeName<Int64>::get();
         case TypeIndex::Int128:     return TypeName<Int128>::get();
+        case TypeIndex::BFloat16:   return "BFloat16";
+        case TypeIndex::Float16:    return "Float16";
         case TypeIndex::Float32:    return TypeName<Float32>::get();
         case TypeIndex::Float64:    return TypeName<Float64>::get();
         case TypeIndex::Date:       return "Date";

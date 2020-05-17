@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdio.h>
 #include <stdint.h>
 #include <limits.h>
@@ -35,6 +37,12 @@ struct BFloat16 {
         value = fl16;
     }
 
+    explicit BFloat16(const double fl) {
+        value = BFloat16((float) fl).getValue();
+    }
+
+    BFloat16(const BFloat16 &) = default;
+
     unsigned short getValue() const {
         return value;
     }
@@ -52,11 +60,13 @@ struct BFloat16 {
     }
 
     bool isInfinity() const {
-        return !((bool)(value << 9)) && (((value >> 7) & 0xff) == 0xff);
+        bool isNullFraction = (value << 9) == 0;
+        return isNullFraction && (((value >> 7) & 0xff) == 0xff);
     }
 
     bool isNan() const {
-        return ((bool)(value << 9)) && (((value >> 7) & 0xff) == 0xff);
+        bool isNullFraction = (value << 9) == 0;
+        return !isNullFraction && (((value >> 7) & 0xff) == 0xff);
     }
 
 
@@ -87,7 +97,21 @@ struct BFloat16 {
         return asFloat() >= fl.asFloat();
     }
 
-    BFloat16 inline operator+(const BFloat16 fl) const {
+    BFloat16 & operator= (const BFloat16 &fl) {
+        value = fl.getValue();
+        return *this;
+    }
+
+    BFloat16 & operator= (const bool &b) {
+        if (b) {
+            value = 0x3f80;
+        } else {
+            value = 0;
+        }
+        return *this;
+    }
+
+    const BFloat16 inline operator+(const BFloat16 fl) const {
         if (isNull()) {
             return BFloat16(fl.getValue());
         }
@@ -160,11 +184,11 @@ struct BFloat16 {
         return BFloat16(exponent);
     }
 
-    BFloat16 inline operator-(const BFloat16 fl) const {
+    const BFloat16 inline operator-(const BFloat16 fl) const {
         return BFloat16(getValue()) + BFloat16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
     }
 
-    BFloat16 inline operator*(const BFloat16 fl) const {
+    const BFloat16 inline operator*(const BFloat16 fl) const {
         if (isNull() || fl.isNull()) {
             return BFloat16((unsigned short) 0);
         }
@@ -207,7 +231,7 @@ struct BFloat16 {
         return BFloat16(resultValue);
     }
 
-    BFloat16 inline operator/(const BFloat16 fl) const {
+    const BFloat16 inline operator/ (const BFloat16 fl) const {
         if (isNull()) {
             return BFloat16((unsigned short) 0);
         }
@@ -245,7 +269,7 @@ struct BFloat16 {
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
                 // report underflow
-                return BFloat16(bFLOAT16_NAN);
+                return BFloat16(BFLOAT16_NAN);
             }
             resultingExponentCopy--;
         }
@@ -280,9 +304,6 @@ template <> struct TypeId<BFloat16> { static constexpr const TypeIndex value = T
 
 }
 
-namespace std
-{
-
 template <> struct is_signed<DB::BFloat16>
 {
     static constexpr bool value = false;
@@ -302,4 +323,3 @@ template <> struct is_arithmetic<DB::BFloat16>
 {
     static constexpr bool value = false;
 };
-}

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/UUID.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <Common/UInt128.h>
 #include <common/DayNum.h>
 #include <memory>
@@ -63,6 +65,8 @@ public:
     bool writeNumber(Int64 value) { return writeValueIfPossible(&IConverter::writeInt64, value); }
     bool writeNumber(UInt64 value) { return writeValueIfPossible(&IConverter::writeUInt64, value); }
     bool writeNumber(UInt128 value) { return writeValueIfPossible(&IConverter::writeUInt128, value); }
+    bool writeNumber(BFloat16 value) { return writeValueIfPossible(&IConverter::writeBFloat16, value); }
+    bool writeNumber(Float16 value) { return writeValueIfPossible(&IConverter::writeFloat16, value); }
     bool writeNumber(Float32 value) { return writeValueIfPossible(&IConverter::writeFloat32, value); }
     bool writeNumber(Float64 value) { return writeValueIfPossible(&IConverter::writeFloat64, value); }
     bool writeString(const StringRef & str) { return writeValueIfPossible(&IConverter::writeString, str); }
@@ -148,6 +152,8 @@ private:
         virtual void writeInt64(Int64) = 0;
         virtual void writeUInt64(UInt64) = 0;
         virtual void writeUInt128(const UInt128 &) = 0;
+        virtual void writeBFloat16(const BFloat16 &) = 0;
+        virtual void writeFloat16(const Float16 &) = 0;
         virtual void writeFloat32(Float32) = 0;
         virtual void writeFloat64(Float64) = 0;
         virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) = 0;
@@ -254,6 +260,8 @@ public:
     bool writeNumber(Int64 /* value */) { return false; }
     bool writeNumber(UInt64 /* value */) { return false; }
     bool writeNumber(UInt128 /* value */) { return false; }
+    bool writeNumber(const BFloat16 & /* value */) { return false; }
+    bool writeNumber(const Float16 & /* value */) { return false; }
     bool writeNumber(Float32 /* value */) { return false; }
     bool writeNumber(Float64 /* value */) { return false; }
     bool writeString(const StringRef & /* value */) { return false; }
