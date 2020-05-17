@@ -22,7 +22,7 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("count", createAggregateFunctionCount);
+    factory.registerFunction("count", createAggregateFunctionCount, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

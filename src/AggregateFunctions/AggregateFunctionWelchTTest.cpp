@@ -14,7 +14,7 @@ namespace DB
 namespace
 {
 //template <typename X = Float64, typename Y = Float64, typename Ret = Float64>
-static IAggregateFunction * createWithExtraTypes(Float64 significance_level, const DataTypes & argument_types, const Array & parameters)
+IAggregateFunction * createWithExtraTypes(Float64 significance_level, const DataTypes & argument_types, const Array & parameters)
 {
     return new AggregateFunctionWelchTTest(significance_level, argument_types, parameters);
 }
