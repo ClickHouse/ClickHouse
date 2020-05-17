@@ -306,7 +306,8 @@ public:
 
     static MutablePtr mutate(Ptr ptr)
     {
-        MutablePtr res = ptr->shallowMutate();
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        ptr.reset(); /// Reset use_count to 1.
         res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn)); });
         return res;
     }
