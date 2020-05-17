@@ -16,7 +16,7 @@ TEST(IGrabberAllocator, InvalidMaxSize)
     EXPECT_ANY_THROW(Explt{800});
 }
 
-TEST(IGrabberAllocator, SingleInsertionDoubleRetrieval)
+TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
 {
     IntToInt cache(ga::defaultMinChunkSize);
 
@@ -54,8 +54,5 @@ TEST(IGrabberAllocator, SingleInsertionDoubleRetrieval)
 
     EXPECT_EQ(stats.keyed_regions_count, 0);
     EXPECT_EQ(stats.all_regions_count, 1);
-
-    cache.reset();
-    EXPECT_EQ(cache.getStats(), ga::Stats{});
 }
 
