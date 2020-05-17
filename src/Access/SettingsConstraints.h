@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Common/SettingsChanges.h>
-#include <Core/Settings.h>
+#include <common/StringRef.h>
+#include <unordered_map>
+
 
 namespace Poco
 {
@@ -60,17 +63,25 @@ public:
     void clear();
     bool empty() const { return constraints_by_index.empty(); }
 
-    void setMinValue(const StringRef & name, const Field & min_value);
-    Field getMinValue(const StringRef & name) const;
+    void setMinValue(const StringRef & setting_name, const Field & min_value);
+    void setMinValue(size_t setting_index, const Field & min_value);
+    Field getMinValue(const StringRef & setting_name) const;
+    Field getMinValue(size_t setting_index) const;
 
-    void setMaxValue(const StringRef & name, const Field & max_value);
-    Field getMaxValue(const StringRef & name) const;
+    void setMaxValue(const StringRef & setting_name, const Field & max_value);
+    void setMaxValue(size_t setting_index, const Field & max_value);
+    Field getMaxValue(const StringRef & setting_name) const;
+    Field getMaxValue(size_t setting_index) const;
 
-    void setReadOnly(const StringRef & name, bool read_only);
-    bool isReadOnly(const StringRef & name) const;
+    void setReadOnly(const StringRef & setting_name, bool read_only);
+    void setReadOnly(size_t setting_index, bool read_only);
+    bool isReadOnly(const StringRef & setting_name) const;
+    bool isReadOnly(size_t setting_index) const;
 
-    void set(const StringRef & name, const Field & min_value, const Field & max_value, bool read_only);
-    void get(const StringRef & name, Field & min_value, Field & max_value, bool & read_only) const;
+    void set(const StringRef & setting_name, const Field & min_value, const Field & max_value, bool read_only);
+    void set(size_t setting_index, const Field & min_value, const Field & max_value, bool read_only);
+    void get(const StringRef & setting_name, Field & min_value, Field & max_value, bool & read_only) const;
+    void get(size_t setting_index, Field & min_value, Field & max_value, bool & read_only) const;
 
     void merge(const SettingsConstraints & other);
 
