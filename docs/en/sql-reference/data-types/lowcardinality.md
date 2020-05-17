@@ -21,6 +21,22 @@ LowCardinality(data_type)
 
 `LowCardinality` is a superstructure that changes a data storage method and rules of data processing. ClickHouse applies [dictionary coding](https://en.wikipedia.org/wiki/Dictionary_coder) to `LowCardinality`-columns. Operating with dictionary encoded data significantly increases performance of [SELECT](../statements/select/index.md) queries for many applications.
 
+Consider using `LowCardinality` instead of [Enum](enum.md) when working with strings. `LowCardinality` provides more flexibility in use and often reveals the same or higher efficiency.
+
+## Example
+
+Create a table with a `LowCardinality`-column:
+
+```sql
+CREATE TABLE lc_t
+(
+    `id` UInt16, 
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+```
+
 ## Related Settings and Functions
 
 Settings:
