@@ -2,7 +2,7 @@
 
 ClickHouse предоставляет собственный клиент командной строки: `clickhouse-client`. Клиент поддерживает запуск с аргументами командной строки и с конфигурационными файлами. Подробнее читайте в разделе [Конфигурирование](#interfaces_cli_configuration).
 
-Клиент [устанавливается](../getting_started/index.md) пакетом `clickhouse-client` и запускается командой `clickhouse-client`.
+Клиент [устанавливается](../getting-started/index.md) пакетом `clickhouse-client` и запускается командой `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -88,7 +88,7 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 ```
 
 -   `name` — идентификатор подстановки. В консольном клиенте его следует использовать как часть имени параметра `--param_<name> = value`.
--   `data type` — [тип данных](../sql_reference/data_types/index.md) значения. Например, структура данных `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` ([целочисленный](../sql_reference/data_types/int_uint.md) тип может быть и другим).
+-   `data type` — [тип данных](../sql-reference/data-types/index.md) значения. Например, структура данных `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` ([целочисленный](../sql-reference/data-types/int-uint.md) тип может быть и другим).
 
 #### Пример {#primer}
 

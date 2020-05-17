@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=20.4.1.*
+ARG version=20.5.1.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -21,6 +21,7 @@ RUN apt-get update \
             locales \
             ca-certificates \
             wget \
+            tzata \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

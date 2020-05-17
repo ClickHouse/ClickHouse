@@ -206,10 +206,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
     for (const auto & column : columns)
     {
-        /// Do not include virtual columns
-        if (column.is_virtual)
-            continue;
-
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         ASTPtr column_declaration_ptr{column_declaration};
 
@@ -271,7 +267,8 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
     return res;
 }
 
-ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns_ast, const Context & context)
+ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
+    const ASTExpressionList & columns_ast, const Context & context, bool sanity_check_compression_codecs)
 {
     /// First, deduce implicit types.
 
@@ -359,7 +356,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
-            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type);
+            column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type, sanity_check_compression_codecs);
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
@@ -394,7 +391,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     if (create.columns_list)
     {
         if (create.columns_list->columns)
-            properties.columns = getColumnsDescription(*create.columns_list->columns, context);
+        {
+            bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
+            properties.columns = getColumnsDescription(*create.columns_list->columns, context, sanity_check_compression_codecs);
+        }
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)

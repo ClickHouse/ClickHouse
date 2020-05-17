@@ -20,7 +20,7 @@
     -   [卡夫卡](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (使用 [去客户](https://github.com/ClickHouse/clickhouse-go/))
 -   流处理
-    -  [Flink](https://flink.apache.org)
+    -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   对象存储
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
@@ -37,7 +37,7 @@
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [ﾂ暗ｪﾂ氾环催ﾂ団](https://github.com/lomik/carbon-clickhouse) +
         -   [ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/lomik/graphite-clickhouse)
-        -   [石墨-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) -优化静态分区 [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) 如果从规则 [汇总配置](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) 可以应用
+        -   [石墨-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) -优化静态分区 [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) 如果从规则 [汇总配置](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) 可以应用
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [普罗米修斯号](https://prometheus.io/)
@@ -69,7 +69,7 @@
         -   [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/cloudflare/sqlalchemy-clickhouse) (使用 [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [熊猫](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
-- PHP
+-   PHP
     -   [Doctrine](https://www.doctrine-project.org/)
         -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
@@ -77,7 +77,7 @@
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (使用 [ﾂ暗ｪﾂ氾环催ﾂ団](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-    -   [clickhouse-hdfs-装载机](https://github.com/jaykelin/clickhouse-hdfs-loader) (使用 [JDBC](../../sql_reference/table_functions/jdbc.md))
+    -   [clickhouse-hdfs-装载机](https://github.com/jaykelin/clickhouse-hdfs-loader) (使用 [JDBC](../../sql-reference/table-functions/jdbc.md))
 -   斯卡拉
     -   [Akka](https://akka.io)
     -   [掳胫client-禄脢鹿脷露胫鲁隆鹿-client酶](https://github.com/crobox/clickhouse-scala-client)

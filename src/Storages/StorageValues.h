@@ -23,11 +23,20 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    /// Why we may have virtual columns in the storage from a single block?
+    /// Because it used as tmp storage for pushing blocks into views, and some
+    /// views may contain virtual columns from original storage.
+    NamesAndTypesList getVirtuals() const override
+    {
+        return virtuals;
+    }
 private:
     Block res_block;
+    NamesAndTypesList virtuals;
 
 protected:
-    StorageValues(const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_);
+    StorageValues(
+        const StorageID & table_id_, const ColumnsDescription & columns_, const Block & res_block_, const NamesAndTypesList & virtuals_ = {});
 };
 
 }

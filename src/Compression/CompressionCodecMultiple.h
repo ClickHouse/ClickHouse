@@ -9,7 +9,7 @@ class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
     CompressionCodecMultiple() = default;
-    explicit CompressionCodecMultiple(Codecs codecs_);
+    CompressionCodecMultiple(Codecs codecs_, bool sanity_check);
 
     uint8_t getMethodByte() const override;
 
@@ -24,9 +24,13 @@ protected:
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const override;
 
+    bool isCompression() const override;
+    bool isGenericCompression() const override { return false; }
+
 private:
     Codecs codecs;
 
+    String getCodecDescImpl() const;
 };
 
 

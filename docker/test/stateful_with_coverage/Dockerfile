@@ -6,9 +6,7 @@ RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-9 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-        python-requests \
-        llvm-8 \
-        llvm-9
+        python-requests
 
 COPY s3downloader /s3downloader
 COPY run.sh /run.sh
