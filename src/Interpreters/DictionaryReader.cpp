@@ -119,7 +119,7 @@ void DictionaryReader::readKeys(const IColumn & keys, Block & out_block, ColumnV
     /// calculate and extract dictHas()
     function_has->execute(working_block, size);
     ColumnWithTypeAndName & has_column = working_block.getByPosition(has_position);
-    auto mutable_has = (*std::move(has_column.column)).mutate();
+    auto mutable_has = IColumn::mutate(std::move(has_column.column));
     found.swap(typeid_cast<ColumnVector<UInt8> &>(*mutable_has).getData());
     has_column.column = nullptr;
 

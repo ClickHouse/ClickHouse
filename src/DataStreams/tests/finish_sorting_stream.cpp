@@ -80,7 +80,7 @@ int main(int argc, char ** argv)
             {
                 for (size_t i = 0; i < block.columns(); ++i)
                 {
-                    MutableColumnPtr ptr = (*std::move(res_block.getByPosition(i).column)).mutate();
+                    MutableColumnPtr ptr = IColumn::mutate(std::move(res_block.getByPosition(i).column));
                     ptr->insertRangeFrom(*block.getByPosition(i).column.get(), 0, block.rows());
                 }
             }
