@@ -16,6 +16,7 @@
 #include <common/logger_useful.h>
 
 #include "IGrabberAllocator_fwd.h"
+#include "allocatorCommon.h"
 
 namespace DB
 {
@@ -538,6 +539,11 @@ private:
                 hits.fetch_add(1, std::memory_order_relaxed);
 
                 RegionMetadata& metadata = *it;
+
+                if (metadata.value() == nullptr) // unobtainable result, just for clang's static analysis tool
+                    throw Exception("Cache corruption",
+                            ErrorCodes::BAD_ARGUMENTS);
+
 
                 onSharedValueCreate(cache_lock, metadata);
 
