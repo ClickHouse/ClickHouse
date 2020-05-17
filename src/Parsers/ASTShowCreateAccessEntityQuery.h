@@ -15,22 +15,14 @@ namespace DB
 class ASTShowCreateAccessEntityQuery : public ASTQueryWithOutput
 {
 public:
-    enum class Kind
-    {
-        USER,
-        ROLE,
-        QUOTA,
-        ROW_POLICY,
-        SETTINGS_PROFILE,
-    };
+    using EntityType = IAccessEntity::Type;
 
-    const Kind kind;
+    EntityType type;
     String name;
     bool current_quota = false;
     bool current_user = false;
-    RowPolicy::FullNameParts row_policy_name;
+    RowPolicy::NameParts row_policy_name_parts;
 
-    ASTShowCreateAccessEntityQuery(Kind kind_);
     String getID(char) const override;
     ASTPtr clone() const override;
 

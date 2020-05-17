@@ -20,7 +20,7 @@ struct TraceLogElement
     UInt64 thread_id{};
     String query_id{};
     Array trace{};
-    UInt64 size{}; /// Allocation size in bytes for TraceType::Memory
+    Int64 size{}; /// Allocation size in bytes for TraceType::Memory
 
     static std::string name() { return "TraceLog"; }
     static Block createBlock();

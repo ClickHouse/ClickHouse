@@ -51,8 +51,10 @@ class Context;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
+struct EnabledRolesInfo;
 class EnabledRowPolicies;
 class EnabledQuota;
+struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
@@ -102,8 +104,8 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class VolumeJBOD;
+using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 struct NamedSession;
 
 
@@ -166,7 +168,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    std::vector<UUID> current_roles;
+    boost::container::flat_set<UUID> current_roles;
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
@@ -221,14 +223,14 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
-    VolumePtr getTemporaryVolume() const;
+    VolumeJBODPtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
 
-    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumeJBODPtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -254,12 +256,11 @@ public:
     String getUserName() const;
     std::optional<UUID> getUserID() const;
 
-    void setCurrentRoles(const std::vector<UUID> & current_roles_);
+    void setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_);
     void setCurrentRolesDefault();
-    std::vector<UUID> getCurrentRoles() const;
-    Strings getCurrentRolesNames() const;
-    std::vector<UUID> getEnabledRoles() const;
-    Strings getEnabledRolesNames() const;
+    boost::container::flat_set<UUID> getCurrentRoles() const;
+    boost::container::flat_set<UUID> getEnabledRoles() const;
+    std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -278,7 +279,6 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    std::shared_ptr<const EnabledRowPolicies> getRowPolicies() const;
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
 
     /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
@@ -287,6 +287,7 @@ public:
     void setInitialRowPolicy();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
+    std::optional<QuotaUsage> getQuotaUsage() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);

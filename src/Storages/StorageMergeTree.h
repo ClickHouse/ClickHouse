@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Core/BackgroundSchedulePool.h>

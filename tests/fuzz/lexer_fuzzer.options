@@ -1,0 +1,2 @@
+[libfuzzer]
+dict = ast.dict

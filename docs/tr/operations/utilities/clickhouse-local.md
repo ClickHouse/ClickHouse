@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 60
 toc_title: clickhouse-yerel
 ---
@@ -9,11 +9,11 @@ toc_title: clickhouse-yerel
 
 Bu `clickhouse-local` program, ClickHouse sunucusunu dağıtmak ve yapılandırmak zorunda kalmadan yerel dosyalar üzerinde hızlı işlem yapmanızı sağlar.
 
-Tabloları temsil eden verileri kabul eder ve bunları kullanarak sorgular [ClickHouse SQL lehçesi](../../sql_reference/index.md).
+Tabloları temsil eden verileri kabul eder ve bunları kullanarak sorgular [ClickHouse SQL lehçesi](../../sql-reference/index.md).
 
 `clickhouse-local` ClickHouse server ile aynı çekirdeği kullanır, bu nedenle özelliklerin çoğunu ve aynı format ve tablo motorlarını destekler.
 
-Varsayılan olarak `clickhouse-local` aynı ana bilgisayarda verilere erişimi yok, ancak kullanarak yükleme sunucu yapılandırmasını destekler `--config-file` değişken.
+Varsayılan olarak `clickhouse-local` aynı ana bilgisayarda verilere erişimi yok, ancak kullanarak yükleme sunucu yapılandırmasını destekler `--config-file` tartışma.
 
 !!! warning "Uyarıcı"
     İçine üretim sunucusu yapılandırmasını yüklemek için tavsiye edilmez `clickhouse-local` çünkü insan hatası durumunda veriler zarar görebilir.

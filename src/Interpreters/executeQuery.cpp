@@ -180,6 +180,14 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
             query_log->add(elem);
 }
 
+static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
+{
+    if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
+    {
+        if (ast_insert_into->watch)
+            context.setSetting("output_format_enable_streaming", 1);
+    }
+}
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
@@ -246,6 +254,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
+    setQuerySpecificSettings(ast, context);
+
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
     BlockIO res;
@@ -307,7 +317,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = allow_processors && interpreter->canExecuteWithProcessors();
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())

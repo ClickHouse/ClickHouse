@@ -11,18 +11,24 @@
 <meta property="og:description" content="{{ description }}"/>
 <meta property="og:type" content="{{ og_type or 'website' }}" />
 <meta property="og:image" content="https://clickhouse.tech/images/logo.png" />
-{% if page and page.abs_url %}
-    {% set url = 'https://clickhouse.tech' + page.abs_url %}
-{% endif %}
 <meta property="og:url" content="{{ url or 'https://clickhouse.tech/' }}"/>
 <link rel="canonical" href="{{ url or 'https://clickhouse.tech/' }}" />
-
-
-<meta property="twitter:title" content="{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}"/>
+{% if page and not single_page %}
+<link rel="amphtml" href="{{ url or 'https://clickhouse.tech/' }}amp/">
+{% endif %}
+<link rel="search" href="/opensearch.xml" title="ClickHouse" type="application/opensearchdescription+xml" />
+{% include "templates/docs/ld_json.html" %}
 
 <meta name="description" content="{{ description }}"/>
 <meta name="keywords"
-      content="ClickHouse, DBMS, OLAP, SQL, open-source, relational, analytics, analytical, Big Data, web-analytics" />
+      content="ClickHouse, DBMS, OLAP, SQL, {{ _('open-source') }}, {{ _('relational') }}, {{ _('analytics') }}, {{ _('analytical') }}, {{ _('Big Data') }}, {{ _('web-analytics') }}" />
+
+{% if config and page %}
+    {% for code, name in config.extra.languages.items() %}
+    <link rel="alternate" hreflang="{{ code }}" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}" />
+    {% endfor %}
+    <link rel="alternate" hreflang="x-default" href="{{ config.extra.website_url }}/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}en/{{ page.url }}" />
+{% endif %}
 
 {% for prefetch_item in prefetch_items %}
 <link rel="prefetch" href="{{ prefetch_item.0 }}" as="{{ prefetch_item.1 }}" />

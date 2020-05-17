@@ -1,5 +1,26 @@
 ## ClickHouse release v20.3
 
+### ClickHouse release v20.3.8.53, 2020-04-23
+
+### Bug Fix
+* Fixed wrong behaviour of datetime functions for timezones that has altered between positive and negative offsets from UTC (e.g. Pacific/Kiritimati). This fixes [#7202](https://github.com/ClickHouse/ClickHouse/issues/7202) [#10369](https://github.com/ClickHouse/ClickHouse/pull/10369) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix possible segfault with `distributed_group_by_no_merge` enabled (introduced in 20.3.7.46 by [#10131](https://github.com/ClickHouse/ClickHouse/issues/10131)). [#10399](https://github.com/ClickHouse/ClickHouse/pull/10399) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fix wrong flattening of `Array(Tuple(...))` data types. This fixes [#10259](https://github.com/ClickHouse/ClickHouse/issues/10259) [#10390](https://github.com/ClickHouse/ClickHouse/pull/10390) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Drop disks reservation in Aggregator. This fixes bug in disk space reservation, which may cause big external aggregation to fail even if it could be completed successfully [#10375](https://github.com/ClickHouse/ClickHouse/pull/10375) ([Azat Khuzhin](https://github.com/azat))
+* Fixed `DROP` vs `OPTIMIZE` race in `ReplicatedMergeTree`. `DROP` could left some garbage in replica path in ZooKeeper if there was concurrent `OPTIMIZE` query. [#10312](https://github.com/ClickHouse/ClickHouse/pull/10312) ([tavplubix](https://github.com/tavplubix))
+* Fix bug when server cannot attach table after column default was altered. [#10441](https://github.com/ClickHouse/ClickHouse/pull/10441) ([alesapin](https://github.com/alesapin))
+* Do not remove metadata directory when attach database fails before loading tables.  [#10442](https://github.com/ClickHouse/ClickHouse/pull/10442) ([Winter Zhang](https://github.com/zhang2014))
+* Fixed several bugs when some data was inserted with quorum, then deleted somehow (DROP PARTITION, TTL) and this leaded to the stuck of INSERTs or false-positive exceptions in SELECTs. This fixes [#9946](https://github.com/ClickHouse/ClickHouse/issues/9946) [#10188](https://github.com/ClickHouse/ClickHouse/pull/10188) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov))
+* Fix possible `Pipeline stuck` error in `ConcatProcessor` which could have happened in remote query. [#10381](https://github.com/ClickHouse/ClickHouse/pull/10381) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fixed wrong behavior in HashTable that caused compilation error when trying to read HashMap from buffer. [#10386](https://github.com/ClickHouse/ClickHouse/pull/10386) ([palasonic1](https://github.com/palasonic1))
+* Allow to use `count(*)` with multiple JOINs. Fixes [#9853](https://github.com/ClickHouse/ClickHouse/issues/9853) [#10291](https://github.com/ClickHouse/ClickHouse/pull/10291) ([Artem Zuikov](https://github.com/4ertus2))
+* Prefer `fallback_to_stale_replicas` over `skip_unavailable_shards`, otherwise when both settings specified and there are no up-to-date replicas the query will fail (patch from @alex-zaitsev). Fixes: [#2564](https://github.com/ClickHouse/ClickHouse/issues/2564). [#10422](https://github.com/ClickHouse/ClickHouse/pull/10422) ([Azat Khuzhin](https://github.com/azat))
+* Fix the issue when a query with ARRAY JOIN, ORDER BY and LIMIT may return incomplete result. This fixes [#10226](https://github.com/ClickHouse/ClickHouse/issues/10226). Author: [Vadim Plakhtinskiy](https://github.com/VadimPlh). [#10427](https://github.com/ClickHouse/ClickHouse/pull/10427) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Check the number and type of arguments when creating BloomFilter index [#9623](https://github.com/ClickHouse/ClickHouse/issues/9623) [#10431](https://github.com/ClickHouse/ClickHouse/pull/10431) ([Winter Zhang](https://github.com/zhang2014))
+
+### Performance Improvement
+* Improved performance of queries with explicitly defined sets at right side of `IN` operator and tuples in the left side. This fixes performance regression in version 20.3. [#9740](https://github.com/ClickHouse/ClickHouse/pull/9740), [#10385](https://github.com/ClickHouse/ClickHouse/pull/10385) ([Anton Popov](https://github.com/CurtizJ))
+
 ### ClickHouse release v20.3.7.46, 2020-04-17
 
 #### Bug Fix
@@ -765,4 +786,4 @@
 #### Security Fix
 * Fixed the possibility of reading directories structure in tables with `File` table engine. This fixes [#8536](https://github.com/ClickHouse/ClickHouse/issues/8536). [#8537](https://github.com/ClickHouse/ClickHouse/pull/8537) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
-## [Changelog for 2019](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats_new/changelog/2019.md)
+## [Changelog for 2019](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2019.md)

@@ -16,6 +16,9 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    depends_on:
+      - redirect
+      - resolver
 
 # Redirects all requests to origin Minio.
   redirect:
@@ -26,6 +29,27 @@ services:
       - SERVER_REDIRECT=minio1:9001
       - SERVER_REDIRECT_CODE=307
       - SERVER_ACCESS_LOG=/nginx/access.log
+
+# HTTP proxies for Minio.
+  proxy1:
+    image: vimagick/tinyproxy
+    ports:
+      - "4081:8888"
+
+  proxy2:
+    image: vimagick/tinyproxy
+    ports:
+      - "4082:8888"
+
+# Empty container to run proxy resolver.
+  resolver:
+    image: python:3
+    ports:
+      - "4083:8080"
+    tty: true
+    depends_on:
+      - proxy1
+      - proxy2
 
 volumes:
   data1-1:

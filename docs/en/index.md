@@ -3,14 +3,14 @@ toc_priority: 0
 toc_title: Overview
 ---
 
-# What is ClickHouse? {#what-is-clickhouse}
+# What Is ClickHouse? {#what-is-clickhouse}
 
 ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
 
 In a “normal” row-oriented DBMS, data is stored in this order:
 
 | Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
-|---|---------|--------|------------|-------|-------------|
+|-----|-------------|------------|--------------------|-----------|---------------------|
 | \#0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
 | \#1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
 | \#2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
@@ -23,7 +23,7 @@ Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
 In a column-oriented DBMS, data is stored like this:
 
 | Row:        | \#0                 | \#1                 | \#2                 | \#N |
-|---------|-------------|-------------|-------------|---|
+|-------------|---------------------|---------------------|---------------------|-----|
 | WatchID:    | 89354350662         | 90329509958         | 89953706054         | …   |
 | JavaEnable: | 1                   | 0                   | 1                   | …   |
 | Title:      | Investor Relations  | Contact us          | Mission             | …   |
@@ -62,11 +62,11 @@ Column-oriented databases are better suited to OLAP scenarios: they are at least
 
 **Row-oriented DBMS**
 
-![Row-oriented](images/row_oriented.gif#)
+![Row-oriented](images/row-oriented.gif#)
 
 **Column-oriented DBMS**
 
-![Column-oriented](images/column_oriented.gif#)
+![Column-oriented](images/column-oriented.gif#)
 
 See the difference?
 
