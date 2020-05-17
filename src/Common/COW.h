@@ -216,7 +216,8 @@ protected:
 
         operator const immutable_ptr<T> & () const { return value; }
         operator immutable_ptr<T> & () { return value; }
-        operator immutable_ptr<T> () && { return std::move(value); }
+
+        immutable_ptr<T> detach() && { return std::move(value); }
 
         operator bool() const { return value != nullptr; }
         bool operator! () const { return value == nullptr; }
