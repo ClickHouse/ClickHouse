@@ -120,8 +120,8 @@ public:
                 UInt32 code_point2 = generate_code_point(rand >> 32);
 
                 /// We have padding in column buffers that we can overwrite.
-                pos += UTF8::convert(*reinterpret_cast<int *>(&code_point1), pos, sizeof(int));
-                last_writen_bytes = UTF8::convert(*reinterpret_cast<int *>(&code_point2), pos, sizeof(int));
+                pos += UTF8::convert(code_point1, pos, sizeof(int));
+                last_writen_bytes = UTF8::convert(code_point2, pos, sizeof(int));
                 pos += last_writen_bytes;
             }
             offset = pos - data_to.data() + 1;
