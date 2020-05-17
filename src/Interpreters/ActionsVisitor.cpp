@@ -381,11 +381,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             if (!data.only_consts)
             {
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                /// Do not subquery and create sets. We treat "IN" as "ignoreExceptNull" function.
+                /// Do not subquery and create sets. We replace "in*" function to "in*IgnoreSet".
+
+                auto argument_name = node.arguments->children.at(0)->getColumnName();
 
                 data.addAction(ExpressionAction::applyFunction(
-                        FunctionFactory::instance().get("ignoreExceptNull", data.context),
-                        { node.arguments->children.at(0)->getColumnName() },
+                        FunctionFactory::instance().get(node.name + "IgnoreSet", data.context),
+                        { argument_name, argument_name },
                         column_name.get(ast)));
             }
             return;

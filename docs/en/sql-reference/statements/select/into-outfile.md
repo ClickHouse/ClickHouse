@@ -1,3 +1,7 @@
+---
+toc_title: INTO OUTFILE
+---
+
 # INTO OUTFILE Clause {#into-outfile-clause}
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to `SELECT query` to redirect its output to the specified file on the client-side.
