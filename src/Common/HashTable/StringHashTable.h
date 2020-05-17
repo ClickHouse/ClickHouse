@@ -201,6 +201,8 @@ protected:
     Ts ms;
 
 public:
+    static constexpr bool IS_TWO_LEVEL = false;
+
     using Key = StringRef;
     using key_type = Key;
     using mapped_type = typename Ts::mapped_type;

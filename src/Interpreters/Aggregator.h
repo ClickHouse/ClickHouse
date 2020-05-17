@@ -772,18 +772,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
 
-    #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
-        M(key32)            \
-        M(key64)            \
-        M(key_string)       \
-        M(key_fixed_string) \
-        M(keys32)           \
-        M(keys64)           \
-        M(keys128)          \
-        M(keys256)          \
-        M(nullable_keys128) \
-        M(nullable_keys256) \
-
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
@@ -800,6 +788,34 @@ struct AggregatedDataVariants : private boost::noncopyable
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
         APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
+
+    #define APPLY_FOR_VARIANTS_SINGLE_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
+        M(key32)            \
+        M(key64)            \
+        M(key_string)       \
+        M(key_fixed_string) \
+        M(keys32)           \
+        M(keys64)           \
+        M(keys128)          \
+        M(keys256)          \
+        M(nullable_keys128) \
+        M(nullable_keys256) \
+
+    #define APPLY_FOR_VARIANTS_TWO_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
+        M(key32_two_level)            \
+        M(key64_two_level)            \
+        M(key_string_two_level)       \
+        M(key_fixed_string_two_level) \
+        M(keys32_two_level)           \
+        M(keys64_two_level)           \
+        M(keys128_two_level)          \
+        M(keys256_two_level)          \
+        M(nullable_keys128_two_level) \
+        M(nullable_keys256_two_level) \
+
+    #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
+        APPLY_FOR_VARIANTS_SINGLE_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
+        APPLY_FOR_VARIANTS_TWO_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M) \
 
     bool isConvertibleToTwoLevel() const
     {
@@ -1027,6 +1043,8 @@ public:
         /// After how many accumulated keys in the buffer for a certain bucket try to insert into the shared table.
         const size_t group_by_shared_method_buffer_bucket_max_size;
 
+        const size_t group_by_shared_method_min_num_rows;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -1037,7 +1055,8 @@ public:
             VolumeJBODPtr tmp_volume_, size_t max_threads_,
             size_t min_free_disk_space_,
             double group_by_shared_method_proportion_threshold_,
-            size_t group_by_shared_method_buffer_bucket_max_size_)
+            size_t group_by_shared_method_buffer_bucket_max_size_,
+            size_t group_by_shared_method_min_num_rows_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -1047,14 +1066,15 @@ public:
             tmp_volume(tmp_volume_), max_threads(max_threads_),
             min_free_disk_space(min_free_disk_space_),
             group_by_shared_method_proportion_threshold(group_by_shared_method_proportion_threshold_),
-            group_by_shared_method_buffer_bucket_max_size(group_by_shared_method_buffer_bucket_max_size_)
+            group_by_shared_method_buffer_bucket_max_size(group_by_shared_method_buffer_bucket_max_size_),
+            group_by_shared_method_min_num_rows(group_by_shared_method_min_num_rows_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, 0, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, 0, 0, 0)
         {
             intermediate_header = intermediate_header_;
         }

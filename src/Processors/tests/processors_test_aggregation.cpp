@@ -240,7 +240,8 @@ try
                 1, /// max_threads
                 0,
                 0,
-                0
+                0,
+                block_size
             );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);
@@ -315,7 +316,8 @@ try
                 1, /// max_threads
                 0,
                 0,
-                0
+                0,
+                block_size
         );
 
         auto agg_params = std::make_shared<AggregatingTransformParams>(params, /* final =*/ false);

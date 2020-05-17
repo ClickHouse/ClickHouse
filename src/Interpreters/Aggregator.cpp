@@ -117,7 +117,17 @@ void AggregatedDataVariants::convertToTwoLevelShared()
             type = Type::NAME ## _two_level_shared; \
             break;
 
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+        APPLY_FOR_VARIANTS_SINGLE_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
+
+    #undef M
+    #define M(NAME) \
+        case Type::NAME: \
+            NAME ## _shared = std::make_unique<decltype(NAME ## _shared)::element_type>(*(NAME)); \
+            (NAME).reset(); \
+            type = Type::NAME ## _shared; \
+            break;
+
+        APPLY_FOR_VARIANTS_TWO_LEVEL_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
 
     #undef M
 
@@ -858,18 +868,14 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     if (first_iteration && result.type != AggregatedDataVariants::Type::without_key &&
         shared_result &&
         params.group_by_shared_method_proportion_threshold != 0 &&
-        !params.max_bytes_before_external_group_by &&
-        1.0 * result.size() / num_rows >= params.group_by_shared_method_proportion_threshold)
+        params.max_bytes_before_external_group_by == 0 &&
+        num_rows >= params.group_by_shared_method_min_num_rows &&
+        1.0 * result.size() / num_rows >= params.group_by_shared_method_proportion_threshold &&
+        !result.isTwoLevel() &&
+        result.isConvertibleToTwoLevelShared())
     {
-        #define M(NAME) \
-            else if (result.type == AggregatedDataVariants::Type::NAME) \
-                use_shared = true;
-
-        if (false) {} // NOLINT
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL_SHARED(M)
-        #undef M
-        if (use_shared)
-            LOG_TRACE(log, "Use shared method: " << shared_result->getMethodName());
+        use_shared = true;
+        LOG_TRACE(log, "Use shared method: " << shared_result->getMethodName());
     }
 
     bool worth_convert_to_two_level

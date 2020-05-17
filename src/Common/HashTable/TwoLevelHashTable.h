@@ -47,6 +47,7 @@ protected:
 public:
     using Impl = ImplTable;
 
+    static constexpr bool IS_TWO_LEVEL = true;
     static constexpr size_t NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
 
@@ -97,6 +98,18 @@ public:
     /// Copy the data from another (normal) hash table. It should have the same hash function.
     template <typename Source>
     TwoLevelHashTable(const Source & src)
+    {
+        if constexpr(Source::IS_TWO_LEVEL)
+        {
+            for (size_t i = 0; i < Source::NUM_BUCKETS; ++i)
+                initFromSingleLevel(src.impls[i]);
+        }
+        else
+            initFromSingleLevel(src);
+    }
+
+    template <typename Source>
+    void initFromSingleLevel(const Source & src)
     {
         typename Source::const_iterator it = src.begin();
 

@@ -1657,7 +1657,8 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
         context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
-        settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size);
+        settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size,
+        settings.max_block_size);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
@@ -1722,7 +1723,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
                               allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
-                              settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size);
+                              settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size,
+                              settings.max_block_size);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
@@ -1736,17 +1738,22 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
         if (!(storage && storage->hasEvenlyDistributedRead()))
             pipeline.resize(pipeline.getNumStreams(), true, true);
 
-        auto shared_variant = std::make_shared<AggregatedDataVariants>();
-        shared_variant->aggregator = &transform_params->aggregator;
-        shared_variant->init();
-
-        if (shared_variant->isConvertibleToTwoLevelShared())
+        AggregatedDataVariantsPtr shared_variant = nullptr;
+        /// We can't use shared method for external aggregation yet.
+        if (settings.max_bytes_before_external_group_by == 0)
         {
-            shared_variant->convertToTwoLevelShared();
-            shared_variant->createAggregatesPoolsForShared();
+            shared_variant = std::make_shared<AggregatedDataVariants>();
+            shared_variant->aggregator = &transform_params->aggregator;
+            shared_variant->init();
+
+            if (shared_variant->isConvertibleToTwoLevelShared())
+            {
+                shared_variant->convertToTwoLevelShared();
+                shared_variant->createAggregatesPoolsForShared();
+            }
+            else
+                shared_variant.reset();
         }
-        else
-            shared_variant.reset();
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams(), shared_variant);
         auto merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -1949,7 +1956,8 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
         context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
-        settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size);
+        settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size,
+        settings.max_block_size);
 
     if (modificator == Modificator::ROLLUP)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
@@ -1975,7 +1983,8 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
                               SettingUInt64(0), SettingUInt64(0),
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
-                              settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size);
+                              settings.group_by_shared_method_proportion_threshold, settings.group_by_shared_method_buffer_bucket_max_size,
+                              settings.max_block_size);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
