@@ -4,40 +4,40 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 
 下列表格列出了支持的数据格式以及在 (`INSERT`) 以及 (`SELECT`) 请求中使用它们的方式。
 
-| 格式 | INSERT | SELECT |
-| ------- | -------- | -------- |
-| [TabSeparated](#tabseparated) | ✔ | ✔ |
-| [TabSeparatedRaw](#tabseparatedraw) | ✗ | ✔ |
-| [TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
-| [Template](#format-template) | ✔ | ✔ |
-| [TemplateIgnoreSpaces](#templateignorespaces) | ✔ | ✗ |
-| [CSV](#csv) | ✔ | ✔ |
-| [CSVWithNames](#csvwithnames) | ✔ | ✔ |
-| [CustomSeparated](#format-customseparated) | ✔ | ✔ |
-| [Values](#data-format-values) | ✔ | ✔ |
-| [Vertical](#vertical) | ✗ | ✔ |
-| VerticalRaw | ✗ | ✔ |
-| [JSON](#json) | ✗ | ✔ |
-| [JSONCompact](#jsoncompact) | ✗ | ✔ |
-| [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
-| [TSKV](#tskv) | ✔ | ✔ |
-| [Pretty](#pretty) | ✗ | ✔ |
-| [PrettyCompact](#prettycompact) | ✗ | ✔ |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock) | ✗ | ✔ |
-| [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
-| [PrettySpace](#prettyspace) | ✗ | ✔ |
-| [Protobuf](#protobuf) | ✔ | ✔ |
-| [Avro](#data-format-avro) | ✔ | ✔ |
-| [AvroConfluent](#data-format-avro-confluent) | ✔ | ✗ |
-| [Parquet](#data-format-parquet) | ✔ | ✔ |
-| [ORC](#data-format-orc) | ✔ | ✗ |
-| [RowBinary](#rowbinary) | ✔ | ✔ |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes) | ✔ | ✔ |
-| [Native](#native) | ✔ | ✔ |
-| [Null](#null) | ✗ | ✔ |
-| [XML](#xml) | ✗ | ✔ |
-| [CapnProto](#capnproto) | ✔ | ✔ |
+| 格式                                                            | INSERT | SELECT |
+|-----------------------------------------------------------------|--------|--------|
+| [TabSeparated](#tabseparated)                                   | ✔      | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                             | ✗      | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                 | ✔      | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔      | ✔      |
+| [模板](#format-template)                                        | ✔      | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                   | ✔      | ✗      |
+| [CSV](#csv)                                                     | ✔      | ✔      |
+| [CSVWithNames](#csvwithnames)                                   | ✔      | ✔      |
+| [自定义分离](#format-customseparated)                           | ✔      | ✔      |
+| [值](#data-format-values)                                       | ✔      | ✔      |
+| [垂直](#vertical)                                               | ✗      | ✔      |
+| VerticalRaw                                                     | ✗      | ✔      |
+| [JSON](#json)                                                   | ✗      | ✔      |
+| [JSONCompact](#jsoncompact)                                     | ✗      | ✔      |
+| [JSONEachRow](#jsoneachrow)                                     | ✔      | ✔      |
+| [TSKV](#tskv)                                                   | ✔      | ✔      |
+| [漂亮](#pretty)                                                 | ✗      | ✔      |
+| [PrettyCompact](#prettycompact)                                 | ✗      | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)               | ✗      | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                             | ✗      | ✔      |
+| [PrettySpace](#prettyspace)                                     | ✗      | ✔      |
+| [Protobuf](#protobuf)                                           | ✔      | ✔      |
+| [Avro](#data-format-avro)                                       | ✔      | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                    | ✔      | ✗      |
+| [镶木地板](#data-format-parquet)                                | ✔      | ✔      |
+| [ORC](#data-format-orc)                                         | ✔      | ✗      |
+| [RowBinary](#rowbinary)                                         | ✔      | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)       | ✔      | ✔      |
+| [本地人](#native)                                               | ✔      | ✔      |
+| [Null](#null)                                                   | ✗      | ✔      |
+| [XML](#xml)                                                     | ✗      | ✔      |
+| [CapnProto](#capnproto)                                         | ✔      | ✔      |
 
 ## TabSeparated {#tabseparated}
 
@@ -47,32 +47,30 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 
 TabSeparated 格式非常方便用于自定义程序或脚本处理数据。HTTP 客户端接口默认会用这种格式，命令行客户端批量模式下也会用这种格式。这种格式允许在不同数据库之间传输数据。例如，从 MYSQL 中导出数据然后导入到 ClickHouse 中，反之亦然。
 
-TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极值（当 'extremes' 设置是1）。这种情况下，总值和极值输出在主数据的后面。主要的数据，总值，极值会以一个空行隔开，例如：
+TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极值（当 ‘extremes’ 设置是1）。这种情况下，总值和极值输出在主数据的后面。主要的数据，总值，极值会以一个空行隔开，例如：
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```
-2014-03-17      1406958
-2014-03-18      1383658
-2014-03-19      1405797
-2014-03-20      1353623
-2014-03-21      1245779
-2014-03-22      1031592
-2014-03-23      1046491
+    2014-03-17      1406958
+    2014-03-18      1383658
+    2014-03-19      1405797
+    2014-03-20      1353623
+    2014-03-21      1245779
+    2014-03-22      1031592
+    2014-03-23      1046491
 
-0000-00-00      8873898
+    0000-00-00      8873898
 
-2014-03-17      1031592
-2014-03-23      1406958
-```
+    2014-03-17      1031592
+    2014-03-23      1406958
 
-### 数据解析方式
+### 数据解析方式 {#shu-ju-jie-xi-fang-shi}
 
 整数以十进制形式写入。数字在开头可以包含额外的 `+` 字符（解析时忽略，格式化时不记录）。非负数不能包含负号。 读取时，允许将空字符串解析为零，或者（对于带符号的类型）将仅包含负号的字符串解析为零。 不符合相应数据类型的数字可能会被解析为不同的数字，而不会显示错误消息。
 
-浮点数以十进制形式写入。点号用作小数点分隔符。支持指数等符号，如'inf'，'+ inf'，'-inf'和'nan'。 浮点数的输入可以以小数点开始或结束。
+浮点数以十进制形式写入。点号用作小数点分隔符。支持指数等符号，如’inf’，‘+ inf’，‘-inf’和’nan’。 浮点数的输入可以以小数点开始或结束。
 格式化的时候，浮点数的精确度可能会丢失。
 解析的时候，没有严格需要去读取与机器可以表示的最接近的数值。
 
@@ -85,12 +83,10 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 字符串以反斜线转义的特殊字符输出。 以下转义序列用于输出：`\b`，`\f`，`\r`，`\n`，`\t`，`\0`，`\'`，`\\`。 解析还支持`\a`，`\v`和`\xHH`（十六进制转义字符）和任何`\c`字符，其中`c`是任何字符（这些序列被转换为`c`）。 因此，读取数据支持可以将换行符写为`\n`或`\`的格式，或者换行。例如，字符串 `Hello world` 在单词之间换行而不是空格可以解析为以下任何形式：
 
-```
-Hello\nworld
+    Hello\nworld
 
-Hello\
-world
-```
+    Hello\
+    world
 
 第二种形式是支持的，因为 MySQL 读取 tab-separated 格式数据集的时候也会使用它。
 
@@ -100,7 +96,7 @@ world
 
 数组写在方括号内的逗号分隔值列表中。 通常情况下，数组中的数字项目会被拼凑，但日期，带时间的日期以及字符串将使用与上面相同的转义规则用单引号引起来。
 
-[NULL](../query_language/syntax.md) 将输出为 `\N`。
+[NULL](../sql-reference/syntax.md) 将输出为 `\N`。
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
@@ -115,65 +111,66 @@ world
 在解析过程中，第一行完全被忽略。您不能使用列名来确定其位置或检查其正确性。
 （未来可能会加入解析头行的功能）
 
-这种格式也可以使用名称 ` TSVWithNames` 来表示。
+这种格式也可以使用名称 `TSVWithNames` 来表示。
 
 ## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 与 `TabSeparated` 格式不一样的是，第一行会显示列的名称，第二行会显示列的类型。
 在解析过程中，第一行和第二行完全被忽略。
 
-这种格式也可以使用名称 ` TSVWithNamesAndTypes` 来表示。
+这种格式也可以使用名称 `TSVWithNamesAndTypes` 来表示。
 
-## Template {#format-template}
+## 模板 {#format-template}
 
-This format allows to specify a custom format string with placeholders for values with specified escaping rule.
+此格式允许为具有指定转义规则的值指定带有占位符的自定义格式字符串。
 
-It uses settings `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+它使用设置 `format_schema`, `format_schema_rows`, `format_schema_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` 使用时 `JSON` 逃跑，进一步查看)
 
-Format string `format_schema_rows` specifies rows format with the following syntax:
+格式字符串 `format_schema_rows` 使用以下语法指定行格式:
 
- `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
+`delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
-  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped),
-  `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
+    where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
+    `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped),
+    `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
 
-  - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
-  - `Escaped` (similarly to `TSV`)
-  - `Quoted` (similarly to `Values`)
-  - `Raw` (without escaping, similarly to `TSVRaw`)
-  - `None` (no escaping rule, see further)
+    - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+    - `Escaped` (similarly to `TSV`)
+    - `Quoted` (similarly to `Values`)
+    - `Raw` (without escaping, similarly to `TSVRaw`)
+    - `None` (no escaping rule, see further)
 
-  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+    If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
 
-  So, for the following format string:
+    So, for the following format string:
 
-    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+      `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
 
-  the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
+    the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
 
-  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+    `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
- The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
+该 `format_schema_rows_between_delimiter` setting指定行之间的分隔符，该分隔符在除最后一行之外的每一行之后打印（或预期） (`\n` 默认情况下)
 
-Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
+格式字符串 `format_schema` 具有相同的语法 `format_schema_rows` 并允许指定前缀，后缀和打印一些附加信息的方式。 它包含以下占位符而不是列名:
 
- - `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
- - `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
- - `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
- - `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
- - `rows` is the total number of output rows
- - `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows_before_limit_at_least is the exact number of rows there would have been without a LIMIT.
- - `time` is the request execution time in seconds
- - `rows_read` is the number of rows have been read
- - `bytes_read` is the number of bytes (uncompressed) have been read
+-   `data` 包含数据的行 `format_schema_rows` 格式，由分隔 `format_schema_rows_between_delimiter`. 此占位符必须是格式字符串中的第一个占位符。
+-   `totals` 是包含总值的行 `format_schema_rows` 格式（与总计一起使用时)
+-   `min` 是具有最小值的行 `format_schema_rows` 格式（当极值设置为1时)
+-   `max` 是具有最大值的行 `format_schema_rows` 格式（当极值设置为1时)
+-   `rows` 输出行总数
+-   `rows_before_limit` 是没有限制的最小行数。 仅当查询包含LIMIT时输出。 如果查询包含GROUP BY，则rows\_before\_limit\_at\_least是没有限制的确切行数。
+-   `time` 请求执行时间以秒为单位
+-   `rows_read` 已读取的行数
+-   `bytes_read` 被读取的字节数（未压缩）
 
- The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
- If the `format_schema` setting is an empty string, `${data}` is used as default value.
-  For insert queries format allows to skip some columns or some fields if prefix or suffix (see example).
+占位符 `data`, `totals`, `min` 和 `max` 必须没有指定转义规则（或 `None` 必须明确指定）。 其余的占位符可能具有指定的任何转义规则。
+如果 `format_schema` 设置为空字符串, `${data}` 用作默认值。
+对于插入查询格式允许跳过一些列或一些字段，如果前缀或后缀（见示例）。
 
- `Select` example:
-```sql
+`Select` 示例:
+
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5
 FORMAT Template
 SETTINGS format_schema = '<!DOCTYPE HTML>
@@ -192,7 +189,8 @@ SETTINGS format_schema = '<!DOCTYPE HTML>
 format_schema_rows = '<tr> <td>${SearchPhrase:XML}</td> <td>${с:XML}</td> </tr>',
 format_schema_rows_between_delimiter = '\n    '
 ```
-```html
+
+``` html
 <!DOCTYPE HTML>
 <html> <head> <title>Search phrases</title> </head>
  <body>
@@ -212,27 +210,29 @@ format_schema_rows_between_delimiter = '\n    '
 </html>
 ```
 
-`Insert` example:
-```
-Some header
-Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
-Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
-Total rows: 2
-```
-```sql
+`Insert` 示例:
+
+    Some header
+    Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+    Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+    Total rows: 2
+
+``` sql
 INSERT INTO UserActivity FORMAT Template SETTINGS
 format_schema = 'Some header\n${data}\nTotal rows: ${:CSV}\n',
 format_schema_rows = 'Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}'
 ```
-`PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows: ` in suffix will be ignored.
-All delimiters in the input data must be strictly equal to delimiters in specified format strings.
+
+`PageViews`, `UserID`, `Duration` 和 `Sign` 占位符内部是表中列的名称。 值后 `Useless field` 在行和之后 `\nTotal rows:` in后缀将被忽略。
+输入数据中的所有分隔符必须严格等于指定格式字符串中的分隔符。
 
 ## TemplateIgnoreSpaces {#templateignorespaces}
 
-This format is suitable only for input.
-Similar to `Template`,  but skips whitespace characters between delimiters and values in the input stream. However, if format strings contain whitespace characters, these characters will be expected in the input stream. Also allows to specify empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. Such placeholders are used only for skipping whitespace characters.
-It's possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
-```sql
+此格式仅适用于输入。
+类似于 `Template`，但跳过输入流中的分隔符和值之间的空格字符。 但是，如果格式字符串包含空格字符，则在输入流中将需要这些字符。 还允许指定空占位符 (`${}` 或 `${:None}`）将一些分隔符分成单独的部分，以忽略它们之间的空格。 此类占位符仅用于跳过空格字符。
+可以阅读 `JSON` 如果列的值在所有行中具有相同的顺序，则使用此格式。 例如，以下请求可用于从格式的输出示例中插入数据 [JSON](#json):
+
+``` sql
 INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
 format_schema = '{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}',
 format_schema_rows = '{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}',
@@ -243,28 +243,24 @@ format_schema_rows_between_delimiter = ','
 
 与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
 
-```
-SearchPhrase=   count()=8267016
-SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
-SearchPhrase=2014 spring fashion    count()=1549
-SearchPhrase=freeform photos       count()=1480
-SearchPhrase=angelina jolie    count()=1245
-SearchPhrase=omsk       count()=1112
-SearchPhrase=photos of dog breeds    count()=1091
-SearchPhrase=curtain designs        count()=1064
-SearchPhrase=baku       count()=1000
-```
+    SearchPhrase=   count()=8267016
+    SearchPhrase=bathroom interior design    count()=2166
+    SearchPhrase=yandex     count()=1655
+    SearchPhrase=2014 spring fashion    count()=1549
+    SearchPhrase=freeform photos       count()=1480
+    SearchPhrase=angelina jolie    count()=1245
+    SearchPhrase=omsk       count()=1112
+    SearchPhrase=photos of dog breeds    count()=1091
+    SearchPhrase=curtain designs        count()=1064
+    SearchPhrase=baku       count()=1000
 
-[NULL](../query_language/syntax.md) 输出为 `\N`。
+[NULL](../sql-reference/syntax.md) 输出为 `\N`。
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-```
-x=1	y=\N
-```
+    x=1 y=\N
 
 当有大量的小列时，这种格式是低效的，通常没有理由使用它。它被用于 Yandex 公司的一些部门。
 
@@ -278,12 +274,9 @@ x=1	y=\N
 
 格式化的时候，行是用双引号括起来的。字符串中的双引号会以两个双引号输出，除此之外没有其他规则来做字符转义了。日期和时间也会以双引号包括。数字的输出不带引号。值由一个单独的字符隔开，这个字符默认是 `,`。行使用 Unix 换行符（LF）分隔。 数组序列化成 CSV 规则如下：首先将数组序列化为 TabSeparated 格式的字符串，然后将结果字符串用双引号包括输出到 CSV。CSV 格式的元组被序列化为单独的列（即它们在元组中的嵌套关系会丢失）。
 
+    clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 
-```
-clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
-```
-
-&ast;默认情况下间隔符是 `,` ，在 [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
+\*默认情况下间隔符是 `,` ，在 [format\_csv\_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) 中可以了解更多间隔符配置。
 
 解析的时候，可以使用或不使用引号来解析所有值。支持双引号和单引号。行也可以不用引号排列。 在这种情况下，它们被解析为逗号或换行符（CR 或 LF）。在解析不带引号的行时，若违反 RFC 规则，会忽略前导和尾随的空格和制表符。 对于换行，全部支持 Unix（LF），Windows（CR LF）和 Mac OS Classic（CR LF）。
 
@@ -291,14 +284,14 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 CSV 格式是和 TabSeparated 一样的方式输出总数和极值。
 
-## CSVWithNames
+## CSVWithNames {#csvwithnames}
 
 会输出带头部行，和 `TabSeparatedWithNames` 一样。
 
-## CustomSeparated {#format-customseparated}
+## 自定义分离 {#format-customseparated}
 
-Similar to [Template](#format-template), but it prints or reads all columns and uses escaping rule from setting `format_custom_escaping_rule` and delimiters from settings `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` and `format_custom_result_after_delimiter`, not from format strings.
-There is also `CustomSeparatedIgnoreSpaces` format, which is similar to `TemplateIgnoreSpaces`.
+类似于 [模板](#format-template)，但它打印或读取所有列，并使用从设置转义规则 `format_custom_escaping_rule` 从设置和分隔符 `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` 和 `format_custom_result_after_delimiter`，而不是从格式字符串。
+也有 `CustomSeparatedIgnoreSpaces` 格式，这是类似于 `TemplateIgnoreSpaces`.
 
 ## JSON {#json}
 
@@ -308,7 +301,7 @@ There is also `CustomSeparatedIgnoreSpaces` format, which is similar to `Templat
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
-```json
+``` json
 {
         "meta":
         [
@@ -372,12 +365,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义：斜线`/`被转义为`\/`; 替代的换行符 `U+2028` 和 `U+2029` 会打断一些浏览器解析，它们会被转义为 `\uXXXX`。 ASCII 控制字符被转义：退格，换页，换行，回车和水平制表符被替换为`\b`，`\f`，`\n`，`\r`，`\t` 作为使用`\uXXXX`序列的00-1F范围内的剩余字节。 无效的 UTF-8 序列更改为替换字符 ，因此输出文本将包含有效的 UTF-8 序列。 为了与 JavaScript 兼容，默认情况下，Int64 和 UInt64 整数用双引号引起来。要除去引号，可以将配置参数 output_format_json_quote_64bit_integers 设置为0。
+JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义：斜线`/`被转义为`\/`; 替代的换行符 `U+2028` 和 `U+2029` 会打断一些浏览器解析，它们会被转义为 `\uXXXX`。 ASCII 控制字符被转义：退格，换页，换行，回车和水平制表符被替换为`\b`，`\f`，`\n`，`\r`，`\t` 作为使用`\uXXXX`序列的00-1F范围内的剩余字节。 无效的 UTF-8 序列更改为替换字符 ，因此输出文本将包含有效的 UTF-8 序列。 为了与 JavaScript 兼容，默认情况下，Int64 和 UInt64 整数用双引号引起来。要除去引号，可以将配置参数 output\_format\_json\_quote\_64bit\_integers 设置为0。
 
 `rows` – 结果输出的行数。
 
 `rows_before_limit_at_least` 去掉 LIMIT 过滤后的最小行总数。 只会在查询包含 LIMIT 条件时输出。
-若查询包含 GROUP BY，rows_before_limit_at_least 就是去掉 LIMIT 后过滤后的准确行数。
+若查询包含 GROUP BY，rows\_before\_limit\_at\_least 就是去掉 LIMIT 后过滤后的准确行数。
 
 `totals` – 总值 （当使用 TOTALS 条件时）。
 
@@ -385,7 +378,7 @@ JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
+ClickHouse 支持 [NULL](../sql-reference/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
 
 参考 JSONEachRow 格式。
 
@@ -395,7 +388,7 @@ ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `nu
 
 示例：
 
-```json
+``` json
 {
         "meta":
         [
@@ -439,7 +432,7 @@ ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `nu
 
 将数据结果每一行以 JSON 结构体输出（换行分割 JSON 结构体）。
 
-```json
+``` json
 {"SearchPhrase":"","count()":"8267016"}
 {"SearchPhrase": "bathroom interior design","count()": "2166"}
 {"SearchPhrase":"yandex","count()":"1655"}
@@ -456,25 +449,25 @@ ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `nu
 
 对于解析，任何顺序都支持不同列的值。可以省略某些值 - 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。 作为默认值，不支持表中指定的复杂值。元素之间的空白字符被忽略。如果在对象之后放置逗号，它将被忽略。对象不一定必须用新行分隔。
 
-### Usage of Nested Structures {#jsoneachrow-nested}
+### 嵌套结构的使用 {#jsoneachrow-nested}
 
-If you have a table with the [Nested](../data_types/nested_data_structures/nested.md) data type columns, you can insert JSON data having the same structure. Enable this functionality with the [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json) setting.
+如果你有一张桌子 [嵌套式](../sql-reference/data-types/nested-data-structures/nested.md) 数据类型列，可以插入具有相同结构的JSON数据。 启用此功能与 [input\_format\_import\_nested\_json](../operations/settings/settings.md#settings-input_format_import_nested_json) 设置。
 
-For example, consider the following table:
+例如，请考虑下表:
 
-```sql
+``` sql
 CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
 ```
 
-As you can find in the `Nested` data type description, ClickHouse treats each component of the nested structure as a separate column, `n.s` and `n.i` for our table. So you can insert the data the following way:
+正如你可以在找到 `Nested` 数据类型说明，ClickHouse将嵌套结构的每个组件视为单独的列, `n.s` 和 `n.i` 为了我们的桌子 所以你可以通过以下方式插入数据:
 
-```sql
+``` sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
 ```
 
-To insert data as hierarchical JSON object set [input_format_import_nested_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
+将数据作为分层JSON对象集插入 [input\_format\_import\_nested\_json=1](../operations/settings/settings.md#settings-input_format_import_nested_json).
 
-```json
+``` json
 {
     "n": {
         "s": ["abc", "def"],
@@ -483,36 +476,41 @@ To insert data as hierarchical JSON object set [input_format_import_nested_json=
 }
 ```
 
-Without this setting ClickHouse throws the exception.
+如果没有此设置，ClickHouse将引发异常。
 
-```sql
+``` sql
 SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
 ```
-```text
+
+``` text
 ┌─name────────────────────────────┬─value─┐
 │ input_format_import_nested_json │ 0     │
 └─────────────────────────────────┴───────┘
 ```
-```sql
+
+``` sql
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 ```
-```text
+
+``` text
 Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
 ```
-```sql
+
+``` sql
 SET input_format_import_nested_json=1
 INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
 SELECT * FROM json_each_row_nested
 ```
-```text
+
+``` text
 ┌─n.s───────────┬─n.i────┐
 │ ['abc','def'] │ [1,23] │
 └───────────────┴────────┘
 ```
 
-## Native {#native}
+## 本地人 {#native}
 
-最高性能的格式。 据通过二进制格式的块进行写入和读取。对于每个块，该块中的行数，列数，列名称和类型以及列的部分将被相继记录。 换句话说，这种格式是 “列式”的 - 它不会将列转换为行。 这是用于在服务器之间进行交互的本地界面中使用的格式，用于使用命令行客户端和 C++ 客户端。
+最高性能的格式。 据通过二进制格式的块进行写入和读取。对于每个块，该块中的行数，列数，列名称和类型以及列的部分将被相继记录。 换句话说，这种格式是 «列式»的 - 它不会将列转换为行。 这是用于在服务器之间进行交互的本地界面中使用的格式，用于使用命令行客户端和 C++ 客户端。
 
 您可以使用此格式快速生成只能由 ClickHouse DBMS 读取的格式。但自己处理这种格式是没有意义的。
 
@@ -521,25 +519,23 @@ SELECT * FROM json_each_row_nested
 没有输出。但是，查询已处理完毕，并且在使用命令行客户端时，数据将传输到客户端。这仅用于测试，包括生产力测试。
 显然，这种格式只适用于输出，不适用于解析。
 
-## Pretty {#pretty}
+## 漂亮 {#pretty}
 
 将数据以表格形式输出，也可以使用 ANSI 转义字符在终端中设置颜色。
 它会绘制一个完整的表格，每行数据在终端中占用两行。
 每一个结果块都会以单独的表格输出。这是很有必要的，以便结果块不用缓冲结果输出（缓冲在可以预见结果集宽度的时候是很有必要的）。
 
-[NULL](../query_language/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../sql-reference/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 ``` sql
 SELECT * FROM t_null
 ```
 
-```
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-└───┴──────┘
-```
+    ┌─x─┬────y─┐
+    │ 1 │ ᴺᵁᴸᴸ │
+    └───┴──────┘
 
-为避免将太多数据传输到终端，只打印前10,000行。 如果行数大于或等于10,000，则会显示消息“Showed first 10 000”。
+为避免将太多数据传输到终端，只打印前10,000行。 如果行数大于或等于10,000，则会显示消息«Showed first 10 000»。
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
 Pretty格式支持输出总值（当使用 WITH TOTALS 时）和极值（当 `extremes` 设置为1时）。 在这些情况下，总数值和极值在主数据之后以单独的表格形式输出。 示例（以 PrettyCompact 格式显示）：
@@ -548,28 +544,26 @@ Pretty格式支持输出总值（当使用 WITH TOTALS 时）和极值（当 `ex
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```
-┌──EventDate─┬───────c─┐
-│ 2014-03-17 │ 1406958 │
-│ 2014-03-18 │ 1383658 │
-│ 2014-03-19 │ 1405797 │
-│ 2014-03-20 │ 1353623 │
-│ 2014-03-21 │ 1245779 │
-│ 2014-03-22 │ 1031592 │
-│ 2014-03-23 │ 1046491 │
-└────────────┴─────────┘
+    ┌──EventDate─┬───────c─┐
+    │ 2014-03-17 │ 1406958 │
+    │ 2014-03-18 │ 1383658 │
+    │ 2014-03-19 │ 1405797 │
+    │ 2014-03-20 │ 1353623 │
+    │ 2014-03-21 │ 1245779 │
+    │ 2014-03-22 │ 1031592 │
+    │ 2014-03-23 │ 1046491 │
+    └────────────┴─────────┘
 
-Totals:
-┌──EventDate─┬───────c─┐
-│ 0000-00-00 │ 8873898 │
-└────────────┴─────────┘
+    Totals:
+    ┌──EventDate─┬───────c─┐
+    │ 0000-00-00 │ 8873898 │
+    └────────────┴─────────┘
 
-Extremes:
-┌──EventDate─┬───────c─┐
-│ 2014-03-17 │ 1031592 │
-│ 2014-03-23 │ 1406958 │
-└────────────┴─────────┘
-```
+    Extremes:
+    ┌──EventDate─┬───────c─┐
+    │ 2014-03-17 │ 1031592 │
+    │ 2014-03-23 │ 1406958 │
+    └────────────┴─────────┘
 
 ## PrettyCompact {#prettycompact}
 
@@ -585,23 +579,23 @@ Extremes:
 
 示例：
 
-```bash
+``` bash
 watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 您可以使用 HTTP 接口来获取数据，显示在浏览器中。
 
-### PrettyCompactNoEscapes
+### PrettyCompactNoEscapes {#prettycompactnoescapes}
 
 用法类似上述。
 
-### PrettySpaceNoEscapes
+### PrettySpaceNoEscapes {#prettyspacenoescapes}
 
 用法类似上述。
 
 ## PrettySpace {#prettyspace}
 
-与 `PrettyCompact`(#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
+与 `PrettyCompact`(\#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
 
 ## RowBinary {#rowbinary}
 
@@ -616,29 +610,29 @@ FixedString 被简单地表示为一个字节序列。
 
 数组表示为 varint 长度（无符号 [LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
 
-对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
+对于 [NULL](../sql-reference/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [可为空](../sql-reference/data-types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
-Similar to [RowBinary](#rowbinary), but with added header:
+类似于 [RowBinary](#rowbinary)，但添加了标题:
 
- * [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
- * N `String`s specifying column names
- * N `String`s specifying column types
+-   [LEB128](https://en.wikipedia.org/wiki/LEB128)-编码列数（N)
+-   N `String`s指定列名
+-   N `String`s指定列类型
 
-## Values {#data-format-values}
+## 值 {#data-format-values}
 
-在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../query_language/syntax.md) 为 `NULL`。
+在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../sql-reference/syntax.md) 为 `NULL`。
 
 以 Values 格式传递数据时需要转义的最小字符集是：单引号和反斜线。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-## Vertical {#vertical}
+## 垂直 {#vertical}
 
 使用指定的列名在单独的行上打印每个值。如果每行都包含大量列，则此格式便于打印一行或几行。
 
-[NULL](../query_language/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../sql-reference/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 示例:
 
@@ -646,50 +640,43 @@ Similar to [RowBinary](#rowbinary), but with added header:
 SELECT * FROM t_null FORMAT Vertical
 ```
 
-```
-Row 1:
-──────
-x: 1
-y: ᴺᵁᴸᴸ
-```
+    Row 1:
+    ──────
+    x: 1
+    y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-## VerticalRaw
+## VerticalRaw {#verticalraw}
 
 和 `Vertical` 格式不同点在于，行是不会被转义的。
 这种格式仅仅适用于输出，但不适用于解析输入（将数据插入到表中）。
 
 示例:
 
-```
-:) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
-Row 1:
-──────
-statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
+    :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
 
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-Row 1:
-──────
-test: string with 'quotes' and   with some special
- characters
-```
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    test: string with 'quotes' and   with some special
+     characters
 
 和 Vertical 格式相比：
 
-```
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
-Row 1:
-──────
-test: string with \'quotes\' and \t with some special \n characters
-```
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
+    Row 1:
+    ──────
+    test: string with \'quotes\' and \t with some special \n characters
 
 ## XML {#xml}
 
 该格式仅适用于输出查询结果，但不适用于解析输入，示例：
 
-
-```xml
+``` xml
 <?xml version='1.0' encoding='UTF-8' ?>
 <result>
         <meta>
@@ -760,9 +747,9 @@ test: string with \'quotes\' and \t with some special \n characters
 
 ## CapnProto {#capnproto}
 
-Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
+Cap’n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
 
-Cap'n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
+Cap’n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
 
 ``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits
@@ -771,38 +758,35 @@ SELECT SearchPhrase, count() AS c FROM test.hits
 
 其中 `schema.capnp` 描述如下：
 
-```
-struct Message {
-  SearchPhrase @0 :Text;
-  c @1 :Uint64;
-}
-```
+    struct Message {
+      SearchPhrase @0 :Text;
+      c @1 :Uint64;
+    }
 
-格式文件存储的目录可以在服务配置中的 [ format_schema_path ](../operations/server_settings/settings.md) 指定。
+格式文件存储的目录可以在服务配置中的 [format\_schema\_path](../operations/server-configuration-parameters/settings.md) 指定。
 
-Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
-
+Cap’n Proto 反序列化是很高效的，通常不会增加系统的负载。
 
 ## Protobuf {#protobuf}
 
-Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
+Protobuf-是一个 [协议缓冲区](https://developers.google.com/protocol-buffers/) 格式。
 
-This format requires an external format schema. The schema is cached between queries.
-ClickHouse supports both `proto2` and `proto3` syntaxes. Repeated/optional/required fields are supported.
+此格式需要外部格式架构。 在查询之间缓存架构。
+ClickHouse支持 `proto2` 和 `proto3` 语法 支持重复/可选/必填字段。
 
-Usage examples:
+使用示例:
 
-```sql
+``` sql
 SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
 ```
 
-```bash
+``` bash
 cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
-where the file `schemafile.proto` looks like this:
+哪里的文件 `schemafile.proto` 看起来像这样:
 
-```capnp
+``` capnp
 syntax = "proto3";
 
 message MessageType {
@@ -813,13 +797,13 @@ message MessageType {
 };
 ```
 
-To find the correspondence between table columns and fields of Protocol Buffers' message type ClickHouse compares their names.
-This comparison is case-insensitive and the characters `_` (underscore) and `.` (dot) are considered as equal.
-If types of a column and a field of Protocol Buffers' message are different the necessary conversion is applied.
+要查找协议缓冲区的消息类型的表列和字段之间的对应关系，ClickHouse比较它们的名称。
+这种比较是不区分大小写和字符 `_` (下划线)和 `.` （点）被认为是相等的。
+如果协议缓冲区消息的列和字段的类型不同，则应用必要的转换。
 
-Nested messages are supported. For example, for the field `z` in the following message type
+支持嵌套消息。 例如，对于字段 `z` 在下面的消息类型
 
-```capnp
+``` capnp
 message MessageType {
   message XType {
     message YType {
@@ -831,12 +815,12 @@ message MessageType {
 };
 ```
 
-ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
-Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested.md).
+ClickHouse尝试找到一个名为 `x.y.z` （或 `x_y_z` 或 `X.y_Z` 等）。
+嵌套消息适用于输入或输出一个 [嵌套数据结构](../sql-reference/data-types/nested-data-structures/nested.md).
 
-Default values defined in a protobuf schema like this
+在protobuf模式中定义的默认值，如下所示
 
-```capnp
+``` capnp
 syntax = "proto2";
 
 message MessageType {
@@ -844,103 +828,102 @@ message MessageType {
 }
 ```
 
-are not applied; the [table defaults](../query_language/create.md#create-default-values) are used instead of them.
+不应用;该 [表默认值](../sql-reference/statements/create.md#create-default-values) 用来代替它们。
 
-ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
-It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
-See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+ClickHouse在输入和输出protobuf消息 `length-delimited` 格式。
+这意味着每个消息之前，应该写它的长度作为一个 [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
+另请参阅 [如何在流行语言中读取/写入长度分隔的protobuf消息](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
 ## Avro {#data-format-avro}
 
-[Apache Avro](http://avro.apache.org/) is a row-oriented data serialization framework developed within Apache's Hadoop project.
+[Apache Avro](http://avro.apache.org/) 是在Apache Hadoop项目中开发的面向行的数据序列化框架。
 
-ClickHouse Avro format supports reading and writing [Avro data files](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
+ClickHouse Avro格式支持读取和写入 [Avro数据文件](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-### Data Types Matching
+### 数据类型匹配{\#sql\_reference/data\_types-matching} {#data-types-matching-sql_referencedata_types-matching}
 
-The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
-| Avro data type `INSERT` | ClickHouse data type | Avro data type `SELECT` |
-| -------------------- | -------------------- | ------------------ |
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8\|16\|32\)](../data_types/int_uint.md), [UInt(8\|16\|32)](../data_types/int_uint.md) | `int` |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](../data_types/int_uint.md), [UInt64](../data_types/int_uint.md) | `long` |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](../data_types/float.md) | `float` |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](../data_types/float.md) | `double` |
-| `bytes`, `string`, `fixed`, `enum` | [String](../data_types/string.md) | `bytes` |
-| `bytes`, `string`, `fixed` | [FixedString(N)](../data_types/fixedstring.md) | `fixed(N)` |
-| `enum` | [Enum(8\|16)](../data_types/enum.md) | `enum` |
-| `array(T)` | [Array(T)](../data_types/array.md) | `array(T)` |
-| `union(null, T)`, `union(T, null)` | [Nullable(T)](../data_types/date.md) | `union(null, T)`|
-| `null` | [Nullable(Nothing)](../data_types/special_data_types/nothing.md) | `null` |
-| `int (date)` *  | [Date](../data_types/date.md) | `int (date)` * |
-| `long (timestamp-millis)` * | [DateTime64(3)](../data_types/datetime.md) | `long (timestamp-millis)` * |
-| `long (timestamp-micros)` * | [DateTime64(6)](../data_types/datetime.md) | `long (timestamp-micros)` * |
+| Avro数据类型 `INSERT`                       | ClickHouse数据类型                                                                                                | Avro数据类型 `SELECT`        |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------|------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8/16/32)](../sql-reference/data-types/int-uint.md), [UInt(8/16/32)](../sql-reference/data-types/int-uint.md) | `int`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](../sql-reference/data-types/int-uint.md), [UInt64](../sql-reference/data-types/int-uint.md)               | `long`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](../sql-reference/data-types/float.md)                                                                   | `float`                      |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](../sql-reference/data-types/float.md)                                                                   | `double`                     |
+| `bytes`, `string`, `fixed`, `enum`          | [字符串](../sql-reference/data-types/string.md)                                                                   | `bytes`                      |
+| `bytes`, `string`, `fixed`                  | [固定字符串(N)](../sql-reference/data-types/fixedstring.md)                                                       | `fixed(N)`                   |
+| `enum`                                      | [枚举(8/16)](../sql-reference/data-types/enum.md)                                                                 | `enum`                       |
+| `array(T)`                                  | [阵列(T)](../sql-reference/data-types/array.md)                                                                   | `array(T)`                   |
+| `union(null, T)`, `union(T, null)`          | [可为空(T)](../sql-reference/data-types/date.md)                                                                  | `union(null, T)`             |
+| `null`                                      | [可为空（无)](../sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                       |
+| `int (date)` \*                             | [日期](../sql-reference/data-types/date.md)                                                                       | `int (date)` \*              |
+| `long (timestamp-millis)` \*                | [DateTime64(3)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-millis)` \* |
+| `long (timestamp-micros)` \*                | [DateTime64(6)](../sql-reference/data-types/datetime.md)                                                          | `long (timestamp-micros)` \* |
 
-\* [Avro logical types](http://avro.apache.org/docs/current/spec.html#Logical+Types)
+\* [Avro逻辑类型](http://avro.apache.org/docs/current/spec.html#Logical+Types)
 
+不支持的Avro数据类型: `record` （非根), `map`
 
+不支持的Avro逻辑数据类型: `uuid`, `time-millis`, `time-micros`, `duration`
 
-Unsupported Avro data types: `record` (non-root), `map`
+### 插入数据 {#inserting-data}
 
-Unsupported Avro logical data types: `uuid`, `time-millis`, `time-micros`, `duration`
+将Avro文件中的数据插入ClickHouse表:
 
-### Inserting Data
-
-To insert data from an Avro file into ClickHouse table:
-
-```bash
+``` bash
 $ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
 ```
 
-The root schema of input Avro file must be of `record` type.
+输入Avro文件的根模式必须是 `record` 类型。
 
-To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.
-Unused fields are skipped.
+要查找Avro schema的表列和字段之间的对应关系，ClickHouse比较它们的名称。 此比较区分大小写。
+跳过未使用的字段。
 
-Data types of a ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to corresponding column type.
+ClickHouse表列的数据类型可能与插入的Avro数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [投](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 将数据转换为相应的列类型。
 
-### Selecting Data
+### 选择数据 {#selecting-data}
 
-To select data from ClickHouse table into an Avro file:
+从ClickHouse表中选择数据到Avro文件:
 
-```bash
+``` bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 ```
 
-Column names must:
+列名必须:
 
-- start with `[A-Za-z_]`
-- subsequently contain only `[A-Za-z0-9_]`
+-   名,名,名,名 `[A-Za-z_]`
+-   随后只包含 `[A-Za-z0-9_]`
 
-Output Avro file compression and sync interval can be configured with [output_format_avro_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output_format_avro_sync_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
+输出Avro文件压缩和同步间隔可以配置 [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) 和 [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) 分别。
 
 ## AvroConfluent {#data-format-avro-confluent}
 
-AvroConfluent supports decoding single-object Avro messages commonly used with [Kafka](https://kafka.apache.org/) and [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
+AvroConfluent支持解码单对象Avro消息常用于 [卡夫卡](https://kafka.apache.org/) 和 [汇合的模式注册表](https://docs.confluent.io/current/schema-registry/index.html).
 
-Each Avro message embeds a schema id that can be resolved to the actual schema with help of the Schema Registry.
+每个Avro消息都嵌入了一个架构id，该架构id可以在架构注册表的帮助下解析为实际架构。
 
-Schemas are cached once resolved.
+模式解析后会进行缓存。
 
-Schema Registry URL is configured with [format_avro_schema_registry_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
+架构注册表URL配置为 [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
-### Data Types Matching
+### 数据类型匹配{\#sql\_reference/data\_types-matching-1} {#data-types-matching-sql_referencedata_types-matching-1}
 
-Same as [Avro](#data-format-avro)
+和 [Avro](#data-format-avro)
 
-### Usage
+### 用途 {#usage}
 
-To quickly verify schema resolution you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](../operations/utils/clickhouse-local.md):
+要快速验证架构解析，您可以使用 [kafkacat](https://github.com/edenhill/kafkacat) 与 [ﾂ环板-ｮﾂ嘉ｯﾂ偲](../operations/utilities/clickhouse-local.md):
 
-```bash
+``` bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
 1 a
 2 b
 3 c
 ```
 
-To use `AvroConfluent` with [Kafka](../operations/table_engines/kafka.md):
-```sql
+使用 `AvroConfluent` 与 [卡夫卡](../engines/table-engines/integrations/kafka.md):
+
+``` sql
 CREATE TABLE topic1_stream
 (
     field1 String,
@@ -958,125 +941,123 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-!!! note "Warning"
-    Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it's value after a restart.
+!!! note "警告"
+    设置 `format_avro_schema_registry_url` 需要在配置 `users.xml` restart动后保持它的价值。
 
+## 镶木地板 {#data-format-parquet}
 
-## Parquet {#data-format-parquet}
+[阿帕奇地板](http://parquet.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 ClickHouse支持此格式的读写操作。
 
-[Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
+### 数据类型匹配{\#sql\_reference/data\_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
 
-### Data Types Matching
+下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 和 `SELECT` 查询。
 
-The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+| Parquet数据类型 (`INSERT`) | ClickHouse数据类型                                       | Parquet数据类型 (`SELECT`) |
+|----------------------------|----------------------------------------------------------|----------------------------|
+| `UINT8`, `BOOL`            | [UInt8](../sql-reference/data-types/int-uint.md)         | `UINT8`                    |
+| `INT8`                     | [Int8](../sql-reference/data-types/int-uint.md)          | `INT8`                     |
+| `UINT16`                   | [UInt16](../sql-reference/data-types/int-uint.md)        | `UINT16`                   |
+| `INT16`                    | [Int16](../sql-reference/data-types/int-uint.md)         | `INT16`                    |
+| `UINT32`                   | [UInt32](../sql-reference/data-types/int-uint.md)        | `UINT32`                   |
+| `INT32`                    | [Int32](../sql-reference/data-types/int-uint.md)         | `INT32`                    |
+| `UINT64`                   | [UInt64](../sql-reference/data-types/int-uint.md)        | `UINT64`                   |
+| `INT64`                    | [Int64](../sql-reference/data-types/int-uint.md)         | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`      | [Float32](../sql-reference/data-types/float.md)          | `FLOAT`                    |
+| `DOUBLE`                   | [Float64](../sql-reference/data-types/float.md)          | `DOUBLE`                   |
+| `DATE32`                   | [日期](../sql-reference/data-types/date.md)              | `UINT16`                   |
+| `DATE64`, `TIMESTAMP`      | [日期时间](../sql-reference/data-types/datetime.md)      | `UINT32`                   |
+| `STRING`, `BINARY`         | [字符串](../sql-reference/data-types/string.md)          | `STRING`                   |
+| —                          | [固定字符串](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
+| `DECIMAL`                  | [十进制](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
 
-| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`) |
-| -------------------- | ------------------ | ---- |
-| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
-| `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
-| `UINT16` | [UInt16](../data_types/int_uint.md) | `UINT16` |
-| `INT16` | [Int16](../data_types/int_uint.md) | `INT16` |
-| `UINT32` | [UInt32](../data_types/int_uint.md) | `UINT32` |
-| `INT32` | [Int32](../data_types/int_uint.md) | `INT32` |
-| `UINT64` | [UInt64](../data_types/int_uint.md) | `UINT64` |
-| `INT64` | [Int64](../data_types/int_uint.md) | `INT64` |
-| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) | `FLOAT` |
-| `DOUBLE` | [Float64](../data_types/float.md) | `DOUBLE` |
-| `DATE32` | [Date](../data_types/date.md) | `UINT16` |
-| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) | `UINT32` |
-| `STRING`, `BINARY` | [String](../data_types/string.md) | `STRING` |
-| — | [FixedString](../data_types/fixedstring.md) | `STRING` |
-| `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
+ClickHouse支持可配置的精度 `Decimal` 类型。 该 `INSERT` 查询对待实木复合地板 `DECIMAL` 键入为ClickHouse `Decimal128` 类型。
 
-ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
+不支持的Parquet数据类型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+ClickHouse表列的数据类型可能与插入的Parquet数据的相应字段不同。 插入数据时，ClickHouse根据上表解释数据类型，然后 [投](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 为ClickHouse表列设置的数据类型的数据。
 
-Data types of a ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+### 插入和选择数据 {#inserting-and-selecting-data}
 
-### Inserting and Selecting Data
+您可以通过以下命令将Parquet数据从文件插入到ClickHouse表中:
 
-You can insert Parquet data from a file into ClickHouse table by the following command:
-
-```bash
+``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
-You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
+您可以从ClickHouse表中选择数据，并通过以下命令将它们保存到Parquet格式的某个文件中:
 
-```bash
+``` bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 
-To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
+要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
+[阿帕奇兽人](https://orc.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 您只能将此格式的数据插入ClickHouse。
 
-### Data Types Matching
+### 数据类型匹配{\#sql\_reference/data\_types-matching-3} {#data-types-matching-sql_referencedata_types-matching-3}
 
-The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` queries.
+下表显示了支持的数据类型以及它们如何匹配ClickHouse [数据类型](../sql-reference/data-types/index.md) 在 `INSERT` 查询。
 
-| ORC data type (`INSERT`) | ClickHouse data type |
-| -------------------- | ------------------ |
-| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) |
-| `INT8` | [Int8](../data_types/int_uint.md) |
-| `UINT16` | [UInt16](../data_types/int_uint.md) |
-| `INT16` | [Int16](../data_types/int_uint.md) |
-| `UINT32` | [UInt32](../data_types/int_uint.md) |
-| `INT32` | [Int32](../data_types/int_uint.md) |
-| `UINT64` | [UInt64](../data_types/int_uint.md) |
-| `INT64` | [Int64](../data_types/int_uint.md) |
-| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) |
-| `DOUBLE` | [Float64](../data_types/float.md) |
-| `DATE32` | [Date](../data_types/date.md) |
-| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) |
-| `STRING`, `BINARY` | [String](../data_types/string.md) |
-| `DECIMAL` | [Decimal](../data_types/decimal.md) |
+| ORC数据类型 (`INSERT`) | ClickHouse数据类型                                  |
+|------------------------|-----------------------------------------------------|
+| `UINT8`, `BOOL`        | [UInt8](../sql-reference/data-types/int-uint.md)    |
+| `INT8`                 | [Int8](../sql-reference/data-types/int-uint.md)     |
+| `UINT16`               | [UInt16](../sql-reference/data-types/int-uint.md)   |
+| `INT16`                | [Int16](../sql-reference/data-types/int-uint.md)    |
+| `UINT32`               | [UInt32](../sql-reference/data-types/int-uint.md)   |
+| `INT32`                | [Int32](../sql-reference/data-types/int-uint.md)    |
+| `UINT64`               | [UInt64](../sql-reference/data-types/int-uint.md)   |
+| `INT64`                | [Int64](../sql-reference/data-types/int-uint.md)    |
+| `FLOAT`, `HALF_FLOAT`  | [Float32](../sql-reference/data-types/float.md)     |
+| `DOUBLE`               | [Float64](../sql-reference/data-types/float.md)     |
+| `DATE32`               | [日期](../sql-reference/data-types/date.md)         |
+| `DATE64`, `TIMESTAMP`  | [日期时间](../sql-reference/data-types/datetime.md) |
+| `STRING`, `BINARY`     | [字符串](../sql-reference/data-types/string.md)     |
+| `DECIMAL`              | [十进制](../sql-reference/data-types/decimal.md)    |
 
-ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
+ClickHouse支持的可配置精度 `Decimal` 类型。 该 `INSERT` 查询对待兽人 `DECIMAL` 键入为ClickHouse `Decimal128` 类型。
 
-Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+不支持的ORC数据类型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-The data types of ClickHouse table columns don't have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+ClickHouse表列的数据类型不必匹配相应的ORC数据字段。 插入数据时，ClickHouse根据上表解释数据类型，然后 [投](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) 将数据转换为ClickHouse表列的数据类型集。
 
-### Inserting Data
+### 插入数据 {#inserting-data-1}
 
-You can insert ORC data from a file into ClickHouse table by the following command:
+您可以通过以下命令将文件中的ORC数据插入到ClickHouse表中:
 
-```bash
+``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-To exchange data with Hadoop, you can use [HDFS table engine](../operations/table_engines/hdfs.md).
+要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
-## Format Schema {#formatschema}
+## 格式架构 {#formatschema}
 
-The file name containing the format schema is set by the setting `format_schema`.
-It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
-The format schema is a combination of a file name and the name of a message type in this file, delimited by colon,
-e.g. `schemafile.proto:MessageType`.
-If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
-it can be omitted and in this case the format schema looks like `schemafile:MessageType`.
+包含格式架构的文件名由该设置设置 `format_schema`.
+当使用其中一种格式时，需要设置此设置 `Cap'n Proto` 和 `Protobuf`.
+格式架构是文件名和此文件中消息类型的名称的组合，用冒号分隔,
+e.g. `schemafile.proto:MessageType`.
+如果文件具有格式的标准扩展名（例如, `.proto` 为 `Protobuf`),
+它可以被省略，在这种情况下，格式模式如下所示 `schemafile:MessageType`.
 
-If you input or output data via the [client](../interfaces/cli.md) in the interactive mode, the file name specified in the format schema
-can contain an absolute path or a path relative to the current directory on the client.
-If you use the client in the batch mode, the path to the schema must be relative due to security reasons.
+如果您通过输入或输出数据 [客户](../interfaces/cli.md) 在交互模式下，格式架构中指定的文件名
+可以包含绝对路径或相对于客户端上当前目录的路径。
+如果在批处理模式下使用客户端，则由于安全原因，架构的路径必须是相对的。
 
-If you input or output data via the [HTTP interface](../interfaces/http.md) the file name specified in the format schema
-should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path)
-in the server configuration.
+如果您通过输入或输出数据 [HTTP接口](../interfaces/http.md) 格式架构中指定的文件名
+应该位于指定的目录中 [format\_schema\_path](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path)
+在服务器配置中。
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
 
-## Skipping Errors {#skippingerrors}
+## 跳过错误 {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) and
-[input_format_allow_errors_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) settings.
-Limitations:
- - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
- - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
-
+一些格式，如 `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` 和 `Protobuf` 如果发生解析错误，可以跳过断开的行，并从下一行开始继续解析。 看 [input\_format\_allow\_errors\_num](../operations/settings/settings.md#settings-input_format_allow_errors_num) 和
+[input\_format\_allow\_errors\_ratio](../operations/settings/settings.md#settings-input_format_allow_errors_ratio) 设置。
+限制:
+-在解析错误的情况下 `JSONEachRow` 跳过所有数据，直到新行（或EOF），所以行必须由 `\n` 正确计算错误。
+- `Template` 和 `CustomSeparated` 在最后一列之后使用分隔符，并在行之间使用分隔符来查找下一行的开头，所以跳过错误只有在其中至少有一个不为空时才有效。
 
 [来源文章](https://clickhouse.tech/docs/zh/interfaces/formats/) <!--hide-->

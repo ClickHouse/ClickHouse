@@ -1,10 +1,9 @@
 #include <errno.h>
 #include <pthread.h>
 #include <time.h>
-#include "musl_features.h"
 #include "syscall.h"
 
-int __clock_nanosleep(clockid_t clk, int flags, const struct timespec * req, struct timespec * rem)
+int clock_nanosleep(clockid_t clk, int flags, const struct timespec * req, struct timespec * rem)
 {
     if (clk == CLOCK_THREAD_CPUTIME_ID)
         return EINVAL;
@@ -23,5 +22,3 @@ int __clock_nanosleep(clockid_t clk, int flags, const struct timespec * req, str
     pthread_setcanceltype(old_cancel_type, NULL);
     return status;
 }
-
-weak_alias(__clock_nanosleep, clock_nanosleep);

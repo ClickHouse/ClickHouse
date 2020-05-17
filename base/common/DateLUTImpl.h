@@ -1,8 +1,9 @@
 #pragma once
 
-#include "Types.h"
 #include "DayNum.h"
-#include "likely.h"
+#include "defines.h"
+#include "types.h"
+
 #include <ctime>
 #include <string>
 
@@ -11,7 +12,7 @@
 /// Table size is bigger than DATE_LUT_MAX_DAY_NUM to fill all indices within UInt16 range: this allows to remove extra check.
 #define DATE_LUT_SIZE 0x10000
 #define DATE_LUT_MIN_YEAR 1970
-#define DATE_LUT_MAX_YEAR 2105 /// Last supported year
+#define DATE_LUT_MAX_YEAR 2106 /// Last supported year (incomplete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 #if defined(__PPC__)
@@ -36,7 +37,12 @@ using YearWeek = std::pair<UInt16, UInt8>;
 class DateLUTImpl
 {
 public:
-    DateLUTImpl(const std::string & time_zone);
+    explicit DateLUTImpl(const std::string & time_zone);
+
+    DateLUTImpl(const DateLUTImpl &) = delete;
+    DateLUTImpl & operator=(const DateLUTImpl &) = delete;
+    DateLUTImpl(const DateLUTImpl &&) = delete;
+    DateLUTImpl & operator=(const DateLUTImpl &&) = delete;
 
 public:
     /// The order of fields matters for alignment and sizeof.
@@ -98,7 +104,7 @@ private:
             return guess;
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
-        if (offset_at_start_of_epoch >= 0)
+        if (t >= lut[DayNum(guess + 1)].date)
             return DayNum(guess + 1);
 
         return DayNum(guess - 1);
@@ -286,8 +292,8 @@ public:
         if (offset_is_whole_number_of_hours_everytime)
             return (t / 60) % 60;
 
-        time_t date = find(t).date;
-        return (t - date) / 60 % 60;
+        UInt32 date = find(t).date;
+        return (UInt32(t) - date) / 60 % 60;
     }
 
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
@@ -300,9 +306,8 @@ public:
         if (offset_is_whole_number_of_hours_everytime)
             return t / 3600 * 3600;
 
-        time_t date = find(t).date;
-        /// Still can return wrong values for time at 1970-01-01 if the UTC offset was non-whole number of hours.
-        return date + (t - date) / 3600 * 3600;
+        UInt32 date = find(t).date;
+        return date + (UInt32(t) - date) / 3600 * 3600;
     }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
@@ -578,7 +583,7 @@ public:
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
-        /// NOTE This assumption is false for "Pacific/Pitcairn" time zone.
+        /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
         return (t + 86400 - offset_at_start_of_epoch) / 3600;
     }
 

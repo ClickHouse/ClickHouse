@@ -1,9 +1,10 @@
 #include <string>
+#include <vector>
 #include <common/find_symbols.h>
 #include <gtest/gtest.h>
 
 
-TEST(find_symbols, SimpleTest)
+TEST(FindSymbols, SimpleTest)
 {
     std::string s = "Hello, world! Goodbye...";
     const char * begin = s.data();
@@ -22,4 +23,16 @@ TEST(find_symbols, SimpleTest)
     ASSERT_EQ(find_last_symbols_or_null<' '>(begin, end), end - 11);
     ASSERT_EQ(find_last_symbols_or_null<'H'>(begin, end), begin);
     ASSERT_EQ((find_last_symbols_or_null<'a', 'e'>(begin, end)), end - 4);
+
+    {
+        std::vector<std::string> vals;
+        splitInto<' ', ','>(vals, "hello, world", true);
+        ASSERT_EQ(vals, (std::vector<std::string>{"hello", "world"}));
+    }
+
+    {
+        std::vector<std::string> vals;
+        splitInto<' ', ','>(vals, "s String", true);
+        ASSERT_EQ(vals, (std::vector<std::string>{"s", "String"}));
+    }
 }

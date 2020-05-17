@@ -1,37 +1,37 @@
-# Устранение неисправностей
+# Устранение неисправностей {#ustranenie-neispravnostei}
 
-- [Установка дистрибутива](#troubleshooting-installation-errors)
-- [Соединение с сервером](#troubleshooting-accepts-no-connections)
-- [Обработка запросов](#troubleshooting-does-not-process-queries)
-- [Скорость обработки запросов](#troubleshooting-too-slow)
+-   [Установка дистрибутива](#troubleshooting-installation-errors)
+-   [Соединение с сервером](#troubleshooting-accepts-no-connections)
+-   [Обработка запросов](#troubleshooting-does-not-process-queries)
+-   [Скорость обработки запросов](#troubleshooting-too-slow)
 
 ## Установка дистрибутива {#troubleshooting-installation-errors}
 
-### Не получается скачать deb-пакеты из репозитория ClickHouse с помощью apt-get
+### Не получается скачать deb-пакеты из репозитория ClickHouse с помощью Apt-get {#ne-poluchaetsia-skachat-deb-pakety-iz-repozitoriia-clickhouse-s-pomoshchiu-apt-get}
 
-- Проверьте настройки брандмауэра.
-- Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting_started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
+-   Проверьте настройки брандмауэра.
+-   Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting-started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
 
 ## Соединение с сервером {#troubleshooting-accepts-no-connections}
 
 Возможные проблемы:
 
-- Сервер не запущен.
-- Неожиданные или неправильные параметры конфигурации.
+-   Сервер не запущен.
+-   Неожиданные или неправильные параметры конфигурации.
 
-### Сервер не запущен
+### Сервер не запущен {#server-ne-zapushchen}
 
 **Проверьте, запущен ли сервер**
 
 Команда:
 
-```bash
+``` bash
 $ sudo service clickhouse-server status
 ```
 
 Если сервер не запущен, запустите его с помощью команды:
 
-```bash
+``` bash
 $ sudo service clickhouse-server start
 ```
 
@@ -41,24 +41,24 @@ $ sudo service clickhouse-server start
 
 В случае успешного запуска вы должны увидеть строки, содержащие:
 
-- `<Information> Application: starting up.` — сервер запускается.
-- `<Information> Application: Ready for connections.` — сервер запущен и готов принимать соединения.
+-   `<Information> Application: starting up.` — сервер запускается.
+-   `<Information> Application: Ready for connections.` — сервер запущен и готов принимать соединения.
 
-Если `clickhouse-server` не запустился из-за ошибки конфигурации вы  увидите `<Error>` строку с описанием ошибки. Например:
+Если `clickhouse-server` не запустился из-за ошибки конфигурации вы увидите `<Error>` строку с описанием ошибки. Например:
 
-```text
+``` text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
 Если вы не видите ошибки в конце файла, просмотрите весь файл начиная со строки:
 
-```text
+``` text
 <Information> Application: starting up.
 ```
 
 При попытке запустить второй экземпляр `clickhouse-server` журнал выглядит следующим образом:
 
-```text
+``` text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
 2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
 2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
@@ -76,54 +76,54 @@ Revision: 54413
 
 Если из логов `clickhouse-server` вы не получили необходимой информации или логов нет, то вы можете посмотреть логи `system.d` командой:
 
-```bash
+``` bash
 $ sudo journalctl -u clickhouse-server
 ```
 
 **Запустите clickhouse-server в интерактивном режиме**
 
-```bash
+``` bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
 Эта команда запускает сервер как интерактивное приложение со стандартными параметрами скрипта автозапуска. В этом режиме `clickhouse-server` выводит сообщения в консоль.
 
-### Параметры конфигурации
+### Параметры конфигурации {#parametry-konfiguratsii}
 
 Проверьте:
 
-- Настройки Docker.
+-   Настройки Docker.
 
-    При запуске ClickHouse в Docker в сети IPv6 убедитесь, что установлено `network=host`.
+        При запуске ClickHouse в Docker в сети IPv6 убедитесь, что установлено `network=host`.
 
-- Параметры endpoint.
+-   Параметры endpoint.
 
-    Проверьте настройки [listen_host](server_settings/settings.md#server_settings-listen_host) и [tcp_port](server_settings/settings.md#server_settings-tcp_port).
+        Проверьте настройки [listen_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) и [tcp_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port).
 
-    По умолчанию, сервер ClickHouse принимает только локальные подключения.
+        По умолчанию, сервер ClickHouse принимает только локальные подключения.
 
-- Настройки протокола HTTP.
+-   Настройки протокола HTTP.
 
-    Проверьте настройки протокола для HTTP API.
+        Проверьте настройки протокола для HTTP API.
 
-- Параметры безопасного подключения.
+-   Параметры безопасного подключения.
 
-    Проверьте:
+        Проверьте:
 
-    - Настройку `tcp_port_secure`.
-    - Параметры для SSL-сертификатов.
+        - Настройку `tcp_port_secure`.
+        - Параметры для SSL-сертификатов.
 
-     Используйте правильные параметры при подключении. Например, используйте параметр `port_secure` при использовании `clickhouse_client`.
+         Используйте правильные параметры при подключении. Например, используйте параметр `port_secure` при использовании `clickhouse_client`.
 
-- Настройки пользователей.
+-   Настройки пользователей.
 
-    Возможно, вы используете неверное имя пользователя или пароль.
+        Возможно, вы используете неверное имя пользователя или пароль.
 
 ## Обработка запросов {#troubleshooting-does-not-process-queries}
 
 Если ClickHouse не может обработать запрос, он отправляет клиенту описание ошибки. В `clickhouse-client` вы получаете описание ошибки в консоли. При использовании интерфейса HTTP, ClickHouse отправляет описание ошибки в теле ответа. Например:
 
-```bash
+``` bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```

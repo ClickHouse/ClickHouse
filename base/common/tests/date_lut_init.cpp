@@ -1,7 +1,7 @@
 #include <common/DateLUT.h>
 
 /// Позволяет проверить время инициализации DateLUT.
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     DateLUT::instance();
     return 0;

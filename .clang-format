@@ -52,7 +52,7 @@ IncludeCategories:
 ReflowComments: false
 AlignEscapedNewlinesLeft: false
 AlignEscapedNewlines: DontAlign
-AlignTrailingComments: true
+AlignTrailingComments: false
 
 # Not changed:
 AccessModifierOffset: -4

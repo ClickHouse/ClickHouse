@@ -1,32 +1,18 @@
 add_library (mysqlxx
-    src/Connection.cpp
-    src/Exception.cpp
-    src/Query.cpp
-    src/ResultBase.cpp
-    src/StoreQueryResult.cpp
-    src/UseQueryResult.cpp
-    src/Row.cpp
-    src/Value.cpp
-    src/Pool.cpp
-    src/PoolWithFailover.cpp
-
-    include/mysqlxx/Connection.h
-    include/mysqlxx/Exception.h
-    include/mysqlxx/mysqlxx.h
-    include/mysqlxx/Null.h
-    include/mysqlxx/Pool.h
-    include/mysqlxx/PoolWithFailover.h
-    include/mysqlxx/Query.h
-    include/mysqlxx/ResultBase.h
-    include/mysqlxx/Row.h
-    include/mysqlxx/StoreQueryResult.h
-    include/mysqlxx/Transaction.h
-    include/mysqlxx/Types.h
-    include/mysqlxx/UseQueryResult.h
-    include/mysqlxx/Value.h
+    Connection.cpp
+    Exception.cpp
+    Query.cpp
+    ResultBase.cpp
+    StoreQueryResult.cpp
+    UseQueryResult.cpp
+    Row.cpp
+    Value.cpp
+    Pool.cpp
+    PoolFactory.cpp
+    PoolWithFailover.cpp
 )
 
-target_include_directories (mysqlxx PUBLIC include)
+target_include_directories (mysqlxx PUBLIC ..)
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
     target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include)
@@ -46,7 +32,7 @@ else ()
     endif ()
 endif ()
 
-target_link_libraries(mysqlxx PUBLIC common ${Poco_Util_LIBRARY} ${Poco_Foundation_LIBRARY} PRIVATE ${MYSQLCLIENT_LIBRARIES} PUBLIC ${Boost_SYSTEM_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
+target_link_libraries(mysqlxx PUBLIC common PRIVATE ${MYSQLCLIENT_LIBRARIES} PUBLIC ${Boost_SYSTEM_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
 if(OPENSSL_LIBRARIES)
     target_link_libraries(mysqlxx PRIVATE ${OPENSSL_LIBRARIES})
 endif()
@@ -57,5 +43,5 @@ if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
 endif ()
 
 if (ENABLE_TESTS)
-    add_subdirectory (src/tests)
+    add_subdirectory (tests)
 endif ()

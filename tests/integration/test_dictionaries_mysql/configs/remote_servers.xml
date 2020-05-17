@@ -1,0 +1,12 @@
+<yandex>
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <replica>
+                    <host>instance</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+    </remote_servers>
+</yandex>
