@@ -15,7 +15,21 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_01037.points;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;"
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "./01037_test_data"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "./01037_point_data"
+
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_01037.polygons_array;"
+
+$CLICKHOUSE_CLIENT --query="
+CREATE TABLE test_01037.polygons_array
+(
+   key Array(Array(Array(Array(Float64)))),
+   name String,
+   value UInt64
+)
+ENGINE = Memory;
+"
+
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --max_insert_block_size=100000 < "./01037_polygon_data"
 
 for type in ${SearchTypes[@]};
 do
@@ -29,27 +43,11 @@ do
     value UInt64 DEFAULT 101
     )
     PRIMARY KEY key
-    SOURCE(FILE(path './user_files/test.json' format 'JSONEachRow'))
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
     LIFETIME(MIN 1 MAX 10)
     LAYOUT($type());"
 
     echo $type array finished
-
-    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY IF EXISTS test_01037.dict_tuple;"
-
-    $CLICKHOUSE_CLIENT -n --query="
-    CREATE DICTIONARY test_01037.dict_tuple
-    (
-    key Array(Array(Array(Tuple(Float64, Float64)))),
-    name String DEFAULT 'qqq',
-    value UInt64 DEFAULT 101
-    )
-    PRIMARY KEY key
-    SOURCE(FILE(path './user_files/test.json' format 'JSONEachRow'))
-    LIFETIME(MIN 1 MAX 10)
-    LAYOUT($type());"
-
-    echo $type tuple finished
 
     $CLICKHOUSE_CLIENT -n --query="
     select 'dictGet', 'test_01037.dict_array' as dict_name, tuple(x, y) as key,
@@ -59,16 +57,7 @@ do
 
     echo $type array query finished
 
-    $CLICKHOUSE_CLIENT -n --query="
-    select 'dictGet', 'test_01037.dict_tuple' as dict_name, tuple(x, y) as key,
-       dictGet(dict_name, 'name', key),
-       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
-    " > $TMP_DIR/results$type.out
-
-    echo $type tuple query finished
-
     $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
-    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_tuple;"
 
     echo $type finished
 done
