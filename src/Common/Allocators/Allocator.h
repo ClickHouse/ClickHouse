@@ -22,7 +22,11 @@ static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
 namespace DB::ErrorCodes
 {
-    extern const int CANNOT_MREMAP;
+extern const int SYSTEM_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int CANNOT_ALLOCATE_MEMORY;
+extern const int CANNOT_MUNMAP;
+extern const int CANNOT_MREMAP;
 }
 
 /**
