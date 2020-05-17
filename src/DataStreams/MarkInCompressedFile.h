@@ -5,8 +5,7 @@
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
-#include <Common/IGrabberAllocator.h>
-#include <Common/Allocator_fwd.h>
+#include <Common/Allocators/Allocator.h>
 
 namespace DB
 {

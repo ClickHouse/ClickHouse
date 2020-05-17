@@ -4,7 +4,7 @@
 #include <Core/Types.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
-#include <Common/Allocator.h>
+#include <Common/Allocators/Allocator.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/IDataType.h>

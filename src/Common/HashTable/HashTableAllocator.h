@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Allocators/Allocator.h>
+#include <Common/Allocators/Allocator_fwd.h>
 
 /**
   * We are going to use the entire memory we allocated when resizing a hash
