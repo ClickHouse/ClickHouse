@@ -306,7 +306,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     auto stream = block_io.getInputStream();
     Block res = stream->read();
 
-    if (res && block_io.in->read())
+    if (res && stream->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;
