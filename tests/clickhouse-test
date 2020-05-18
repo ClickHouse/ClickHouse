@@ -235,6 +235,9 @@ def run_tests_array(all_tests_with_params):
                         clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
                     if not args.no_system_log_cleanup:
+                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        clickhouse_proc.communicate("SYSTEM FLUSH LOGS")
+
                         for table in ['query_log', 'query_thread_log', 'trace_log', 'metric_log']:
                             clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                             clickhouse_proc.communicate("TRUNCATE TABLE IF EXISTS system.{}".format(table))
