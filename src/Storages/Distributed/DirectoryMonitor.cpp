@@ -215,8 +215,10 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
     auto pools = createPoolsForAddresses(name, pool_factory);
 
     const auto settings = storage.global_context.getSettings();
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
-        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
+        settings.load_balancing,
+        settings.distributed_replica_error_half_life.totalSeconds(),
+        settings.distributed_replica_error_cap);
 }
 
 
@@ -274,7 +276,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ClientInfo client_info;
         readHeader(in, insert_settings, insert_query, client_info, log);
 
-        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings, &client_info};
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -463,7 +465,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings, &client_info);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, insert_settings, client_info);
                     remote->writePrefix();
                 }
 
