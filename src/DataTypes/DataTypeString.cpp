@@ -15,6 +15,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
@@ -26,6 +29,14 @@
 
 namespace DB
 {
+
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_AST_STRUCTURE;
+}
+
 
 void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -366,12 +377,24 @@ bool DataTypeString::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments) {
+        if (arguments->children.size() > 1)
+            throw Exception("String data type family mustnt have more than one argument - size in characters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const auto * argument = arguments->children[0]->as<ASTLiteral>();
+        if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
+            throw Exception("FixedString data type family may have only a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    }
+
+    return std::make_shared<DataTypeString>();
+}
+
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
-    auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });
-
-    factory.registerSimpleDataType("String", creator);
+    factory.registerDataType("String", create);
 
     /// These synonyms are added for compatibility.
 
