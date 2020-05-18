@@ -112,55 +112,54 @@ template <typename T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_range) const
 {
     if (limit >= data.size() || limit >= equal_range.back().second)
-    {
         limit = 0;
-    }
+
     size_t n = equal_range.size();
     if (limit)
-    {
         --n;
-    }
+
     EqualRanges new_ranges;
     for (size_t i = 0; i < n; ++i)
     {
         const auto& [first, last] = equal_range[i];
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last, [this](size_t a, size_t b) { return data[a] > data[b]; });
+            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last, [this](size_t a, size_t b) { return data[a] < data[b]; });
+            std::partial_sort(res.begin() + first, res.begin() + last, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
         auto new_first = first;
         for (auto j = first + 1; j < last; ++j)
         {
             if (data[res[new_first]] != data[res[j]])
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
         if (last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, last);
-        }
     }
+
     if (limit)
     {
         const auto& [first, last] = equal_range.back();
         if (reverse)
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this](size_t a, size_t b) { return data[a] > data[b]; });
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, [this](size_t a, size_t b) { return data[a] < data[b]; });
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
         auto new_first = first;
         for (auto j = first + 1; j < limit; ++j)
         {
             if (data[res[new_first]] != data[res[j]])
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
@@ -174,9 +173,7 @@ void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColum
             }
         }
         if (new_last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, new_last);
-        }
     }
     equal_range = std::move(new_ranges);
 }
