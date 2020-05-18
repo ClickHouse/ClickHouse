@@ -13,7 +13,7 @@ class AddingSelectorTransform : public ISimpleTransform
 {
 public:
     AddingSelectorTransform(const Block & header, size_t num_outputs_, ColumnNumbers key_columns_);
-    String getName() const override { return "SplittingByHash"; }
+    String getName() const override { return "AddingSelector"; }
     void transform(Chunk & input_chunk, Chunk & output_chunk) override;
 
 private:
