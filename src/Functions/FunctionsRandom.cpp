@@ -103,7 +103,8 @@ void RandImpl2::execute(char * output, size_t size)
         unalignedStore<UInt32>(output + 28, generator7.next());
     }
 
-    if (end - output > 0) {
+    if (end - output > 0)
+    {
         unalignedStore<UInt32>(output, generator0.next());
         unalignedStore<UInt32>(output + 4, generator1.next());
         unalignedStore<UInt32>(output + 8, generator2.next());
