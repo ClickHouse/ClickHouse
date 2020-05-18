@@ -299,7 +299,6 @@ def test_rename_with_parallel_insert(started_cluster):
         drop_table(nodes, table_name)
 
 
-@pytest.mark.skip(reason="For unknown reason one of these tests kill Zookeeper")
 def test_rename_with_parallel_merges(started_cluster):
     table_name = "test_rename_with_parallel_merges"
     drop_table(nodes, table_name)
@@ -337,7 +336,6 @@ def test_rename_with_parallel_merges(started_cluster):
         drop_table(nodes, table_name)
 
 
-@pytest.mark.skip(reason="For unknown reason one of these tests kill Zookeeper")
 def test_rename_with_parallel_slow_insert(started_cluster):
     table_name = "test_rename_with_parallel_slow_insert"
     drop_table(nodes, table_name)
@@ -499,7 +497,6 @@ def test_rename_with_parallel_ttl_delete(started_cluster):
         drop_table(nodes, table_name)
 
 
-@pytest.mark.skip(reason="For unknown reason one of these tests kill Zookeeper")
 def test_rename_distributed(started_cluster):
     table_name = 'test_rename_distributed'
     try:
@@ -516,7 +513,6 @@ def test_rename_distributed(started_cluster):
         drop_distributed_table(node1, table_name)
 
 
-@pytest.mark.skip(reason="For unknown reason one of these tests kill Zookeeper")
 def test_rename_distributed_parallel_insert_and_select(started_cluster):
     table_name = 'test_rename_distributed_parallel_insert_and_select'
     try:
