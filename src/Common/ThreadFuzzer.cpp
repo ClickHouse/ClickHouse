@@ -125,6 +125,7 @@ void ThreadFuzzer::initConfiguration()
     pthread_mutex_lock_after_migrate_probability = 1;
     pthread_mutex_unlock_before_migrate_probability = 1;
     pthread_mutex_unlock_after_migrate_probability = 1;
+#endif
 }
 
 
