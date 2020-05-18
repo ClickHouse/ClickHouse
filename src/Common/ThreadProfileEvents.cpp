@@ -166,8 +166,9 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
 
 thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
 thread_local bool PerfEventsCounters::thread_events_descriptors_opened = false;
-thread_local PerfEventsCounters * PerfEventsCounters::current_thread_counters = nullptr;
+thread_local std::optional<PerfEventsCounters::Id> PerfEventsCounters::current_thread_counters_id = std::nullopt;
 
+std::atomic<PerfEventsCounters::Id> PerfEventsCounters::counters_id = 0;
 std::atomic<bool> PerfEventsCounters::perf_unavailability_logged = false;
 std::atomic<bool> PerfEventsCounters::particular_events_unavailability_logged = false;
 
@@ -262,11 +263,10 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
 
 void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
 {
-    if (current_thread_counters == &counters)
-        return;
-    if (current_thread_counters != nullptr)
+    if (current_thread_counters_id.has_value())
     {
-        LOG_WARNING(getLogger(), "Only one instance of `PerfEventsCounters` can be used on the thread");
+        if (current_thread_counters_id != counters.id)
+            LOG_WARNING(getLogger(), "Only one instance of `PerfEventsCounters` can be used on the thread");
         return;
     }
 
@@ -282,12 +282,12 @@ void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
             ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
     }
 
-    current_thread_counters = &counters;
+    current_thread_counters_id = counters.id;
 }
 
 void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events)
 {
-    if (current_thread_counters != &counters)
+    if (current_thread_counters_id != counters.id)
         return;
     if (!thread_events_descriptors_opened)
         return;
@@ -330,8 +330,10 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
             LOG_WARNING(getLogger(), "Can't reset perf event with file descriptor: " << fd);
     }
 
-    current_thread_counters = nullptr;
+    current_thread_counters_id.reset();
 }
+
+PerfEventsCounters::PerfEventsCounters(): id(counters_id++) {}
 
 PerfDescriptorsHolder::PerfDescriptorsHolder()
 {
