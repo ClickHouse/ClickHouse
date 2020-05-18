@@ -271,7 +271,7 @@ void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
 {
     if (current_thread_counters_id.has_value())
     {
-        if (current_thread_counters_id != counters.id)
+        if (current_thread_counters_id == counters.id)
             LOG_WARNING(getLogger(), "Only one instance of `PerfEventsCounters` can be used on the thread");
         return;
     }
