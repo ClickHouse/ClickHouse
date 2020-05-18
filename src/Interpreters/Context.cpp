@@ -1044,7 +1044,7 @@ void Context::setCurrentDatabase(const String & name)
 }
 
 
-void Context::setUserAgent(const components::UserAgent * useragent)
+void Context::setUserAgent(components::UserAgent * useragent)
 {
     userAgent = useragent;
 }

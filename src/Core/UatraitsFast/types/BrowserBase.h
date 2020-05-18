@@ -12,3 +12,4 @@ std::optional<BrowserBase> browserBaseFromString(const std::string & browser_bas
 const std::string & toString(const BrowserBase browser_base);
 const std::string & toString(const std::optional<BrowserBase> & browser_base);
 } // namespace uatraits::types
+

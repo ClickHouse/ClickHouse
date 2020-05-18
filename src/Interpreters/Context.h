@@ -24,7 +24,7 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
-#include <Core/UatraitsFast/UserAgent.h>
+#include <Core/UatraitsFast/uatraits/UserAgent.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -349,7 +349,7 @@ public:
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void setUserAgent(const components::UserAgent * useragent);
+    void setUserAgent(components::UserAgent * useragent);
     const components::UserAgent * getUserAgent() const;
 
     void killCurrentQuery();

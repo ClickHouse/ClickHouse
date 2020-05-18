@@ -28,3 +28,4 @@ struct hash<uatraits::types::OperatingSystem>
     }
 };
 } // namespace std
+
