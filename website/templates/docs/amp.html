@@ -11,12 +11,12 @@
     <style amp-custom>CUSTOM_CSS_PLACEHOLDER</style>
     <script async custom-element="amp-analytics" src="https://cdn.ampproject.org/v0/amp-analytics-0.1.js"></script>
   </head>
-  <body dir="{{ direction or 'ltr' }}">
+  <body class="amp" dir="{{ direction or 'ltr' }}">
     <div class="container-fluid container-lg pb-5">
       <div class="row pt-3 mb-3">
         <div class="col">
           <a href="/" class="text-decoration-none">
-            <amp-img class="d-inline-block mr-3" layout="fixed" width="40" height="36" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"></amp-img><amp-img class="d-inline-block" layout="fixed" width="238" height="36" src="/images/clickhouse-black.svg" alt="ClickHouse" title="ClickHouse"></amp-img>
+            <amp-img class="d-inline-block mr-3" layout="fixed" width="40" height="36" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"></amp-img><amp-img class="invert-dark d-inline-block" layout="fixed" width="238" height="36" src="/images/clickhouse-black.svg" alt="ClickHouse" title="ClickHouse"></amp-img>
           </a>
         </div>
       </div>
@@ -31,7 +31,7 @@
           {% include "templates/docs/footer.html" %}
         </div>
       </div>
-      <div class="row fixed-bottom text-center bg-white py-3">
+      <div id="to-full-website" class="row fixed-bottom text-center bg-white py-3">
         <div class="col">
           <a class="btn btn-lg btn-outline-orange" href="{{ url }}">To full website</a>
         </div>
