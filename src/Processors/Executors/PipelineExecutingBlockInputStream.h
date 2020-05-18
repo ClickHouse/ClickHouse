@@ -32,8 +32,8 @@ protected:
     Block readImpl() override;
 
 private:
-    std::unique_ptr<PullingPipelineExecutor> executor;
     std::unique_ptr<QueryPipeline> pipeline;
+    std::unique_ptr<PullingPipelineExecutor> executor;
 };
 
 }
