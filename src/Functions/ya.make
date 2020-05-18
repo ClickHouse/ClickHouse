@@ -283,6 +283,7 @@ SRCS(
     rand.cpp
     randomPrintableASCII.cpp
     randomString.cpp
+    randomStringUTF8.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
