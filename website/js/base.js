@@ -35,9 +35,9 @@
 
     var top_nav = $('#top-nav.sticky-top');
     if (window.location.hash.length > 1 && top_nav.length) {
-        var hash_desrination = $(window.location.hash);
-        if (hash_desrination.length) {
-            var offset = hash_desrination.offset().top - top_nav.height() * 1.5;
+        var hash_destination = $(window.location.hash);
+        if (hash_destination.length) {
+            var offset = hash_destination.offset().top - top_nav.height() * 1.5;
             $('html, body').animate({
                 scrollTop: offset
             }, 70);
