@@ -38,6 +38,7 @@
 
 #### Experimental Feature
 * Added experimental database engine Atomic. It supports non-blocking `DROP` and `RENAME TABLE` queries and atomic `EXCHANGE TABLES t1 AND t2` query [#7512](https://github.com/ClickHouse/ClickHouse/pull/7512) ([tavplubix](https://github.com/tavplubix))
+* Initial support for ReplicatedMergeTree over S3 (it works in suboptimal way) [#10126](https://github.com/ClickHouse/ClickHouse/pull/10126) ([Pavel Kovalenko](https://github.com/Jokser))
 
 #### Bug Fix
 * Fixed incorrect scalar results inside inner query of `MATERIALIZED VIEW` in case if this query contained dependent table [#10603](https://github.com/ClickHouse/ClickHouse/pull/10603) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
@@ -171,7 +172,6 @@
 * Add config option `system_tables_lazy_load`. If it's set to false, then system tables with logs are loaded at the server startup. [Alexander Burmak](https://github.com/Alex-Burmak), [Svyatoslav Tkhon Il Pak](https://github.com/DeifyTheGod), [#9642](https://github.com/ClickHouse/ClickHouse/pull/9642) [#10359](https://github.com/ClickHouse/ClickHouse/pull/10359) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use background thread pool (background_schedule_pool_size) for distributed sends [#10263](https://github.com/ClickHouse/ClickHouse/pull/10263) ([Azat Khuzhin](https://github.com/azat))
 * Use background thread pool for background buffer flushes. [#10315](https://github.com/ClickHouse/ClickHouse/pull/10315) ([Azat Khuzhin](https://github.com/azat))
-* Support ReplicatedMergeTree over S3 [#10126](https://github.com/ClickHouse/ClickHouse/pull/10126) ([Pavel Kovalenko](https://github.com/Jokser))
 * Support for one special case of removing incompletely written parts. This fixes [#9940](https://github.com/ClickHouse/ClickHouse/issues/9940). [#10221](https://github.com/ClickHouse/ClickHouse/pull/10221) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use isInjective() over manual list of such functions for GROUP BY optimization. [#10342](https://github.com/ClickHouse/ClickHouse/pull/10342) ([Azat Khuzhin](https://github.com/azat))
 * Improve MsgPack input format by adding msgpack::visitor concept instead of msgpack::unpack concept. [#10325](https://github.com/ClickHouse/ClickHouse/pull/10325) ([Kruglov Pavel](https://github.com/Avogar))
