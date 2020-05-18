@@ -25,7 +25,7 @@ class GRPCClient
             GRPCConnection::QueryResponse reply;
             grpc::ClientContext context;
             auto deadline = std::chrono::system_clock::now() + std::chrono::milliseconds(10000);
-            // context.set_deadline(deadline);
+            context.set_deadline(deadline);
 
             auto user = std::make_unique<GRPCConnection::User>(userInfo);
             auto querySettigs = std::make_unique<GRPCConnection::QuerySettings>();

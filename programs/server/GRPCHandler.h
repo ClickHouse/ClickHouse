@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include "IServer.h"
 #include <Poco/RunnableAdapter.h>
-#include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -52,7 +52,7 @@ class CallDataQuery : public CommonCallData
 {
      public:
           CallDataQuery(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* notification_cq_, grpc::ServerCompletionQueue* new_call_cq_, IServer* server_, Poco::Logger * log_)
-          : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context()), pool(1)
+          : CommonCallData(Service_, notification_cq_, new_call_cq_, server_, log_), responder(&gRPCcontext), context(iServer->context())
           {
                detailsStatus = SEND_TOTALS;
                status = START_QUERY;
@@ -91,16 +91,6 @@ class CallDataQuery : public CommonCallData
           virtual void respond() override;
           virtual ~CallDataQuery() override
           {
-               if (lazy_format)
-                    lazy_format->finish();
-               try
-               {
-                    pool.wait();
-               }
-               catch (...)
-               {
-                    //
-               }
                query_watch.stop();
                progress_watch.stop();
                query_context.reset();
@@ -119,12 +109,9 @@ class CallDataQuery : public CommonCallData
           DetailsStatus detailsStatus;
           Status status;
 
-          std::shared_ptr<LazyOutputFormat> lazy_format;
           BlockIO io;
-          PipelineExecutorPtr executor;
           Context context;
-          ThreadPool pool;
-          std::atomic_bool exception = false;
+          std::shared_ptr<PullingPipelineExecutor> executor;
           std::optional<Context> query_context;
 
           std::shared_ptr<WriteBufferFromGRPC> out;

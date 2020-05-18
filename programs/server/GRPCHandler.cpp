@@ -75,8 +75,6 @@ void CallDataQuery::respond()
     } 
     catch(...)
     {
-        if (executor)
-            executor->cancel();
         io.onException();
         
         tryLogCurrentException(log);
@@ -106,8 +104,10 @@ void CallDataQuery::ParseQuery()
 
     query_context = context;
     query_scope.emplace(*query_context);
-    query_context->setUser(user, password, user_adress, quota_key);
+    query_context->setUser(user, password, user_adress);
     query_context->setCurrentQueryId(request.query_info().query_id());
+    if (!quota_key.empty())
+        query_context->setQuotaKey(quota_key);
 
     SettingsChanges settings_changes;
     for (const auto & [key, value] : request.query_info().settings())
@@ -240,27 +240,9 @@ void CallDataQuery::ExecuteQuery()
     LOG_TRACE(log, "Execute Query");
     if (io.pipeline.initialized())
     {
-        auto & header = io.pipeline.getHeader();
-        auto thread_group = CurrentThread::getGroup();
-
-        lazy_format = std::make_shared<LazyOutputFormat>(io.pipeline.getHeader());
-        io.pipeline.setOutput(lazy_format);
-        executor = io.pipeline.execute();
-
-        pool.scheduleOrThrowOnError([&]()
-        {
-            try
-            {
-                executor->execute(io.pipeline.getNumThreads());
-            }
-            catch (...)
-            {
-                exception = true;
-                throw;
-            }
-        });
         query_watch.start();
         progress_watch.start();
+        executor = std::make_shared<PullingPipelineExecutor>(io.pipeline);
         ProgressQuery();
     }
     else
@@ -273,33 +255,27 @@ void CallDataQuery::ProgressQuery()
 {
     status = PROGRESS;
     bool sent = false;
-    while (!lazy_format->isFinished() && !exception)
+
+    Block block;
+    while (executor->pull(block, query_watch.elapsedMilliseconds()))
     {
-        if (auto block = lazy_format->getBlock(query_watch.elapsedMilliseconds()))
+        if (block)
         {
-            query_watch.restart();
             if (!io.null_format)
-            {
                 sent = sendData(block); 
                 break;
-            }
         }
-        //To make detached thread do something
-        LOG_TRACE(log, "Progress Query");
-
-        // interactive_delay in miliseconds
         if (progress_watch.elapsedMilliseconds() >= interactive_delay)
         {
             progress_watch.restart();
             sent = sendProgress(); 
             break;
         }
+        query_watch.restart();
+        
     }
-    
-    if ((lazy_format->isFinished() || exception) && !sent)
+    if (!sent)
     {
-        lazy_format->finish();
-        pool.wait();
         SendDetails();
     }
 }
@@ -312,13 +288,13 @@ void CallDataQuery::SendDetails()
         {
             case SEND_TOTALS:
             {
-                sent = sendTotals(lazy_format->getTotals());
+                sent = sendTotals(executor->getTotalsBlock());
                 detailsStatus = SEND_EXTREMES;
                 break;
             }
             case SEND_EXTREMES:
             {
-                sent = sendExtremes(lazy_format->getExtremes());
+                sent = sendExtremes(executor->getExtremesBlock());
                 detailsStatus = FINISH;
                 break;
             }
