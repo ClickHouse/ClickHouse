@@ -529,14 +529,14 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `thread_name` (String) — Название потока, из которого была сделана запись.
 -   `thread_id` (UInt64) — Идентификатор потока ОС.
 -   `level` (Enum8) — Уровень логирования записи. Возможные значения:
-    -   `1` — Fatal.
-    -   `2` — Critical.
-    -   `3` — Error.
-    -   `4` — Warning.
-    -   `5` — Notice.
-    -   `6` — Information.
-    -   `7` — Debug.
-    -   `8` — Trace.
+    -   `1` или `'Fatal'`.
+    -   `2` или `'Critical'`.
+    -   `3` или `'Error'`.
+    -   `4` или `'Warning'`.
+    -   `5` или `'Notice'`.
+    -   `6` или `'Information'`.
+    -   `7` или `'Debug'`.
+    -   `8` или `'Trace'`.
 -   `query_id` (String) — Идентификатор запроса.
 -   `logger_name` (LowCardinality(String)) — Название логгера (`DDLWorker`).
 -   `message` (String) — Само тело записи.
