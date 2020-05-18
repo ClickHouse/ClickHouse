@@ -124,10 +124,11 @@ namespace
 }
 
 template <typename T>
-void inplacePartialSwapHelper(T& arr, size_t bound, bool reverse) {
+void inplacePartialSwapHelper(T& arr, size_t bound)
+{
     std::reverse(std::begin(arr), std::begin(arr) + bound);
     std::reverse(std::begin(arr) + bound, std::end(arr));
-    if (!reverse) std::reverse(std::begin(arr), std::end(arr));
+    std::reverse(std::begin(arr), std::end(arr));
 }
 
 template <typename T>
@@ -188,28 +189,27 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                 for (UInt32 i = 0; i < UInt32(s); ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, res.data());
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
-                size_t nans_to_move = 0;
                 if (std::is_floating_point_v<T> && nan_direction_hint < 0)
                 {
-                    for (ssize_t i = s - 1; i >= 0; --i)
+                    size_t nans_to_move = 0;
+
+                    for (size_t i = 0; i < s; ++i)
                     {
-                        if (isNaN(data[res[i]]))
+                        if (isNaN(data[res[reverse ? i : s - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
                     }
-                }
 
-                if (nans_to_move) {
-                    inplacePartialSwapHelper(res, s - nans_to_move, reverse);
-                } else if (reverse) {
-                    std::reverse(std::begin(res), std::end(res));
+                    if (nans_to_move)
+                    {
+                        inplacePartialSwapHelper(res, reverse ? nans_to_move : s - nans_to_move);
+                    }
                 }
-
                 return;
             }
         }

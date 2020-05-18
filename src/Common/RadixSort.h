@@ -313,7 +313,7 @@ private:
 
 public:
     /// Least significant digit radix sort (stable)
-    static void executeLSD(Element * arr, size_t size, Index * destination = NULL)
+    static void executeLSD(Element * arr, size_t size, bool reverse = false, Index * destination = nullptr)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
@@ -386,13 +386,19 @@ public:
                 size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
 
                 /// Place the element on the next free position.
-                writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractIndex(reader[i]);
+                if (reverse)
+                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractIndex(reader[i]);
+                else
+                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractIndex(reader[i]);
             }
         } else if (NUM_PASSES % 2)
         {
             /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
             /// NOTE Sometimes it will be more optimal to provide non-destructive interface, that will not modify original array.
             memcpy(arr, swap_buffer, size * sizeof(Element));
+        } else if (reverse)
+        {
+            std::reverse(arr, arr + size);
         }
 
         allocator.deallocate(swap_buffer, size * sizeof(Element));
