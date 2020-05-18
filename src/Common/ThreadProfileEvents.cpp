@@ -117,32 +117,39 @@ static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profil
         {
             .event_type = perf_type_id::PERF_TYPE_SOFTWARE,
             .event_config = event_config,
-            .profile_event = profile_event
+            .profile_event = profile_event,
+            .profile_event_running = std::nullopt,
+            .profile_event_enabled = std::nullopt
         };
 }
 
-static PerfEventInfo hardwareEvent(int event_config, ProfileEvents::Event profile_event)
+static PerfEventInfo hardwareEvent(int event_config, ProfileEvents::Event profile_event, std::optional<ProfileEvents::Event> pe_running, std::optional<ProfileEvents::Event> pe_enabled)
 {
     return PerfEventInfo
         {
             .event_type = perf_type_id::PERF_TYPE_HARDWARE,
             .event_config = event_config,
-            .profile_event = profile_event
+            .profile_event = profile_event,
+            .profile_event_running = pe_running,
+            .profile_event_enabled = pe_enabled
         };
 }
 
+#define HARDWARE_WITH_TIME(EVENT_NAME) \
+    hardwareEvent(EVENT_NAME, ProfileEvents::EVENT_NAME, {ProfileEvents::EVENT_NAME##_RUNNING}, {ProfileEvents::EVENT_NAME##_ENABLED})
+
 // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
 const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
-    hardwareEvent(PERF_COUNT_HW_CPU_CYCLES, ProfileEvents::PERF_COUNT_HW_CPU_CYCLES),
-    hardwareEvent(PERF_COUNT_HW_INSTRUCTIONS, ProfileEvents::PERF_COUNT_HW_INSTRUCTIONS),
-    hardwareEvent(PERF_COUNT_HW_CACHE_REFERENCES, ProfileEvents::PERF_COUNT_HW_CACHE_REFERENCES),
-    hardwareEvent(PERF_COUNT_HW_CACHE_MISSES, ProfileEvents::PERF_COUNT_HW_CACHE_MISSES),
-    hardwareEvent(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, ProfileEvents::PERF_COUNT_HW_BRANCH_INSTRUCTIONS),
-    hardwareEvent(PERF_COUNT_HW_BRANCH_MISSES, ProfileEvents::PERF_COUNT_HW_BRANCH_MISSES),
-    hardwareEvent(PERF_COUNT_HW_BUS_CYCLES, ProfileEvents::PERF_COUNT_HW_BUS_CYCLES),
-    hardwareEvent(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, ProfileEvents::PERF_COUNT_HW_STALLED_CYCLES_FRONTEND),
-    hardwareEvent(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, ProfileEvents::PERF_COUNT_HW_STALLED_CYCLES_BACKEND),
-    hardwareEvent(PERF_COUNT_HW_REF_CPU_CYCLES, ProfileEvents::PERF_COUNT_HW_REF_CPU_CYCLES),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_CPU_CYCLES),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_INSTRUCTIONS),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_CACHE_REFERENCES),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_CACHE_MISSES),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_BRANCH_INSTRUCTIONS),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_BRANCH_MISSES),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_BUS_CYCLES),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_STALLED_CYCLES_BACKEND),
+    HARDWARE_WITH_TIME(PERF_COUNT_HW_REF_CPU_CYCLES),
     // This reports the CPU clock, a high-resolution per-CPU timer.
     // a bit broken according to this: https://stackoverflow.com/a/56967896
 //            softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PERF_COUNT_SW_CPU_CLOCK),
@@ -159,7 +166,7 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
     // without requiring a counting event.
 //            softwareEventInfo(PERF_COUNT_SW_DUMMY, ProfileEvents::PERF_COUNT_SW_DUMMY)
 };
-static_assert(std::size(PerfEventsCounters::raw_events_info) == PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
+#undef HARDWARE_WITH_TIME
 
 thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
 thread_local bool PerfEventsCounters::thread_events_descriptors_opened = false;
@@ -173,7 +180,7 @@ Logger * PerfEventsCounters::getLogger()
     return &Logger::get("PerfEventsCounters");
 }
 
-UInt64 PerfEventsCounters::getRawValue(int event_type, int event_config) const
+PerfEventValue PerfEventsCounters::getRawValue(int event_type, int event_config) const
 {
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
@@ -183,7 +190,7 @@ UInt64 PerfEventsCounters::getRawValue(int event_type, int event_config) const
     }
 
     LOG_WARNING(getLogger(), "Can't find perf event info for event_type=" << event_type << ", event_config=" << event_config);
-    return 0;
+    return {};
 }
 
 static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
@@ -226,6 +233,7 @@ static void perfEventOpenDisabled(Int32 perf_event_paranoid, bool has_cap_sys_ad
     pe.disabled = 1;
     // can record kernel only when `perf_event_paranoid` <= 1 or have CAP_SYS_ADMIN
     pe.exclude_kernel = perf_event_paranoid >= 2 && !has_cap_sys_admin;
+    pe.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING;
 
     event_file_descriptor = openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
 }
@@ -258,7 +266,7 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
     bool log_unsupported_event = particular_events_unavailability_logged.compare_exchange_strong(expected, true);
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
-        counters.raw_event_values[i] = 0;
+        counters.raw_event_values[i] = {};
         const PerfEventInfo & event_info = raw_events_info[i];
         int & fd = thread_events_descriptors_holder.descriptors[i];
         perfEventOpenDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config, fd);
@@ -287,8 +295,8 @@ void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
     if (!initializeThreadLocalEvents(counters))
         return;
 
-    for (UInt64 & raw_value : counters.raw_event_values)
-        raw_value = 0;
+    for (PerfEventValue & raw_value : counters.raw_event_values)
+        raw_value = {};
 
     for (int fd : thread_events_descriptors_holder.descriptors)
     {
@@ -319,7 +327,7 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
         if (read(fd, &counters.raw_event_values[i], bytes_to_read) != bytes_to_read)
         {
             LOG_WARNING(getLogger(), "Can't read event value from file descriptor: " << fd);
-            counters.raw_event_values[i] = 0;
+            counters.raw_event_values[i] = {};
         }
     }
 
@@ -330,7 +338,13 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
         if (fd == -1)
             continue;
 
-        profile_events.increment(raw_events_info[i].profile_event, counters.raw_event_values[i]);
+        const PerfEventInfo & info = raw_events_info[i];
+        const PerfEventValue & raw_value = counters.raw_event_values[i];
+        profile_events.increment(info.profile_event, raw_value.value);
+        if (info.profile_event_running.has_value())
+            profile_events.increment(info.profile_event_running.value(), raw_value.time_running);
+        if (info.profile_event_enabled.has_value())
+            profile_events.increment(info.profile_event_enabled.value(), raw_value.time_enabled);
 
         if (ioctl(fd, PERF_EVENT_IOC_DISABLE, 0))
             LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << fd);
@@ -339,14 +353,14 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
     }
 
     // process custom events which depend on the raw ones
-    UInt64 hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES);
-    UInt64 hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES);
+    UInt64 hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES).value;
+    UInt64 hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES).value;
 
     UInt64 instructions_per_cpu_scaled = hw_cpu_cycles != 0
-                                         ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS) / hw_cpu_cycles
+                                         ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS).value / hw_cpu_cycles
                                          : 0;
     UInt64 instructions_per_cpu = hw_ref_cpu_cycles != 0
-                                  ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS) / hw_ref_cpu_cycles
+                                  ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS).value / hw_ref_cpu_cycles
                                   : 0;
 
     profile_events.increment(ProfileEvents::PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE_SCALED, instructions_per_cpu_scaled);

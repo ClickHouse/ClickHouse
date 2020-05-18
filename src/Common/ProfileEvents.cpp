@@ -179,15 +179,35 @@
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
     M(PERF_COUNT_HW_CPU_CYCLES, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
+    M(PERF_COUNT_HW_CPU_CYCLES_RUNNING, "Total cycles (<time running>).")  \
+    M(PERF_COUNT_HW_CPU_CYCLES_ENABLED, "Total cycles (<time enabled>).")  \
     M(PERF_COUNT_HW_INSTRUCTIONS, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
+    M(PERF_COUNT_HW_INSTRUCTIONS_RUNNING, "Retired instructions (<time running>).") \
+    M(PERF_COUNT_HW_INSTRUCTIONS_ENABLED, "Retired instructions (<time enabled> * 100%).") \
     M(PERF_COUNT_HW_CACHE_REFERENCES, "Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
+    M(PERF_COUNT_HW_CACHE_REFERENCES_RUNNING, "Cache accesses (<time running>).") \
+    M(PERF_COUNT_HW_CACHE_REFERENCES_ENABLED, "Cache accesses (<time enabled>).") \
     M(PERF_COUNT_HW_CACHE_MISSES, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in con‐junction with the PERF_COUNT_HW_CACHE_REFERENCES event to calculate cache miss rates.") \
+    M(PERF_COUNT_HW_CACHE_MISSES_RUNNING, "Cache misses (<time running> / <time enabled> * 100%).") \
+    M(PERF_COUNT_HW_CACHE_MISSES_ENABLED, "Cache misses (<time enabled>).") \
     M(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, "Retired branch instructions. Prior to Linux 2.6.35, this used the wrong event on AMD processors.") \
+    M(PERF_COUNT_HW_BRANCH_INSTRUCTIONS_RUNNING, "Retired branch instructions (<time running>).") \
+    M(PERF_COUNT_HW_BRANCH_INSTRUCTIONS_ENABLED, "Retired branch instructions (<time enabled>).") \
     M(PERF_COUNT_HW_BRANCH_MISSES, "Mispredicted branch instructions.") \
+    M(PERF_COUNT_HW_BRANCH_MISSES_RUNNING, "Mispredicted branch instructions (<time running>).") \
+    M(PERF_COUNT_HW_BRANCH_MISSES_ENABLED, "Mispredicted branch instructions (<time enabled>).") \
     M(PERF_COUNT_HW_BUS_CYCLES, "Bus cycles, which can be different from total cycles.") \
+    M(PERF_COUNT_HW_BUS_CYCLES_RUNNING, "Bus cycles, which can be different from total cycles (<time running>).") \
+    M(PERF_COUNT_HW_BUS_CYCLES_ENABLED, "Bus cycles, which can be different from total cycles (<time enabled>).") \
     M(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, "Stalled cycles during issue.") \
+    M(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND_RUNNING, "Stalled cycles during issue (<time running>).") \
+    M(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND_ENABLED, "Stalled cycles during issue (<time enabled>).") \
     M(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, "Stalled cycles during retirement.") \
+    M(PERF_COUNT_HW_STALLED_CYCLES_BACKEND_RUNNING, "Stalled cycles during retirement (<time running>).") \
+    M(PERF_COUNT_HW_STALLED_CYCLES_BACKEND_ENABLED, "Stalled cycles during retirement (<time enabled>).") \
     M(PERF_COUNT_HW_REF_CPU_CYCLES, "Total cycles; not affected by CPU frequency scaling.") \
+    M(PERF_COUNT_HW_REF_CPU_CYCLES_RUNNING, "Total cycles; not affected by CPU frequency scaling (<time running>).") \
+    M(PERF_COUNT_HW_REF_CPU_CYCLES_ENABLED, "Total cycles; not affected by CPU frequency scaling (<time enabled>).") \
     \
     M(PERF_COUNT_SW_TASK_CLOCK, "A clock count specific to the task that is running") \
     M(PERF_COUNT_SW_PAGE_FAULTS, "Number of page faults") \

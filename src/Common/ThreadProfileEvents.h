@@ -37,15 +37,35 @@ namespace ProfileEvents
     extern const Event OSWriteBytes;
 
     extern const Event PERF_COUNT_HW_CPU_CYCLES;
+    extern const Event PERF_COUNT_HW_CPU_CYCLES_RUNNING;
+    extern const Event PERF_COUNT_HW_CPU_CYCLES_ENABLED;
     extern const Event PERF_COUNT_HW_INSTRUCTIONS;
+    extern const Event PERF_COUNT_HW_INSTRUCTIONS_RUNNING;
+    extern const Event PERF_COUNT_HW_INSTRUCTIONS_ENABLED;
     extern const Event PERF_COUNT_HW_CACHE_REFERENCES;
+    extern const Event PERF_COUNT_HW_CACHE_REFERENCES_RUNNING;
+    extern const Event PERF_COUNT_HW_CACHE_REFERENCES_ENABLED;
     extern const Event PERF_COUNT_HW_CACHE_MISSES;
+    extern const Event PERF_COUNT_HW_CACHE_MISSES_RUNNING;
+    extern const Event PERF_COUNT_HW_CACHE_MISSES_ENABLED;
     extern const Event PERF_COUNT_HW_BRANCH_INSTRUCTIONS;
+    extern const Event PERF_COUNT_HW_BRANCH_INSTRUCTIONS_RUNNING;
+    extern const Event PERF_COUNT_HW_BRANCH_INSTRUCTIONS_ENABLED;
     extern const Event PERF_COUNT_HW_BRANCH_MISSES;
+    extern const Event PERF_COUNT_HW_BRANCH_MISSES_RUNNING;
+    extern const Event PERF_COUNT_HW_BRANCH_MISSES_ENABLED;
     extern const Event PERF_COUNT_HW_BUS_CYCLES;
+    extern const Event PERF_COUNT_HW_BUS_CYCLES_RUNNING;
+    extern const Event PERF_COUNT_HW_BUS_CYCLES_ENABLED;
     extern const Event PERF_COUNT_HW_STALLED_CYCLES_FRONTEND;
+    extern const Event PERF_COUNT_HW_STALLED_CYCLES_FRONTEND_RUNNING;
+    extern const Event PERF_COUNT_HW_STALLED_CYCLES_FRONTEND_ENABLED;
     extern const Event PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
+    extern const Event PERF_COUNT_HW_STALLED_CYCLES_BACKEND_RUNNING;
+    extern const Event PERF_COUNT_HW_STALLED_CYCLES_BACKEND_ENABLED;
     extern const Event PERF_COUNT_HW_REF_CPU_CYCLES;
+    extern const Event PERF_COUNT_HW_REF_CPU_CYCLES_RUNNING;
+    extern const Event PERF_COUNT_HW_REF_CPU_CYCLES_ENABLED;
 
 //    extern const Event PERF_COUNT_SW_CPU_CLOCK;
     extern const Event PERF_COUNT_SW_TASK_CLOCK;
@@ -150,6 +170,15 @@ struct PerfEventInfo
     // see configs in perf_event.h
     int event_config;
     ProfileEvents::Event profile_event;
+    std::optional<ProfileEvents::Event> profile_event_running;
+    std::optional<ProfileEvents::Event> profile_event_enabled;
+};
+
+struct PerfEventValue
+{
+    UInt64 value;
+    UInt64 time_enabled;
+    UInt64 time_running;
 };
 
 struct PerfDescriptorsHolder;
@@ -171,7 +200,7 @@ struct PerfEventsCounters
 
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
 
-    static const PerfEventInfo raw_events_info[];
+    static const PerfEventInfo raw_events_info[PerfEventsCounters::NUMBER_OF_RAW_EVENTS];
 
     static void initializeProfileEvents(PerfEventsCounters & counters);
 
@@ -188,13 +217,13 @@ private:
     static thread_local PerfEventsCounters * current_thread_counters;
 
     // temp array just to not create it each time event processing finishes
-    UInt64 raw_event_values[NUMBER_OF_RAW_EVENTS]{};
+    PerfEventValue raw_event_values[NUMBER_OF_RAW_EVENTS]{};
 
     static Logger * getLogger();
 
     static bool initializeThreadLocalEvents(PerfEventsCounters & counters);
 
-    [[nodiscard]] UInt64 getRawValue(int event_type, int event_config) const;
+    [[nodiscard]] PerfEventValue getRawValue(int event_type, int event_config) const;
 };
 
 struct PerfDescriptorsHolder
