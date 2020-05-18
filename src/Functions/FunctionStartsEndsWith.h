@@ -152,10 +152,10 @@ public:
     {
         if constexpr (UseMultitargetCode)
         {
-            registerImplementation<TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>  (TargetArch::SSE42);
-            registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>    (TargetArch::AVX);
-            registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>   (TargetArch::AVX2);
-            registerImplementation<TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>(TargetArch::AVX512F);
+            this->template registerImplementation<TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>  (TargetArch::SSE42);
+            this->template registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>    (TargetArch::AVX);
+            this->template registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>   (TargetArch::AVX2);
+            this->template registerImplementation<TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>(TargetArch::AVX512F);
         }
     }
 

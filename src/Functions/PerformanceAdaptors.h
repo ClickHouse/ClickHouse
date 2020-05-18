@@ -172,7 +172,7 @@ template <typename DefaultFunction>
 class FunctionPerformanceAdaptor : public FunctionExecutor<DefaultFunction>
 {
 public:
-    using BaseFunctionPtr = FunctionExecutor<DefaultFunction>::BaseFunctionPtr;
+    using BaseFunctionPtr = typename FunctionExecutor<DefaultFunction>::BaseFunctionPtr;
 
     template <typename ...Params>
     FunctionPerformanceAdaptor(const Context & context_, Params&&... params)

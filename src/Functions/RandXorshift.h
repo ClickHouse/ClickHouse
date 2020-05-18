@@ -38,8 +38,8 @@ public:
     {
         if constexpr (UseMultitargetCode)
         {
-            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>(TargetArch::AVX2);
-            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl2, ToType, Name>>(TargetArch::AVX2);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>(TargetArch::AVX2);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl2, ToType, Name>>(TargetArch::AVX2);
         }
     }
 
