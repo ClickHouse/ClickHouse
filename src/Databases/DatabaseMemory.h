@@ -46,6 +46,8 @@ public:
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
+    void drop(const Context & context) override;
+
 private:
     String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;
