@@ -34,7 +34,6 @@
 * Add function arrayAUC [#8698](https://github.com/ClickHouse/ClickHouse/pull/8698) ([taiyang-li](https://github.com/taiyang-li))
 * Support `DROP VIEW` statement for better TPC-H compatibility. [#9831](https://github.com/ClickHouse/ClickHouse/pull/9831) ([Amos Bird](https://github.com/amosbird))
 * Add 'strict_order' option to windowFunnel() [#9773](https://github.com/ClickHouse/ClickHouse/pull/9773) ([achimbab](https://github.com/achimbab))
-* Add support for configuring MongoDB connections with URI (for Atlas service). [#5387](https://github.com/ClickHouse/ClickHouse/pull/5387) ([Manish Srivastava](https://github.com/manish53))
 * Support `DATE` and `TIMESTAMP` SQL operators, e.g. `SELECT date '2001-01-01'` [#9691](https://github.com/ClickHouse/ClickHouse/pull/9691) ([Artem Zuikov](https://github.com/4ertus2))
 
 #### Experimental Feature
