@@ -7,6 +7,7 @@ function onResize() {
     $('body').attr('data-offset', window_height.toString());
     var sidebar = $('#sidebar');
     var languages = $('#languages-dropdown')
+    var edit = $('#edit-link');
     var single_page_switch = $('#single-page-switch');
     if ((sidebar.width() - single_page_switch.width() - sidebar.find('.dropdown-toggle').width()) >= 36) {
         single_page_switch.addClass('float-right');
@@ -15,10 +16,13 @@ function onResize() {
     }
     if (is_wide) {
         sidebar.removeClass('collapse');
+        edit.detach().appendTo($('#edit-wrapper'));
         languages.detach().appendTo($('#languages-wrapper'));
     } else {
         sidebar.addClass('collapse');
-        languages.detach().insertBefore(single_page_switch);
+        edit.detach().insertBefore(single_page_switch);
+        edit.addClass('float-right');
+        languages.detach().insertBefore(edit);
         languages.addClass('float-right');
         single_page_switch.removeClass('float-right');
     }
