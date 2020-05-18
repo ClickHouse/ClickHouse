@@ -17,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -33,6 +34,7 @@
 #include <re2/re2.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 
 
@@ -82,7 +84,8 @@ namespace
             , file_path(bucket + "/" + key)
         {
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
-            reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
             if (columns.hasDefaults())
                 reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);

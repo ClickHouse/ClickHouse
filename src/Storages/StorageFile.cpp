@@ -25,7 +25,6 @@
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/types.h>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
@@ -34,6 +33,7 @@
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 
 namespace fs = std::filesystem;
@@ -291,6 +291,7 @@ public:
 
     Chunk generate() override
     {
+        std::cout << StackTrace().toString() << std::endl;
         while (!finished_generate)
         {
             /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -332,8 +333,11 @@ public:
                     *read_buf, metadata_snapshot->getSampleBlock(), context,
                     max_block_size, storage->format_settings);
 
-                if (columns_description.hasDefaults())
-                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
+
+                reader = std::make_shared<InputStreamFromInputFormat>(format);
+
+                if (!column_defaults.empty())
+                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
 
                 reader->readPrefix();
             }

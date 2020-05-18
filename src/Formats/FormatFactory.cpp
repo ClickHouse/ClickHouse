@@ -6,15 +6,17 @@
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/ParallelParsingBlockInputStream.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
+#include <Processors/Formats/Impl/NativeFormat.cpp>
+#include <Processors/Formats/Impl/ParallelParsingBlockInputFormat.h>
 #include <Poco/URI.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -131,7 +133,7 @@ FormatSettings getFormatSettings<Settings>(const Context & context,
     const Settings & settings);
 
 
-BlockInputStreamPtr FormatFactory::getInput(
+InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
@@ -140,19 +142,23 @@ BlockInputStreamPtr FormatFactory::getInput(
     const std::optional<FormatSettings> & _format_settings) const
 {
     if (name == "Native")
-        return std::make_shared<NativeBlockInputStream>(buf, sample, 0);
+        return std::make_shared<NativeInputFormatFromNativeBlockInputStream>(sample, buf);
 
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
     if (!getCreators(name).input_processor_creator)
     {
-        const auto & input_getter = getCreators(name).input_creator;
-        if (!input_getter)
-            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
-
-        return input_getter(buf, sample, max_block_size, {}, format_settings);
+//        const auto & input_getter = getCreators(name).input_creator;
+//        if (!input_getter)
+//            throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+//
+//        const Settings & settings = context.getSettingsRef();
+//        FormatSettings format_settings = getInputFormatSetting(settings, context);
+//
+//        return input_getter(buf, sample, max_block_size, callback ? callback : ReadCallback(), format_settings);
+        throw;
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -188,19 +194,32 @@ BlockInputStreamPtr FormatFactory::getInput(
         row_input_format_params.max_execution_time = settings.max_execution_time;
         row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
 
-        auto input_creator_params =
-            ParallelParsingBlockInputStream::InputCreatorParams{sample,
-                row_input_format_params, format_settings};
-        ParallelParsingBlockInputStream::Params params{buf, input_getter,
-            input_creator_params, file_segmentation_engine,
+
+        auto parser_creator = std::bind(
+            input_getter.target<InputProcessorCreatorFunc>(),
+            std::placeholders::_1, sample, row_input_format_params, format_settings);
+
+//        auto anime = parser_creator(buf)
+        auto boruto = input_getter(buf, sample, row_input_format_params, format_settings);
+//        auto naruto = input_getter.target<InputProcessorCreatorFunc>()(buf, sample, row_input_format_params, format_settings);
+
+        auto naruto =
+            [sample, row_input_format_params, format_settings, input_getter]
+            (ReadBuffer & input)
+            {return input_getter(input, sample, row_input_format_params, format_settings);};
+
+        auto aaa = naruto(buf);
+
+        ParallelParsingBlockInputFormat::Params params{buf, sample,
+            naruto, file_segmentation_engine,
             settings.max_threads,
             settings.min_chunk_bytes_for_parallel_parsing};
-        return std::make_shared<ParallelParsingBlockInputStream>(params);
+        return std::make_shared<ParallelParsingBlockInputFormat>(params);
     }
 
-    auto format = getInputFormat(name, buf, sample, context, max_block_size,
-        format_settings);
-    return std::make_shared<InputStreamFromInputFormat>(std::move(format));
+
+    auto format = getInputFormat(name, buf, sample, context, max_block_size, std::move(callback));
+    return format;
 }
 
 

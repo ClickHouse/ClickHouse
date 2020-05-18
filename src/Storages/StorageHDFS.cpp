@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
@@ -122,7 +123,8 @@ public:
 
                 auto compression = chooseCompressionMethod(path, compression_method);
                 auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path), compression);
-                auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+                auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+                auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
                 reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
                 reader->readPrefix();
