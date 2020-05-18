@@ -1,7 +1,7 @@
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
@@ -28,6 +28,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
+#include <Common/createHardLink.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -57,8 +58,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_LINK;
 }
 
 static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
@@ -168,6 +167,7 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 
 void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
+    const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
     size_t num_shards = shards_info.size();
@@ -181,14 +181,14 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
 
-        /// If hasInternalReplication, than prefer local replica
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
+        /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings.prefer_localhost_replica)
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
             for (size_t replica_index : ext::range(0, replicas.size()))
             {
-                if (!replicas[replica_index].is_local)
+                if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
                 {
                     shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
@@ -199,7 +199,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
             }
         }
 
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
         {
             shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
@@ -276,12 +276,12 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
+        const Settings & settings = context.getSettingsRef();
 
-        if (!job.is_local_job)
+        if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
             if (!job.stream)
             {
-                const Settings & settings = context.getSettingsRef();
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
                 {
@@ -312,14 +312,14 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings, &context.getClientInfo());
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, settings, context.getClientInfo());
                 job.stream->writePrefix();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
             job.stream->write(shard_block);
         }
-        else
+        else // local
         {
             if (!job.stream)
             {
@@ -457,34 +457,14 @@ void DistributedBlockOutputStream::writeSuffix()
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block)
+IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block) const
 {
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
-    const auto & slot_to_shard = cluster->getSlotToShard();
 
-// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
-#define CREATE_FOR_TYPE(TYPE) \
-    if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
-    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
-        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
-            return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
+    return storage.createSelector(cluster, key_column);
 }
 
 
@@ -528,31 +508,25 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
+    const auto & settings = context.getSettingsRef();
 
     if (shard_info.hasInternalReplication())
     {
-        if (shard_info.getLocalNodeCount() > 0)
-        {
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
-        }
         else
-        {
-            if (shard_info.dir_name_for_internal_replication.empty())
-                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
-
-            writeToShard(block, {shard_info.dir_name_for_internal_replication});
-        }
+            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
     }
     else
     {
-        if (shard_info.getLocalNodeCount() > 0)
+        if (shard_info.isLocal())
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
-            if (!address.is_local)
-                dir_names.push_back(address.toFullString(context.getSettingsRef().use_compact_format_in_distributed_parts_names));
+            if (!address.is_local || !settings.prefer_localhost_replica)
+                dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);
@@ -575,39 +549,29 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
-    /** tmp directory is used to ensure atomicity of transactions
-      *  and keep monitor thread out from reading incomplete data
-      */
+    /// tmp directory is used to ensure atomicity of transactions
+    /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto first = true;
+    const auto & [disk, data_path] = storage.getPath();
 
-    /// write first file, hardlink the others
-    for (const auto & dir_name : dir_names)
+    auto it = dir_names.begin();
+    /// on first iteration write block to a temporary directory for subsequent
+    /// hardlinking to ensure the inode is not freed until we're done
     {
-        const auto & [disk, data_path] = storage.getPath();
-        const std::string path(disk + data_path + dir_name + '/');
-
-        /// ensure shard subdirectory creation and notify storage
+        const std::string path(disk + data_path + *it);
         Poco::File(path).createDirectory();
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
 
-        const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
-        const auto & block_file_path = path + file_name;
+        const std::string tmp_path(path + "/tmp/");
+        Poco::File(tmp_path).createDirectory();
 
-        /** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
-            *  the inode is not freed until we're done */
-        if (first)
+        const std::string file_name(toString(storage.file_names_increment.get()) + ".bin");
+
+        first_file_tmp_path = tmp_path + file_name;
+
+        /// Write batch to temporary location
         {
-            first = false;
-
-            const auto & tmp_path = path + "tmp/";
-            Poco::File(tmp_path).createDirectory();
-            const auto & block_file_tmp_path = tmp_path + file_name;
-
-            first_file_tmp_path = block_file_tmp_path;
-
-            WriteBufferFromFile out{block_file_tmp_path};
+            WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out};
             NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
@@ -632,19 +596,35 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
-
-            auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-            directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
         }
 
-        if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
-                                   ErrorCodes::CANNOT_LINK);
+        // Create hardlink here to reuse increment number
+        const std::string block_file_path(path + '/' + file_name);
+        createHardLink(first_file_tmp_path, block_file_path);
+    }
+    ++it;
+
+    /// Make hardlinks
+    for (; it != dir_names.end(); ++it)
+    {
+        const std::string path(disk + data_path + *it);
+        Poco::File(path).createDirectory();
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
+
+        createHardLink(first_file_tmp_path, block_file_path);
     }
 
-    /** remove the temporary file, enabling the OS to reclaim inode after all threads
-        *  have removed their corresponding files */
+    /// remove the temporary file, enabling the OS to reclaim inode after all threads
+    /// have removed their corresponding files
     Poco::File(first_file_tmp_path).remove();
+
+    /// Notify
+    auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+    for (const auto & dir_name : dir_names)
+    {
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
+        directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
+    }
 }
 
 

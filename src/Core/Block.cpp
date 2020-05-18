@@ -335,7 +335,7 @@ MutableColumns Block::mutateColumns()
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column ? (*std::move(data[i].column)).mutate() : data[i].type->createColumn();
+        columns[i] = data[i].column ? IColumn::mutate(std::move(data[i].column)) : data[i].type->createColumn();
     return columns;
 }
 
@@ -403,8 +403,20 @@ Block Block::sortColumns() const
 {
     Block sorted_block;
 
-    for (const auto & name : index_by_name)
-        sorted_block.insert(data[name.second]);
+    /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
+    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
+    {
+        size_t i = 0;
+        for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
+            sorted_index_by_name[i++] = it;
+    }
+    std::sort(sorted_index_by_name.begin(), sorted_index_by_name.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return lhs->first < rhs->first;
+    });
+
+    for (const auto & it : sorted_index_by_name)
+        sorted_block.insert(data[it->second]);
 
     return sorted_block;
 }

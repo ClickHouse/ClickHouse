@@ -69,8 +69,7 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity,
-        bool need_finish_last_granule);
+        const MergeTreeIndexGranularity & index_granularity);
 
     virtual ~IMergeTreeDataPartWriter();
 
@@ -86,9 +85,6 @@ public:
     /// You must call it after calling write method and optionally
     ///  calling calculations of primary and skip indices.
     void next();
-
-    /// Count index_granularity for block and store in `index_granularity`
-    void fillIndexGranularity(const Block & block);
 
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
@@ -112,6 +108,13 @@ public:
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 
 protected:
+    /// Count index_granularity for block and store in `index_granularity`
+    size_t computeIndexGranularity(const Block & block);
+    virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block);
+
+    size_t getCurrentMark() const { return current_mark; }
+    size_t getIndexOffset() const { return index_offset; }
+
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -131,12 +134,6 @@ protected:
 
     bool compute_granularity;
     bool with_final_mark;
-    bool need_finish_last_granule;
-
-    size_t current_mark = 0;
-
-    /// The offset to the first row of the block for which you want to write the index.
-    size_t index_offset = 0;
 
     size_t next_mark = 0;
     size_t next_index_offset = 0;
@@ -163,6 +160,14 @@ protected:
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns * written_offset_columns = nullptr;
+
+private:
+    /// Data is already written up to this mark.
+    size_t current_mark = 0;
+    /// The offset to the first row of the block for which you want to write the index.
+    size_t index_offset = 0;
+    /// Index is already serialized up to this mark.
+    size_t index_mark = 0;
 };
 
 }

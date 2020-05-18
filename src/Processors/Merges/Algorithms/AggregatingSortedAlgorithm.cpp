@@ -289,10 +289,10 @@ void AggregatingSortedAlgorithm::initialize(Chunks chunks)
     initializeQueue(std::move(chunks));
 }
 
-void AggregatingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
+void AggregatingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
 {
     preprocessChunk(chunk, columns_definition);
-    updateCursor(std::move(chunk), source_num);
+    updateCursor(chunk, source_num);
 }
 
 IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()

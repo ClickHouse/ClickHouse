@@ -28,7 +28,6 @@ import kafka_pb2
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
-# TODO: modify tests to respect `skip_broken_messages` setting.
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -198,6 +197,54 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
+
+@pytest.mark.timeout(180)
+def test_kafka_consumer_hang(kafka_cluster):
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang',
+                     kafka_group_name = 'consumer_hang',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 8,
+                     kafka_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64) ENGINE = Memory();
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS SELECT * FROM test.kafka;
+        ''')
+
+    time.sleep(10)
+    instance.query('SELECT * FROM test.view')
+
+    # This should trigger heartbeat fail,
+    # which will trigger REBALANCE_IN_PROGRESS,
+    # and which can lead to consumer hang.
+    kafka_cluster.pause_container('kafka1')
+    time.sleep(0.5)
+    kafka_cluster.unpause_container('kafka1')
+
+    # print("Attempt to drop")
+    instance.query('DROP TABLE test.kafka')
+
+    #kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    # original problem appearance was a sequence of the following messages in librdkafka logs:
+    # BROKERFAIL -> |ASSIGN| -> REBALANCE_IN_PROGRESS -> "waiting for rebalance_cb" (repeated forever)
+    # so it was waiting forever while the application will execute queued rebalance callback
+
+    # from a user perspective: we expect no hanging 'drop' queries
+    # 'dr'||'op' to avoid self matching
+    assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
 
 @pytest.mark.timeout(180)
 def test_kafka_csv_with_delimiter(kafka_cluster):
@@ -1190,7 +1237,7 @@ def test_exception_from_destructor(kafka_cluster):
         DROP TABLE test.kafka;
     ''')
 
-    kafka_cluster.open_bash_shell('instance')
+    #kafka_cluster.open_bash_shell('instance')
     assert TSV(instance.query('SELECT 1')) == TSV('1')
 
 

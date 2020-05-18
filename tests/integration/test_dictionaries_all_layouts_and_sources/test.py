@@ -111,7 +111,9 @@ LAYOUTS = [
     Layout("flat"),
     Layout("complex_key_hashed"),
     Layout("complex_key_cache"),
-    Layout("range_hashed")
+    Layout("range_hashed"),
+    Layout("direct"),
+    Layout("complex_key_direct")
 ]
 
 SOURCES = [

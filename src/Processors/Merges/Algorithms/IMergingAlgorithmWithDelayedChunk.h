@@ -24,7 +24,7 @@ protected:
     ColumnRawPtrs last_chunk_sort_columns; /// Point to last_chunk if valid.
 
     void initializeQueue(Chunks chunks);
-    void updateCursor(Chunk chunk, size_t source_num);
+    void updateCursor(Chunk & chunk, size_t source_num);
 
 private:
     /// Chunks currently being merged.

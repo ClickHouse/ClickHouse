@@ -1,7 +1,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>
 
 #include <Processors/IProcessor.h>
@@ -129,7 +129,7 @@ try
     Logger::root().setLevel("trace");
 
     auto disk = std::make_shared<DiskLocal>("tmp", ".", 0);
-    auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
+    auto tmp_volume = std::make_shared<VolumeJBOD>("tmp", std::vector<DiskPtr>{disk}, 0);
 
     auto execute_chain = [tmp_volume](
         String msg,

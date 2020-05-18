@@ -398,6 +398,10 @@ private:
             ignore_error = config().getBool("ignore-error", false);
         }
 
+        ClientInfo & client_info = context.getClientInfo();
+        client_info.setInitialQuery();
+        client_info.quota_key = config().getString("quota_key", "");
+
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -606,9 +610,7 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (
-            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
-            server_display_name.length() == 0)
+        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -620,11 +622,19 @@ private:
                 << " revision " << server_revision
                 << "." << std::endl << std::endl;
 
-            if (std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH)
-                < std::make_tuple(server_version_major, server_version_minor, server_version_patch))
+            auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+            auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
+
+            if (client_version_tuple < server_version_tuple)
             {
                 std::cout << "ClickHouse client version is older than ClickHouse server. "
                     << "It may lack support for new features."
+                    << std::endl << std::endl;
+            }
+            else if (client_version_tuple > server_version_tuple)
+            {
+                std::cout << "ClickHouse server version is older than ClickHouse client. "
+                    << "It may indicate that the server is out of date and can be upgraded."
                     << std::endl << std::endl;
             }
         }
@@ -813,7 +823,7 @@ private:
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function))
+            if (insert && (!insert->select || input_function) && !insert->watch)
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
@@ -906,7 +916,7 @@ private:
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    nullptr,
+                    &context.getClientInfo(),
                     true);
 
                 sendExternalTables();
@@ -938,7 +948,15 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query_without_data,
+            query_id,
+            QueryProcessingStage::Complete,
+            &context.getSettingsRef(),
+            &context.getClientInfo(),
+            true);
+
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1711,6 +1729,7 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
+            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -1846,6 +1865,8 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
+        if (options.count("quota_key"))
+            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))

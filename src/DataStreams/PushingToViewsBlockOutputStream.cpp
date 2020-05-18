@@ -72,9 +72,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
+            const auto & inner_table_columns = inner_table->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
-                if (inner_table->hasColumn(column.name))
+                if (inner_table_columns.hasPhysical(column.name))
                     list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
@@ -89,10 +90,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         else
             out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
+        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr});
     }
 
-    /* Do not push to destination table if the flag is set */
+    /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
         output = storage->write(query_ptr, context);
@@ -161,7 +162,12 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     {
         // Process sequentially
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
+        {
             process(block, view_num);
+
+            if (views[view_num].exception)
+                std::rethrow_exception(views[view_num].exception);
+        }
     }
 }
 
@@ -189,8 +195,18 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (output)
         output->writeSuffix();
 
+    std::exception_ptr first_exception;
+
     for (auto & view : views)
     {
+        if (view.exception)
+        {
+            if (!first_exception)
+                first_exception = view.exception;
+
+            continue;
+        }
+
         try
         {
             view.out->writeSuffix();
@@ -201,6 +217,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             throw;
         }
     }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
 }
 
 void PushingToViewsBlockOutputStream::flush()
@@ -238,10 +257,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
+
             Context local_context = *views_context;
             local_context.addViewSource(
-                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
-                                          block));
+                StorageValues::create(
+                    storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
@@ -268,7 +288,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     catch (Exception & ex)
     {
         ex.addMessage("while pushing to view " + view.table_id.getNameForLogs());
-        throw;
+        view.exception = std::current_exception();
+    }
+    catch (...)
+    {
+        view.exception = std::current_exception();
     }
 }
 

@@ -451,7 +451,10 @@ JSON JSON::operator[] (size_t n) const
     size_t i = 0;
     const_iterator it = begin();
     while (i < n && it != end())
-        ++it, ++i;
+    {
+        ++it;
+        ++i;
+    }
 
     if (i != n)
         throw JSONException("JSON: array index " + std::to_string(n) + " out of bounds.");
@@ -626,7 +629,7 @@ std::string JSON::getString() const
                         {
                             unicode = Poco::NumberParser::parseHex(hex);
                         }
-                        catch (const Poco::SyntaxException & e)
+                        catch (const Poco::SyntaxException &)
                         {
                             throw JSONException("JSON: incorrect syntax: incorrect HEX code.");
                         }

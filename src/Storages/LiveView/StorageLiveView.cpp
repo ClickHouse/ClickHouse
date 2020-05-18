@@ -245,7 +245,8 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(table_id_), global_context(local_context.getGlobalContext())
+    : IStorage(table_id_)
+    , global_context(local_context.getGlobalContext())
 {
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
@@ -275,22 +276,6 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
-}
-
-NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageLiveView::hasColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return true;
-
-    return IStorage::hasColumn(column_name);
 }
 
 Block StorageLiveView::getHeader() const
@@ -483,6 +468,10 @@ void StorageLiveView::shutdown()
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
 
+    /// WATCH queries should be stopped after setting shutdown_called to true.
+    /// Otherwise livelock is possible for LiveView table in Atomic database:
+    /// WATCH query will wait for table to be dropped and DatabaseCatalog will wait for queries to finish
+
     {
         std::lock_guard no_users_thread_lock(no_users_thread_mutex);
         if (no_users_thread.joinable())
@@ -629,6 +618,13 @@ BlockInputStreams StorageLiveView::watch(
 
         return { reader };
     }
+}
+
+NamesAndTypesList StorageLiveView::getVirtuals() const
+{
+    return NamesAndTypesList{
+        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
+    };
 }
 
 void registerStorageLiveView(StorageFactory & factory)

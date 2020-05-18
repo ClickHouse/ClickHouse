@@ -16,7 +16,7 @@ public:
         size_t max_row_refs);
 
     void initialize(Chunks chunks) override;
-    void consume(Chunk chunk, size_t source_num) override;
+    void consume(Chunk & chunk, size_t source_num) override;
 
 private:
     SortDescription description;
