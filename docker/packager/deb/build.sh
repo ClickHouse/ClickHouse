@@ -15,10 +15,10 @@ if [ -n "$BINARY_OUTPUT" ] && { [ "$BINARY_OUTPUT" = "programs" ] || [ "$BINARY_
 then
   echo Place $BINARY_OUTPUT to output
   mkdir /output/binary ||: # if exists
-  mv /build/obj-x86_64-linux-gnu/programs/clickhouse* /output/binary
+  mv /build/obj-*/programs/clickhouse* /output/binary
   if [ "$BINARY_OUTPUT" = "tests" ]
   then
-    mv /build/obj-x86_64-linux-gnu/src/unit_tests_dbms /output/binary
+    mv /build/obj-*/src/unit_tests_dbms /output/binary
   fi
 fi
 ccache --show-stats ||:
