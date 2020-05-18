@@ -53,6 +53,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
+-   [complex\_key\_direct](#complex-key-direct)
 -   [ip\_trie](#ip-trie)
 
 ### flat {#flat}
@@ -314,6 +315,10 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ``` sql
 LAYOUT(DIRECT())
 ```
+
+### complex\_key\_direct {#complex-key-direct}
+
+Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `direct`.
 
 ### ip\_trie {#ip-trie}
 

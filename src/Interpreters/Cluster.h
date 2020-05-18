@@ -124,10 +124,14 @@ public:
         bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+        const std::string & pathForInsert(bool prefer_localhost_replica) const;
 
     public:
-        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && prefer_localhost_replica
         std::string dir_name_for_internal_replication;
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication && !prefer_localhost_replica
+        std::string dir_name_for_internal_replication_with_local;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         UInt32 weight = 1;

@@ -8,6 +8,8 @@ void registerFunctionRandConstant(FunctionFactory & factory);
 void registerFunctionGenerateUUIDv4(FunctionFactory & factory);
 void registerFunctionRandomPrintableASCII(FunctionFactory & factory);
 void registerFunctionRandomString(FunctionFactory & factory);
+void registerFunctionRandomFixedString(FunctionFactory & factory);
+void registerFunctionRandomStringUTF8(FunctionFactory & factory);
 
 void registerFunctionsRandom(FunctionFactory & factory)
 {
@@ -17,6 +19,8 @@ void registerFunctionsRandom(FunctionFactory & factory)
     registerFunctionGenerateUUIDv4(factory);
     registerFunctionRandomPrintableASCII(factory);
     registerFunctionRandomString(factory);
+    registerFunctionRandomFixedString(factory);
+    registerFunctionRandomStringUTF8(factory);
 }
 
 }

@@ -29,8 +29,10 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         "port", config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
     default_database = config.getString("database", "");
+
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
+
     bool password_prompt = false;
     if (config.getBool("ask-password", false))
     {
@@ -52,6 +54,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         if (auto result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
             password = result;
     }
+
     compression = config.getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts(
