@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int UNKNOWN_VOLUME_TYPE;
 }
 
 IVolume::IVolume(
