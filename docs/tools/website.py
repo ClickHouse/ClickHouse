@@ -20,25 +20,31 @@ def adjust_markdown_html(content):
         content,
         features='html.parser'
     )
+    for a in soup.find_all('a'):
+        a_class = a.attrs.get('class')
+        if a_class and 'headerlink' in a_class:
+            a.string = '\xa0'
     for details in soup.find_all('details'):
         for summary in details.find_all('summary'):
             if summary.parent != details:
                 summary.extract()
                 details.insert(0, summary)
     for div in soup.find_all('div'):
-        div.attrs['role'] = 'alert'
         div_class = div.attrs.get('class')
-        for a in div.find_all('a'):
-            a_class = a.attrs.get('class')
-            if a_class:
-                a.attrs['class'] = a_class + ['alert-link']
-            else:
-                a.attrs['class'] = 'alert-link'
+        is_admonition = div_class and 'admonition' in div.attrs.get('class')
+        if is_admonition:
+            for a in div.find_all('a'):
+                a_class = a.attrs.get('class')
+                if a_class:
+                    a.attrs['class'] = a_class + ['alert-link']
+                else:
+                    a.attrs['class'] = 'alert-link'
         for p in div.find_all('p'):
             p_class = p.attrs.get('class')
-            if p_class and ('admonition-title' in p_class):
-                p.attrs['class'] = p_class + ['alert-heading', 'display-5', 'mb-2']
-        if div_class and 'admonition' in div.attrs.get('class'):
+            if is_admonition and p_class and ('admonition-title' in p_class):
+                p.attrs['class'] = p_class + ['alert-heading', 'display-6', 'mb-2']
+        if is_admonition:
+            div.attrs['role'] = 'alert'
             if ('info' in div_class) or ('note' in div_class):
                 mode = 'alert-primary'
             elif ('attention' in div_class) or ('warning' in div_class):
@@ -49,7 +55,7 @@ def adjust_markdown_html(content):
                 mode = 'alert-info'
             else:
                 mode = 'alert-secondary'
-            div.attrs['class'] = div_class + ['alert', 'lead', 'pb-0', 'mb-4', mode]
+            div.attrs['class'] = div_class + ['alert', 'pb-0', 'mb-4', mode]
 
     return str(soup)
 
