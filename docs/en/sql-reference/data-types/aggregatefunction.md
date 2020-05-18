@@ -1,13 +1,13 @@
 ---
 toc_priority: 52
-toc_title: AggregateFunction(name, types_of_arguments...)
+toc_title: AggregateFunction
 ---
 
-# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
+# AggregateFunction {#data-type-aggregatefunction}
 
-Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [a materialized view](../../sql-reference/statements/select.md#create-view). The common way to produce an aggregate function state is by calling the aggregate function with the `-State` suffix. To get the final result of aggregation in the future, you must use the same aggregate function with the `-Merge`suffix.
+Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [a materialized view](../../sql-reference/statements/create.md#create-view). The common way to produce an aggregate function state is by calling the aggregate function with the `-State` suffix. To get the final result of aggregation in the future, you must use the same aggregate function with the `-Merge`suffix.
 
-`AggregateFunction` — parametric data type.
+`AggregateFunction(name, types_of_arguments…)` — parametric data type.
 
 **Parameters**
 

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 76
 toc_title: Seguridad Changelog
 ---
 
-## Corregido En La versión De ClickHouse 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
+## Corregido en la versión de ClickHouse 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
 
 ### CVE-2019-15024 {#cve-2019-15024}
 
@@ -25,7 +25,7 @@ Un cliente autenticado malintencionado puede desencadenar el desbordamiento de p
 
 Créditos: Eldar Zaitov del equipo de seguridad de la información de Yandex
 
-## Corregido En La versión De ClickHouse 19.13.6.1, 2019-09-20 {#fixed-in-clickhouse-release-19-13-6-1-2019-09-20}
+## Corregido en la versión de ClickHouse 19.13.6.1, 2019-09-20 {#fixed-in-clickhouse-release-19-13-6-1-2019-09-20}
 
 ### CVE-2019-18657 {#cve-2019-18657}
 
@@ -33,7 +33,7 @@ Función de la tabla `url` la vulnerabilidad permitió al atacante inyectar enca
 
 Crédito: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
 
-## Corregido En La versión De ClickHouse 18.12.13, 2018-09-10 {#fixed-in-clickhouse-release-18-12-13-2018-09-10}
+## Corregido en la versión de ClickHouse 18.12.13, 2018-09-10 {#fixed-in-clickhouse-release-18-12-13-2018-09-10}
 
 ### CVE-2018-14672 {#cve-2018-14672}
 
@@ -41,7 +41,7 @@ Las funciones para cargar modelos CatBoost permitieron el recorrido de ruta y la
 
 Créditos: Andrey Krasichkov del equipo de seguridad de la información de Yandex
 
-## Corregido En La versión De ClickHouse 18.10.3, 2018-08-13 {#fixed-in-clickhouse-release-18-10-3-2018-08-13}
+## Corregido en la versión de ClickHouse 18.10.3, 2018-08-13 {#fixed-in-clickhouse-release-18-10-3-2018-08-13}
 
 ### CVE-2018-14671 {#cve-2018-14671}
 
@@ -49,7 +49,7 @@ unixODBC permitía cargar objetos compartidos arbitrarios desde el sistema de ar
 
 Créditos: Andrey Krasichkov y Evgeny Sidorov del equipo de seguridad de la información de Yandex
 
-## Corregido En La versión De ClickHouse 1.1.54388, 2018-06-28 {#fixed-in-clickhouse-release-1-1-54388-2018-06-28}
+## Corregido en la versión de ClickHouse 1.1.54388, 2018-06-28 {#fixed-in-clickhouse-release-1-1-54388-2018-06-28}
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
@@ -57,7 +57,7 @@ Créditos: Andrey Krasichkov y Evgeny Sidorov del equipo de seguridad de la info
 
 Créditos: Andrey Krasichkov del equipo de seguridad de la información de Yandex
 
-## Corregido En La versión De ClickHouse 1.1.54390, 2018-07-06 {#fixed-in-clickhouse-release-1-1-54390-2018-07-06}
+## Corregido en la versión de ClickHouse 1.1.54390, 2018-07-06 {#fixed-in-clickhouse-release-1-1-54390-2018-07-06}
 
 ### CVE-2018-14669 {#cve-2018-14669}
 
@@ -65,7 +65,7 @@ ClickHouse cliente MySQL tenía “LOAD DATA LOCAL INFILE” funcionalidad habil
 
 Créditos: Andrey Krasichkov y Evgeny Sidorov del equipo de seguridad de la información de Yandex
 
-## Corregido En La versión De ClickHouse 1.1.54131, 2017-01-10 {#fixed-in-clickhouse-release-1-1-54131-2017-01-10}
+## Corregido en la versión de ClickHouse 1.1.54131, 2017-01-10 {#fixed-in-clickhouse-release-1-1-54131-2017-01-10}
 
 ### CVE-2018-14670 {#cve-2018-14670}
 

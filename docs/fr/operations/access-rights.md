@@ -1,113 +1,143 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 48
-toc_title: "Les Droits D'Acc\xE8s"
+toc_title: "Le Contr\xF4le d'acc\xE8s et de Gestion de Compte"
 ---
 
-# Les Droits D’Accès {#access-rights}
+# Le Contrôle d'accès et de Gestion de Compte {#access-control}
 
-Les utilisateurs et les droits d’accès sont configurés dans la configuration utilisateur. Ce n’est généralement `users.xml`.
+Clickhouse prend en charge la gestion du contrôle d'accès basée sur [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) approche.
 
-Les utilisateurs sont enregistrés dans le `users` section. Voici un fragment de la `users.xml` fichier:
+Entités d'accès ClickHouse:
+- [Compte d'utilisateur](#user-account-management)
+- [Rôle](#role-management)
+- [La Ligne Politique](#row-policy-management)
+- [Les Paramètres De Profil](#settings-profiles-management)
+- [Quota](#quotas-management)
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+Vous pouvez configurer des entités d'accès à l'aide de:
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
+-   Flux de travail piloté par SQL.
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+    Vous avez besoin de [permettre](#enabling-access-control) cette fonctionnalité.
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+-   Serveur [les fichiers de configuration](configuration-files.md) `users.xml` et `config.xml`.
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.host\.ru$.
+Nous vous recommandons D'utiliser un workflow piloté par SQL. Les deux méthodes de configuration fonctionnent simultanément, donc si vous utilisez les fichiers de configuration du serveur pour gérer les comptes et les droits d'accès, vous pouvez passer doucement au flux de travail piloté par SQL.
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+!!! note "Avertissement"
+    Vous ne pouvez pas gérer la même entité d'accès par les deux méthodes de configuration simultanément.
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
+## Utilisation {#access-control-usage}
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+Par défaut, le serveur ClickHouse fournit le compte utilisateur `default` ce qui n'est pas autorisé à utiliser le contrôle D'accès piloté par SQL et la gestion de compte, mais a tous les droits et autorisations. Le `default` compte d'utilisateur est utilisé dans tous les cas, lorsque l'utilisateur n'est pas défini, par exemple, lors de la connexion du client ou dans les requêtes distribuées. Dans le traitement des requêtes distribuées, un compte utilisateur par défaut est utilisé si la configuration du serveur ou du cluster ne spécifie pas [d'utilisateur et mot de passe](../engines/table-engines/special/distributed.md) propriété.
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-        <allow_dictionaries>
-           <dictionary>test</dictionary>
-        </allow_dictionaries>
-    </web>
-</users>
-```
+Si vous commencez simplement à utiliser ClickHouse, vous pouvez utiliser le scénario suivant:
 
-Vous pouvez voir une déclaration de deux utilisateurs: `default`et`web`. Nous avons ajouté l’ `web` utilisateur séparément.
+1.  [Permettre](#enabling-access-control) Contrôle D'accès piloté par SQL et gestion de compte pour le `default` utilisateur.
+2.  Connexion en vertu de la `default` compte d'utilisateur et de créer tous les utilisateurs. N'oubliez pas de créer un compte d'administrateur (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+3.  [Restreindre les autorisations](settings/permissions-for-queries.md#permissions_for_queries) pour l' `default` utilisateur et désactiver le contrôle D'accès piloté par SQL et la gestion des comptes pour elle.
 
-Le `default` l’utilisateur est choisi dans les cas où le nom d’utilisateur n’est pas passé. Le `default` l’utilisateur est également utilisé pour le traitement des requêtes distribuées, si la configuration du serveur ou du cluster `user` et `password` (voir la section sur les [Distribué](../engines/table-engines/special/distributed.md) moteur).
+### Propriétés de la Solution actuelle {#access-control-properties}
 
-The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+-   Vous pouvez accorder des autorisations pour les bases de données et les tables même si elles n'existent pas.
+-   Si une table a été supprimée, tous les privilèges correspondant à cette table ne sont pas révoqués. Ainsi, si une nouvelle table est créée plus tard avec le même nom, tous les privilèges redeviennent réels. Pour révoquer les privilèges correspondant à la table supprimée, vous devez effectuer, par exemple, l' `REVOKE ALL PRIVILEGES ON db.table FROM ALL` requête.
+-   Il n'y a pas de paramètres de durée de vie pour les privilèges.
 
-Le mot de passe est spécifié en texte clair (non recommandé) ou en SHA-256. Le hash n’est pas salé. À cet égard, vous ne devez pas considérer ces mots de passe comme assurant la sécurité contre les attaques malveillantes potentielles. Au contraire, ils sont nécessaires pour la protection contre les employés.
+## Compte d'utilisateur {#user-account-management}
 
-Une liste de réseaux est précisé que l’accès est autorisé à partir. Dans cet exemple, la liste des réseaux pour les utilisateurs est chargé à partir d’un fichier séparé (`/etc/metrika.xml`) contenant les `networks` substitution. Voici un fragment de:
+Un compte d'utilisateur est une entité qui permet d'autoriser quelqu'un à ClickHouse. Un compte utilisateur contient:
 
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
+-   Informations d'Identification.
+-   [Privilège](../sql-reference/statements/grant.md#grant-privileges) qui définissent l'étendue des requêtes que l'utilisateur peut effectuer.
+-   Hôtes à partir desquels la connexion au serveur ClickHouse est autorisée.
+-   Rôles accordés et par défaut.
+-   Paramètres avec leurs contraintes qui s'appliquent par défaut lors de la connexion de l'utilisateur.
+-   Profils de paramètres assignés.
 
-Vous pouvez définir cette liste de réseaux directement dans `users.xml` ou dans un fichier dans le `users.d` répertoire (pour plus d’informations, consultez la section “[Fichiers de Configuration](configuration-files.md#configuration_files)”).
+Des privilèges à un compte d'utilisateur peuvent être accordés par [GRANT](../sql-reference/statements/grant.md) requête ou en attribuant [rôle](#role-management). Pour révoquer les privilèges d'un utilisateur, ClickHouse fournit [REVOKE](../sql-reference/statements/revoke.md) requête. Pour lister les privilèges d'un utilisateur, utilisez - [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) déclaration.
 
-La configuration comprend des commentaires expliquant comment ouvrir l’accès de partout.
+Gestion des requêtes:
 
-Pour une utilisation en production, spécifiez uniquement `ip` (adresses IP et leurs masques), depuis l’utilisation `host` et `hoost_regexp` peut causer une latence supplémentaire.
+-   [CREATE USER](../sql-reference/statements/create.md#create-user-statement)
+-   [ALTER USER](../sql-reference/statements/alter.md#alter-user-statement)
+-   [DROP USER](../sql-reference/statements/misc.md#drop-user-statement)
+-   [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
 
-Ensuite, le profil des paramètres utilisateur est spécifié (voir la section “[Les paramètres des profils](settings/settings-profiles.md)”. Vous pouvez spécifier le profil par défaut, `default'`. Le profil peut avoir n’importe quel nom. Vous pouvez spécifier le même profil pour différents utilisateurs. La chose la plus importante que vous pouvez écrire dans les paramètres de profil `readonly=1` qui assure un accès en lecture seule. Spécifiez ensuite le quota à utiliser (voir la section “[Quota](quotas.md#quotas)”). Vous pouvez spécifier le quota par défaut: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+### Paramètres Application {#access-control-settings-applying}
 
-Dans le facultatif `<allow_databases>` section, vous pouvez également spécifier une liste de bases de données que l’utilisateur peut accéder. Par défaut, toutes les bases de données sont disponibles pour l’utilisateur. Vous pouvez spécifier l’ `default` la base de données. Dans ce cas, l’utilisateur recevra l’accès à la base de données par défaut.
+Les paramètres peuvent être définis de différentes manières: pour un compte utilisateur, dans ses profils de rôles et de paramètres accordés. Lors d'une connexion utilisateur, si un paramètre est défini dans différentes entités d'accès, la valeur et les contraintes de ce paramètre sont appliquées par les priorités suivantes (de plus haut à plus bas):
 
-Dans le facultatif `<allow_dictionaries>` section, vous pouvez également spécifier une liste de dictionnaires que l’utilisateur peut accéder. Par défaut, tous les dictionnaires sont disponibles pour l’utilisateur.
+1.  Paramètre de compte utilisateur.
+2.  Les paramètres de rôles par défaut du compte d'utilisateur. Si un paramètre est défini dans certains rôles, l'ordre de la mise en application n'est pas défini.
+3.  Les paramètres dans les profils de paramètres attribués à un utilisateur ou à ses rôles par défaut. Si un paramètre est défini dans certains profils, l'ordre d'application des paramètres n'est pas défini.
+4.  Paramètres appliqués à l'ensemble du serveur par défaut [profil par défaut](server-configuration-parameters/settings.md#default-profile).
 
-L’accès à la `system` la base de données est toujours autorisée (puisque cette base de données est utilisée pour traiter les requêtes).
+## Rôle {#role-management}
 
-L’utilisateur peut obtenir une liste de toutes les bases de données et tables en utilisant `SHOW` requêtes ou tables système, même si l’accès aux bases de données individuelles n’est pas autorisé.
+Le rôle est un conteneur pour l'accès des entités qui peuvent être accordées à un compte d'utilisateur.
 
-Accès de base de données n’est pas liée à la [ReadOnly](settings/permissions-for-queries.md#settings_readonly) paramètre. Vous ne pouvez pas accorder un accès complet à une base de données et `readonly` l’accès à un autre.
+Rôle contient:
+
+-   [Privilège](../sql-reference/statements/grant.md#grant-privileges)
+-   Paramètres et contraintes
+-   Liste des rôles attribués
+
+Gestion des requêtes:
+
+-   [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+-   [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
+-   [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
+-   [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)
+-   [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
+-   [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
+
+Les privilèges d'un rôle peuvent être accordés par [GRANT](../sql-reference/statements/grant.md) requête. Pour révoquer les privilèges D'un rôle ClickHouse fournit [REVOKE](../sql-reference/statements/revoke.md) requête.
+
+## La Ligne Politique {#row-policy-management}
+
+La stratégie de ligne est un filtre qui définit les lignes disponibles pour un utilisateur ou pour un rôle. La stratégie de ligne contient des filtres pour une table spécifique et une liste de rôles et / ou d'utilisateurs qui doivent utiliser cette stratégie de ligne.
+
+Gestion des requêtes:
+
+-   [CREATE ROW POLICY](../sql-reference/statements/create.md#create-row-policy-statement)
+-   [ALTER ROW POLICY](../sql-reference/statements/alter.md#alter-row-policy-statement)
+-   [DROP ROW POLICY](../sql-reference/statements/misc.md#drop-row-policy-statement)
+-   [SHOW CREATE ROW POLICY](../sql-reference/statements/show.md#show-create-row-policy-statement)
+
+## Les Paramètres De Profil {#settings-profiles-management}
+
+Paramètres profil est une collection de [paramètre](settings/index.md). Le profil paramètres contient les paramètres et les contraintes, ainsi que la liste des rôles et/ou des utilisateurs auxquels ce quota est appliqué.
+
+Gestion des requêtes:
+
+-   [CREATE SETTINGS PROFILE](../sql-reference/statements/create.md#create-settings-profile-statement)
+-   [ALTER SETTINGS PROFILE](../sql-reference/statements/alter.md#alter-settings-profile-statement)
+-   [DROP SETTINGS PROFILE](../sql-reference/statements/misc.md#drop-settings-profile-statement)
+-   [SHOW CREATE SETTINGS PROFILE](../sql-reference/statements/show.md#show-create-settings-profile-statement)
+
+## Quota {#quotas-management}
+
+Le Quota limite l'utilisation des ressources. Voir [Quota](quotas.md).
+
+Quota contient un ensemble de limites pour certaines durées, et la liste des rôles et/ou des utilisateurs qui devrait utiliser ce quota.
+
+Gestion des requêtes:
+
+-   [CREATE QUOTA](../sql-reference/statements/create.md#create-quota-statement)
+-   [ALTER QUOTA](../sql-reference/statements/alter.md#alter-quota-statement)
+-   [DROP QUOTA](../sql-reference/statements/misc.md#drop-quota-statement)
+-   [SHOW CREATE QUOTA](../sql-reference/statements/show.md#show-create-quota-statement)
+
+## Activation du contrôle D'accès piloté par SQL et de la gestion de Compte {#enabling-access-control}
+
+-   Configurez un répertoire pour le stockage des configurations.
+
+    Clickhouse stocke les configurations d'entité d'accès dans le dossier défini dans [access\_control\_path](server-configuration-parameters/settings.md#access_control_path) paramètre de configuration du serveur.
+
+-   Activez le contrôle D'accès piloté par SQL et la gestion de compte pour au moins un compte d'utilisateur.
+
+    Par défaut, le contrôle D'accès piloté par SQL et la gestion des comptes sont activés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le `users.xml` fichier de configuration et affecter 1 au [access\_management](settings/settings-users.md#access_management-user-setting) paramètre.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

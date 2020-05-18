@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: "\u0633\u062E\u062A \u0627\u0641\u0632\u0627\u0631 \u062A\u0633\u062A"
 ---
 
 # چگونه برای تست سخت افزار خود را با کلیک {#how-to-test-your-hardware-with-clickhouse}
 
-با این آموزش شما می توانید اجرا پایه clickhouse آزمون عملکرد بر روی هر سرور بدون نصب و راه اندازی clickhouse بسته است.
+با این آموزش شما می توانید اجرا پایه ClickHouse آزمون عملکرد بر روی هر سرور بدون نصب و راه اندازی ClickHouse بسته است.
 
 1.  برو به “commits” صفحه: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  با کلیک بر روی اولین علامت چک سبز یا صلیب قرمز با سبز “ClickHouse Build Check” و با کلیک بر روی “Details” لینک نزدیک “ClickHouse Build Check”.
+2.  با کلیک بر روی اولین علامت چک سبز یا صلیب قرمز با سبز “ClickHouse Build Check” و با کلیک بر روی “Details” لینک نزدیک “ClickHouse Build Check”. چنین لینک در برخی از مرتکب وجود دارد, برای مثال مرتکب با اسناد و مدارک. در این مورد, را انتخاب کنید نزدیکترین ارتکاب داشتن این لینک.
 
 3.  رونوشت از پیوند به “clickhouse” دودویی برای amd64 یا aarch64.
 
@@ -65,7 +65,7 @@ toc_title: "\u0633\u062E\u062A \u0627\u0641\u0632\u0627\u0631 \u062A\u0633\u062A
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  ویرایش benchmark-new.sh تغییر “clickhouse-client” به “./clickhouse client” و اضافه کردن “–max\_memory\_usage 100000000000” پارامتر.
+1.  ویرایش benchmark-new.sh تغییر `clickhouse-client` به `./clickhouse client` و اضافه کردن `–-max_memory_usage 100000000000` پارامتر.
 
 <!-- -->
 
@@ -79,4 +79,4 @@ toc_title: "\u0633\u062E\u062A \u0627\u0641\u0632\u0627\u0631 \u062A\u0633\u062A
 
 1.  ارسال اعداد و اطلاعات در مورد پیکربندی سخت افزار خود را به clickhouse-feedback@yandex-team.com
 
-همه نتایج در اینجا منتشر شده: https://clickhouse.فناوری/ظروف محک.زنگام
+همه نتایج در اینجا منتشر شده: https://clickhouse.فناوری / معیار / سخت افزار/

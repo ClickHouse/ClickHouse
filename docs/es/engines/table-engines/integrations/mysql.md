@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: MySQL
 ---
@@ -9,7 +9,7 @@ toc_title: MySQL
 
 El motor MySQL le permite realizar `SELECT` consultas sobre datos almacenados en un servidor MySQL remoto.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -51,7 +51,7 @@ Simple `WHERE` cláusulas tales como `=, !=, >, >=, <, <=` se ejecutan en el ser
 
 El resto de las condiciones y el `LIMIT` La restricción de muestreo se ejecuta en ClickHouse solo después de que finalice la consulta a MySQL.
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 Tabla en MySQL:
 

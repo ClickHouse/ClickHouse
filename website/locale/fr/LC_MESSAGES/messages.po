@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-04-30 15:45+0300\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
 "PO-Revision-Date: 2020-03-30 15:12+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fr\n"
@@ -32,31 +32,31 @@ msgstr ""
 msgid "ClickHouse - fast open-source OLAP DBMS"
 msgstr "ClickHouse-SGBD OLAP open-source rapide"
 
-#: templates/common_meta.html:10 templates/common_meta.html:21
+#: templates/common_meta.html:10
 msgid "ClickHouse DBMS"
 msgstr "SGBD ClickHouse"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "open-source"
 msgstr "open-source"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "relational"
 msgstr "relationnel"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytics"
 msgstr "Analytics"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "analytical"
 msgstr "analytique"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "Big Data"
 msgstr "Big Data"
 
-#: templates/common_meta.html:25
+#: templates/common_meta.html:21
 msgid "web-analytics"
 msgstr "web-analytics"
 
@@ -76,11 +76,23 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
-#: templates/docs/content.html:6
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "Construit à partir de"
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr "publié le"
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr "modifié sur"
+
+#: templates/docs/machine-translated.html:3
 msgid "Help wanted!"
 msgstr "Demander de l'aide!"
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -94,19 +106,15 @@ msgstr ""
 "code ClickHouse principale et attend que d'autres locuteurs natifs le "
 "rendent plus lisible par l'homme."
 
-#: templates/docs/content.html:7
+#: templates/docs/machine-translated.html:4
 msgid "You can also use the original English version as a reference."
 msgstr ""
 "Vous pouvez également utiliser la version originale anglaise comme "
 "référence."
 
-#: templates/docs/content.html:10
+#: templates/docs/machine-translated.html:7
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "Aide clickhouse documentation en éditant cette page"
-
-#: templates/docs/content.html:27
-msgid "Built from"
-msgstr "Construit à partir de"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -320,4 +328,10 @@ msgstr "activer JavaScript pour voir l'adresse e-mail"
 #~ "queries. Сreated by Yandex ClickHouse "
 #~ "manages extremely large volumes of data"
 #~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "publié à"
+
+#~ msgid "modified at"
+#~ msgstr "modifié à"
 

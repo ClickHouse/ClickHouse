@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u062A\u0627\u0631\u06CC\u062E \u0648\
   \ \u0632\u0645\u0627\u0646"
@@ -46,7 +46,7 @@ SELECT
 
 ## سال {#todayofyear}
 
-تبدیل یک تاریخ و یا تاریخ با گذشت زمان به یک uint16 تعداد شامل تعداد روز از سال (1-366).
+تبدیل یک تاریخ و یا تاریخ با گذشت زمان به یک UInt16 تعداد شامل تعداد روز از سال (1-366).
 
 ## تودیفمون {#todayofmonth}
 
@@ -58,16 +58,16 @@ SELECT
 
 ## تمام {#tohour}
 
-تبدیل تاریخ با هم به یک uint8 شماره حاوی تعداد ساعت در زمان 24 ساعته (0-23).
+تبدیل تاریخ با هم به یک UInt8 شماره حاوی تعداد ساعت در زمان 24 ساعته (0-23).
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true – even in Moscow the clocks were twice changed at a different time).
 
 ## تامینوت {#tominute}
 
-تبدیل تاریخ با هم به یک uint8 شماره حاوی تعداد دقیقه از ساعت (0-59).
+تبدیل تاریخ با هم به یک UInt8 شماره حاوی تعداد دقیقه از ساعت (0-59).
 
 ## جای خالی {#tosecond}
 
-تبدیل تاریخ با هم به یک uint8 شماره حاوی شماره دوم در دقیقه (0-59).
+تبدیل تاریخ با هم به یک UInt8 شماره حاوی شماره دوم در دقیقه (0-59).
 ثانیه جهش برای به حساب نمی.
 
 ## تیونیتیمستمپ {#to-unix-timestamp}
@@ -115,7 +115,7 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 دور کردن تاریخ یا تاریخ با زمان به روز اول سال ایزو.
 تاریخ را برمی گرداند.
 
-## toStartOfQuarter {#tostartofquarter}
+## تاستارتوفارتر {#tostartofquarter}
 
 دور یک تاریخ یا تاریخ با زمان به روز اول سه ماهه.
 اولین روز از سه ماهه است یا 1 ژانویه, 1 مارس, 1 جولای, یا 1 اکتبر.
@@ -160,7 +160,7 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 
 دور پایین تاریخ با زمان به شروع فاصله ده دقیقه.
 
-## toStartOfFifteenMinutes {#tostartoffifteenminutes}
+## حفاظت از محیط زیست {#tostartoffifteenminutes}
 
 دور پایین تاریخ با زمان به شروع فاصله پانزده دقیقه.
 
@@ -214,7 +214,7 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 
 ## هشدار داده می شود {#toisoweek}
 
-تبدیل یک تاریخ و یا تاریخ با گذشت زمان به یک uint8 تعداد شامل iso هفته شماره.
+تبدیل یک تاریخ و یا تاریخ با گذشت زمان به یک UInt8 تعداد شامل ISO هفته شماره.
 
 ## تاریخ \[, حالت\]) {#toweekdatemode}
 
@@ -300,7 +300,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 قبول صفر استدلال و بازده تاریخ دیروز در یکی از لحظات اجرای درخواست.
 همان ‘today() - 1’.
 
-## سانس {#timeslot}
+## بازه زمانی {#timeslot}
 
 دور زمان به نیم ساعت.
 این تابع خاص به یاندکس است.متریکا, از نیم ساعت حداقل مقدار زمان برای شکستن یک جلسه به دو جلسه است اگر یک تگ ردیابی نشان می دهد تعداد صفحات متوالی یک کاربر که در زمان به شدت بیش از این مقدار متفاوت. این به این معنی است که تاپل (شناسه برچسب, شناسه کاربری, و شکاف زمان) را می توان مورد استفاده قرار گیرد به جستجو برای تعداد صفحات که در جلسه مربوطه شامل.
@@ -315,7 +315,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 ## اطلاعات دقیق {#toyyyymmddhhmmss}
 
-تبدیل یک تاریخ و یا تاریخ با گذشت زمان به یک uint64 تعداد شامل سال و ماه شماره (yyyy \* 10000000000 + mm \* 100000000 + dd \* 1000000 + hh \* 10000 + mm \* 100 + ss) است.
+تبدیل یک تاریخ و یا تاریخ با گذشت زمان به یک UInt64 تعداد شامل سال و ماه شماره (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss) است.
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
 
@@ -439,12 +439,12 @@ Function formats a Time according given Format string. N.B.: Format is a constan
 | \# پ       | هستم یا بعد از ظهر تعیین                                                    | PM         |
 | %R         | 24-ساعت ساعت ساعت: زمان میلی متر, معادل %ساعت: % متر                        | 22:33      |
 | %S         | دوم (00-59)                                                                 | 44         |
-| % تی       | شخصیت افقی تب (’)                                                           |            |
+| % تی       | شخصیت افقی تب (')                                                           |            |
 | %T         | ایزو 8601 فرمت زمان (ساعت:میلی متر:اس اس), معادل %ساعت:%متر:%بازدید کنندگان | 22:33:44   |
 | \# تو      | ایزو 8601 روز هفته به عنوان شماره با دوشنبه به عنوان 1 (1-7)                | 2          |
 | %V         | ایزو 8601 هفته شماره (01-53)                                                | 01         |
 | \# وات     | روز هفته به عنوان یک عدد اعشاری با یکشنبه به عنوان 0 (0-6)                  | 2          |
-| \#…        | سال گذشته دو رقم (00-99)                                                    | 18         |
+| \#...      | سال گذشته دو رقم (00-99)                                                    | 18         |
 | %Y         | سال                                                                         | 2018       |
 | %%         | یک % نشانه                                                                  | %          |
 

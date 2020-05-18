@@ -7,6 +7,7 @@ function onResize() {
     $('body').attr('data-offset', window_height.toString());
     var sidebar = $('#sidebar');
     var languages = $('#languages-dropdown')
+    var edit = $('#edit-link');
     var single_page_switch = $('#single-page-switch');
     if ((sidebar.width() - single_page_switch.width() - sidebar.find('.dropdown-toggle').width()) >= 36) {
         single_page_switch.addClass('float-right');
@@ -15,10 +16,13 @@ function onResize() {
     }
     if (is_wide) {
         sidebar.removeClass('collapse');
+        edit.detach().appendTo($('#edit-wrapper'));
         languages.detach().appendTo($('#languages-wrapper'));
     } else {
         sidebar.addClass('collapse');
-        languages.detach().insertBefore(single_page_switch);
+        edit.detach().insertBefore(single_page_switch);
+        edit.addClass('float-right');
+        languages.detach().insertBefore(edit);
         languages.addClass('float-right');
         single_page_switch.removeClass('float-right');
     }
@@ -78,29 +82,11 @@ $(document).ready(function () {
 
     var headers = $('#content h1, #content h2, #content h3, #content h4, #content h5, #content h6');
     headers.mouseenter(function() {
-        $(this).find('.headerlink').show();
+        $(this).find('.headerlink').html('¶');
     });
     headers.mouseleave(function() {
-        $(this).find('.headerlink').hide();
+        $(this).find('.headerlink').html('&nbsp;');
     });
-    $('.admonition').each(function () {
-        var current = $(this);
-        current.addClass('alert').addClass('lead').addClass('pb-0').addClass('mb-4');
-        current.attr('role', 'alert');
-        current.find('a').addClass('alert-link');
-        if (current.hasClass('info') || current.hasClass('note')) {
-            current.addClass('alert-primary');
-        } if (current.hasClass('attention') || current.hasClass('warning')) {
-            current.addClass('alert-warning');
-        } else if (current.hasClass('important')) {
-            current.addClass('alert-danger');
-        } else if (current.hasClass('tip') ) {
-            current.addClass('alert-info');
-        } else {
-            current.addClass('alert-secondary');
-        }
-    });
-    $('.admonition-title').addClass('alert-heading').addClass('display-5').addClass('mb-2');
 
     if ($('#docsearch-input').length) {
         docsearch({

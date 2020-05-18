@@ -1057,6 +1057,8 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     return false;
 }
 
+template bool ParserCollectionOfLiterals<Array>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+template bool ParserCollectionOfLiterals<Tuple>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -1105,6 +1107,7 @@ const char * ParserAlias::restricted_keywords[] =
     "HAVING",
     "ORDER",
     "LIMIT",
+    "OFFSET",
     "SETTINGS",
     "FORMAT",
     "UNION",

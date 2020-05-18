@@ -68,6 +68,8 @@ void TextLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(source_file);
     columns[i++]->insert(source_line);
+
+    block.setColumns(std::move(columns));
 }
 
 TextLog::TextLog(Context & context_, const String & database_name_,

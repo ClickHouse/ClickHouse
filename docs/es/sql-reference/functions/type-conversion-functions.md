@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: "Conversi\xF3n de tipo"
 ---
 
-# Funciones De conversión De Tipos {#type-conversion-functions}
+# Funciones de conversión de tipos {#type-conversion-functions}
 
-## Problemas Comunes De Conversiones numéricas {#numeric-conversion-issues}
+## Problemas comunes de conversiones numéricas {#numeric-conversion-issues}
 
 Cuando convierte un valor de uno a otro tipo de datos, debe recordar que, en un caso común, es una operación insegura que puede provocar una pérdida de datos. Puede producirse una pérdida de datos si intenta ajustar el valor de un tipo de datos más grande a un tipo de datos más pequeño, o si convierte valores entre diferentes tipos de datos.
 
@@ -123,7 +123,7 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## Fecha {#todate}
 
-## Todos Los Derechos Reservados {#todateorzero}
+## Todos los derechos reservados {#todateorzero}
 
 ## ToDateOrNull {#todateornull}
 
@@ -185,7 +185,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 └──────┴────────────────────────────────────────────────────┘
 ```
 
-## Por Ejemplo: {#todecimal3264128orzero}
+## Por ejemplo: {#todecimal3264128orzero}
 
 Convierte un valor de entrada en el [Decimal (P, S)](../../sql-reference/data-types/decimal.md) tipo de datos. Esta familia de funciones incluye:
 
@@ -271,9 +271,9 @@ Ver también el `toUnixTimestamp` función.
 ## ¿Qué puedes encontrar en Neodigit) {#tofixedstrings-n}
 
 Convierte un argumento de tipo String en un tipo FixedString(N) (una cadena con longitud fija N). N debe ser una constante.
-Si la cadena tiene menos bytes que N, se pasa con bytes nulos a la derecha. Si la cadena tiene más bytes que N, se produce una excepción.
+Si la cadena tiene menos bytes que N, se rellena con bytes nulos a la derecha. Si la cadena tiene más bytes que N, se produce una excepción.
 
-## Todos Los Derechos Reservados.) {#tostringcuttozeros}
+## Todos los derechos reservados.) {#tostringcuttozeros}
 
 Acepta un argumento String o FixedString. Devuelve la cadena con el contenido truncado en el primer byte cero encontrado.
 
@@ -518,7 +518,7 @@ Resultado:
 
 **Ver también**
 
--   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
+-   \[Anuncio de ISO 8601 por @xkcd¿Por qué?/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [Fecha](#todate)
 -   [toDateTime](#todatetime)

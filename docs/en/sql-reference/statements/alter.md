@@ -520,23 +520,23 @@ To use `ALTER USER` you must have the [ALTER USER](grant.md#grant-access-managem
 
 ### Examples {#alter-user-examples}
 
-Set granted roles as default:
+Set assigned roles as default:
 
 ``` sql
 ALTER USER user DEFAULT ROLE role1, role2
 ```
 
-If roles aren't previously granted to a user, ClickHouse throws an exception.
+If roles aren't previously assigned to a user, ClickHouse throws an exception.
 
-Set all the granted roles to default:
+Set all the assigned roles to default:
 
 ``` sql
 ALTER USER user DEFAULT ROLE ALL
 ```
 
-If a role will be granted to a user in the future it will become default automatically.
+If a role is assigned to a user in the future, it will become default automatically.
 
-Set all the granted roles to default excepting `role1` and `role2`:
+Set all the assigned roles to default, excepting `role1` and `role2`:
 
 ``` sql
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
@@ -591,7 +591,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
 
 ## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
 
-Changes quotas.
+Changes settings profiles.
 
 ### Syntax {#alter-settings-profile-syntax}
 

@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: hdf'ler
 ---
 
-# hdf’ler {#hdfs}
+# hdf'ler {#hdfs}
 
-Hdfs’deki dosyalardan bir tablo oluşturur. Bu tablo işlevi benzer [url](url.md) ve [Dosya](file.md) biri.
+Hdfs'deki dosyalardan bir tablo oluşturur. Bu tablo işlevi benzer [url](url.md) ve [Dosya](file.md) biri.
 
 ``` sql
 hdfs(URI, format, structure)
@@ -53,7 +53,7 @@ Birden çok yol bileşenleri globs olabilir. İşlenmek için dosya var olmalı 
 
 **Örnek**
 
-1.  HDFS’DE aşağıdaki Urı’lere sahip birkaç dosyamız olduğunu varsayalım:
+1.  HDFS'DE aşağıdaki Urı'lere sahip birkaç dosyamız olduğunu varsayalım:
 
 -   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
 -   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’

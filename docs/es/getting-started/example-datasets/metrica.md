@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
-toc_priority: 21
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 14
 toc_title: El Yandex.Metrica Datos
 ---
 
-# Yandex Anonimizado.Metrica Datos {#anonymized-yandex-metrica-data}
+# Yandex anonimizado.Metrica Datos {#anonymized-yandex-metrica-data}
 
 El conjunto de datos consta de dos tablas que contienen datos anónimos sobre los hits (`hits_v1`) y visitas (`visits_v1`) el Yandex.Métrica. Puedes leer más sobre Yandex.Metrica en [Historial de ClickHouse](../../introduction/history.md) apartado.
 
 El conjunto de datos consta de dos tablas, cualquiera de ellas se puede descargar como `tsv.xz` o como particiones preparadas. Además, una versión extendida de la `hits` La tabla que contiene 100 millones de filas está disponible como TSV en https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz y como particiones preparadas en https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
-## Obtención De Tablas a Partir De Particiones Preparadas {#obtaining-tables-from-prepared-partitions}
+## Obtención de tablas a partir de particiones preparadas {#obtaining-tables-from-prepared-partitions}
 
 Descargar e importar tabla de hits:
 
@@ -33,7 +33,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Obtención De Tablas a Partir De Un Archivo TSV Comprimido {#obtaining-tables-from-compressed-tsv-file}
+## Obtención de tablas a partir de un archivo TSV comprimido {#obtaining-tables-from-compressed-tsv-file}
 
 Descargar e importar hits desde un archivo TSV comprimido:
 
@@ -63,7 +63,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Consultas De Ejemplo {#example-queries}
+## Consultas de ejemplo {#example-queries}
 
 [Tutorial de ClickHouse](../../getting-started/tutorial.md) se basa en Yandex.El conjunto de datos de Metrica y la forma recomendada de comenzar con este conjunto de datos es simplemente pasar por el tutorial.
 

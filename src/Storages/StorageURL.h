@@ -3,6 +3,9 @@
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
 #include <ext/shared_ptr_helper.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/CompressionMethod.h>
 
 
 namespace DB
@@ -39,10 +42,9 @@ protected:
     Poco::URI uri;
     const Context & context_global;
     String compression_method;
-
-private:
     String format_name;
 
+private:
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
@@ -62,6 +64,43 @@ private:
     virtual Block getHeaderBlock(const Names & column_names) const = 0;
 };
 
+class StorageURLBlockOutputStream : public IBlockOutputStream
+{
+public:
+    StorageURLBlockOutputStream(const Poco::URI & uri,
+                                const String & format,
+                                const Block & sample_block_,
+                                const Context & context,
+                                const ConnectionTimeouts & timeouts,
+                                const CompressionMethod compression_method);
+
+    Block getHeader() const override
+    {
+        return sample_block;
+    }
+
+    void write(const Block & block) override
+    {
+        writer->write(block);
+    }
+
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
+
+    void writeSuffix() override
+    {
+        writer->writeSuffix();
+        writer->flush();
+        write_buf->finalize();
+    }
+
+private:
+    Block sample_block;
+    std::unique_ptr<WriteBuffer> write_buf;
+    BlockOutputStreamPtr writer;
+};
 
 class StorageURL final : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
 {

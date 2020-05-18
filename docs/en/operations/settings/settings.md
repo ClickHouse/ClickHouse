@@ -2,7 +2,7 @@
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Changes the behavior of [distributed subqueries](../../sql-reference/statements/select.md).
+Changes the behavior of [distributed subqueries](../../sql-reference/operators/in.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -362,7 +362,7 @@ See also:
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-Sets default strictness for [JOIN clauses](../../sql-reference/statements/select.md#select-join).
+Sets default strictness for [JOIN clauses](../../sql-reference/statements/select/join.md#select-join).
 
 Possible values:
 
@@ -389,13 +389,13 @@ Default value: 0.
 
 See also:
 
--   [JOIN clause](../../sql-reference/statements/select.md#select-join)
+-   [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
 -   [Join table engine](../../engines/table-engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Sets the type of [JOIN](../../sql-reference/statements/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
+Sets the type of [JOIN](../../sql-reference/statements/select/join.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
 Possible values:
 
@@ -1255,7 +1255,9 @@ Default value: Empty
 
 ## background\_pool\_size {#background_pool_size}
 
-Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+Sets the number of threads performing background operations in table engines (for example, merges in [MergeTree engine](../../engines/table-engines/mergetree-family/index.md) tables). This setting is applied from `default` profile at ClickHouse server start and can’t be changed in a user session. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
+
+Before changing it, please also take a look at related [MergeTree settings](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-merge_tree), such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
 
 Possible values:
 

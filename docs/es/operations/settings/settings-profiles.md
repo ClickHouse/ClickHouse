@@ -1,13 +1,21 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "Perfiles de configuraci\xF3n"
 ---
 
-# Perfiles De configuración {#settings-profiles}
+# Perfiles de configuración {#settings-profiles}
 
-Un perfil de configuración es una colección de configuraciones agrupadas con el mismo nombre. Cada usuario de ClickHouse tiene un perfil.
+Un perfil de configuración es una colección de configuraciones agrupadas con el mismo nombre.
+
+!!! note "Información"
+    ClickHouse también es compatible [Flujo de trabajo controlado por SQL](../access-rights.md#access-control) para administrar perfiles de configuración. Recomendamos usarlo.
+
+Un perfil puede tener cualquier nombre. El perfil puede tener cualquier nombre. Puede especificar el mismo perfil para diferentes usuarios. Lo más importante que puede escribir en el perfil de configuración es `readonly=1`, que asegura el acceso de sólo lectura.
+
+Los perfiles de configuración pueden heredar unos de otros. Para usar la herencia, indique una o varias `profile` configuraciones antes de las demás configuraciones que se enumeran en el perfil. En caso de que se defina una configuración en diferentes perfiles, se utiliza la última definida.
+
 Para aplicar todos los ajustes de un perfil, establezca el `profile` configuración.
 
 Ejemplo:
@@ -64,8 +72,10 @@ Ejemplo:
 </profiles>
 ```
 
-El ejemplo especifica dos perfiles: `default` y `web`. El `default` tiene un propósito especial: siempre debe estar presente y se aplica al iniciar el servidor. En otras palabras, el `default` perfil contiene la configuración predeterminada. El `web` profile es un perfil regular que se puede establecer utilizando el `SET` consulta o utilizando un parámetro URL en una consulta HTTP.
+El ejemplo especifica dos perfiles: `default` y `web`.
 
-Los perfiles de configuración pueden heredar unos de otros. Para usar la herencia, indique una o varias `profile` configuraciones antes de las demás configuraciones que se enumeran en el perfil. En caso de que se defina una configuración en diferentes perfiles, se utiliza la última definida.
+El `default` tiene un propósito especial: siempre debe estar presente y se aplica al iniciar el servidor. En otras palabras, el `default` perfil contiene la configuración predeterminada.
+
+El `web` profile es un perfil regular que se puede establecer utilizando el `SET` consulta o utilizando un parámetro URL en una consulta HTTP.
 
 [Artículo Original](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

@@ -23,8 +23,8 @@
                     {% set edit_url = page.edit_url %}
                 {% endif %}
                 {% if edit_url %}
-                <li class="nav-item">
-                    <a href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
+                <li id="edit-wrapper" class="nav-item">
+                    <a id="edit-link" href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
                 </li>
                 {% endif %}
                 <li class="nav-item">
