@@ -123,50 +123,46 @@ static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profil
         };
 }
 
-static PerfEventInfo hardwareEvent(int event_config, ProfileEvents::Event profile_event, std::optional<ProfileEvents::Event> pe_running, std::optional<ProfileEvents::Event> pe_enabled)
-{
-    return PerfEventInfo
-        {
-            .event_type = perf_type_id::PERF_TYPE_HARDWARE,
-            .event_config = event_config,
-            .profile_event = profile_event,
-            .profile_event_running = pe_running,
-            .profile_event_enabled = pe_enabled
-        };
-}
-
-#define HARDWARE_WITH_TIME(EVENT_NAME) \
-    hardwareEvent(EVENT_NAME, ProfileEvents::EVENT_NAME, {ProfileEvents::EVENT_NAME##_RUNNING}, {ProfileEvents::EVENT_NAME##_ENABLED})
+#define HARDWARE_EVENT(PERF_NAME, LOCAL_NAME) \
+    PerfEventInfo \
+    { \
+        .event_type = perf_type_id::PERF_TYPE_HARDWARE, \
+        .event_config = PERF_NAME, \
+        .profile_event = ProfileEvents::LOCAL_NAME, \
+        .profile_event_running = {ProfileEvents::LOCAL_NAME##Running}, \
+        .profile_event_enabled = {ProfileEvents::LOCAL_NAME##Enabled} \
+    }
 
 // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
 const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_CPU_CYCLES),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_INSTRUCTIONS),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_CACHE_REFERENCES),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_CACHE_MISSES),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_BRANCH_INSTRUCTIONS),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_BRANCH_MISSES),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_BUS_CYCLES),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_STALLED_CYCLES_BACKEND),
-    HARDWARE_WITH_TIME(PERF_COUNT_HW_REF_CPU_CYCLES),
+    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_INSTRUCTIONS, PerfInstructions),
+    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_REFERENCES, PerfCacheReferences),
+    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_MISSES, PerfCacheMisses),
+    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, PerfBranchInstructions),
+    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_MISSES, PerfBranchMisses),
+    HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend),
+    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend),
+    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
     // This reports the CPU clock, a high-resolution per-CPU timer.
     // a bit broken according to this: https://stackoverflow.com/a/56967896
-//            softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PERF_COUNT_SW_CPU_CLOCK),
-    softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PERF_COUNT_SW_TASK_CLOCK),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS),
-    softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PERF_COUNT_SW_CONTEXT_SWITCHES),
-    softwareEvent(PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PERF_COUNT_SW_CPU_MIGRATIONS),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MIN, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MIN),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PERF_COUNT_SW_PAGE_FAULTS_MAJ),
-    softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PERF_COUNT_SW_ALIGNMENT_FAULTS),
-    softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PERF_COUNT_SW_EMULATION_FAULTS)
+//    softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PerfCpuClock),
+    softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PerfTaskClock),
+    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PerfPageFaults),
+    softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PerfContextSwitches),
+    softwareEvent(PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PerfCpuMigrations),
+    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MIN, ProfileEvents::PerfPageFaultsMin),
+    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PerfPageFaultsMaj),
+    softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PerfAlignmentFaults),
+    softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PerfEmulationFaults)
     // This is a placeholder event that counts nothing. Informational sample record types such as mmap or
     // comm must be associated with an active event. This dummy event allows gathering such records
     // without requiring a counting event.
 //            softwareEventInfo(PERF_COUNT_SW_DUMMY, ProfileEvents::PERF_COUNT_SW_DUMMY)
 };
-#undef HARDWARE_WITH_TIME
+
+#undef HARDWARE_EVENT
 
 thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
 thread_local bool PerfEventsCounters::thread_events_descriptors_opened = false;
@@ -363,8 +359,8 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
                                   ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS).value / hw_ref_cpu_cycles
                                   : 0;
 
-    profile_events.increment(ProfileEvents::PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE_SCALED, instructions_per_cpu_scaled);
-    profile_events.increment(ProfileEvents::PERF_CUSTOM_INSTRUCTIONS_PER_CPU_CYCLE, instructions_per_cpu);
+    profile_events.increment(ProfileEvents::PerfCustomInstructionsPerCpuCycleScaled, instructions_per_cpu_scaled);
+    profile_events.increment(ProfileEvents::PerfCustomInstructionsPerCpuCycle, instructions_per_cpu);
 
     current_thread_counters = nullptr;
 }
