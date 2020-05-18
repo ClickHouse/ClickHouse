@@ -20,16 +20,17 @@ struct AggregateFunctionSumData
 {
     T sum{};
 
-    void add(T value)
+    void ALWAYS_INLINE add(T value)
     {
         sum += value;
     }
 
     /// Vectorized version
     template <typename Value>
-    void addMany(const Value * __restrict ptr, size_t count)
+    void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
         /// Compiler cannot unroll this loop, do it manually.
+        /// (at least for floats, most likely due to the lack of -fassociative-math)
 
         /// Something around the number of SSE registers * the number of elements fit in register.
         constexpr size_t unroll_count = 128 / sizeof(T);
@@ -52,6 +53,36 @@ struct AggregateFunctionSumData
         {
             sum += *ptr;
             ++ptr;
+        }
+    }
+
+    template <typename Value>
+    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    {
+        constexpr size_t unroll_count = 128 / sizeof(T);
+        T partial_sums[unroll_count]{};
+
+        const auto * end = ptr + count;
+        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
+
+        while (ptr < unrolled_end)
+        {
+            for (size_t i = 0; i < unroll_count; ++i)
+                if (!null_map[i])
+                    partial_sums[i] += ptr[i];
+            ptr += unroll_count;
+            null_map += unroll_count;
+        }
+
+        for (size_t i = 0; i < unroll_count; ++i)
+            sum += partial_sums[i];
+
+        while (ptr < end)
+        {
+            if (!*null_map)
+                sum += *ptr;
+            ++ptr;
+            ++null_map;
         }
     }
 
@@ -86,7 +117,7 @@ struct AggregateFunctionSumKahanData
     T compensation{};
 
     template <typename Value>
-    ALWAYS_INLINE void addImpl(Value value, T & out_sum, T & out_compensation)
+    void ALWAYS_INLINE addImpl(Value value, T & out_sum, T & out_compensation)
     {
         auto compensated_value = value - out_compensation;
         auto new_sum = out_sum + compensated_value;
@@ -94,16 +125,16 @@ struct AggregateFunctionSumKahanData
         out_sum = new_sum;
     }
 
-    void add(T value)
+    void ALWAYS_INLINE add(T value)
     {
         addImpl(value, sum, compensation);
     }
 
     /// Vectorized version
     template <typename Value>
-    void addMany(const Value * __restrict ptr, size_t count)
+    void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
-        constexpr size_t unroll_count = 4; // 128 / sizeof(T);
+        constexpr size_t unroll_count = 4;
         T partial_sums[unroll_count]{};
         T partial_compensations[unroll_count]{};
 
@@ -124,6 +155,37 @@ struct AggregateFunctionSumKahanData
         {
             addImpl(*ptr, sum, compensation);
             ++ptr;
+        }
+    }
+
+    template <typename Value>
+    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    {
+        constexpr size_t unroll_count = 4;
+        T partial_sums[unroll_count]{};
+        T partial_compensations[unroll_count]{};
+
+        const auto * end = ptr + count;
+        const auto * unrolled_end = ptr + (count / unroll_count * unroll_count);
+
+        while (ptr < unrolled_end)
+        {
+            for (size_t i = 0; i < unroll_count; ++i)
+                if (!null_map[i])
+                    addImpl(ptr[i], partial_sums[i], partial_compensations[i]);
+            ptr += unroll_count;
+            null_map += unroll_count;
+        }
+
+        for (size_t i = 0; i < unroll_count; ++i)
+            mergeImpl(sum, compensation, partial_sums[i], partial_compensations[i]);
+
+        while (ptr < end)
+        {
+            if (!*null_map)
+                addImpl(*ptr, sum, compensation);
+            ++ptr;
+            ++null_map;
         }
     }
 
@@ -215,6 +277,13 @@ public:
     {
         const auto & column = static_cast<const ColVecType &>(*columns[0]);
         this->data(place).addMany(column.getData().data(), batch_size);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *) const override
+    {
+        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
