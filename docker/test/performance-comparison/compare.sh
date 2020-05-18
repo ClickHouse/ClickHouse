@@ -542,7 +542,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( time get_profiles || restart || get_profiles ||: )
+    ( time get_profiles || restart || get_profiles ||: ) 2>> profile-errors.log
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
