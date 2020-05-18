@@ -33,11 +33,13 @@
 #endif
 
 /// Thread and memory sanitizers do not intercept mremap. The usage of mremap will lead to false positives.
+#ifndef DISABLE_MREMAP
 #if defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
 //#   pragma message("Allocators: no mremap")
 #   define DISABLE_MREMAP 1
 #else
 //#   pragma message("Allocators: using mremap")
+#endif
 #endif
 
 /// In debug builds, request mmap() at random addresses (a kind of ASLR) to reproduce more memory stomping bugs.
