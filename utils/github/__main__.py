@@ -7,15 +7,15 @@
     - All pull-requests must be squash-merged or explicitly merged without rebase.
     - All pull-requests to master must have at least one label prefixed with `pr-`.
     - Labels that require pull-request to be backported must be red colored (#ff0000).
-    - Stable branch name must be of form `YY.NUMBER`.
-    - All stable branches must be forked directly from the master branch and never be merged back,
+    - Release branch name must be of form `YY.NUMBER`.
+    - All release branches must be forked directly from the master branch and never be merged back,
       or merged with any other branches based on the master branch (including master branch itself).
 
     Output of this script:
 
     - Commits without references from pull-requests.
     - Pull-requests to master without proper labels.
-    - Pull-requests that need to be backported, with statuses per stable branch.
+    - Pull-requests that need to be backported, with statuses per release branch.
 
 '''
 
@@ -29,7 +29,7 @@ import sys
 try:
     from termcolor import colored  # `pip install termcolor`
 except ImportError:
-    sys.exit("Package 'termcolor' not found. Try run: `pip3 install termcolor`")
+    sys.exit("Package 'termcolor' not found. Try run: `pip3 install [--user] termcolor`")
 
 
 CHECK_MARK = colored('🗸', 'green')
@@ -45,8 +45,6 @@ parser.add_argument('--repo', '-r', type=str, default='', metavar='PATH',
     help='path to the root of the ClickHouse repository')
 parser.add_argument('--remote', type=str, default='origin',
     help='remote name of the "ClickHouse/ClickHouse" upstream')
-parser.add_argument('-n', type=int, default=3, dest='number',
-    help='number of last stable branches to consider')
 parser.add_argument('--token', type=str, required=True,
     help='token for Github access')
 parser.add_argument('--login', type=str,
@@ -54,31 +52,46 @@ parser.add_argument('--login', type=str,
 parser.add_argument('--auto-label', action='store_true', dest='autolabel', default=True,
     help='try to automatically parse PR description and put labels')
 
+# Either select last N release branches, or specify them manually.
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('-n', type=int, default=3, dest='number',
+    help='number of last release branches to consider')
+group.add_argument('--branch', type=str, action='append', metavar='BRANCH',
+    help='specific release branch name to consider')
+
 args = parser.parse_args()
 
 github = query.Query(args.token, 30)
 repo = local.Local(args.repo, args.remote, github.get_default_branch())
 
-stables = repo.get_stables()[-args.number:] # [(branch name, base)]
-if not stables:
+if not args.branch:
+    release_branches = repo.get_release_branches()[-args.number:] # [(branch name, base)]
+else:
+    release_branches = []
+    all_release_branches = repo.get_release_branches()
+    for branch in all_release_branches:
+        if branch[0] in args.branch:
+            release_branches.append(branch)
+
+if not release_branches:
     sys.exit('No release branches found!')
 else:
     print('Found release branches:')
-    for stable in stables:
-        print(f'{CHECK_MARK} {stable[0]} forked from {stable[1]}')
+    for branch in release_branches:
+        print(f'{CHECK_MARK} {branch[0]} forked from {branch[1]}')
 
-first_commit = stables[0][1]
+first_commit = release_branches[0][1]
 pull_requests = github.get_pull_requests(first_commit, args.login)
 good_commits = set(pull_request['mergeCommit']['oid'] for pull_request in pull_requests)
 
 bad_commits = [] # collect and print them in the end
 from_commit = repo.get_head_commit()
-for i in reversed(range(len(stables))):
-    for commit in repo.iterate(from_commit, stables[i][1]):
+for i in reversed(range(len(release_branches))):
+    for commit in repo.iterate(from_commit, release_branches[i][1]):
         if str(commit) not in good_commits and commit.author.name != 'robot-clickhouse':
             bad_commits.append(commit)
 
-    from_commit = stables[i][1]
+    from_commit = release_branches[i][1]
 
 members = set(github.get_members("ClickHouse", "ClickHouse"))
 def print_responsible(pull_request):
@@ -146,22 +159,22 @@ if need_backporting:
         no_backport_labeled = set()
         wait = set()
 
-        for stable in stables:
-            if repo.comparator(stable[1]) < repo.comparator(pull_request['mergeCommit']['oid']):
-                targets.append(stable[0])
+        for branch in release_branches:
+            if repo.comparator(branch[1]) < repo.comparator(pull_request['mergeCommit']['oid']):
+                targets.append(branch[0])
 
                 # FIXME: compatibility logic - check for a manually set label, that indicates status 'backported'.
-                # FIXME: O(n²) - no need to iterate all labels for every `stable`
+                # FIXME: O(n²) - no need to iterate all labels for every `branch`
                 for label in github.get_labels(pull_request):
                     if re_vlabel.match(label['name']) or re_vlabel_backported.match(label['name']):
-                        if f'v{stable[0]}' == label['name'] or f'v{stable[0]}-backported' == label['name']:
-                            backport_labeled.add(stable[0])
+                        if f'v{branch[0]}' == label['name'] or f'v{branch[0]}-backported' == label['name']:
+                            backport_labeled.add(branch[0])
                     if re_vlabel_conflicts.match(label['name']):
-                        if f'v{stable[0]}-conflicts' == label['name']:
-                            conflict_labeled.add(stable[0])
+                        if f'v{branch[0]}-conflicts' == label['name']:
+                            conflict_labeled.add(branch[0])
                     if re_vlabel_no_backport.match(label['name']):
-                        if f'v{stable[0]}-no-backport' == label['name']:
-                            no_backport_labeled.add(stable[0])
+                        if f'v{branch[0]}-no-backport' == label['name']:
+                            no_backport_labeled.add(branch[0])
 
         for event in github.get_timeline(pull_request):
             if(event['isCrossRepository'] or
