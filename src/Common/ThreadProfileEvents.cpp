@@ -164,13 +164,13 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
 
 #undef HARDWARE_EVENT
 
-thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
-thread_local bool PerfEventsCounters::thread_events_descriptors_opened = false;
-thread_local std::optional<PerfEventsCounters::Id> PerfEventsCounters::current_thread_counters_id = std::nullopt;
-
 std::atomic<PerfEventsCounters::Id> PerfEventsCounters::counters_id = 0;
 std::atomic<bool> PerfEventsCounters::perf_unavailability_logged = false;
 std::atomic<bool> PerfEventsCounters::particular_events_unavailability_logged = false;
+
+thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
+thread_local bool PerfEventsCounters::thread_events_descriptors_opened = false;
+thread_local std::optional<PerfEventsCounters::Id> PerfEventsCounters::current_thread_counters_id = std::nullopt;
 
 Logger * PerfEventsCounters::getLogger()
 {
