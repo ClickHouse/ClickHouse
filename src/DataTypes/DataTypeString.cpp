@@ -376,8 +376,10 @@ void registerDataTypeString(DataTypeFactory & factory)
     /// These synonyms are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NCHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("CHARACTER", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("NVARCHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARCHAR2", "String", DataTypeFactory::CaseInsensitive); /// Oracle
     factory.registerAlias("TEXT", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("TINYTEXT", "String", DataTypeFactory::CaseInsensitive);
