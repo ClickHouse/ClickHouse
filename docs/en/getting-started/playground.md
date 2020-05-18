@@ -8,26 +8,26 @@ toc_title: Playground
 [ClickHouse Playground](https://play.clickhouse.tech) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
 Several example datasets are available in the Playground as well as sample queries that show ClickHouse features. There's also a selection of ClickHouse LTS releases to experiment with.
 
-ClickHouse Playground gives the experience of m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) instance hosted in [Yandex.Cloud](https://cloud.yandex.com/). More information about [cloud providers](../commercial/cloud.md).
+ClickHouse Playground gives the experience of m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) instance (4 vCPU, 32 GB RAM) hosted in [Yandex.Cloud](https://cloud.yandex.com/). More information about [cloud providers](../commercial/cloud.md).
 
 You can make queries to playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers. More information about software products that support ClickHouse is available [here](../interfaces/index.md).
 
 ## Credentials
 
-| Parameter         | Value                                   |
-|:------------------|:----------------------------------------|
-| HTTPS endpoint    | `https://play-api.clickhouse.tech:8443` |
-| Native endpoint   | `play-api.clickhouse.tech:9440`         |
-| User              | `playground`                            |
-| Password          | `clickhouse`                            |
-
-!!! note "Note"
-    All these endpoints require a secure TLS connection.
+| Parameter           | Value                                   |
+|:--------------------|:----------------------------------------|
+| HTTPS endpoint      | `https://play-api.clickhouse.tech:8443` |
+| Native TCP endpoint | `play-api.clickhouse.tech:9440`         |
+| User                | `playground`                            |
+| Password            | `clickhouse`                            |
 
 There are additional endpoints with specific ClickHouse releases to experiment with their differences (ports and user/password are the same as above):
 
 * 20.3 LTS: `play-api-v20-3.clickhouse.tech`
 * 19.14 LTS: `play-api-v19-14.clickhouse.tech`
+
+!!! note "Note"
+    All these endpoints require a secure TLS connection.
 
 ## Limitations
 
