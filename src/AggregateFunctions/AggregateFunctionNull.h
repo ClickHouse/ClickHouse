@@ -194,12 +194,21 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
         if (!column->isNullAt(row_num))
         {
             this->setFlag(place);
-            const IColumn * nested_column = &column->getNestedColumn();
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
+    }
+
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        const UInt8 * null_map = column->getNullMapData().data();
+
+        this->nested_function->addBatchSinglePlaceNotNull(batch_size, this->nestedPlace(place), &nested_column, null_map, arena);
     }
 };
 

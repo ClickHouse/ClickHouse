@@ -145,6 +145,11 @@ public:
       */
     virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
+    /** The same for single place when need to aggregate only filtered data.
+      */
+    virtual void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const = 0;
+
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
@@ -199,6 +204,14 @@ public:
     {
         for (size_t i = 0; i < batch_size; ++i)
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchArray(
