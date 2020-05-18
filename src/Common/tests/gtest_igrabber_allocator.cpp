@@ -68,24 +68,30 @@ TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
     EXPECT_EQ(stats.all_regions_count, 1);
 }
 
-TEST(IGrabberAllocator, CacheShrinking)
+TEST(IGrabberAllocator, CacheUnusedShrinking)
 {
     IntToInt cache(MMAP_THRESHOLD);
 
-    for (int i = 0; i < 200; ++i)
-        cache.getOrSet(i, [] {return 100; }, [](void *) { return 1; });
+    for (int i = 0; i < 5; ++i)
+        EXPECT_TRUE(cache.getOrSet(i, [] {return 100; }, [](void *) { return 1; }).second);
 
     auto stats = cache.getStats();
 
-    EXPECT_EQ(stats.misses, 200);
+    EXPECT_EQ(stats.misses, 5);
+    EXPECT_EQ(stats.free_regions_count, 1);
+    EXPECT_EQ(stats.used_regions_count, 0);
 
     cache.shrinkToFit();
 
     EXPECT_EQ(cache.getStats(), ga::Stats{});
 
-    // assert there are no used elements.
-    for (int i = 0; i < 200; ++i)
-        EXPECT_EQ(nullptr, cache.get(i));
+    for (int i = 0; i < 5; ++i)
+        EXPECT_EQ(cache.get(i).get(), nullptr);
+}
+
+TEST(IGrabberAllocator, CacheUsedShrinking)
+{
+    IntToInt cache(MMAP_THRESHOLD);
 
     auto&& [ptr, produced] = cache.getOrSet(0, [] {return 100;}, [](void *) { return 1; });
 
