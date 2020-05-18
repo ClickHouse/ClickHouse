@@ -182,6 +182,12 @@ static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int grou
     return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
 }
 
+// cat /proc/sys/kernel/perf_event_paranoid
+// -1: Allow use of (almost) all events by all users
+// >=0: Disallow raw tracepoint access by users without CAP_IOC_LOCK
+// >=1: Disallow CPU event access by users without CAP_SYS_ADMIN
+// >=2: Disallow kernel profiling by users without CAP_SYS_ADMIN
+// >=3: Disallow all event access by users without CAP_SYS_ADMIN
 static bool getPerfEventParanoid(Int32 & result)
 {
     // the longest possible variant: "-1\0"
