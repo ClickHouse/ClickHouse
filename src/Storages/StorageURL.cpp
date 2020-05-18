@@ -14,6 +14,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -105,10 +106,10 @@ namespace
                     context.getRemoteHostFilter()),
                 compression_method);
 
-            reader = FormatFactory::instance().getInput(format, *read_buf,
-                sample_block, context, max_block_size, format_settings);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader,
-                columns, context);
+
+            auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
         }
 
         String getName() const override

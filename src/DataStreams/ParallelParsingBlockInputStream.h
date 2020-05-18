@@ -158,7 +158,6 @@ private:
     // constructor, which is absent for atomics that are inside ProcessingUnit.
     std::deque<ProcessingUnit> processing_units;
 
-
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number);
     void finishAndWait();
 
