@@ -94,7 +94,7 @@ void ClusterCopierApp::mainImpl()
     StatusFile status_file(process_path + "/status");
     ThreadStatus thread_status;
 
-    auto log = &logger();
+    auto * log = &logger();
     LOG_INFO(log, "Starting clickhouse-copier ("
         << "id " << process_id << ", "
         << "host_id " << host_id << ", "

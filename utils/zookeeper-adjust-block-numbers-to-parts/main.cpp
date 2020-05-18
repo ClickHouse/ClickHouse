@@ -199,7 +199,7 @@ void setCurrentBlockNumber(zkutil::ZooKeeper & zk, const std::string & path, Int
     create_ephemeral_nodes(1); /// Firstly try to create just a single node.
 
     /// Create other nodes in batches of 50 nodes.
-    while (current_block_number + 50 <= new_current_block_number)
+    while (current_block_number + 50 <= new_current_block_number) // NOLINT: clang-tidy thinks that the loop is infinite
         create_ephemeral_nodes(50);
 
     create_ephemeral_nodes(new_current_block_number - current_block_number);
