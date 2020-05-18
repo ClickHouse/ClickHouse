@@ -142,14 +142,14 @@ private:
     /// Current configuration with core OpenCL instances.
     std::shared_ptr<OCL::Configuration> configuration = nullptr;
 
-    cl_kernel getKernel(cl_char) const { return kernels[KernelInt8].get(); }
-    cl_kernel getKernel(cl_uchar) const { return kernels[KernelUInt8].get(); }
-    cl_kernel getKernel(cl_short) const { return kernels[KernelInt16].get(); }
-    cl_kernel getKernel(cl_ushort) const { return kernels[KernelUInt16].get(); }
-    cl_kernel getKernel(cl_int) const { return kernels[KernelInt32].get(); }
-    cl_kernel getKernel(cl_uint) const { return kernels[KernelUInt32].get(); }
-    cl_kernel getKernel(cl_long) const { return kernels[KernelInt64].get(); }
-    cl_kernel getKernel(cl_ulong) const { return kernels[KernelUInt64].get(); }
+    cl_kernel getKernel(Int8) const { return kernels[KernelInt8].get(); }
+    cl_kernel getKernel(UInt8) const { return kernels[KernelUInt8].get(); }
+    cl_kernel getKernel(Int16) const { return kernels[KernelInt16].get(); }
+    cl_kernel getKernel(UInt16) const { return kernels[KernelUInt16].get(); }
+    cl_kernel getKernel(Int32) const { return kernels[KernelInt32].get(); }
+    cl_kernel getKernel(UInt32) const { return kernels[KernelUInt32].get(); }
+    cl_kernel getKernel(Int64) const { return kernels[KernelInt64].get(); }
+    cl_kernel getKernel(UInt64) const { return kernels[KernelUInt64].get(); }
 
     /// Sorts p_input inplace with indices. Works only with arrays which size equals to power of two.
     template <class T>
