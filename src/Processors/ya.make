@@ -10,6 +10,7 @@ SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
+    Executors/PipelineExecutingBlockInputStream.h
     Executors/PipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     Executors/TreeExecutorBlockInputStream.cpp
