@@ -21,7 +21,7 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #    if USE_OPENCL
-#        include "Common/BitonicSort.h"
+#        include "Common/BitonicSort.h" // Y_IGNORE
 #    endif
 #else
 #undef USE_OPENCL
@@ -127,6 +127,7 @@ void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_
 {
     if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
     {
+#if !defined(ARCADIA_BUILD)
 #if USE_OPENCL
         if (!limit || limit >= data.size())
         {
@@ -137,6 +138,7 @@ void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_
         }
 #else
         throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
+#endif
 #endif
     }
 

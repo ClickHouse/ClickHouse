@@ -116,14 +116,17 @@ private:
 
     void executeFormatImpl(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
+        const size_t num_arguments = arguments.size();
+        assert(num_arguments >= 2);
+
         auto c_res = ColumnString::create();
-        std::vector<const ColumnString::Chars *> data(arguments.size());
-        std::vector<const ColumnString::Offsets *> offsets(arguments.size());
-        std::vector<size_t> fixed_string_sizes(arguments.size());
-        std::vector<String> constant_strings(arguments.size());
+        std::vector<const ColumnString::Chars *> data(num_arguments);
+        std::vector<const ColumnString::Offsets *> offsets(num_arguments);
+        std::vector<size_t> fixed_string_sizes(num_arguments);
+        std::vector<String> constant_strings(num_arguments);
         bool has_column_string = false;
         bool has_column_fixed_string = false;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (size_t i = 0; i < num_arguments; ++i)
         {
             const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -148,9 +151,9 @@ private:
         }
 
         String pattern;
-        pattern.reserve(2 * arguments.size());
+        pattern.reserve(2 * num_arguments);
 
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (size_t i = 0; i < num_arguments; ++i)
             pattern += "{}";
 
         FormatImpl::formatExecute(

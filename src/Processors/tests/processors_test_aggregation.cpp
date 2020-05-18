@@ -9,8 +9,6 @@
 #include <Processors/ForkProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueueBuffer.h>
-#include <Processors/Executors/SequentialPipelineExecutor.h>
-#include <Processors/Executors/ParallelPipelineExecutor.h>
 #include <Processors/printPipeline.h>
 
 #include <Columns/ColumnsNumber.h>
