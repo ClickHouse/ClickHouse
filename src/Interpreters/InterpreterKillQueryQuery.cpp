@@ -302,8 +302,9 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true, QueryProcessingStage::Complete, false, false);
-    Block res = block_io.in->read();
+    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true);
+    auto stream = block_io.getInputStream();
+    Block res = stream->read();
 
     if (res && block_io.in->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);

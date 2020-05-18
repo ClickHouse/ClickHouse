@@ -22,6 +22,9 @@ public:
     explicit PullingPipelineExecutor(QueryPipeline & pipeline_);
     ~PullingPipelineExecutor();
 
+    /// Get structure of returned block or chunk.
+    const Block & getHeader() const;
+
     /// Methods return false if query is finished.
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded.
     /// You can use any pull method.

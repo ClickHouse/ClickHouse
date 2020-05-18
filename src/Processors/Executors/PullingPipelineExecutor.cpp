@@ -52,6 +52,11 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
     }
 }
 
+const Block & PullingPipelineExecutor::getHeader() const
+{
+    return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
+}
+
 static void threadFunction(PullingPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
     if (thread_group)
