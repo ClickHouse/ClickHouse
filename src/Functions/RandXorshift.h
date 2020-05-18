@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 DECLARE_MULTITARGET_CODE(
 
 struct RandXorshiftImpl
