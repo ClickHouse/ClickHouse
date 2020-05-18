@@ -255,6 +255,7 @@ namespace Coordination
         VALUE,
         SEQUENTIAL,
         CHILDS,
+        CTIME,
         IS_EPHEMERAL,
         IS_SEQUENTIAL
     };
@@ -299,6 +300,10 @@ namespace Coordination
             {
                 prefix = "/childs/";
             }
+            else if (prefix_type == EtcdKeyPrefix::CTIME)
+            {
+                prefix = "/ctime/";
+            }
             else if (prefix_type == EtcdKeyPrefix::IS_EPHEMERAL)
             {
                 prefix = "/is_ephemeral/";
@@ -320,6 +325,10 @@ namespace Coordination
         String getChildsFlagKey() const
         {
             return generateFullPathFromParts(EtcdKeyPrefix::CHILDS, level, zk_path);
+        }
+        String getCtimeKey() const
+        {
+            return generateFullPathFromParts(EtcdKeyPrefix::CTIME, level, zk_path);
         }
         String getEphimeralFlagKey() const
         {
@@ -661,6 +670,9 @@ namespace Coordination
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getSequentialFlagKey(), std::to_string(is_sequential), cur_lease_id));
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getEphimeralFlagKey(), std::to_string(is_ephemeral), cur_lease_id));
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getChildsFlagKey(), "", cur_lease_id));
+            auto time_now = std::chrono::high_resolution_clock::now();
+            int64_t time = std::chrono::duration_cast<std::chrono::milliseconds>(time_now.time_since_epoch()).count();
+            txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getCtimeKey(), std::to_string(time), cur_lease_id));
             if (parentPath(path) != "/")
             {
                 txn_requests.compares.emplace_back(prepareCompare(etcd_key.getParentKey(), "version", "not_equal", -1));
@@ -740,6 +752,7 @@ namespace Coordination
             txn_requests.compares.emplace_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", version == -1 ? "not_equal" : "equal", version));
 
             txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsFlagKey()));
+            txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
             for (auto key : etcd_key.getRelatedKeys())
             {
                 txn_requests.success_delete_ranges.emplace_back(prepareDeleteRangeRequest(key));
@@ -762,6 +775,7 @@ namespace Coordination
         void preparePostCall() override
         {
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
+            txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getCtimeKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
         }
     };
@@ -778,6 +792,7 @@ namespace Coordination
         void preparePostCall() override
         {
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
+            txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getCtimeKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
         }
     };
@@ -797,7 +812,9 @@ namespace Coordination
         {
             txn_requests.compares.emplace_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", version == -1 ? "not_equal" : "equal", version));
             txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
-            txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
+            txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getCtimeKey()));
+            txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
+            txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getCtimeKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getFullEtcdKey(), data));
         }
@@ -813,9 +830,8 @@ namespace Coordination
         }
         void preparePostCall() override
         {
-            txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
-            txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
+            txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getCtimeKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
         }
     };
@@ -832,6 +848,7 @@ namespace Coordination
         }
         void preparePostCall() override
         {
+            txn_requests.compares.emplace_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", version == -1 ? "not_equal" : "equal", version));
             txn_requests.failure_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
         }
@@ -1115,6 +1132,7 @@ namespace Coordination
             {
                 create_response.finished = false;
             }
+            create_response.path_created = path;
             if (!create_response.finished)
             {
                 LOG_DEBUG(log, "Create request for path: " << process_path << " does not finished.");
@@ -1208,6 +1226,10 @@ namespace Coordination
                         exists_response.stat.version = kv.version();
                         exists_response.stat.ephemeralOwner = kv.lease();
                     }
+                    else if (kv.key() == etcd_key.getCtimeKey())
+                    {
+                        exists_response.stat.ctime = std::stoll(kv.value());
+                    }
                     else if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                     {
                         exists_response.stat.numChildren = range_resp.count();
@@ -1238,6 +1260,10 @@ namespace Coordination
                             get_response.stat.ephemeralOwner = kv.lease();
                             get_response.error = Error::ZOK;
                         }
+                        else if (kv.key() == etcd_key.getCtimeKey())
+                        {
+                            get_response.stat.ctime = std::stoll(kv.value());
+                        }
                         else if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                         {
                             get_response.stat.numChildren = range_resp.count();
@@ -1255,50 +1281,40 @@ namespace Coordination
         if (!compare_result)
         {
             set_response.error = Error::ZNONODE;
-            for (auto resp: responses)
-            {
-                if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
-                    {
-                        if (kv.key() == etcd_key.getFullEtcdKey())
-                        {
-                            set_response.error = Error::ZOK;
-                            if (version != -1 && kv.version() != version)
-                            {
-                                set_response.error = Error::ZBADVERSION;
-                                return response;
-                            }
-                        }
-                    }
-                }
-            }
         }
-        else
+        for (auto resp: responses)
         {
-            for (auto resp: responses)
+            if (ResponseOp::ResponseCase::kResponsePut == resp.response_case())
             {
-                if (ResponseOp::ResponseCase::kResponsePut == resp.response_case())
+                auto put_resp = resp.response_put();
+                if (put_resp.prev_kv().key() == etcd_key.getFullEtcdKey())
                 {
-                    auto put_resp = resp.response_put();
-                    if (put_resp.prev_kv().key() == etcd_key.getFullEtcdKey())
-                    {
-                        set_response.error = Error::ZOK;
-                        set_response.stat.version = put_resp.prev_kv().version() + 1;
-                        set_response.stat.ephemeralOwner = put_resp.prev_kv().lease();
-                    }
-                    
+                    set_response.error = Error::ZOK;
+                    set_response.stat.version = put_resp.prev_kv().version() + 1;
+                    set_response.stat.ephemeralOwner = put_resp.prev_kv().lease();
                 }
-                else if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                
+            }
+            else if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+            {
+                auto range_resp = resp.response_range();
+                for (auto kv : range_resp.kvs())
                 {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
+                    if (kv.key() == etcd_key.getFullEtcdKey())
                     {
-                        if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
+                        if (version != -1 && kv.version() != version)
                         {
-                            set_response.stat.numChildren = range_resp.count();
+                            set_response.error = Error::ZBADVERSION;
+                            break;
                         }
+                    }
+                    else if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
+                    {
+                        set_response.stat.numChildren = range_resp.count();
+                    }
+                    else if (kv.key() == etcd_key.getCtimeKey())
+                    {
+                        set_response.stat.ctime = std::stoll(kv.value());
                     }
                 }
             }
@@ -1323,7 +1339,11 @@ namespace Coordination
                         list_response.stat.version = kv.version();
                         list_response.stat.ephemeralOwner = kv.lease();
                     }
-                    if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
+                    else if (kv.key() == etcd_key.getCtimeKey())
+                    {
+                        list_response.stat.ctime = std::stoll(kv.value());
+                    }
+                    else if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                     {
                         list_response.stat.numChildren = range_resp.count();
                         for (auto kv : range_resp.kvs())
@@ -1333,6 +1353,7 @@ namespace Coordination
                         list_response.error = Error::ZOK;
                         break;
                     }
+
                 }
             }
         }
@@ -1386,16 +1407,12 @@ namespace Coordination
                     if (sequential_keys_map[etcd_request->path] > 1)
                     {
                         auto * cur_resp = dynamic_cast<const EtcdKeeperCreateResponse *>(etcd_request->makeResponseFromResponses(true, responses).get());
-                        bool succeeded = cur_resp->error == Error::ZOK;
                         int32_t cur_seq_num = etcd_request->seq_num;
                         for (int i = 0; i != sequential_keys_map[etcd_request->path]; i++)
                         {
                             auto added_resp = std::make_shared<EtcdKeeperCreateResponse>(*cur_resp);
-                            if (succeeded)
-                            {
-                                etcd_request->setSequentialNumber(cur_seq_num + i);
-                                added_resp->path_created = etcd_request->process_path;
-                            }
+                            etcd_request->setSequentialNumber(cur_seq_num + i);
+                            added_resp->path_created = etcd_request->process_path;
                             multi_response.responses.emplace_back(added_resp);
                         }
                         continue;
@@ -1406,6 +1423,7 @@ namespace Coordination
         }
         else
         {
+            multi_response.error = Error::ZSYSTEMERROR;
             multi_response.responses.reserve(etcd_requests.size());
             for (int i; i != etcd_requests.size(); i++)
             {
