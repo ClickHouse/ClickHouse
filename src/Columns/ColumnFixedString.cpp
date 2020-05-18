@@ -169,9 +169,8 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
 
     size_t k = equal_range.size();
     if (limit)
-    {
         --k;
-    }
+
     EqualRanges new_ranges;
 
     for (size_t i = 0; i < k; ++i)
@@ -187,16 +186,13 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
             if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n) != 0)
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
         if (last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, last);
-        }
     }
     if (limit)
     {
@@ -211,9 +207,8 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
             if (memcmpSmallAllowOverflow15(chars.data() + j * n, chars.data() + new_first * n, n)  != 0)
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
@@ -227,9 +222,7 @@ void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permu
             }
         }
         if (new_last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, new_last);
-        }
     }
     equal_range = std::move(new_ranges);
 }
