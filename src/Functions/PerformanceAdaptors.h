@@ -117,123 +117,67 @@ struct PerformanceStatistics
     PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
 };
 
-struct PerformanceAdaptorOptions
-{
-    std::optional<std::vector<String>> implementations;
-};
-
-/// Redirects IExecutableFunctionImpl::execute() and IFunction:executeImpl() to executeFunctionImpl();
-template <typename DefaultFunction, typename Dummy = void>
-class FunctionExecutor;
-
-template <typename DefaultFunction>
-class FunctionExecutor<DefaultFunction, std::enable_if_t<std::is_base_of_v<IExecutableFunctionImpl, DefaultFunction>>>
-    : public DefaultFunction
-{
-public:
-    using BaseFunctionPtr = ExecutableFunctionImplPtr;
-
-    template <typename ...Args>
-    FunctionExecutor(Args&&... args) : DefaultFunction(std::forward<Args>(args)...) {}
-
-    virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        executeFunctionImpl(block, arguments, result, input_rows_count);
-    }
-};
-
-template <typename DefaultFunction>
-class FunctionExecutor<DefaultFunction, std::enable_if_t<std::is_base_of_v<IFunction, DefaultFunction>>>
-    : public DefaultFunction
-{
-public:
-    using BaseFunctionPtr = FunctionPtr;
-
-    template <typename ...Args>
-    FunctionExecutor(Args&&... args) : DefaultFunction(std::forward<Args>(args)...) {}
-
-    virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        executeFunctionImpl(block, arguments, result, input_rows_count);
-    }
-};
-
-/// Combine several IExecutableFunctionImpl into one.
-/// All the implementations should be equivalent.
-/// Implementation to execute will be selected based on performance on previous runs.
-/// DefaultFunction should be executable on every supported platform, while alternative implementations
-/// could use extended set of instructions (AVX, NEON, etc).
-/// It's convenient to inherit your func from this and register all alternative implementations in the constructor.
-template <typename DefaultFunction>
-class FunctionPerformanceAdaptor : public FunctionExecutor<DefaultFunction>
+/* Class which is used to store implementations for the function and selecting the best one to run
+ * based on processor architecture and statistics from previous runs.
+ * 
+ * FunctionInterface is typically IFunction or IExecutableFunctionImpl, but practically it can be
+ * any interface that contains "execute" method (IFunction is an exception and is supported as well).
+ * 
+ * Example of usage:
+ * 
+ * class MyDefaulImpl : public IFunction {...};
+ * class MySecondImpl : public IFunction {...};
+ * class MyAVX2Impl : public IFunction {...};
+ * 
+ * /// All methods but execute/executeImpl are usually not bottleneck, so just use them from
+ * /// default implementation.
+ * class MyFunction : public MyDefaultImpl
+ * {
+ *     MyFunction(const Context & context) : selector(context) {
+ *         /// Register all implementations in constructor.
+ *         /// There could be as many implementation for every target as you want.
+ *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
+ *         selector.registerImplementation<TargetArch::Default, MySecondImpl>();
+ *         selector.registreImplementation<TargetArch::AVX2, MyAVX2Impl>();
+ *     }
+ *
+ *     void executeImpl(...) override {
+ *         selector.selectAndExecute(...);
+ *     }
+ *
+ *     static FunctionPtr create(const Context & context) {
+ *         return std::make_shared<MyFunction>(context);
+ *     }
+ * private:
+ *     ImplementationSelector<IFunction> selector;
+ * };
+ */
+template <typename FunctionInterface>
+class ImplementationSelector
 {
 public:
-    using BaseFunctionPtr = typename FunctionExecutor<DefaultFunction>::BaseFunctionPtr;
+    using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    template <typename ...Params>
-    FunctionPerformanceAdaptor(const Context & context_, Params&&... params)
-        : FunctionExecutor<DefaultFunction>(std::forward<Params>(params)...)
-        , context(context_)
+    ImplementationSelector(const Context & context_) : context(context_) {}
+
+    /* Select the best implementation based on previous runs.
+     * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
+     * and "execute" otherwise.
+     */
+    void selectAndExecute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-        if (isImplementationEnabled(DefaultFunction::getImplementationTag()))
-            statistics.emplace_back();
-    }
-
-    /// Register alternative implementation.
-    template<typename Function, typename ...Params>
-    void registerImplementation(TargetArch arch, Params&&... params)
-    {
-        if (IsArchSupported(arch) && isImplementationEnabled(Function::getImplementationTag()))
-        {
-            impls.emplace_back(std::make_shared<Function>(std::forward<Params>(params)...));
-            statistics.emplace_back();
-        }
-    }
-
-    bool isImplementationEnabled(const String & impl_tag)
-    {
-        const String & tag = context.getSettingsRef().function_implementation.value;
-        return tag.empty() || tag == impl_tag;
-        // if (!options.implementations)
-        //     return true;
-
-        // for (const auto & tag : *options.implementations)
-        // {
-        //     if (tag == impl_tag)
-        //         return true;
-        // }
-        // return false;
-    }
-
-protected:
-    virtual void executeFunctionImpl(Block & block, const ColumnNumbers & arguments,
-                                     size_t result, size_t input_rows_count) override
-    {
-        if (statistics.empty())
-            throw Exception("All available implementations are disabled by user config",
+        if (implementations.empty())
+            throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
                             ErrorCodes::NO_SUITABLE_FUNCTION_IMPLEMENTATION);
 
         auto id = statistics.select();
         Stopwatch watch;
 
-        if (id == impls.size())
-        {
-            if constexpr (std::is_base_of_v<IFunction, FunctionPerformanceAdaptor>)
-                DefaultFunction::executeImpl(block, arguments, result, input_rows_count);
-            else
-                DefaultFunction::execute(block, arguments, result, input_rows_count);
-        }
+        if constexpr (std::is_same_v<FunctionInterface, IFunction>)
+            implementations[id]->executeImpl(block, arguments, result, input_rows_count);
         else
-        {
-            if constexpr (std::is_base_of_v<IFunction, FunctionPerformanceAdaptor>)
-                impls[id]->executeImpl(block, arguments, result, input_rows_count);
-            else
-                impls[id]->execute(block, arguments, result, input_rows_count);
-        }
+            implementations[id]->execute(block, arguments, result, input_rows_count);
+        
         watch.stop();
 
         // TODO(dakovalkov): Calculate something more informative.
@@ -249,10 +193,29 @@ protected:
         }
     }
 
+    /* Register new implementation for function.
+     *
+     * Arch - required instruction set for running the implementation. It's guarantied that no one method would
+     * be called (even the constructor and static methods) if the processor doesn't support this instruction set.
+     * 
+     * FunctionImpl - implementation, should be inherited from template argument FunctionInterface.
+     * 
+     * All function arguments will be forwarded to the implementation constructor.
+     */
+    template <TargetArch Arch, typename FunctionImpl, typename ...Args>
+    void registerImplementation(Args&&... args)
+    {
+        if (IsArchSupported(Arch))
+        {
+            implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));
+            statistics.emplace_back();
+        }
+    }
+
 private:
-    std::vector<BaseFunctionPtr> impls; // Alternative implementations.
-    PerformanceStatistics statistics;
     const Context & context;
+    std::vector<ImplementationPtr> implementations;
+    PerformanceStatistics statistics;
 };
 
 }
