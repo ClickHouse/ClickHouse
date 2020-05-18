@@ -1,8 +1,6 @@
 #include <Common/config.h>
 #include <iostream>
 
-#if USE_OPENCL
-
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
@@ -16,13 +14,10 @@
 #include "Common/BitonicSort.h"
 
 
-using Key = cl_ulong;
-
-
 /// Generates vector of size 8 for testing.
 /// Vector contains max possible value, min possible value and duplicate values.
 template <class Type>
-static void generateTest(std::vector<Type>& data, Type min_value, Type max_value)
+static void generateTest(std::vector<Type> & data, Type min_value, Type max_value)
 {
     int size = 10;
 
@@ -62,8 +57,7 @@ static void check(const std::vector<size_t> & indices, bool reverse = true)
 
 
 template <class Type>
-static void sortBitonicSortWithPodArrays(const std::vector<Type>& data,
-                                         std::vector<size_t> & indices, bool ascending = true)
+static void sortBitonicSortWithPodArrays(const std::vector<Type> & data, std::vector<size_t> & indices, bool ascending = true)
 {
     DB::PaddedPODArray<Type> pod_array_data = DB::PaddedPODArray<Type>(data.size());
     DB::IColumn::Permutation pod_array_indices = DB::IColumn::Permutation(data.size());
@@ -74,7 +68,6 @@ static void sortBitonicSortWithPodArrays(const std::vector<Type>& data,
         *(pod_array_indices.data() + index) = index;
     }
 
-    BitonicSort::getInstance().configure();
     BitonicSort::getInstance().sort(pod_array_data, pod_array_indices, ascending);
 
     for (size_t index = 0; index < data.size(); ++index)
@@ -83,7 +76,7 @@ static void sortBitonicSortWithPodArrays(const std::vector<Type>& data,
 
 
 template <class Type>
-static void testBitonicSort(std::string test_name, Type min_value, Type max_value)
+static void testBitonicSort(const std::string & test_name, Type min_value, Type max_value)
 {
     std::cerr << test_name << std::endl;
 
@@ -102,147 +95,80 @@ static void testBitonicSort(std::string test_name, Type min_value, Type max_valu
 
 static void straightforwardTests()
 {
-    testBitonicSort<cl_char>("Test 01: cl_char.", CHAR_MIN, CHAR_MAX);
-    testBitonicSort<cl_uchar>("Test 02: cl_uchar.", 0, UCHAR_MAX);
-    testBitonicSort<cl_short>("Test 03: cl_short.", SHRT_MIN, SHRT_MAX);
-    testBitonicSort<cl_ushort>("Test 04: cl_ushort.", 0, USHRT_MAX);
-    testBitonicSort<cl_int>("Test 05: cl_int.", INT_MIN, INT_MAX);
-    testBitonicSort<cl_uint >("Test 06: cl_uint.", 0, UINT_MAX);
-    testBitonicSort<cl_long >("Test 07: cl_long.", LONG_MIN, LONG_MAX);
-    testBitonicSort<cl_ulong >("Test 08: cl_ulong.", 0, ULONG_MAX);
+    testBitonicSort<DB::Int8>("Test 01: Int8.", CHAR_MIN, CHAR_MAX);
+    testBitonicSort<DB::UInt8>("Test 02: UInt8.", 0, UCHAR_MAX);
+    testBitonicSort<DB::Int16>("Test 03: Int16.", SHRT_MIN, SHRT_MAX);
+    testBitonicSort<DB::UInt16>("Test 04: UInt16.", 0, USHRT_MAX);
+    testBitonicSort<DB::Int32>("Test 05: Int32.", INT_MIN, INT_MAX);
+    testBitonicSort<DB::UInt32>("Test 06: UInt32.", 0, UINT_MAX);
+    testBitonicSort<DB::Int64>("Test 07: Int64.", LONG_MIN, LONG_MAX);
+    testBitonicSort<DB::UInt64>("Test 08: UInt64.", 0, ULONG_MAX);
 }
 
 
-static void NO_INLINE sort1(Key * data, size_t size)
+template <typename T>
+static void bitonicSort(std::vector<T> & data)
 {
-    std::sort(data, data + size);
-}
-
-
-static void NO_INLINE sort2(std::vector<Key> & data, std::vector<size_t> & indices)
-{
-    BitonicSort::getInstance().configure();
+    size_t size = data.size();
+    std::vector<size_t> indices(size);
+    for (size_t i = 0; i < size; ++i)
+        indices[i] = i;
 
     sortBitonicSortWithPodArrays(data, indices);
 
-    std::vector<Key> result(data.size());
-    for (size_t index = 0; index < data.size(); ++index)
-        result[index] = data[indices[index]];
+    std::vector<T> result(size);
+    for (size_t i = 0; i < size; ++i)
+        result[i] = data[indices[i]];
 
     data = std::move(result);
 }
 
 
-int main(int argc, char ** argv)
+template <typename T>
+static bool checkSort(const std::vector<T> & data, size_t size)
 {
-    straightforwardTests();
+    std::vector<T> copy1(data.begin(), data.begin() + size);
+    std::vector<T> copy2(data.begin(), data.begin() + size);
 
-    if (argc < 3)
-    {
-        std::cerr << "Not enough arguments were passed\n";
-        return 1;
-    }
+    std::sort(copy1.data(), copy1.data() + size);
+    bitonicSort<T>(copy2);
 
-    size_t n = DB::parse<size_t>(argv[1]);
-    size_t method = DB::parse<size_t>(argv[2]);
+    for (size_t i = 0; i < size; ++i)
+        if (copy1[i] != copy2[i])
+            return false;
 
-    std::vector<Key> data(n);
-    std::vector<size_t> indices(n);
-
-    {
-        Stopwatch watch;
-
-        for (auto & elem : data)
-            elem = static_cast<Key>(rand());
-
-        for (size_t i = 0; i < n; ++i)
-            indices[i] = i;
-
-        watch.stop();
-        double elapsed = watch.elapsedSeconds();
-        std::cerr
-                << "Filled in " << elapsed
-                << " (" << n / elapsed << " elem/sec., "
-                << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
-                << std::endl;
-    }
-
-    if (n <= 100)
-    {
-        std::cerr << std::endl;
-        for (const auto & elem : data)
-            std::cerr << elem << ' ';
-        std::cerr << std::endl;
-        for (const auto & index : indices)
-            std::cerr << index << ' ';
-        std::cerr << std::endl;
-    }
-
-    {
-        Stopwatch watch;
-
-        if (method == 1)    sort1(data.data(), n);
-        if (method == 2)    sort2(data, indices);
-
-        watch.stop();
-        double elapsed = watch.elapsedSeconds();
-        std::cerr
-                << "Sorted in " << elapsed
-                << " (" << n / elapsed << " elem/sec., "
-                << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
-                << std::endl;
-    }
-
-    {
-        Stopwatch watch;
-
-        size_t i = 1;
-        while (i < n)
-        {
-            if (!(data[i - 1] <= data[i]))
-                break;
-            ++i;
-        }
-
-        watch.stop();
-        double elapsed = watch.elapsedSeconds();
-        std::cerr
-                << "Checked in " << elapsed
-                << " (" << n / elapsed << " elem/sec., "
-                << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
-                << std::endl
-                << "Result: " << (i == n ? "Ok." : "Fail!") << std::endl;
-    }
-
-    if (n <= 1000)
-    {
-        std::cerr << std::endl;
-
-        std::cerr << data[0] << ' ';
-        for (size_t i = 1; i < n; ++i)
-        {
-            if (!(data[i - 1] <= data[i]))
-                std::cerr << "*** ";
-            std::cerr << data[i] << ' ';
-        }
-
-        std::cerr << std::endl;
-
-        for (const auto & index : indices)
-            std::cerr << index << ' ';
-        std::cerr << std::endl;
-    }
-
-    return 0;
+    return true;
 }
 
-#else
 
 int main()
 {
-    std::cerr << "Openc CL disabled.";
+    BitonicSort::getInstance().configure();
+
+    straightforwardTests();
+
+    size_t size = 1100;
+    std::vector<int> data(size);
+    for (size_t i = 0; i < size; ++i)
+        data[i] = rand();
+
+    for (size_t i = 0; i < 128; ++i)
+    {
+        if (!checkSort<int>(data, i))
+        {
+            std::cerr << "fail at length " << i << std::endl;
+            return 1;
+        }
+    }
+
+    for (size_t i = 128; i < size; i += 7)
+    {
+        if (!checkSort<int>(data, i))
+        {
+            std::cerr << "fail at length " << i << std::endl;
+            return 1;
+        }
+    }
 
     return 0;
 }
-
-#endif

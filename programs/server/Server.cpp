@@ -226,7 +226,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
 #if !defined(ARCADIA_BUILD)
 #if USE_OPENCL
-        BitonicSort::getInstance().configure();
+    BitonicSort::getInstance().configure();
 #endif
 #endif
 
