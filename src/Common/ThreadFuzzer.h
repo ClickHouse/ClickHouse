@@ -59,7 +59,7 @@ private:
     uint64_t cpu_time_period_us = 1000;
     double yield_probability = 0;
     double migrate_probability = 0;
-    double sleep_probability = 0.1;
+    double sleep_probability = 0.01;
     double sleep_time_us = 100000;
 
     ThreadFuzzer();
