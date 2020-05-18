@@ -143,26 +143,39 @@ private:
 ) // DECLARE_MULTITARGET_CODE
 
 template <typename Name>
-class FunctionStartsEndsWith
-    : public FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>
+class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
 {
 public:
-    FunctionStartsEndsWith(const Context & context_)
-        : FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>(context_)
+    FunctionStartsEndsWith(const Context & context) : selector(context)
     {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
+
         if constexpr (UseMultitargetCode)
         {
-            this->template registerImplementation<TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>  (TargetArch::SSE42);
-            this->template registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>    (TargetArch::AVX);
-            this->template registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>   (TargetArch::AVX2);
-            this->template registerImplementation<TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>(TargetArch::AVX512F);
+            selector.registerImplementation<TargetArch::SSE42,
+                TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>();
+            selector.registerImplementation<TargetArch::AVX,
+                TargetSpecific::AVX::FunctionStartsEndsWith<Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>();
+            selector.registerImplementation<TargetArch::AVX512F,
+                TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>();
         }
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionStartsEndsWith<Name>>(context);
     }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 }

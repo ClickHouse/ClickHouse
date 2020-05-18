@@ -29,24 +29,35 @@ struct RandXorshiftImpl2
 ) // DECLARE_MULTITARGET_CODE
 
 template <typename ToType, typename Name>
-class FunctionRandomXorshift
-    : public FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>
+class FunctionRandomXorshift : public FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>
 {
 public:
-    FunctionRandomXorshift(const Context & context_)
-        : FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>(context_)
+    FunctionRandomXorshift(const Context & context) : selector(context)
     {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>();
+
         if constexpr (UseMultitargetCode)
         {
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>(TargetArch::AVX2);
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl2, ToType, Name>>(TargetArch::AVX2);
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl2, ToType, Name>>();
         }
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionRandomXorshift<ToType, Name>>(context);
     }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 }

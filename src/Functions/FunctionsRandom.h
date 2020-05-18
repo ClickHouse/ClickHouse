@@ -99,28 +99,44 @@ public:
 };
 
 template <typename ToType, typename Name>
-class FunctionRandom : public FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>
+class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
 {
 public:
-    FunctionRandom(const Context & context_)
-        : FunctionPerformanceAdaptor<FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>(context_)
+    FunctionRandom(const Context & context) : selector(context)
     {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>();
+
         if constexpr (UseMultitargetCode)
         {
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::SSE42::RandImpl,   ToType, Name>>(TargetArch::SSE42);
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,     ToType, Name>>(TargetArch::AVX);
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,    ToType, Name>>(TargetArch::AVX2);
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>(TargetArch::AVX512F);
+            selector.registerImplementation<TargetArch::SSE42,
+                FunctionRandomImpl<TargetSpecific::SSE42::RandImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX,
+                FunctionRandomImpl<TargetSpecific::AVX::RandImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX512F,
+                FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>();
 
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>(TargetArch::Default);
-            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2,    ToType, Name>>(TargetArch::AVX2);
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2, ToType, Name>>();
         }
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
 
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionRandom<ToType, Name>>(context);
     }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 }
