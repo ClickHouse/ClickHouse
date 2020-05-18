@@ -59,10 +59,6 @@
  *
  * @note This is also required, because tcmalloc can't allocate a chunk of memory greater than 16 GB.
  *
- * @note MMAP_THRESHOLD symbol is intentionally made weak. It allows to override it during linkage when using
- *       ClickHouse as a library in third-party applications which may already use own allocator doing mmaps in the
- *       implementation of alloc/realloc.
- *
  * @note This parameter can be used not only for mremap, e.g. IGrabberAllocator uses it to determine minimum chunk size.
  */
 #ifdef NDEBUG
@@ -73,7 +69,7 @@
      * expect that the set of operations mmap/something to do/mremap can only be
      * performed about 1000 times per second.
      */
-    [[gnu::weak]] extern constexpr const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
+    constexpr const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 #else
 //#   pragma message("Allocators: using 4KB MMAP_THRESHOLD")
     /**
@@ -81,7 +77,7 @@
      * stomping bugs. Along with ASLR it will hopefully detect more issues than
      * ASan. The program may fail due to the limit on number of memory mappings.
      */
-    [[gnu::weak]] extern constexpr const size_t MMAP_THRESHOLD = 4096;
+    constexpr const size_t MMAP_THRESHOLD = 4096;
 
 #endif
 
