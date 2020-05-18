@@ -7,6 +7,8 @@ TMP_DIR="/tmp"
 
 declare -a SearchTypes=("POLYGON" "GRID_POLYGON" "BUCKET_POLYGON" "ONE_BUCKET_POLYGON")
 
+unzip -q 01037_test_data.zip
+
 $CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS test_01037;"
 
 $CLICKHOUSE_CLIENT --query="CREATE DATABASE test_01037 Engine = Ordinary;"
@@ -16,6 +18,8 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_01037.points;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE test_01037.points (x Float64, y Float64) ENGINE = Memory;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.points FORMAT TSV" --max_insert_block_size=100000 < "./01037_point_data"
+
+rm 01037_point_data
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test_01037.polygons_array;"
 
@@ -30,6 +34,8 @@ ENGINE = Memory;
 "
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --max_insert_block_size=100000 < "./01037_polygon_data"
+
+rm 01037_polygon_data
 
 for type in ${SearchTypes[@]};
 do
