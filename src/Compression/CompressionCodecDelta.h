@@ -23,6 +23,8 @@ protected:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 
+    bool isCompression() const override { return false; }
+    bool isGenericCompression() const override { return false; }
 
 private:
     UInt8 delta_bytes_size;

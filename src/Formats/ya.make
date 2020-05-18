@@ -2,7 +2,7 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
-    contrib/libs/protobuf_std
+    contrib/libs/protobuf
 )
 
 SRCS(
@@ -10,6 +10,7 @@ SRCS(
     FormatSchemaInfo.cpp
     IRowInputStream.cpp
     IRowOutputStream.cpp
+    JSONEachRowUtils.cpp
     MySQLBlockInputStream.cpp
     NativeFormat.cpp
     NullFormat.cpp

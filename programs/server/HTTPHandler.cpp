@@ -1,5 +1,8 @@
 #include "HTTPHandler.h"
 
+#include "HTTPHandlerFactory.h"
+#include "HTTPHandlerRequestFilter.h"
+
 #include <chrono>
 #include <iomanip>
 #include <Poco/File.h>
@@ -7,6 +10,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerRequestImpl.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/NetException.h>
 #include <ext/scope_guard.h>
 #include <Core/ExternalTable.h>
@@ -16,7 +20,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/SettingsChanges.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -32,6 +36,7 @@
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryParameterVisitor.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
 
@@ -53,7 +58,9 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_COMPILE_REGEXP;
 
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
@@ -78,6 +85,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 
     extern const int QUERY_IS_TOO_LARGE;
 
@@ -98,25 +106,27 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     using namespace Poco::Net;
 
     if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+    {
         return HTTPResponse::HTTP_UNAUTHORIZED;
+    }
     else if (exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
              exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
              exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
              exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
-
+             exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
              exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
              exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
-
              exception_code == ErrorCodes::SYNTAX_ERROR ||
-
              exception_code == ErrorCodes::INCORRECT_DATA ||
              exception_code == ErrorCodes::TYPE_MISMATCH)
+    {
         return HTTPResponse::HTTP_BAD_REQUEST;
+    }
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_IDENTIFIER ||
@@ -128,18 +138,27 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION ||
              exception_code == ErrorCodes::UNKNOWN_FORMAT ||
              exception_code == ErrorCodes::UNKNOWN_DATABASE_ENGINE ||
-
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_QUERY)
+    {
         return HTTPResponse::HTTP_NOT_FOUND;
+    }
     else if (exception_code == ErrorCodes::QUERY_IS_TOO_LARGE)
+    {
         return HTTPResponse::HTTP_REQUESTENTITYTOOLARGE;
+    }
     else if (exception_code == ErrorCodes::NOT_IMPLEMENTED)
+    {
         return HTTPResponse::HTTP_NOT_IMPLEMENTED;
+    }
     else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
              exception_code == ErrorCodes::CANNOT_OPEN_FILE)
+    {
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+    }
     else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
+    {
         return HTTPResponse::HTTP_LENGTH_REQUIRED;
+    }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
@@ -204,9 +223,9 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
-    , log(&Logger::get("HTTPHandler"))
+    , log(&Logger::get(name))
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -225,13 +244,6 @@ void HTTPHandler::processQuery(
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
     std::istream & istr = request.stream();
-
-    /// Part of the query can be passed in the 'query' parameter and the rest in the request body
-    /// (http method need not necessarily be POST). In this case the entire query consists of the
-    /// contents of the 'query' parameter, a line break and the request body.
-    std::string query_param = params.get("query", "");
-    if (!query_param.empty())
-        query_param += '\n';
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -271,8 +283,10 @@ void HTTPHandler::processQuery(
     }
 
     std::string query_id = params.get("query_id", "");
-    context.setUser(user, password, request.clientAddress(), quota_key);
+    context.setUser(user, password, request.clientAddress());
     context.setCurrentQueryId(query_id);
+    if (!quota_key.empty())
+        context.setQuotaKey(quota_key);
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -390,8 +404,6 @@ void HTTPHandler::processQuery(
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
     }
 
-    std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
-
     std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
@@ -413,7 +425,7 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
-    static const NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
+    static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
         "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
 
     Names reserved_param_suffixes;
@@ -478,16 +490,11 @@ void HTTPHandler::processQuery(
         else if (param_could_be_skipped(key))
         {
         }
-        else if (startsWith(key, "param_"))
-        {
-            /// Save name and values of substitution in dictionary.
-            const String parameter_name = key.substr(strlen("param_"));
-            context.setQueryParameter(parameter_name, value);
-        }
         else
         {
-            /// All other query parameters are treated as settings.
-            settings_changes.push_back({key, value});
+            /// Other than query parameters are treated as settings.
+            if (!customizeQueryParam(context, key, value))
+                settings_changes.push_back({key, value});
         }
     }
 
@@ -495,25 +502,9 @@ void HTTPHandler::processQuery(
     context.checkSettingsConstraints(settings_changes);
     context.applySettingsChanges(settings_changes);
 
-    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
-    std::string full_query;
-
-    /// Support for "external data for query processing".
-    if (has_external_data)
-    {
-        ExternalTablesHandler handler(context, params);
-        params.load(request, istr, handler);
-
-        /// Params are of both form params POST and uri (GET params)
-        for (const auto & it : params)
-            if (it.first == "query")
-                full_query += it.second;
-
-        in = std::make_unique<ReadBufferFromString>(full_query);
-    }
-    else
-        in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
-
+    const auto & query = getQuery(request, params, context);
+    std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -578,7 +569,6 @@ void HTTPHandler::processQuery(
             try
             {
                 char b;
-                //FIXME looks like MSG_DONTWAIT is useless because of POCO_BROKEN_TIMEOUTS
                 int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
                 if (status == 0)
                     context.killCurrentQuery();
@@ -593,7 +583,7 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(context);
+    customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
@@ -731,5 +721,191 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     }
 }
 
+DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
+    : HTTPHandler(server_, "DynamicQueryHandler"), param_name(param_name_)
+{
+}
+
+bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+{
+    if (key == param_name)
+        return true;    /// do nothing
+
+    if (startsWith(key, "param_"))
+    {
+        /// Save name and values of substitution in dictionary.
+        const String parameter_name = key.substr(strlen("param_"));
+        context.setQueryParameter(parameter_name, value);
+        return true;
+    }
+
+    return false;
+}
+
+std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
+{
+
+    if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
+    {
+        /// Part of the query can be passed in the 'query' parameter and the rest in the request body
+        /// (http method need not necessarily be POST). In this case the entire query consists of the
+        /// contents of the 'query' parameter, a line break and the request body.
+        std::string query_param = params.get(param_name, "");
+        return query_param.empty() ? query_param : query_param + "\n";
+    }
+
+    /// Support for "external data for query processing".
+    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
+    ExternalTablesHandler handler(context, params);
+    params.load(request, request.stream(), handler);
+
+    std::string full_query;
+    /// Params are of both form params POST and uri (GET params)
+    for (const auto & it : params)
+        if (it.first == param_name)
+            full_query += it.second;
+
+    return full_query;
+}
+
+PredefinedQueryHandler::PredefinedQueryHandler(
+    IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
+    , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
+    : HTTPHandler(server_, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
+    , url_regex(url_regex_), header_name_with_capture_regex(header_name_with_regex_)
+{
+}
+
+bool PredefinedQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+{
+    if (receive_params.count(key))
+    {
+        context.setQueryParameter(key, value);
+        return true;
+    }
+
+    return false;
+}
+
+void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & request, DB::Context & context)
+{
+    /// If in the configuration file, the handler's header is regex and contains named capture group
+    /// We will extract regex named capture groups as query parameters
+
+    const auto & set_query_params = [&](const char * begin, const char * end, const CompiledRegexPtr & compiled_regex)
+    {
+        int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
+
+        re2::StringPiece matches[num_captures];
+        re2::StringPiece input(begin, end - begin);
+        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
+        {
+            for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
+            {
+                const auto & capturing_value = matches[capturing_index];
+
+                if (capturing_value.data())
+                    context.setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
+            }
+        }
+    };
+
+    if (url_regex)
+    {
+        const auto & uri = request.getURI();
+        set_query_params(uri.data(), find_first_symbols<'?'>(uri.data(), uri.data() + uri.size()), url_regex);
+    }
+
+    for (const auto & [header_name, regex] : header_name_with_capture_regex)
+    {
+        const auto & header_value = request.get(header_name);
+        set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
+    }
+}
+
+std::string PredefinedQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
+{
+    if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
+    {
+        /// Support for "external data for query processing".
+        ExternalTablesHandler handler(context, params);
+        params.load(request, request.stream(), handler);
+    }
+
+    return predefined_query;
+}
+
+Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
+{
+    std::string query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
+}
+
+static inline bool capturingNamedQueryParam(NameSet receive_params, const CompiledRegexPtr & compiled_regex)
+{
+    const auto & capturing_names = compiled_regex->NamedCapturingGroups();
+    return std::count_if(capturing_names.begin(), capturing_names.end(), [&](const auto & iterator)
+    {
+        return std::count_if(receive_params.begin(), receive_params.end(),
+            [&](const auto & param_name) { return param_name == iterator.first; });
+    });
+}
+
+static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
+{
+    auto compiled_regex = std::make_shared<const re2::RE2>(expression);
+
+    if (!compiled_regex->ok())
+        throw Exception("Cannot compile re2: " + expression + " for http handling rule, error: " +
+                        compiled_regex->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+
+    return compiled_regex;
+}
+
+Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
+{
+    Poco::Util::AbstractConfiguration & configuration = server.config();
+
+    if (!configuration.has(config_prefix + ".handler.query"))
+        throw Exception("There is no path '" + config_prefix + ".handler.query" + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
+
+    std::unordered_map<String, CompiledRegexPtr> headers_name_with_regex;
+    Poco::Util::AbstractConfiguration::Keys headers_name;
+    configuration.keys(config_prefix + ".headers", headers_name);
+
+    for (const auto & header_name : headers_name)
+    {
+        auto expression = configuration.getString(config_prefix + ".headers." + header_name);
+
+        if (!startsWith(expression, "regex:"))
+            continue;
+
+        expression = expression.substr(6);
+        auto regex = getCompiledRegex(expression);
+        if (capturingNamedQueryParam(analyze_receive_params, regex))
+            headers_name_with_regex.emplace(std::make_pair(header_name, regex));
+    }
+
+    if (configuration.has(config_prefix + ".url"))
+    {
+        auto url_expression = configuration.getString(config_prefix + ".url");
+
+        if (startsWith(url_expression, "regex:"))
+            url_expression = url_expression.substr(6);
+
+        auto regex = getCompiledRegex(url_expression);
+        if (capturingNamedQueryParam(analyze_receive_params, regex))
+            return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+                server, std::move(analyze_receive_params), std::move(predefined_query), std::move(regex),
+                std::move(headers_name_with_regex)), configuration, config_prefix);
+    }
+
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{} ,std::move(headers_name_with_regex)),
+        configuration, config_prefix);
+}
 
 }

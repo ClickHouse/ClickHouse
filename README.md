@@ -15,6 +15,5 @@ ClickHouse is an open-source column-oriented database management system that all
 
 ## Upcoming Events
 
-* [ClickHouse Online Meetup East (in English)](https://www.eventbrite.com/e/clickhouse-online-meetup-east-registration-102989325846) on April 28, 2020.
 * [ClickHouse Workshop in Novosibirsk](https://2020.codefest.ru/lecture/1628) on TBD date.
 * [Yandex C++ Open-Source Sprints in Moscow](https://events.yandex.ru/events/otkrytyj-kod-v-yandek-28-03-2020) on TBD date.

@@ -44,6 +44,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
@@ -92,6 +93,7 @@
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/OffsetTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataStreams/materializeBlock.h>
@@ -314,7 +316,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
-        if (context->hasQueryContext())
+        if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext().addScalar(it.first, it.second);
 
@@ -422,11 +424,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
 
     /// Remove limits for some tables in the `system` database.
-    if (left_table_id.database_name == "system" &&
-        ((left_table_id.table_name == "quotas") || (left_table_id.table_name == "quota_usage") || (left_table_id.table_name == "one")))
+    if (left_table_id.database_name == "system")
     {
-        options.ignore_quota = true;
-        options.ignore_limits = true;
+        static const boost::container::flat_set<String> system_tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (system_tables_ignoring_quota.count(left_table_id.table_name))
+        {
+            options.ignore_quota = true;
+            options.ignore_limits = true;
+        }
     }
 
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
@@ -632,6 +637,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
+    SpecialSort special_sort = context.getSettings().special_sort.value;
     for (const auto & elem : query.orderBy()->children)
     {
         String name = elem->children.front()->getColumnName();
@@ -645,25 +651,25 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, const Co
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
             order_descr.emplace_back(name, order_by_elem.direction,
-                order_by_elem.nulls_direction, collator, true, fill_desc);
+                order_by_elem.nulls_direction, collator, special_sort, true, fill_desc);
         }
         else
-            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator, special_sort);
     }
 
     return order_descr;
 }
 
-static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
+static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNativeNumber(type))
-        throw Exception("Illegal type " + type->getName() + " of LIMIT expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception("Illegal type " + type->getName() + " of " + expr + " expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
-        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of LIMIT expression is not representable as UInt64", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of " + expr + " expression is not representable as UInt64", ErrorCodes::INVALID_LIMIT_EXPRESSION);
 
     return converted.safeGet<UInt64>();
 }
@@ -676,11 +682,12 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 
     if (query.limitLength())
     {
-        length = getLimitUIntValue(query.limitLength(), context);
+        length = getLimitUIntValue(query.limitLength(), context, "LIMIT");
         if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context);
+            offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
     }
-
+    else if (query.limitOffset())
+        offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
     return {length, offset};
 }
 
@@ -688,7 +695,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
@@ -853,14 +860,14 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 {
                     pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
                     {
-                        if (stream_type == QueryPipeline::StreamType::Totals)
-                            return nullptr;
+                        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
 
                         return std::make_shared<FilterTransform>(
                             block,
                             expressions.filter_info->actions,
                             expressions.filter_info->column_name,
-                            expressions.filter_info->do_remove_column);
+                            expressions.filter_info->do_remove_column,
+                            on_totals);
                     });
                 }
                 else
@@ -1065,6 +1072,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
             if (!(pipeline_with_processors && has_prelimit))  /// Limit is no longer needed if there is prelimit.
                 executeLimit(pipeline);
+
+            executeOffset(pipeline);
         }
     }
 
@@ -1210,7 +1219,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
                 if (is_alias)
-                    column_expr = setAlias(column_default->expression->clone(), column);
+                {
+                    auto column_decl = storage_columns.get(column);
+                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
+                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+                    column_expr = setAlias(cast_column_default->clone(), column);
+                }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
 
@@ -1608,9 +1622,10 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 
 void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
-    pipeline.addSimpleTransform([&](const Block & block)
+    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type)
     {
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter);
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter, on_totals);
     });
 }
 
@@ -1869,11 +1884,10 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type == QueryPipeline::StreamType::Totals)
-            return nullptr;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
 
         /// TODO: do we need to save filter there?
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false);
+        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false, on_totals);
     });
 }
 
@@ -2033,7 +2047,9 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
                 sorting_stream, output_order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
                 settings.max_bytes_before_external_sort / pipeline.streams.size(),
-                context->getTemporaryVolume(), settings.min_free_disk_space_for_temporary_data);
+                context->getTemporaryVolume(),
+                settings.temporary_files_codec,
+                settings.min_free_disk_space_for_temporary_data);
 
             stream = merging_stream;
         });
@@ -2051,10 +2067,9 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
     const Settings & settings = context->getSettingsRef();
 
-    /// TODO: Limits on sorting
-//    IBlockInputStream::LocalLimits limits;
-//    limits.mode = IBlockInputStream::LIMITS_TOTAL;
-//    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+    IBlockInputStream::LocalLimits limits;
+    limits.mode = IBlockInputStream::LIMITS_CURRENT;
+    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
     if (input_sorting_info)
     {
@@ -2091,6 +2106,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
                 return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
             });
 
+            /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
+
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
                 return std::make_shared<FinishSortingTransform>(
@@ -2108,6 +2125,15 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
             return nullptr;
 
         return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
+    });
+
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
+        auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
+        return transform;
     });
 
     /// Merge the sorted blocks.
@@ -2333,8 +2359,8 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
     Names columns;
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
-    UInt64 length = getLimitUIntValue(query.limitByLength(), *context);
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context) : 0);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), *context, "LIMIT");
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context, "OFFSET") : 0);
 
     pipeline.transform([&](auto & stream)
     {
@@ -2352,8 +2378,8 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    UInt64 length = getLimitUIntValue(query.limitByLength(), *context);
-    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context) : 0);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), *context, "LIMIT");
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), *context, "OFFSET") : 0);
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -2432,6 +2458,7 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
     }
 }
 
+void InterpreterSelectQuery::executeOffset(Pipeline & /* pipeline */) {}
 
 void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
 {
@@ -2522,6 +2549,26 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
 
             return std::make_shared<LimitTransform>(
                     header, limit_length, limit_offset, 1, always_read_till_end, query.limit_with_ties, order_descr);
+        });
+    }
+}
+
+
+void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    /// If there is not a LIMIT but an offset
+    if (!query.limitLength() && query.limitOffset())
+    {
+        UInt64 limit_length;
+        UInt64 limit_offset;
+        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, *context);
+
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipeline::StreamType::Main)
+                return nullptr;
+            return std::make_shared<OffsetTransform>(header, limit_offset, 1);
         });
     }
 }

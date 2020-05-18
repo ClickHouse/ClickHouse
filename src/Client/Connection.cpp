@@ -30,7 +30,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
@@ -61,12 +61,15 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
-        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: "
+            << (default_database.empty() ? "(not specified)" : default_database)
+            << ". User: " << user
+            << (static_cast<bool>(secure) ? ". Secure" : "")
+            << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
 
         if (static_cast<bool>(secure))
         {
-#if USE_POCO_NETSSL
+#if USE_SSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
@@ -165,12 +168,14 @@ void Connection::sendHello()
         || has_control_character(password))
         throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
+    auto client_revision = ClickHouseRevision::get();
+
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
-    writeVarUInt(ClickHouseRevision::get(), *out);
+    writeVarUInt(client_revision, *out);
     writeStringBinary(default_database, *out);
     writeStringBinary(user, *out);
     writeStringBinary(password, *out);
@@ -379,7 +384,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
+        compression_codec = CompressionCodecFactory::instance().get(method, level, !settings->allow_suspicious_codecs);
     }
     else
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
@@ -394,23 +399,10 @@ void Connection::sendQuery(
     /// Client info.
     if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
     {
-        ClientInfo client_info_to_send;
-
-        if (!client_info || client_info->empty())
-        {
-            /// No client info passed - means this query initiated by me.
-            client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-            client_info_to_send.fillOSUserHostNameAndVersionInfo();
-            client_info_to_send.client_name = (DBMS_NAME " ") + client_name;
-        }
+        if (client_info && !client_info->empty())
+            client_info->write(*out, server_revision);
         else
-        {
-            /// This query is initiated by another query.
-            client_info_to_send = *client_info;
-            client_info_to_send.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        }
-
-        client_info_to_send.write(*out, server_revision);
+            ClientInfo().write(*out, server_revision);
     }
 
     /// Per query settings.

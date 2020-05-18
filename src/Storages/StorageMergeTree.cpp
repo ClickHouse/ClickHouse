@@ -18,7 +18,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <optional>
@@ -93,9 +93,18 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+
+    auto & merge_pool = global_context.getBackgroundPool();
+    merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
+    /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
+    merge_pool.startTask(merging_mutating_task_handle);
+
     if (areBackgroundMovesNeeded())
-        moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
+    {
+        auto & move_pool = global_context.getBackgroundMovePool();
+        moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
+        move_pool.startTask(moving_task_handle);
+    }
 }
 
 
@@ -106,7 +115,10 @@ void StorageMergeTree::shutdown()
     shutdown_called = true;
 
     /// Unlock all waiting mutations
-    mutation_wait_event.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
 
     try
     {
@@ -499,7 +511,10 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
-    mutation_wait_event.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
     merging_mutating_task_handle->wake();
@@ -768,7 +783,10 @@ bool StorageMergeTree::tryMutatePart()
         write_part_log({});
 
         /// Notify all, who wait for this or previous mutations
-        mutation_wait_event.notify_all();
+        {
+            std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+            mutation_wait_event.notify_all();
+        }
     }
     catch (...)
     {

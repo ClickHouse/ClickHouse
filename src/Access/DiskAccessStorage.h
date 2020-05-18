@@ -17,8 +17,8 @@ public:
     void setDirectory(const String & directory_path_);
 
 private:
-    std::optional<UUID> findImpl(std::type_index type, const String & name) const override;
-    std::vector<UUID> findAllImpl(std::type_index type) const override;
+    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
@@ -27,14 +27,15 @@ private:
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    ext::scope_guard subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const override;
+    ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(std::type_index type) const override;
+    bool hasSubscriptionImpl(EntityType type) const override;
 
     void initialize(const String & directory_path_, Notifications & notifications);
+    void clear();
     bool readLists();
     bool writeLists();
-    void scheduleWriteLists(std::type_index type);
+    void scheduleWriteLists(EntityType type);
     bool rebuildLists();
 
     void startListsWritingThread();
@@ -52,9 +53,9 @@ private:
     using NameToIDMap = std::unordered_map<String, UUID>;
     struct Entry
     {
-        Entry(const std::string_view & name_, std::type_index type_) : name(name_), type(type_) {}
-        std::string_view name;          /// view points to a string in `name_to_id_maps`.
-        std::type_index type;
+        UUID id;
+        String name;
+        EntityType type;
         mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
         mutable std::list<OnChangedHandler> handlers_by_id;
     };
@@ -63,14 +64,14 @@ private:
 
     String directory_path;
     bool initialized = false;
-    std::unordered_map<std::type_index, NameToIDMap> name_to_id_maps;
-    std::unordered_map<UUID, Entry> id_to_entry_map;
-    boost::container::flat_set<std::type_index> types_of_lists_to_write;
+    std::unordered_map<UUID, Entry> entries_by_id;
+    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
+    boost::container::flat_set<EntityType> types_of_lists_to_write;
     bool failed_to_write_lists = false;                          /// Whether writing of the list files has been failed since the recent restart of the server.
     ThreadFromGlobalPool lists_writing_thread;                   /// List files are written in a separate thread.
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
     std::atomic<bool> lists_writing_thread_exited = false;
-    mutable std::unordered_multimap<std::type_index, OnChangedHandler> handlers_by_type;
+    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
     mutable std::mutex mutex;
 };
 }

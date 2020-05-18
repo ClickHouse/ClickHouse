@@ -50,7 +50,7 @@
     /// Change value of x.
     {
         /// Creating mutable ptr. It can clone an object under the hood if it was shared.
-        Column::MutablePtr mutate_x = std::move(*x).mutate();
+        Column::MutablePtr mutate_x = IColumn::mutate(std::move(x));
         /// Using non-const methods of an object.
         mutate_x->set(2);
         /// Assigning pointer 'x' to mutated object.
@@ -79,22 +79,12 @@ private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
-    template <typename T>
-    class IntrusivePtr : public boost::intrusive_ptr<T>
-    {
-    public:
-        using boost::intrusive_ptr<T>::intrusive_ptr;
-
-        T & operator*() const & { return boost::intrusive_ptr<T>::operator*(); }
-        T && operator*() const && { return const_cast<typename std::remove_const<T>::type &&>(*boost::intrusive_ptr<T>::get()); }
-    };
-
 protected:
     template <typename T>
-    class mutable_ptr : public IntrusivePtr<T>
+    class mutable_ptr : public boost::intrusive_ptr<T>
     {
     private:
-        using Base = IntrusivePtr<T>;
+        using Base = boost::intrusive_ptr<T>;
 
         template <typename> friend class COW;
         template <typename, typename> friend class COWHelper;
@@ -123,10 +113,10 @@ public:
 
 protected:
     template <typename T>
-    class immutable_ptr : public IntrusivePtr<const T>
+    class immutable_ptr : public boost::intrusive_ptr<const T>
     {
     private:
-        using Base = IntrusivePtr<const T>;
+        using Base = boost::intrusive_ptr<const T>;
 
         template <typename> friend class COW;
         template <typename, typename> friend class COWHelper;
@@ -185,9 +175,9 @@ protected:
     }
 
 public:
-    MutablePtr mutate() const &&
+    static MutablePtr mutate(Ptr ptr)
     {
-        return shallowMutate();
+        return ptr->shallowMutate();
     }
 
     MutablePtr assumeMutable() const
@@ -226,6 +216,9 @@ protected:
 
         operator const immutable_ptr<T> & () const { return value; }
         operator immutable_ptr<T> & () { return value; }
+
+        /// Get internal immutable ptr. Does not change internal use counter.
+        immutable_ptr<T> detach() && { return std::move(value); }
 
         operator bool() const { return value != nullptr; }
         bool operator! () const { return value == nullptr; }

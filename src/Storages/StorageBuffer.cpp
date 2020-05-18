@@ -81,11 +81,6 @@ StorageBuffer::StorageBuffer(
     setConstraints(constraints_);
 }
 
-StorageBuffer::~StorageBuffer()
-{
-    flush_handle->deactivate();
-}
-
 
 /// Reads from one buffer (from one block) under its mutex.
 class BufferSource : public SourceWithProgress
@@ -168,8 +163,10 @@ Pipes StorageBuffer::read(
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
-            return destination->hasColumn(column_name) &&
-                   destination->getColumn(column_name).type->equals(*getColumn(column_name).type);
+            const auto & dest_columns = destination->getColumns();
+            const auto & our_columns = getColumns();
+            return dest_columns.hasPhysical(column_name) &&
+                   dest_columns.get(column_name).type->equals(*our_columns.get(column_name).type);
         });
 
         if (dst_has_same_structure)
@@ -186,17 +183,19 @@ Pipes StorageBuffer::read(
             const Block header = getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
+            const auto & dest_columns = destination->getColumns();
+            const auto & our_columns = getColumns();
             for (const String & column_name : column_names)
             {
-                if (!destination->hasColumn(column_name))
+                if (!dest_columns.hasPhysical(column_name))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
                         << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
-                const auto & dst_col = destination->getColumn(column_name);
-                const auto & col = getColumn(column_name);
+                const auto & dst_col = dest_columns.getPhysical(column_name);
+                const auto & col = our_columns.getPhysical(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
@@ -287,7 +286,7 @@ static void appendBlock(const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = (*std::move(to.getByPosition(column_no).column)).mutate();
+            MutableColumnPtr col_to = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
             col_to->insertRangeFrom(col_from, 0, rows);
 
@@ -303,7 +302,7 @@ static void appendBlock(const Block & from, Block & to)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = (*std::move(col_to)).mutate()->cut(0, old_rows);
+                    col_to = col_to->cut(0, old_rows);
             }
         }
         catch (...)
@@ -464,6 +463,9 @@ void StorageBuffer::startup()
 
 void StorageBuffer::shutdown()
 {
+    if (!flush_handle)
+        return;
+
     flush_handle->deactivate();
 
     try

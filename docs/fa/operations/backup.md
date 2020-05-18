@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06AF\u06CC\u0631\u06CC \u062F\
   \u0627\u062F\u0647 \u0647\u0627"
@@ -8,7 +8,7 @@ toc_title: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06AF\u06CC\u0631\u06CC 
 
 # پشتیبان گیری داده ها {#data-backup}
 
-در حالی که [تکرار](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [شما نمی توانید فقط جداول را با یک موتور ادغام مانند حاوی بیش از 50 گیگابایت داده رها کنید](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). با این حال, این پادمان تمام موارد ممکن را پوشش نمی دهد و می تواند دور.
+در حالی که [تکرار](../engines/table-engines/mergetree-family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [شما نمی توانید فقط جداول را با یک موتور ادغام مانند حاوی بیش از 50 گیگابایت داده رها کنید](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). با این حال, این پادمان تمام موارد ممکن را پوشش نمی دهد و می تواند دور.
 
 به منظور به طور موثر کاهش خطاهای انسانی ممکن است, شما باید با دقت تهیه یک استراتژی برای پشتیبان گیری و بازیابی اطلاعات خود را **در پیش**.
 
@@ -23,7 +23,7 @@ toc_title: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06AF\u06CC\u0631\u06CC 
 
 ## گزارشهای ویژه سیستم پرونده {#filesystem-snapshots}
 
-برخی از سیستم های فایل های محلی قابلیت عکس فوری (به عنوان مثال, [ZFS](https://en.wikipedia.org/wiki/ZFS)), اما ممکن است بهترین انتخاب برای خدمت نمایش داده شد زندگی می کنند. یک راه حل ممکن است برای ایجاد کپی های اضافی با این نوع از سیستم فایل و حذف از [توزیع شده](../engines/table_engines/special/distributed.md) جداول که برای استفاده `SELECT` نمایش داده شد. عکس های فوری در چنین کپی خواهد شد در دسترس از هر گونه نمایش داده شد که تغییر داده ها باشد. به عنوان یک جایزه, این کپی ممکن است تنظیمات سخت افزار خاص با دیسک های بیشتر متصل در هر سرور, خواهد بود که مقرون به صرفه.
+برخی از سیستم های فایل های محلی قابلیت عکس فوری (به عنوان مثال, [ZFS](https://en.wikipedia.org/wiki/ZFS)), اما ممکن است بهترین انتخاب برای خدمت نمایش داده شد زندگی می کنند. یک راه حل ممکن است برای ایجاد کپی های اضافی با این نوع از سیستم فایل و حذف از [توزیع شده](../engines/table-engines/special/distributed.md) جداول که برای استفاده `SELECT` نمایش داده شد. عکس های فوری در چنین کپی خواهد شد در دسترس از هر گونه نمایش داده شد که تغییر داده ها باشد. به عنوان یک جایزه, این کپی ممکن است تنظیمات سخت افزار خاص با دیسک های بیشتر متصل در هر سرور, خواهد بود که مقرون به صرفه.
 
 ## تاتر-کپی {#clickhouse-copier}
 
@@ -35,7 +35,7 @@ toc_title: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06AF\u06CC\u0631\u06CC 
 
 کلیک اجازه می دهد تا با استفاده از `ALTER TABLE ... FREEZE PARTITION ...` پرس و جو برای ایجاد یک کپی محلی از پارتیشن های جدول. این اجرا با استفاده از hardlinks به `/var/lib/clickhouse/shadow/` پوشه, بنابراین معمولا فضای دیسک اضافی برای داده های قدیمی مصرف نمی. نسخه های ایجاد شده از فایل ها توسط سرور کلیک هاوس انجام نمی شود, بنابراین شما فقط می توانید ترک وجود دارد: شما یک نسخه پشتیبان تهیه ساده است که هیچ سیستم خارجی اضافی نیاز ندارد, اما هنوز هم مستعد ابتلا به مشکلات سخت افزاری خواهد بود. به همین دلیل بهتر است از راه دور به مکان دیگری کپی کنید و سپس نسخه های محلی را حذف کنید. توزیع فایل سیستم ها و فروشگاه های شی هنوز هم یک گزینه خوب برای این, اما عادی فایل های پیوست شده سرور با ظرفیت به اندازه کافی بزرگ ممکن است کار و همچنین (در این مورد انتقال از طریق فایل سیستم شبکه و یا شاید رخ می دهد [درباره ما](https://en.wikipedia.org/wiki/Rsync)).
 
-برای کسب اطلاعات بیشتر در مورد نمایش داده شد مربوط به دستکاری پارتیشن, دیدن [تغییر مستندات](../sql_reference/statements/alter.md#alter_manipulations-with-partitions).
+برای کسب اطلاعات بیشتر در مورد نمایش داده شد مربوط به دستکاری پارتیشن, دیدن [تغییر مستندات](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
 یک ابزار شخص ثالث در دسترس است به طور خودکار این روش: [کلیک-پشتیبان گیری](https://github.com/AlexAkulov/clickhouse-backup).
 

@@ -29,7 +29,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -179,7 +178,6 @@ void DatabaseOrdinary::loadStoredObjects(
     startupTables(pool);
 
     /// Attach dictionaries.
-    attachToExternalDictionariesLoader(context);
     for (const auto & [name, query] : file_names)
     {
         auto create_query = query->as<const ASTCreateQuery &>();

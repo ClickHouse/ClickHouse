@@ -30,7 +30,11 @@ set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
 set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
-option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+# Enable the ability to organize targets into hierarchies of "folders" for capable GUI-based IDEs.
+# For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+option(ENABLE_IPO "Enable full link time optimization (it's usually impractical; see also ENABLE_THINLTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
     cmake_policy(SET CMP0069 NEW)
     include(CheckIPOSupported)
@@ -53,12 +57,12 @@ endif ()
 include (cmake/find/ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
-    message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
-    set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
+    set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+    message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = ${CMAKE_BUILD_TYPE}")
 endif ()
-string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
+string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
@@ -99,16 +103,7 @@ endif ()
 include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
-    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
-endif ()
-
-if (COMPILER_GCC OR COMPILER_CLANG)
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-endif ()
-
-if (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "8.3.0")
-    # Warnings in protobuf generating
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-array-bounds")
+    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
 endif ()
 
 if (COMPILER_CLANG)
@@ -188,16 +183,16 @@ endif ()
 
 option(WITH_COVERAGE "Build with coverage." 0)
 
-if(WITH_COVERAGE AND COMPILER_CLANG)
-   set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-   # If we want to disable coverage for specific translation units
-   set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
+if (WITH_COVERAGE AND COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    # If we want to disable coverage for specific translation units
+    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
 
-if(WITH_COVERAGE AND COMPILER_GCC)
-   set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
-   set(COVERAGE_OPTION "-lgcov")
-   set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
+if (WITH_COVERAGE AND COMPILER_GCC)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
+    set(COVERAGE_OPTION "-lgcov")
+    set(WITHOUT_COVERAGE "-fno-profile-arcs -fno-test-coverage")
 endif()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -210,18 +205,44 @@ set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
 if (COMPILER_CLANG)
-    # Exception unwinding doesn't work in clang release build without this option
-    # TODO investigate that
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
-
     if (OS_DARWIN)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -Wl,-U,_inside_main")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-U,_inside_main")
     endif()
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
+
+    option(ENABLE_THINLTO "Enable Thin LTO. Only applicable for clang. It's also suppressed when building with tests or sanitizers." ON)
+
+    # We cannot afford to use LTO when compiling unitests, and it's not enough
+    # to only supply -fno-lto at the final linking stage. So we disable it
+    # completely.
+    if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
+        # Link time optimization
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+    endif ()
+
+    # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
+
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    if (LLVM_AR_PATH)
+        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
+        set (CMAKE_AR ${LLVM_AR_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
+    endif ()
+
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    if (LLVM_RANLIB_PATH)
+        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
+        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
+    endif ()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
@@ -247,7 +268,7 @@ endif ()
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
@@ -264,7 +285,6 @@ endif ()
 ### Add targets below this comment ###
 ######################################
 
-string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
 if (MAKE_STATIC_LIBRARIES)
@@ -305,21 +325,20 @@ endif ()
 
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
-include(GNUInstallDirs)
+include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
 include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
+include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
 include (cmake/find/boost.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
 include (cmake/find/termcap.cmake)
-include (cmake/find/odbc.cmake)
-# openssl, zlib, odbc before poco
-include (cmake/find/poco.cmake)
+# openssl, zlib before poco
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
@@ -328,11 +347,8 @@ include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/opencl.cmake)
 include (cmake/find/h3.cmake)
-include (cmake/find/cpuid.cmake) # Freebsd, bundled
-if (NOT USE_CPUID)
-    include (cmake/find/cpuinfo.cmake) # Debian
-endif()
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
@@ -368,6 +384,16 @@ if (OS_LINUX AND NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
+if (USE_OPENCL)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_OPENCL=1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_OPENCL=1")
+
+    if (OS_DARWIN)
+        set(OPENCL_LINKER_FLAGS "-framework OpenCL")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCL_LINKER_FLAGS}")
+    endif ()
+endif ()
+
 include (cmake/print_flags.cmake)
 
 if (TARGET global-group)
@@ -389,6 +415,9 @@ endmacro()
 
 set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
 include_directories(${ConfigIncludePath})
+
+# Add as many warnings as possible for our own code.
+include (cmake/warnings.cmake)
 
 add_subdirectory (base)
 add_subdirectory (programs)

@@ -1,4 +1,5 @@
 #include <Databases/DatabaseOnDisk.h>
+#include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <ext/scope_guard.h>
 
 namespace DB
@@ -33,22 +34,18 @@ public:
     ~DatabaseWithDictionaries() override;
 
 protected:
-    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
-        : DatabaseOnDisk(name, metadata_path_, data_path_, logger, context) {}
+    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context);
 
-    void attachToExternalDictionariesLoader(Context & context);
-    void detachFromExternalDictionariesLoader();
-
-    void detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info);
-
-    ASTPtr getCreateDictionaryQueryImpl(const String & dictionary_name,
-                                        bool throw_on_error) const override;
+    ASTPtr getCreateDictionaryQueryImpl(const String & dictionary_name, bool throw_on_error) const override;
 
     std::unordered_map<String, DictionaryAttachInfo> dictionaries;
 
 private:
-    ExternalDictionariesLoader * external_loader = nullptr;
-    ext::scope_guard database_as_config_repo_for_external_loader;
+    void detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info);
+    void reloadDictionaryConfig(const String & full_name);
+
+    const ExternalDictionariesLoader & external_loader;
+    boost::atomic_shared_ptr<ext::scope_guard> database_as_config_repo_for_external_loader;
 };
 
 }

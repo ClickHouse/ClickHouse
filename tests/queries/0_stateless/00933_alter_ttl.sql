@@ -21,6 +21,6 @@ drop table if exists ttl;
 create table ttl (d Date, a Int) engine = MergeTree order by tuple() partition by toDayOfMonth(d);
 alter table ttl modify column a Int ttl d + interval 1 day;
 desc table ttl;
-alter table ttl modify column d Int ttl d + interval 1 day; -- { serverError 44}
+alter table ttl modify column d Int ttl d + interval 1 day; -- { serverError 524 }
 
 drop table if exists ttl;
