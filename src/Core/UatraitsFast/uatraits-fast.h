@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <re2/re2.h>
-#include <sparsehash/dense_hash_map>
+#include <Common/HashTable/HashMap.h>
 
 #include <common/StringRef.h>
 #include <IO/ReadBuffer.h>
@@ -471,10 +471,10 @@ private:
     SubstringsToIndices substrings_to_indices;
 
 #if !defined(ARCADIA_BUILD)
-    using Profiles = google::dense_hash_map<StringRef, Actions, StringRefHash>;
+    using Profiles = HashMap<StringRef, Actions, StringRefHash>;
 
     /// Отображение DeviceModel -> DeviceName
-    using ModelToName = google::dense_hash_map<std::string, std::string>;
+    using ModelToName = HashMap<StringRef, StringRef, StringRefHash>;
 #else
     using Profiles = google::sparsehash::dense_hash_map<StringRef, Actions, StringRefHash> types;
 

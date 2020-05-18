@@ -877,27 +877,27 @@ void UATraits::detectByUserAgent(const StringRef & user_agent_lower, Result & re
         reinterpret_cast<std::deque<std::pair<UInt8, UInt64>>*>(ctx)->push_back(std::make_pair(from, id));
         return 0;
     };
-        UInt64 length = user_agent_lower.size;
-        /// Hyperscan restriction.
-        if (length > std::numeric_limits<UInt32>::max())
-            throw Poco::Exception("Too long string to search", 1);
-        /// Zero the result, scan, check, update the offset.
-        UInt8 a = 2;
-        err = hs_scan(
-            regexps_engine->getDB(),
-            user_agent_lower.data,
-            length,
-            0,
-            smart_scratch.get(),
-            on_match,
-            &search_result);
-        if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
-            throw Poco::Exception("Failed to scan with hyperscan", 2);
+    UInt64 length = user_agent_lower.size;
+    /// Hyperscan restriction.
+    if (length > std::numeric_limits<UInt32>::max())
+        throw Poco::Exception("Too long string to search", 1);
+    /// Zero the result, scan, check, update the offset.
+    UInt8 a = 2;
+    err = hs_scan(
+        regexps_engine->getDB(),
+        user_agent_lower.data,
+        length,
+        0,
+        smart_scratch.get(),
+        on_match,
+        &search_result);
+    if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
+        throw Poco::Exception("Failed to scan with hyperscan", 2);
 
-        for (const auto & [position, index] : search_result)
-        {
-            auto & match = matched_substrings[index];
-            if (match.positions_len != Match::max_positions)
+    for (const auto & [position, index] : search_result)
+    {
+        auto & match = matched_substrings[index];
+        if (match.positions_len != Match::max_positions)
         {
             ++match.positions_len;
             match.positions[match.positions_len - 1] = position;
@@ -918,8 +918,40 @@ void UATraits::detectByUserAgentCaseSafe(const StringRef & user_agent, const Str
     matched_substrings.clear();
     matched_substrings.resize(substrings_count);
 
-    /// Выполняем автомат Ахо-Корасик для всех собранных подстрок. Байтовая маска найденных подстрок будет записана в matched_substrings;
-    const auto search_result = automata->AhoSearch(TStringBuf{user_agent_lower.data, user_agent_lower.size});
+    hs_scratch_t * scratch = nullptr;
+    hs_error_t err = hs_clone_scratch(regexps_engine->getScratch(), &scratch);
+
+    if (err != HS_SUCCESS)
+        throw Poco::Exception("Could not clone scratch space for hyperscan", 1); // TODO: ErrorCodes::CANNOT_ALLOCATE_MEMORY
+
+    DB::MultiRegexps::ScratchPtr smart_scratch(scratch);
+    std::deque<std::pair<UInt8 , UInt64>> search_result;
+
+    auto on_match = []([[maybe_unused]] unsigned int id,
+                       unsigned long long from, // NOLINT
+                       unsigned long long /* to */, // NOLINT
+                       unsigned int /* flags */,
+                       void * ctx) -> int
+    {
+        reinterpret_cast<std::deque<std::pair<UInt8, UInt64>>*>(ctx)->push_back(std::make_pair(from, id));
+        return 0;
+    };
+    UInt64 length = user_agent_lower.size;
+    /// Hyperscan restriction.
+    if (length > std::numeric_limits<UInt32>::max())
+        throw Poco::Exception("Too long string to search", 1);
+    /// Zero the result, scan, check, update the offset.
+    UInt8 a = 2;
+    err = hs_scan(
+        regexps_engine->getDB(),
+        user_agent_lower.data,
+        length,
+        0,
+        smart_scratch.get(),
+        on_match,
+        &search_result);
+    if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
+        throw Poco::Exception("Failed to scan with hyperscan", 2);
 
     for (const auto & [position, index] : search_result)
     {

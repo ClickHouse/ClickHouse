@@ -72,6 +72,7 @@ public:
         const OperatingSystem & getOperatingSystem() const;
         const Browser & getBrowser() const;
 
+
     private:
         Agent(
             const bool has_same_site_support,
@@ -92,8 +93,6 @@ public:
     Agent detect(const std::string & user_agent) const;
 
 private:
-    UserAgent() = default;
-
     Agent detect(
         const std::string & user_agent,
         const std::string & profile,

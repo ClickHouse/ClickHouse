@@ -681,13 +681,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
-    Poco::AutoPtr<Poco::Util::MapConfiguration> config = new Poco::Util::MapConfiguration;
-    config->setInt("reload_frequency_sec", 600);
-    config->setString("browsers_path", "data/browser.xml");
-    config->setString("profiles_path", "data/profiles.xml");
-    config->setString("extra_path", "data/extra.xml");
+    Poco::AutoPtr<Poco::Util::MapConfiguration> ua_config = new Poco::Util::MapConfiguration;
+    ua_config->setInt("reload_frequency_sec", 600);
+    ua_config->setString("browsers_path", "data/browser.xml");
+    ua_config->setString("profiles_path", "data/profiles.xml");
+    ua_config->setString("extra_path", "data/extra.xml");
 
-    components::UserAgent::get_mutable_instance().create(*config);
+    components::UserAgent::get_mutable_instance().create(*ua_config);
     components::UserAgent::get_mutable_instance().reload();
     global_context->setUserAgent(&components::UserAgent::get_mutable_instance());
 
