@@ -82,10 +82,10 @@ $(document).ready(function () {
 
     var headers = $('#content h1, #content h2, #content h3, #content h4, #content h5, #content h6');
     headers.mouseenter(function() {
-        $(this).find('.headerlink').show();
+        $(this).find('.headerlink').html('¶');
     });
     headers.mouseleave(function() {
-        $(this).find('.headerlink').hide();
+        $(this).find('.headerlink').html('&nbsp;');
     });
 
     if ($('#docsearch-input').length) {
