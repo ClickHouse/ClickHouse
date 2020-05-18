@@ -442,7 +442,7 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 
     /// Collect all shards that contain partition piece number piece_number.
     Strings piece_status_paths;
-    for (auto & shard : shards_with_partition)
+    for (const auto & shard : shards_with_partition)
     {
         ShardPartition & task_shard_partition = shard->partition_tasks.find(partition_name)->second;
         ShardPartitionPiece & shard_partition_piece = task_shard_partition.pieces[piece_number];
@@ -702,7 +702,7 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
 
     auto new_columns_list = std::make_shared<ASTColumns>();
     new_columns_list->set(new_columns_list->columns, new_columns);
-    if (auto indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
+    if (const auto * indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
         new_columns_list->set(new_columns_list->indices, indices->clone());
 
     new_query.replace(new_query.columns_list, new_columns_list);

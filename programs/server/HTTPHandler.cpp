@@ -195,7 +195,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
     std::vector<ReadBufferPtr> read_buffers;
     std::vector<ReadBuffer *> read_buffers_raw_ptr;
 
-    auto cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
+    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
         throw Exception("Expected CascadeWriteBuffer", ErrorCodes::LOGICAL_ERROR);
 
@@ -383,7 +383,7 @@ void HTTPHandler::processQuery(
         {
             auto push_memory_buffer_and_continue = [next_buffer = used_output.out_maybe_compressed] (const WriteBufferPtr & prev_buf)
             {
-                auto prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
+                auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
                     throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
 
