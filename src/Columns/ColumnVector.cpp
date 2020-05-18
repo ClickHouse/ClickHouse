@@ -21,7 +21,7 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #    if USE_OPENCL
-#        include "Common/BitonicSort.h"
+#        include "Common/BitonicSort.h" // Y_IGNORE
 #    endif
 #else
 #undef USE_OPENCL
