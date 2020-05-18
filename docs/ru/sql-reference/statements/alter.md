@@ -204,17 +204,17 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 Для работы с [партициями](../../sql-reference/statements/alter.md) доступны следующие операции:
 
--   [DETACH PARTITION](#alter_detach-partition) – перенести партицию в директорию `detached`;
--   [DROP PARTITION](#alter_drop-partition) – удалить партицию;
--   [ATTACH PARTITION\|PART](#alter_attach-partition) – добавить партицию/кусок в таблицу из директории `detached`;
--   [ATTACH PARTITION FROM](#alter_attach-partition-from) – скопировать партицию из другой таблицы;
--   [REPLACE PARTITION](#alter_replace-partition) – скопировать партицию из другой таблицы с заменой;
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - переместить партицию в другую таблицу;
--   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) – удалить все значения в столбце для заданной партиции;
--   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - очистить построенные вторичные индексы для заданной партиции;
--   [FREEZE PARTITION](#alter_freeze-partition) – создать резервную копию партиции;
--   [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
--   [MOVE PARTITION\|PART](#alter_move-partition) – переместить партицию/кускок на другой диск или том.
+-   [DETACH PARTITION](#alter_detach-partition) — перенести партицию в директорию `detached`;
+-   [DROP PARTITION](#alter_drop-partition) — удалить партицию;
+-   [ATTACH PARTITION\|PART](#alter_attach-partition) — добавить партицию/кусок в таблицу из директории `detached`;
+-   [ATTACH PARTITION FROM](#alter_attach-partition-from) — скопировать партицию из другой таблицы;
+-   [REPLACE PARTITION](#alter_replace-partition) — скопировать партицию из другой таблицы с заменой;
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) — переместить партицию в другую таблицу;
+-   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — удалить все значения в столбце для заданной партиции;
+-   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — очистить построенные вторичные индексы для заданной партиции;
+-   [FREEZE PARTITION](#alter_freeze-partition) — создать резервную копию партиции;
+-   [FETCH PARTITION](#alter_fetch-partition) — скачать партицию с другого сервера;
+-   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кускок на другой диск или том.
 
 #### DETACH PARTITION {#alter_detach-partition}
 
@@ -312,12 +312,14 @@ ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
-Перемещает партицию из таблицы `table_source` в таблицу `table_dest` (добавляет к существующим данным в `table_dest`), с удалением данных из таблицы `table_source`.
+Перемещает партицию из таблицы `table_source` в таблицу `table_dest` (добавляет к существующим данным в `table_dest`) с удалением данных из таблицы `table_source`.
 
 Следует иметь в виду:
 
 -   Таблицы должны иметь одинаковую структуру.
 -   Для таблиц должен быть задан одинаковый ключ партиционирования.
+-   Движки таблиц должны быть одинакового семейства (реплицированные или нереплицированные).
+-   Для таблиц должна быть задана одинаковая политика хранения.
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 

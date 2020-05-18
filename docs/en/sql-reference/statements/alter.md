@@ -201,17 +201,17 @@ All changes on replicated tables are broadcasting to ZooKeeper so will be applie
 
 The following operations with [partitions](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
--   [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directory and forget it.
--   [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
--   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
--   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
--   [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(#alter_move_to_table-partition) - Move the data partition from one table to another.
--   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
--   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - Resets the specified secondary index in a partition.
--   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
--   [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
--   [MOVE PARTITION\|PART](#alter_move-partition) – Move partition/data part to another disk or volume.
+-   [DETACH PARTITION](#alter_detach-partition) — Moves a partition to the `detached` directory and forget it.
+-   [DROP PARTITION](#alter_drop-partition) — Deletes a partition.
+-   [ATTACH PART\|PARTITION](#alter_attach-partition) — Adds a part or partition from the `detached` directory to the table.
+-   [ATTACH PARTITION FROM](#alter_attach-partition-from) — Copies the data partition from one table to another and adds.
+-   [REPLACE PARTITION](#alter_replace-partition) — Copies the data partition from one table to another and replaces.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) — Moves the data partition from one table to another.
+-   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
+-   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
+-   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
+-   [FETCH PARTITION](#alter_fetch-partition) — Downloads a partition from another server.
+-   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
 <!-- -->
 
@@ -307,13 +307,13 @@ For the query to run successfully, the following conditions must be met:
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
-This query move the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
+This query moves the data partition from the `table_source` to `table_dest` with deleting the data from `table_source`.
 
 For the query to run successfully, the following conditions must be met:
 
 -   Both tables must have the same structure.
 -   Both tables must have the same partition key.
--   Both tables must be the same engine family. (replicated or non-replicated)
+-   Both tables must be the same engine family (replicated or non-replicated).
 -   Both tables must have the same storage policy.
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}

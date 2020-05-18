@@ -5,7 +5,7 @@ toc_title: How to Build ClickHouse on Mac OS X
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on Mac OS X 10.15 (Catalina)
+Build should work on Mac OS X 10.15 (Catalina).
 
 ## Install Homebrew {#install-homebrew}
 
