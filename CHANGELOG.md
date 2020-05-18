@@ -187,7 +187,6 @@
 * Now layout type for dictionaries with no arguments can be specified without round brackets in dictionaries DDL-queries. Fixes [#10057](https://github.com/ClickHouse/ClickHouse/issues/10057). [#10064](https://github.com/ClickHouse/ClickHouse/pull/10064) ([alesapin](https://github.com/alesapin))
 * Add ability to use number ranges with leading zeros in filepath [#9989](https://github.com/ClickHouse/ClickHouse/pull/9989) ([Olga Khvostikova](https://github.com/stavrolia))
 * Better memory usage in CROSS JOIN. [#10029](https://github.com/ClickHouse/ClickHouse/pull/10029) ([Artem Zuikov](https://github.com/4ertus2))
-* The `clickhouse-format` tool is now able to format multiple queries when the `-n` argument is used. [#10852](https://github.com/ClickHouse/ClickHouse/pull/10852) ([Darío](https://github.com/dgrr))
 * Try to connect to all shards in cluster when getting structure of remote table and skip_unavailable_shards is set. [#7278](https://github.com/ClickHouse/ClickHouse/pull/7278) ([nvartolomei](https://github.com/nvartolomei))
 * Add `total_rows`/`total_bytes` into the `system.tables` table. [#9919](https://github.com/ClickHouse/ClickHouse/pull/9919) ([Azat Khuzhin](https://github.com/azat))
 * System log tables now use polymorpic parts by default. [#9905](https://github.com/ClickHouse/ClickHouse/pull/9905) ([Anton Popov](https://github.com/CurtizJ))
