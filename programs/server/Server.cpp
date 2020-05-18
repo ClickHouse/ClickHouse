@@ -65,7 +65,7 @@
 #   include "config_core.h"
 #   include "Common/config_version.h"
 #   if USE_OPENCL
-#       include "Common/BitonicSort.h"
+#       include "Common/BitonicSort.h" // Y_IGNORE
 #   endif
 #endif
 
