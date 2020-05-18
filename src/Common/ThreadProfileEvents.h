@@ -182,6 +182,9 @@ struct PerfDescriptorsHolder;
 
 struct PerfEventsCounters
 {
+    // must be unsigned to not cause undefined behaviour on increment
+    typedef UInt64 Id;
+
     // cat /proc/sys/kernel/perf_event_paranoid - if perf_event_paranoid is set to 3, all calls to `perf_event_open` are rejected (even for the current process)
     // https://lwn.net/Articles/696234/
     // -1: Allow use of (almost) all events by all users
@@ -203,7 +206,10 @@ struct PerfEventsCounters
 
     static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
 
+    PerfEventsCounters();
+
 private:
+    static std::atomic<Id> counters_id;
     // used to write information about perf unavailability only once for all threads
     static std::atomic<bool> perf_unavailability_logged;
     // used to write information about particular perf events unavailability only once for all threads
@@ -211,8 +217,9 @@ private:
 
     static thread_local PerfDescriptorsHolder thread_events_descriptors_holder;
     static thread_local bool thread_events_descriptors_opened;
-    static thread_local PerfEventsCounters * current_thread_counters;
+    static thread_local std::optional<PerfEventsCounters::Id> current_thread_counters_id;
 
+    Id id;
     // temp array just to not create it each time event processing finishes
     PerfEventValue raw_event_values[NUMBER_OF_RAW_EVENTS]{};
 
