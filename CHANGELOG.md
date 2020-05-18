@@ -206,6 +206,7 @@
 * Add a `timestamp_ns` column to `system.trace_log`. It contains a high-definition timestamp of the trace event, and allows to build timelines of thread profiles ("flame charts"). [#9696](https://github.com/ClickHouse/ClickHouse/pull/9696) ([Alexander Kuzmenkov](https://github.com/akuzm))
 * When the setting `send_logs_level` is enabled, avoid intermixing of log messages and query progress. [#9634](https://github.com/ClickHouse/ClickHouse/pull/9634) ([Azat Khuzhin](https://github.com/azat))
 * Added support of `MATERIALIZE TTL IN PARTITION`. [#9581](https://github.com/ClickHouse/ClickHouse/pull/9581) ([Vladimir Chebotarev](https://github.com/excitoon))
+* Support complex types inside Avro nested fields [#10502](https://github.com/ClickHouse/ClickHouse/pull/10502) ([Andrew Onyshchuk](https://github.com/oandrew))
 
 #### Performance Improvement
 * Better insert logic for right table for Partial MergeJoin. [#10467](https://github.com/ClickHouse/ClickHouse/pull/10467) ([Artem Zuikov](https://github.com/4ertus2))
@@ -275,9 +276,6 @@
 * Allow to add various glitches around `pthread_mutex_lock`, `pthread_mutex_unlock` functions. [#9635](https://github.com/ClickHouse/ClickHouse/pull/9635) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add support for `clang-tidy` in `packager` script. [#9625](https://github.com/ClickHouse/ClickHouse/pull/9625) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add ability to use unbundled msgpack. [#10168](https://github.com/ClickHouse/ClickHouse/pull/10168) ([Azat Khuzhin](https://github.com/azat))
-
-#### New Feature / Improvement
-* Support complex types inside Avro nested fields [#10502](https://github.com/ClickHouse/ClickHouse/pull/10502) ([Andrew Onyshchuk](https://github.com/oandrew))
 
 
 ## ClickHouse release v20.3
