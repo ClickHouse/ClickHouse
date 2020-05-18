@@ -38,7 +38,7 @@ struct BFloat16 {
     }
 
     explicit BFloat16(const double fl) {
-        value = BFloat16((float) fl).getValue();
+        value = BFloat16(static_cast<float>(fl)).getValue();
     }
 
     BFloat16(const BFloat16 &) = default;
@@ -48,7 +48,7 @@ struct BFloat16 {
     }
 
     bool sign() const {
-        return !(bool)((0x1 << 15) & value);
+        return !static_cast<bool>((0x1 << 15) & value);
     }
 
     unsigned short withoutSign() const {
@@ -56,7 +56,7 @@ struct BFloat16 {
     }
 
     bool isNull() const {
-        return !(bool)(value & 0x7fff);
+        return !static_cast<bool>(value & 0x7fff);
     }
 
     bool isInfinity() const {
@@ -75,7 +75,7 @@ struct BFloat16 {
     float asFloat() const {
         float fl;
         unsigned int fl32 = (value >> 15) << 8;
-        unsigned int exponent = (unsigned int)((value >> 7) & 0xff);
+        unsigned int exponent = static_cast<unsigned int>((value >> 7) & 0xff);
         fl32 = (fl32 | exponent) << 22;
         fl32 |= (value & 0x7f) << 16;
         std::memcpy( &fl, &fl32, sizeof( float ) );
@@ -185,12 +185,12 @@ struct BFloat16 {
     }
 
     const BFloat16 inline operator-(const BFloat16 fl) const {
-        return BFloat16(getValue()) + BFloat16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
+        return BFloat16(getValue()) + BFloat16(static_cast<unsigned short>(static_cast<unsigned short>(0x1 << 15) ^ fl.getValue()));
     }
 
     const BFloat16 inline operator*(const BFloat16 fl) const {
         if (isNull() || fl.isNull()) {
-            return BFloat16((unsigned short) 0);
+            return BFloat16(static_cast<unsigned short>(0));
         }
         unsigned short resultingExponent;
         unsigned short exponentBias = 0x100;
@@ -233,7 +233,7 @@ struct BFloat16 {
 
     const BFloat16 inline operator/ (const BFloat16 fl) const {
         if (isNull()) {
-            return BFloat16((unsigned short) 0);
+            return BFloat16(static_cast<unsigned short>(0));
         }
         if (fl.isNull()) {
             return BFloat16(BFLOAT16_NAN);
@@ -264,7 +264,7 @@ struct BFloat16 {
         unsigned short resultingMantissa = (getValue() & 0x7f) / (fl.getValue() & 0x7f);
         unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
-        while (!(bool)(resultingMantissa >> 6)) {
+        while (!static_cast<bool>(resultingMantissa >> 6)) {
             resultingExponent--;
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {

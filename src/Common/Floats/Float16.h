@@ -32,14 +32,14 @@ struct Float16 {
         std::memcpy(&fl32, &fl, sizeof(unsigned int));
         fl16 = (fl32 >> 31) << 5;
         unsigned short exponent = (fl32 >> 23) & 0xff;
-        exponent = (exponent - 0x70) & ((unsigned int)((int)(0x70 - exponent) >> 4) >> 27);
+        exponent = (exponent - 0x70) & (static_cast<unsigned int>(static_cast<int>(0x70 - exponent) >> 4) >> 27);
         fl16 = (fl16 | exponent) << 10;
         fl16 |= (fl32 >> 13) & 0x3ff;
         value = fl16;
     }
 
     explicit Float16(const double fl) {
-        value = Float16((float) fl).getValue();
+        value = Float16(static_cast<float>(fl)).getValue();
     }
 
     Float16(const Float16 &) = default;
@@ -49,7 +49,7 @@ struct Float16 {
     }
 
     bool sign() const {
-        return !(bool)((0x1 << 15) & value);
+        return !static_cast<bool>((0x1 << 15) & value);
     }
 
     unsigned short withoutSign() const {
@@ -57,7 +57,7 @@ struct Float16 {
     }
 
     bool isNull() const {
-        return !(bool)(value & 0x7fff);
+        return !static_cast<bool>(value & 0x7fff);
     }
 
     bool isInfinity() const {
@@ -76,9 +76,9 @@ struct Float16 {
     float asFloat() const {
         float fl;
         unsigned int fl32 = (value >> 15) << 8;
-        unsigned int exponent = (unsigned int)((value >> 11) & 0x1f);
-        if (exponent == (unsigned short) 0x1f) {
-            exponent = (unsigned int) 0x100;
+        unsigned int exponent = static_cast<unsigned int>((value >> 11) & 0x1f);
+        if (exponent == static_cast<unsigned short>(0x1f)) {
+            exponent = static_cast<unsigned int>(0x100);
         } else {
             exponent = (0x7f - (exponent - 0xf));
         }
@@ -174,7 +174,7 @@ struct Float16 {
             }
         }
         flExponent = exponent;
-        while (!(bool)(resultingMantissa >> 9)) {
+        while (!static_cast<bool>(resultingMantissa >> 9)) {
             exponent--;
             resultingMantissa = resultingMantissa << 1;
             if (flExponent - exponent != 1) {
@@ -191,12 +191,12 @@ struct Float16 {
     }
 
     const Float16 inline operator-(const Float16 fl) const {
-        return Float16(getValue()) + Float16((unsigned short)(((unsigned short)(0x1 << 15)) ^ fl.getValue()));
+        return Float16(getValue()) + Float16(static_cast<unsigned short>(static_cast<unsigned short>(0x1 << 15) ^ fl.getValue()));
     }
 
     const Float16 inline operator*(const Float16 fl) const {
         if (isNull() || fl.isNull()) {
-            return Float16((unsigned short) 0);
+            return Float16(static_cast<unsigned short>(0));
         }
         unsigned short resultingExponent;
         unsigned short exponentBias = 0x10;
@@ -224,7 +224,7 @@ struct Float16 {
         unsigned short resultingMantissa = (getValue() & 0x3ff) * (fl.getValue() & 0x3ff);
         unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
-        while (!(bool)(resultingMantissa >> 9)) {
+        while (!static_cast<bool>(resultingMantissa >> 9)) {
             resultingExponent--;
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
@@ -239,7 +239,7 @@ struct Float16 {
 
     Float16 inline operator/(const Float16 fl) const {
         if (isNull()) {
-            return Float16((unsigned short) 0);
+            return Float16(static_cast<unsigned short>(0));
         }
         if (fl.isNull()) {
             return Float16(FLOAT16_NAN);
@@ -270,7 +270,7 @@ struct Float16 {
         unsigned short resultingMantissa = (getValue() & 0x3ff) / (fl.getValue() & 0x3ff);
         unsigned short signMask = ((getValue() >> 15) ^ (fl.getValue() >> 15)) << 15;
         unsigned short resultingExponentCopy = resultingExponent;
-        while (!(bool)(resultingMantissa >> 9)) {
+        while (!static_cast<bool>(resultingMantissa >> 9)) {
             resultingExponent--;
             resultingMantissa = resultingMantissa << 1;
             if (resultingExponentCopy - resultingExponent != 1) {
