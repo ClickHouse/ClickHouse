@@ -1,6 +1,6 @@
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
-Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/functions/ext-dict-functions.md).
+Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ## dictGet {#dictget}
 
