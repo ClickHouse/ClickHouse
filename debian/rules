@@ -21,10 +21,13 @@ ifeq ($(THREADS_COUNT),)
     THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
 endif
 DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
-DEB_BUILD_OPTIONS+=nocheck
 
 ifndef ENABLE_TESTS
     CMAKE_FLAGS += -DENABLE_TESTS=0
+else
+# To export binaries and from deb build we do not strip them. No need to run tests in deb build as we run them in CI
+    DEB_BUILD_OPTIONS+=nocheck
+    DEB_BUILD_OPTIONS+=nostrip
 endif
 
 ifndef MAKE_TARGET
