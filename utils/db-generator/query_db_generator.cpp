@@ -516,8 +516,9 @@ public:
     create = "CREATE DATABASE IF NOT EXISTS " + db + ";\n\n";
     create += "CREATE TABLE IF NOT EXISTS " + name + " (\n";
     for (auto column = columns.begin(); column != columns.end(); ++column) {
-      if (column != columns.begin())
-        create += ",  \n";
+      if (column != columns.begin()) {
+          create += ", \n";
+      }
       create += *column + " ";
       create += column_description[*column].is_array ? "ARRAY(" : "";
       create += type_definition[column_description[*column].type];
@@ -1163,32 +1164,32 @@ TableList get_tables_from_select(std::string query) {
 
 int main(int, char **) {
 
-  using namespace DB;
+    using namespace DB;
 
-  handlers["plus"] = arithmetic_func;
-  handlers["minus"] = arithmetic_func;
-  handlers["like"] = like_func;
-  handlers["array"] = array_func;
-  handlers[""] = simple_func;
+    handlers["plus"] = arithmetic_func;
+    handlers["minus"] = arithmetic_func;
+    handlers["like"] = like_func;
+    handlers["array"] = array_func;
+    handlers[""] = simple_func;
 
-  std::string query = "";
+    std::string query = "";
 
-  std::string in;
-  while (1) {
-    std::cin >> in;
-    query += " " + in;
-    if (in.find(';') != std::string::npos)
-      break;
-  }
-  try {
-    auto result = get_tables_from_select(query);
-
-    for (auto table : result.tables) {
-      std::cout << table.second.create_query();
-      std::cout << table.second.insert_query();
+    std::string in;
+    while (1) {
+        std::cin >> in;
+        query += " " + in;
+        if (in.find(';') != std::string::npos)
+            break;
     }
-    std::cout << query << std::endl;
-  } catch (std::string e) {
-    std::cerr << "Exception: " << std::endl;
-  }
-  
+    try {
+        auto result = get_tables_from_select(query);
+
+        for (auto table : result.tables) {
+            std::cout << table.second.create_query();
+            std::cout << table.second.insert_query();
+        }
+        std::cout << query << std::endl;
+    } catch (std::string e) {
+        std::cerr << "Exception: " << std::endl;
+    }
+}
