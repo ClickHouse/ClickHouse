@@ -47,7 +47,7 @@ SELECT
     threads_realtime >= threads_time_user_system_io,
     any(length(thread_ids)) >= 1
     FROM
-        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE type=2 ORDER BY event_time DESC LIMIT 1)
+        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE type='QueryFinish' ORDER BY event_time DESC LIMIT 1)
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
 # Check per-thread and per-query ProfileEvents consistency
