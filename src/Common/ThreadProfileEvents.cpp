@@ -210,12 +210,7 @@ static bool getPerfEventParanoid(Int32 & result)
         return false;
 
     str[max_length - 1] = '\0';
-    Int64 value = strtol(str, nullptr, 10);
-    // the only way to be incorrect is to not be a number
-    if (value == 0 && errno != 0)
-        return false;
-
-    result = static_cast<Int32>(value);
+    result = atoi(str);
     return true;
 }
 
