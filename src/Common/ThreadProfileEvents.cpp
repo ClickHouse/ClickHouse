@@ -348,20 +348,6 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
             LOG_WARNING(getLogger(), "Can't reset perf event with file descriptor: " << fd);
     }
 
-    // process custom events which depend on the raw ones
-    UInt64 hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES).value;
-    UInt64 hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES).value;
-
-    UInt64 instructions_per_cpu_scaled = hw_cpu_cycles != 0
-                                         ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS).value / hw_cpu_cycles
-                                         : 0;
-    UInt64 instructions_per_cpu = hw_ref_cpu_cycles != 0
-                                  ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS).value / hw_ref_cpu_cycles
-                                  : 0;
-
-    profile_events.increment(ProfileEvents::PerfCustomInstructionsPerCpuCycleScaled, instructions_per_cpu_scaled);
-    profile_events.increment(ProfileEvents::PerfCustomInstructionsPerCpuCycle, instructions_per_cpu);
-
     current_thread_counters = nullptr;
 }
 
