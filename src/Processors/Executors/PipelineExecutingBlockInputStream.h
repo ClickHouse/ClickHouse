@@ -13,7 +13,7 @@ class PipelineExecutingBlockInputStream : public IBlockInputStream
 {
 public:
     explicit PipelineExecutingBlockInputStream(QueryPipeline pipeline_);
-    ~PipelineExecutingBlockInputStream();
+    ~PipelineExecutingBlockInputStream() override;
 
     String getName() const override { return "PipelineExecuting"; }
     Block getHeader() const override;
