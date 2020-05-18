@@ -76,9 +76,6 @@ namespace ProfileEvents
     extern const Event PerfPageFaultsMaj;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
-
-    extern const Event PerfCustomInstructionsPerCpuCycleScaled;
-    extern const Event PerfCustomInstructionsPerCpuCycle;
 #endif
 }
 
