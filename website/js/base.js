@@ -20,8 +20,11 @@
             var offset = 0;
 
             if (selector !== '#') {
-                offset = $(selector).offset().top - $('#top-nav').height() * 1.5;
-                dst += selector;
+                var destination = $(selector);
+                if (destination.length) {
+                    offset = destination.offset().top - $('#top-nav').height() * 1.5;
+                    dst += selector;
+                }
             }
             $('html, body').animate({
                 scrollTop: offset
@@ -32,10 +35,13 @@
 
     var top_nav = $('#top-nav.sticky-top');
     if (window.location.hash.length > 1 && top_nav.length) {
-        var offset = $(window.location.hash).offset().top - top_nav.height() * 1.5;
-        $('html, body').animate({
-            scrollTop: offset
-        }, 70);
+        var hash_destination = $(window.location.hash);
+        if (hash_destination.length) {
+            var offset = hash_destination.offset().top - top_nav.height() * 1.5;
+            $('html, body').animate({
+                scrollTop: offset
+            }, 70);
+        }
     }
 
     $('img').each(function() {
