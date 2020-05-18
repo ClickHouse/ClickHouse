@@ -107,13 +107,13 @@ public:
     {
         if constexpr (UseMultitargetCode)
         {
-            registerImplementation<FunctionRandomImpl<TargetSpecific::SSE42::RandImpl,   ToType, Name>>(TargetArch::SSE42);
-            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,     ToType, Name>>(TargetArch::AVX);
-            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,    ToType, Name>>(TargetArch::AVX2);
-            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>(TargetArch::AVX512F);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::SSE42::RandImpl,   ToType, Name>>(TargetArch::SSE42);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,     ToType, Name>>(TargetArch::AVX);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,    ToType, Name>>(TargetArch::AVX2);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>(TargetArch::AVX512F);
 
-            registerImplementation<FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>(TargetArch::Default);
-            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2,    ToType, Name>>(TargetArch::AVX2);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>(TargetArch::Default);
+            this->template registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2,    ToType, Name>>(TargetArch::AVX2);
         }
     }
 

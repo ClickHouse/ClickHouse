@@ -112,6 +112,7 @@ constexpr bool UseMultitargetCode = true;
 #define DECLARE_SSE42_SPECIFIC_CODE(...) \
 BEGIN_SSE42_SPECIFIC_CODE \
 namespace TargetSpecific::SSE42 { \
+    void __dummy_function_clang(); \
     using namespace DB::TargetSpecific::SSE42; \
     __VA_ARGS__ \
 } \
@@ -120,6 +121,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX_SPECIFIC_CODE(...) \
 BEGIN_AVX_SPECIFIC_CODE \
 namespace TargetSpecific::AVX { \
+    void __dummy_function_clang(); \
     using namespace DB::TargetSpecific::AVX; \
     __VA_ARGS__ \
 } \
@@ -128,6 +130,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX2_SPECIFIC_CODE(...) \
 BEGIN_AVX2_SPECIFIC_CODE \
 namespace TargetSpecific::AVX2 { \
+    void __dummy_function_clang(); \
     using namespace DB::TargetSpecific::AVX2; \
     __VA_ARGS__ \
 } \
@@ -136,6 +139,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX512F_SPECIFIC_CODE(...) \
 BEGIN_AVX512F_SPECIFIC_CODE \
 namespace TargetSpecific::AVX512F { \
+    void __dummy_function_clang(); \
     using namespace DB::TargetSpecific::AVX512F; \
     __VA_ARGS__ \
 } \
