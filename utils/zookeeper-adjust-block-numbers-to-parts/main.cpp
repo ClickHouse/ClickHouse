@@ -102,7 +102,7 @@ std::unordered_map<std::string, Int64> getPartitionsNeedAdjustingBlockNumbers(
         std::cout << "Shard: " << shard << std::endl;
         std::vector<std::string> use_tables = tables.empty() ? getAllTables(zk, root, shard) : removeNotExistingTables(zk, root, shard, tables);
 
-        for (auto table : use_tables)
+        for (const auto & table : use_tables)
         {
             std::cout << "\tTable: " << table << std::endl;
             std::string table_path = root + "/" + shard + "/" + table;
@@ -121,7 +121,7 @@ std::unordered_map<std::string, Int64> getPartitionsNeedAdjustingBlockNumbers(
                 continue;
             }
 
-            for (auto partition : partitions)
+            for (const auto & partition : partitions)
             {
                 try
                 {

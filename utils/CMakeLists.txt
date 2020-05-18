@@ -1,3 +1,7 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
 if(MAKE_STATIC_LIBRARIES)
     set(MAX_LINKER_MEMORY 3500)
 else()
