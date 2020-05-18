@@ -95,8 +95,7 @@ void SquashingTransform::append(ReferenceType input_block)
     {
         const auto source_column = input_block.getByPosition(i).column;
 
-        auto mutable_column = (*std::move(
-            accumulated_block.getByPosition(i).column)).mutate();
+        auto mutable_column = IColumn::mutate(std::move(accumulated_block.getByPosition(i).column));
 
         if (reserve_memory)
         {

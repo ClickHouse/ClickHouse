@@ -24,7 +24,7 @@
 #include <Common/PODArray.h>
 #include <Columns/ColumnsCommon.h>
 
-#include "oclBasics.cpp"
+#include "oclBasics.h"
 #include "bitonicSortKernels.cl"
 
 class BitonicSort

@@ -21,7 +21,7 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #    if USE_OPENCL
-#        include "Common/BitonicSort.h"
+#        include "Common/BitonicSort.h" // Y_IGNORE
 #    endif
 #else
 #undef USE_OPENCL
@@ -144,10 +144,12 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     }
     else
     {
+#if !defined(ARCADIA_BUILD)
 #if USE_OPENCL
         /// If bitonic sort if specified as preferred than `nan_direction_hint` equals specific value 42.
         if (nan_direction_hint == 42 && BitonicSort::getInstance().sort(data, res, !reverse))
             return;
+#endif
 #endif
 
         /// A case for radix sort
