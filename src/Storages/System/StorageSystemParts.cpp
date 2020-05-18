@@ -54,8 +54,8 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
         {"hash_of_uncompressed_files",                  std::make_shared<DataTypeString>()},
         {"uncompressed_hash_of_compressed_files",       std::make_shared<DataTypeString>()},
 
-        {"delete_ttl_info_min",                         std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"delete_ttl_info_max",                         std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+        {"delete_ttl_info_min",                         std::make_shared<DataTypeDateTime>()},
+        {"delete_ttl_info_max",                         std::make_shared<DataTypeDateTime>()},
 
         {"move_ttl_info.expression",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"move_ttl_info.min",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
