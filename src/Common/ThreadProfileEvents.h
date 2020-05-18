@@ -185,19 +185,6 @@ struct PerfEventsCounters
     // must be unsigned to not cause undefined behaviour on increment
     typedef UInt64 Id;
 
-    // cat /proc/sys/kernel/perf_event_paranoid - if perf_event_paranoid is set to 3, all calls to `perf_event_open` are rejected (even for the current process)
-    // https://lwn.net/Articles/696234/
-    // -1: Allow use of (almost) all events by all users
-    // >=0: Disallow raw tracepoint access by users without CAP_IOC_LOCK
-    // >=1: Disallow CPU event access by users without CAP_SYS_ADMIN
-    // >=2: Disallow kernel profiling by users without CAP_SYS_ADMIN
-    // >=3: Disallow all event access by users without CAP_SYS_ADMIN
-
-    // https://lwn.net/Articles/696216/
-    // It adds a another value that can be set for the sysctl parameter (i.e. kernel.perf_event_paranoid=3)
-    // that restricts perf_event_open() to processes with the CAP_SYS_ADMIN capability
-    // todo: check whether perf_event_open() is available with CAP_SYS_ADMIN
-
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
 
     static const PerfEventInfo raw_events_info[PerfEventsCounters::NUMBER_OF_RAW_EVENTS];
