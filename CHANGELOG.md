@@ -156,7 +156,6 @@
 * Fix issue when timezone was not preserved if you write a simple arithmetic expression like `time + 1` (in contrast to an expression like `time + INTERVAL 1 SECOND`). This fixes [#5743](https://github.com/ClickHouse/ClickHouse/issues/5743) [#9323](https://github.com/ClickHouse/ClickHouse/pull/9323) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 #### Improvement
-* Use AWS SDK libraries from ClickHouse-Extras [#10527](https://github.com/ClickHouse/ClickHouse/pull/10527) ([Pavel Kovalenko](https://github.com/Jokser))
 * Use time zone when comparing DateTime with string literal. This fixes [#5206](https://github.com/ClickHouse/ClickHouse/issues/5206). [#10515](https://github.com/ClickHouse/ClickHouse/pull/10515) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Print verbose diagnostic info if Decimal value cannot be parsed from text input format. [#10205](https://github.com/ClickHouse/ClickHouse/pull/10205) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add tasks/memory metrics for distributed/buffer schedule pools [#10449](https://github.com/ClickHouse/ClickHouse/pull/10449) ([Azat Khuzhin](https://github.com/azat))
@@ -229,6 +228,7 @@
 * Use single row counter for multiple streams in pre-limit transform. This helps to avoid uniting pipeline streams in queries with `limit` but without `order by` (like `select f(x) from (select x from t limit 1000000000)`) and use multiple threads for further processing. [#9602](https://github.com/ClickHouse/ClickHouse/pull/9602) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 
 #### Build/Testing/Packaging Improvement
+* Use a fork of AWS SDK libraries from ClickHouse-Extras [#10527](https://github.com/ClickHouse/ClickHouse/pull/10527) ([Pavel Kovalenko](https://github.com/Jokser))
 * Add integration tests for new ALTER RENAME COLUMN query. [#10654](https://github.com/ClickHouse/ClickHouse/pull/10654) ([vzakaznikov](https://github.com/vzakaznikov))
 * Fix possible signed integer overflow in invocation of function `now64` with wrong arguments. This fixes [#8973](https://github.com/ClickHouse/ClickHouse/issues/8973) [#10511](https://github.com/ClickHouse/ClickHouse/pull/10511) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Split fuzzer and sanitizer configurations to make build config compatible with Oss-fuzz. [#10494](https://github.com/ClickHouse/ClickHouse/pull/10494) ([kyprizel](https://github.com/kyprizel))
