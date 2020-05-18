@@ -184,7 +184,7 @@ column_type type_cast(int t) {
 
 class FuncRet {
 public:
-  FuncRet(){};
+  FuncRet(){}
 
   FuncRet(column_type t, std::string v) : value(v), type(t) {}
 
@@ -1191,4 +1191,4 @@ int main(int, char **) {
   } catch (std::string e) {
     std::cerr << "Exception: " << std::endl;
   }
-}
+  
