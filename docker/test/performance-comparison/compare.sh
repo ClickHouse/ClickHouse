@@ -314,6 +314,25 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     from queries
     ;
 
+-- save all test runs as JSON for the new comparison page
+create table all_query_funs_json engine File(JSON, 'report/all-query-runs.json') as
+    select test, query, versions_runs[1] runs_left, versions_runs[2] runs_right
+    from (
+        select
+            test, query,
+            groupArrayInsertAt(runs, version) versions_runs
+        from (
+            select
+                replaceAll(_file, '-queries.tsv', '') test,
+                query, version,
+                groupArray(time) runs
+            from file('*-queries.tsv', TSV, 'query text, run int, version UInt32, time float')
+            group by test, query, version
+        )
+        group by test, query
+    )
+    ;
+
 create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
     select left, right, diff, stat_threshold, changed_fail, test, query from queries where changed_show
     order by abs(diff) desc;
