@@ -3,6 +3,7 @@
 ### ClickHouse release v20.4.2.9, 2020-05-12
 
 #### Backward Incompatible Change
+* System tables (e.g. system.query_log, system.trace_log, system.metric_log) are using compact data part format for parts smaller than 10 MiB in size. Compact data part format is supported since version 20.3. If you are going to downgrade to version less than 20.3, you should manually delete table data for system logs in `/var/lib/clickhouse/data/system/`.
 * When string comparison involves FixedString and compared arguments are of different sizes, do comparison as if smaller string is padded to the length of the larger. This is intented for SQL compatibility if we imagine that FixedString data type corresponds to SQL CHAR. This closes [#9272](https://github.com/ClickHouse/ClickHouse/issues/9272). [#10363](https://github.com/ClickHouse/ClickHouse/pull/10363) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Make SHOW CREATE TABLE multiline. Now it is more readable and more like MySQL. [#10049](https://github.com/ClickHouse/ClickHouse/pull/10049) ([Azat Khuzhin](https://github.com/azat))
 * Added a setting `validate_polygons` that is used in `pointInPolygon` function and enabled by default. [#9857](https://github.com/ClickHouse/ClickHouse/pull/9857) ([alexey-milovidov](https://github.com/alexey-milovidov))
