@@ -31,6 +31,9 @@ void PipelineExecutingBlockInputStream::readPrefixImpl()
 
 Block PipelineExecutingBlockInputStream::readImpl()
 {
+    if (!executor)
+        executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
     Block block;
     while (executor->pull(block))
     {
