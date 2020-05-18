@@ -86,7 +86,8 @@ list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
     AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     AggregateFunctions/AggregateFunctionState.cpp
-    AggregateFunctions/parseAggregateFunctionParameters.cpp)
+    AggregateFunctions/parseAggregateFunctionParameters.cpp
+    AggregateFunctions/ML/ITrainedModel.cpp)
 
 list (APPEND dbms_headers
     AggregateFunctions/IAggregateFunction.h
@@ -95,7 +96,8 @@ list (APPEND dbms_headers
     AggregateFunctions/AggregateFunctionCombinatorFactory.h
     AggregateFunctions/AggregateFunctionState.h
     AggregateFunctions/FactoryHelpers.h
-    AggregateFunctions/parseAggregateFunctionParameters.h)
+    AggregateFunctions/parseAggregateFunctionParameters.h
+    AggregateFunctions/ML/ITrainedModel.h)
 
 list (APPEND dbms_sources TableFunctions/ITableFunction.cpp TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers TableFunctions/ITableFunction.h   TableFunctions/TableFunctionFactory.h)
