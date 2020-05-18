@@ -22,7 +22,7 @@ You can make queries to playground using any HTTP client, for example [curl](htt
 | Password          | `clickhouse`                            |
 
 !!! note "Note"
-    Note that all endpoints require a secure TLS connection.
+    All these endpoints require a secure TLS connection.
 
 There are additional endpoints with specific ClickHouse releases to experiment with their differences (ports and user/password are the same as above):
 
@@ -50,7 +50,7 @@ HTTPS endpoint example with `curl`:
 curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
 ```
 
-TCP endpoint example with [../interfaces/cli.md]:
+TCP endpoint example with [CLI](../interfaces/cli.md):
 ``` bash
 clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse!'"
 ```

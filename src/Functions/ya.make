@@ -205,7 +205,6 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
-    ignoreExceptNull.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -284,6 +283,8 @@ SRCS(
     rand.cpp
     randomPrintableASCII.cpp
     randomString.cpp
+    randomStringUTF8.cpp
+    randomFixedString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp

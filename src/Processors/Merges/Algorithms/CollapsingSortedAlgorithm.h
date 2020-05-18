@@ -31,6 +31,7 @@ public:
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,
+        bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_,
         bool use_average_block_sizes,
@@ -42,6 +43,7 @@ private:
     MergedData merged_data;
 
     const size_t sign_column_number;
+    const bool only_positive_sign;
 
     static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;

@@ -13,6 +13,7 @@ class Layout(object):
         'complex_key_cache': '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>',
         'range_hashed': '<range_hashed/>',
         'direct': '<direct/>',
+        'complex_key_direct': '<complex_key_direct/>'
     }
 
     def __init__(self, name):
@@ -307,7 +308,7 @@ class Dictionary(object):
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:
-            if self.structure.layout.get_str() != '<direct/>':
+            if 'direct' not in self.structure.layout.get_str():
                 result.write('''
                 <yandex>
                 <dictionary>

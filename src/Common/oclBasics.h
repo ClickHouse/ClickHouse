@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Common/config.h>
 #if USE_OPENCL
 

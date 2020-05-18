@@ -22,12 +22,17 @@ public:
     /// Transform must have the number of inputs equals to the number of pipes. And single output.
     /// Will connect pipes outputs with transform inputs automatically.
     Pipe(Pipes && pipes, ProcessorPtr transform);
+    /// Create pipe from output port. If pipe was created that way, it possibly will not have tree shape.
+    Pipe(OutputPort * port);
 
     Pipe(const Pipe & other) = delete;
     Pipe(Pipe && other) = default;
 
     Pipe & operator=(const Pipe & other) = delete;
     Pipe & operator=(Pipe && other) = default;
+
+    /// Append processors to pipe. After this, it possibly will not have tree shape.
+    void addProcessors(const Processors & processors_);
 
     OutputPort & getPort() const { return *output_port; }
     const Block & getHeader() const { return output_port->getHeader(); }

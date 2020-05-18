@@ -11,6 +11,10 @@
     {% set url = 'https://clickhouse.tech' + page.abs_url %}
 {% endif %}
 
+{% if page and page.canonical_url %}
+    {% set canonical_url = page.canonical_url %}
+{% endif %}
+
 {% if page and page.meta and page.meta.title %}
     {% set title = page.meta.title %}
 {% elif page and page.title and not page.is_homepage and page.title != 'hidden' %}
