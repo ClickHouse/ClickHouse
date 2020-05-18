@@ -79,10 +79,6 @@
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
-#if USE_OPENCL
-#    include "Common/BitonicSort.h"
-#endif
-
 namespace CurrentMetrics
 {
     extern const Metric Revision;
