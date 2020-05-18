@@ -42,8 +42,7 @@ BlockIO executeQuery(
     Context & context,        /// DB, tables, data types, storage engines, functions, aggregate functions...
     bool internal = false,    /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.
-    bool may_have_embedded_data = false, /// If insert query may have embedded data
-    bool allow_processors = true /// If can use processors pipeline
+    bool may_have_embedded_data = false /// If insert query may have embedded data
 );
 
 
