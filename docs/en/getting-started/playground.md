@@ -22,7 +22,7 @@ You can make queries to playground using any HTTP client, for example [curl](htt
 | Password          | `clickhouse`                            |
 
 !!! note "Note"
-    Note that all endpoints require a secure TLS connection.
+    All these endpoints require a secure TLS connection.
 
 There are additional endpoints with specific ClickHouse releases to experiment with their differences (ports and user/password are the same as above):
 
