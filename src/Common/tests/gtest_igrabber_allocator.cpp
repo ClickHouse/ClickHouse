@@ -68,3 +68,31 @@ TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
     EXPECT_EQ(stats.all_regions_count, 1);
 }
 
+TEST(IGrabberAllocator, CacheShrinking)
+{
+    IntToInt cache(MMAP_THRESHOLD);
+
+    for (int i = 0; i < 200; ++i)
+        cache.getOrSet(i, [] {return 100; }, [](void *) { return 1; });
+
+    auto stats = cache.getStats();
+
+    EXPECT_EQ(stats.misses, 200);
+
+    cache.shrinkToFit();
+
+    EXPECT_EQ(cache.getStats(), ga::Stats{});
+
+    // assert there are no used elements.
+    for (int i = 0; i < 200; ++i)
+        EXPECT_EQ(nullptr, cache.get(i));
+
+    auto&& [ptr, produced] = cache.getOrSet(0, [] {return 100;}, [](void *) { return 1; });
+
+    EXPECT_TRUE(produced);
+
+    cache.shrinkToFit();
+
+    EXPECT_EQ(ptr.get(), cache.get(0).get()); // check that a used element is not erased
+}
+

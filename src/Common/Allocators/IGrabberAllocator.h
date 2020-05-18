@@ -195,19 +195,37 @@ public:
         return used_regions.size();
     }
 
-    /// Clears the cache.
-    void reset() noexcept
+    /**
+     * @brief Removes unused elements from the cache. Such include unused (unreferenced) RegionMetadata's, as well as
+     *        allocated but unused MemoryChunks.
+     *
+     * @note This method does NOT invalidate used elements. They remain in the cache.
+     *
+     * @note The statistics is zeroed out.
+     *
+     */
+    void shrinkToFit()
     {
         std::lock_guard lock(mutex);
 
         insertion_attempts.clear();
+
+        // value_to_region not cleared because it contains referenced regions.
+
+        const auto disposer = [this](auto& container)
+        {
+            for (auto it = container.begin(); it != container.end(); ++it)
+                all_regions.erase_and_dispose(all_regions.iterator_to(*it),
+                                              region_metadata_disposer);
+
+            container.clear();
+        };
+
+        disposer(free_regions);
+        disposer(unused_allocated_regions);
+
+        value_to_region.clear();
         chunks.clear();
-
-        free_regions.clear();
-        used_regions.clear();
-        unused_allocated_regions.clear();
-
-        all_regions.clear_and_dispose(region_metadata_disposer);
 
         total_chunks_size = 0;
         total_allocated_size = 0;
@@ -224,6 +242,18 @@ public:
         evictions = 0;
         evicted_bytes = 0;
         secondary_evictions = 0;
+    }
+
+    /**
+     * @warning Currently this method acts like IGrabberAllocator::shrinkToFit, the proposed action is below.
+     *
+     *  Invalidates the cache. All unused elements (along with their metadata) are removed, all used elements
+     *  become "disposed" (tracked in RegionMetadata) and are removed on first IGrabberAllocator::get or
+     *  IGrabberAllocator::getOrSet call.
+     */
+    void reset()
+    {
+        shrinkToFit();
     }
 
     /**
@@ -342,8 +372,6 @@ private:
 public:
     inline ValuePtr get(const Key& key)
     {
-        std::lock_guard lock(mutex);
-
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
