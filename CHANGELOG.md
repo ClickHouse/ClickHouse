@@ -26,7 +26,6 @@
 * Consider `NULL` to be equal to `NULL` in `IN` operator, if the option `transform_null_in` is set. [#10085](https://github.com/ClickHouse/ClickHouse/pull/10085) ([achimbab](https://github.com/achimbab))
 * Add MessagePack Input/Output format. [#9889](https://github.com/ClickHouse/ClickHouse/pull/9889) ([Kruglov Pavel](https://github.com/Avogar))
 * Add `ALTER TABLE ... RENAME COLUMN` for MergeTree table engines family. [#9948](https://github.com/ClickHouse/ClickHouse/pull/9948) ([alesapin](https://github.com/alesapin))
-* Implemented s3 table function and storage. [#5596](https://github.com/ClickHouse/ClickHouse/pull/5596) ([Vladimir Chebotarev](https://github.com/excitoon))
 * Support parallel distributed INSERT SELECT. [#9759](https://github.com/ClickHouse/ClickHouse/pull/9759) ([vxider](https://github.com/Vxider))
 * Added implementation of LIVE VIEW tables that were originally proposed in [#3925](https://github.com/ClickHouse/ClickHouse/issues/3925), and then updated in [#5541](https://github.com/ClickHouse/ClickHouse/issues/5541). Note that currently only LIVE VIEW tables are supported. See [#5541](https://github.com/ClickHouse/ClickHouse/issues/5541) for detailed description. [#6425](https://github.com/ClickHouse/ClickHouse/pull/6425) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Add ability to query Distributed over Distributed (w/o `distributed_group_by_no_merge`) ... [#9923](https://github.com/ClickHouse/ClickHouse/pull/9923) ([Azat Khuzhin](https://github.com/azat))
