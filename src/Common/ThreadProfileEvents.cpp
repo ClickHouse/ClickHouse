@@ -176,19 +176,6 @@ Logger * PerfEventsCounters::getLogger()
     return &Logger::get("PerfEventsCounters");
 }
 
-PerfEventValue PerfEventsCounters::getRawValue(int event_type, int event_config) const
-{
-    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
-    {
-        const PerfEventInfo & event_info = raw_events_info[i];
-        if (event_info.event_type == event_type && event_info.event_config == event_config)
-            return raw_event_values[i];
-    }
-
-    LOG_WARNING(getLogger(), "Can't find perf event info for event_type=" << event_type << ", event_config=" << event_config);
-    return {};
-}
-
 static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
 {
     return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));

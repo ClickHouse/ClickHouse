@@ -219,8 +219,6 @@ private:
     static Logger * getLogger();
 
     static bool initializeThreadLocalEvents(PerfEventsCounters & counters);
-
-    [[nodiscard]] PerfEventValue getRawValue(int event_type, int event_config) const;
 };
 
 struct PerfDescriptorsHolder
