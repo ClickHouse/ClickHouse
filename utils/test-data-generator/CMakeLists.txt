@@ -1,3 +1,6 @@
+# Disable clang-tidy for protobuf generated files
+set (CMAKE_CXX_CLANG_TIDY "")
+
 add_compile_options(-Wno-zero-as-null-pointer-constant -Wno-array-bounds) # Protobuf generated files
 
 if (USE_PROTOBUF)
