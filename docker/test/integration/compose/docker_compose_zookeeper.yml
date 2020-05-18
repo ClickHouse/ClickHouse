@@ -1,25 +1,37 @@
 version: '2.2'
 services:
+# our compose version doesn't support inheritance :( so we copy-paste images
+# configuration
     zoo1:
         image: zookeeper:3.4.12
         restart: always
         environment:
             ZOO_TICK_TIME: 500
-            ZOO_MY_ID: 1
             ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
-
+            ZOO_MY_ID: 1
+            JVMFLAGS: -Dzookeeper.forceSync=no
+        tmpfs:
+            - /data
+            - /datalog
     zoo2:
         image: zookeeper:3.4.12
         restart: always
         environment:
             ZOO_TICK_TIME: 500
-            ZOO_MY_ID: 2
             ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
-
+            ZOO_MY_ID: 2
+            JVMFLAGS: -Dzookeeper.forceSync=no
+        tmpfs:
+            - /data
+            - /datalog
     zoo3:
         image: zookeeper:3.4.12
         restart: always
         environment:
             ZOO_TICK_TIME: 500
-            ZOO_MY_ID: 3
             ZOO_SERVERS: server.1=zoo1:2888:3888 server.2=zoo2:2888:3888 server.3=zoo3:2888:3888
+            ZOO_MY_ID: 3
+            JVMFLAGS: -Dzookeeper.forceSync=no
+        tmpfs:
+            - /data
+            - /datalog
