@@ -55,24 +55,24 @@ TasksStatsCounters::TasksStatsCounters(const UInt64 tid, const MetricsProvider p
 {
     switch (provider)
     {
-        case MetricsProvider::Netlink:
-            stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
-            {
-                ::taskstats result;
-                metrics_provider->getStat(result, tid);
-                return result;
-            };
-            break;
-        case MetricsProvider::Procfs:
-            stats_getter = [metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid)]()
-            {
-                ::taskstats result;
-                metrics_provider->getTaskStats(result);
-                return result;
-            };
-            break;
-        case MetricsProvider::None:
-            ;
+    case MetricsProvider::Netlink:
+        stats_getter = [metrics_provider = std::make_shared<TaskStatsInfoGetter>(), tid]()
+        {
+            ::taskstats result;
+            metrics_provider->getStat(result, tid);
+            return result;
+        };
+        break;
+    case MetricsProvider::Procfs:
+        stats_getter = [metrics_provider = std::make_shared<ProcfsMetricsProvider>(tid)]()
+        {
+            ::taskstats result;
+            metrics_provider->getTaskStats(result);
+            return result;
+        };
+        break;
+    case MetricsProvider::None:
+        ;
     }
 }
 
