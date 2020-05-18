@@ -593,6 +593,7 @@ Columns:
 -   `memory_usage` (UInt64) — Memory consumption by the query.
 -   `query` (String) — Query string.
 -   `exception` (String) — Exception message.
+-   `exception_code` (String) — Code of an exception message. 
 -   `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
 -   `is_initial_query` (UInt8) — Query type. Possible values:
     -   1 — Query was initiated by the client.
@@ -628,6 +629,12 @@ Columns:
 -   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
 -   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
 
+**Example**
+
+``` sql
+SELECT * FROM system.query_log
+```
+
 Each query creates one or two rows in the `query_log` table, depending on the status of the query:
 
 1.  If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
@@ -642,6 +649,10 @@ When the table is deleted manually, it will be automatically created on the fly.
     The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
+
+**See Also**
+
+-   [Article name](path/to/article_name.md) — Some words about referenced information.
 
 ## system.query\_thread\_log {#system_tables-query-thread-log}
 
