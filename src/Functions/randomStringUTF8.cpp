@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 /* Generate string with a UTF-8 encoded text.
  * Take a single argument - length of result string in Unicode code points.
- * ATTENTION: Method generate only assignable code points(excluded 4-13 planes).
+ * ATTENTION: Method generate only assignable code points (excluded 4-13 planes).
  * See https://en.wikipedia.org/wiki/Plane_(Unicode) */
 
 class FunctionRandomStringUTF8 : public IFunction
@@ -71,7 +71,7 @@ public:
 
         /* As we generate only assigned planes, the mathematical expectation of the number of bytes
          * per generated code point ~= 3.85. So, reserving for coefficient 4 will not be an overhead
-        */
+         */
 
         if (summary_utf8_len > (1 << 29))
             throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
@@ -131,7 +131,6 @@ public:
             }
             offsets_to[row_num] = offset;
         }
-
 
         /// Put zero bytes in between.
         auto * pos = data_to.data();
