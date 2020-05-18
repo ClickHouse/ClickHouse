@@ -4,8 +4,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
-#include <common/unaligned.h>
 #include <Common/randomSeed.h>
+#include <common/unaligned.h>
 
 
 namespace DB

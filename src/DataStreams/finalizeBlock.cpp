@@ -18,7 +18,7 @@ namespace DB
                 current.type = unfinalized_type->getReturnType();
                 if (current.column)
                 {
-                    auto mut_column = (*std::move(current.column)).mutate();
+                    auto mut_column = IColumn::mutate(std::move(current.column));
                     current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
                 }
             }

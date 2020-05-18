@@ -20,7 +20,7 @@ public:
         SortDescription description_, size_t max_block_size);
 
     void initialize(Chunks chunks) override;
-    void consume(Chunk chunk, size_t source_num) override;
+    void consume(Chunk & chunk, size_t source_num) override;
     Status merge() override;
 
     struct SimpleAggregateDescription;
