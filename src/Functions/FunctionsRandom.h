@@ -7,8 +7,7 @@
 
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-// #include "TargetSpecific.h"
-// #include "PerformanceAdaptors.h"
+
 namespace DB
 {
 
@@ -43,6 +42,12 @@ struct RandImpl
 {
     static void execute(char * output, size_t size);
     static String getImplementationTag() { return ToString(BuildArch); }
+};
+
+struct RandImpl2
+{
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_v2"; }
 };
 
 ) // DECLARE_MULTITARGET_CODE
@@ -106,6 +111,9 @@ public:
             registerImplementation<FunctionRandomImpl<TargetSpecific::AVX::RandImpl,     ToType, Name>>(TargetArch::AVX);
             registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl,    ToType, Name>>(TargetArch::AVX2);
             registerImplementation<FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>(TargetArch::AVX512F);
+
+            registerImplementation<FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>(TargetArch::Default);
+            registerImplementation<FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2,    ToType, Name>>(TargetArch::AVX2);
         }
     }
 

@@ -66,6 +66,52 @@ void RandImpl::execute(char * output, size_t size)
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
 }
 
+void RandImpl2::execute(char * output, size_t size)
+{
+    if (size == 0)
+        return;
+
+    LinearCongruentialGenerator generator0;
+    LinearCongruentialGenerator generator1;
+    LinearCongruentialGenerator generator2;
+    LinearCongruentialGenerator generator3;
+    LinearCongruentialGenerator generator4;
+    LinearCongruentialGenerator generator5;
+    LinearCongruentialGenerator generator6;
+    LinearCongruentialGenerator generator7;
+
+    seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(output));
+    seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator4, 0xfb4122280b2ab102ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator5, 0x0121c276df39c173ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator6, 0x17ae82e3a19a612fULL + reinterpret_cast<intptr_t>(output));
+    seed(generator7, 0x8b6e12da7e06d122ULL + reinterpret_cast<intptr_t>(output));
+
+    const char * end = output + size;
+
+    for (; (end - output + 15) <= 32; output += 32)
+    {
+        unalignedStore<UInt32>(output, generator0.next());
+        unalignedStore<UInt32>(output + 4, generator1.next());
+        unalignedStore<UInt32>(output + 8, generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
+        unalignedStore<UInt32>(output + 16, generator4.next());
+        unalignedStore<UInt32>(output + 20, generator5.next());
+        unalignedStore<UInt32>(output + 24, generator6.next());
+        unalignedStore<UInt32>(output + 28, generator7.next());
+    }
+
+    while (end - output > 0) {
+        unalignedStore<UInt32>(output, generator0.next());
+        unalignedStore<UInt32>(output + 4, generator1.next());
+        unalignedStore<UInt32>(output + 8, generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
+        output += 16;
+    }
+}
+
 ) //DECLARE_MULTITARGET_CODE
 
 }
