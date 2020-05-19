@@ -97,8 +97,15 @@ struct BFloat16 {
         return asFloat() >= fl.asFloat();
     }
 
-    BFloat16 & operator= (const BFloat16 &fl) {
-        value = fl.getValue();
+    BFloat16 & operator= (const BFloat16 &fl) = default;
+
+    BFloat16 & operator= (const float &f) {
+        value = BFloat16(f).getValue();
+        return *this;
+    }
+
+    BFloat16 & operator= (const double &d) {
+        value = BFloat16(d).getValue();
         return *this;
     }
 
@@ -285,6 +292,8 @@ struct BFloat16 {
     template <typename T> bool inline operator<= (const T rhs) const { return *this <= BFloat16(rhs); }
     template <typename T> bool inline operator<  (const T rhs) const { return *this <  BFloat16(rhs); }
     template <typename T> explicit operator T() const { return static_cast<T>(value); }
+    operator float() const { return asFloat();  }
+    operator double() const { return static_cast<double>(asFloat());  }
 };
 
 template <typename T> bool inline operator== (T a, const BFloat16 b) { return BFloat16(a) == b; }

@@ -103,8 +103,15 @@ struct Float16 {
         return asFloat() >= fl.asFloat();
     }
 
-    Float16 & operator= (const Float16 &fl) {
-        value = fl.getValue();
+    Float16 & operator= (const Float16 &fl) = default;
+
+    Float16 & operator= (const float &f) {
+        value = Float16(f).getValue();
+        return *this;
+    }
+
+    Float16 & operator= (const double &d) {
+        value = Float16(d).getValue();
         return *this;
     }
 
@@ -291,6 +298,8 @@ struct Float16 {
     template <typename T> bool inline operator<= (const T rhs) const { return *this <= Float16(rhs); }
     template <typename T> bool inline operator<  (const T rhs) const { return *this <  Float16(rhs); }
     template <typename T> explicit operator T() const { return static_cast<T>(value); }
+    operator float() const { return asFloat();  }
+    operator double() const { return static_cast<double>(asFloat());  }
 };
 
 template <typename T> bool inline operator== (T a, const Float16 b) { return Float16(a) == b; }
