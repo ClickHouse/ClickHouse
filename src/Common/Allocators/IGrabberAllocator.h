@@ -224,10 +224,7 @@ public:
         disposer(free_regions);
         disposer(unused_regions);
 
-        chunks.remove_if([](const auto& chunk) { 
-            std::cout << "real " << chunk.used_refcount << "\n";
-            return chunk.used_refcount == 0; 
-        });
+        chunks.remove_if([](const auto& chunk) { return chunk.used_refcount == 0; });
 
         if (!clear_stats)
             return;
