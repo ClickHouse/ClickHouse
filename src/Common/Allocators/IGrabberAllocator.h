@@ -543,8 +543,6 @@ private:
 
         ++metadata.chunk->used_refcount;
 
-        std::cout << "create " << metadata.chunk->used_refcount << "\n";
-
         total_size_in_use += metadata.size;
     }
 
@@ -572,8 +570,6 @@ private:
         used_regions.erase(used_regions.iterator_to(metadata));
 
         --metadata.chunk->used_refcount;
-
-        std::cout << "delete " << metadata.chunk->used_refcount << "\n";
 
         total_size_in_use -= metadata.size;
 
