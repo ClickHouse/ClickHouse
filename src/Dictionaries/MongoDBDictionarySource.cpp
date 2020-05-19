@@ -35,11 +35,13 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 }
 
 
+#include <common/logger_useful.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/ObjectId.h>
+#include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 
@@ -187,15 +189,38 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , db{db_}
     , collection{collection_}
     , sample_block{sample_block_}
-    , connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
+    , connection{std::make_shared<Poco::MongoDB::Connection>()}
 {
     if (!uri.empty())
     {
+        Poco::URI poco_uri(uri);
+
+        // Parse database from URI. This is required for correctness -- the
+        // cursor is created using database name and colleciton name, so we have
+        // to specify them properly.
+        db = poco_uri.getPath();
+        // getPath() may return a leading slash, remove it.
+        if (!db.empty() && db[0] == '/')
+        {
+            db.erase(0, 1);
+        }
+
+        // Parse some other parts from URI, for logging and display purposes.
+        host = poco_uri.getHost();
+        port = poco_uri.getPort();
+        user = poco_uri.getUserInfo();
+        if (size_t separator = user.find(':'); separator != std::string::npos)
+        {
+            user.resize(separator);
+        }
+
+        // Connect with URI.
         Poco::MongoDB::Connection::SocketFactory socket_factory;
         connection->connect(uri, socket_factory);
     }
     else
     {
+        // Connect with host/port/user/etc.
         connection->connect(host, port);
         if (!user.empty())
         {
