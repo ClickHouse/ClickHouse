@@ -13,7 +13,6 @@ namespace Poco
     class Logger;
 }
 
-
 namespace DB
 {
 
@@ -26,13 +25,16 @@ public:
             std::pair<std::string, UInt16> & parsed_address,
             const String & exchange_name_,
             const String & routing_key_,
+            const size_t channel_id_,
             Poco::Logger * log_,
             char row_delimiter_,
+            const bool bind_by_id_,
             const bool hash_exchange_,
             const size_t num_queues_,
             const std::atomic<bool> & stopped_);
 
     ~ReadBufferFromRabbitMQConsumer() override;
+
     void allowNext() { allowed = true; } // Allow to read next message.
     void subscribeConsumer();
 
@@ -43,14 +45,16 @@ private:
     event_base * evbase;
     RabbitMQHandler eventHandler;
     AMQP::TcpConnection connection;
-
     ChannelPtr consumer_channel;
+
     const String & exchange_name;
     const String & routing_key;
+    const String channel_id;
+    const bool bind_by_id;
+    const bool hash_exchange;
 
     Poco::Logger * log;
     char row_delimiter;
-    const bool hash_exchange;
     bool stalled = false;
     bool allowed = true;
     const std::atomic<bool> & stopped;
@@ -59,7 +63,6 @@ private:
     const size_t num_queues;
     String consumerTag; // ID for the consumer
     Queues queues;
-    bool bindings_created = false;
     bool subscribed = false;
     String current_exchange_name;
 

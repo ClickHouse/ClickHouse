@@ -12,8 +12,10 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         std::pair<std::string, UInt16> & parsed_address,
         const String & exchange_name_,
         const String & routing_key_,
+        const size_t channel_id_,
         Poco::Logger * log_,
         char row_delimiter_,
+        const bool bind_by_id_,
         const bool hash_exchange_,
         const size_t num_queues_,
         const std::atomic<bool> & stopped_)
@@ -24,8 +26,10 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
           AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
         , exchange_name(exchange_name_)
         , routing_key(routing_key_)
+        , channel_id(std::to_string(channel_id_ - 1))
         , log(log_)
         , row_delimiter(row_delimiter_)
+        , bind_by_id(bind_by_id_)
         , hash_exchange(hash_exchange_)
         , num_queues(num_queues_)
         , stopped(stopped_)
@@ -34,7 +38,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
      * because in case when num_consumers > 1 - inputStreams run asynchronously and if they share the same connection,
      * then they also will share the same event loop. But it will mean that if one stream's consumer starts event loop,
      * then it will run all callbacks on the connection - including other stream's consumer's callbacks - 
-     * it result in asynchronous run of the same code and lead to a lot of seg faults.
+     * it result in asynchronous run of the same code and lead to occasional seg faults.
      */
     while (!connection.ready())
     {
@@ -60,7 +64,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
     //unsubscribe();
-    consumer_channel->close();
+    connection.close();
 
     messages.clear();
     current = messages.begin();
@@ -82,11 +86,6 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
     if (hash_exchange)
     {
-        /* If hash_exchange flag is set, it means that there should be a distribution of messages between multiple consumers
-         * or queues - like rebalance. In this case a fanout exchange will pass all messages to  consistent-hash exchange, 
-         * which will distribute messages (between queues) based on a hash value of the routing key. 
-         * However, internally (with INSERT query) messages can be published directly to hash exchange.
-         */
         current_exchange_name = exchange_name + "_hash";
         consumer_channel->declareExchange(current_exchange_name, AMQP::consistent_hash).onError([&](const char * message)
         {
@@ -100,8 +99,6 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     }
     else
     {
-        /// In simple cases with one queue and one consumer direct exchange type is used. 
-        
         current_exchange_name = exchange_name + "_direct";
         consumer_channel->declareExchange(current_exchange_name, AMQP::direct).onError([&](const char * message)
         {
@@ -130,9 +127,23 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings()
     .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
     {
         queues.emplace_back(queue_name_);
-        LOG_TRACE(log, "Queue " + queue_name_ + " declared");
 
-        consumer_channel->bindQueue(current_exchange_name, queue_name_, routing_key)
+        String binding_key = routing_key;
+
+        /* If hash exchange is used then binding key must be an integer. By default so it is.
+         *
+         * bind_by_id flag means that a little more complex routing algorithm is used:
+         * each channel is given a serial number, each channel consumes from a single queue, which is bound
+         * to the exchange with the binding key == serial number of consumer channel. To finish the routing -
+         * when messages are published - they are published with a routing key == (message_counter++ %= num_channels).
+         * This enables a very fast sharding between channels (~consumers) without using hash-exchange, which is very slow.
+         */
+        if (bind_by_id && !hash_exchange)
+            binding_key = "topic_" + channel_id;
+
+        LOG_TRACE(log, "Queue " + queue_name_ + " is bound by key " + binding_key);
+
+        consumer_channel->bindQueue(current_exchange_name, queue_name_, binding_key)
         .onSuccess([&]
         {
             bindings_ok = true;
@@ -152,11 +163,6 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings()
     while (!bindings_ok && !bindings_error)
     {
         startNonBlockEventLoop();
-    }
-
-    if (bindings_ok)
-    {
-        bindings_created = true;
     }
 }
 
@@ -189,7 +195,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 
         consumer_ok = true;
 
-        LOG_TRACE(log, "Consumer " + consumerTag + " is subscribed to queue " + queue_name + " with the key " + routing_key);
+        LOG_TRACE(log, "Consumer " + consumerTag + " is subscribed to queue " + queue_name);
     })
     .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
     {
@@ -205,7 +211,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
             //LOG_TRACE(log, "Consumer " + consumerTag + " received the message " + message_received);
 
             received.push_back(message_received);
-            this->stalled = false; 
         }
     })
     .onError([&](const char * message)
@@ -251,14 +256,14 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     {
         if (received.empty())
         {
+            /* Run the onReceived callbacks to save the messages that have been received by now
+             */
             startNonBlockEventLoop();
         }
 
         if (received.empty())
         {
             LOG_TRACE(log, "Stalled");
-            stalled = true;
-
             return false;
         }
 

@@ -16,6 +16,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         const String & routing_key_,
         const String & exchange_,
         Poco::Logger * log_,
+        const size_t num_queues_,
+        const bool bind_by_id_,
         const bool hash_exchange_,
         std::optional<char> delimiter,
         size_t rows_per_message,
@@ -26,6 +28,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , routing_key(routing_key_)
         , exchange_name(exchange_)
         , log(log_)
+        , num_queues(num_queues_)
+        , bind_by_id(bind_by_id_)
         , hash_exchange(hash_exchange_)
         , delim(delimiter)
         , max_rows(rows_per_message)
@@ -39,43 +43,27 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     producer_channel->close();
-
     assert(rows == 0 && chunks.empty());
 }
 
 
 void WriteBufferToRabbitMQProducer::checkExchange()
 {
-    if (hash_exchange)
+    /* The AMQP::passive flag indicates that it should only be checked if such exchange already exists.
+     * If it doesn't - then no queue bindings happened and publishing to an exchange, without any queue
+     * bound to it, will lead to messages being routed nowhere. May be this check seems pointless, but
+     * without it no publishing will happen.
+     */
+    producer_channel->declareExchange(exchange_name + "_direct", AMQP::direct, AMQP::passive)
+    .onSuccess([&]()
     {
-        /* The AMQP::passive flag indicates that it should only be checked if such exchange already exists.
-         * If it doesn't - then no queue bindings happened and publishing to an exchange, without any queue
-         * bound to it, will lead to messages being routed nowhere.
-         */
-        producer_channel->declareExchange(exchange_name, AMQP::fanout, AMQP::passive)
-        .onSuccess([&]()
-        {
-            exchange_declared = true;
-        })
-        .onError([&](const char * message)
-        {
-            exchange_error = true;
-            LOG_ERROR(log, "Exchange was not declared: " << message);
-        });
-    }
-    else
+        exchange_declared = true;
+    })
+    .onError([&](const char * message)
     {
-        producer_channel->declareExchange(exchange_name + "_direct", AMQP::direct, AMQP::passive)
-        .onSuccess([&]()
-        {
-            exchange_declared = true;
-        })
-        .onError([&](const char * message)
-        {
-            exchange_error = true;
-            LOG_ERROR(log, "Exchange was not declared: " << message);
-        });
-    }
+        exchange_error = true;
+        LOG_ERROR(log, "Exchange was not declared: " << message);
+    });
 }
 
 
@@ -103,17 +91,29 @@ void WriteBufferToRabbitMQProducer::count_row()
 
         payload.append(last_chunk, 0, last_chunk_size);
 
-        /* If hash exchange is used - it distributes messages among queues based on hash of a routing key.
-         * To make it unique - use current channel id.
-         */
+        next_queue %= num_queues;
+
         if (hash_exchange)
         {
+            /* If hash exchange is used - it distributes messages among queues based on hash of a routing key.
+             * To make it unique - use current channel id.
+             */
             producer_channel->publish(exchange_name, channel_id, payload);
+        }
+        else if (bind_by_id)
+        {
+            producer_channel->publish(exchange_name, "topic_" + std::to_string(next_queue), payload);
+
+            //LOG_TRACE(log, "Producer " + channel_id + " publishes to queue " + std::to_string(next_queue));
         }
         else
         {
             producer_channel->publish(exchange_name, routing_key, payload);
+
+            //LOG_TRACE(log, "Producer " + channel_id + " publishes with key " + routing_key);
         }
+
+        next_queue++;
 
         rows = 0;
         chunks.clear();

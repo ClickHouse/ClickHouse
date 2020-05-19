@@ -52,6 +52,8 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
+    Poco::Logger * getLog() { return log; }
+
 
 protected:
     StorageRabbitMQ(
@@ -61,7 +63,7 @@ protected:
             const String & host_port_,
             const String & routing_key_, const String & exchange_name_, 
             const String & format_name_, char row_delimiter_,
-            size_t num_consumers_, bool hash_exchange_, size_t num_queues_);
+            size_t num_consumers_, bool bind_by_id_, size_t num_queues_, bool hash_exchange);
 
 
 private:
@@ -75,21 +77,23 @@ private:
     char row_delimiter;
     size_t num_consumers;
     size_t num_created_consumers = 0;
-    bool hash_exchange;
+    bool bind_by_id;
     size_t num_queues;
+    const bool hash_exchange;
 
     Poco::Logger * log;
     std::pair<std::string, UInt16> parsed_address;
-
-    Poco::Semaphore semaphore;
-    std::mutex mutex;
-    std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     event_base * producersEvbase;
     RabbitMQHandler producersEventHandler;
     AMQP::TcpConnection producersConnection;
 
+    Poco::Semaphore semaphore;
+    std::mutex mutex;
+    std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
+
     bool set_producer_connection = true;
+    size_t consumer_id = 0;
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
