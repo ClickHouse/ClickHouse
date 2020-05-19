@@ -14,6 +14,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <Storages/IStorage_fwd.h>
+#include <Functions/Regexps.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -206,6 +207,8 @@ private:
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
 
+    const MultiRegexps::Regexps * hyperscan_browser_base;
+
     /// Use copy constructor or createGlobal() instead
     Context();
 
@@ -346,6 +349,9 @@ public:
 
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
+
+    void setHyperscanBrowserBase(const MultiRegexps::Regexps * regexps);
+    const MultiRegexps::Regexps * getHyperscanBrowserBase() const;
 
     void killCurrentQuery();
 
