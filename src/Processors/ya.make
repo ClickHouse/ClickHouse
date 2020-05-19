@@ -98,6 +98,7 @@ SRCS(
     Merges/ReplacingSortedTransform.h
     Merges/SummingSortedTransform.h
     Merges/VersionedCollapsingTransform.h
+    OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
@@ -106,8 +107,10 @@ SRCS(
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
     Transforms/AddingMissedTransform.cpp
+    Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ConvertingTransform.cpp
+    Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
     Transforms/DistinctTransform.cpp

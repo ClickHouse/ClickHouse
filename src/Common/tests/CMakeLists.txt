@@ -37,7 +37,7 @@ target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
 
 if (USE_OPENCL)
     add_executable (bitonic_sort bitonic_sort.cpp)
-    target_link_libraries (bitonic_sort PRIVATE clickhouse_common_io ${OPENCL_LINKER_FLAGS})
+    target_link_libraries (bitonic_sort PRIVATE clickhouse_common_io ${OPENCL_LINKER_FLAGS} ${OpenCL_LIBRARIES})
 endif ()
 
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
