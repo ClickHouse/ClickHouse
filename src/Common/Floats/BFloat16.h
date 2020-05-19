@@ -41,6 +41,18 @@ struct BFloat16 {
         value = BFloat16(static_cast<float>(fl)).getValue();
     }
 
+    explicit BFloat16(const int i) {
+        value = BFloat16(static_cast<float>(i)).getValue();
+    }
+
+    explicit BFloat16(const long int &l) {
+        value = BFloat16(static_cast<double>(l)).getValue();
+    }
+
+    explicit BFloat16(const __int128 i) {
+        value = BFloat16(static_cast<float>(i)).getValue();
+    }
+
     BFloat16(const BFloat16 &) = default;
 
     unsigned short getValue() const {
@@ -118,7 +130,7 @@ struct BFloat16 {
         return *this;
     }
 
-    const BFloat16 inline operator+(const BFloat16 fl) const {
+    BFloat16 inline operator+(const BFloat16 &fl) const {
         if (isNull()) {
             return BFloat16(fl.getValue());
         }
@@ -191,11 +203,11 @@ struct BFloat16 {
         return BFloat16(exponent);
     }
 
-    const BFloat16 inline operator-(const BFloat16 fl) const {
+    BFloat16 inline operator-(const BFloat16 &fl) const {
         return BFloat16(getValue()) + BFloat16(static_cast<unsigned short>(static_cast<unsigned short>(0x1 << 15) ^ fl.getValue()));
     }
 
-    const BFloat16 inline operator*(const BFloat16 fl) const {
+    BFloat16 inline operator*(const BFloat16 &fl) const {
         if (isNull() || fl.isNull()) {
             return BFloat16(static_cast<unsigned short>(0));
         }
@@ -238,7 +250,7 @@ struct BFloat16 {
         return BFloat16(resultValue);
     }
 
-    const BFloat16 inline operator/ (const BFloat16 fl) const {
+    BFloat16 inline operator/ (const BFloat16 &fl) const {
         if (isNull()) {
             return BFloat16(static_cast<unsigned short>(0));
         }
@@ -284,16 +296,19 @@ struct BFloat16 {
         return BFloat16(resultValue);
     }
 
-
     template <typename T> bool inline operator== (const T rhs) const { return *this == BFloat16(rhs); }
     template <typename T> bool inline operator!= (const T rhs) const { return *this != BFloat16(rhs); }
     template <typename T> bool inline operator>= (const T rhs) const { return *this >= BFloat16(rhs); }
     template <typename T> bool inline operator>  (const T rhs) const { return *this > BFloat16(rhs); }
     template <typename T> bool inline operator<= (const T rhs) const { return *this <= BFloat16(rhs); }
     template <typename T> bool inline operator<  (const T rhs) const { return *this <  BFloat16(rhs); }
+    template <typename T> BFloat16 inline operator+ (const T rhs) { return *this + BFloat16(rhs); }
+    template <typename T> BFloat16 inline operator- (const T rhs) { return *this - BFloat16(rhs); }
+    template <typename T> BFloat16 inline operator* (const T rhs) { return *this * BFloat16(rhs); }
+    template <typename T> BFloat16 inline operator/ (const T rhs) { return *this / BFloat16(rhs); }
     template <typename T> explicit operator T() const { return static_cast<T>(value); }
-    operator float() const { return asFloat();  }
-    operator double() const { return static_cast<double>(asFloat());  }
+    explicit operator float() const { return asFloat();  }
+    explicit operator double() const { return static_cast<double>(asFloat());  }
 };
 
 template <typename T> bool inline operator== (T a, const BFloat16 b) { return BFloat16(a) == b; }
@@ -302,10 +317,14 @@ template <typename T> bool inline operator>= (T a, const BFloat16 b) { return BF
 template <typename T> bool inline operator>  (T a, const BFloat16 b) { return BFloat16(a) > b; }
 template <typename T> bool inline operator<= (T a, const BFloat16 b) { return BFloat16(a) <= b; }
 template <typename T> bool inline operator<  (T a, const BFloat16 b) { return BFloat16(a) < b; }
-template <typename T> BFloat16 inline operator+ (T a, const BFloat16 b) { return BFloat16(a) + b; }
-template <typename T> BFloat16 inline operator- (T a, const BFloat16 b) { return BFloat16(a) - b; }
-template <typename T> BFloat16 inline operator* (T a, const BFloat16 b) { return BFloat16(a) * b; }
-template <typename T> BFloat16 inline operator/ (T a, const BFloat16 b) { return BFloat16(a) / b; }
+//template <typename T> BFloat16 inline operator+ (T a, const BFloat16 b) { return BFloat16(a) + b; }
+//template <typename T> BFloat16 inline operator- (T a, const BFloat16 b) { return BFloat16(a) - b; }
+//template <typename T> BFloat16 inline operator* (T a, const BFloat16 b) { return BFloat16(a) * b; }
+//template <typename T> BFloat16 inline operator/ (T a, const BFloat16 b) { return BFloat16(a) / b; }
+//template <typename T> BFloat16 inline operator+ (const BFloat16 a, T b) { return a + BFloat16(b); }
+//template <typename T> BFloat16 inline operator- (const BFloat16 a, T b) { return a - BFloat16(b); }
+//template <typename T> BFloat16 inline operator* (const BFloat16 a, T b) { return a * BFloat16(b); }
+//template <typename T> BFloat16 inline operator/ (const BFloat16 a, T b) { return a / BFloat16(b); }
 
 template <> inline constexpr bool IsNumber<BFloat16> = true;
 template <> struct TypeName<BFloat16> { static const char * get() { return "BFloat16"; } };
