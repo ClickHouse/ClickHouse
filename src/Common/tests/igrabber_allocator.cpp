@@ -17,7 +17,7 @@ int main() noexcept
                  stats.regions, stats.used_regions, stats.unused_regions);
      }
 
-    stats = cache.getStats();
+    auto stats = cache.getStats();
 
      printf("All regions: %lu, expected 1\n Used regions: %lu, expected 0\n Unused regions: %lu, expected 1\n",
              stats.regions, stats.used_regions, stats.unused_regions);
@@ -26,6 +26,6 @@ int main() noexcept
 
     cache.getStats().print(std::cout);
 
-    std::cout << "Is nullptr:" << cache.get(0).get() == nullptr << "\n";
+    std::cout << "Is nullptr:" << (cache.get(0).get() == nullptr) << "\n";
 }
 
