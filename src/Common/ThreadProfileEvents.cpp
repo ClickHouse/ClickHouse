@@ -12,6 +12,8 @@
 #include <syscall.h>
 #include <sys/ioctl.h>
 #include <cerrno>
+#include <sys/types.h>
+#include <dirent.h>
 
 
 namespace DB
@@ -244,6 +246,39 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
         bool expected_value = false;
         if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
             LOG_INFO(getLogger(), "Not enough permissions to record perf events");
+        return false;
+    }
+
+    rlimit64 limits{};
+    if (getrlimit64(RLIMIT_NOFILE, &limits))
+    {
+        LOG_WARNING(getLogger(), "Unable to get rlimit: errno = " << errno << ", message = " << strerror(errno));
+        return false;
+    }
+    UInt64 maximum_open_descriptors = limits.rlim_cur;
+
+    std::string dir_path("/proc/");
+    dir_path += std::to_string(getpid());
+    dir_path += "/fd";
+    DIR * fd_dir = opendir(dir_path.c_str());
+    if (fd_dir == nullptr)
+    {
+        LOG_WARNING(getLogger(), "Unable to get file descriptors used by the current process errno = " << errno
+                        << ", message = " << strerror(errno));
+        return false;
+    }
+    UInt64 opened_descriptors = 0;
+    while (readdir(fd_dir) != nullptr)
+        ++opened_descriptors;
+    closedir(fd_dir);
+
+    UInt64 fd_count_afterwards = opened_descriptors + NUMBER_OF_RAW_EVENTS;
+    UInt64 threshold = static_cast<UInt64>(maximum_open_descriptors * FILE_DESCRIPTORS_THRESHOLD);
+    if (fd_count_afterwards > threshold)
+    {
+        LOG_WARNING(getLogger(), "Can't measure perf events as the result number of file descriptors ("
+                        << fd_count_afterwards << ") is more than the current threshold (" << threshold << " = "
+                        << maximum_open_descriptors << " * " << FILE_DESCRIPTORS_THRESHOLD << ")");
         return false;
     }
 

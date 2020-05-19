@@ -186,6 +186,7 @@ struct PerfEventsCounters
     typedef UInt64 Id;
 
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
+    static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
 
     static const PerfEventInfo raw_events_info[PerfEventsCounters::NUMBER_OF_RAW_EVENTS];
 
