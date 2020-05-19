@@ -1266,16 +1266,6 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     NameSet already_changed_columns;
     bool is_compact_part = isCompactPart(part);
     ColumnsDescription part_columns(part->getColumns());
-    NameSet modified_columns;
-    for (const auto & command : commands)
-    {
-        if (command.type == MutationCommand::Type::DELETE || command.type == MutationCommand::Type::UPDATE
-            || command.type == MutationCommand::Type::MATERIALIZE_INDEX || command.type == MutationCommand::Type::MATERIALIZE_TTL || command.type == MutationCommand::Type::READ_COLUMN)
-        {
-            modified_columns.emplace(command.column_name);
-        }
-    }
-
 
     for (const auto & command : commands)
     {
@@ -1311,7 +1301,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN && part_columns.has(command.column_name))
         {
-            if (is_compact_part || modified_columns.count(command.rename_to))
+            if (is_compact_part)
             {
                 for_interpreter.push_back(
                 {
