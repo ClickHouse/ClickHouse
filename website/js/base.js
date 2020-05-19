@@ -5,6 +5,7 @@
         var selector = target.attr('href');
         var is_tab = target.attr('role') === 'tab';
         var is_collapse = target.attr('data-toggle') === 'collapse';
+        var is_rating = target.attr('role') === 'rating';
         var navbar_toggle = $('#navbar-toggle');
 
         navbar_toggle.collapse('hide');
@@ -14,7 +15,7 @@
             selector = '#';
         }
 
-        if (selector && selector.startsWith('#') && !is_tab && !is_collapse) {
+        if (selector && selector.startsWith('#') && !is_tab && !is_collapse && !is_rating) {
             event.preventDefault();
             var dst = window.location.href.replace(window.location.hash, '');
             var offset = 0;
