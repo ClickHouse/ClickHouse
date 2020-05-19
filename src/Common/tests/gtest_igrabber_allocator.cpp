@@ -47,25 +47,27 @@ TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
 
         stats = cache.getStats();
 
-        EXPECT_EQ(stats.misses, 1);
+        EXPECT_EQ(stats.misses, 2); //get + getOrSet
+        EXPECT_EQ(stats.hits, 0);
         EXPECT_EQ(stats.used_regions_count, 1);
-        EXPECT_EQ(stats.all_regions_count, 1);
+        EXPECT_EQ(stats.all_regions_count, 2);
 
         auto ptr2 = cache.get(0);
 
         stats = cache.getStats();
 
         EXPECT_EQ(ptr.get(), ptr2.get());
-        EXPECT_EQ(stats.misses, 1);
+        EXPECT_EQ(stats.misses, 2);
         EXPECT_EQ(stats.hits, 1);
         EXPECT_EQ(stats.used_regions_count, 1);
-        EXPECT_EQ(stats.all_regions_count, 1);
+        EXPECT_EQ(stats.all_regions_count, 2);
     }
 
     stats = cache.getStats();
 
-    EXPECT_EQ(stats.keyed_regions_count, 0);
-    EXPECT_EQ(stats.all_regions_count, 1);
+    EXPECT_EQ(stats.keyed_regions_count, 1);
+    EXPECT_EQ(stats.all_regions_count, 2);
+    EXPECT_EQ(stats.used_regions_count, 0);
 }
 
 TEST(IGrabberAllocator, CacheUnusedShrinking)
