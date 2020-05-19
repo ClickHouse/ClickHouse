@@ -104,6 +104,8 @@ TEST(IGrabberAllocator, CacheUnusedShrinking)
 
     cache.shrinkToFit();
 
+    EXPECT_EQ(stats.chunks, 0);
+
     EXPECT_EQ(cache.get(0).get(), nullptr);
     EXPECT_EQ(cache.get(1).get(), nullptr);
 }
@@ -128,15 +130,12 @@ TEST(IGrabberAllocator, CacheUsedShrinking)
 
     cache.shrinkToFit();
 
+    EXPECT_EQ(stats.chunks, 1);
+
     EXPECT_EQ(stats.used_regions, 1);
     EXPECT_EQ(stats.unused_regions, 0);
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
-
-
-    std::cout << cache.get(1).get() << "\n";
-    std::cout << ptr.get() << " " << cache.get(0).get() << "\n";
-
 }
 

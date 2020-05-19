@@ -159,6 +159,8 @@ private:
 
     size_t total_chunks_size {0};
     size_t total_allocated_size {0};
+
+    /// Part of #max_cache_size that is currently used.
     size_t total_size_in_use {0};
 
     std::atomic_size_t total_size_currently_initialized {0};
@@ -201,10 +203,8 @@ public:
      *
      * @note This method does NOT invalidate used elements. They remain in the cache.
      *
-     * @note The statistics is zeroed out.
-     *
      */
-    void shrinkToFit()
+    void shrinkToFit(bool clearStats = true)
     {
         std::lock_guard lock(mutex);
 
@@ -224,7 +224,10 @@ public:
         disposer(free_regions);
         disposer(unused_regions);
 
-        chunks.clear();
+        chunks.remove_if([](const auto& chunk) { return chunk.used_refcount == 0; });
+
+        if (!clear_stats)
+            return;
 
         total_chunks_size = 0;
         total_allocated_size = 0;
@@ -526,15 +529,20 @@ public:
 private:
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
-        if (++metadata.refcount == 1)
-        {
-            if (metadata.TUnusedRegionHook::is_linked())
-                unused_regions.erase(unused_regions.iterator_to(metadata));
+        if (++metadata.refcount != 1)
+            return;
 
-            // already present in used_regions (in getOrSet), see line 506
+        // One reference.
 
-            value_to_region.emplace(metadata.value(), &metadata);
-        }
+        if (metadata.TUnusedRegionHook::is_linked())
+            unused_regions.erase(unused_regions.iterator_to(metadata));
+
+        // already present in used_regions (in getOrSet), see line 506
+
+        value_to_region.emplace(metadata.value(), &metadata);
+
+        ++metadata.chunk->used_refcount;
+
 
         total_size_in_use += metadata.size;
     }
@@ -552,15 +560,17 @@ private:
 
         RegionMetadata& metadata = *(it->second);
 
-        --metadata.refcount;
+        if (--metadata.refcount != 0)
+            return;
 
-        if (metadata.refcount == 0)
-        {
-            value_to_region.erase(it);
+        // Deleting last reference.
 
-            unused_regions.push_back(metadata);
-            used_regions.erase(used_regions.iterator_to(metadata));
-        }
+        value_to_region.erase(it);
+
+        unused_regions.push_back(metadata);
+        used_regions.erase(used_regions.iterator_to(metadata));
+
+        --metadata.chunk->used_refcount;
 
         total_size_in_use -= metadata.size;
 
@@ -725,7 +735,17 @@ private:
         void * ptr;  /// Start of allocated memory.
         size_t size; /// Size of allocated memory.
 
-        constexpr MemoryChunk(size_t size_, void * address_hint) : size(size_)
+        /**
+         * @brief How many RegionMetadatas being in #used_regions reference this chunk.
+         *
+         * Must track due to existence of IGrabberAllocator::shrinkToFit method.
+         *
+         * @see IGrabberAllocator::shrinkToFit
+         */
+        size_t used_refcount;
+
+        constexpr MemoryChunk(size_t size_, void * address_hint)
+            : size(size_), used_refcount(0)
         {
             CurrentMemoryTracker::alloc(size_);
 
@@ -768,7 +788,7 @@ private:
 
     /**
      * @brief Element referenced in all intrusive containers here.
-     *        Includes a #Key-#Value pair and a pointer to some IGrabberAllocator::MemoryRegion part storage
+     *        Includes a #Key-#Value pair and a pointer to some IGrabberAllocator::MemoryChunkChunk part storage
      *        holding some #Value's data.
      *
      * Consider #Value = std::vector of size 10.
@@ -777,7 +797,6 @@ private:
      * (Heap, allocated by ::new()) Region metadata { void *ptr, std::vector Value;}, ptr = value.data = 0xcafebabe.
      * (Head, allocated by mmap()) MemoryChunk {void * ptr}, ptr = 0xcafebabe
      * (0xcafebabe) [Area with std::vector data]
-
      */
     struct RegionMetadata :
         public TUnusedRegionHook,
@@ -804,8 +823,13 @@ private:
         /// How many outer users reference this object's #value?
         size_t refcount {0};
 
-        /// Used to compare regions, usually MemoryChunk.ptr @see IGrabberAllocator::evict
-        void * chunk {nullptr};
+        /**
+         * Used to compare regions (usually MemoryChunk.ptr) and update MemoryChunk's used_refcount
+         * @see IGrabberAllocator::evict
+         * @see IGrabberAllocator::onValueDelete
+         * @see IGrabberAllocator::onSharedValueCreate
+         */
+        MemoryChunk * chunk {nullptr};
 
         [[nodiscard]] static RegionMetadata * create() { return new RegionMetadata(); }
 
@@ -840,7 +864,10 @@ private:
             return std::launder(reinterpret_cast<Value*>(&value_storage));
         }
 
-        [[nodiscard, gnu::pure]] constexpr bool operator< (const RegionMetadata & other) const noexcept { return size < other.size; }
+        [[nodiscard, gnu::pure]] constexpr bool operator< (const RegionMetadata & other) const noexcept
+        {
+            return size < other.size;
+        }
 
         [[nodiscard, gnu::pure]] constexpr bool isFree() const noexcept { return TFreeRegionHook::is_linked(); }
 
@@ -904,7 +931,7 @@ private:
     }
 
     /**
-     * @brief Given a free #free_region, occupies its part of size #size.
+     * @brief Given a #free_region, occupies its part of size #size.
      */
     constexpr RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size)
     {
@@ -965,7 +992,7 @@ private:
         }
 
         free_region->ptr = chunk.ptr;
-        free_region->chunk = chunk.ptr;
+        free_region->chunk = chunk;
         free_region->size = chunk.size;
 
         all_regions.push_back(*free_region);
