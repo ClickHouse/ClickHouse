@@ -20,11 +20,14 @@
     "width": 163,
     "height": 60
   }
-}, {
+}}, {
 "@context": "http://schema.org",
 "@type": "Episode",
 "name": "{{ title }}",
-"ratingValue": RATING_VALUE,
-"ratingCount": RATING_COUNT
+"aggregateRating": {
+  "@type": "AggregateRating"
+  "ratingValue": RATING_VALUE,
+  "ratingCount": RATING_COUNT
+}
 }]</script>
 {% endif %}
