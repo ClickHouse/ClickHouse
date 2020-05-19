@@ -1,5 +1,5 @@
 {% if page and page.meta %}
-<script type="application/ld+json">{
+<script type="application/ld+json">[{
 "@context": "http://schema.org",
 "@type": "TechArticle",
 "headline": "{{ title }}",
@@ -20,6 +20,11 @@
     "width": 163,
     "height": 60
   }
-}
-}</script>
+}, {
+"@context": "http://schema.org",
+"@type": "Episode",
+"name": "{{ title }}",
+"ratingValue": RATING_VALUE,
+"ratingCount": RATING_COUNT
+}]</script>
 {% endif %}

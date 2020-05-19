@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-05-19 11:11+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -38,27 +38,27 @@ msgstr "ClickHouse-быстрая СУБД OLAP с открытым исходн
 msgid "ClickHouse DBMS"
 msgstr "СУБД ClickHouse"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "open-source"
 msgstr "открытый исходный код"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "relational"
 msgstr "реляционный"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytics"
 msgstr "аналитика"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytical"
 msgstr "аналитический"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "Big Data"
 msgstr "большие данные"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "web-analytics"
 msgstr "веб-аналитика"
 
@@ -78,15 +78,51 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "ООО «Яндекс»"
 
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "Рейтинг"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "голоса"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "Рейтинг Статей"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "Был ли этот контент полезным?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "Непригодная"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "Плохая"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "Хорошая"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "Отличная"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "документация"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "Собрано из"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "опубликовано"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "изменено"
 

@@ -24,6 +24,7 @@
 {% else %}
     {% set title = config.site_name %}
 {% endif %}
+{% set title = title.strip() %}
 {% if page and page.content and not single_page %}
     {% set description = page.content|striptags %}
     {% set description = description.replace('¶','')[0:120] %}

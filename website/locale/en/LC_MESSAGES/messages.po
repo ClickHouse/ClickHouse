@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-05-19 11:11+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -37,27 +37,27 @@ msgstr "ClickHouse - fast open-source OLAP DBMS"
 msgid "ClickHouse DBMS"
 msgstr "ClickHouse DBMS"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "open-source"
 msgstr "open-source"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "relational"
 msgstr "relational"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytics"
 msgstr "analytics"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytical"
 msgstr "analytical"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "Big Data"
 msgstr "Big Data"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "web-analytics"
 msgstr "web-analytics"
 
@@ -77,15 +77,51 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Yandex LLC"
 
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "Rating"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "votes"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "Article Rating"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "Was this content helpful?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "Unusable"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "Poor"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "Good"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "Excellent"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "documentation"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "Built from"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "published on"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "modified on"
 
