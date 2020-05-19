@@ -1,6 +1,5 @@
 #include "MutationsInterpreter.h"
 
-#include <Parsers/queryToString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -636,7 +635,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         }
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "QUERY:" << queryToString(select));
 
     return select;
 }
