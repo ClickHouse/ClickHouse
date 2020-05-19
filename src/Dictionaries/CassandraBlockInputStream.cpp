@@ -22,14 +22,14 @@ namespace ErrorCodes
 }
 
 CassandraBlockInputStream::CassandraBlockInputStream(
-    CassSession *session,
-    const std::string &query_str,
+    CassSession *session_,
+    const std::string &query_str_,
     const DB::Block &sample_block,
-    const size_t max_block_size)
-    : session{session}
-    , statement{cass_statement_new(query_str.c_str(), 0)}
-    , query_str{query_str}
-    , max_block_size{max_block_size}
+    const size_t max_block_size_)
+    : session(session_)
+    , statement(cass_statement_new(query_str_.c_str(), 0))
+    , query_str(query_str_)
+    , max_block_size(max_block_size_)
 {
     cass_statement_set_paging_size(statement, max_block_size);
     this->has_more_pages = cass_true;
@@ -51,77 +51,77 @@ namespace
     {
         switch (type)
         {
-            case ValueType::UInt8:
+            case ValueType::vtUInt8:
             {
                 cass_uint32_t _value;
                 cass_value_get_uint32(value, &_value);
                 static_cast<ColumnUInt8 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::UInt16:
+            case ValueType::vtUInt16:
             {
                 cass_uint32_t _value;
                 cass_value_get_uint32(value, &_value);
                 static_cast<ColumnUInt16 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::UInt32:
+            case ValueType::vtUInt32:
             {
                 cass_uint32_t _value;
                 cass_value_get_uint32(value, &_value);
                 static_cast<ColumnUInt32 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::UInt64:
+            case ValueType::vtUInt64:
             {
                 cass_int64_t _value;
                 cass_value_get_int64(value, &_value);
                 static_cast<ColumnUInt64 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::Int8:
+            case ValueType::vtInt8:
             {
                 cass_int8_t _value;
                 cass_value_get_int8(value, &_value);
                 static_cast<ColumnInt8 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::Int16:
+            case ValueType::vtInt16:
             {
                 cass_int16_t _value;
                 cass_value_get_int16(value, &_value);
                 static_cast<ColumnInt16 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::Int32:
+            case ValueType::vtInt32:
             {
                 cass_int32_t _value;
                 cass_value_get_int32(value, &_value);
                 static_cast<ColumnInt32 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::Int64:
+            case ValueType::vtInt64:
             {
                 cass_int64_t _value;
                 cass_value_get_int64(value, &_value);
                 static_cast<ColumnInt64 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::Float32:
+            case ValueType::vtFloat32:
             {
                 cass_float_t _value;
                 cass_value_get_float(value, &_value);
                 static_cast<ColumnFloat32 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::Float64:
+            case ValueType::vtFloat64:
             {
                 cass_double_t _value;
                 cass_value_get_double(value, &_value);
                 static_cast<ColumnFloat64 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::String:
+            case ValueType::vtString:
             {
                 const char* _value;
                 size_t _value_length;
@@ -129,21 +129,21 @@ namespace
                 static_cast<ColumnString &>(column).insertData(_value, _value_length);
                 break;
             }
-            case ValueType::Date:
+            case ValueType::vtDate:
             {
                 cass_int64_t _value;
                 cass_value_get_int64(value, &_value);
                 static_cast<ColumnUInt16 &>(column).insertValue(UInt32{cass_date_from_epoch(_value)}); // FIXME
                 break;
             }
-            case ValueType::DateTime:
+            case ValueType::vtDateTime:
             {
                 cass_int64_t _value;
                 cass_value_get_int64(value, &_value);
                 static_cast<ColumnUInt32 &>(column).insertValue(_value);
                 break;
             }
-            case ValueType::UUID:
+            case ValueType::vtUUID:
             {
                 CassUuid _value;
                 cass_value_get_uuid(value, &_value);
@@ -166,7 +166,7 @@ namespace
         MutableColumns columns(description.sample_block.columns());
         CassFuture* query_future = cass_session_execute(session, statement);
 
-        const CassResult* result = cass_future_get_result(query_future);
+        const CassResult* result_tmp = cass_future_get_result(query_future);
 
         if (result == nullptr) {
             const char* error_message;
@@ -176,12 +176,12 @@ namespace
             throw Exception{error_message, ErrorCodes::CASSANDRA_INTERNAL_ERROR};
         }
 
-        const CassRow* row = cass_result_first_row(result);
+        const CassRow* row = cass_result_first_row(result_tmp);
         const CassValue* map = cass_row_get_column(row, 0);
-        CassIterator* iterator = cass_iterator_from_map(map);
-        while (cass_iterator_next(iterator)) {
-            const CassValue* _key = cass_iterator_get_map_key(iterator);
-            const CassValue* _value = cass_iterator_get_map_value(iterator);
+        CassIterator* iterator_tmp = cass_iterator_from_map(map);
+        while (cass_iterator_next(iterator_tmp)) {
+            const CassValue* _key = cass_iterator_get_map_key(iterator_tmp);
+            const CassValue* _value = cass_iterator_get_map_value(iterator_tmp);
             auto pair_values = {std::make_pair(_key, 0ul), std::make_pair(_value, 1ul)};
             for (const auto &[value, idx]: pair_values) {
                 if (description.types[idx].second) {
@@ -194,13 +194,13 @@ namespace
             }
         }
 
-        has_more_pages = cass_result_has_more_pages(result);
+        has_more_pages = cass_result_has_more_pages(result_tmp);
 
         if (has_more_pages) {
-            cass_statement_set_paging_state(statement, result);
+            cass_statement_set_paging_state(statement, result_tmp);
         }
 
-        cass_result_free(result);
+        cass_result_free(result_tmp);
 
         return description.sample_block.cloneWithColumns(std::move(columns));
     }

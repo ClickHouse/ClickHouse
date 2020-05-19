@@ -2,7 +2,7 @@
 import warnings
 import pymysql.cursors
 import pymongo
-import cassandra
+import cassandra.cluster
 import redis
 import aerospike
 from tzlocal import get_localzone
