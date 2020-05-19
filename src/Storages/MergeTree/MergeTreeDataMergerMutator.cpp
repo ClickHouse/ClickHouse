@@ -1262,12 +1262,18 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         NameSet mutated_columns;
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::DELETE || command.type == MutationCommand::Type::UPDATE)
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::DELETE
+                || command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
+            }
+            else if (command.type == MutationCommand::Type::DROP_INDEX)
+            {
+                for_file_renames.push_back(command);
             }
             else if (part_columns.has(command.column_name))
             {
@@ -1277,7 +1283,8 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
                 }
                 else if (command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
-                    for_interpreter.push_back({
+                    for_interpreter.push_back(
+                    {
                         .type = MutationCommand::Type::READ_COLUMN,
                         .column_name = command.rename_to,
                     });
@@ -1299,10 +1306,16 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     {
         for (const auto & command : commands)
         {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::DELETE || command.type == MutationCommand::Type::UPDATE)
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::DELETE
+                || command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::DROP_INDEX)
+            {
+                for_file_renames.push_back(command);
             }
             /// If we don't have this column in source part, than we don't need
             /// to materialize it
