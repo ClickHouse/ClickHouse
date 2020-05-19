@@ -224,7 +224,6 @@ public:
         disposer(free_regions);
         disposer(unused_regions);
 
-        value_to_region.clear();
         chunks.clear();
 
         total_chunks_size = 0;
@@ -543,9 +542,6 @@ private:
     void onValueDelete(Value * value)
     {
         std::lock_guard cache_lock(mutex);
-
-        for (auto& elem: value_to_region)
-            std::cout << elem.first << " " << elem.second << "\n";
 
         auto it = value_to_region.find(value);
 

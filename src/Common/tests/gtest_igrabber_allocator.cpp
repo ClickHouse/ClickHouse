@@ -49,8 +49,8 @@ TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
 
         EXPECT_EQ(stats.misses, 2); //get + getOrSet
         EXPECT_EQ(stats.hits, 0);
-        EXPECT_EQ(stats.used_regions_count, 1);
-        EXPECT_EQ(stats.all_regions_count, 2);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.regions, 2);
 
         auto ptr2 = cache.get(0);
 
@@ -59,15 +59,15 @@ TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
         EXPECT_EQ(ptr.get(), ptr2.get());
         EXPECT_EQ(stats.misses, 2);
         EXPECT_EQ(stats.hits, 1);
-        EXPECT_EQ(stats.used_regions_count, 1);
-        EXPECT_EQ(stats.all_regions_count, 2);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.regions, 2);
     }
 
     stats = cache.getStats();
 
-    EXPECT_EQ(stats.keyed_regions_count, 1);
-    EXPECT_EQ(stats.all_regions_count, 2);
-    EXPECT_EQ(stats.used_regions_count, 0);
+    EXPECT_EQ(stats.unused_regions, 1);
+    EXPECT_EQ(stats.regions, 2);
+    EXPECT_EQ(stats.used_regions, 0);
 }
 
 TEST(IGrabberAllocator, CacheUnusedShrinking)
@@ -112,12 +112,31 @@ TEST(IGrabberAllocator, CacheUsedShrinking)
 {
     IntToInt cache(MMAP_THRESHOLD);
 
-    auto&& [ptr, produced] = cache.getOrSet(0, [] {return 100;}, [](void *) { return 1; });
+    const auto size = [] {return 100; };
+    const auto init = [](void *) {return 100; };
 
-    EXPECT_TRUE(produced);
+    auto&& [ptr, produced] = cache.getOrSet(0, size, init);
+
+    {
+        cache.getOrSet(1, size, init);
+    }
+
+    auto stats = cache.getStats();
+
+    EXPECT_EQ(stats.used_regions, 1);
+    EXPECT_EQ(stats.unused_regions, 1);
 
     cache.shrinkToFit();
 
-    EXPECT_EQ(ptr.get(), cache.get(0).get()); // check that a used element is not erased
+    EXPECT_EQ(stats.used_regions, 1);
+    EXPECT_EQ(stats.unused_regions, 0);
+
+    EXPECT_EQ(cache.get(1).get(), nullptr);
+    EXPECT_EQ(cache.get(0).get(), ptr.get());
+
+
+    std::cout << cache.get(1).get() << "\n";
+    std::cout << ptr.get() << " " << cache.get(0).get() << "\n";
+
 }
 
