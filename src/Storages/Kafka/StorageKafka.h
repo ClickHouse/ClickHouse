@@ -67,6 +67,7 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_,
         const String & group_,
+        const String & client_id_,
         const Names & topics_,
         const String & format_name_,
         char row_delimiter_,
@@ -83,6 +84,7 @@ private:
     Names topics;
     const String brokers;
     const String group;
+    const String client_id;
     const String format_name;
     char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
     const String schema_name;

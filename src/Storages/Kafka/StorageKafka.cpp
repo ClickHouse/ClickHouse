@@ -118,6 +118,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & brokers_,
     const String & group_,
+    const String & client_id_,
     const Names & topics_,
     const String & format_name_,
     char row_delimiter_,
@@ -132,6 +133,7 @@ StorageKafka::StorageKafka(
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
     , group(global_context.getMacros()->expand(group_))
+    , client_id(global_context.getMacros()->expand(client_id_))
     , format_name(global_context.getMacros()->expand(format_name_))
     , row_delimiter(row_delimiter_)
     , schema_name(global_context.getMacros()->expand(schema_name_))
@@ -262,7 +264,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
-    conf.set("client.id", VERSION_FULL);
+    conf.set("client.id", client_id);
     // TODO: fill required settings
     updateConfiguration(conf);
 
@@ -281,7 +283,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
 
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
-    conf.set("client.id", VERSION_FULL);
+    conf.set("client.id", client_id);
 
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
 
@@ -503,6 +505,7 @@ void registerStorageKafka(StorageFactory & factory)
           * - Kafka broker list
           * - List of topics
           * - Group ID (may be a constaint expression with a string result)
+          * - Client ID
           * - Message format (string)
           * - Row delimiter
           * - Schema (optional, if the format supports it)
@@ -545,6 +548,7 @@ void registerStorageKafka(StorageFactory & factory)
         CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size)
         CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages)
         CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch)
+        CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id)
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
@@ -709,9 +713,17 @@ void registerStorageKafka(StorageFactory & factory)
             }
         }
 
+        // Get and check client id
+         String client_id = kafka_settings.kafka_client_id.value;
+        if (args_count >= 11)
+        {
+            engine_args[10] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[10], args.local_context);
+            client_id = engine_args[10]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+
         return StorageKafka::create(
             args.table_id, args.context, args.columns,
-            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
+            brokers, group, client_id, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken, intermediate_commit);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
