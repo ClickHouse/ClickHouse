@@ -176,7 +176,7 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part->disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->volume->getDisk(), data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
