@@ -37,9 +37,8 @@ public:
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledMessages() const;
-    auto rebalanceHappened() const { return rebalance_happened; }
 
-    void storeLastReadMessageOffset();
+    bool storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
 
     // Return values for the message that's being read.

@@ -336,12 +336,17 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     return true;
 }
 
-void ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
+bool ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
 {
-    if (!stalled && !rebalance_happened)
+    if (!stalled && !rebalance_happened && !stopped)
     {
         consumer->store_offset(*(current - 1));
         ++offsets_stored;
+        return true;
+    }
+    else
+    {
+        return false;
     }
 }
 
