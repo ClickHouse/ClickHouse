@@ -4,8 +4,8 @@ add_library(clickhouse_functions_useragent ${clickhouse_functions_useragent_sour
 target_link_libraries(clickhouse_functions_useragent PRIVATE dbms)
 
 if(USE_HYPERSCAN)
-    target_link_libraries(clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+    target_link_libraries(clickhouse_functions_useragent PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories(clickhouse_functions_useragent SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
