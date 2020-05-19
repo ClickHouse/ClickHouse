@@ -19,7 +19,7 @@ int main() noexcept
 
     cache.shrinkToFit();
 
-    cache.getStats.print(std::cout);
+    cache.getStats().print(std::cout);
 
     for (int i = 0; i < 5; ++i)
         std::cout << cache.get(i).get() << "\n";
