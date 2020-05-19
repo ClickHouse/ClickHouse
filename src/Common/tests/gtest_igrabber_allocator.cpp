@@ -91,7 +91,7 @@ TEST(IGrabberAllocator, StatefulSingleInsertionSingleRetrieval)
 
     EXPECT_EQ(cache.getStats(), ga::Stats{});
 
-    EXPECT_EQ(cache.get(0), std::shared_ptr<int>{nullptr});
+    EXPECT_EQ(cache.get(0), std::shared_ptr<pointer>{nullptr});
 
     ga::Stats stats;
 
