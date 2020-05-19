@@ -407,7 +407,7 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 static void extractMergingAndGatheringColumns(
-    const NamesAndTypesList & all_columns,
+    const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const MergeTreeIndices & indexes,
     const MergeTreeData::MergingParams & merging_params,
@@ -437,11 +437,11 @@ static void extractMergingAndGatheringColumns(
 
     /// Force to merge at least one column in case of empty key
     if (key_columns.empty())
-        key_columns.emplace(all_columns.front().name);
+        key_columns.emplace(storage_columns.front().name);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
-    for (const auto & column : all_columns)
+    for (const auto & column : storage_columns)
     {
         if (key_columns.count(column.name))
         {
@@ -600,14 +600,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList storage_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
 
     NamesAndTypesList gathering_columns;
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        all_columns, data.sorting_key_expr, data.skip_indices,
+        storage_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
@@ -617,7 +617,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         disk,
         TMP_PREFIX + future_part.name);
 
-    new_data_part->setColumns(all_columns);
+    new_data_part->setColumns(storage_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
@@ -669,7 +669,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
     else
     {
-        merging_columns = all_columns;
+        merging_columns = storage_columns;
         merging_column_names = all_column_names;
         gathering_columns.clear();
         gathering_column_names.clear();
@@ -959,7 +959,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (merge_alg != MergeAlgorithm::Vertical)
         to.writeSuffixAndFinalizePart(new_data_part);
     else
-        to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
+        to.writeSuffixAndFinalizePart(new_data_part, &storage_columns, &checksums_gathered_columns);
 
     return new_data_part;
 }
@@ -1013,12 +1013,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const auto data_settings = data.getSettings();
     MutationCommands for_interpreter, for_file_renames;
 
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "COMMANDS FOR PART:" << commands_for_part.size());
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "TOTAL COLUMNS:" << commands.size());
     splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "COMMANDS FOR INTERPRETER:" << for_interpreter.size());
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "COMMANDS FOR FILE RENAMES:" << for_file_renames.size());
 
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
 
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList storage_columns = data.getColumns().getAllPhysical();
 
     if (!for_interpreter.empty())
     {
@@ -1026,6 +1030,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in = interpreter->execute(table_lock_holder);
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
+
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "UPDATED HEADER:" << updated_header.dumpStructure());
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "STREAM HEADER:" << in->getHeader().dumpStructure());
     }
 
     auto new_data_part = data.createPart(
@@ -1036,7 +1043,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
-    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns, for_file_renames));
+    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, storage_columns, for_file_renames));
     new_data_part->partition.assign(source_part->partition);
 
     auto disk = new_data_part->disk;
@@ -1113,7 +1120,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             disk->createHardLink(it->path(), destination);
         }
 
-        merge_entry->columns_written = all_columns.size() - updated_header.columns();
+        merge_entry->columns_written = storage_columns.size() - updated_header.columns();
 
         new_data_part->checksums = source_part->checksums;
 
@@ -1258,6 +1265,18 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     NameSet removed_columns_from_compact_part;
     NameSet already_changed_columns;
     bool is_compact_part = isCompactPart(part);
+    ColumnsDescription part_columns(part->getColumns());
+    NameSet modified_columns;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::Type::DELETE || command.type == MutationCommand::Type::UPDATE
+            || command.type == MutationCommand::Type::MATERIALIZE_INDEX || command.type == MutationCommand::Type::MATERIALIZE_TTL || command.type == MutationCommand::Type::READ_COLUMN)
+        {
+            modified_columns.emplace(command.column_name);
+        }
+    }
+
+
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::Type::DELETE
@@ -1269,28 +1288,30 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
             for (const auto & [column_name, expr] : command.column_to_update_expression)
                 already_changed_columns.emplace(column_name);
         }
-        else if (command.type == MutationCommand::Type::READ_COLUMN)
+        else if (command.type == MutationCommand::Type::READ_COLUMN && part_columns.has(command.column_name))
         {
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "READ COLUMN:" << command.column_name);
             /// If we don't have this column in source part, than we don't
             /// need to materialize it
-            if (part->getColumns().contains(command.column_name))
+            if (part_columns.has(command.column_name))
             {
+                LOG_DEBUG(&Poco::Logger::get("DEBUG"), "PART HAS COLUMN:" << command.column_name);
                 for_interpreter.push_back(command);
-                if (!command.column_name.empty())
-                    already_changed_columns.emplace(command.column_name);
+                already_changed_columns.emplace(command.column_name);
             }
             else
                 for_file_renames.push_back(command);
 
         }
-        else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN)
+        else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN && part_columns.has(command.column_name))
         {
             removed_columns_from_compact_part.emplace(command.column_name);
             for_file_renames.push_back(command);
+            part_columns.remove(command.column_name);
         }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN && part_columns.has(command.column_name))
         {
-            if (is_compact_part)
+            if (is_compact_part || modified_columns.count(command.rename_to))
             {
                 for_interpreter.push_back(
                 {
@@ -1298,11 +1319,15 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
                     .column_name = command.rename_to,
                 });
                 already_changed_columns.emplace(command.column_name);
+                part_columns.rename(command.column_name, command.rename_to);
             }
             else
+            {
+                part_columns.rename(command.column_name, command.rename_to);
                 for_file_renames.push_back(command);
+            }
         }
-        else
+        else if (part_columns.has(command.column_name))
         {
             for_file_renames.push_back(command);
         }
@@ -1429,9 +1454,12 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
-    NamesAndTypesList all_columns,
+    NamesAndTypesList storage_columns,
     const MutationCommands & commands_for_removes)
 {
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "COLUMNS FOr NEW PART START:" << storage_columns.toString());
+    if (isCompactPart(source_part))
+        return updated_header.getNamesAndTypesList();
     NameSet removed_columns;
     NameToNameMap renamed_columns;
     for (const auto & command : commands_for_removes)
@@ -1439,12 +1467,17 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
         if (command.type == MutationCommand::RENAME_COLUMN)
+        {
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "RENAME FROM:" << command.column_name << " TO:" << command.rename_to);
             renamed_columns.emplace(command.rename_to, command.column_name);
+        }
     }
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
-    for (auto it = all_columns.begin(); it != all_columns.end();)
+    NameSet columns_that_was_renamed;
+    for (auto it = storage_columns.begin(); it != storage_columns.end();)
     {
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "LOOKING AT:" << it->name);
         if (updated_header.has(it->name))
         {
             auto updated_type = updated_header.getByName(it->name).type;
@@ -1461,9 +1494,14 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
             ++it;
         }
         else
-            it = all_columns.erase(it);
+        {
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "ERASE:" << it->name);
+            it = storage_columns.erase(it);
+        }
     }
-    return all_columns;
+
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "COLUMNS FOr NEW PART FINISH:" << storage_columns.toString());
+    return storage_columns;
 }
 
 MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
