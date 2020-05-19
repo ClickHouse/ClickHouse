@@ -74,21 +74,38 @@ TEST(IGrabberAllocator, CacheUnusedShrinking)
 {
     IntToInt cache(MMAP_THRESHOLD);
 
-    for (int i = 0; i < 5; ++i)
-        EXPECT_TRUE(cache.getOrSet(i, [] {return 100; }, [](void *) { return 1; }).second);
+    const auto size = [] { return 100; };
+    const auto init = [](void *) { return 0; };
+
+    {
+        auto pair = cache.getOrSet(0, size, init);
+        auto stats = cache.getStats();
+
+        EXPECT_EQ(stats.regions, 2);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.unused_regions, 0);
+    }
+
+    {
+        auto pair = cache.getOrSet(1, size, init);
+        auto stats = cache.getStats();
+
+        EXPECT_EQ(stats.regions, 3);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.unused_regions, 1);
+    }
+
 
     auto stats = cache.getStats();
 
-    EXPECT_EQ(stats.misses, 5);
-    EXPECT_EQ(stats.free_regions_count, 1);
-    EXPECT_EQ(stats.used_regions_count, 0);
+    EXPECT_EQ(stats.initialized_size, 200);
+    EXPECT_EQ(stats.used_regions, 0);
+    EXPECT_EQ(stats.unused_regions, 2);
 
     cache.shrinkToFit();
 
-    EXPECT_EQ(cache.getStats(), ga::Stats{});
-
-    for (int i = 0; i < 5; ++i)
-        EXPECT_EQ(cache.get(i).get(), nullptr);
+    EXPECT_EQ(cache.get(0).get(), nullptr);
+    EXPECT_EQ(cache.get(1).get(), nullptr);
 }
 
 TEST(IGrabberAllocator, CacheUsedShrinking)
