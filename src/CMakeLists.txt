@@ -356,6 +356,11 @@ if (USE_OPENCL)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${OpenCL_INCLUDE_DIRS})
 endif ()
 
+if (USE_CASSANDRA)
+    dbms_target_link_libraries(PRIVATE ${CASSANDRA_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${CASS_INCLUDE_DIR})
+endif()
+
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 

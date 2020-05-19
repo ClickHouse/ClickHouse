@@ -281,10 +281,10 @@ SRCS(
     rand64.cpp
     randConstant.cpp
     rand.cpp
+    randomFixedString.cpp
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
-    randomFixedString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
