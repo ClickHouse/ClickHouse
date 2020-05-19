@@ -1,18 +1,18 @@
-# Quotas {#quotas}
+# 配额 {#quotas}
 
-Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
-Quotas are set up in the user config. This is usually 'users.xml'.
+配额允许您在一段时间内限制资源使用情况，或者只是跟踪资源的使用。
+配额在用户配置中设置。 这通常是 ‘users.xml’.
 
-The system also has a feature for limiting the complexity of a single query. See the section "Restrictions on query complexity").
+The system also has a feature for limiting the complexity of a single query. See the section «Restrictions on query complexity»).
 
-In contrast to query complexity restrictions, quotas:
+与查询复杂性限制相比，配额:
 
-- Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
-- Account for resources spent on all remote servers for distributed query processing.
+-   对可以在一段时间内运行的一组查询设置限制，而不是限制单个查询。
+-   占用在所有远程服务器上用于分布式查询处理的资源。
 
-Let's look at the section of the 'users.xml' file that defines quotas.
+让我们来看看的部分 ‘users.xml’ 定义配额的文件。
 
-```xml
+``` xml
 <!-- Quotas -->
 <quotas>
     <!-- Quota name. -->
@@ -32,10 +32,10 @@ Let's look at the section of the 'users.xml' file that defines quotas.
     </default>
 ```
 
-By default, the quota just tracks resource consumption for each hour, without limiting usage.
-The resource consumption calculated for each interval is output to the server log after each request.
+默认情况下，配额只跟踪每小时的资源消耗，而不限制使用情况。
+每次请求后，计算出的每个时间间隔的资源消耗将输出到服务器日志中。
 
-```xml
+``` xml
 <statbox>
     <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
@@ -61,11 +61,11 @@ The resource consumption calculated for each interval is output to the server lo
 </statbox>
 ```
 
-For the 'statbox' quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn't necessarily begin at midnight.
+为 ‘statbox’ 配额，限制设置为每小时和每24小时（86,400秒）。 时间间隔从实现定义的固定时刻开始计数。 换句话说，24小时间隔不一定从午夜开始。
 
-When the interval ends, all collected values are cleared. For the next hour, the quota calculation starts over.
+间隔结束时，将清除所有收集的值。 在下一个小时内，配额计算将重新开始。
 
-Here are the amounts that can be restricted:
+以下是可以限制的金额:
 
 `queries` – The total number of requests.
 
@@ -77,11 +77,11 @@ Here are the amounts that can be restricted:
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
-If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
+如果在至少一个时间间隔内超出限制，则会引发异常，其中包含有关超出了哪个限制、哪个时间间隔以及新时间间隔开始时（何时可以再次发送查询）的文本。
 
-Quotas can use the "quota key" feature in order to report on resources for multiple keys independently. Here is an example of this:
+Quotas can use the «quota key» feature in order to report on resources for multiple keys independently. Here is an example of this:
 
-```xml
+``` xml
 <!-- For the global reports designer. -->
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,
@@ -96,11 +96,10 @@ Quotas can use the "quota key" feature in order to report on resources for multi
     <keyed />
 ```
 
-The quota is assigned to users in the 'users' section of the config. See the section "Access rights".
+配额分配给用户 ‘users’ section of the config. See the section «Access rights».
 
-For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will "start over".
+For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will «start over».
 
-When the server is restarted, quotas are reset.
+服务器重新启动时，将重置配额。
 
-
-[Original article](https://clickhouse.yandex/docs/en/operations/quotas/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->

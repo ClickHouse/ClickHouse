@@ -1,0 +1,13 @@
+<yandex>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+</yandex>

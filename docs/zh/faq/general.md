@@ -1,6 +1,6 @@
-# 常见问题
+# 常见问题 {#chang-jian-wen-ti}
 
-## 为什么不使用MapReduce之类的产品呢?
+## 为什么不使用MapReduce之类的产品呢? {#wei-shi-yao-bu-shi-yong-mapreducezhi-lei-de-chan-pin-ni}
 
 我们可以将MapReduce这类的系统称为分布式计算系统，其reduce操作基于分布式排序。其中最常见的开源解决方案是 [Apache Hadoop](http://hadoop.apache.org)。 Yandex使用他们的内部解决方案YT。
 
@@ -8,15 +8,12 @@
 
 大多数MapReduce系统允许您在集群上执行任意代码。但是，声明性查询语言更适合OLAP，以便快速运行实验。例如，Hadoop包含Hive和Pig，Cloudera Impala或Shark（过时）for Spark，以及Spark SQL、Presto和Apache Drill。与专业系统相比，运行此类任务时的性能非常不理想，所以将这些系统用作Web接口的后端服务是不现实的，因为延迟相对较高。
 
+## 如果我在通过ODBC使用Oracle时遇到编码问题，该怎么办？ {#oracle-odbc-encodings}
 
-## What to do if I have a problem with encodings when using Oracle through ODBC? {#oracle-odbc-encodings}
+如果您通过ODBC驱动程序使用Oracle作为外部字典的源，则需要为 `NLS_LANG` 在变量 `/etc/default/clickhouse`. 欲了解更多详情，请参阅 [Oracle NLS\_常见问题](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
-If you use Oracle through ODBC driver as a source of external dictionaries, you need to set up correctly value for the `NLS_LANG` variable in the `/etc/default/clickhouse`. For more details see the [Oracle NLS_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+**示例**
 
-**Example**
+    NLS_LANG=CHINESE_CHINA.ZHS16GBK
 
-```
-NLS_LANG=CHINESE_CHINA.ZHS16GBK
-```
-
-[来源文章](https://clickhouse.yandex/docs/zh/faq/general/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/faq/general/) <!--hide-->

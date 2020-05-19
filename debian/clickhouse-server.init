@@ -3,8 +3,8 @@
 # Provides:          clickhouse-server
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Required-Start:
-# Required-Stop:
+# Required-Start:    $network
+# Required-Stop:     $network
 # Short-Description: Yandex clickhouse-server daemon
 ### END INIT INFO
 
@@ -20,19 +20,27 @@ CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
-LOCALSTATEDIR=/var/lock
+if [ -d "/var/lock" ]; then
+    LOCALSTATEDIR=/var/lock
+else
+    LOCALSTATEDIR=/run/lock
+fi
+
+if [ ! -d "$LOCALSTATEDIR" ]; then
+    mkdir -p "$LOCALSTATEDIR"
+fi
+
 CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
-
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
+# CLICKHOUSE_STOP_TIMEOUT=60 # Disabled by default. Place to /etc/default/clickhouse if you need.
 
 # Some systems lack "flock"
 command -v flock >/dev/null && FLOCK=flock
-
 
 # Override defaults from optional config file
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
@@ -76,7 +84,13 @@ is_running()
 
 wait_for_done()
 {
+    timeout=$1
+    attempts=0
     while is_running; do
+        attempts=$(($attempts + 1))
+        if [ -n "$timeout" ] && [ $attempts -gt $timeout ]; then
+            return 1
+        fi
         sleep 1
     done
 }
@@ -175,7 +189,7 @@ start()
 
     if [ $EXIT_STATUS -eq 0 ]; then
         attempts=0
-        while ! is_running && [ $attempts -le 10 ]; do
+        while ! is_running && [ $attempts -le ${CLICKHOUSE_START_TIMEOUT:=10} ]; do
             attempts=$(($attempts + 1))
             sleep 1
         done
@@ -194,7 +208,7 @@ start()
 
 stop()
 {
-    local EXIT_STATUS
+    #local EXIT_STATUS
     EXIT_STATUS=0
 
     if [ -f $CLICKHOUSE_PIDFILE ]; then
@@ -203,9 +217,13 @@ stop()
 
         kill -TERM $(cat "$CLICKHOUSE_PIDFILE")
 
-        wait_for_done
+        if ! wait_for_done ${CLICKHOUSE_STOP_TIMEOUT}; then
+            EXIT_STATUS=2
+            echo "TIMEOUT"
+        else
+            echo "DONE"
+        fi
 
-        echo "DONE"
     fi
     return $EXIT_STATUS
 }
@@ -214,8 +232,12 @@ stop()
 restart()
 {
     check_config
-    stop
-    start
+    if stop; then
+        if start; then
+            return 0
+        fi
+    fi
+    return 1
 }
 
 
@@ -295,13 +317,14 @@ main()
         start && enable_cron
         ;;
     stop)
-        disable_cron && stop
+        # disable_cron returns false if cron disabled (with systemd) - not checking return status
+        disable_cron
+        stop
         ;;
     restart)
         restart && enable_cron
         ;;
     forcestop)
-        # disable_cron returns false if cron disabled (with systemd) - not checking return status
         disable_cron
         forcestop
         ;;

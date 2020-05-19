@@ -9,7 +9,7 @@ endif()
 
 SET(WITH_KERBEROS false)
 # project and source dir
-set(HDFS3_ROOT_DIR ${CMAKE_SOURCE_DIR}/contrib/libhdfs3)
+set(HDFS3_ROOT_DIR ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3)
 set(HDFS3_SOURCE_DIR ${HDFS3_ROOT_DIR}/src)
 set(HDFS3_COMMON_DIR ${HDFS3_SOURCE_DIR}/common)
 
@@ -182,10 +182,13 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/common/FileWrapper.h
     )
 
+# old kernels (< 3.17) doens't have SYS_getrandom. Always use POSIX implementation to have better compatibility
+set_source_files_properties(${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp PROPERTIES COMPILE_FLAGS "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1")
+
 # target
 add_library(hdfs3 ${SRCS} ${PROTO_SOURCES} ${PROTO_HEADERS})
 
-if (USE_INTERNAL_PROTOBUF_LIBRARY)
+if(USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(hdfs3 protoc)
 endif()
 
@@ -199,17 +202,17 @@ if (WITH_KERBEROS)
 endif()
 target_include_directories(hdfs3 PRIVATE ${LIBXML2_INCLUDE_DIR})
 
-target_link_libraries(hdfs3 ${LIBGSASL_LIBRARY})
+target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
-    target_link_libraries(hdfs3 ${KERBEROS_LIBRARIES})
+    target_link_libraries(hdfs3 PRIVATE ${KERBEROS_LIBRARIES})
 endif()
-target_link_libraries(hdfs3 ${LIBXML2_LIBRARY})
+target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARY})
 
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})
-target_link_libraries(hdfs3 ${Protobuf_LIBRARY})
+target_link_libraries(hdfs3 PRIVATE ${Protobuf_LIBRARY})
 if(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBRARIES)
     target_include_directories(hdfs3 PRIVATE ${OPENSSL_INCLUDE_DIR})
-    target_link_libraries(hdfs3 ${OPENSSL_LIBRARIES})
+    target_link_libraries(hdfs3 PRIVATE ${OPENSSL_LIBRARIES})
 endif()

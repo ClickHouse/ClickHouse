@@ -1,0 +1,5 @@
+<yandex>
+    <merge_tree>
+        <replicated_can_become_leader>FAlse</replicated_can_become_leader>
+    </merge_tree>
+</yandex>

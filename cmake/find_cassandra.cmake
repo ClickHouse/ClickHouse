@@ -6,6 +6,7 @@ if (NOT DEFINED ENABLE_CASSANDRA OR ENABLE_CASSANDRA)
                 "${ClickHouse_SOURCE_DIR}/contrib/cassandra/include/")
         set (CASSANDRA_LIBRARY cassandra)
         set (USE_CASSANDRA 1)
+        set(CASS_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/cassandra")
 
         message(STATUS "Using cassandra: ${CASSANDRA_LIBRARY}")
     endif()

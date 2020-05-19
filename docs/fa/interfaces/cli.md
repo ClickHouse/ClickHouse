@@ -1,122 +1,149 @@
-<div dir="rtl" markdown="1">
+---
+machine_translated: true
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 17
+toc_title: "\u0645\u0634\u062A\u0631\u06CC \u062E\u0637 \u0641\u0631\u0645\u0627\u0646"
+---
 
-# کلاینت Command-line
+# مشتری خط فرمان {#command-line-client}
 
-برای کار از طریق محیط ترمینال میتوانید از دستور ` clickhouse-client` استفاده کنید
+تاتر یک مشتری خط فرمان بومی فراهم می کند: `clickhouse-client`. مشتری پشتیبانی از گزینه های خط فرمان و فایل های پیکربندی. برای کسب اطلاعات بیشتر, دیدن [پیکربندی](#interfaces_cli_configuration).
 
-</div>
+[نصب](../getting-started/index.md) این از `clickhouse-client` بسته بندی و اجرا با فرمان `clickhouse-client`.
 
-```bash
+``` bash
 $ clickhouse-client
-ClickHouse client version 0.0.26176.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.26176.
+ClickHouse client version 19.17.1.1579 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 19.17.1 revision 54428.
 
 :)
 ```
 
-<div dir="rtl" markdown="1">
+مشتری و سرور نسخه های مختلف سازگار با یکدیگر هستند, اما برخی از ویژگی های ممکن است در مشتریان قدیمی تر در دسترس باشد. ما توصیه می کنیم با استفاده از همان نسخه از مشتری به عنوان برنامه سرور. هنگامی که شما سعی می کنید به استفاده از یک مشتری از نسخه های قدیمی تر و سپس سرور, `clickhouse-client` پیام را نمایش میدهد:
 
-کلاینت از آپشن های command-line و فایل های کانفیگ پشتیبانی می کند. برای اطلاعات بیشتر بخش "[پیکربندی](#interfaces_cli_configuration)" را مشاهده کنید.
+      ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
-## استفاده
+## استفاده {#cli_usage}
 
-کلاینت می تواند به دو صورت interactive و non-intercative (batch) مورد استفاده قرار گیرد. برای استفاده از حالت batch، پارامتر `query` را مشخص کنید، و یا داده ها ره به `stdin` ارسال کنید (کلاینت تایید می کند که `stdin` ترمینال نیست) و یا از هر 2 استفاده کنید. مشابه HTTP interface، هنگامی که از از پارامتر `query` و ارسال داده ها به `stdin` استفاده می کنید، درخواست، ترکیبی از پارامتر `query`، line feed، و داده ها در `stdin` است. این کار برای query های بزرگ INSERT مناسب است.
+مشتری را می توان در حالت تعاملی و غیر تعاملی (دسته ای) استفاده کرد. برای استفاده از حالت دسته ای ‘query’ پارامتر یا ارسال داده به ‘stdin’ (تایید می کند که ‘stdin’ یک ترمینال نیست), یا هر دو. هنگام استفاده از رابط اچ تی پی مشابه است ‘query’ پارامتر و ارسال داده به ‘stdin’, درخواست یک الحاق از است ‘query’ پارامتر, خوراک خط, و داده ها در ‘stdin’. این مناسب برای نمایش داده شد درج بزرگ است.
 
-مثالی از استفاده کلاینت برای اجرای دستور INSERT داده
+نمونه ای از استفاده از مشتری برای وارد کردن داده ها:
 
-</div>
+``` bash
+$ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 
-```bash
-echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
-
-cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 3, 'some text', '2016-08-14 00:00:00'
 4, 'some more text', '2016-08-14 00:00:01'
 _EOF
 
-cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+$ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
-<div dir="rtl" markdown="1">
 
-در حالت Batch، فرمت داده ها به صورت پیش فرض به صورت TabSeparated می باشد. شما میتوانید فرمت داده ها رو در هنگام اجرای query و با استفاده از شرط FORMAT مشخص کنید.
+در حالت دسته ای, فرمت داده ها به طور پیش فرض جدول است. شما می توانید فرمت را در بند فرمت پرس و جو تنظیم کنید.
 
-به طور پیش فرض شما فقط می توانید یک query را در خالت batch اجرا کنید.برای ساخت چندین query از یک "اسکریپت"، از پارامتر --multiquery استفاده کنید. این روش برای تمام query ها به جز INSERT کار می کند. نتایج query ها به صورت متوالی و بدون seperator اضافه تولید می شوند. به طور مشابه برای پردازش تعداد زیادی از query ها شما می توانید از 'clickhouse-client' برای هر query استفاده کنید. دقت کنید که ممکن است حدود 10 میلی ثانیه تا زمان راه اندازی برنامه 'clickhouse-client' زمان گرفته شود.
+به طور پیش فرض, شما فقط می توانید پردازش یک پرس و جو تنها در حالت دسته ای. برای ایجاد چندین نمایش داده شد از یک “script,” استفاده از `--multiquery` پارامتر. این برای همه نمایش داده شد به جز درج کار می کند. نتایج پرس و جو خروجی متوالی بدون جداکننده های اضافی می باشد. به طور مشابه, برای پردازش تعداد زیادی از نمایش داده شد, شما می توانید اجرا ‘clickhouse-client’ برای هر پرس و جو. توجه داشته باشید که ممکن است دهها میلی ثانیه برای راه اندازی ‘clickhouse-client’ برنامه
 
-در حالت intercative، شما یک command line برای درج query های خود دریافت می کنید.
+در حالت تعاملی شما یک خط فرمان دریافت می کنید که می توانید نمایش داده شده را وارد کنید.
 
-اگر 'multiline' مشخص نشده باشد (به صورت پیش فرض): برای اجرای یک query، دکمه Enter را بزنید. سیمی کالن در انتهای query اجباری نیست. برای درج یک query چند خطی (multiline)، دکمه ی بک اسلش `\` را قبل از line feed فشار دهید. بعد از فشردن Enter، از شما برای درج خط بعدی query درخواست خواهد شد.
+اگر ‘multiline’ مشخص نشده است (به طور پیش فرض): برای اجرای پرس و جو را فشار دهید را وارد کنید. نقطه و ویرگول در پایان پرس و جو لازم نیست. برای ورود به پرس و جو چند خطی یک بک اسلش را وارد کنید `\` قبل از خط تغذیه. بعد از اینکه شما فشار وارد, از شما خواسته خواهد شد که برای ورود به خط بعدی از پرس و جو.
 
-اگر چند خطی (multiline) مشخص شده باشد: برای اجرای query، در انتها سیمی کالن را وارد کنید و سپس Enter بزنید. اگر سیمی کالن از انتهای خط حذف می شد، از شما برای درج خط جدید query درخواست می شد.
+اگر چند خطی مشخص شده است: برای اجرای یک پرس و جو, پایان با یک نقطه و ویرگول و مطبوعات را وارد کنید. اگر نقطه و ویرگول در پایان خط وارد شده حذف شد, از شما خواسته خواهد شد برای ورود به خط بعدی از پرس و جو.
 
-تنها یک query اجرا می شود. پس همه چیز بعد از سیمی کالن ignore می شود.
+فقط یک پرس و جو تنها اجرا می شود, بنابراین همه چیز پس از نقطه و ویرگول نادیده گرفته شده است.
 
-شما میتوانید از `\G` به جای سیمی کالن یا بعد از سیمی کالن استفاده کنید. این علامت، فرمت Vertical را نشان می دهد. در این فرمت، هر مقدار در یک خط جدا چاپ می شود که برای جداول عریض مناسب است. این ویژگی غیرمعمول برای سازگاری با MySQL CLI اضافه شد.
+شما می توانید مشخص کنید `\G` بجای یا بعد از نقطه و ویرگول. این نشان می دهد فرمت عمودی. در این قالب, هر مقدار بر روی یک خط جداگانه چاپ, مناسب است که برای جداول گسترده ای. این ویژگی غیر معمول برای سازگاری با خروجی زیر کلی اضافه شد.
 
-command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بدون کتابخانه بسته به build) می باشد. به عبارت دیگر، این محیط از shortcut های آشنا استفاده می کند و history دستورات را نگه می دار. history ها در فایل ~/.clickhouse-client-history نوشته می شوند.
+خط فرمان بر اساس ‘replxx’ (شبیه به ‘readline’). به عبارت دیگر از میانبرهای صفحهکلید اشنایی استفاده میکند و تاریخ را حفظ میکند. تاریخ به نوشته شده است `~/.clickhouse-client-history`.
 
-به صورت پیش فرض فرمت خروجی PrettyCompact می باشد. شما میتوانید از طریق دستور FORMAT در یک query، یا با مشخص کردن `\G` در انتهای query، استفاده از آرگومان های `--format` یا `--vertical` یا از کانفیگ فایل کلاینت، فرمت خروجی را مشخص کنید.
+به طور پیش فرض, فرمت استفاده می شود قبل از شکست است. شما می توانید فرمت را در بند فرمت پرس و جو یا با مشخص کردن تغییر دهید `\G` در پایان پرس و جو, با استفاده از `--format` یا `--vertical` استدلال در خط فرمان, و یا با استفاده از فایل پیکربندی مشتری.
 
-برای خروج از کلاینت، Ctrl-D (یا Ctrl+C) را فشار دهید؛ و یا یکی از دستورات زیر را به جای اجرای query اجرا کنید: "exit", "quit", "logout", "exit;", "quit;", "logout;", "q", "Q", ":q"
+برای خروج از مشتری, کنترل مطبوعات+د (یا کنترل+ج), و یا یکی از موارد زیر را وارد کنید به جای یک پرس و جو: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
-در هنگام اجرای یک query، کلاینت موارد زیر را نمایش می دهد:
+هنگامی که پردازش یک پرس و جو مشتری نشان می دهد:
 
-1. Progress، که بیش از 10 بار در ثانیه بروز نخواهد شد ( به صورت پیش فرض). برای query های سریع، progress ممکن است زمانی برای نمایش پیدا نکند.
-2. فرمت کردن query بعد از عملیات پارس کردن، به منظور دیباگ کردن query.
-3. نمایش خروجی با توجه به نوع فرمت.
-4. تعداد لاین های خروجی، زمان پاس شدن query، و میانگیم سرعت پردازش query.
+1.  پیشرفت, که به روز شده است بیش از 10 بار در ثانیه (به طور پیش فرض). برای نمایش داده شد سریع پیشرفت ممکن است زمان نمایش داده می شود.
+2.  پرس و جو فرمت شده پس از تجزیه, برای اشکال زدایی.
+3.  نتیجه در قالب مشخص شده است.
+4.  تعداد خطوط در نتیجه زمان گذشت و سرعت متوسط پردازش پرس و جو.
 
-شما میتوانید query های طولانی را با فشردن Ctrl-C کنسل کنید. هر چند، بعد از این کار همچنان نیاز به انتظار چند ثانیه ای برای قطع کردن درخواست توسط سرور می باشید. امکان کنسل کردن یک query در مراحل خاص وجود ندارد. اگر شما صبر نکنید و برای بار دوم Ctrl+C را وارد کنید از client خارج می شوید.
+شما می توانید یک پرس و جو طولانی با فشار دادن کنترل لغو+ج.با این حال, شما هنوز هم نیاز به کمی صبر کنید برای سرور به سقط درخواست. این ممکن است به لغو پرس و جو در مراحل خاص. اگر شما منتظر نیست و مطبوعات کنترل+ج بار دوم مشتری خروج خواهد شد.
 
-کلاینت commant-line اجازه ی پاس دادن داده های external (جداول موقت external) را برای query ها می دهد. برای اطلاعات بیشتر به بخش "داده های External برای پردازش query" مراجعه کنید.
+مشتری خط فرمان اجازه می دهد تا عبور داده های خارجی (جداول موقت خارجی) برای پرس و جو. برای کسب اطلاعات بیشتر به بخش مراجعه کنید “External data for query processing”.
+
+### نمایش داده شد با پارامترهای {#cli-queries-with-parameters}
+
+شما می توانید پرس و جو را با پارامترها ایجاد کنید و مقادیر را از برنامه مشتری منتقل کنید. این اجازه می دهد تا برای جلوگیری از قالب بندی پرس و جو با ارزش های پویا خاص در سمت سرویس گیرنده. به عنوان مثال:
+
+``` bash
+$ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
+```
+
+#### نحو پرس و جو {#cli-queries-with-parameters-syntax}
+
+یک پرس و جو را به طور معمول فرمت کنید و سپس مقادیر را که می خواهید از پارامترهای برنامه به پرس و جو در پرانتز در قالب زیر منتقل کنید قرار دهید:
+
+``` sql
+{<name>:<data type>}
+```
+
+-   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+-   `data type` — [نوع داده](../sql-reference/data-types/index.md) از مقدار پارامتر برنامه. برای مثال یک ساختار داده مانند `(integer, ('string', integer))` می تواند داشته باشد `Tuple(UInt8, Tuple(String, UInt8))` نوع داده (شما همچنین می توانید از یکی دیگر استفاده کنید [عدد صحیح](../sql-reference/data-types/int-uint.md) انواع).
+
+#### مثال {#example}
+
+``` bash
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+```
 
 ## پیکربندی {#interfaces_cli_configuration}
 
-شما میتوانید، پارامتر ها را به `clickhouse-client` (تمام پارامترها دارای مقدار پیش فرض هستند) از دو روش زیر پاس بدید:
+شما می توانید پارامترها را به `clickhouse-client` (همه پارامترها یک مقدار پیش فرض) با استفاده از:
 
-- از طریق Command Line
+-   از خط فرمان
 
-   گزینه های Command-line مقادیر پیش فرض در ستینگ و کانفیگ فایل را نادیده میگیرد.
+    گزینه های خط فرمان نادیده گرفتن مقادیر پیش فرض و تنظیمات در فایل های پیکربندی.
 
-- کانفیگ فایل ها.
+-   فایل های پیکربندی.
 
-   ستینگ های داخل کانفیگ فایل، مقادیر پیش فرض را نادیده می گیرد.
+    تنظیمات در فایل های پیکربندی نادیده گرفتن مقادیر پیش فرض.
 
-### گزینه های Command line
+### گزینههای خط فرمان {#command-line-options}
 
-- `--host, -h` -– نام سرور، به صورت پیش فرض 'localhost' است. شما میتوانید یکی از موارد نام و یا IPv4 و یا IPv6 را در این گزینه مشخص کنید.
-- `--port` – پورت اتصال به ClickHouse. مقدار پیش فرض: 9000. دقت کنید که پرت اینترفیس HTTP و اینتفریس native متفاوت است.
-- `--user, -u` – نام کاربری جهت اتصال. پیش فرض: default.
-- `--password` – پسورد جهت اتصال. پیش فرض: خالی
-- `--query, -q` – مشخص کردن query برای پردازش در هنگام استفاده از حالت non-interactive.
-- `--database, -d` – انتخاب دیتابیس در بدو ورود به کلاینت. مقدار پیش فرض: دیتابیس مشخص شده در تنظیمات سرور (پیش فرض 'default')
-- `--multiline, -m` – اگر مشخص شود، یعنی اجازه ی نوشتن query های چند خطی را بده. (بعد از Enter، query را ارسال نکن).
-- `--multiquery, -n` – اگر مشخص شود، اجازه ی اجرای چندین query که از طریق کاما جدا شده اند را می دهد. فقط در حالت non-interactive کار می کند.
-- `--format, -f` مشخص کردن نوع فرمت خروجی
-- `--vertical, -E` اگر مشخص شود، از فرمت Vertical برای نمایش خروجی استفاده می شود. این گزینه مشابه '--format=Vertical' می باشد. در این فرمت، هر مقدار در یک خط جدید چاپ می شود، که در هنگام نمایش جداول عریض مفید است.
-- `--time, -t` اگر مشخص شود، در حالت non-interactive زمان اجرای query در 'stderr' جاپ می شود.
-- `--stacktrace` – اگر مشخص شود stack trase مربوط به اجرای query در هنگام رخ دادن یک exception چاپ می شود.
-- `-config-file` – نام فایل پیکربندی.
+-   `--host, -h` -– The server name, ‘localhost’ به طور پیش فرض. شما می توانید از نام یا نشانی اینترنتی4 یا ایپو6 استفاده کنید.
+-   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
+-   `--user, -u` – The username. Default value: default.
+-   `--password` – The password. Default value: empty string.
+-   `--query, -q` – The query to process when using non-interactive mode.
+-   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ به طور پیش فرض).
+-   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
+-   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
+-   `--format, -f` – Use the specified default format to output the result.
+-   `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as ‘–format=Vertical’. در این قالب, هر مقدار بر روی یک خط جداگانه چاپ, مفید است که در هنگام نمایش جداول گسترده.
+-   `--time, -t` – If specified, print the query execution time to ‘stderr’ در حالت غیر تعاملی.
+-   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
+-   `--config-file` – The name of the configuration file.
+-   `--secure` – If specified, will connect to server over secure connection.
+-   `--param_<name>` — Value for a [پرسوجو با پارامترها](#cli-queries-with-parameters).
 
-### فایل های پیکربندی
+### پروندههای پیکربندی {#configuration_files}
 
-`clickhouse-client` به ترتیب اولویت زیر از اولین فایل موجود برای ست کردن تنظیمات استفاده می کند:
+`clickhouse-client` با استفاده از اولین فایل موجود در زیر:
 
-- مشخص شده در پارامتر `-config-file`
-- `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
-- `/etc/clickhouse-client/config.xml`
+-   تعریف شده در `--config-file` پارامتر.
+-   `./clickhouse-client.xml`
+-   `~/.clickhouse-client/config.xml`
+-   `/etc/clickhouse-client/config.xml`
 
-مثالی از یک کانفیگ فایل
+نمونه ای از یک فایل پیکربندی:
 
-</div>
-
-```xml
+``` xml
 <config>
     <user>username</user>
     <password>password</password>
+    <secure>False</secure>
 </config>
 ```
 
-
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/cli/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/cli/) <!--hide-->

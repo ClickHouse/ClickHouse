@@ -4,4 +4,4 @@ For more information see [ClickHouse Server Docker Image](https://hub.docker.com
 
 ## License
 
-View [license information](https://github.com/yandex/ClickHouse/blob/master/LICENSE) for the software contained in this image.
+View [license information](https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE) for the software contained in this image.

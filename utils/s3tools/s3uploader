@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 import os
 import logging
@@ -92,14 +92,14 @@ if __name__ == "__main__":
     parser.add_argument('--tmp-prefix', default='/tmp',
                         help='Prefix to store temporay downloaded file')
     data_group = parser.add_mutually_exclusive_group(required=True)
-    data_group.add_argument('--table-name',
+    table_name_argument = data_group.add_argument('--table-name',
                             help='Name of table with database, if you are uploading partitions')
     data_group.add_argument('--file-path',
                             help='Name of file, if you are uploading')
     args = parser.parse_args()
 
     if args.table_name is not None and args.clickhouse_data_path is None:
-        raise argparse.ArgumentError(
+        raise argparse.ArgumentError(table_name_argument,
             "You should specify --clickhouse-data-path to upload --table")
 
     s3_conn = S3API(

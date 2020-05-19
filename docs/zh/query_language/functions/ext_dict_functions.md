@@ -1,1 +1,0 @@
-../../../en/query_language/functions/ext_dict_functions.md

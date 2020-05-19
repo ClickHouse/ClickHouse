@@ -1,25 +1,25 @@
-# Performance
+# 性能 {#performance}
 
-根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在 [这里](https://clickhouse.yandex/benchmark.html) 查看具体的测试结果。
+根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在 [这里](https://clickhouse.tech/benchmark/dbms/) 查看具体的测试结果。
 
-许多其他的测试也证实这一点。你可以使用互联网搜索到它们，或者你也可以从 [我们收集的部分相关连接](https://clickhouse.yandex/#independent-benchmarks) 中查看。
+许多其他的测试也证实这一点。你可以使用互联网搜索到它们，或者你也可以从 [我们收集的部分相关连接](https://clickhouse.tech/#independent-benchmarks) 中查看。
 
-## 单个大查询的吞吐量
+## 单个大查询的吞吐量 {#dan-ge-da-cha-xun-de-tun-tu-liang}
 
 吞吐量可以使用每秒处理的行数或每秒处理的字节数来衡量。如果数据被放置在page cache中，则一个不太复杂的查询在单个服务器上大约能够以2-10GB／s（未压缩）的速度进行处理（对于简单的查询，速度可以达到30GB／s）。如果数据没有在page cache中的话，那么速度将取决于你的磁盘系统和数据的压缩率。例如，如果一个磁盘允许以400MB／s的速度读取数据，并且数据压缩率是3，则数据的处理速度为1.2GB/s。这意味着，如果你是在提取一个10字节的列，那么它的处理速度大约是1-2亿行每秒。
 
 对于分布式处理，处理速度几乎是线性扩展的，但这受限于聚合或排序的结果不是那么大的情况下。
 
-## 处理短查询的延迟时间
+## 处理短查询的延迟时间 {#chu-li-duan-cha-xun-de-yan-chi-shi-jian}
 
 如果一个查询使用主键并且没有太多行(几十万)进行处理，并且没有查询太多的列，那么在数据被page cache缓存的情况下，它的延迟应该小于50毫秒(在最佳的情况下应该小于10毫秒)。 否则，延迟取决于数据的查找次数。如果你当前使用的是HDD，在数据没有加载的情况下，查询所需要的延迟可以通过以下公式计算得知： 查找时间（10 ms） \* 查询的列的数量 \* 查询的数据块的数量。
 
-## 处理大量短查询的吞吐量
+## 处理大量短查询的吞吐量 {#chu-li-da-liang-duan-cha-xun-de-tun-tu-liang}
 
 在相同的情况下，ClickHouse可以在单个服务器上每秒处理数百个查询（在最佳的情况下最多可以处理数千个）。但是由于这不适用于分析型场景。因此我们建议每秒最多查询100次。
 
-## 数据的写入性能
+## 数据的写入性能 {#shu-ju-de-xie-ru-xing-neng}
 
 我们建议每次写入不少于1000行的批量写入，或每秒不超过一个写入请求。当使用tab-separated格式将一份数据写入到MergeTree表中时，写入速度大约为50到200MB/s。如果您写入的数据每行为1Kb，那么写入的速度为50，000到200，000行每秒。如果您的行更小，那么写入速度将更高。为了提高写入性能，您可以使用多个INSERT进行并行写入，这将带来线性的性能提升。
 
-[来源文章](https://clickhouse.yandex/docs/en/introduction/performance/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/introduction/performance/) <!--hide-->

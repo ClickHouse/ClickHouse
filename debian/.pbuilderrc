@@ -11,11 +11,10 @@
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
 # sudo ln -s sid /usr/share/debootstrap/scripts/buster
 # build ubuntu:
-# sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=zesty  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty  pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=artful pbuilder create --configfile debian/.pbuilderrc && DIST=artful pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=bionic pbuilder create --configfile debian/.pbuilderrc && DIST=bionic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=cosmic pbuilder create --configfile debian/.pbuilderrc && DIST=cosmic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=disco  pbuilder create --configfile debian/.pbuilderrc && DIST=disco  pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=eoan   pbuilder create --configfile debian/.pbuilderrc && DIST=eoan   pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=devel  pbuilder create --configfile debian/.pbuilderrc && DIST=devel  pdebuild --configfile debian/.pbuilderrc
 # build debian:
 # sudo DIST=stable       pbuilder create --configfile debian/.pbuilderrc && DIST=stable       pdebuild --configfile debian/.pbuilderrc
@@ -31,9 +30,11 @@
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# test gcc-9
+# env DEB_CC=gcc-9 DEB_CXX=g++-9 EXTRAPACKAGES="g++-9 gcc-9" DIST=disco pdebuild --configfile debian/.pbuilderrc
 # use only clang:
-# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES=clang-5.0 DIST=artful pdebuild --configfile debian/.pbuilderrc
 # env DEB_CC=clang-8 DEB_CXX=clang++-8 EXTRAPACKAGES=clang-8 DIST=disco pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES=clang-5.0 DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+asan:
 # env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
 # clang+tsan:
