@@ -390,6 +390,7 @@ target_link_libraries (clickhouse_common_io
         PRIVATE
     string_utils
     widechar_width
+    uatraits_fast
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
@@ -449,6 +450,7 @@ dbms_target_link_libraries (
     clickhouse_common_config
     clickhouse_common_zookeeper
     string_utils # FIXME: not sure if it's private
+    uatraits_fast
         PUBLIC
     clickhouse_common_io
         PRIVATE

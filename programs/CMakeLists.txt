@@ -109,6 +109,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
 else ()
     add_executable (clickhouse main.cpp)
     target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils)
+    target_link_libraries (clickhouse PRIVATE clickhouse_common_io clickhouse_common_uatraitsfast)
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
     if (ENABLE_CLICKHOUSE_SERVER)
