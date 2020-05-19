@@ -289,7 +289,7 @@ public:
 
         /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
         if (is_mutation)
-            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
+            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->volume);
         else
         {
             IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -297,7 +297,7 @@ public:
             for (auto & part_ptr : future_part_.parts)
             {
                 ttl_infos.update(part_ptr->ttl_infos);
-                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
             }
 
             reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
@@ -1250,7 +1250,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
 
     for (auto & part : data_parts)
     {
-        auto disk = part->disk;
+        auto disk = part->volume->getDisk();
         String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = part_path + "checksums.txt";
