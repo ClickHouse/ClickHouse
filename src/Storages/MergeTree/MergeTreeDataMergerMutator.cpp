@@ -610,11 +610,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
     MergeTreeData::MutableDataPartPtr new_data_part = data.createPart(
         future_part.name,
         future_part.type,
         future_part.part_info,
-        disk,
+        single_disk_volume,
         TMP_PREFIX + future_part.name);
 
     new_data_part->setColumns(all_columns);
@@ -752,7 +753,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_transform = std::make_unique<CollapsingSortedTransform>(
-                header, pipes.size(), sort_description, data.merging_params.sign_column,
+                header, pipes.size(), sort_description, data.merging_params.sign_column, false,
                 merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
@@ -1028,8 +1029,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
     }
 
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, space_reservation->getDisk());
     auto new_data_part = data.createPart(
-        future_part.name, future_part.type, future_part.part_info, space_reservation->getDisk(), "tmp_mut_" + future_part.name);
+        future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
 
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
@@ -1039,7 +1041,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns, for_file_renames));
     new_data_part->partition.assign(source_part->partition);
 
-    auto disk = new_data_part->disk;
+    auto disk = new_data_part->volume->getDisk();
     String new_part_tmp_path = new_data_part->getFullRelativePath();
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
@@ -1644,7 +1646,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     MergeTreeData::MutableDataPartPtr new_data_part,
     bool need_remove_expired_values)
 {
-    auto disk = new_data_part->disk;
+    auto disk = new_data_part->volume->getDisk();
     if (need_remove_expired_values)
     {
         /// Write a file with ttl infos in json format.
@@ -1674,7 +1676,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->setBytesOnDisk(
-        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath()));
+        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
     new_data_part->calculateColumnsSizesOnDisk();
 }
 

@@ -189,6 +189,8 @@ public:
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                               IColumn::SpecialSort) const override;
 
     void reserve(size_t n) override
     {
