@@ -527,8 +527,6 @@ public:
 private:
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
-        std::cout << "refs: " << metadata.refcount << "\n";
-
         if (++metadata.refcount == 1)
         {
             if (metadata.TUnusedRegionHook::is_linked())
@@ -546,6 +544,9 @@ private:
     {
         std::lock_guard cache_lock(mutex);
 
+        for (auto& elem: value_to_region)
+            std::cout << elem.first << " " << elem.second << "\n";
+
         auto it = value_to_region.find(value);
 
         // it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
@@ -554,8 +555,6 @@ private:
             throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
 
         RegionMetadata& metadata = *(it->second);
-
-        std::cout << "refs: " << metadata.refcount << "\n";
 
         --metadata.refcount;
 
