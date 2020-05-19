@@ -90,7 +90,7 @@ TEST(IGrabberAllocator, StatefulSingleInsertionSingleRetrieval)
 
     const auto init = [](void * p)
     {
-        static_cast<int *>(*p) = 42;
+        *static_cast<int *>(p) = 42;
         return pointer{p};
     };
 
@@ -174,7 +174,7 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
 
     const auto init = [](void * p)
     {
-        static_cast<int *>(*p) = 43;
+        *static_cast<int *>(p) = 43;
         return pointer{p};
     };
 
