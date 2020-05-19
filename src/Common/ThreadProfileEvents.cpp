@@ -127,7 +127,7 @@ static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profil
     PerfEventInfo \
     { \
         .event_type = perf_type_id::PERF_TYPE_HARDWARE, \
-        .event_config = PERF_NAME, \
+        .event_config = (PERF_NAME), \
         .profile_event = ProfileEvents::LOCAL_NAME, \
         .profile_event_running = {ProfileEvents::LOCAL_NAME##Running}, \
         .profile_event_enabled = {ProfileEvents::LOCAL_NAME##Enabled} \
@@ -204,7 +204,7 @@ static bool getPerfEventParanoid(Int32 & result)
         return false;
 
     str[max_length - 1] = '\0';
-    result = atoi(str);
+    result = static_cast<Int32>(strtol(str, nullptr, 10));
     return true;
 }
 
