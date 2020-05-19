@@ -1,4 +1,4 @@
-#include "Common/UatraitsFast/UserAgent.h"
+#include "UserAgent.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include "Common/UatraitsFast/types/OperatingSystem.h"

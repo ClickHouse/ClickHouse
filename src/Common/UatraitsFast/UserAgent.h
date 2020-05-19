@@ -5,12 +5,12 @@
 #include <optional>
 #include <shared_mutex>
 #include <string>
-#include <Common/UatraitsFast/uatraits-fast.h>
+#include "uatraits-fast.h"
 #include <boost/serialization/singleton.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Common/UatraitsFast/types/Browser.h"
-#include "Common/UatraitsFast/types/BrowserBase.h"
-#include "Common/UatraitsFast/types/OperatingSystem.h"
+#include "types/Browser.h"
+#include "types/BrowserBase.h"
+#include "types/OperatingSystem.h"
 
 namespace components
 {

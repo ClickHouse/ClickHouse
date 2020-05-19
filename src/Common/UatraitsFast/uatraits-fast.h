@@ -6,6 +6,20 @@
 #include <memory>
 #include <ctime>
 
+#include <Poco/File.h>
+#include <Poco/FileStream.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/NumberParser.h>
+#include <Poco/String.h>
+
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
+#include <Poco/DOM/Text.h>
+#include <Poco/DOM/NodeList.h>
+#include <Poco/DOM/NamedNodeMap.h>
+#include <Poco/SAX/InputSource.h>
+
 #include <boost/noncopyable.hpp>
 
 #include <re2/re2.h>

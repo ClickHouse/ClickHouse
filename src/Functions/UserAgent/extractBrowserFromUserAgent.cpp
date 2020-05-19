@@ -5,7 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/map.h>
-#include <../contrib/hyperscan/src/hs.h>
+#include <hs.h>
 #include <Interpreters/Context.h>
 
 

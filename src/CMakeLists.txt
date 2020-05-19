@@ -223,13 +223,7 @@ add_subdirectory (Compression)
 
 
 set(dbms_headers)
-set(dbms_sources Common/UatraitsFast/types/Browser.h
-  Common/UatraitsFast/types/Browser.cpp Common/UatraitsFast/types/BrowserBase.h
-  Common/UatraitsFast/types/BrowserBase.cpp
-  Common/UatraitsFast/types/OperatingSystem.h
-  Common/UatraitsFast/types/OperatingSystem.cpp Common/UatraitsFast/uatraits-fast.h
-  Common/UatraitsFast/uatraits-fast.cpp Common/TraceCollector.cpp
-  Common/TraceCollector.h)
+set(dbms_sources)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -308,7 +302,7 @@ add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_common Common)
-add_object_library(clickhouse_core_uatraitsfast Core/UatraitsFast)
+add_object_library(clickhouse_common_uatraitsfast Common/UatraitsFast)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
@@ -390,7 +384,7 @@ target_link_libraries (clickhouse_common_io
         PRIVATE
     string_utils
     widechar_width
-    uatraits_fast
+    clickhouse_common_uatraitsfast
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
@@ -450,7 +444,7 @@ dbms_target_link_libraries (
     clickhouse_common_config
     clickhouse_common_zookeeper
     string_utils # FIXME: not sure if it's private
-    uatraits_fast
+    clickhouse_common_uatraitsfast
         PUBLIC
     clickhouse_common_io
         PRIVATE
@@ -609,6 +603,8 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils uatraits_fast)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES}
+      clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper
+      string_utils clickhouse_common_uatraitsfast)
     add_check(unit_tests_dbms)
 endif ()
