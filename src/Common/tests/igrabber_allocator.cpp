@@ -22,7 +22,7 @@ int main() noexcept
 
     cache.getStats().print(std::cout);
 
-    std::cout << ptr.get() << " " << cache.get(0).get() << "\n";
     std::cout << nullptr << " " << cache.get(1).get() << "\n";
+    std::cout << ptr.get() << " " << cache.get(0).get() << "\n";
 }
 
