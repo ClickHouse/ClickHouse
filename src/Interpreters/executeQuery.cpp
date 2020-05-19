@@ -599,6 +599,22 @@ BlockIO executeQuery(
     return streams;
 }
 
+BlockIO executeQuery(
+        const String & query,
+        Context & context,
+        bool internal,
+        QueryProcessingStage::Enum stage,
+        bool may_have_embedded_data,
+        bool allow_processors)
+{
+    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data, allow_processors);
+
+    if (!allow_processors && res.pipeline.initialized())
+        res.in = res.getInputStream();
+
+    return res;
+}
+
 
 void executeQuery(
     ReadBuffer & istr,
