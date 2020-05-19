@@ -204,7 +204,7 @@ public:
      * @note This method does NOT invalidate used elements. They remain in the cache.
      *
      */
-    void shrinkToFit(bool clearStats = true)
+    void shrinkToFit(bool clear_stats = true)
     {
         std::lock_guard lock(mutex);
 
