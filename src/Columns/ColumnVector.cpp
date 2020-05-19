@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int OPENCL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -121,6 +122,30 @@ namespace
 }
 
 template <typename T>
+void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                                            IColumn::SpecialSort special_sort) const
+{
+    if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
+    {
+#if !defined(ARCADIA_BUILD)
+#if USE_OPENCL
+        if (!limit || limit >= data.size())
+        {
+            res.resize(data.size());
+
+            if (data.empty() || BitonicSort::getInstance().sort(data, res, !reverse))
+                return;
+        }
+#else
+        throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
+#endif
+#endif
+    }
+
+    getPermutation(reverse, limit, nan_direction_hint, res);
+}
+
+template <typename T>
 void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = data.size();
@@ -144,14 +169,6 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     }
     else
     {
-#if !defined(ARCADIA_BUILD)
-#if USE_OPENCL
-        /// If bitonic sort if specified as preferred than `nan_direction_hint` equals specific value 42.
-        if (nan_direction_hint == 42 && BitonicSort::getInstance().sort(data, res, !reverse))
-            return;
-#endif
-#endif
-
         /// A case for radix sort
         if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
         {
