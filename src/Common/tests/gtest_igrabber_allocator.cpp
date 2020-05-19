@@ -3,7 +3,15 @@
 
 using namespace DB;
 
+/**
+ * Let's call the cache @e stateless if the test does not check the mmaped memory,
+ * and @e stateful otherwise.
+ */
+
 using IntToInt = IGrabberAllocator<int, int>;
+
+struct pointer { int * ptr; };
+using IntToPointer = IGrabberAllocator<int, pointer>;
 
 namespace ga
 {
@@ -28,7 +36,7 @@ TEST(IGrabberAllocator, InvalidMaxSize)
     EXPECT_ANY_THROW(Explt{800});
 }
 
-TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
+TEST(IGrabberAllocator, StatelessSingleInsertionSingleRetrieval)
 {
     IntToInt cache(MMAP_THRESHOLD);
 
@@ -70,7 +78,51 @@ TEST(IGrabberAllocator, SingleInsertionSingleRetrieval)
     EXPECT_EQ(stats.used_regions, 0);
 }
 
-TEST(IGrabberAllocator, CacheUnusedShrinking)
+TEST(IGrabberAllocator, StatefulSingleInsertionSingleRetrieval)
+{
+    IntToPointer cache(MMAP_THRESHOLD);
+
+    EXPECT_EQ(cache.getStats(), ga::Stats{});
+
+    EXPECT_EQ(cache.get(0), std::shared_ptr<int>{nullptr});
+
+    ga::Stats stats;
+
+    {
+        auto&& [ptr, produced] = cache.getOrSet(0,
+                []{ return 200; },
+                [](void * p) { *p = 42; return {p};});
+
+        EXPECT_TRUE(produced);
+        EXPECT_EQ(*(ptr->ptr), 42);
+
+        stats = cache.getStats();
+
+        EXPECT_EQ(stats.misses, 2); //get + getOrSet
+        EXPECT_EQ(stats.hits, 0);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.regions, 2);
+
+        auto ptr2 = cache.get(0);
+
+        stats = cache.getStats();
+
+        EXPECT_EQ(*(ptr2->ptr), 42);
+        EXPECT_EQ(ptr.get(), ptr2.get());
+        EXPECT_EQ(stats.misses, 2);
+        EXPECT_EQ(stats.hits, 1);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.regions, 2);
+    }
+
+    stats = cache.getStats();
+
+    EXPECT_EQ(stats.unused_regions, 1);
+    EXPECT_EQ(stats.regions, 2);
+    EXPECT_EQ(stats.used_regions, 0);
+}
+
+TEST(IGrabberAllocator, StatelessCacheUnusedShrinking)
 {
     IntToInt cache(MMAP_THRESHOLD);
 
@@ -110,7 +162,50 @@ TEST(IGrabberAllocator, CacheUnusedShrinking)
     EXPECT_EQ(cache.get(1).get(), nullptr);
 }
 
-TEST(IGrabberAllocator, CacheUsedShrinking)
+TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
+{
+    IntToPointer cache(MMAP_THRESHOLD);
+
+    const auto size = [] { return sizeof(pointer); };
+    const auto init = [](void * p) { *p = 43; return {p}; };
+
+    {
+        auto&& [ptr, _] = cache.getOrSet(0, size, init);
+        auto stats = cache.getStats();
+
+        EXPECT_EQ(*(ptr->ptr), 43);
+
+        EXPECT_EQ(stats.regions, 2);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.unused_regions, 0);
+    }
+
+    {
+        auto&& [ptr, _] = cache.getOrSet(1, size, init);
+        auto stats = cache.getStats();
+
+        EXPECT_EQ(*(ptr->ptr), 43);
+
+        EXPECT_EQ(stats.regions, 3);
+        EXPECT_EQ(stats.used_regions, 1);
+        EXPECT_EQ(stats.unused_regions, 1);
+    }
+
+    auto stats = cache.getStats();
+
+    EXPECT_EQ(stats.initialized_size, 200);
+    EXPECT_EQ(stats.used_regions, 0);
+    EXPECT_EQ(stats.unused_regions, 2);
+
+    cache.shrinkToFit();
+
+    EXPECT_EQ(stats.chunks, 0);
+
+    EXPECT_EQ(cache.get(0).get(), nullptr);
+    EXPECT_EQ(cache.get(1).get(), nullptr);
+}
+
+TEST(IGrabberAllocator, StatelessCacheUsedShrinking)
 {
     IntToInt cache(MMAP_THRESHOLD);
 
@@ -137,5 +232,38 @@ TEST(IGrabberAllocator, CacheUsedShrinking)
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
+}
+
+TEST(IGrabberAllocator, StatefulCacheUsedShrinking)
+{
+    IntToPointer cache(MMAP_THRESHOLD);
+
+    const auto size = [] {return sizeof(pointer); };
+    const auto init = [](void * p) { *p = 48; return {p}; };
+
+    auto&& [ptr, produced] = cache.getOrSet(0, size, init);
+
+    EXPECT_EQ(*(ptr->ptr), 48);
+
+    {
+        cache.getOrSet(1, size, init);
+        EXPECT_EQ(*(ptr->ptr), 48);
+    }
+
+    auto stats = cache.getStats();
+
+    EXPECT_EQ(stats.used_regions, 1);
+    EXPECT_EQ(stats.unused_regions, 1);
+
+    cache.shrinkToFit();
+
+    EXPECT_EQ(stats.chunks, 1);
+
+    EXPECT_EQ(stats.used_regions, 1);
+    EXPECT_EQ(stats.unused_regions, 0);
+
+    EXPECT_EQ(cache.get(1).get(), nullptr);
+    EXPECT_EQ(cache.get(0).get(), ptr.get());
+    EXPECT_EQ(*(ptr->ptr), 48);
 }
 
