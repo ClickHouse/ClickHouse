@@ -144,6 +144,7 @@ def get_js_in(args):
         f"'{args.website_dir}/js/jquery.js'",
         f"'{args.website_dir}/js/popper.js'",
         f"'{args.website_dir}/js/bootstrap.js'",
+        f"'{args.website_dir}/js/sentry.js'",
         f"'{args.website_dir}/js/base.js'",
         f"'{args.website_dir}/js/index.js'",
         f"'{args.website_dir}/js/docsearch.js'",
