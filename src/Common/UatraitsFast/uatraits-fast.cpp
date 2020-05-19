@@ -41,21 +41,6 @@
 
 namespace
 {
-namespace ErrorCodes
-{
-extern const int NO_ROOT_ELEMENT;
-extern const int NO_ROOT_NODE_ELEMENT;
-extern const int UNEXPECTED_NAME_FOR_ROOT_NODE;
-extern const int PARSE_NO_VALUE_SPECIFIED;
-extern const int PARSE_NO_NAME_SPECIFIED;
-extern const int CONDITION_WITHOUT_FIELD;
-extern const int CONDITION_WITHOUT_VALUE;
-extern const int CONDITION_WITHOUT_TYPE;
-extern const int UNSUPPORTED_CONDITION_TYPE;
-extern const int TOO_MANY_CONDITIONS_INSIDE_RULE;
-extern const int NO_CONDITIONS_INSIDE_RULE;
-}
-
 template <template<typename> class Comparator>
 std::shared_ptr<BasicCondition<UATraits::Result>> createCondition(const bool isVersionField, const std::string & field_name, const UATraits::Version version, const StringRef src)
 {
@@ -74,7 +59,7 @@ std::shared_ptr<BasicCondition<UATraits::Result>> parseCondition(Poco::XML::Node
         Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs = node->attributes();
         Poco::XML::Node * type = attrs->getNamedItem("type");
         if (!type)
-            throw DB::Exception("Condition without type", ErrorCodes::CONDITION_WITHOUT_TYPE);
+            throw Poco::Exception("Condition without type");
 
         std::shared_ptr<BaseGroupCondition<UATraits::Result>> group;
 
@@ -88,7 +73,7 @@ std::shared_ptr<BasicCondition<UATraits::Result>> parseCondition(Poco::XML::Node
         }
         else
         {
-            throw DB::Exception("Unsupported condition type " + type->getNodeValue(), ErrorCodes::UNSUPPORTED_CONDITION_TYPE);
+            throw Poco::Exception("Unsupported condition type " + type->getNodeValue());
         }
         Poco::AutoPtr<Poco::XML::NodeList> group_children = node->childNodes();
 
@@ -106,11 +91,11 @@ std::shared_ptr<BasicCondition<UATraits::Result>> parseCondition(Poco::XML::Node
     Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs = node->attributes();
     Poco::XML::Node * field = attrs->getNamedItem("field");
     if (!field)
-        throw DB::Exception("Condition without field", ErrorCodes::CONDITION_WITHOUT_FIELD);
+        throw Poco::Exception("Condition without field");
 
     const auto value = node->innerText();
     if (value == "")
-        throw DB::Exception("Condition without value", ErrorCodes::CONDITION_WITHOUT_VALUE);
+        throw Poco::Exception("Condition without value");
 
     constexpr std::string_view version_suffix = "Version";
 
@@ -157,11 +142,11 @@ auto parseRule(Poco::XML::Node * rule)
     Poco::AutoPtr<Poco::XML::NamedNodeMap> attrs = rule->attributes();
     Poco::XML::Node * name = attrs->getNamedItem("name");
     if (!name)
-        throw DB::Exception("No name specified", ErrorCodes::PARSE_NO_NAME_SPECIFIED);
+        throw Poco::Exception("No name specified");
 
     Poco::XML::Node * value = attrs->getNamedItem("value");
     if (!value)
-        throw DB::Exception("No value specified", ErrorCodes::PARSE_NO_VALUE_SPECIFIED);
+        throw Poco::Exception("No value specified");
 
     std::shared_ptr<BasicCondition<UATraits::Result>> condition;
 
@@ -175,14 +160,14 @@ auto parseRule(Poco::XML::Node * rule)
             continue;
 
         if (condition)
-            throw DB::Exception("Too many conditions inside rule", ErrorCodes::TOO_MANY_CONDITIONS_INSIDE_RULE);
+            throw Poco::Exception("Too many conditions inside rule");
 
         condition = parseCondition(rule_child);
     }
 
     if (!condition)
     {
-        throw DB::Exception("No conditions inside rule", ErrorCodes::NO_CONDITIONS_INSIDE_RULE);
+        throw Poco::Exception("No conditions inside rule");
     }
 
     return std::make_shared<Rule<UATraits::Result>>(name->getNodeValue(), value->getNodeValue(), condition);
@@ -273,20 +258,16 @@ void UATraits::Result::dump(std::ostream & ostr) const
         ostr << std::endl;
 }
 
-UATraits::UATraits(const std::string & browser_path, const std::string & profiles_path, const std::string & extra_path)
-    : browser_path(browser_path)
-    , profiles_path(profiles_path)
-    , extra_path(extra_path)
+UATraits::UATraits(const std::string & browser_path_, const std::string & profiles_path_, const std::string & extra_path_)
+    : browser_path(browser_path_)
+    , profiles_path(profiles_path_)
+    , extra_path(extra_path_)
 {
-    profiles.set_empty_key(StringRef());
-    model_to_name.set_empty_key(std::string());
     load();
 }
 
 UATraits::UATraits(std::istream & browser_istr, std::istream & profiles_istr, std::istream & extra_istr)
 {
-    profiles.set_empty_key(StringRef());
-    model_to_name.set_empty_key(std::string());
     load(browser_istr, profiles_istr, extra_istr);
 }
 
@@ -374,11 +355,9 @@ void UATraits::loadProfiles(std::istream & istr)
         strings.push_back(url->getNodeValue());
         StringRef url_ref(strings.back().data(), strings.back().size());
 
-        std::pair<Profiles::iterator, bool> inserted = profiles.insert(std::make_pair(url_ref, Actions()));
-        if (!inserted.second)
-            LOG_WARNING(log, "Duplicate profile " << strings.back());
+        profiles[url_ref] = Actions();  // TODO: check return value
 
-        Actions & actions = inserted.first->second;
+        Actions & actions = profiles[url_ref];
 
         Poco::AutoPtr<Poco::XML::NodeList> properties = profiles_elems->item(i)->childNodes();
         for (size_t j = 0; j < properties->length(); ++j)
@@ -514,9 +493,9 @@ void UATraits::addBranch(Poco::XML::Node & branch, Node & node)
                 node.children_common.push_back(Node());
                 Node & branch_common = node.children_common.back();
 
-                for (size_t j = 0; j < pattern_nodes->length(); ++j)
+                for (size_t k = 0; k < pattern_nodes->length(); ++k)
                 {
-                    Poco::XML::Node * pattern_node = pattern_nodes->item(j);
+                    Poco::XML::Node * pattern_node = pattern_nodes->item(k);
 
                     if (pattern_node->nodeType() != Poco::XML::Node::ELEMENT_NODE)
                         continue;
@@ -551,17 +530,17 @@ void UATraits::addBranch(Poco::XML::Node & branch, Node & node)
                     }
 
                     Poco::AutoPtr<Poco::XML::NamedNodeMap> define_attrs = branch_child->attributes();
-                    Poco::XML::Node * name = prop_attrs->getNamedItem("name");
-                    if (!name)
+                    Poco::XML::Node * node_name = prop_attrs->getNamedItem("name");
+                    if (!node_name)
                         throw Poco::Exception("No 'name' attribute for <define>");
 
-                    addAction(*pattern_node, name->getNodeValue(), surrogate_branch.actions);
+                    addAction(*pattern_node, node_name->getNodeValue(), surrogate_branch.actions);
 
                     /// Если name - DeviceName, то заполним соответствие от DeviceModel.
-                    if (name->getNodeValue() == "DeviceName")
+                    if (node_name->getNodeValue() == "DeviceName")
                     {
-                        Poco::AutoPtr<Poco::XML::NamedNodeMap> prop_attrs = pattern_node->attributes();
-                        Poco::XML::Node * value = prop_attrs->getNamedItem("value");
+                        Poco::AutoPtr<Poco::XML::NamedNodeMap> prop_attrs_device = pattern_node->attributes();
+                        Poco::XML::Node * value = prop_attrs_device->getNamedItem("value");
 
                         if (!value)
                             throw Poco::Exception("No 'value' attribute in define for DeviceName.");
@@ -883,7 +862,6 @@ void UATraits::detectByUserAgent(const StringRef & user_agent_lower, Result & re
     if (length > std::numeric_limits<UInt32>::max())
         throw Poco::Exception("Too long string to search", 1);
     /// Zero the result, scan, check, update the offset.
-    UInt8 a = 2;
     err = hs_scan(
         regexps_engine->getDB(),
         user_agent_lower.data,
@@ -942,7 +920,6 @@ void UATraits::detectByUserAgentCaseSafe(const StringRef & user_agent, const Str
     if (length > std::numeric_limits<UInt32>::max())
         throw Poco::Exception("Too long string to search", 1);
     /// Zero the result, scan, check, update the offset.
-    UInt8 a = 2;
     err = hs_scan(
         regexps_engine->getDB(),
         user_agent_lower.data,
@@ -987,12 +964,12 @@ void UATraits::detectByProfile(StringRef profile, Result & result) const
         --profile.size;
     }
 
-    Profiles::const_iterator it = profiles.find(profile);
-    if (profiles.end() != it)
+    auto it = profiles.find(profile);
+    if (it != nullptr)
     {
         result.bool_fields[Result::isMobile] = true;
-        for (size_t i = 0; i < it->second.size(); ++i)
-            it->second[i]->execute(StringRef(), result, 0, nullptr);
+        for (size_t i = 0; i < it->getMapped().size(); ++i)
+            it->getMapped()[i]->execute(StringRef(), result, 0, nullptr);
     }
 }
 
@@ -1119,13 +1096,11 @@ bool UATraits::traverse(const Node & node, StringRef user_agent, Result & result
 }
 
 
-std::string UATraits::getNameByModel(const std::string & model) const
+StringRef UATraits::getNameByModel(const StringRef model) const
 {
-    ModelToName::const_iterator it = model_to_name.find(model);
+    auto it = model_to_name.find(model);
 
-    return it == model_to_name.end()
-        ? ""
-        : it->second;
+    return it == nullptr ? "" : it->getMapped();
 }
 
 
@@ -1142,19 +1117,19 @@ void UATraits::loadExtra(std::istream & istr)
     root_rule = std::make_unique<RootRule<Result>>();
 
     if (root_elem->length() == 0)
-        throw DB::Exception("No root element in " + extra_path, ErrorCodes::NO_ROOT_ELEMENT);
+        throw Poco::Exception("No root element in " + extra_path);
 
-    auto root_node = root_elem->item(0);
-    while (root_node && root_node->nodeType() == Poco::XML::Node::COMMENT_NODE)
-        root_node = root_node->nextSibling();
+    auto root_node_elem = root_elem->item(0);
+    while (root_node_elem && root_node_elem->nodeType() == Poco::XML::Node::COMMENT_NODE)
+        root_node_elem = root_node_elem->nextSibling();
 
-    if (!root_node)
-        throw DB::Exception("No root node element in " + extra_path, ErrorCodes::NO_ROOT_NODE_ELEMENT);
+    if (!root_node_elem)
+        throw Poco::Exception("No root node element in " + extra_path);
 
-    if (root_node->nodeName() != "rules")
-        throw DB::Exception("Unexpected name for root node: " + root_node->nodeName() + ", expected 'rules'", ErrorCodes::UNEXPECTED_NAME_FOR_ROOT_NODE);
+    if (root_node_elem->nodeName() != "rules")
+        throw Poco::Exception("Unexpected name for root node: " + root_node_elem->nodeName() + ", expected 'rules'");
 
-    Poco::AutoPtr<Poco::XML::NodeList> branch_children = root_node->childNodes();
+    Poco::AutoPtr<Poco::XML::NodeList> branch_children = root_node_elem->childNodes();
 
     for (size_t i = 0; i < branch_children->length(); ++i)
     {

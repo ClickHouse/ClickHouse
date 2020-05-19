@@ -481,7 +481,7 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 }
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
-struct NullSink
+struct NullSink2
 {
     void append(const char *, size_t) {}
     void push_back(char) {}

@@ -353,7 +353,7 @@ public:
 
     /** По DeviceModel найти DeviceName. Если не найдено - вернуть пустую строку.
       */
-    std::string getNameByModel(const std::string & model) const;
+    StringRef getNameByModel(const StringRef model) const;
 
     /// Обработчик значения для поля
     struct IAction

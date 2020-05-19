@@ -120,9 +120,9 @@ public:
             throw Exception(
                 "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
-            auto col_res = ColumnFixedString::create(col_fixed->getN());
-            extractBrowserFromUserAgentImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
-            block.getByPosition(result).column = std::move(col_res);
+            // auto col_res = ColumnFixedString::create(col_fixed->getN());
+            // extractBrowserFromUserAgentImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
+            // block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(
