@@ -27,6 +27,7 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
 -   صف پیام
     -   [کافکا](https://kafka.apache.org)
         -   [در حال بارگذاری](https://github.com/housepower/clickhouse_sinker) (استفاده [برو کارگیر](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   پردازش جریان
     -   [لرزش](https://flink.apache.org)
         -   [سینک فلینک-کلیک](https://github.com/ivi-ru/flink-clickhouse-sink)
