@@ -1,9 +1,11 @@
+import concurrent.futures
 import hashlib
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
 
 import bs4
 import closure
@@ -152,6 +154,28 @@ def get_js_in(args):
     ]
 
 
+def minify_file(path, css_digest, js_digest):
+    if not (
+        path.endswith('.html') or
+        path.endswith('.css')
+    ):
+        return
+
+    logging.info('Minifying %s', path)
+    with open(path, 'rb') as f:
+        content = f.read().decode('utf-8')
+    if path.endswith('.html'):
+        content = minify_html(content)
+        content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
+        content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
+    elif path.endswith('.css'):
+        content = cssmin.cssmin(content)
+    elif path.endswith('.js'):
+        content = jsmin.jsmin(content)
+    with open(path, 'wb') as f:
+        f.write(content.encode('utf-8'))
+
+
 def minify_website(args):
     css_in = ' '.join(get_css_in(args))
     css_out = f'{args.output_dir}/css/base.css'
@@ -197,28 +221,17 @@ def minify_website(args):
 
     if args.minify:
         logging.info('Minifying website')
-        for root, _, filenames in os.walk(args.output_dir):
-            for filename in filenames:
-                path = os.path.join(root, filename)
-                if not (
-                    filename.endswith('.html') or
-                    filename.endswith('.css')
-                ):
-                    continue
-
-                logging.info('Minifying %s', path)
-                with open(path, 'rb') as f:
-                    content = f.read().decode('utf-8')
-                if filename.endswith('.html'):
-                    content = minify_html(content)
-                    content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
-                    content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
-                elif filename.endswith('.css'):
-                    content = cssmin.cssmin(content)
-                elif filename.endswith('.js'):
-                    content = jsmin.jsmin(content)
-                with open(path, 'wb') as f:
-                    f.write(content.encode('utf-8'))
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = []
+            for root, _, filenames in os.walk(args.output_dir):
+                for filename in filenames:
+                    path = os.path.join(root, filename)
+                    futures.append(executor.submit(minify_file, path, css_digest, js_digest))
+            for future in futures:
+                exc = future.exception()
+                if exc:
+                    logging.error(exc)
+                    sys.exit(1)
 
 
 def process_benchmark_results(args):
