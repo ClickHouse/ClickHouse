@@ -1,4 +1,4 @@
 usr/bin/clickhouse
 usr/bin/clickhouse-odbc-bridge
+usr/bin/clickhouse-extract-from-config
 etc/security/limits.d/clickhouse.conf
-usr/share/clickhouse/*

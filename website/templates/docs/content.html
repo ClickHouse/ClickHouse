@@ -1,0 +1,42 @@
+<div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-2 p-md-5">
+    <div id="content" class="mt-md-n3">
+        {% if not single_page %}
+            {% set ancestors = page.ancestors|reverse|list %}
+            {% if page.is_index %}
+                {% set ancestors = ancestors[:-1] %}
+            {% endif %}
+            {% if ancestors %}
+                {% set ancestor_ns = namespace(level=ancestors|length) %}
+                <div class="row">
+                    <nav class="col text-muted" aria-label="breadcrumb">
+                        <ol class="breadcrumb bg-transparent p-0">
+                            {% for ancestor in ancestors %}
+                            <li class="breadcrumb-item"><a href="{{ '../' * ancestor_ns.level }}" class="text-reset">{{ ancestor.title.strip() }}</a>
+                                {% set ancestor_ns.level = ancestor_ns.level - 1 %}
+                            </li>
+                           {% endfor %}
+                        </ol>
+                    </nav>
+                </div>
+            {% endif %}
+
+            {% include "templates/docs/machine-translated.html" %}
+            {{ page.content|adjust_markdown_html }}
+        {% endif %}
+
+        {% if single_page and page.content %}
+        <script type="text/javascript" src="content.js?{{ config.extra.rev_short }}"></script>
+        {% endif %}
+    </div>
+
+    {% include "templates/docs/footer.html" %}
+</div>
+{% if single_page and page.content %}
+<!-- BREAK -->
+(function() {
+    {% for chunk in page.content|chunks %}
+    document.write({{ chunk|tojson|safe }});
+    {% endfor %}
+})();
+<!-- BREAK -->
+{% endif %}

@@ -1,4 +1,8 @@
-FROM ubuntu:18.04
+FROM ubuntu:19.10
+
+RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -10,11 +14,6 @@ RUN apt-get update -y \
             expect \
             g++ \
             gcc \
-            libclang-6.0-dev \
-            libicu-dev \
-            liblld-6.0-dev \
-            libreadline-dev \
-            gperf \
             ninja-build \
             perl \
             pkg-config \
@@ -23,7 +22,12 @@ RUN apt-get update -y \
             python-requests \
             python-termcolor \
             sudo \
-            tzdata
+            tzdata \
+            llvm-10 \
+            clang-10 \
+            clang-tidy-10 \
+            lld-10 \
+            lldb-10
 
 COPY build.sh /
 

@@ -1,6 +1,6 @@
-# 如何编写 C++ 代码
+# 如何编写 C++ 代码 {#ru-he-bian-xie-c-dai-ma}
 
-## 一般建议
+## 一般建议 {#yi-ban-jian-yi}
 
 **1.** 以下是建议，而不是要求。
 
@@ -10,7 +10,7 @@
 
 **4.** 许多规则没有逻辑原因； 它们是由既定的做法决定的。
 
-## 格式化
+## 格式化 {#ge-shi-hua}
 
 **1.** 大多数格式化可以用 `clang-format` 自动完成。
 
@@ -18,7 +18,7 @@
 
 **3.** 左右花括号需在单独的行。
 
-```cpp
+``` cpp
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
     char tmp = '0';
@@ -29,30 +29,30 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 
 **4.** 若整个方法体仅有一行 `描述`， 则可以放到单独的行上。 在花括号周围放置空格（除了行尾的空格）。
 
-```cpp
+``` cpp
 inline size_t mask() const                { return buf_size() - 1; }
 inline size_t place(HashValue x) const    { return x & mask(); }
 ```
 
 **5.** 对于函数。 不要在括号周围放置空格。
 
-```cpp
+``` cpp
 void reinsert(const Value & x)
 ```
 
-```cpp
+``` cpp
 memcpy(&buf[place_value], &x, sizeof(x));
 ```
 
 **6.** 在`if`，`for`，`while`和其他表达式中，在开括号前面插入一个空格（与函数声明相反）。
 
-```cpp
+``` cpp
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** 在二元运算符（`+`，`-`，`*`，`/`，`％`，...）和三元运算符 `?:` 周围添加空格。
+**7.** 在二元运算符（`+`，`-`，`*`，`/`，`％`，…）和三元运算符 `?:` 周围添加空格。
 
-```cpp
+``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
 UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
@@ -60,7 +60,7 @@ UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
 **8.** 若有换行，新行应该以运算符开头，并且增加对应的缩进。
 
-```cpp
+``` cpp
 if (elapsed_ns)
     message << " ("
         << rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
@@ -69,7 +69,7 @@ if (elapsed_ns)
 
 **9.** 如果需要，可以在一行内使用空格来对齐。
 
-```cpp
+``` cpp
 dst.ClickLogID         = click.LogID;
 dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
@@ -79,7 +79,7 @@ dst.ClickGoodEvent     = click.GoodEvent;
 
 如有必要，运算符可以包裹到下一行。 在这种情况下，它前面的偏移量增加。
 
-**11.** 不要使用空格来分开一元运算符 (`--`, `++`, `*`, `&`, ...) 和参数。
+**11.** 不要使用空格来分开一元运算符 (`--`, `++`, `*`, `&`, …) 和参数。
 
 **12.** 在逗号后面加一个空格，而不是在之前。同样的规则也适合 `for` 循环中的分号。
 
@@ -87,7 +87,7 @@ dst.ClickGoodEvent     = click.GoodEvent;
 
 **14.** 在 `template <...>` 表达式中，在 `template` 和 `<` 中加入一个空格，在 `<` 后面或在 `>` 前面都不要有空格。
 
-```cpp
+``` cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 {}
@@ -95,7 +95,7 @@ struct AggregatedStatElement
 
 **15.** 在类和结构体中， `public`， `private` 以及 `protected` 同 `class/struct` 无需缩进，其他代码须缩进。
 
-```cpp
+``` cpp
 template <typename T>
 class MultiVersion
 {
@@ -108,11 +108,11 @@ public:
 
 **16.** 如果对整个文件使用相同的 `namespace`，并且没有其他重要的东西，则 `namespace` 中不需要偏移量。
 
-**17.** 在 `if`, `for`, `while` 中包裹的代码块中，若代码是一个单行的 `statement`，那么大括号是可选的。 可以将 `statement` 放到一行中。这个规则同样适用于嵌套的 `if`， `for`， `while`， ...
+**17.** 在 `if`, `for`, `while` 中包裹的代码块中，若代码是一个单行的 `statement`，那么大括号是可选的。 可以将 `statement` 放到一行中。这个规则同样适用于嵌套的 `if`， `for`， `while`， …
 
 但是如果内部 `statement` 包含大括号或 `else`，则外部块应该用大括号括起来。
 
-```cpp
+``` cpp
 /// Finish write.
 for (auto & stream : streams)
     stream.second->finalize();
@@ -124,7 +124,7 @@ for (auto & stream : streams)
 
 **20.** 非ASCII字符可用于字符串文字。
 
-```cpp
+``` cpp
 << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 ```
 
@@ -136,7 +136,7 @@ for (auto & stream : streams)
 
 **24.** `const` 必须写在类型名称之前。
 
-```cpp
+``` cpp
 //correct
 const char * pos
 const std::string & s
@@ -146,7 +146,7 @@ char const * pos
 
 **25.** 声明指针或引用时，`*` 和 `＆` 符号两边应该都用空格分隔。
 
-```cpp
+``` cpp
 //correct
 const char * pos
 //incorrect
@@ -160,7 +160,7 @@ const char *pos
 
 `using`可以在本地声明，例如在函数内部。
 
-```cpp
+``` cpp
 //correct
 using FileStreams = std::map<std::string, std::shared_ptr<Stream>>;
 FileStreams streams;
@@ -170,14 +170,14 @@ std::map<std::string, std::shared_ptr<Stream>> streams;
 
 **27.** 不要在一个语句中声明不同类型的多个变量。
 
-```cpp
+``` cpp
 //incorrect
 int x, *y;
 ```
 
 **28.** 不要使用C风格的类型转换。
 
-```cpp
+``` cpp
 //incorrect
 std::cerr << (int)c <<; std::endl;
 //correct
@@ -196,17 +196,17 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 **32.** 如果不需要 postfix，请始终使用前缀增量/减量运算符。
 
-```cpp
+``` cpp
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 ```
 
-## Comments
+## 评论 {#comments}
 
 **1.** 请务必为所有非常重要的代码部分添加注释。
 
 这是非常重要的。 编写注释可能会帮助您意识到代码不是必需的，或者设计错误。
 
-```cpp
+``` cpp
 /** Part of piece of memory, that can be used.
   * For example, if internal_buffer is 1MB, and there was only 10 bytes loaded to buffer from file for reading,
   * then working_buffer will have size of only 10 bytes
@@ -218,7 +218,7 @@ for (Names::const_iterator it = column_names.begin(); it != column_names.end(); 
 
 **3.** 在他们描述的代码之前放置注释。 在极少数情况下，注释可以在代码之后，在同一行上。
 
-```cpp
+``` cpp
 /** Parses and executes the query.
 */
 void executeQuery(
@@ -236,7 +236,7 @@ void executeQuery(
 
 **6.** 请勿添加无效的注释。 特别是，不要留下像这样的空注释：
 
-```cpp
+``` cpp
 /*
 * Procedure Name:
 * Original procedure name:
@@ -257,9 +257,9 @@ void executeQuery(
 */
 ```
 
-这个示例来源于 [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)。
+这个示例来源于 http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/。
 
-**7.** 不要在每个文件的开头写入垃圾注释（作者，创建日期...）。
+**7.** 不要在每个文件的开头写入垃圾注释（作者，创建日期…）。
 
 **8.** 单行注释用三个斜杆： `///` ，多行注释以 `/**`开始。 这些注释会当做文档。
 
@@ -267,7 +267,7 @@ void executeQuery(
 
 **9.** 多行注释的开头和结尾不得有空行（关闭多行注释的行除外）。
 
-**10.** 要注释掉代码，请使用基本注释，而不是“记录”注释。
+**10.** 要注释掉代码，请使用基本注释，而不是«记录»注释。
 
 **11.** 在提交之前删除代码的无效注释部分。
 
@@ -275,69 +275,69 @@ void executeQuery(
 
 **13.** 不要使用大写字母。 不要使用过多的标点符号。
 
-```cpp
+``` cpp
 /// WHAT THE FAIL???
 ```
 
 **14.** 不要使用注释来制作分隔符。
 
-```cpp
+``` cpp
 ///******************************************************
 ```
 
 **15.** 不要在注释中开始讨论。
 
-```cpp
+``` cpp
 /// Why did you do this stuff?
 ```
 
 **16.** 没有必要在块的末尾写一条注释来描述它的含义。
 
-```cpp
+``` cpp
 /// for
 ```
 
-## Names
+## 姓名 {#names}
 
 **1.** 在变量和类成员的名称中使用带下划线的小写字母。
 
-```cpp
+``` cpp
 size_t max_block_size;
 ```
 
 **2.** 对于函数（方法）的名称，请使用以小写字母开头的驼峰标识。
 
-```cpp
+``` cpp
 std::string getName() const override { return "Memory"; }
 ```
 
 **3.** 对于类（结构）的名称，使用以大写字母开头的驼峰标识。接口名称用I前缀。
 
-```cpp
+``` cpp
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` 的命名方式与类相同，或者以__t`命名。
+**4.** `using` 的命名方式与类相同，或者以\_\_t\`命名。
 
 **5.** 模板类型参数的名称：在简单的情况下，使用`T`; `T`，`U`; `T1`，`T2`。
 
 对于更复杂的情况，要么遵循类名规则，要么添加前缀`T`。
 
-```cpp
+``` cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 ```
 
 **6.** 模板常量参数的名称：遵循变量名称的规则，或者在简单的情况下使用 `N`。
 
-```cpp
+``` cpp
 template <bool without_www>
 struct ExtractDomain
 ```
 
 **7.** 对于抽象类型（接口），用 `I` 前缀。
 
-```cpp
+``` cpp
 class IBlockInputStream
 ```
 
@@ -345,13 +345,13 @@ class IBlockInputStream
 
 在所有其他情况下，请使用能描述含义的名称。
 
-```cpp
+``` cpp
 bool info_successfully_loaded = false;
 ```
 
 **9.** `define` 和全局常量的名称使用带下划线的 `ALL_CAPS`。
 
-```cpp
+``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
 ```
 
@@ -363,12 +363,12 @@ bool info_successfully_loaded = false;
 
 **11.** 如果名称包含缩写，则：
 
-- 对于变量名，缩写应使用小写字母 `mysql_connection`（不是 `mySQL_connection` ）。
-- 对于类和函数的名称，请将大写字母保留在缩写 `MySQLConnection`（不是 `MySqlConnection` 。
+-   对于变量名，缩写应使用小写字母 `mysql_connection`（不是 `mySQL_connection` ）。
+-   对于类和函数的名称，请将大写字母保留在缩写 `MySQLConnection`（不是 `MySqlConnection` 。
 
 **12.** 仅用于初始化类成员的构造方法参数的命名方式应与类成员相同，但最后使用下划线。
 
-```cpp
+``` cpp
 FileQueueProcessor(
     const std::string & path_,
     const std::string & prefix_,
@@ -385,13 +385,13 @@ FileQueueProcessor(
 
 **13.** 局部变量和类成员的名称没有区别（不需要前缀）。
 
-```cpp
+``` cpp
 timer (not m_timer)
 ```
 
-**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
+**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL\_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
 
-```cpp
+``` cpp
 enum class CompressionMethod
 {
     QuickLZ = 0,
@@ -401,17 +401,13 @@ enum class CompressionMethod
 
 **15.** 所有名字必须是英文。不允许音译俄语单词。
 
-```
-not Stroka
-```
+    not Stroka
 
 **16.** 缩写须是众所周知的（当您可以在维基百科或搜索引擎中轻松找到缩写的含义时）。
 
-```
-`AST`, `SQL`.
+    `AST`, `SQL`.
 
-Not `NVDH` (some random letters)
-```
+    Not `NVDH` (some random letters)
 
 如果缩短版本是常用的，则可以接受不完整的单词。
 
@@ -419,7 +415,7 @@ Not `NVDH` (some random letters)
 
 **17.** C++ 源码文件名称必须为 `.cpp` 拓展名。 头文件必须为 `.h` 拓展名。
 
-## 如何编写代码
+## 如何编写代码 {#ru-he-bian-xie-dai-ma}
 
 **1.** 内存管理。
 
@@ -431,9 +427,9 @@ Not `NVDH` (some random letters)
 
 示例：
 
-- 最简单的方法是将对象放在堆栈上，或使其成为另一个类的成员。
-- 对于大量小对象，请使用容器。
-- 对于自动释放少量在堆中的对象，可以用 `shared_ptr/unique_ptr`。
+-   最简单的方法是将对象放在堆栈上，或使其成为另一个类的成员。
+-   对于大量小对象，请使用容器。
+-   对于自动释放少量在堆中的对象，可以用 `shared_ptr/unique_ptr`。
 
 **2.** 资源管理。
 
@@ -449,7 +445,7 @@ Not `NVDH` (some random letters)
 
 在线程函数中，你应该在 `join` 之后捕获并保留所有异常以在主线程中重新抛出它们。
 
-```cpp
+``` cpp
 /// If there weren't any calculations yet, calculate the first block synchronously
 if (!started)
 {
@@ -465,14 +461,14 @@ if (exception)
 
 不处理就不要隐藏异常。 永远不要盲目地把所有异常都记录到日志中。
 
-```cpp
+``` cpp
 //Not correct
 catch (...) {}
 ```
 
 如果您需要忽略某些异常，请仅针对特定异常执行此操作并重新抛出其余异常。
 
-```cpp
+``` cpp
 catch (const DB::Exception & e)
 {
     if (e.code() == ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION)
@@ -484,7 +480,7 @@ catch (const DB::Exception & e)
 
 当使用具有返回码或 `errno` 的函数时，请始终检查结果并在出现错误时抛出异常。
 
-```cpp
+``` cpp
 if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
@@ -501,16 +497,16 @@ if (0 != close(fd))
 
 按照以下选项：
 
-- 创建一个函数（ `done（）` 或 `finalize（）` ），它将提前完成所有可能导致异常的工作。 如果调用了该函数，则稍后在析构函数中应该没有异常。
-- 过于复杂的任务（例如通过网络发送消息）可以放在单独的方法中，类用户必须在销毁之前调用它们。
-- 如果析构函数中存在异常，则最好记录它而不是隐藏它（如果 logger 可用）。
-- 在简单的应用程序中，依赖于`std::terminate`（对于C++ 11中默认情况下为 `noexcept` 的情况）来处理异常是可以接受的。
+-   创建一个函数（ `done（）` 或 `finalize（）` ），它将提前完成所有可能导致异常的工作。 如果调用了该函数，则稍后在析构函数中应该没有异常。
+-   过于复杂的任务（例如通过网络发送消息）可以放在单独的方法中，类用户必须在销毁之前调用它们。
+-   如果析构函数中存在异常，则最好记录它而不是隐藏它（如果 logger 可用）。
+-   在简单的应用程序中，依赖于`std::terminate`（对于C++ 11中默认情况下为 `noexcept` 的情况）来处理异常是可以接受的。
 
 **6.** 匿名代码块。
 
 您可以在单个函数内创建单独的代码块，以使某些变量成为局部变量，以便在退出块时调用析构函数。
 
-```cpp
+``` cpp
 Block block = data.in->read();
 
 {
@@ -526,11 +522,11 @@ ready_any.set();
 
 在离线数据处理程序中：
 
-- 尝试在单个CPU核心上获得最佳性能。 然后，您可以根据需要并行化代码。
+-   尝试在单个CPU核心上获得最佳性能。 然后，您可以根据需要并行化代码。
 
 在服务端应用中：
 
-- 使用线程池来处理请求。 此时，我们还没有任何需要用户空间上下文切换的任务。
+-   使用线程池来处理请求。 此时，我们还没有任何需要用户空间上下文切换的任务。
 
 Fork不用于并行化。
 
@@ -582,7 +578,7 @@ Fork不用于并行化。
 
 在极少数情况下，您可能需要通过参数返回值。 在这种情况下，参数应该是引用传递的。
 
-```cpp
+``` cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Allows creating an aggregate function by its name.
@@ -614,7 +610,7 @@ public:
 
 如果稍后您需要延迟初始化，则可以添加将创建无效对象的默认构造函数。 或者，对于少量对象，您可以使用 `shared_ptr / unique_ptr`。
 
-```cpp
+``` cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
 
 /// For deferred initialization
@@ -627,7 +623,7 @@ Loader() {}
 
 **18.** 编码。
 
-在所有情况下使用 UTF-8 编码。使用 `std::string` and `char *`。不要使用 `std::wstring` 和 `wchar_t`。
+在所有情况下使用 UTF-8 编码。使用 `std::string` 和 `char *`。不要使用 `std::wstring` 和 `wchar_t`。
 
 **19.** 日志。
 
@@ -669,13 +665,13 @@ Loader() {}
 
 **24.** 不要使用 `trailing return type` 为必要的功能。
 
-```cpp
+``` cpp
 [auto f() -&gt; void;]{.strike}
 ```
 
 **25.** 声明和初始化变量。
 
-```cpp
+``` cpp
 //right way
 std::string s = "Hello";
 std::string s{"Hello"};
@@ -686,13 +682,13 @@ auto s = std::string{"Hello"};
 
 **26.** 对于虚函数，在基类中编写 `virtual`，但在后代类中写 `override` 而不是`virtual`。
 
-## 没有用到的 C++ 特性。
+## 没有用到的 C++ 特性。 {#mei-you-yong-dao-de-c-te-xing}
 
 **1.** 不使用虚拟继承。
 
 **2.** 不使用 C++03 中的异常标准。
 
-## 平台
+## 平台 {#ping-tai}
 
 **1.** 我们为特定平台编写代码。
 
@@ -706,7 +702,7 @@ auto s = std::string{"Hello"};
 
 **4.** 操作系统：Linux Ubuntu，不比 Precise 早。
 
-**5.** 代码是为x86_64 CPU架构编写的。
+**5.** 代码是为x86\_64 CPU架构编写的。
 
 CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2。
 
@@ -716,7 +712,7 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 **8.** 使用发布的设置来开发和调试代码。
 
-## 工具
+## 工具 {#gong-ju}
 
 **1.** KDevelop 是一个好的 IDE.
 
@@ -744,7 +740,7 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 **10.** 未使用的代码将从 repo 中删除。
 
-## 库
+## 库 {#ku}
 
 **1.** 使用C ++ 14标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
 
@@ -760,7 +756,7 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 **5.** 始终优先考虑已经使用的库。
 
-## 一般建议
+## 一般建议 {#yi-ban-jian-yi-1}
 
 **1.** 尽可能精简代码。
 
@@ -774,7 +770,7 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 **6.** 鼓励简化代码。 尽可能减小代码的大小。
 
-## 其他建议
+## 其他建议 {#qi-ta-jian-yi}
 
 **1.** 从 `stddef.h` 明确指定 `std ::` 的类型。
 
@@ -802,32 +798,32 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 允许以下任何包装样式：
 
-```cpp
+``` cpp
 function(
   T1 x1,
   T2 x2)
 ```
 
-```cpp
+``` cpp
 function(
   size_t left, size_t right,
   const & RangesInDataParts ranges,
   size_t limit)
 ```
 
-```cpp
+``` cpp
 function(size_t left, size_t right,
   const & RangesInDataParts ranges,
   size_t limit)
 ```
 
-```cpp
+``` cpp
 function(size_t left, size_t right,
       const & RangesInDataParts ranges,
       size_t limit)
 ```
 
-```cpp
+``` cpp
 function(
       size_t left,
       size_t right,
@@ -835,4 +831,4 @@ function(
       size_t limit)
 ```
 
-[来源文章](https://clickhouse.yandex/docs/en/development/style/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/development/style/) <!--hide-->

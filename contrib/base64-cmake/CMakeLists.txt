@@ -1,58 +1,43 @@
 SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/base64)
 
-macro(cast_to_bool var instruction)
-    if (HAVE_${var})
-        set(base64_${var} 1)
-        set(base64_${var}_opt ${instruction})
-    else()
-        set(base64_${var} 0)
-    endif()
-endmacro()
+add_library(base64_scalar OBJECT ${LIBRARY_DIR}/turbob64c.c ${LIBRARY_DIR}/turbob64d.c)
+add_library(base64_ssse3 OBJECT ${LIBRARY_DIR}/turbob64sse.c) # This file also contains code for ARM NEON
 
-cast_to_bool(NEON32 "") # TODO flags
-cast_to_bool(NEON64 "") # TODO flags
-cast_to_bool(SSSE3 "-mssse3")
-cast_to_bool(SSE41 "-msse4.1")
-cast_to_bool(SSE42 "-msse4.2")
-cast_to_bool(AVX   "-mavx")
-cast_to_bool(AVX2  "-mavx2")
-
-set(HAVE_FAST_UNALIGNED_ACCESS 0)
-if(HAVE_SSSE3 OR HAVE_SSE41 OR HAVE_SSE42 OR HAVE_AVX OR HAVE_AVX2)
-    set(HAVE_FAST_UNALIGNED_ACCESS 1)
+if (ARCH_AMD64)
+    add_library(base64_avx OBJECT ${LIBRARY_DIR}/turbob64sse.c) # This is not a mistake. One file is compiled twice.
+    add_library(base64_avx2 OBJECT ${LIBRARY_DIR}/turbob64avx2.c)
 endif ()
 
-configure_file(config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
+target_compile_options(base64_scalar PRIVATE -falign-loops)
 
-add_library(base64
-        ${LIBRARY_DIR}/lib/lib.c
-        ${LIBRARY_DIR}/lib/codec_choose.c
-        ${LIBRARY_DIR}/lib/arch/avx/codec.c
-        ${LIBRARY_DIR}/lib/arch/avx2/codec.c
-        ${LIBRARY_DIR}/lib/arch/generic/codec.c
-        ${LIBRARY_DIR}/lib/arch/neon32/codec.c
-        ${LIBRARY_DIR}/lib/arch/neon64/codec.c
-        ${LIBRARY_DIR}/lib/arch/sse41/codec.c
-        ${LIBRARY_DIR}/lib/arch/sse42/codec.c
-        ${LIBRARY_DIR}/lib/arch/ssse3/codec.c
+if (ARCH_AMD64)
+    target_compile_options(base64_ssse3 PRIVATE -mssse3 -falign-loops)
+    target_compile_options(base64_avx PRIVATE -falign-loops -mavx)
+    target_compile_options(base64_avx2 PRIVATE -falign-loops -mavx2)
+else ()
+    target_compile_options(base64_ssse3 PRIVATE -falign-loops)
+endif ()
 
-        ${LIBRARY_DIR}/lib/codecs.h
-        ${CMAKE_CURRENT_BINARY_DIR}/config.h)
+if (ARCH_AMD64)
+    add_library(base64
+        $<TARGET_OBJECTS:base64_scalar>
+        $<TARGET_OBJECTS:base64_ssse3>
+        $<TARGET_OBJECTS:base64_avx>
+        $<TARGET_OBJECTS:base64_avx2>)
+else ()
+    add_library(base64
+        $<TARGET_OBJECTS:base64_scalar>
+        $<TARGET_OBJECTS:base64_ssse3>)
+endif ()
 
-if(HAVE_AVX)
-    set_source_files_properties(${LIBRARY_DIR}/lib/arch/avx/codec.c PROPERTIES COMPILE_FLAGS -mavx)
-endif()
-if(HAVE_AVX2)
-    set_source_files_properties(${LIBRARY_DIR}/lib/arch/avx2/codec.c PROPERTIES COMPILE_FLAGS -mavx2)
-endif()
-if(HAVE_SSE41)
-    set_source_files_properties(${LIBRARY_DIR}/lib/arch/sse41/codec.c PROPERTIES COMPILE_FLAGS -msse4.1)
-endif()
-if(HAVE_SSE42)
-    set_source_files_properties(${LIBRARY_DIR}/lib/arch/sse42/codec.c PROPERTIES COMPILE_FLAGS -msse4.2)
-endif()
-if(HAVE_SSSE3)
-    set_source_files_properties(${LIBRARY_DIR}/lib/arch/ssse3/codec.c PROPERTIES COMPILE_FLAGS -mssse3)
-endif()
+target_include_directories(base64 SYSTEM PUBLIC ${LIBRARY_DIR})
 
-target_include_directories(base64 PRIVATE ${LIBRARY_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})
+if (XCODE OR XCODE_VERSION)
+    # https://gitlab.kitware.com/cmake/cmake/issues/17457
+    #     Some native build systems may not like targets that have only object files, so consider adding at least one real source file
+    # This applies to Xcode.
+    if (NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c" "")
+    endif ()
+    target_sources(base64 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
+endif ()

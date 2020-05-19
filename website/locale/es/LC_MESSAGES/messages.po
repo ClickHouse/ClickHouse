@@ -1,0 +1,336 @@
+# Spanish translations for PROJECT.
+# Copyright (C) 2020 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"PO-Revision-Date: 2020-03-26 10:19+0300\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: es\n"
+"Language-Team: es <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+#: templates/common_meta.html:1
+msgid ""
+"ClickHouse is a fast open-source column-oriented database management "
+"system that allows generating analytical data reports in real-time using "
+"SQL queries"
+msgstr ""
+"ClickHouse es un rápido sistema de gestión de bases de datos orientado a "
+"columnas de código abierto que permite generar informes de datos "
+"analíticos en tiempo real utilizando consultas SQL"
+
+#: templates/common_meta.html:6
+msgid "ClickHouse - fast open-source OLAP DBMS"
+msgstr "ClickHouse - DBMS OLAP de código abierto rápido"
+
+#: templates/common_meta.html:10
+msgid "ClickHouse DBMS"
+msgstr "Sistema abierto."
+
+#: templates/common_meta.html:21
+msgid "open-source"
+msgstr "de código abierto"
+
+#: templates/common_meta.html:21
+msgid "relational"
+msgstr "relacional"
+
+#: templates/common_meta.html:21
+msgid "analytics"
+msgstr "analítica"
+
+#: templates/common_meta.html:21
+msgid "analytical"
+msgstr "analítico"
+
+#: templates/common_meta.html:21
+msgid "Big Data"
+msgstr "Grandes Datos"
+
+#: templates/common_meta.html:21
+msgid "web-analytics"
+msgstr "Sistema abierto."
+
+#: templates/footer.html:8
+msgid "ClickHouse source code is published under the Apache 2.0 License."
+msgstr "El código fuente de ClickHouse se publica bajo la licencia Apache 2.0."
+
+#: templates/footer.html:8
+msgid ""
+"Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
+"CONDITIONS OF ANY KIND, either express or implied."
+msgstr ""
+"El software se distribuye \"TAL CUAL\", SIN GARANTÍAS O CONDICIONES DE "
+"NINGÚN TIPO, ya sea expresa o implícita."
+
+#: templates/footer.html:11
+msgid "Yandex LLC"
+msgstr "Sistema abierto."
+
+#: templates/docs/footer.html:4
+msgid "Built from"
+msgstr "Construido a partir de"
+
+#: templates/docs/footer.html:4
+msgid "published on"
+msgstr "publicado en"
+
+#: templates/docs/footer.html:4
+msgid "modified on"
+msgstr "modificado en"
+
+#: templates/docs/machine-translated.html:3
+msgid "Help wanted!"
+msgstr "Ayuda quería!"
+
+#: templates/docs/machine-translated.html:4
+msgid ""
+"The following content of this documentation page has been machine-"
+"translated. But unlike other websites, it is not done on the fly. This "
+"translated text lives on GitHub repository alongside main ClickHouse "
+"codebase and waits for fellow native speakers to make it more human-"
+"readable."
+msgstr ""
+"El siguiente contenido de esta página de documentación ha sido traducido "
+"por máquina. Pero a diferencia de otros sitios web, no se hace sobre la "
+"marcha. Este texto traducido vive en el repositorio de GitHub junto con "
+"la base de código principal de ClickHouse y espera a que otros hablantes "
+"nativos lo hagan más legible por humanos."
+
+#: templates/docs/machine-translated.html:4
+msgid "You can also use the original English version as a reference."
+msgstr "También puede usar la versión original en inglés como referencia."
+
+#: templates/docs/machine-translated.html:7
+msgid "Help ClickHouse documentation by editing this page"
+msgstr "Ayuda a la documentación de ClickHouse editando esta página"
+
+#: templates/docs/sidebar.html:3
+msgid "Multi-page or single-page"
+msgstr "Multi-página o de una sola página"
+
+#: templates/docs/sidebar.html:5
+msgid "Multi-page version"
+msgstr "Versión de varias páginas"
+
+#: templates/docs/sidebar.html:8
+msgid "Single-page version"
+msgstr "Versión de una sola página"
+
+#: templates/docs/sidebar.html:13
+msgid "Version"
+msgstr "Versión"
+
+#: templates/docs/sidebar.html:13 templates/docs/sidebar.html:19
+msgid "latest"
+msgstr "reciente"
+
+#: templates/docs/sidebar.html:36
+msgid "PDF version"
+msgstr "Versión PDF"
+
+#: templates/docs/toc.html:8
+msgid "Table of Contents"
+msgstr "Tabla de contenido"
+
+#: templates/index/community.html:4
+msgid "ClickHouse community"
+msgstr "ClickHouse de la comunidad"
+
+#: templates/index/community.html:13 templates/index/community.html:14
+msgid "ClickHouse YouTube Channel"
+msgstr "ClickHouse Canal de YouTube"
+
+#: templates/index/community.html:25 templates/index/community.html:26
+msgid "ClickHouse Official Twitter Account"
+msgstr "Cuenta oficial de Twitter de ClickHouse"
+
+#: templates/index/community.html:36 templates/index/community.html:37
+msgid "ClickHouse at Telegram"
+msgstr "ClickHouse en Telegram"
+
+#: templates/index/community.html:41
+msgid "Chat with real users in "
+msgstr "Chatear con usuarios reales en "
+
+#: templates/index/community.html:44 templates/index/community.html:116
+msgid "English"
+msgstr "Ingl"
+
+#: templates/index/community.html:45
+msgid "or in"
+msgstr "o en"
+
+#: templates/index/community.html:47 templates/index/community.html:117
+msgid "Russian"
+msgstr "Ruso"
+
+#: templates/index/community.html:65
+msgid "Open GitHub issue to ask for help or to file a feature request"
+msgstr ""
+"Abra el problema de GitHub para pedir ayuda o para presentar una "
+"solicitud de función"
+
+#: templates/index/community.html:76 templates/index/community.html:77
+msgid "ClickHouse Slack Workspace"
+msgstr "Espacio de trabajo de ClickHouse Slack"
+
+#: templates/index/community.html:82
+msgid "Multipurpose public hangout"
+msgstr "Lugar de reunión público multiusos"
+
+#: templates/index/community.html:101
+msgid "Ask any questions"
+msgstr "Haga cualquier pregunta"
+
+#: templates/index/community.html:115
+msgid "ClickHouse Blog"
+msgstr ""
+"Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n "
+"ElectrÃ³nica"
+
+#: templates/index/community.html:116
+msgid "in"
+msgstr "en"
+
+#: templates/index/community.html:128 templates/index/community.html:129
+msgid "ClickHouse at Google Groups"
+msgstr "ClickHouse en Grupos de Google"
+
+#: templates/index/community.html:133
+msgid "Email discussions"
+msgstr "Discusiones por correo electrónico"
+
+#: templates/index/community.html:142
+msgid "Like ClickHouse?"
+msgstr "¿Te gusta ClickHouse?"
+
+#: templates/index/community.html:143
+msgid "Help to spread the word about it via"
+msgstr "Ayuda a correr la voz al respecto a través de"
+
+#: templates/index/community.html:144
+msgid "and"
+msgstr "y"
+
+#: templates/index/community.html:153
+msgid "Hosting ClickHouse Meetups"
+msgstr "Grupos de Meetup de Hosting ClickHouse"
+
+#: templates/index/community.html:157
+msgid ""
+"ClickHouse meetups are essential for strengthening community worldwide, "
+"but they couldn't be possible without the help of local organizers. "
+"Please, feel this form if you want to become one or want to meet "
+"ClickHouse core team for any other reason."
+msgstr ""
+"Las reuniones de ClickHouse son esenciales para fortalecer la comunidad "
+"en todo el mundo, pero no podrían ser posibles sin la ayuda de los "
+"organizadores locales. Por favor, sienta este formulario si desea "
+"convertirse en uno o quiere conocer al equipo central de ClickHouse por "
+"cualquier otra razón."
+
+#: templates/index/community.html:159
+msgid "ClickHouse Meetup"
+msgstr "Haga clic en Meetup de Casa"
+
+#: templates/index/community.html:165
+msgid "Name"
+msgstr "Nombre"
+
+#: templates/index/community.html:168
+msgid "Email"
+msgstr "Correo"
+
+#: templates/index/community.html:171
+msgid "Company"
+msgstr "Empresa"
+
+#: templates/index/community.html:174
+msgid "City"
+msgstr "Ciudad"
+
+#: templates/index/community.html:179
+msgid "We'd like to host a public ClickHouse Meetup"
+msgstr "Nos gustaría organizar un Meetup público de ClickHouse"
+
+#: templates/index/community.html:185
+msgid "We'd like to invite Yandex ClickHouse team to our office"
+msgstr "Nos gustaría invitar al equipo de Yandex ClickHouse a nuestra oficina"
+
+#: templates/index/community.html:191
+msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
+msgstr ""
+"Nos gustaría invitar al equipo de Yandex ClickHouse a otro evento que "
+"organizamos"
+
+#: templates/index/community.html:197
+msgid "We're interested in commercial consulting, support or managed service"
+msgstr ""
+"Estamos interesados en consultoría comercial, soporte o servicio "
+"gestionado"
+
+#: templates/index/community.html:201
+msgid "Additional comments"
+msgstr "Comentarios adicionales"
+
+#: templates/index/community.html:203
+msgid "Send"
+msgstr "Enviar"
+
+#: templates/index/community.html:212
+msgid ""
+"If you have any more thoughts or questions, feel free to contact Yandex "
+"ClickHouse team directly at"
+msgstr ""
+"Si tiene más pensamientos o preguntas, no dude en ponerse en contacto con"
+" el equipo de Yandex ClickHouse directamente en"
+
+#: templates/index/community.html:213
+msgid "turn on JavaScript to see email address"
+msgstr "activar JavaScript para ver la dirección de correo electrónico"
+
+#~ msgid ""
+#~ "ClickHouse is an open source column-"
+#~ "oriented database management system that "
+#~ "allows generating analytical data reports "
+#~ "in real time using SQL queries."
+#~ msgstr ""
+#~ "ClickHouse es un sistema de gestión "
+#~ "de bases de datos orientado a "
+#~ "columnas de código abierto que permite"
+#~ " generar informes de datos analíticos "
+#~ "en tiempo real utilizando consultas SQL."
+
+#~ msgid ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+#~ msgstr ""
+#~ "ClickHouse is an open source distributed"
+#~ " column-oriented database management system"
+#~ " that allows generating analytical data "
+#~ "reports in real time using SQL "
+#~ "queries. Сreated by Yandex ClickHouse "
+#~ "manages extremely large volumes of data"
+#~ " in a stable and sustainable manner."
+
+#~ msgid "published at"
+#~ msgstr "publicado en"
+
+#~ msgid "modified at"
+#~ msgstr "modificado en"
+

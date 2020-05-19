@@ -16,7 +16,7 @@
 #define MKL_APP_NAME "librdkafka"
 #define MKL_APP_DESC_ONELINE "The Apache Kafka C/C++ library"
 // distro
-//#define SOLIB_EXT ".so"
+#define SOLIB_EXT ".so"
 // gcc
 //#define WITH_GCC 1
 // gxx
@@ -48,9 +48,9 @@
 // parseversion
 #define MKL_APP_VERSION "0.11.4"
 // libdl
-//#define WITH_LIBDL 1
+#define WITH_LIBDL 1
 // WITH_PLUGINS
-//#define WITH_PLUGINS 1
+#define WITH_PLUGINS 1
 // zlib
 #define WITH_ZLIB 1
 // zstd
@@ -63,6 +63,8 @@
 #define WITH_SSL 1
 // WITH_SASL_SCRAM
 #define WITH_SASL_SCRAM 1
+// WITH_SASL_OAUTHBEARER
+#define WITH_SASL_OAUTHBEARER 1
 // crc32chw
 #if !defined(__PPC__)
 #define WITH_CRC32C_HW 1
@@ -73,12 +75,20 @@
 #define HAVE_STRNDUP 1
 // strerror_r
 #define HAVE_STRERROR_R 1
+
+#ifdef __APPLE__
+// pthread_setname_np
+#define HAVE_PTHREAD_SETNAME_DARWIN 1
+#if (__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ <= 101400)
+#define _TTHREAD_EMULATE_TIMESPEC_GET_
+#endif
+
+#else
 // pthread_setname_gnu
 #define HAVE_PTHREAD_SETNAME_GNU 1
+#endif
 // python
 //#define HAVE_PYTHON 1
-// C11 threads
-#if (__STDC_VERSION__ >= 201112L) && !defined(__STDC_NO_THREADS__)
-#  define WITH_C11THREADS 1
-#endif
+// disable C11 threads for compatibility with old libc
+//#define WITH_C11THREADS 1
 #endif /* _CONFIG_H_ */

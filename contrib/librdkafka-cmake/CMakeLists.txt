@@ -1,4 +1,4 @@
-set(RDKAFKA_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/librdkafka/src)
+set(RDKAFKA_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src)
 
 set(SRCS
   ${RDKAFKA_SOURCE_DIR}/crc32c.c
@@ -7,11 +7,14 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdavl.c
   ${RDKAFKA_SOURCE_DIR}/rdbuf.c
   ${RDKAFKA_SOURCE_DIR}/rdcrc32.c
+  ${RDKAFKA_SOURCE_DIR}/rddl.c
+  ${RDKAFKA_SOURCE_DIR}/rdhdrhistogram.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_background.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_broker.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_buf.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_cert.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_cgrp.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_event.c
@@ -20,6 +23,8 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_lz4.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata_cache.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_mock.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_mock_handlers.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msg.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_reader.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_writer.c
@@ -27,13 +32,16 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_op.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_partition.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_pattern.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_plugin.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_queue.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_range_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_request.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_roundrobin_assignor.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_subscription.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_timer.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_topic.c
@@ -56,10 +64,11 @@ set(SRCS
 )
 
 add_library(rdkafka ${SRCS})
+target_compile_options(rdkafka PRIVATE -fno-sanitize=undefined)
 target_include_directories(rdkafka SYSTEM PUBLIC include)
 target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
 target_include_directories(rdkafka SYSTEM PRIVATE ${ZSTD_INCLUDE_DIR}/common)   # Because wrong path to "zstd_errors.h" is used.
-target_link_libraries(rdkafka PUBLIC ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${LZ4_LIBRARY} ${LIBGSASL_LIBRARY})
+target_link_libraries(rdkafka PRIVATE ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${LZ4_LIBRARY} ${LIBGSASL_LIBRARY})
 if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
-    target_link_libraries(rdkafka PUBLIC ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+    target_link_libraries(rdkafka PRIVATE ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 endif()

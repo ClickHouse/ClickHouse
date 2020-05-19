@@ -1,5 +1,7 @@
 [Unit]
 Description=ClickHouse Server (analytic DBMS for big data)
+Requires=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -11,7 +13,7 @@ RuntimeDirectory=clickhouse-server
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
 LimitCORE=infinity
 LimitNOFILE=500000
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE
 
 [Install]
 WantedBy=multi-user.target

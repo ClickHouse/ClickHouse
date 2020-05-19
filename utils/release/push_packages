@@ -6,6 +6,7 @@ import os
 import logging
 import shutil
 import base64
+import pexpect
 
 
 # Do nothing if keys are not provided
@@ -106,7 +107,7 @@ class SSHConnection(object):
 def debsign(path, gpg_passphrase, gpg_sec_key_path, gpg_pub_key_path, gpg_user):
     try:
         with GpgKey(gpg_sec_key_path, gpg_pub_key_path):
-            cmd = ('debsign -k {key} -p"gpg --verbose --no-use-agent --batch '
+            cmd = ('debsign -k \'{key}\' -p"gpg --verbose --no-use-agent --batch '
                    '--no-tty --passphrase {passphrase}" {path}/*.changes').format(
                        key=gpg_user, passphrase=gpg_passphrase, path=path)
             logging.info("Build debsign cmd '%s'", cmd)
@@ -116,6 +117,20 @@ def debsign(path, gpg_passphrase, gpg_sec_key_path, gpg_pub_key_path, gpg_user):
         logging.error("Cannot debsign packages on path %s, with user key", path)
         raise ex
 
+def rpmsign(path, gpg_passphrase, gpg_sec_key_path, gpg_pub_key_path, gpg_user):
+    try:
+        with GpgKey(gpg_sec_key_path, gpg_pub_key_path):
+            for package in os.listdir(path):
+                package_path = os.path.join(path, package)
+                logging.info("Signing %s", package_path)
+                proc = pexpect.spawn('rpm --resign -D "_signature gpg" -D "_gpg_name {username}" {package}'.format(username=gpg_user, package=package_path))
+                proc.expect_exact("Enter pass phrase: ")
+                proc.sendline(gpg_passphrase)
+                proc.expect(pexpect.EOF)
+                logging.info("Signed successfully")
+    except Exception as ex:
+        logging.error("Cannot rpmsign packages on path %s, with user key", path)
+        raise ex
 
 def transfer_packages_scp(ssh_key, path, repo_user, repo_url, incoming_directory):
     logging.info("Transferring packages via scp to %s", repo_url)
@@ -137,13 +152,13 @@ def transfer_packages_dupload(ssh_key, path, repo_user, repo_url, incoming_direc
     }
     with DebRelease(config, repo_user, ssh_key):
         logging.info("Duploading")
-        subprocess.check_call("dupload --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
+        subprocess.check_call("dupload -f --nomail --to {repo} {path}".format(repo=repo_short_name, path=path), shell=True)
         logging.info("Dupload finished")
 
 
 def clear_old_incoming_packages(ssh_connection, user):
     for pkg in ('deb', 'rpm', 'tgz'):
-        for release_type in ('stable', 'testing'):
+        for release_type in ('stable', 'testing', 'prestable', 'lts'):
             try:
                 ssh_connection.execute("rm /home/{user}/incoming/clickhouse/{pkg}/{release_type}/*".format(
                     user=user, pkg=pkg, release_type=release_type))
@@ -177,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument('--deb-directory')
     parser.add_argument('--rpm-directory')
     parser.add_argument('--tgz-directory')
-    parser.add_argument('--release-type', choices=('testing', 'stable',), default='testing')
+    parser.add_argument('--release-type', choices=('testing', 'stable', 'prestable', 'lts'), default='testing')
     parser.add_argument('--ssh-key-path')
     parser.add_argument('--gpg-passphrase', required=True)
     parser.add_argument('--gpg-sec-key-path')
@@ -203,6 +218,7 @@ if __name__ == "__main__":
     if args.rpm_directory:
         if not is_open_source:
             raise Exception("Cannot upload .rpm package to {}".format(args.repo_url))
+        rpmsign(args.rpm_directory, args.gpg_passphrase, args.gpg_sec_key_path, args.gpg_pub_key_path, args.gpg_key_user)
         packages.append((args.rpm_directory, 'rpm'))
 
     if args.tgz_directory:

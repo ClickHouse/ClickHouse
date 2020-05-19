@@ -1,6 +1,0 @@
-<yandex>
-    <logger>
-        <log remove="remove"/>
-        <errorlog remove="remove"/>
-    </logger>
-</yandex>

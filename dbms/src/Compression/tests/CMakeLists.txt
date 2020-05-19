@@ -1,5 +1,0 @@
-add_executable (compressed_buffer compressed_buffer.cpp)
-target_link_libraries (compressed_buffer PRIVATE clickhouse_compression clickhouse_common_io)
-
-add_executable (cached_compressed_read_buffer cached_compressed_read_buffer.cpp)
-target_link_libraries (cached_compressed_read_buffer PRIVATE clickhouse_compression clickhouse_common_io)

@@ -14,6 +14,10 @@ fi
 
 brew install cmake ninja gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline librdkafka
 
+# If you want to run tests
+brew install python
+sudo pip install lxml termcolor requests
+
 ## Checkout ClickHouse sources
 
 #  To get the latest stable version:
@@ -33,16 +37,16 @@ fi
 
 mkdir build
 cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++-8 g++-7` -DCMAKE_C_COMPILER=`which gcc-8 gcc-7`
+cmake .. -DCMAKE_CXX_COMPILER=`which g++-9 g++-8` -DCMAKE_C_COMPILER=`which gcc-9 gcc-8`
 cmake --build .
 
 cd ..
 
 #  Run server:
-# build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
+# build/programs/clickhouse-server --config-file=ClickHouse/programs/server/config.xml &
 
 #  Run client:
-# build/dbms/programs/clickhouse-client
+# build/programs/clickhouse-client
 
 
 ## Caveats

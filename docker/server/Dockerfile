@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.8.1.*
+ARG version=20.5.1.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -18,10 +18,10 @@ RUN apt-get update \
             clickhouse-common-static=$version \
             clickhouse-client=$version \
             clickhouse-server=$version \
-            libgcc-7-dev \
             locales \
-            tzdata \
+            ca-certificates \
             wget \
+            tzata \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -34,6 +34,7 @@ RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
+ENV TZ UTC
 
 RUN mkdir /docker-entrypoint-initdb.d
 

@@ -1,4 +1,5 @@
 set +e
+# set -x
 
 function gen_version_string {
     if [ -n "$TEST" ]; then
@@ -11,10 +12,10 @@ function gen_version_string {
 function get_version {
     if [ -z "$VERSION_MAJOR" ] && [ -z "$VERSION_MINOR" ] && [ -z "$VERSION_PATCH" ]; then
         BASEDIR=$(dirname "${BASH_SOURCE[0]}")/../../
-        VERSION_REVISION=`grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//'`
-        VERSION_MAJOR=`grep "set(VERSION_MAJOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//'`
-        VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
-        VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
+        VERSION_REVISION=`grep "set(VERSION_REVISION" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//'`
+        VERSION_MAJOR=`grep "set(VERSION_MAJOR" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//'`
+        VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
+        VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
     fi
     VERSION_PREFIX="${VERSION_PREFIX:-v}"
     VERSION_POSTFIX_TAG="${VERSION_POSTFIX:--testing}"
@@ -96,12 +97,14 @@ function gen_revision_author {
                 -e "s/set(VERSION_MINOR [^) ]*/set(VERSION_MINOR $VERSION_MINOR/g;" \
                 -e "s/set(VERSION_PATCH [^) ]*/set(VERSION_PATCH $VERSION_PATCH/g;" \
                 -e "s/set(VERSION_STRING [^) ]*/set(VERSION_STRING $VERSION_STRING/g;" \
-                dbms/cmake/version.cmake
+                cmake/version.cmake
 
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
             gen_dockerfiles "$VERSION_STRING"
-            dbms/src/Storages/System/StorageSystemContributors.sh ||:
-            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/src/Storages/System/StorageSystemContributors.generated.cpp
+            src/Storages/System/StorageSystemContributors.sh ||:
+            utils/list-versions/list-versions.sh > utils/list-versions/version_date.tsv
+
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" cmake/version.cmake debian/changelog docker/*/Dockerfile src/Storages/System/StorageSystemContributors.generated.cpp utils/list-versions/version_date.tsv
             if [ -z $NO_PUSH ]; then
                 git push
             fi
@@ -178,4 +181,135 @@ function gen_changelog {
 function gen_dockerfiles {
     VERSION_STRING="$1"
     ls -1 docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='$VERSION_STRING'/'
+}
+
+function make_rpm {
+    [ -z "$VERSION_STRING" ] && get_version && VERSION_STRING+=${VERSION_POSTFIX}
+    VERSION_FULL="${VERSION_STRING}"
+    PACKAGE_DIR=${PACKAGE_DIR=../}
+
+    function deb_unpack {
+        rm -rf $PACKAGE-$VERSION_FULL
+        alien --verbose --generate --to-rpm --scripts ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_${ARCH}.deb
+        cd $PACKAGE-$VERSION_FULL
+        mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec.tmp
+        cat ${PACKAGE}-$VERSION_FULL-2.spec.tmp \
+            | grep -vF '%dir "/"' \
+            | grep -vF '%dir "/usr/"' \
+            | grep -vF '%dir "/usr/bin/"' \
+            | grep -vF '%dir "/usr/lib/"' \
+            | grep -vF '%dir "/usr/lib/debug/"' \
+            | grep -vF '%dir "/usr/lib/.build-id/"' \
+            | grep -vF '%dir "/usr/share/"' \
+            | grep -vF '%dir "/usr/share/doc/"' \
+            | grep -vF '%dir "/lib/"' \
+            | grep -vF '%dir "/lib/systemd/"' \
+            | grep -vF '%dir "/lib/systemd/system/"' \
+            | grep -vF '%dir "/etc/"' \
+            | grep -vF '%dir "/etc/security/"' \
+            | grep -vF '%dir "/etc/security/limits.d/"' \
+            | grep -vF '%dir "/etc/init.d/"' \
+            | grep -vF '%dir "/etc/cron.d/"' \
+            | grep -vF '%dir "/etc/systemd/system/"' \
+            | grep -vF '%dir "/etc/systemd/"' \
+            | sed -e 's|%config |%config(noreplace) |' \
+            > ${PACKAGE}-$VERSION_FULL-2.spec
+    }
+
+    function rpm_pack {
+        rpmbuild --buildroot="$CUR_DIR/${PACKAGE}-$VERSION_FULL" -bb --target ${TARGET} "${PACKAGE}-$VERSION_FULL-2.spec"
+        cd $CUR_DIR
+    }
+
+    function unpack_pack {
+        deb_unpack
+        rpm_pack
+    }
+
+    PACKAGE=clickhouse-server
+    ARCH=all
+    TARGET=noarch
+    deb_unpack
+    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
+    echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Requires: tzdata" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Requires: initscripts" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    echo "Obsoletes: clickhouse-server-common < $VERSION_FULL" >> ${PACKAGE}-$VERSION_FULL-2.spec
+
+    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
+    rpm_pack
+
+    PACKAGE=clickhouse-client
+    ARCH=all
+    TARGET=noarch
+    deb_unpack
+    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
+    echo "Requires: clickhouse-common-static = $VERSION_FULL-2" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
+    rpm_pack
+
+    PACKAGE=clickhouse-test
+    ARCH=all
+    TARGET=noarch
+    deb_unpack
+    mv ${PACKAGE}-$VERSION_FULL-2.spec ${PACKAGE}-$VERSION_FULL-2.spec_tmp
+    echo "Requires: python2" >> ${PACKAGE}-$VERSION_FULL-2.spec
+    #echo "Requires: python2-termcolor" >> ${PACKAGE}-$VERSION-2.spec
+    cat ${PACKAGE}-$VERSION_FULL-2.spec_tmp >> ${PACKAGE}-$VERSION_FULL-2.spec
+    rpm_pack
+
+    PACKAGE=clickhouse-common-static
+    ARCH=amd64
+    TARGET=x86_64
+    unpack_pack
+
+    PACKAGE=clickhouse-common-static-dbg
+    ARCH=amd64
+    TARGET=x86_64
+    unpack_pack
+
+    mv clickhouse-*-${VERSION_FULL}-2.*.rpm ${PACKAGE_DIR}
+}
+
+function make_tgz {
+    [ -z "$VERSION_STRING" ] && get_version && VERSION_STRING+=${VERSION_POSTFIX}
+    VERSION_FULL="${VERSION_STRING}"
+    PACKAGE_DIR=${PACKAGE_DIR=../}
+
+    for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
+        alien --verbose --scripts --generate --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_*.deb
+        PKGDIR="./${PACKAGE}-${VERSION_FULL}"
+        if [ ! -d "$PKGDIR/install" ]; then
+            mkdir "$PKGDIR/install"
+        fi
+
+        if [ ! -f "$PKGDIR/install/doinst.sh" ]; then
+            echo '#!/bin/sh' > "$PKGDIR/install/doinst.sh"
+            echo 'set -e' >> "$PKGDIR/install/doinst.sh"
+        fi
+
+        SCRIPT_TEXT='
+SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
+    destpath=${filepath##$SCRIPTPATH/..}
+    mkdir -p $(dirname "$destpath")
+    cp -r "$filepath" "$destpath"
+done
+'
+
+        echo "$SCRIPT_TEXT" | sed -i "2r /dev/stdin" "$PKGDIR/install/doinst.sh"
+
+        chmod +x "$PKGDIR/install/doinst.sh"
+
+        if [ -f "/usr/bin/pigz" ]; then
+            tar --use-compress-program=pigz -cf "${PACKAGE}-${VERSION_FULL}.tgz" "$PKGDIR"
+        else
+            tar -czf "${PACKAGE}-${VERSION_FULL}.tgz" "$PKGDIR"
+        fi
+
+        rm -r $PKGDIR
+    done
+
+
+    mv clickhouse-*-${VERSION_FULL}.tgz ${PACKAGE_DIR}
 }

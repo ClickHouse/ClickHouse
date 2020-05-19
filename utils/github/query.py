@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import requests
+import time
 
 
 class Query:
@@ -11,9 +12,9 @@ class Query:
         self._token = token
         self._max_page_size = max_page_size
         self._min_page_size = min_page_size
+        self.api_costs = {}
 
     _MEMBERS = '''
-    {{
         organization(login: "{organization}") {{
             team(slug: "{team}") {{
                 members(first: {max_page_size} {next}) {{
@@ -27,7 +28,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_members(self, organization, team):
         '''Get all team members for organization
@@ -58,8 +58,7 @@ class Query:
         return logins
 
     _LABELS = '''
-    {{
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 labels(first: {max_page_size} {next}) {{
                     pageInfo {{
@@ -73,7 +72,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_labels(self, pull_request):
         '''Fetchs all labels for given pull-request
@@ -102,8 +100,7 @@ class Query:
         return labels
 
     _TIMELINE = '''
-    {{
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 timeline(first: {max_page_size} {next}) {{
                     pageInfo {{
@@ -140,7 +137,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_timeline(self, pull_request):
         '''Fetchs all cross-reference events from pull-request's timeline
@@ -169,8 +165,7 @@ class Query:
         return events
 
     _PULL_REQUESTS = '''
-    {{
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             defaultBranchRef {{
                 name
                 target {{
@@ -186,10 +181,12 @@ class Query:
                                     totalCount
                                     nodes {{
                                         ... on PullRequest {{
+                                            id
                                             number
                                             author {{
                                                 login
                                             }}
+                                            bodyText
                                             mergedBy {{
                                                 login
                                             }}
@@ -248,7 +245,6 @@ class Query:
                 }}
             }}
         }}
-    }}
     '''
     def get_pull_requests(self, before_commit, login):
         '''Get all merged pull-requests from the HEAD of default branch to the last commit (excluding)
@@ -285,7 +281,7 @@ class Query:
                     f'there are {commit["associatedPullRequests"]["totalCount"]} pull-requests merged in commit {commit["oid"]}'
 
                 for pull_request in commit['associatedPullRequests']['nodes']:
-                    if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
+                    if(pull_request['baseRepository']['nameWithOwner'] == 'ClickHouse/ClickHouse' and
                        pull_request['baseRefName'] == default_branch_name and
                        pull_request['mergeCommit']['oid'] == commit['oid'] and
                        (not login or pull_request['author']['login'] == login)):
@@ -294,13 +290,11 @@ class Query:
         return pull_requests
 
     _DEFAULT = '''
-    {
-        repository(owner: "yandex", name: "ClickHouse") {
+        repository(owner: "ClickHouse", name: "ClickHouse") {
             defaultBranchRef {
                 name
             }
         }
-    }
     '''
     def get_default_branch(self):
         '''Get short name of the default branch
@@ -310,7 +304,58 @@ class Query:
         '''
         return self._run(Query._DEFAULT)['repository']['defaultBranchRef']['name']
 
-    def _run(self, query):
+    _GET_LABEL = '''
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
+            labels(first: {max_page_size} {next} query: "{name}") {{
+                pageInfo {{
+                    hasNextPage
+                    endCursor
+                }}
+                nodes {{
+                    id
+                    name
+                    color
+                }}
+            }}
+        }}
+    '''
+    _SET_LABEL = '''
+        addLabelsToLabelable(input: {{ labelableId: "{pr_id}", labelIds: "{label_id}" }}) {{
+            clientMutationId
+        }}
+    '''
+    def set_label(self, pull_request, label_name):
+        '''Set label by name to the pull request
+
+        Args:
+            pull_request: JSON object returned by `get_pull_requests()`
+            label_name (string): label name
+        '''
+        labels = []
+        not_end = True
+        query = Query._GET_LABEL.format(name=label_name,
+                                        max_page_size=self._max_page_size,
+                                        next='')
+
+        while not_end:
+            result = self._run(query)['repository']['labels']
+            not_end = result['pageInfo']['hasNextPage']
+            query = Query._GET_LABEL.format(name=label_name,
+                                            max_page_size=self._max_page_size,
+                                            next=f'after: "{result["pageInfo"]["endCursor"]}"')
+
+            labels += [label for label in result['nodes']]
+
+        if not labels:
+            return
+
+        query = Query._SET_LABEL.format(pr_id = pull_request['id'], label_id = labels[0]['id'])
+        self._run(query, is_mutation=True)
+
+        pull_request['labels']['nodes'].append(labels[0])
+
+
+    def _run(self, query, is_mutation=False):
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
 
@@ -334,12 +379,44 @@ class Query:
             return session
 
         headers = {'Authorization': f'bearer {self._token}'}
-        request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
-        if request.status_code == 200:
-            result = request.json()
-            if 'errors' in result:
-                raise Exception(f'Errors occured: {result["errors"]}')
-            return result['data']
+        if is_mutation:
+            query = f'''
+            mutation {{
+                {query}
+            }}
+            '''
         else:
-            import json
-            raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(request.json(), indent=4)}')
+            query = f'''
+            query {{
+                {query}
+                rateLimit {{
+                    cost
+                    remaining
+                }}
+            }}
+            '''
+
+        while True:
+            request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
+            if request.status_code == 200:
+                result = request.json()
+                if 'errors' in result:
+                    raise Exception(f'Errors occured: {result["errors"]}')
+
+                if not is_mutation:
+                    import inspect
+                    caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
+                    if caller not in self.api_costs.keys():
+                        self.api_costs[caller] = 0
+                    self.api_costs[caller] += result['data']['rateLimit']['cost']
+
+                return result['data']
+            else:
+                import json
+                resp = request.json()
+                if resp and len(resp) > 0 and resp[0] and 'type' in resp[0] and resp[0]['type'] == 'RATE_LIMITED':
+                    print("API rate limit exceeded. Waiting for 1 second.")
+                    time.sleep(1)
+                    continue
+
+                raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(resp, indent=4)}')

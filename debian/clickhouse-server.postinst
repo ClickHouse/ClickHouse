@@ -1,8 +1,10 @@
 #!/bin/sh
 set -e
+# set -x
 
 CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+# Please note that we don't support paths with whitespaces. This is rather ignorant.
 CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
@@ -11,17 +13,18 @@ CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 
-OS=${OS=`lsb_release -is 2>/dev/null || uname -s ||:`}
+[ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
+[ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
 
-. /usr/share/debconf/confmodule
+if [ ! -f "/etc/debian_version" ]; then
+    not_deb_os=1
+fi
 
-test -f /etc/default/clickhouse && . /etc/default/clickhouse
-
-if [ "$1" = configure ]; then
+if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
         # if old rc.d service present - remove it
-        if [ -x "/etc/init.d/clickhouse-server" ]; then
-            update-rc.d clickhouse-server remove
+        if [ -x "/etc/init.d/clickhouse-server" ] && [ -x "/usr/sbin/update-rc.d" ]; then
+            /usr/sbin/update-rc.d clickhouse-server remove
             echo "ClickHouse init script has migrated to systemd. Please manually stop old server and restart the service: sudo killall clickhouse-server && sleep 5 && sudo service clickhouse-server restart"
         fi
 
@@ -30,19 +33,18 @@ if [ "$1" = configure ]; then
     else
         # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
-            if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]; then
-                echo # TODO
+            if [ -x "/usr/sbin/update-rc.d" ]; then
+                /usr/sbin/update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
             else
-                update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
+                echo # TODO [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]
             fi
         fi
     fi
 
     # Make sure the administrative user exists
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
-        if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]; then
-            adduser --system --no-create-home --home /nonexistent \
-                --shell /bin/false ${CLICKHOUSE_USER} > /dev/null
+        if [ -n "$not_deb_os" ]; then
+            useradd -r -s /bin/false --home-dir /nonexistent ${CLICKHOUSE_USER} > /dev/null
         else
             adduser --system --disabled-login --no-create-home --home /nonexistent \
                 --shell /bin/false --group --gecos "ClickHouse server" ${CLICKHOUSE_USER} > /dev/null
@@ -51,12 +53,12 @@ if [ "$1" = configure ]; then
 
     # if the user was created manually, make sure the group is there as well
     if ! getent group ${CLICKHOUSE_GROUP} > /dev/null; then
-        addgroup --system ${CLICKHOUSE_GROUP} > /dev/null
+        groupadd -r ${CLICKHOUSE_GROUP} > /dev/null
     fi
 
     # make sure user is in the correct group
     if ! id -Gn ${CLICKHOUSE_USER} | grep -qw ${CLICKHOUSE_USER}; then
-        adduser ${CLICKHOUSE_USER} ${CLICKHOUSE_GROUP} > /dev/null
+        usermod -a -G ${CLICKHOUSE_GROUP} ${CLICKHOUSE_USER} > /dev/null
     fi
 
     # check validity of user and group
@@ -73,6 +75,9 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ] && [ -f "$CLICKHOUSE_CONFIG" ]; then
+        if [ -z "$SHELL" ]; then
+            SHELL="/bin/sh"
+        fi
         CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path") ||:
         echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
     fi
@@ -114,23 +119,27 @@ Please fix this and reinstall this package." >&2
     TMPFILE=/tmp/test_setcap.sh
 
     command -v setcap >/dev/null \
-        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
-        && setcap "cap_net_admin,cap_ipc_lock+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
-        || echo "Cannot set 'net_admin' or 'ipc_lock' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
+        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock,cap_sys_nice+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
+        && setcap "cap_net_admin,cap_ipc_lock,cap_sys_nice+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
+        || echo "Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
 
     # Clean old dynamic compilation results
     if [ -d "${CLICKHOUSE_DATADIR_FROM_CONFIG}/build" ]; then
         rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
     fi
 
-    db_get clickhouse-server/default-password
-    defaultpassword="$RET"
-    if [ -n "$defaultpassword" ]; then
-        echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-    fi
+    if [ -f /usr/share/debconf/confmodule ]; then
+        db_get clickhouse-server/default-password
+        defaultpassword="$RET"
+        if [ -n "$defaultpassword" ]; then
+            echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+        fi
 
-    # everything went well, so now let's reset the password
-    db_set clickhouse-server/default-password ""
-    # ... done with debconf here
-    db_stop
+        # everything went well, so now let's reset the password
+        db_set clickhouse-server/default-password ""
+        # ... done with debconf here
+        db_stop
+    fi
 fi
