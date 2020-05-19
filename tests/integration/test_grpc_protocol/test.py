@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 proto_dir = os.path.join(SCRIPT_DIR, './protos')
-try:    
+try:
     subprocess.check_call(
         'python -m grpc_tools.protoc -I{proto_path} --python_out=. --grpc_python_out=. \
         {proto_path}/GrpcConnection.proto'.format(proto_path=proto_dir), shell=True)

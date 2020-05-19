@@ -35,7 +35,7 @@ class GRPCClient
             request.set_interactive_delay(1000);
 
             querySettigs->set_query(query);
-            querySettigs->set_format("Pretty");
+            querySettigs->set_format("Values");
             querySettigs->set_query_id(std::to_string(id));
             querySettigs->set_data_stream((insert_data.size() != 0));
             (*querySettigs->mutable_settings())["max_query_size"] ="100";
@@ -150,7 +150,6 @@ int main(int argc, char** argv)
         std::cout << client.Query(userInfo1, "SELECT count() FROM numbers(100)") << std::endl;
     }
     {
-        std::cout << client.Query(userInfo1, "WITH ['hello'] AS hello SELECT hello, * FROM ( WITH ['hello'] AS hello SELECT hello)") << std::endl;
         std::cout << client.Query(userInfo1, "CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory;") << std::endl;
         std::cout << client.Query(userInfo1, "INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);") << std::endl;
         std::cout << client.Query(userInfo1, "SELECT s FROM arrays_test") << std::endl;

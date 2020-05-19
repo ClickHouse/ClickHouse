@@ -39,7 +39,7 @@ std::string ParseGrpcPeer(const grpc::ServerContext& context_)
 
 void CallDataQuery::respond()
 {
-   try
+    try
     {
         switch (status)
         {
@@ -71,7 +71,6 @@ void CallDataQuery::respond()
                 delete this;
             }
         }
-         
     }
     catch (...)
     {
@@ -114,7 +113,7 @@ void CallDataQuery::ParseQuery()
     query_context->setCurrentQueryId(request.query_info().query_id());
     if (!quota_key.empty())
         query_context->setQuotaKey(quota_key);
-    
+
     if (!request.query_info().format().empty())
     {
         format_output = request.query_info().format();
@@ -204,7 +203,7 @@ void CallDataQuery::ParseData()
                 res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, *query_context);
         }
         io.out->writePrefix();
-        while(auto block = res_stream->read())
+        while (auto block = res_stream->read())
             io.out->write(block);
         if (request.query_info().data_stream())
         {

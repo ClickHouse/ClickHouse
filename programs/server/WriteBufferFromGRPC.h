@@ -35,7 +35,7 @@ protected:
 
 public:
     WriteBufferFromGRPC(grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_)
-    : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) 
+    : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_)
     {}
 
     ~WriteBufferFromGRPC() override {}
