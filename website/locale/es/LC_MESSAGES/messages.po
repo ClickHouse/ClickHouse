@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-05-19 11:11+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -36,27 +36,27 @@ msgstr "ClickHouse - DBMS OLAP de código abierto rápido"
 msgid "ClickHouse DBMS"
 msgstr "Sistema abierto."
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "open-source"
 msgstr "de código abierto"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "relational"
 msgstr "relacional"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytics"
 msgstr "analítica"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytical"
 msgstr "analítico"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "Big Data"
 msgstr "Grandes Datos"
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "web-analytics"
 msgstr "Sistema abierto."
 
@@ -76,15 +76,51 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Sistema abierto."
 
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr "Clasificación"
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr "voto"
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr "Clasificación del artículo"
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr "¿Este contenido fue útil?"
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr "Inutilizable"
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr "Pobre"
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr "Bien"
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr "Excelente"
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr "documentación"
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr "Construido a partir de"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr "publicado en"
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr "modificado en"
 
