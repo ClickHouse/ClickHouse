@@ -10,19 +10,11 @@ int main() noexcept
     const auto size = [] {return 100; };
     const auto init = [](void *) {return 100; };
 
-    auto&& [ptr, produced] = cache.getOrSet(0, size, init);
-
-    {
-        cache.getOrSet(1, size, init);
-    }
-
-    cache.getStats().print(std::cout);
-
+    auto ptr = cache.getOrSet(0, size, init).first;
     cache.shrinkToFit();
 
-    cache.getStats().print(std::cout);
+    auto ptr2 = cache.get(0);
 
-    std::cout << cache.get(1).get() << "\n";
-    std::cout << ptr.get() << " " << cache.get(0).get() << "\n";
+    std::cout << ptr.get() << " " << ptr2.get() << "\n";
 }
 
