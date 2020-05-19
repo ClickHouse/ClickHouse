@@ -155,7 +155,7 @@ $(document).ready(function () {
                 url: window.location.pathname + 'rate/',
                 type: 'POST',
                 dataType: 'json',
-                data: {rating: $(this).prevAll().length + 1},
+                data: JSON.stringify({rating: $(this).prevAll().length + 1}),
                 success: function () {
                 },
                 error: function () {
