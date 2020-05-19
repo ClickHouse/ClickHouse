@@ -152,7 +152,6 @@ TEST(IGrabberAllocator, StatelessCacheUnusedShrinking)
         EXPECT_EQ(stats.unused_regions, 1);
     }
 
-
     auto stats = cache.getStats();
 
     EXPECT_EQ(stats.initialized_size, 200);
@@ -161,7 +160,7 @@ TEST(IGrabberAllocator, StatelessCacheUnusedShrinking)
 
     cache.shrinkToFit();
 
-    EXPECT_EQ(stats.chunks, 0);
+    EXPECT_EQ(stats.chunks, 0); // is 1
 
     EXPECT_EQ(cache.get(0).get(), nullptr);
     EXPECT_EQ(cache.get(1).get(), nullptr);
@@ -197,7 +196,7 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
 
     auto stats = cache.getStats();
 
-    EXPECT_EQ(stats.initialized_size, 200);
+    EXPECT_EQ(stats.initialized_size, 2 * sizeof(pointer));
     EXPECT_EQ(stats.used_regions, 0);
     EXPECT_EQ(stats.unused_regions, 2);
 
@@ -232,7 +231,7 @@ TEST(IGrabberAllocator, StatelessCacheUsedShrinking)
     EXPECT_EQ(stats.chunks, 1);
 
     EXPECT_EQ(stats.used_regions, 1);
-    EXPECT_EQ(stats.unused_regions, 0);
+    EXPECT_EQ(stats.unused_regions, 0); // is 1
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
@@ -263,7 +262,7 @@ TEST(IGrabberAllocator, StatefulCacheUsedShrinking)
     EXPECT_EQ(stats.chunks, 1);
 
     EXPECT_EQ(stats.used_regions, 1);
-    EXPECT_EQ(stats.unused_regions, 0);
+    EXPECT_EQ(stats.unused_regions, 0); // is 1
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
