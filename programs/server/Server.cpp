@@ -932,7 +932,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             create_server("grpc_port", [&](UInt16 port)
-            {   
+            {
                 Poco::Net::SocketAddress server_address(listen_host, port);
                 gRPCServers.emplace_back(new GRPCServer(server_address.toString(), *this));
                 LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());

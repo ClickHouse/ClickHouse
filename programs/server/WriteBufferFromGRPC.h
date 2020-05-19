@@ -27,7 +27,7 @@ protected:
     void nextImpl() override
     {
         progress = true;
-        
+
         String buffer(working_buffer.begin(), working_buffer.begin() + offset());
         auto response = setResposeDetails(buffer);
         responder->Write(response, tag);
@@ -35,8 +35,8 @@ protected:
 
 public:
     WriteBufferFromGRPC(grpc::ServerAsyncReaderWriter<QueryResponse, QueryRequest>* responder_, void* tag_, std::function<QueryResponse(const String& buffer)> setResposeDetails_)
-        : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) 
-        {}
+    : responder(responder_), tag(tag_), setResposeDetails(setResposeDetails_) 
+    {}
 
     ~WriteBufferFromGRPC() override {}
     bool onProgress()

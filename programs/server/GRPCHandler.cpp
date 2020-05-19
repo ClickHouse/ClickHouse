@@ -40,8 +40,8 @@ std::string ParseGrpcPeer(const grpc::ServerContext& context_)
 void CallDataQuery::respond()
 {
    try
-   {
-        switch(status)
+    {
+        switch (status)
         {
             case START_QUERY:
             {
@@ -71,12 +71,12 @@ void CallDataQuery::respond()
                 delete this;
             }
         }
-                  
-    } 
-    catch(...)
+         
+    }
+    catch (...)
     {
         io.onException();
-        
+
         tryLogCurrentException(log);
         std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
         int exception_code = getCurrentExceptionCode();
@@ -89,7 +89,7 @@ void CallDataQuery::respond()
 void CallDataQuery::ParseQuery()
 {
     LOG_TRACE(log, "Process query");
-    
+
     Poco::Net::SocketAddress user_adress(ParseGrpcPeer(gRPCcontext));
     LOG_TRACE(log, "Request: " << request.query_info().query());
 
@@ -97,6 +97,12 @@ void CallDataQuery::ParseQuery()
     std::string password = request.user_info().password();
     std::string quota_key = request.user_info().quota();
     interactive_delay = request.interactive_delay();
+    format_output = "Values";
+    if (user.empty())
+    {
+        user = "default";
+        password = "";
+    }
     if (interactive_delay == 0)
         interactive_delay = INT_MAX;
     context.setProgressCallback([this] (const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
@@ -108,29 +114,26 @@ void CallDataQuery::ParseQuery()
     query_context->setCurrentQueryId(request.query_info().query_id());
     if (!quota_key.empty())
         query_context->setQuotaKey(quota_key);
+    
+    if (!request.query_info().format().empty())
+    {
+        format_output = request.query_info().format();
+        query_context->setDefaultFormat(request.query_info().format());
+    }
+    if (!request.query_info().database().empty())
+    {
+        if (!DatabaseCatalog::instance().isDatabaseExist(request.query_info().database()))
+        {
+            Exception e("Database " + request.query_info().database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        }
+        query_context->setCurrentDatabase(request.query_info().database());
+    }
 
     SettingsChanges settings_changes;
     for (const auto & [key, value] : request.query_info().settings())
     {
-        if (key == "database")
-        {
-            if (!DatabaseCatalog::instance().isDatabaseExist(value))
-            {
-                Exception e("Database " + value + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            }
-            query_context->setCurrentDatabase(value);
-        }
-        else if (key == "default_format")
-        {
-            format_output = value;
-            query_context->setDefaultFormat(value);
-        }
-        else
-        {
-            settings_changes.push_back({key, value});
-        }
+        settings_changes.push_back({key, value});
     }
-
     query_context->checkSettingsConstraints(settings_changes);
     query_context->applySettingsChanges(settings_changes);
 
@@ -141,7 +144,7 @@ void CallDataQuery::ParseQuery()
     client_info.initial_user = client_info.current_user;
     client_info.initial_query_id = client_info.current_query_id;
     client_info.initial_address = client_info.current_address;
-}       
+}
 
 void CallDataQuery::ParseData()
 {
@@ -149,10 +152,10 @@ void CallDataQuery::ParseData()
     const char * begin = request.query_info().query().data();
     const char * end = begin + request.query_info().query().size();
     const Settings & settings = query_context->getSettingsRef();
-    
+
     ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
-    
+
     auto * insert_query = ast->as<ASTInsertQuery>();
     auto query_end = end;
 
@@ -164,8 +167,7 @@ void CallDataQuery::ParseData()
     io = executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
     if (io.out)
     {
-
-        if (!insert_query || !(insert_query->data || request.query_info().insert_data() || !request.insert_data().empty()))
+        if (!insert_query || !(insert_query->data || request.query_info().data_stream() || !request.insert_data().empty()))
         {
             Exception e("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
         }
@@ -196,7 +198,6 @@ void CallDataQuery::ParseData()
         auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
         {
-            
             StoragePtr storage = DatabaseCatalog::instance().getTable(table_id);
             auto column_defaults = storage->getColumns().getDefaults();
             if (!column_defaults.empty())
@@ -205,7 +206,7 @@ void CallDataQuery::ParseData()
         io.out->writePrefix();
         while(auto block = res_stream->read())
             io.out->write(block);
-        if (request.query_info().insert_data())
+        if (request.query_info().data_stream())
         {
             status = READ_DATA;
             responder.Read(&request, (void*)this);
@@ -229,8 +230,8 @@ void CallDataQuery::ReadData()
         const char * end = begin + request.insert_data().size();
         ReadBufferFromMemory data_in(begin, end - begin);
         auto res_stream = query_context->getInputFormat(format_input, data_in, io.out->getHeader(), query_context->getSettings().max_insert_block_size);
-        
-        while(auto block = res_stream->read())
+
+        while (auto block = res_stream->read())
             io.out->write(block);
         responder.Read(&request, (void*)this);
     }
@@ -262,17 +263,16 @@ void CallDataQuery::ProgressQuery()
         if (block)
         {
             if (!io.null_format)
-                sent = sendData(block); 
+                sent = sendData(block);
                 break;
         }
         if (progress_watch.elapsedMilliseconds() >= interactive_delay)
         {
             progress_watch.restart();
-            sent = sendProgress(); 
+            sent = sendProgress();
             break;
         }
         query_watch.restart();
-        
     }
     if (!sent)
     {
@@ -284,7 +284,7 @@ void CallDataQuery::SendDetails()
     bool sent = false;
     while (!sent)
     {
-        switch(detailsStatus)
+        switch (detailsStatus)
         {
             case SEND_TOTALS:
             {

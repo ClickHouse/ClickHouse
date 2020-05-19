@@ -58,14 +58,14 @@ class CallDataQuery : public CommonCallData
                status = START_QUERY;
                out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this, nullptr);
                service->RequestQuery(&gRPCcontext, &responder, new_call_cq, notification_cq, this);
-          }     
+          }
           void ParseQuery();
           void ParseData();
           void ReadData();
           void ExecuteQuery();
           void ProgressQuery();
           void FinishQuery();
-          
+
           enum DetailsStatus
           {
                SEND_TOTALS,
@@ -96,7 +96,7 @@ class CallDataQuery : public CommonCallData
                query_context.reset();
                query_scope.reset();
           }
-          
+
      private:
           QueryRequest request;
           QueryResponse response;
@@ -152,7 +152,7 @@ class GRPCServer final : public Poco::Runnable
      void HandleRpcs()
      {
           new CallDataQuery(&service, notification_cq.get(), new_call_cq.get(), &iServer, log);
-    
+
           // rpc event "read done / write done / close(already connected)" call-back by this completion queue
           auto handle_calls_completion = [&]()
           {
@@ -161,7 +161,8 @@ class GRPCServer final : public Poco::Runnable
                while (true)
                {
                     GPR_ASSERT(new_call_cq->Next(&tag, &ok));
-                    if (!ok) {
+                    if (!ok)
+                    {
                          LOG_WARNING(log, "Client has gone away.");
                          delete static_cast<CallDataQuery*>(tag);
                          continue;
@@ -178,7 +179,8 @@ class GRPCServer final : public Poco::Runnable
                while (true)
                {
                     GPR_ASSERT(notification_cq->Next(&tag, &ok));
-                    if (!ok) {
+                    if (!ok)
+                    {
                          LOG_WARNING(log, "Client has gone away.");
                          delete static_cast<CallDataQuery*>(tag);
                          continue;
@@ -193,7 +195,7 @@ class GRPCServer final : public Poco::Runnable
           notification_cq_thread.detach();
           new_call_cq_thread.detach();
      }
-     
+
      private:
           IServer & iServer;
           Poco::Logger * log;

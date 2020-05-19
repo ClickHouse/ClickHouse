@@ -10,8 +10,10 @@ message User {
 message QuerySettings {
    string query = 1;
    string query_id = 2;
-   bool insert_data = 4;
-   map<string, string> settings = 5;
+   bool data_stream = 4;
+   string database = 5;
+   string format = 6;
+   map<string, string> settings = 7;
 }
 message QueryRequest {
    User user_info = 1;

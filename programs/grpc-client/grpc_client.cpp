@@ -2,7 +2,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <thread> 
+#include <thread>
 #include <stdlib.h>
 #include <grpc++/channel.h>
 #include <grpc++/client_context.h>
@@ -35,15 +35,14 @@ class GRPCClient
             request.set_interactive_delay(1000);
 
             querySettigs->set_query(query);
+            querySettigs->set_format("Pretty");
             querySettigs->set_query_id(std::to_string(id));
-            querySettigs->set_insert_data((insert_data.size() != 0));
-
-            (*querySettigs->mutable_settings())["default_format"] ="Pretty";
+            querySettigs->set_data_stream((insert_data.size() != 0));
             (*querySettigs->mutable_settings())["max_query_size"] ="100";
 
 
             request.set_allocated_query_info(querySettigs.release());
-            
+
             void* got_tag = (void*)1;
             bool ok = false;
 
@@ -54,9 +53,9 @@ class GRPCClient
             {
                 GRPCConnection::QueryRequest request_insert;
                 for (const auto& data : insert_data)
-                {                
+                {
                     request_insert.set_insert_data(data);
-                    if(reply.exception_occured().empty())
+                    if (reply.exception_occured().empty())
                     {
                         reader->Write(request_insert);
                     }
@@ -66,7 +65,7 @@ class GRPCClient
                     }
                 }
                 request_insert.set_insert_data("");
-                if(reply.exception_occured().empty())
+                if (reply.exception_occured().empty())
                 {
                     reader->Write(request_insert);
                 }
@@ -109,18 +108,23 @@ class GRPCClient
             if (status.ok() && reply.exception_occured().empty())
             {
                 return "";
-            } else if (status.ok() && !reply.exception_occured().empty()) {
+            }
+            else if (status.ok() && !reply.exception_occured().empty())
+            {
                 return reply.exception_occured();
-            } else {
+            }
+            else
+            {
                 return "RPC failed";
             }
          }
 
     private:
         std::unique_ptr<GRPCConnection::GRPC::Stub> stub_;
- };
+};
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     GRPCConnection::User userInfo1;
     userInfo1.set_user("default");
     userInfo1.set_password("");
@@ -146,7 +150,7 @@ int main(int argc, char** argv) {
         std::cout << client.Query(userInfo1, "SELECT count() FROM numbers(100)") << std::endl;
     }
     {
-        std::cout << client.Query(userInfo1, "WITH ['hello'] AS hello SELECT hello, * FROM ( WITH ['hello'] AS hello SELECT hello)");
+        std::cout << client.Query(userInfo1, "WITH ['hello'] AS hello SELECT hello, * FROM ( WITH ['hello'] AS hello SELECT hello)") << std::endl;
         std::cout << client.Query(userInfo1, "CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory;") << std::endl;
         std::cout << client.Query(userInfo1, "INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);") << std::endl;
         std::cout << client.Query(userInfo1, "SELECT s FROM arrays_test") << std::endl;
