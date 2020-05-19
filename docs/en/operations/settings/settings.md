@@ -1258,4 +1258,16 @@ Possible values:
 
 Default value: 16.
 
+## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
+
+Maximum size in rows of shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents problems with RAM in case of unlimited dictionary growth. All the data that was not dictionary encoded are written in not encoded way as ClickHouse do for non-`LowCardinality`-columns.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8192.
+
+
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

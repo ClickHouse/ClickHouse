@@ -41,14 +41,14 @@ ORDER BY id
 
 Settings:
 
-- low_cardinality_max_dictionary_size
+- [low_cardinality_max_dictionary_size](../../operations/settings/settings.md#low_cardinality_max_dictionary_size)
 - low_cardinality_use_single_dictionary_for_part
 - low_cardinality_allow_in_native_format
 - allow_suspicious_low_cardinality_types
 
 Functions:
 
-- toLowCardinality
+- [toLowCardinality](../functions/type-conversion-functions.md#tolowcardinality)
 
 ## See Also
 
