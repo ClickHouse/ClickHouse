@@ -305,10 +305,10 @@ private:
     struct FreeRegionTag;
     struct UsedRegionTag;
 
-    using TUnusedRegionHook = boost::intrusive::list_base_hook<boost::intrusive::tag<UnusedRegionTag>>;
-    using TAllRegionsHook   = boost::intrusive::list_base_hook<boost::intrusive::tag<RegionTag>>;
-    using TFreeRegionHook   = boost::intrusive::set_base_hook< boost::intrusive::tag<FreeRegionTag>>;
-    using TUsedRegionHook   = boost::intrusive::set_base_hook<boost::intrusive::tag<UsedRegionTag>>;
+    using TUnusedRegionHook  = boost::intrusive::list_base_hook<boost::intrusive::tag<UnusedRegionTag>>;
+    using TAllRegionsHook    = boost::intrusive::list_base_hook<boost::intrusive::tag<RegionTag>>;
+    using TFreeRegionHook    = boost::intrusive::set_base_hook< boost::intrusive::tag<FreeRegionTag>>;
+    using TUsedRegionHook    = boost::intrusive::set_base_hook<boost::intrusive::tag<UsedRegionTag>>;
 
     struct RegionCompareBySize;
     struct RegionCompareByKey;
@@ -491,7 +491,7 @@ public:
             onSharedValueCreate(cache_lock, *region);
 
             // can't use std::make_shared due to custom deleter.
-            attempt->value = std::shared_ptr<Value>(
+            attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
                     region->value(),
                     /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
                     /// see also line 619.
@@ -527,6 +527,8 @@ public:
 private:
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
+        std::cout << "refs: " << metadata.refcount << "\n";
+
         if (++metadata.refcount == 1)
         {
             if (metadata.TUnusedRegionHook::is_linked())
@@ -552,6 +554,8 @@ private:
             throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
 
         RegionMetadata& metadata = *(it->second);
+
+        std::cout << "refs: " << metadata.refcount << "\n";
 
         --metadata.refcount;
 
@@ -583,14 +587,10 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                if (metadata.value() == nullptr) // unobtainable result, just for clang's static analysis tool
-                    throw Exception("Cache corruption",
-                            ErrorCodes::BAD_ARGUMENTS);
-
                 onSharedValueCreate(cache_lock, metadata);
 
                 // can't use std::make_shared due to custom deleter.
-                return std::shared_ptr<Value>(
+                return std::shared_ptr<Value>( //not a nullptr
                         metadata.value(),
                         /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
                         /// see also line 530.
