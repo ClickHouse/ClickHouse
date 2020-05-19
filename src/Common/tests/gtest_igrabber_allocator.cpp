@@ -78,6 +78,13 @@ TEST(IGrabberAllocator, StatelessSingleInsertionSingleRetrieval)
     EXPECT_EQ(stats.used_regions, 0);
 }
 
+pointer init(void * p)
+{
+    int * i = static_cast<int*>(p);
+    *i = 42;
+    return pointer{i};
+}
+
 TEST(IGrabberAllocator, StatefulSingleInsertionSingleRetrieval)
 {
     IntToPointer cache(MMAP_THRESHOLD);
@@ -87,12 +94,6 @@ TEST(IGrabberAllocator, StatefulSingleInsertionSingleRetrieval)
     EXPECT_EQ(cache.get(0), std::shared_ptr<int>{nullptr});
 
     ga::Stats stats;
-
-    const auto init = [](void * p)
-    {
-        *static_cast<int *>(p) = 42;
-        return pointer{p};
-    };
 
     {
         auto&& [ptr, produced] = cache.getOrSet(0, []{ return 200; }, init);
@@ -172,17 +173,11 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
 
     const auto size = [] { return sizeof(pointer); };
 
-    const auto init = [](void * p)
-    {
-        *static_cast<int *>(p) = 43;
-        return pointer{p};
-    };
-
     {
         auto&& [ptr, _] = cache.getOrSet(0, size, init);
         auto stats = cache.getStats();
 
-        EXPECT_EQ(*(ptr->ptr), 43);
+        EXPECT_EQ(*(ptr->ptr), 42);
 
         EXPECT_EQ(stats.regions, 2);
         EXPECT_EQ(stats.used_regions, 1);
@@ -193,7 +188,7 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
         auto&& [ptr, _] = cache.getOrSet(1, size, init);
         auto stats = cache.getStats();
 
-        EXPECT_EQ(*(ptr->ptr), 43);
+        EXPECT_EQ(*(ptr->ptr), 42);
 
         EXPECT_EQ(stats.regions, 3);
         EXPECT_EQ(stats.used_regions, 1);
@@ -249,20 +244,13 @@ TEST(IGrabberAllocator, StatefulCacheUsedShrinking)
 
     const auto size = [] {return sizeof(pointer); };
 
-    const auto init = [](void * p)
-    {
-        static_cast<int *>(*p) = 48;
-        return pointer{p};
-    };
-
-
     auto&& [ptr, produced] = cache.getOrSet(0, size, init);
 
-    EXPECT_EQ(*(ptr->ptr), 48);
+    EXPECT_EQ(*(ptr->ptr), 42);
 
     {
         cache.getOrSet(1, size, init);
-        EXPECT_EQ(*(ptr->ptr), 48);
+        EXPECT_EQ(*(ptr->ptr), 42);
     }
 
     auto stats = cache.getStats();
@@ -279,6 +267,6 @@ TEST(IGrabberAllocator, StatefulCacheUsedShrinking)
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
-    EXPECT_EQ(*(ptr->ptr), 48);
+    EXPECT_EQ(*(ptr->ptr), 42);
 }
 
