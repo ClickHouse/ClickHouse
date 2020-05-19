@@ -344,7 +344,8 @@ void SystemLog<LogElement>::savingThreadFunction()
                 std::unique_lock lock(mutex);
                 const bool predicate = flush_event.wait_for(lock,
                     std::chrono::milliseconds(flush_interval_milliseconds),
-                    [&] () {
+                    [&] ()
+                    {
                         return requested_flush_before > flushed_before
                             || is_shutdown;
                     }
