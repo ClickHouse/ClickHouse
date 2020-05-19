@@ -33,7 +33,7 @@ public:
         size_t size = input_rows_count;
         vec_to.resize(size);
         // TODO(dakovalkov): rewrite this workaround
-        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UInt128));
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(UInt128));
 
         for (UInt128 & uuid: vec_to)
         {

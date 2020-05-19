@@ -36,21 +36,47 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each block.
   */
 
+/*
+
 DECLARE_MULTITARGET_CODE(
+
+*/
 
 struct RandImpl
 {
     static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch); }
+    static String getImplementationTag() { return ToString(TargetArch::Default); }
 };
 
 struct RandImpl2
 {
     static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v2"; }
+    static String getImplementationTag() { return ToString(TargetArch::Default) + "_v2"; }
+};
+
+/*
+
+struct RandImpl3
+{
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_v3"; }
+};
+
+struct RandImpl4
+{
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_v4"; }
+};
+
+struct RandImpl5
+{
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_v5"; }
 };
 
 ) // DECLARE_MULTITARGET_CODE
+
+*/
 
 template <typename RandImpl, typename ToType, typename Name>
 class FunctionRandomImpl : public IFunction
@@ -99,30 +125,45 @@ public:
 };
 
 template <typename ToType, typename Name>
-class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
+class FunctionRandom : public FunctionRandomImpl<RandImpl2, ToType, Name>
 {
 public:
     FunctionRandom(const Context & context) : selector(context)
     {
+        // selector.registerImplementation<TargetArch::Default,
+        //     FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
         selector.registerImplementation<TargetArch::Default,
-            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>();
+            FunctionRandomImpl<RandImpl2, ToType, Name>>();
 
-        if constexpr (UseMultitargetCode)
-        {
-            selector.registerImplementation<TargetArch::SSE42,
-                FunctionRandomImpl<TargetSpecific::SSE42::RandImpl, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX,
-                FunctionRandomImpl<TargetSpecific::AVX::RandImpl, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX512F,
-                FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>();
+        // if constexpr (UseMultitargetCode)
+        // {
+        //     selector.registerImplementation<TargetArch::SSE42,
+        //         FunctionRandomImpl<TargetSpecific::SSE42::RandImpl, ToType, Name>>();
+        //     selector.registerImplementation<TargetArch::AVX,
+        //         FunctionRandomImpl<TargetSpecific::AVX::RandImpl, ToType, Name>>();
+        //     selector.registerImplementation<TargetArch::AVX2,
+        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+        //     selector.registerImplementation<TargetArch::AVX512F,
+        //         FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>();
 
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2, ToType, Name>>();
-        }
+        //     selector.registerImplementation<TargetArch::AVX2,
+        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2, ToType, Name>>();
+
+        //     selector.registerImplementation<TargetArch::Default,
+        //         FunctionRandomImpl<TargetSpecific::Default::RandImpl3, ToType, Name>>();
+        //     selector.registerImplementation<TargetArch::AVX2,
+        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl3, ToType, Name>>();
+
+        //     selector.registerImplementation<TargetArch::Default,
+        //         FunctionRandomImpl<TargetSpecific::Default::RandImpl4, ToType, Name>>();
+        //     selector.registerImplementation<TargetArch::AVX2,
+        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl4, ToType, Name>>();
+
+        //     selector.registerImplementation<TargetArch::Default,
+        //         FunctionRandomImpl<TargetSpecific::Default::RandImpl5, ToType, Name>>();
+        //     selector.registerImplementation<TargetArch::AVX2,
+        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl5, ToType, Name>>();
+        // }
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override

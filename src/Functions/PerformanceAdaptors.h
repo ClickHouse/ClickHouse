@@ -207,8 +207,13 @@ public:
     {
         if (IsArchSupported(Arch))
         {
-            implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));
-            statistics.emplace_back();
+            // TODO(dakovalkov): make this option better.
+            const auto & choose_impl = context.getSettingsRef().function_implementation.value;
+            if (choose_impl.empty() || choose_impl == FunctionImpl::getImplementationTag())
+            {
+                implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));
+                statistics.emplace_back();
+            }
         }
     }
 
