@@ -26,16 +26,17 @@ constexpr T* construct_at(void* p, Args&&... args)
 
 struct Stats
 {
-    size_t total_chunks_size {0};
-    size_t total_allocated_size {0};
-    size_t total_currently_initialized_size {0};
-    size_t total_currently_used_size {0};
+    size_t chunks_size {0};
+    size_t chunks{0};
 
-    size_t chunks_count{0};
-    size_t all_regions_count {0};
-    size_t free_regions_count {0};
-    size_t used_regions_count {0};
-    size_t keyed_regions_count {0};
+    size_t allocated_size {0};
+    size_t used_size {0};
+    size_t initialized_size {0};
+
+    size_t regions {0};
+    size_t free_regions {0};
+    size_t used_regions {0};
+    size_t unused_regions {0};
 
     size_t hits {0};
     size_t concurrent_hits {0};
@@ -51,23 +52,23 @@ struct Stats
     void print(Ostream& out_stream) const noexcept
     {
         out_stream
-            << "chunks size sum: "                << total_chunks_size << "\n"
-            << "allocated: "             << total_allocated_size << "\n"
-            << "initialized: " << total_currently_initialized_size << "\n"
-            << "used: "                << total_currently_used_size << "\n"
-            << "chunks: "                       << chunks_count << "\n"
-            << "regions total: "                      << all_regions_count << "\n"
-            << "free regions: "                 << free_regions_count << "\n"
-            << "all - free - unused: "               << used_regions_count << "\n"
-            << "used regions: "                << keyed_regions_count << "\n"
-            << "hits: "                             << hits << "\n"
-            << "concurrent_hits: "                  << concurrent_hits << "\n"
-            << "misses: "                           << misses << "\n"
-            << "allocations: "                      << allocations << "\n"
-            << "allocated_bytes: "                  << allocated_bytes << "\n"
-            << "evictions: "                        << evictions << "\n"
-            << "evicted_bytes: "                    << evicted_bytes << "\n"
-            << "secondary_evictions: "              << secondary_evictions << "\n";
+            << "chunks size: "         << chunks_size << "\n"
+            << "allocated: "           << allocated_size << "\n"
+            << "initialized: "         << initialized_size << "\n"
+            << "used: "                << used_size << "\n"
+            << "chunks: "              << chunks << "\n"
+            << "regions total: "       << regions << "\n"
+            << "free regions: "        << free_regions << "\n"
+            << "unused regions: "      << unused_regions << "\n"
+            << "used regions: "        << used_regions << "\n"
+            << "hits: "                << hits << "\n"
+            << "concurrent_hits: "     << concurrent_hits << "\n"
+            << "misses: "              << misses << "\n"
+            << "allocations: "         << allocations << "\n"
+            << "allocated_bytes: "     << allocated_bytes << "\n"
+            << "evictions: "           << evictions << "\n"
+            << "evicted_bytes: "       << evicted_bytes << "\n"
+            << "secondary_evictions: " << secondary_evictions << "\n";
     }
 };
 }

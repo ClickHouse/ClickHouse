@@ -145,7 +145,7 @@ public:
         std::lock_guard _(mutex);
 
         used_regions.clear();
-        unused_allocated_regions.clear();
+        unused_regions.clear();
         free_regions.clear();
 
         all_regions.clear_and_dispose(region_metadata_disposer);
@@ -222,7 +222,7 @@ public:
         };
 
         disposer(free_regions);
-        disposer(unused_allocated_regions);
+        disposer(unused_regions);
 
         value_to_region.clear();
         chunks.clear();
@@ -265,16 +265,16 @@ public:
 
         ga::Stats out = {};
 
-        out.total_chunks_size = total_chunks_size;
-        out.total_allocated_size = total_allocated_size;
-        out.total_currently_initialized_size = total_size_currently_initialized.load(std::memory_order_relaxed);
-        out.total_currently_used_size = total_size_in_use;
+        out.chunks_size = total_chunks_size;
+        out.allocated_size = total_allocated_size;
+        out.initialized_size = total_size_currently_initialized.load(std::memory_order_relaxed);
+        out.used_size = total_size_in_use;
 
-        out.chunks_count = chunks.size();
-        out.all_regions_count = all_regions.size();
-        out.free_regions_count = free_regions.size();
-        out.used_regions_count = all_regions.size() - free_regions.size() - unused_allocated_regions.size();
-        out.keyed_regions_count = used_regions.size();
+        out.chunks = chunks.size();
+        out.regions = all_regions.size();
+        out.free_regions = free_regions.size();
+        out.unused_regions = unused_regions.size();
+        out.used_regions = used_regions.size();
 
         out.hits = hits.load(std::memory_order_relaxed);
         out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
@@ -303,12 +303,12 @@ private:
     struct UnusedRegionTag;
     struct RegionTag;
     struct FreeRegionTag;
-    struct AllocatedRegionTag;
+    struct UsedRegionTag;
 
-    using TUnusedRegionHook    = boost::intrusive::list_base_hook<boost::intrusive::tag<UnusedRegionTag>>;
-    using TAllRegionsHook      = boost::intrusive::list_base_hook<boost::intrusive::tag<RegionTag>>;
-    using TFreeRegionHook      = boost::intrusive::set_base_hook< boost::intrusive::tag<FreeRegionTag>>;
-    using TAllocatedRegionHook = boost::intrusive::set_base_hook< boost::intrusive::tag<AllocatedRegionTag>>;
+    using TUnusedRegionHook = boost::intrusive::list_base_hook<boost::intrusive::tag<UnusedRegionTag>>;
+    using TAllRegionsHook   = boost::intrusive::list_base_hook<boost::intrusive::tag<RegionTag>>;
+    using TFreeRegionHook   = boost::intrusive::set_base_hook< boost::intrusive::tag<FreeRegionTag>>;
+    using TUsedRegionHook   = boost::intrusive::set_base_hook<boost::intrusive::tag<UsedRegionTag>>;
 
     struct RegionCompareBySize;
     struct RegionCompareByKey;
@@ -323,9 +323,9 @@ private:
         boost::intrusive::compare<RegionCompareBySize>,
         boost::intrusive::base_hook<TFreeRegionHook>,
         boost::intrusive::constant_time_size<true>>;
-    using TAllocatedRegionsMap = boost::intrusive::set<RegionMetadata,
+    using TUsedRegionsMap = boost::intrusive::set<RegionMetadata,
         boost::intrusive::compare<RegionCompareByKey>,
-        boost::intrusive::base_hook<TAllocatedRegionHook>,
+        boost::intrusive::base_hook<TUsedRegionHook>,
         boost::intrusive::constant_time_size<true>>;
 
     /**
@@ -345,14 +345,14 @@ private:
     /**
      * Represented by a keymap (boost multiset).
      */
-    TAllocatedRegionsMap used_regions;
+    TUsedRegionsMap used_regions;
 
     /**
      * Represented by a LRU List (boost linked list).
      * Used to find the next region for eviction.
      * TODO Replace with exponentially-smoothed size-weighted LFU map.
      */
-    TUnusedRegionsList unused_allocated_regions;
+    TUnusedRegionsList unused_regions;
 
     /**
      * Used to identify metadata associated with some #Value (needed while deleting #ValuePtr).
@@ -512,7 +512,7 @@ public:
         }
         catch (...)
         {
-            if (region->TAllocatedRegionHook::is_linked())
+            if (region->TUsedRegionHook::is_linked())
                 used_regions.erase(used_regions.iterator_to(*region));
 
             freeAndCoalesce(*region);
@@ -530,7 +530,9 @@ private:
         if (++metadata.refcount == 1)
         {
             if (metadata.TUnusedRegionHook::is_linked())
-                unused_allocated_regions.erase(unused_allocated_regions.iterator_to(metadata));
+                unused_regions.erase(unused_regions.iterator_to(metadata));
+
+            // already present in used_regions (in getOrSet), see line 506
 
             value_to_region.emplace(metadata.value(), &metadata);
         }
@@ -549,7 +551,6 @@ private:
         if (value_to_region.end() == it)
             throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
 
-
         RegionMetadata& metadata = *(it->second);
 
         --metadata.refcount;
@@ -557,7 +558,9 @@ private:
         if (metadata.refcount == 0)
         {
             value_to_region.erase(it);
-            unused_allocated_regions.push_back(metadata);
+
+            unused_regions.push_back(metadata);
+            used_regions.erase(used_regions.iterator_to(metadata));
         }
 
         total_size_in_use -= metadata.size;
@@ -583,7 +586,6 @@ private:
                 if (metadata.value() == nullptr) // unobtainable result, just for clang's static analysis tool
                     throw Exception("Cache corruption",
                             ErrorCodes::BAD_ARGUMENTS);
-
 
                 onSharedValueCreate(cache_lock, metadata);
 
@@ -786,7 +788,7 @@ private:
         public TUnusedRegionHook,
         public TAllRegionsHook,
         public TFreeRegionHook,
-        public TAllocatedRegionHook
+        public TUsedRegionHook
     {
         /// #Key and #Value needn't be default-constructible.
 
@@ -874,7 +876,7 @@ private:
 private:
     /**
      * @brief Main allocation routine. Allocates from free region (possibly creating a new one).
-     * @note Method does not insert allocated region to #used_regions or #unused_allocated_regions.
+     * @note Method does not insert allocated region to #used_regions or #unused_regions.
      * @return Desired region or std::nullptr.
      */
     constexpr RegionMetadata * allocate(size_t size)
@@ -981,17 +983,17 @@ private:
      * @brief Evicts region of at least #requested size from cache and returns it, probably coalesced with nearby free
      *        regions. While size is not enough, evicts adjacent regions at right, if any.
      *
-     * @post Target region is removed from #unused_allocated_regions and #used_regions and inserted into #free_regions.
+     * @post Target region is removed from #unused_regions and #used_regions and inserted into #free_regions.
      *
      * @return std::nullptr if there are no unused regions.
      * @return Target region otherwise.
      */
     constexpr RegionMetadata * evict(size_t requested) noexcept
     {
-        if (unused_allocated_regions.empty())
+        if (unused_regions.empty())
             return nullptr;
 
-        auto region_it = all_regions.iterator_to(unused_allocated_regions.front());
+        auto region_it = all_regions.iterator_to(unused_regions.front());
 
         while (true)
         {
@@ -999,9 +1001,9 @@ private:
 
             total_allocated_size -= evicted.size;
 
-            unused_allocated_regions.erase(unused_allocated_regions.iterator_to(evicted));
+            unused_regions.erase(unused_regions.iterator_to(evicted));
 
-            if (evicted.TAllocatedRegionHook::is_linked())
+            if (evicted.TUsedRegionHook::is_linked())
                 used_regions.erase(used_regions.iterator_to(evicted));
 
             ++evictions;
@@ -1027,7 +1029,7 @@ private:
      * @brief Inserts #region into #free_regions container, probably coalescing it with adjacent free regions (one to
      *        the right and one to the left).
      *
-     * @pre #region must not be present in #free_regions, #used_regions and #unused_allocated_regions.
+     * @pre #region must not be present in #free_regions, #used_regions and #unused_regions.
      *
      * @param region Target region to insert.
      */
