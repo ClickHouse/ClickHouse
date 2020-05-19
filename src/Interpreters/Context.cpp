@@ -1043,6 +1043,18 @@ void Context::setCurrentDatabase(const String & name)
 }
 
 
+void Context::setUserAgent(components::UserAgent * useragent)
+{
+    userAgent = useragent;
+}
+
+
+const components::UserAgent * Context::getUserAgent() const
+{
+    return userAgent;
+}
+
+
 void Context::setCurrentQueryId(const String & query_id)
 {
     if (!client_info.current_query_id.empty())

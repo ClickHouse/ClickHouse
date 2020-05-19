@@ -14,6 +14,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <Storages/IStorage_fwd.h>
+#include <Functions/Regexps.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
+#include <Common/UatraitsFast/UserAgent.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -206,6 +208,8 @@ private:
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
 
+    components::UserAgent * userAgent;
+
     /// Use copy constructor or createGlobal() instead
     Context();
 
@@ -346,6 +350,9 @@ public:
 
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
+
+    void setUserAgent(components::UserAgent * useragent);
+    const components::UserAgent * getUserAgent() const;
 
     void killCurrentQuery();
 

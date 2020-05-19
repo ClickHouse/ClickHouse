@@ -1,0 +1,10 @@
+RECURSE(
+    uatraits_mobile_phone_match
+    uatraits-conditions
+    uatraits-fast-cached
+    uatraits-fast-mt
+    uatraits-fast-perf
+    uatraits-fast-test
+    uatraits-name-by-model
+    uatraits-user-agent
+)

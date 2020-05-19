@@ -31,6 +31,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UatraitsFast/UserAgent.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -60,6 +61,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
+#include <Functions/Regexps.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -686,6 +688,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// Initialize a watcher periodically updating DNS cache
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
+
+    Poco::AutoPtr<Poco::Util::MapConfiguration> ua_config = new Poco::Util::MapConfiguration;
+    ua_config->setInt("reload_frequency_sec", 600);
+    ua_config->setString("browsers_path", "data/browser.xml");
+    ua_config->setString("profiles_path", "data/profiles.xml");
+    ua_config->setString("extra_path", "data/extra.xml");
+
+    components::UserAgent::get_mutable_instance().create(*ua_config);
+    components::UserAgent::get_mutable_instance().reload();
+    global_context->setUserAgent(&components::UserAgent::get_mutable_instance());
 
 #if defined(OS_LINUX)
     if (!TasksStatsCounters::checkIfAvailable())

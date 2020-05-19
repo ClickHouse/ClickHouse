@@ -139,6 +139,8 @@ add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
+add_object_library(clickhouse_common Common)
+add_object_library(clickhouse_common_uatraitsfast Common/UatraitsFast)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
@@ -383,6 +385,8 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES}
+      clickhouse_functions clickhouse_parsers dbms clickhouse_common_zookeeper
+      string_utils clickhouse_common_uatraitsfast)
     add_check(unit_tests_dbms)
 endif ()
