@@ -88,10 +88,14 @@ TEST(IGrabberAllocator, StatefulSingleInsertionSingleRetrieval)
 
     ga::Stats stats;
 
+    const auto init = [](void * p)
     {
-        auto&& [ptr, produced] = cache.getOrSet(0,
-                []{ return 200; },
-                [](void * p) { *p = 42; return {p};});
+        static_cast<int *>(*p) = 42;
+        return pointer{p};
+    };
+
+    {
+        auto&& [ptr, produced] = cache.getOrSet(0, []{ return 200; }, init);
 
         EXPECT_TRUE(produced);
         EXPECT_EQ(*(ptr->ptr), 42);
@@ -167,7 +171,12 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
     IntToPointer cache(MMAP_THRESHOLD);
 
     const auto size = [] { return sizeof(pointer); };
-    const auto init = [](void * p) { *p = 43; return {p}; };
+
+    const auto init = [](void * p)
+    {
+        static_cast<int *>(*p) = 43;
+        return pointer{p};
+    };
 
     {
         auto&& [ptr, _] = cache.getOrSet(0, size, init);
@@ -239,7 +248,13 @@ TEST(IGrabberAllocator, StatefulCacheUsedShrinking)
     IntToPointer cache(MMAP_THRESHOLD);
 
     const auto size = [] {return sizeof(pointer); };
-    const auto init = [](void * p) { *p = 48; return {p}; };
+
+    const auto init = [](void * p)
+    {
+        static_cast<int *>(*p) = 48;
+        return pointer{p};
+    };
+
 
     auto&& [ptr, produced] = cache.getOrSet(0, size, init);
 
