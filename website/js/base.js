@@ -1,4 +1,5 @@
 (function () {
+    Sentry.init({ dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103' });
     $(document).click(function (event) {
         var target = $(event.target);
         var target_id = target.attr('id');
@@ -7,14 +8,11 @@
         var is_collapse = target.attr('data-toggle') === 'collapse';
         var is_rating = target.attr('role') === 'rating';
         var navbar_toggle = $('#navbar-toggle');
-
         navbar_toggle.collapse('hide');
         $('.algolia-autocomplete .ds-dropdown-menu').hide();
-
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
         }
-
         if (selector && selector.startsWith('#') && !is_tab && !is_collapse && !is_rating) {
             event.preventDefault();
             var dst = window.location.href.replace(window.location.hash, '');
