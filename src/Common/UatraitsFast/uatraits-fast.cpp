@@ -18,8 +18,8 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/Exception.h>
 
-#include <Core/UatraitsFast/rules.h>
-#include <Core/UatraitsFast/uatraits-fast.h>
+#include <Common/UatraitsFast/rules.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include "Actions.h"
 #include "ActionsHelpers.h"
 
@@ -50,6 +50,7 @@ extern const int PARSE_NO_VALUE_SPECIFIED;
 extern const int PARSE_NO_NAME_SPECIFIED;
 extern const int CONDITION_WITHOUT_FIELD;
 extern const int CONDITION_WITHOUT_VALUE;
+extern const int CONDITION_WITHOUT_TYPE;
 extern const int UNSUPPORTED_CONDITION_TYPE;
 extern const int TOO_MANY_CONDITIONS_INSIDE_RULE;
 extern const int NO_CONDITIONS_INSIDE_RULE;

@@ -223,7 +223,13 @@ add_subdirectory (Compression)
 
 
 set(dbms_headers)
-set(dbms_sources Core/UatraitsFast/types/Browser.h Core/UatraitsFast/types/Browser.cpp Core/UatraitsFast/types/BrowserBase.h Core/UatraitsFast/types/BrowserBase.cpp Core/UatraitsFast/types/OperatingSystem.h Core/UatraitsFast/types/OperatingSystem.cpp)
+set(dbms_sources Common/UatraitsFast/types/Browser.h
+  Common/UatraitsFast/types/Browser.cpp Common/UatraitsFast/types/BrowserBase.h
+  Common/UatraitsFast/types/BrowserBase.cpp
+  Common/UatraitsFast/types/OperatingSystem.h
+  Common/UatraitsFast/types/OperatingSystem.cpp Common/UatraitsFast/uatraits-fast.h
+  Common/UatraitsFast/uatraits-fast.cpp Common/TraceCollector.cpp
+  Common/TraceCollector.h)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -383,7 +389,6 @@ target_link_libraries (clickhouse_common_io
     common
         PRIVATE
     string_utils
-    uatraits_fast
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
@@ -444,7 +449,6 @@ dbms_target_link_libraries (
     clickhouse_common_config
     clickhouse_common_zookeeper
     string_utils # FIXME: not sure if it's private
-    uatraits_fast
         PUBLIC
     clickhouse_common_io
         PRIVATE

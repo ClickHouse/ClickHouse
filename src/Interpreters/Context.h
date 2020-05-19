@@ -24,7 +24,7 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
-#include <Core/UatraitsFast/uatraits/UserAgent.h>
+#include <Common/UatraitsFast/UserAgent.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Core/UatraitsFast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include <common/StringRef.h>
 #include "Actions.h"
 

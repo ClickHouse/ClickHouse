@@ -473,7 +473,7 @@ private:
 #if !defined(ARCADIA_BUILD)
     using Profiles = HashMap<StringRef, Actions, StringRefHash>;
 
-    /// Отображение DeviceModel -> DeviceName
+        /// Отображение DeviceModel -> DeviceName
     using ModelToName = HashMap<StringRef, StringRef, StringRefHash>;
 #else
     using Profiles = google::sparsehash::dense_hash_map<StringRef, Actions, StringRefHash> types;

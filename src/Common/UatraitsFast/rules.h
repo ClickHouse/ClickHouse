@@ -7,7 +7,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
-#include <Core/UatraitsFast/uatraits-fast.h>
+#include <Common/UatraitsFast/uatraits-fast.h>
 #include <common/StringRef.h>
 
 
@@ -45,7 +45,7 @@ public:
 					field_found = true;
 				}
 			if (!field_found)
-				throw TWithBackTrace<yexception>() << "Couldn'd find property name: " << parameter << " for condition";
+				throw DB::Exception("Couldn'd find property name: " + parameter + " for condition", 12);
 		}
 		else if constexpr (std::is_same_v<ValueType, StringRef>)
 		{
@@ -62,7 +62,7 @@ public:
 					field_found = true;
 				}
 			if (!field_found)
-				throw TWithBackTrace<yexception>() << "Couldn'd find property name: " << parameter << " for condition";
+				throw DB::Exception("Couldn'd find property name: " + parameter + " for condition", 12);
 		}
 	}
 
@@ -161,8 +161,8 @@ private:
 };
 
 template <typename Traits>
-Rule<Traits>::Rule(std::string const & name, std::string const & value, ConditionPointer const & condition) :
-	name(name), value(value), condition(condition)
+Rule<Traits>::Rule(std::string const & name_, std::string const & value_, ConditionPointer const & condition_) :
+	name(name_), value(value_), condition(condition_)
 {
 	bool field_found = false;
 	for (std::size_t i = 0; i < Traits::BoolFields::BoolFieldsCount; ++i)
@@ -172,7 +172,7 @@ Rule<Traits>::Rule(std::string const & name, std::string const & value, Conditio
 			field_found = true;
 		}
 	if (!field_found)
-		throw TWithBackTrace<yexception>() << "Couldn't find field property for rule: " << name;
+		throw DB::Exception("Couldn't find field property for rule: " + name, 12);
 }
 
 template <typename Traits>
