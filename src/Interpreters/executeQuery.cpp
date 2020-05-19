@@ -607,7 +607,7 @@ BlockIO executeQuery(
         bool may_have_embedded_data,
         bool allow_processors)
 {
-    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data, allow_processors);
+    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data);
 
     if (!allow_processors && res.pipeline.initialized())
         res.in = res.getInputStream();
