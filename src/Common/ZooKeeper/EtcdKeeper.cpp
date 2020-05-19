@@ -202,44 +202,44 @@ namespace Coordination
         TxnRequest txn_request;
         for (auto txn_compare: requests.compares)
         {
-            LOG_DEBUG(log, "CMPR" << txn_compare.key());
+            LOG_DEBUG(log, call_.xid << " CMPR" << txn_compare.key());
             Compare* compare = txn_request.add_compare();
             compare->CopyFrom(txn_compare);
         }
         RequestOp* req_success;
         for (auto success_range: requests.success_ranges)
         {
-            LOG_DEBUG(log, "RG" << success_range.key());
+            LOG_DEBUG(log, "XID " << call_.xid << " RG" << success_range.key());
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_range(std::make_unique<RangeRequest>(success_range).release());
         }
         for (auto success_put: requests.success_puts)
         {
-            LOG_DEBUG(log, "CR" << success_put.key() << " " << success_put.value());
+            LOG_DEBUG(log, "XID " << call_.xid << " CR" << success_put.key() << " " << success_put.value());
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_put(std::make_unique<PutRequest>(success_put).release());
         }
         for (auto success_delete_range: requests.success_delete_ranges)
         {
-            LOG_DEBUG(log, "DR" << success_delete_range.key());
+            LOG_DEBUG(log, "XID " << call_.xid << " DR" << success_delete_range.key());
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_delete_range(std::make_unique<DeleteRangeRequest>(success_delete_range).release());
         }
         for (auto failure_range: requests.failure_ranges)
         {
-            LOG_DEBUG(log, "FRG" << failure_range.key());
+            LOG_DEBUG(log, "XID " << call_.xid << " FRG" << failure_range.key());
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_range(std::make_unique<RangeRequest>(failure_range).release());
         }
         for (auto failure_put: requests.failure_puts)
         {
-            LOG_DEBUG(log, "FCR" << failure_put.key());
+            LOG_DEBUG(log, "XID " << call_.xid << " FCR" << failure_put.key());
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_put(std::make_unique<PutRequest>(failure_put).release());
         }
         for (auto failure_delete_range: requests.failure_delete_ranges)
         {
-            LOG_DEBUG(log, "FDR" << failure_delete_range.key());
+            LOG_DEBUG(log, "XID " << call_.xid << " FDR" << failure_delete_range.key());
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_delete_range(std::make_unique<DeleteRangeRequest>(failure_delete_range).release());
         }
@@ -393,6 +393,7 @@ namespace Coordination
         {
             for (auto event : watch_response.events())
             {
+                std::lock_guard lock(watches_mutex);
                 String path = event.kv().key();
                 EtcdKey etcd_key;
                 etcd_key.setFullPath(path);
@@ -495,7 +496,7 @@ namespace Coordination
         {
             return etcd_key.getChildsPrefix();
         }
-        virtual void clean()
+        virtual void clear()
         {
             composite = false;
             pre_call_called = false;
@@ -516,7 +517,6 @@ namespace Coordination
             }
             callRequest(call, kv_stub, kv_cq, txn_requests);
             pre_call_called = true;
-            txn_requests.clear();
         }
         EtcdKeeperResponsePtr makeResponseFromExisted()
         {
@@ -546,19 +546,30 @@ namespace Coordination
             {
                 LOG_DEBUG(log, "SUCCESS");
             }
+            std::cout << call->response.DebugString() << std::endl;
             return makeResponseFromRepeatedPtrField(call->response.succeeded(), call->response.responses());
         }
+        virtual void parsePreResponses() {}
         bool callRequired(void* got_tag)
         {
-            if (response->error == Error::ZOK && composite && !post_call_called)
+            if (composite && !post_call_called)
             {
                 EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
+                std::cout << "XID " << call->xid << call->response.DebugString();
                 for (auto field : call->response.responses())
                 {
                     pre_call_responses.emplace_back(field);
                 }
                 post_call_called = true;
-                return true;
+                parsePreResponses();
+                if (response->error == Error::ZOK)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
             }
             else
             {
@@ -576,9 +587,11 @@ namespace Coordination
             checkRequestForComposite();
             if (composite && !pre_call_called)
             {
+                txn_requests.clear();
                 preparePreCall();
                 return;
             }
+            txn_requests.clear();
             preparePostCall();
         }
     };
@@ -597,8 +610,9 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePreCall()
+        void preparePreCall() override
         {
+            std::cout << "PRE CREATE " << process_path << std::endl;
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getParentEphimeralFlagKey()));
             if (is_sequential)
             {
@@ -613,12 +627,20 @@ namespace Coordination
             std::stringstream seq_num_str;
             seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
             process_path += seq_num_str.str();
+            std::cout << "SEQ NUM" << process_path << std::endl;
             etcd_key.updateZkPath(process_path);
         }
-        void parsePreResponses()
+        void parsePreResponses() override
         {
+            process_path = path;
+            if (!composite)
+            {
+                std::cout << "!COMPOSITE" << std::endl;
+                return;
+            }
             if (!parent_exists)
             {
+                std::cout << "ZNONODE" << process_path << std::endl;
                 response->error = Error::ZNONODE;
             }
             for (auto resp : pre_call_responses)
@@ -628,6 +650,7 @@ namespace Coordination
                     auto range_resp = resp.response_range();
                     for (auto kv : range_resp.kvs())
                     {
+                        std::cout << "CREATE KEY " << kv.key() << std::endl;
                         if (is_sequential && kv.key() == etcd_key.getParentSequentialCounterKey())
                         {
                             setSequentialNumber(std::stoi(kv.value()));
@@ -639,6 +662,7 @@ namespace Coordination
                                 response->error = Error::ZNOCHILDRENFOREPHEMERALS;
                                 return;
                             }
+                            std::cout << "OK " << kv.key() << std::endl;
                             response->error = Error::ZOK;
                         }
                         else if (kv.key() == etcd_key.getFullEtcdKey())
@@ -652,11 +676,7 @@ namespace Coordination
         }
         void preparePostCall()
         {
-            process_path = path;
-            if (composite)
-            {
-                parsePreResponses();
-            }
+            std::cout << "XID " << xid << " CREATE TXN LEN " << txn_requests.empty() << std::endl;
             if (is_sequential)
             {
                 txn_requests.compares.emplace_back(prepareCompare(etcd_key.getParentSequentialCounterKey(), "value", "equal", seq_num));
@@ -664,7 +684,8 @@ namespace Coordination
                 txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getParentSequentialCounterKey(), std::to_string(seq_num + seq_delta)));
             }
             // TODO add compare for childs flag version
-            int64_t cur_lease_id = is_ephemeral ? lease_id : 0;
+            // int64_t cur_lease_id = is_ephemeral ? lease_id : 0;
+            int64_t cur_lease_id = 0;
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getFullEtcdKey(), data, cur_lease_id));
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getSequentialCounterKey(), std::to_string(0), cur_lease_id));
             txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getSequentialFlagKey(), std::to_string(is_sequential), cur_lease_id));
@@ -680,7 +701,7 @@ namespace Coordination
                 txn_requests.success_puts.emplace_back(preparePutRequest(etcd_key.getParentChildsFlagKey(), "+" + etcd_key.getFullEtcdKey()));
             }
         }
-        void checkRequestForComposite()
+        void checkRequestForComposite() override
         {
             if (is_sequential || parentPath(path) != "/")
             {
@@ -706,13 +727,13 @@ namespace Coordination
         {
             etcd_key = EtcdKey(path);
         }
-        void preparePreCall()
+        void preparePreCall() override
         {
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getFullEtcdKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsFlagKey()));
             txn_requests.success_ranges.emplace_back(prepareRangeRequest(etcd_key.getChildsPrefix(), true));
         }
-        void parsePreResponses()
+        void parsePreResponses() override
         {
             response->error = Error::ZNONODE;
             for (auto resp : pre_call_responses)
@@ -722,6 +743,7 @@ namespace Coordination
                     auto range_resp = resp.response_range();
                     for (auto kv : range_resp.kvs())
                     {
+                        std::cout << "XID " << xid << "KEY " << kv.key();
                         if (startsWith(kv.key(), etcd_key.getChildsPrefix()))
                         {
                             response->error = Error::ZNOTEMPTY;
@@ -747,7 +769,7 @@ namespace Coordination
         }
         void preparePostCall() override
         {
-            parsePreResponses();
+            std::cout << "XID " << xid << " REMOVE TXN LEN " << txn_requests.empty() << std::endl;
             txn_requests.compares.emplace_back(prepareCompare(etcd_key.getChildsFlagKey(), "version", "equal", child_flag_version));
             txn_requests.compares.emplace_back(prepareCompare(etcd_key.getFullEtcdKey(), "version", version == -1 ? "not_equal" : "equal", version));
 
@@ -860,9 +882,15 @@ namespace Coordination
         EtcdKeeperRequests etcd_requests;
         std::unordered_map<String, int32_t> sequential_keys_map;
         std::unordered_map<String, int32_t> multiple_sequential_keys_map;
+        std::vector<ResponsePtr> responses;
+        std::vector<bool> processed_responses;
+        std::vector<bool> faked_responses;
+        bool failed_compare_requered = false;
         EtcdKeeperMultiRequest(const Requests & generic_requests)
         {
             etcd_requests.reserve(generic_requests.size());
+            faked_responses.assign(generic_requests.size(), false);
+            processed_responses.assign(generic_requests.size(), false);
             std::unordered_set<String> created_keys;
             std::unordered_map<String, int> create_requests_count;
             std::unordered_map<String, int> remove_requests_count;
@@ -882,6 +910,11 @@ namespace Coordination
                 {
                     remove_requests_count[concrete_request_remove->path]++;
                 }
+            }
+
+            for (auto created_key : created_keys)
+            {
+                std::cout << "created_key " << created_key << std::endl;
             }
 
             for (auto it = sequential_keys_map.begin(); it != sequential_keys_map.end(); it++)
@@ -904,16 +937,28 @@ namespace Coordination
                 }
             }
 
+            for (auto key : required_keys)
+            {
+                std::cout << "XID " << xid << "REQKEY" << key << std::endl;
+            }
+
+            int i = -1;
             for (const auto & generic_request : generic_requests)
             {
+                i++;
                 if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
                 {
+                    std::cout << "XID " << xid << "concrete_request_create" << concrete_request_create->path << std::endl;
                     auto current_create_request = std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create);
+                    EtcdKeeperCreateResponse create_response;
+                    create_response.path_created = current_create_request->path;
+                    responses.emplace_back(std::make_shared<CreateResponse>(create_response));
                     String cur_path = current_create_request->path;
                     if (required_keys.count(cur_path) && create_request_to_skip[cur_path])
                     {
                         create_request_to_skip[cur_path] = false;
-                        continue;
+                        faked_responses[i] = true;
+                        // continue;
                     }
                     else if (multiple_sequential_keys_map[cur_path] == -1)
                     {
@@ -932,20 +977,27 @@ namespace Coordination
                 }
                 else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
                 {
+                    responses.emplace_back(std::make_shared<RemoveResponse>());
+                    std::cout << "XID " << xid << "concrete_request_remove" << concrete_request_remove->path << std::endl;
                     String cur_path = concrete_request_remove->path;
                     if (required_keys.count(cur_path) && remove_request_to_skip[cur_path])
                     {
                         remove_request_to_skip[cur_path] = false;
-                        continue;
+                        faked_responses[i] = true;
+                        // continue;
                     }
                     etcd_requests.emplace_back(std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove));
                 }
                 else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
                 {
+                    responses.emplace_back(std::make_shared<SetResponse>());
+                    std::cout << "XID " << xid << "concrete_request_set" << concrete_request_set->path << std::endl;
                     etcd_requests.emplace_back(std::make_shared<EtcdKeeperSetRequest>(*concrete_request_set));
                 }
                 else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
                 {
+                    responses.emplace_back(std::make_shared<CheckResponse>());
+                    std::cout << "XID " << xid << "concrete_request_check" << concrete_request_check->path << std::endl;
                     etcd_requests.emplace_back(std::make_shared<EtcdKeeperCheckRequest>(*concrete_request_check));
                 }
                 else
@@ -964,7 +1016,7 @@ namespace Coordination
         }
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
-        void clean() override
+        void clear() override
         {
             composite = false;
             pre_call_called = false;
@@ -974,7 +1026,7 @@ namespace Coordination
             pre_call_responses.clear();
             for (int i = 0; i != etcd_requests.size(); i++)
             {
-                etcd_requests[i]->clean();
+                etcd_requests[i]->clear();
             }
         }
         void setEtcdKey() override
@@ -984,15 +1036,20 @@ namespace Coordination
                 request->setEtcdKey();
             }
         }
-        void preparePreCall()
+        void preparePreCall() override
         {
-            for (auto request : etcd_requests)
+            for (int i = 0; i != etcd_requests.size(); i++)
             {
-                request->checkRequestForComposite();
-                if (request->composite)
+                if (faked_responses[i])
                 {
-                    request->preparePreCall();
-                    txn_requests += request->txn_requests;
+                    continue;
+                }
+                etcd_requests[i]->checkRequestForComposite();
+                if (etcd_requests[i]->composite)
+                {
+                    etcd_requests[i]->txn_requests.clear();
+                    etcd_requests[i]->preparePreCall();
+                    txn_requests += etcd_requests[i]->txn_requests;
                 }
             }
             if (checking_etcd_keys.size())
@@ -1003,8 +1060,10 @@ namespace Coordination
                 }
             }
         }
-        void parsePreResponses()
+        void parsePreResponses() override
         {
+            std::unordered_set<String> founded_keys;
+            std::cout << "PRE LEN " << pre_call_responses.size() << std::endl;
             if (checking_etcd_keys.size())
             {
                 for (auto resp : pre_call_responses)
@@ -1016,40 +1075,55 @@ namespace Coordination
                         {
                             if (checking_etcd_keys.count(kv.key()))
                             {
-                                EtcdKeeperMultiResponse multi_response;
-                                multi_response.error = Error::ZNODEEXISTS;
-                                std::shared_ptr<EtcdKeeperCreateResponse> create_resp = std::make_shared<EtcdKeeperCreateResponse>();
-                                create_resp->error = Error::ZNODEEXISTS;
-                                multi_response.responses.emplace_back(create_resp);
-                                response = std::make_shared<EtcdKeeperMultiResponse>(multi_response);
-                                return;
+                                founded_keys.insert(kv.key());
                             }
                         }
                     }
                 }
             }
-            for (auto request : etcd_requests)
+            std::cout << "POST LEN " << pre_call_responses.size() << std::endl;
+            for (int i = 0; i != etcd_requests.size(); i++)
             {
-                request->txn_requests.clear();
-                request->pre_call_responses = pre_call_responses;
-                request->preparePostCall();
-                if (request->response->error != Error::ZOK)
+                if (!faked_responses[i])
                 {
-                    EtcdKeeperMultiResponse multi_response;
-                    multi_response.error = request->response->error;
-                    for (auto request : etcd_requests)
-                    {
-                        multi_response.responses.emplace_back(request->makeResponseFromExisted());
-                    }
-                    response = std::make_shared<EtcdKeeperMultiResponse>(multi_response);
-                    return;
+                    etcd_requests[i]->pre_call_responses = pre_call_responses;
+                    etcd_requests[i]->parsePreResponses();
                 }
-                txn_requests += request->txn_requests;
+                else if (auto * concrete_response = dynamic_cast<const CreateResponse *>(responses[i].get()))
+                {
+                    if (founded_keys.count(concrete_response->path_created))
+                    {
+                        responses[i]->error = Error::ZNODEEXISTS;
+                    }
+                }
+            }
+            if (responses[0]->error != Error::ZOK)
+            {
+                EtcdKeeperMultiResponse multi_response;
+                multi_response.error = responses[0]->error;
+                multi_response.responses = responses;
+                response = std::make_shared<EtcdKeeperResponse>(multi_response);
             }
         }
         void preparePostCall() override
         {
-            parsePreResponses();
+            for (int i = 0; i != etcd_requests.size(); i++)
+            {
+                if (etcd_requests[i]->response->error != Error::ZOK)
+                {
+                    failed_compare_requered = true;
+                }
+                else
+                {
+                    etcd_requests[i]->txn_requests.clear();
+                    etcd_requests[i]->preparePostCall();
+                }
+                txn_requests += etcd_requests[i]->txn_requests;
+            }
+            if (failed_compare_requered)
+            {
+                txn_requests.compares.emplace_back(prepareCompare("/fake/path", "version", "equal", -1));
+            }
             txn_requests.take_last_create_request_with_prefix("/zk/childs");
         }
         void checkRequestForComposite()
@@ -1059,7 +1133,7 @@ namespace Coordination
                 composite = true;
             }
         }
-        void prepareCall()
+        void prepareCall() override
         {
             setResponse();
             response->error = Error::ZOK;
@@ -1070,6 +1144,7 @@ namespace Coordination
             }
             if (!pre_call_called)
             {
+                txn_requests.clear();
                 preparePreCall();
             }
             checkRequestForComposite();
@@ -1077,6 +1152,7 @@ namespace Coordination
             {
                 return;
             }
+            txn_requests.clear();
             preparePostCall();
         }
         void setResponse() override
@@ -1148,7 +1224,7 @@ namespace Coordination
                     auto put_resp = resp.response_put();
                     if (put_resp.prev_kv().key() == etcd_key.getFullEtcdKey())
                     {
-                        create_response.error = Error::ZSYSTEMERROR;
+                        create_response.error = Error::ZBADARGUMENTS;
                     }
                     else
                     {
@@ -1386,57 +1462,67 @@ namespace Coordination
         return std::make_shared<EtcdKeeperCheckResponse>(check_response);
     }
 
-    EtcdKeeperResponsePtr EtcdKeeperMultiRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses)
+    EtcdKeeperResponsePtr EtcdKeeperMultiRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> & responses_)
     {
         EtcdKeeperMultiResponse multi_response;
-        for (auto key : checking_etcd_keys)
+        multi_response.error = Error::ZOK;
+        for (int i; i != etcd_requests.size(); i++)
         {
-            std::shared_ptr<EtcdKeeperCreateResponse> create_resp = std::make_shared<EtcdKeeperCreateResponse>();
-            create_resp->path_created = key;
-            multi_response.responses.emplace_back(create_resp);
-            std::shared_ptr<EtcdKeeperRemoveResponse> remove_resp = std::make_shared<EtcdKeeperRemoveResponse>();
-            multi_response.responses.emplace_back(remove_resp);
-        }
-        if (compare_result)
-        {
-            multi_response.error = Error::ZOK;
-            for (int i; i != etcd_requests.size(); i++)
+            if (auto * etcd_request = dynamic_cast<EtcdKeeperCreateRequest *>(etcd_requests[i].get()))
             {
-                if (auto * etcd_request = dynamic_cast<EtcdKeeperCreateRequest *>(etcd_requests[i].get()))
+                if (sequential_keys_map[etcd_request->path] > 1)
                 {
-                    if (sequential_keys_map[etcd_request->path] > 1)
+                    std::vector<std::shared_ptr<EtcdKeeperCreateResponse>> seq_nodes;
+                    auto * cur_resp = dynamic_cast<const EtcdKeeperCreateResponse *>(etcd_request->makeResponseFromResponses(compare_result, responses_).get());
+                    int32_t cur_seq_num = etcd_request->seq_num;
+                    for (int i = 0; i != sequential_keys_map[etcd_request->path]; i++)
                     {
-                        auto * cur_resp = dynamic_cast<const EtcdKeeperCreateResponse *>(etcd_request->makeResponseFromResponses(true, responses).get());
-                        int32_t cur_seq_num = etcd_request->seq_num;
-                        for (int i = 0; i != sequential_keys_map[etcd_request->path]; i++)
+                        auto added_resp = std::make_shared<EtcdKeeperCreateResponse>(*cur_resp);
+                        etcd_request->setSequentialNumber(cur_seq_num + i);
+                        added_resp->path_created = etcd_request->process_path;
+                        seq_nodes.emplace_back(added_resp);
+                    }
+                    int seq_nodes_index = 0;
+                    int responses_index = 0;
+                    while (seq_nodes_index < seq_nodes.size() && responses_index < responses.size())
+                    {
+                        if (faked_responses[responses_index])
                         {
-                            auto added_resp = std::make_shared<EtcdKeeperCreateResponse>(*cur_resp);
-                            etcd_request->setSequentialNumber(cur_seq_num + i);
-                            added_resp->path_created = etcd_request->process_path;
-                            multi_response.responses.emplace_back(added_resp);
+                            responses_index++;
                         }
-                        continue;
+                        else if (auto * concrete_response = dynamic_cast<EtcdKeeperCreateResponse *>(responses[i].get()))
+                        {
+                            if (startsWith(seq_nodes[seq_nodes_index]->path_created, concrete_response->path_created))
+                            {
+                                responses[i] = seq_nodes[seq_nodes_index];
+                                processed_responses[i] = true;
+                            }
+                        }
                     }
                 }
-                multi_response.responses.emplace_back(etcd_requests[i]->makeResponseFromResponses(true, responses));
             }
         }
-        else
+        for (int i; i != etcd_requests.size(); i++)
         {
-            multi_response.error = Error::ZSYSTEMERROR;
-            multi_response.responses.reserve(etcd_requests.size());
-            for (int i; i != etcd_requests.size(); i++)
+            if (!faked_responses[i] && !processed_responses[i])
             {
-                auto resp = etcd_requests[i]->makeResponseFromResponses(false, responses);
-                multi_response.finished &= resp->finished;
-                multi_response.responses.emplace_back(resp);
-                if (resp->error != Error::ZOK)
+                if (etcd_requests[i]->makeResponseFromExisted()->error != Error::ZOK)
                 {
-                    multi_response.error = resp->error;
-                    break;
+                    responses[i] = etcd_requests[i]->makeResponseFromExisted();
                 }
+                if (responses[i]->error == Error::ZOK)
+                {
+                    responses[i] = etcd_requests[i]->makeResponseFromResponses(compare_result, responses_);
+                }
+                multi_response.finished &= etcd_requests[i]->response->finished;
+            }
+            multi_response.error = responses[i]->error;
+            if (responses[i]->error != Error::ZOK)
+            {
+                break;
             }
         }
+        multi_response.responses = responses;
         return std::make_shared<EtcdKeeperMultiResponse>(multi_response);
     }
 
@@ -1541,22 +1627,27 @@ namespace Coordination
                             {
                                 list_watch = true;
                             }
-                            std::lock_guard lock(watches_mutex);
-                            if (list_watch)
+                            String watch_path;
                             {
-                                list_watches[info.request->getEtcdKey()].emplace_back(std::move(info.watch));
-                                callWatchRequest(info.request->getChildsPrefix(), true, watch_stub, watch_cq);
+                                std::lock_guard lock(watches_mutex);
+                                if (list_watch)
+                                {
+                                    list_watches[info.request->getEtcdKey()].emplace_back(std::move(info.watch));
+                                    watch_path = info.request->getChildsPrefix();
+                                }
+                                else
+                                {
+                                    watches[info.request->getEtcdKey()].emplace_back(std::move(info.watch));
+                                    watch_path = info.request->getEtcdKey();
+                                }
                             }
-                            else
-                            {
-                                watches[info.request->getEtcdKey()].emplace_back(std::move(info.watch));
-                                callWatchRequest(info.request->getEtcdKey(), false, watch_stub, watch_cq);
-                            }
+                            callWatchRequest(watch_path, list_watch, watch_stub, watch_cq);
                         }
 
                         EtcdKeeper::AsyncCall* call = new EtcdKeeper::AsyncCall;
                         call->xid = info.request->xid;
 
+                        std::cout << "FIRST CALL XID " << call->xid << std::endl;
                         info.request->prepareCall();
                         info.request->call(*call, kv_stub, kv_cq);
                     }
@@ -1613,12 +1704,14 @@ namespace Coordination
                     }
                     else
                     {
+                        
                         if (!request_info.request->callRequired(got_tag))
                         {
+                            std::cout << "XID " << request_info.request->xid << "FromTag" << std::endl;
                             response = request_info.request->makeResponseFromTag(got_tag);
                             if (!response->finished)
                             {
-                                request_info.request->clean();
+                                request_info.request->clear();
                                 {
                                     std::lock_guard lock(push_request_mutex);
                                     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
@@ -1640,6 +1733,7 @@ namespace Coordination
                             operations[request_info.request->xid] = request_info;
                             EtcdKeeper::AsyncCall* call = new EtcdKeeper::AsyncCall;
                             call->xid = request_info.request->xid;
+                            std::cout << "SECOND CALL XID " << call->xid << std::endl;
                             request_info.request->prepareCall();
                             request_info.request->call(*call, kv_stub, kv_cq);
                         }
