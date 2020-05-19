@@ -992,7 +992,7 @@ private:
         }
 
         free_region->ptr = chunk.ptr;
-        free_region->chunk = chunk;
+        free_region->chunk = &chunk;
         free_region->size = chunk.size;
 
         all_regions.push_back(*free_region);
