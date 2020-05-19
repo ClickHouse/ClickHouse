@@ -183,7 +183,7 @@ struct PerfDescriptorsHolder;
 struct PerfEventsCounters
 {
     // must be unsigned to not cause undefined behaviour on increment
-    typedef UInt64 Id;
+    using Id = UInt64;
 
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
     static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
