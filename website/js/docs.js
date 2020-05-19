@@ -157,6 +157,11 @@ $(document).ready(function () {
                 dataType: 'json',
                 data: JSON.stringify({rating: $(this).prevAll().length + 1}),
                 success: function () {
+                    try {
+                        window.yaCounter18343495.reachGoal('docs_feedback');
+                    } catch (e) {
+                        Sentry.captureException(e);
+                    }
                 },
                 error: function () {
                     rating_stars.removeClass('text-orange');
