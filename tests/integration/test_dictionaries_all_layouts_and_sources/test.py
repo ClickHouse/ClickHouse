@@ -106,9 +106,9 @@ VALUES = {
 
 
 LAYOUTS = [
+    Layout("flat"),
     Layout("hashed"),
     Layout("cache"),
-    Layout("flat"),
     Layout("complex_key_hashed"),
     Layout("complex_key_cache"),
     Layout("range_hashed"),
@@ -117,7 +117,7 @@ LAYOUTS = [
 
 SOURCES = [
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
-    SourceMongoURI("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
+    SourceMongoURI("MongoDB_URI", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
     SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
     SourceClickHouse("LocalClickHouse", "localhost", "9000", "node", "9000", "default", ""),

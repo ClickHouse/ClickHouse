@@ -72,12 +72,12 @@ public:
 private:
     const DictionaryStructure dict_struct;
     const std::string uri;
-    const std::string host;
-    const UInt16 port;
-    const std::string user;
+    std::string host;
+    UInt16 port;
+    std::string user;
     const std::string password;
     const std::string method;
-    const std::string db;
+    std::string db;
     const std::string collection;
     Block sample_block;
 
