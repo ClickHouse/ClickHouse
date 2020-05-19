@@ -1026,27 +1026,32 @@ Possible values:
 
 Default value: 0.
 
-## optimize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
+## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Enables or disables skipping of unused shards for SELECT queries that have sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
-
-Default value: 0
-
-## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
-
-Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
 
 Possible values:
 
--   0 - Disabled (do not throws)
--   1 - Disable query execution only if the table has sharding key
--   2 - Disable query execution regardless sharding key is defined for the table
+-    0 — Disabled.
+-    1 — Enabled.
+
+Default value: 0
+
+## force_optimize_skip_unused_shards {#force-optimize-skip-unused-shards}
+
+Enables or disables query execution if [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
+
+Possible values:
+
+-   0 — Disabled. ClickHouse doesn't throw an exception.
+-   1 — Enabled. Query execution is disabled only if the table has a sharding key.
+-   2 — Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
 
 Default value: 0
 
 ## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
 
-Reset [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) for nested `Distributed` table
+Reset [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) for nested `Distributed` table
 
 Possible values:
 
