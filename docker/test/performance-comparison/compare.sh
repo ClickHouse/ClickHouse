@@ -27,7 +27,7 @@ function configure
     kill -0 $left_pid
     disown $left_pid
     set +m
-    while ! clickhouse-client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
     echo server for setup started
 
     clickhouse-client --port 9001 --query "create database test" ||:
@@ -71,9 +71,9 @@ function restart
 
     set +m
 
-    while ! clickhouse-client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
     echo left ok
-    while ! clickhouse-client --port 9002 --query "select 1" ; do kill -0 $right_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9002 --query "select 1" && kill -0 $right_pid ; do echo . ; sleep 1 ; done
     echo right ok
 
     clickhouse-client --port 9001 --query "select * from system.tables where database != 'system'"
@@ -263,7 +263,7 @@ done
 wait
 unset IFS
 
-parallel --verbose --null < analyze-commands.txt
+parallel --null < analyze-commands.txt
 }
 
 # Analyze results
@@ -542,7 +542,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( time get_profiles || restart || get_profiles ||: ) 2>> profile-errors.log
+    ( get_profiles || restart || get_profiles ||: )
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.
