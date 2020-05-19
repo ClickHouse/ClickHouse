@@ -134,7 +134,11 @@ Block KafkaBlockInputStream::readImpl()
 
         auto new_rows = read_kafka_message();
 
-        buffer->storeLastReadMessageOffset();
+        // we can't store the offser after rebalance, when consumer is stalled, or if it's terminating
+        if (!buffer->storeLastReadMessageOffset()) {
+            total_rows = 0;
+            break;
+        }
 
         auto topic         = buffer->currentTopic();
         auto key           = buffer->currentKey();
@@ -172,7 +176,7 @@ Block KafkaBlockInputStream::readImpl()
         }
     }
 
-    if (buffer->rebalanceHappened() || total_rows == 0)
+    if (total_rows == 0)
         return Block();
 
     /// MATERIALIZED columns can be added here, but I think
