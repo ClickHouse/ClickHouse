@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
 
@@ -10,6 +9,7 @@
 
 namespace DB
 {
+class Context;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 

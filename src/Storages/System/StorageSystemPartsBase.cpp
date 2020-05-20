@@ -14,6 +14,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

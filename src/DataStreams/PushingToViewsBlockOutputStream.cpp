@@ -5,6 +5,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>

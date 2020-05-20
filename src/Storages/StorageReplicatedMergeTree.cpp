@@ -44,6 +44,7 @@
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>

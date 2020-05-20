@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 
 #include <Parsers/ASTCreateQuery.h>
