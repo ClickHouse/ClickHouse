@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
@@ -431,6 +432,28 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 NamesAndTypesList IStorage::getVirtuals() const
 {
     return {};
+}
+
+const StorageMetadataKeyField & IStorage::getPartitionKey() const
+{
+    return partition_key;
+}
+
+void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
+{
+    partition_key = partition_key_;
+}
+
+Names IStorage::getColumnsRequiredForPartitionKey() const
+{
+    if (partition_key.expressions)
+        return partition_key.expressions->getRequiredColumns();
+    return {};
+}
+
+bool IStorage::hasPartitionKey() const
+{
+    return partition_key.expressions != nullptr;
 }
 
 }

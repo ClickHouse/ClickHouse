@@ -183,6 +183,9 @@ public: /// thread-unsafe part. lockStructure must be acquired
     ///
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
+    const StorageMetadataKeyField & getPartitionKey() const;
+    void setPartitionKey(const StorageMetadataKeyField & partition_key_);
+    bool hasPartitionKey() const;
 
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
@@ -195,9 +198,20 @@ protected: /// still thread-unsafe part.
 private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
+
     ColumnsDescription columns;
     IndicesDescription indices;
     ConstraintsDescription constraints;
+
+    StorageMetadataKeyField partition_key;
+    //StorageMetadataKeyField primary_key;
+    //StorageMetadataKeyField sorting_key;
+    //StorageMetadataKeyField sample_key;
+
+    //StorageMetadataField rows_ttl_entry;
+
+    //std::vector<StorageMetadataField> column_ttl_entries;
+    //std::vector<StorageMetadataField> move_ttl_entries;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -441,7 +455,7 @@ public:
     virtual Strings getDataPaths() const { return {}; }
 
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    virtual ASTPtr getPartitionKeyAST() const { return nullptr; }
+    virtual ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
 
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
     virtual ASTPtr getSortingKeyAST() const { return nullptr; }
@@ -453,7 +467,7 @@ public:
     virtual ASTPtr getSamplingKeyAST() const { return nullptr; }
 
     /// Returns column names that need to be read to calculate partition key.
-    virtual Names getColumnsRequiredForPartitionKey() const { return {}; }
+    virtual Names getColumnsRequiredForPartitionKey() const;
 
     /// Returns column names that need to be read to calculate sorting key.
     virtual Names getColumnsRequiredForSortingKey() const { return {}; }

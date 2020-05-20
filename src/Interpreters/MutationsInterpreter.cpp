@@ -221,9 +221,8 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 
     NameSet key_columns;
 
-    if (merge_tree_data->partition_key_expr)
-        for (const String & col : merge_tree_data->partition_key_expr->getRequiredColumns())
-            key_columns.insert(col);
+    for (const String & col : merge_tree_data->getColumnsRequiredForPartitionKey())
+        key_columns.insert(col);
 
     auto sorting_key_expr = merge_tree_data->sorting_key_expr;
     if (sorting_key_expr)
