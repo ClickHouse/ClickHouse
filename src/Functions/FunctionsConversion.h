@@ -41,7 +41,6 @@
 #include <Functions/DateTimeTransforms.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -2407,11 +2406,6 @@ protected:
                 " Instead there is a column with the following structure: " + column->dumpStructure(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        Settings set;
-        if (set.cast_keep_nullable)
-            if (arguments.back().type->isNullable()) {
-                return makeNullable(DataTypeFactory::instance().get(type_col->getValue<String>()));
-            }
         return DataTypeFactory::instance().get(type_col->getValue<String>());
     }
 
