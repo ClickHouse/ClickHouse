@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Core/Field.h>
 
+#include <Common/config.h>
 #if USE_CUDA
 #include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
 #endif
