@@ -19,11 +19,13 @@ ASTPtr ASTColumnDeclaration::clone() const
     if (isNULL)
     {
         res->isNULL = isNULL;
+        res->children.push_back(res->isNULL);
     }
 
     if (isNULL)
     {
         res->isNotNULL = isNotNULL;
+        res->children.push_back(res->isNotNULL);
     }
 
     if (default_expression)
@@ -67,6 +69,18 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         type->formatImpl(settings, state, frame);
+    }
+
+    if (isNULL)
+    {
+        settings.ostr << ' ';
+        isNULL->formatImpl(settings, state, frame);
+    }
+
+    if (isNotNULL)
+    {
+        settings.ostr << ' ';
+        isNotNULL->formatImpl(settings, state, frame);
     }
 
     if (default_expression)
