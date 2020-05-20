@@ -133,7 +133,7 @@ function run_tests
     fi
 
     # Delete old report files.
-    for x in {test-times,skipped-tests,wall-clock-times,report-thresholds,client-times}.tsv
+    for x in {test-times,wall-clock-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
@@ -220,66 +220,127 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv client-times.tsv report-thresholds.tsv ||:
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
+rm -rfv analyze ||:
+mkdir analyze ||:
+
+# FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
+# absolutely atrocious way. This should be done by the file() function itself.
+for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
+do
+    paste -d' ' \
+        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
+        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
+        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
+done
 
 # Split the raw test output into files suitable for analysis.
 IFS=$'\n'
 for test_file in $(find . -maxdepth 1 -name "*-raw.tsv" -print)
 do
     test_name=$(basename "$test_file" "-raw.tsv")
-    sed -n "s/^query\t//p" < "$test_file" > "$test_name-queries.tsv"
-    sed -n "s/^client-time/$test_name/p" < "$test_file" >> "client-times.tsv"
-    sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "report-thresholds.tsv"
-    sed -n "s/^skipped/$test_name/p" < "$test_file" >> "skipped-tests.tsv"
+    sed -n "s/^query\t/$test_name\t/p" < "$test_file" >> "analyze/query-runs.tsv"
+    sed -n "s/^client-time/$test_name/p" < "$test_file" >> "analyze/client-times.tsv"
+    sed -n "s/^report-threshold/$test_name/p" < "$test_file" >> "analyze/report-thresholds.tsv"
+    sed -n "s/^skipped/$test_name/p" < "$test_file" >> "analyze/skipped-tests.tsv"
+    sed -n "s/^display-name/$test_name/p" < "$test_file" >> "analyze/query-display-names.tsv"
 done
 unset IFS
 
+# for each query run, prepare array of metrics from query log
+clickhouse-local --query "
+create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
+    'test text, query_index int, query_id text, version UInt8, time float');
+
+create view left_query_log as select *
+    from file('left-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "left-query-log.tsv.columns")');
+
+create view right_query_log as select *
+    from file('right-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "right-query-log.tsv.columns")');
+
+create table query_metrics engine File(TSV, -- do not add header -- will parse with grep
+        'analyze/query-run-metrics.tsv')
+    as select
+        test, query_index, 0 run, version,
+        [
+            -- server-reported time
+            query_duration_ms / toFloat64(1000)
+            , toFloat64(memory_usage)
+            -- client-reported time
+            , query_runs.time
+        ] metrics
+    from (
+        select *, 0 version from left_query_log
+        union all
+        select *, 1 version from right_query_log
+    ) query_logs
+    right join query_runs
+    using (query_id, version)
+    ;
+"
+
 # This is a lateral join in bash... please forgive me.
-# We don't have arrayPermute(), so I have to make random permutations with 
+# We don't have arrayPermute(), so I have to make random permutations with
 # `order by rand`, and it becomes really slow if I do it for more than one
 # query. We also don't have lateral joins. So I just put all runs of each
 # query into a separate file, and then compute randomization distribution
 # for each file. I do this in parallel using GNU parallel.
+query_index=1
 IFS=$'\n'
-for test_file in $(find . -maxdepth 1 -name "*-queries.tsv" -print)
+for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
 do
-    test_name=$(basename "$test_file" "-queries.tsv")
-    query_index=1
-    for query in $(cut -d'	' -f1 "$test_file" | sort | uniq)
-    do
-        query_prefix="$test_name.q$query_index"
-        query_index=$((query_index + 1))
-        grep -F "$query	" "$test_file" > "$query_prefix.tmp"
-        printf "%s\0\n" \
-            "clickhouse-local \
-                --file \"$query_prefix.tmp\" \
-                --structure 'query text, run int, version UInt32, time float' \
-                --query \"$(cat "$script_dir/eqmed.sql")\" \
-                >> \"$test_name-report.tsv\"" \
-                2>> analyze-errors.log \
-            >> analyze-commands.txt
-    done
+    file="analyze/q$query_index.tmp"
+    grep -F "$prefix	" "analyze/query-run-metrics.tsv" > "$file" &
+    printf "%s\0\n" \
+        "clickhouse-local \
+            --file \"$file\" \
+            --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
+            --query \"$(cat "$script_dir/eqmed.sql")\" \
+            >> \"analyze/query-reports.tsv\"" \
+            2>> analyze/errors.log \
+        >> analyze/commands.txt
+
+    query_index=$((query_index + 1))
 done
 wait
 unset IFS
 
-parallel --null < analyze-commands.txt
+parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt
 }
 
 # Analyze results
 function report
 {
-
 rm -r report ||:
 mkdir report ||:
 
-
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
-cat analyze-errors.log >> report/errors.log ||:
+cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
 clickhouse-local --query "
+create view query_display_names as select * from
+    file('analyze/query-display-names.tsv', TSV,
+        'test text, query_index int, query_display_name text')
+    ;
+
+create table query_metric_stats engine File(TSVWithNamesAndTypes,
+        'report/query-metric-stats.tsv') as
+    select *, metric_name
+    from file ('analyze/query-reports.tsv', TSV, 'left Array(float),
+        right Array(float), diff Array(float), stat_threshold Array(float),
+        test text, query_index int') reports
+    left array join ['server_time', 'memory', 'client_time'] as metric_name,
+        left, right, diff, stat_threshold
+    left join query_display_names
+        on reports.test = query_display_names.test
+            and reports.query_index = query_display_names.query_index
+    ;
+
+-- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
         -- FIXME Comparison mode doesn't make sense for queries that complete
@@ -296,53 +357,54 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
         
         left, right, diff, stat_threshold,
         if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
-        reports.test,
-        query
-    from
-        (
-            select *,
-                replaceAll(_file, '-report.tsv', '') test
-            from file('*-report.tsv', TSV, 'left float, right float, diff float, stat_threshold float, query text')
-        ) reports
-        left join file('report-thresholds.tsv', TSV, 'test text, report_threshold float') thresholds
-        using test
-        ;
+        test, query_index, query_display_name
+    from query_metric_stats
+    left join file('analyze/report-thresholds.tsv', TSV,
+            'test text, report_threshold float') thresholds
+        on query_metric_stats.test = thresholds.test
+    where metric_name = 'server_time'
+    order by test, query_index, metric_name
+    ;
 
 -- keep the table in old format so that we can analyze new and old data together
 create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
-    as select short, changed_fail, unstable_fail, left, right, diff, stat_threshold, test, query
+    as select short, changed_fail, unstable_fail, left, right, diff,
+        stat_threshold, test, query_display_name query
     from queries
     ;
 
 -- save all test runs as JSON for the new comparison page
-create table all_query_funs_json engine File(JSON, 'report/all-query-runs.json') as
-    select test, query, versions_runs[1] runs_left, versions_runs[2] runs_right
+create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json') as
+    select test, query_display_name query,
+        versions_runs[1] runs_left, versions_runs[2] runs_right
     from (
         select
-            test, query,
+            test, query_index,
             groupArrayInsertAt(runs, version) versions_runs
         from (
             select
-                replaceAll(_file, '-queries.tsv', '') test,
-                query, version,
-                groupArray(time) runs
-            from file('*-queries.tsv', TSV, 'query text, run int, version UInt32, time float')
-            group by test, query, version
+                test, query_index, version,
+                groupArray(metrics[1]) runs
+            from file('analyze/query-run-metrics.tsv', TSV,
+                'test text, query_index int, run int, version UInt8, metrics Array(float)')
+            group by test, query_index, version
         )
-        group by test, query
-    )
+        group by test, query_index
+    ) runs
+    left join query_display_names using (test, query_index)
     ;
 
 create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
-    select left, right, diff, stat_threshold, changed_fail, test, query from queries where changed_show
-    order by abs(diff) desc;
+    select left, right, diff, stat_threshold, changed_fail, test, query_display_name
+    from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'report/unstable-queries.tsv') as
-    select left, right, diff, stat_threshold, unstable_fail, test, query from queries where unstable_show
-    order by stat_threshold desc;
+    select left, right, diff, stat_threshold, unstable_fail, test, query_display_name
+    from queries where unstable_show order by stat_threshold desc;
 
-create table queries_for_flamegraph engine File(TSVWithNamesAndTypes, 'report/queries-for-flamegraph.tsv') as
-    select query, test from queries where unstable_show or changed_show
+create table queries_for_flamegraph engine File(TSVWithNamesAndTypes,
+        'report/queries-for-flamegraph.tsv') as
+    select test, query_index from queries where unstable_show or changed_show
     ;
 
 create table unstable_tests_tsv engine File(TSV, 'report/bad-tests.tsv') as
@@ -350,23 +412,23 @@ create table unstable_tests_tsv engine File(TSV, 'report/bad-tests.tsv') as
     group by test having s > 0 order by s desc;
 
 create table query_time engine Memory as select *
-    from file('client-times.tsv', TSV, 'test text, query text, client float, server float');
+    from file('analyze/client-times.tsv', TSV,
+        'test text, query_index int, client float, server float');
 
 create table wall_clock engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
 
 create table slow_on_client_tsv engine File(TSV, 'report/slow-on-client.tsv') as
-    select client, server, floor(client/server, 3) p, query
-    from query_time where p > 1.02 order by p desc;
+    select client, server, floor(client/server, 3) p, query_display_name
+    from query_time left join query_display_names using (test, query_index)
+    where p > 1.02 order by p desc;
 
 create table test_time engine Memory as
     select test, sum(client) total_client_time,
         maxIf(client, not short) query_max,
         minIf(client, not short) query_min,
-        count(*) queries,
-        sum(short) short_queries
-    from query_time full join queries
-    using test, query
+        count(*) queries, sum(short) short_queries
+    from query_time full join queries using (test, query_index)
     group by test;
 
 create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
@@ -378,39 +440,88 @@ create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as
         floor(real / queries, 3) avg_real_per_query,
         floor(query_min, 3)
     from test_time
-        -- wall clock times are also measured for skipped tests, so don't
-        -- do full join
-        left join wall_clock using test
+    -- wall clock times are also measured for skipped tests, so don't
+    -- do full join
+    left join wall_clock using test
     order by avg_real_per_query desc;
 
+-- report for all queries page, only main metric
 create table all_tests_tsv engine File(TSV, 'report/all-queries.tsv') as
     select changed_fail, unstable_fail,
         left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        stat_threshold, test, query
-    from queries order by test, query;
+        stat_threshold, test, query_display_name
+    from queries order by test, query_display_name;
+
+-- new report for all queries with all metrics (no page yet)
+create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.tsv') as
+    select metric_name, left, right, diff,
+        floor(left > right ? left / right : right / left, 3),
+        stat_threshold, test, query_index, query_display_name
+    from query_metric_stats
+    order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
-for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
-do
-    # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
-    # absolutely atrocious way. This should be done by the file() function itself.
-    paste -d' ' \
-        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
-        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
-        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
-done
-
+# Prepare source data for metrics and flamegraphs for unstable queries.
 for version in {right,left}
-do
-clickhouse-local --query "
+    do
+    rm -rf data
+    clickhouse-local --query "
 create view queries_for_flamegraph as
     select * from file('report/queries-for-flamegraph.tsv', TSVWithNamesAndTypes,
-        'query text, test text');
+        'test text, query_index int');
+
+create view query_runs as
+    with 0 as left, 1 as right
+    select * from file('analyze/query-runs.tsv', TSV,
+        'test text, query_index int, query_id text, version UInt8, time float')
+    where version = $version
+    ;
+
+create view query_display_names as select * from
+    file('analyze/query-display-names.tsv', TSV,
+        'test text, query_index int, query_display_name text')
+    ;
+
+create table unstable_query_runs engine File(TSVWithNamesAndTypes,
+        'unstable-query-runs.$version.rep') as
+    select test, query_index, query_display_name, query_id
+    from query_runs
+    join queries_for_flamegraph on
+        query_runs.test = queries_for_flamegraph.test
+        and query_runs.query_index = queries_for_flamegraph.query_index
+    left join query_display_names on
+        query_runs.test = query_display_names.test
+        and query_runs.query_index = query_display_names.query_index
+    ;
 
 create view query_log as select *
     from file('$version-query-log.tsv', TSVWithNamesAndTypes,
         '$(cat "$version-query-log.tsv.columns")');
+
+create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
+        'unstable-run-metrics.$version.rep') as
+    select
+        test, query_index, query_id,
+        ProfileEvents.Values value, ProfileEvents.Names metric
+    from query_log array join ProfileEvents
+    join unstable_query_runs using (query_id)
+    ;
+
+create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
+        'unstable-run-metrics-2.$version.rep') as
+    select
+        test, query_index, query_id,
+        v, n
+    from (
+        select
+            test, query_index, query_id,
+            ['memory_usage', 'read_bytes', 'written_bytes', 'query_duration_ms'] n,
+            [memory_usage, read_bytes, written_bytes, query_duration_ms] v
+        from query_log
+        join unstable_query_runs using (query_id)
+    )
+    array join v, n;
 
 create view trace_log as select *
     from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
@@ -423,88 +534,64 @@ create view addresses_src as select *
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
 
-create table unstable_query_runs engine File(TSVWithNamesAndTypes,
-        'unstable-query-runs.$version.rep') as
-    select query, query_id from query_log
-    where query in (select query from queries_for_flamegraph)
-        and query_id not like 'prewarm %'
-    ;
-
-create table unstable_query_log engine File(Vertical,
-        'unstable-query-log.$version.rep') as
-    select * from query_log
-    where query_id in (select query_id from unstable_query_runs);
-
-create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
-        'unstable-run-metrics.$version.rep') as
-    select ProfileEvents.Values value, ProfileEvents.Names metric, query_id, query
-    from query_log array join ProfileEvents
-    where query_id in (select query_id from unstable_query_runs)
-    ;
-
-create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
-        'unstable-run-metrics-2.$version.rep') as
-    select v, n, query_id, query
-    from
-        (select
-            ['memory_usage', 'read_bytes', 'written_bytes', 'query_duration_ms'] n,
-            [memory_usage, read_bytes, written_bytes, query_duration_ms] v,
-            query,
-            query_id
-        from query_log
-        where query_id in (select query_id from unstable_query_runs))
-    array join n, v;
-
 create table unstable_run_traces engine File(TSVWithNamesAndTypes,
         'unstable-run-traces.$version.rep') as
     select
+        test, query_index, query_id,
         count() value,
-        joinGet(addresses_join_$version, 'name', arrayJoin(trace)) metric,
-        unstable_query_runs.query_id,
-        any(unstable_query_runs.query) query
-    from unstable_query_runs
-    join trace_log on trace_log.query_id = unstable_query_runs.query_id
-    group by unstable_query_runs.query_id, metric
+        joinGet(addresses_join_$version, 'name', arrayJoin(trace)) metric
+    from trace_log
+    join unstable_query_runs using query_id
+    group by test, query_index, query_id, metric
     order by count() desc
     ;
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
         'metric-deviation.$version.rep') as
-    select query, floor((q[3] - q[1])/q[2], 3) d,
-        quantilesExact(0, 0.5, 1)(value) q, metric
-    from (select * from unstable_run_metrics
-        union all select * from unstable_run_traces
-        union all select * from unstable_run_metrics_2) mm
-    join queries_for_flamegraph using query
-    group by query, metric
-    having d > 0.5
-    order by query desc, d desc
+    -- first goes the key used to split the file with grep
+    select test, query_index, query_display_name,
+        d, q, metric
+    from (
+        select
+            test, query_index,
+            floor((q[3] - q[1])/q[2], 3) d,
+            quantilesExact(0, 0.5, 1)(value) q, metric
+        from (select * from unstable_run_metrics
+            union all select * from unstable_run_traces
+            union all select * from unstable_run_metrics_2) mm
+        group by test, query_index, metric
+        having d > 0.5
+    ) metrics
+    left join unstable_query_runs using (test, query_index)
+    order by test, query_index, d desc
     ;
 
 create table stacks engine File(TSV, 'stacks.$version.rep') as
     select
-        query,
+        -- first goes the key used to split the file with grep
+        test, query_index, any(query_display_name),
         arrayStringConcat(
             arrayMap(x -> joinGet(addresses_join_$version, 'name', x),
                 arrayReverse(trace)
             ),
             ';'
         ) readable_trace,
-        count()
+        count() c
     from trace_log
     join unstable_query_runs using query_id
-    group by query, trace
+    group by test, query_index, trace
     ;
 " 2> >(tee -a report/errors.log 1>&2) # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
 done
 wait
 
+# Create per-query flamegraphs and files with metrics
 IFS=$'\n'
 for version in {right,left}
 do
-    for query in $(cut -d'	' -f1 "stacks.$version.rep" | sort | uniq)
+    for query in $(cut -d'	' -f1,2,3 "stacks.$version.rep" | sort | uniq)
     do
-        query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
+        query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
 
         # Build separate .svg flamegraph for each query.
         grep -F "$query	" "stacks.$version.rep" \
