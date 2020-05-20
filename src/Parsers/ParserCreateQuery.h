@@ -128,6 +128,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
     ParserExpression expression_parser;
+    ParserIdentifier null_parser;
+    ParserIdentifier not_null_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -139,8 +141,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       */
     ASTPtr type;
     String default_specifier;
-    bool isNull = false;
-    bool isNotNull = false;
+    ASTPtr isNull;
+    ASTPtr isNotNull;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -169,12 +171,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    if (s_null.checkWithoutMoving(pos, expected)) {
-        if (s_null.check(pos, expected))
-            isNull = true;
-    } else if (s_not_null.checkWithoutMoving(pos, expected)) {
-        if (s_not_null.check(pos, expected))
-            isNotNull = true;
+    Pos pos_before_null = pos;
+
+    if (s_null.check(pos, expected)) {
+        if (!null_parser.parse(pos_before_null, isNull, expected))
+            return false;
+    } else if (s_not_null.check(pos, expected)) {
+        if (!not_null_parser.parse(pos_before_null, isNotNull, expected))
+            return false;
     }
 
     if (s_comment.ignore(pos, expected))
@@ -208,10 +212,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (isNull) {
         column_declaration->isNULL = isNull;
+        column_declaration->children.push_back(std::move(isNull));
     }
 
-    if (isNull) {
+    if (isNotNull) {
         column_declaration->isNotNULL = isNotNull;
+        column_declaration->children.push_back(std::move(isNotNull));
     }
 
     if (default_expression)

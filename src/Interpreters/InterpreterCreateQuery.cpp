@@ -274,8 +274,6 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns_ast, const Context & context)
 {
-    Settings set;
-
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
@@ -307,7 +305,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
                     throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
             }
 
-            if (set.data_type_default_nullable && !column_type->isNullable())
+            if (context.getSettingsRef().data_type_default_nullable && !column_type->isNullable() && !col_decl.isNotNULL)
                 column_type = makeNullable(column_type);
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
