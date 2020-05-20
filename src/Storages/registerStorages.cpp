@@ -46,6 +46,10 @@ void registerStorages()
     #if USE_RDKAFKA
     registerStorageKafka(factory);
     #endif
+
+    #if USE_AMQPCPP
+    registerStorageRabbitMQ(factory);
+    #endif
 }
 
 }
