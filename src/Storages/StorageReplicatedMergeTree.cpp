@@ -493,11 +493,11 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 metadata.order_by_ast = tuple;
             }
 
-            if (!primary_key_ast)
+            if (!hasPrimaryKey())
             {
                 /// Primary and sorting key become independent after this ALTER so we have to
                 /// save the old ORDER BY expression as the new primary key.
-                metadata.primary_key_ast = order_by_ast->clone();
+                metadata.primary_key_ast = getSortingKeyAST()->clone();
             }
         }
 

@@ -262,7 +262,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     if (data.hasSortingKey() || data.hasSkipIndices())
         data.sorting_key_and_skip_indices_expr->execute(block);
 
-    Names sort_columns = data.sorting_key_columns;
+    Names sort_columns = data.getSortingKey().expression_column_names;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

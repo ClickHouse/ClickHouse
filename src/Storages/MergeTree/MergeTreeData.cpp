@@ -154,7 +154,8 @@ MergeTreeData::MergeTreeData(
     {
         StorageMetadataKeyField sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
 
-        if (!primary_key_sample.has(sampling_key.expression_column_names[0])
+        const auto & primary_key = getPrimaryKey();
+        if (!primary_key.sample_block.has(sampling_key.expression_column_names[0])
             && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
@@ -252,11 +253,11 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (hasPartitionKey())
         metadata.partition_by_ast = getPartitionKeyAST()->clone();
 
-    if (order_by_ast)
-        metadata.order_by_ast = order_by_ast->clone();
+    if (hasSortingKey())
+        metadata.order_by_ast = getSortingKeyAST()->clone();
 
-    if (primary_key_ast)
-        metadata.primary_key_ast = primary_key_ast->clone();
+    if (hasPrimaryKey())
+        metadata.primary_key_ast = getPrimaryKeyAST()->clone();
 
     if (ttl_table_ast)
         metadata.ttl_for_table_ast = ttl_table_ast->clone();
@@ -349,17 +350,18 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     auto all_columns = metadata.columns.getAllPhysical();
 
     /// Order by check AST
-    if (order_by_ast && only_check)
+    if (hasSortingKey() && only_check)
     {
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
         /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
 
         ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+        const auto & old_sorting_key_columns = getSortingKeyColumns();
         for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
         {
-            if (old_i < sorting_key_columns.size())
+            if (old_i < old_sorting_key_columns.size())
             {
-                if (new_sorting_key_columns[new_i] != sorting_key_columns[old_i])
+                if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
                     added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
                 else
                     ++old_i;
@@ -414,6 +416,12 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_primary_key_data_types.push_back(elem.type);
     }
 
+    DataTypes new_sorting_key_data_types;
+    for (size_t i = 0; i < sorting_key_size; ++i)
+    {
+        new_sorting_key_data_types.push_back(new_sorting_key_sample.getByPosition(i).type);
+    }
+
     ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
     ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
 
@@ -463,17 +471,23 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     {
         setColumns(std::move(metadata.columns));
 
-        order_by_ast = metadata.order_by_ast;
-        sorting_key_columns = std::move(new_sorting_key_columns);
-        sorting_key_expr_ast = std::move(new_sorting_key_expr_list);
-        sorting_key_expr = std::move(new_sorting_key_expr);
+        StorageMetadataKeyField new_sorting_key;
+        new_sorting_key.definition_ast = metadata.order_by_ast;
+        new_sorting_key.expression_column_names = std::move(new_sorting_key_columns);
+        new_sorting_key.expression_ast = std::move(new_sorting_key_expr_list);
+        new_sorting_key.expressions = std::move(new_sorting_key_expr);
+        new_sorting_key.sample_block = std::move(new_sorting_key_sample);
+        new_sorting_key.data_types = std::move(new_sorting_key_data_types);
+        setSortingKey(new_sorting_key);
 
-        primary_key_ast = metadata.primary_key_ast;
-        primary_key_columns = std::move(new_primary_key_columns);
-        primary_key_expr_ast = std::move(new_primary_key_expr_list);
-        primary_key_expr = std::move(new_primary_key_expr);
-        primary_key_sample = std::move(new_primary_key_sample);
-        primary_key_data_types = std::move(new_primary_key_data_types);
+        StorageMetadataKeyField new_primary_key;
+        new_primary_key.definition_ast = metadata.primary_key_ast;
+        new_primary_key.expression_column_names = std::move(new_primary_key_columns);
+        new_primary_key.expression_ast = std::move(new_primary_key_expr_list);
+        new_primary_key.expressions = std::move(new_primary_key_expr);
+        new_primary_key.sample_block = std::move(new_primary_key_sample);
+        new_primary_key.data_types = std::move(new_primary_key_data_types);
+        setPrimaryKey(new_primary_key);
 
         setIndices(metadata.indices);
         skip_indices = std::move(new_indices);
@@ -622,8 +636,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             for (const auto & col : getPartitionKey().expressions->getRequiredColumns())
                 columns_ttl_forbidden.insert(col);
 
-        if (sorting_key_expr)
-            for (const auto & col : sorting_key_expr->getRequiredColumns())
+        if (hasSortingKey())
+            for (const auto & col : getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
         for (const auto & [name, ast] : new_column_ttls)
@@ -1421,8 +1435,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    if (sorting_key_expr)
+    if (hasSortingKey())
     {
+        auto sorting_key_expr = getSortingKey().expressions;
         for (const ExpressionAction & action : sorting_key_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
@@ -3085,7 +3100,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
 {
     const String column_name = node->getColumnName();
 
-    for (const auto & name : primary_key_columns)
+    for (const auto & name : getPrimaryKey().expression_column_names)
         if (column_name == name)
             return true;
 
@@ -3145,10 +3160,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(order_by_ast) != query_to_string(src_data->order_by_ast))
+    if (query_to_string(getSortingKeyAST()) != query_to_string(src_data->getSortingKeyAST()))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
-    if (query_to_string(getPartitionKey().definition_ast) != query_to_string(src_data->getPartitionKey().definition_ast))
+    if (query_to_string(getPartitionKeyAST()) != query_to_string(src_data->getPartitionKeyAST()))
         throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
 
     if (format_version != src_data->format_version)

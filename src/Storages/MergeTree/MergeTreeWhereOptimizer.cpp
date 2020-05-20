@@ -39,8 +39,9 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
         log{log_}
 {
-    if (!data.primary_key_columns.empty())
-        first_primary_key_column = data.primary_key_columns[0];
+    const auto & primary_key = data.getPrimaryKey();
+    if (!primary_key.expression_column_names.empty())
+        first_primary_key_column = primary_key.expression_column_names[0];
 
     calculateColumnSizes(data, queried_columns);
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
