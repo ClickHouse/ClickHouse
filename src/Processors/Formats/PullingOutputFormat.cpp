@@ -1,4 +1,5 @@
 #include <Processors/Formats/PullingOutputFormat.h>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
@@ -7,6 +8,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+WriteBuffer PullingOutputFormat::out(nullptr, 0);
 
 void PullingOutputFormat::consume(Chunk chunk)
 {
