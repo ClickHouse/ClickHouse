@@ -27,7 +27,7 @@ function configure
     kill -0 $left_pid
     disown $left_pid
     set +m
-    while ! clickhouse-client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
     echo server for setup started
 
     clickhouse-client --port 9001 --query "create database test" ||:
@@ -71,9 +71,9 @@ function restart
 
     set +m
 
-    while ! clickhouse-client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9001 --query "select 1" && kill -0 $left_pid ; do echo . ; sleep 1 ; done
     echo left ok
-    while ! clickhouse-client --port 9002 --query "select 1" ; do kill -0 $right_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9002 --query "select 1" && kill -0 $right_pid ; do echo . ; sleep 1 ; done
     echo right ok
 
     clickhouse-client --port 9001 --query "select * from system.tables where database != 'system'"
@@ -263,7 +263,7 @@ done
 wait
 unset IFS
 
-parallel --verbose --null < analyze-commands.txt
+parallel --null < analyze-commands.txt
 }
 
 # Analyze results
@@ -312,6 +312,25 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
 create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
     as select short, changed_fail, unstable_fail, left, right, diff, stat_threshold, test, query
     from queries
+    ;
+
+-- save all test runs as JSON for the new comparison page
+create table all_query_funs_json engine File(JSON, 'report/all-query-runs.json') as
+    select test, query, versions_runs[1] runs_left, versions_runs[2] runs_right
+    from (
+        select
+            test, query,
+            groupArrayInsertAt(runs, version) versions_runs
+        from (
+            select
+                replaceAll(_file, '-queries.tsv', '') test,
+                query, version,
+                groupArray(time) runs
+            from file('*-queries.tsv', TSV, 'query text, run int, version UInt32, time float')
+            group by test, query, version
+        )
+        group by test, query
+    )
     ;
 
 create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
@@ -542,7 +561,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( time get_profiles || restart || get_profiles ||: )
+    ( get_profiles || restart || get_profiles ||: )
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

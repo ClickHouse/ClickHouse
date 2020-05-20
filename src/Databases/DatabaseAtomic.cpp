@@ -1,6 +1,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Poco/File.h>
+#include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
@@ -324,7 +325,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     try
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        String data = global_context.getPath() + actual_data_path;
+        String data = Poco::Path(global_context.getPath()).makeAbsolute().toString() + actual_data_path;
         Poco::File{data}.linkTo(link, Poco::File::LINK_SYMBOLIC);
     }
     catch (...)
