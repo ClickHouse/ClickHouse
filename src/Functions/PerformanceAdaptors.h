@@ -177,7 +177,7 @@ public:
             implementations[id]->executeImpl(block, arguments, result, input_rows_count);
         else
             implementations[id]->execute(block, arguments, result, input_rows_count);
-        
+
         watch.stop();
 
         // TODO(dakovalkov): Calculate something more informative.
