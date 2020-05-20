@@ -11,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int BAD_DATA_PART_NAME;
 }
 
 
@@ -95,7 +96,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
+            if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA
+                || e.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION
+                || e.code() == ErrorCodes::BAD_DATA_PART_NAME)
             {
                 LOG_WARNING(&Logger::get(storage.getLogName() + " (WriteAheadLog)"),
                     "WAL file '" << path << "' is broken. " << e.displayText());

@@ -998,7 +998,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             commands_for_part.emplace_back(command);
     }
 
-    if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
+    if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
