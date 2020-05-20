@@ -19,7 +19,7 @@ System tables:
 - Available only for reading data.
 - Can't be deleted, but can be detached.
 
-### Sources of system metrics
+### Sources of System Metrics
 
 For collecting system metrics ClickHouse server uses:
 
