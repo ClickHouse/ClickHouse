@@ -28,9 +28,10 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ## Comments {#comments}
 
-ClickHouse supports either SQL-style and C-style comments.
-SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
-C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
+ClickHouse supports either SQL-style and C-style comments:
+
+-   SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+-   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
 
