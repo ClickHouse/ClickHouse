@@ -80,6 +80,62 @@ void RandImpl::execute(char * output, size_t size)
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
 }
 
+void RandImpl2::execute(char * output, size_t size)
+{
+    if (size == 0)
+        return;
+
+    LinearCongruentialGenerator generator0;
+    LinearCongruentialGenerator generator1;
+    LinearCongruentialGenerator generator2;
+    LinearCongruentialGenerator generator3;
+    LinearCongruentialGenerator generator4;
+    LinearCongruentialGenerator generator5;
+    LinearCongruentialGenerator generator6;
+    LinearCongruentialGenerator generator7;
+
+    UInt64 rand_seed = randomSeed();
+
+    seed(generator0, rand_seed, 0xfaaae481acb5874aULL + reinterpret_cast<intptr_t>(output));
+    seed(generator1, rand_seed, 0x3181a34f32887db6ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator2, rand_seed, 0xb6970e4a91b66afdULL + reinterpret_cast<intptr_t>(output));
+    seed(generator3, rand_seed, 0xc16062649e83dc13ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator4, rand_seed, 0xbb093972da5c8d92ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator5, rand_seed, 0xc37dcc410dcfed31ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator6, rand_seed, 0x45e1526b7a4367d5ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator7, rand_seed, 0x99c2759203868a7fULL + reinterpret_cast<intptr_t>(output));
+
+    const char * end = output + size;
+
+    constexpr int bytes_per_write = 32;
+    constexpr int safe_overwrite = 15;
+
+    for (; (end - output) + safe_overwrite >= bytes_per_write; output += safe_overwrite)
+    {
+        unalignedStore<UInt32>(output,      generator0.next());
+        unalignedStore<UInt32>(output + 4,  generator1.next());
+        unalignedStore<UInt32>(output + 8,  generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
+        unalignedStore<UInt32>(output + 16, generator4.next());
+        unalignedStore<UInt32>(output + 20, generator5.next());
+        unalignedStore<UInt32>(output + 24, generator6.next());
+        unalignedStore<UInt32>(output + 28, generator7.next());
+    }
+
+    seed(generator0, rand_seed, 0xfaaae481acb5874aULL + reinterpret_cast<intptr_t>(output));
+    seed(generator1, rand_seed, 0x3181a34f32887db6ULL + reinterpret_cast<intptr_t>(output));
+    seed(generator2, rand_seed, 0xb6970e4a91b66afdULL + reinterpret_cast<intptr_t>(output));
+    seed(generator3, rand_seed, 0xc16062649e83dc13ULL + reinterpret_cast<intptr_t>(output));
+
+    if (end - output > 0)
+    {
+        unalignedStore<UInt32>(output,      generator0.next());
+        unalignedStore<UInt32>(output + 4,  generator1.next());
+        unalignedStore<UInt32>(output + 8,  generator2.next());
+        unalignedStore<UInt32>(output + 12, generator3.next());
+    }
+}
+
 typedef UInt64 UInt64x16 __attribute__ ((vector_size (128)));
 typedef UInt64 UInt64x8  __attribute__ ((vector_size (64)));
 typedef UInt64 UInt64x4  __attribute__ ((vector_size (32)));
@@ -114,6 +170,128 @@ template <int Size>
 using VecUInt64 = typename DummyStruct<Size>::UInt64Type;
 template <int Size>
 using VecUInt32 = typename DummyStruct<Size>::UInt32Type;
+
+void RandImpl3::execute(char * output, size_t size)
+{
+    if (size == 0)
+        return;
+    
+    char * end = output + size;
+
+    UInt64x4 generators = {
+        0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(output),
+        0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(output),
+        0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(output),
+        0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(output),
+    };
+
+    constexpr int bytes_per_write = sizeof(UInt32x4);
+    constexpr int safe_overwrite = 15;
+
+    while ((end - output) + safe_overwrite >= bytes_per_write)
+    {
+        generators *= LinearCongruentialGenerator::a;
+        generators += LinearCongruentialGenerator::c;
+        unalignedStore<UInt32x4>(output, __builtin_convertvector(generators >> 16, UInt32x4));
+        output += bytes_per_write;
+    }
+}
+
+void RandImpl4::execute(char * output, size_t size)
+{
+    if (size == 0)
+        return;
+    
+    char * end = output + size;
+
+    UInt64 rand_seed = randomSeed();
+
+    UInt64x8 generators = {
+        calcSeed(rand_seed, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0xfb4121f80b2ab902ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x0122cf767f39c633ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x14ae86e3a79a502fULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x876316da7e06d622ULL + reinterpret_cast<intptr_t>(output)),
+    };
+
+    constexpr int bytes_per_write = sizeof(UInt32x8);
+    constexpr int safe_overwrite = 15;
+
+    while ((end - output) + safe_overwrite >= bytes_per_write)
+    {
+        generators *= LinearCongruentialGenerator::a;
+        generators += LinearCongruentialGenerator::c;
+        unalignedStore<UInt32x8>(output, __builtin_convertvector(generators >> 16, UInt32x8));
+        output += bytes_per_write;
+    }
+
+    if ((end - output) > 0)
+    {
+        generators *= LinearCongruentialGenerator::a;
+        generators += LinearCongruentialGenerator::c;
+        UInt32x8 values = __builtin_convertvector(generators >> 16, UInt32x8);
+        for (int i = 0; (end - output) > 0; ++i)
+        {
+            unalignedStore<UInt32>(output, values[i]);
+            output += sizeof(UInt32);
+        }
+    }
+}
+
+void RandImpl5::execute(char * output, size_t size)
+{
+    if (size == 0)
+        return;
+    
+    char * end = output + size;
+
+    UInt64 rand_seed = randomSeed();
+
+    UInt64x16 generators = {
+        calcSeed(rand_seed, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0xfb4121f80b2ab902ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x0122cf767f39c633ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x14ae86e3a79a502fULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x876316da7e06d622ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0xfb4821280b2ab912ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x0126cf76df39c633ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x17a486e3a19a602fULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x8b6216da7e08d622ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0xfb4101f80b5ab902ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x01226f767f34c633ULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x14ae86e3a75a502fULL + reinterpret_cast<intptr_t>(output)),
+        calcSeed(rand_seed, 0x876e36da7e36d622ULL + reinterpret_cast<intptr_t>(output)),
+    };
+
+    constexpr int bytes_per_write = sizeof(UInt32x16);
+    constexpr int safe_overwrite = 15;
+
+    while ((end - output) + safe_overwrite >= bytes_per_write)
+    {
+        generators *= LinearCongruentialGenerator::a;
+        generators += LinearCongruentialGenerator::c;
+        unalignedStore<UInt32x16>(output, __builtin_convertvector(generators >> 16, UInt32x16));
+        output += bytes_per_write;
+    }
+
+    if ((end - output) > 0)
+    {
+        generators *= LinearCongruentialGenerator::a;
+        generators += LinearCongruentialGenerator::c;
+        UInt32x16 values = __builtin_convertvector(generators >> 16, UInt32x16);
+        for (int i = 0; (end - output) > 0; ++i)
+        {
+            unalignedStore<UInt32>(output, values[i]);
+            output += sizeof(UInt32);
+        }
+    }
+}
 
 namespace {
 
@@ -302,5 +480,76 @@ template struct RandVecImpl2<16>;
 // template struct RandVecImpl2<16>; 
 
 ) //DECLARE_MULTITARGET_CODE
+
+DECLARE_AVX2_SPECIFIC_CODE(
+
+void RandImpl6::execute(char * output, size_t size)
+{
+    if (size == 0)
+        return;
+    
+    char * end = output + size;
+
+    UInt64x8 generators = {
+        0x5f186ce5faee450bULL + reinterpret_cast<intptr_t>(output),
+        0x9adb2ca3c72ac2eeULL + reinterpret_cast<intptr_t>(output),
+        0x07acf8bfa2537705ULL + reinterpret_cast<intptr_t>(output),
+        0x692b1b533834db92ULL + reinterpret_cast<intptr_t>(output),
+        0x5148b84cdda30081ULL + reinterpret_cast<intptr_t>(output),
+        0xe17b8a75a301ad47ULL + reinterpret_cast<intptr_t>(output),
+        0x6d4a5d69ed2a5f56ULL + reinterpret_cast<intptr_t>(output),
+        0x114e23266201b333ULL + reinterpret_cast<intptr_t>(output),
+    };
+    
+    union {
+        UInt64x8 vec;
+        __m256i mm[2];
+    } gens {generators};
+    
+    constexpr int bytes_per_write = sizeof(UInt32x8);
+    constexpr int safe_overwrite = 15;
+
+    const auto low_a  = _mm256_set1_epi64x(0xDEECE66D);
+    // const auto high_a = _mm256_set1_epi64x(5);
+    const auto c = _mm256_set1_epi64x(11);
+
+    while ((end - output) + safe_overwrite >= bytes_per_write)
+    {
+        {
+            auto gens_high = _mm256_srli_epi64(gens.mm[0], 32);
+            auto low_low_res = _mm256_mul_epu32(gens.mm[0], low_a);
+            auto high_low_res = _mm256_slli_epi64(_mm256_mul_epu32(gens_high, low_a), 32);
+            auto low_high_res = _mm256_slli_epi64(gens.mm[0], 32) + _mm256_slli_epi64(gens.mm[0], 34);
+            gens.mm[0] = _mm256_add_epi64(_mm256_add_epi64(low_low_res, high_low_res),
+                                        _mm256_add_epi64(low_high_res, c));
+        }
+        {
+            auto gens_high = _mm256_srli_epi64(gens.mm[1], 32);
+            auto low_low_res = _mm256_mul_epu32(gens.mm[1], low_a);
+            auto high_low_res = _mm256_slli_epi64(_mm256_mul_epu32(gens_high, low_a), 32);
+            auto low_high_res = _mm256_slli_epi64(gens.mm[1], 32) + _mm256_slli_epi64(gens.mm[1], 34);
+            gens.mm[1] = _mm256_add_epi64(_mm256_add_epi64(low_low_res, high_low_res),
+                                        _mm256_add_epi64(low_high_res, c));
+        }
+        // generators *= LinearCongruentialGenerator::a;
+        // generators += LinearCongruentialGenerator::c;
+        unalignedStore<UInt32x8>(output, __builtin_convertvector(gens.vec >> 16, UInt32x8));
+        output += bytes_per_write;
+    }
+
+    if ((end - output) > 0)
+    {
+        generators *= LinearCongruentialGenerator::a;
+        generators += LinearCongruentialGenerator::c;
+        UInt32x8 values = __builtin_convertvector(generators >> 16, UInt32x8);
+        for (int i = 0; (end - output) > 0; ++i)
+        {
+            unalignedStore<UInt32>(output, values[i]);
+            output += sizeof(UInt32);
+        }
+    }
+}
+
+) // DECLARE_AVX2_SPECIFIC_CODE
 
 }
