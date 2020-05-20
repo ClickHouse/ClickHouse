@@ -200,6 +200,8 @@ TEST(IGrabberAllocator, StatelessCacheUnusedShrinking)
 
     cache.shrinkToFit();
 
+    stats = cache.getStats();
+
     EXPECT_EQ(stats.used_regions, 0);
     EXPECT_EQ(stats.unused_regions, 0);
     EXPECT_EQ(stats.free_regions, 0);
@@ -239,13 +241,23 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
         EXPECT_EQ(stats.unused_regions, 1);
     }
 
-    auto stats = cache.getStats();
+    stats = cache.getStats();
+
+    EXPECT_EQ(stats.used_regions, 0);
+    EXPECT_EQ(stats.unused_regions, 2); /// (2), (3)
+    EXPECT_EQ(stats.free_regions, 1);   /// (1)
 
     EXPECT_EQ(stats.initialized_size, 2 * sizeof(pointer));
-    EXPECT_EQ(stats.used_regions, 0);
-    EXPECT_EQ(stats.unused_regions, 2);
+    EXPECT_EQ(stats.chunks, 1);
 
     cache.shrinkToFit();
+
+    stats = cache.getStats();
+
+    EXPECT_EQ(stats.used_regions, 0);
+    EXPECT_EQ(stats.unused_regions, 0);
+    EXPECT_EQ(stats.free_regions, 0);
+    EXPECT_EQ(stats.regions, 0);
 
     EXPECT_EQ(stats.chunks, 0);
 
@@ -266,17 +278,22 @@ TEST(IGrabberAllocator, StatelessCacheUsedShrinking)
         cache.getOrSet(1, size, init);
     }
 
-    auto stats = cache.getStats();
+    ga::Stats stats = cache.getStats();
 
     EXPECT_EQ(stats.used_regions, 1);
+    EXPECT_EQ(stats.free_regions, 1);
     EXPECT_EQ(stats.unused_regions, 1);
 
     cache.shrinkToFit();
 
+    stats = cache.getStats();
+
     EXPECT_EQ(stats.chunks, 1);
 
     EXPECT_EQ(stats.used_regions, 1);
-    EXPECT_EQ(stats.unused_regions, 0); // is 1
+    EXPECT_EQ(stats.unused_regions, 0);
+    EXPECT_EQ(stats.free_regions, 0);
+    EXPECT_EQ(stats.regions, 1);
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
@@ -304,10 +321,14 @@ TEST(IGrabberAllocator, StatefulCacheUsedShrinking)
 
     cache.shrinkToFit();
 
+    stats = cache.getStats();
+
     EXPECT_EQ(stats.chunks, 1);
 
     EXPECT_EQ(stats.used_regions, 1);
-    EXPECT_EQ(stats.unused_regions, 0); // is 1
+    EXPECT_EQ(stats.unused_regions, 0);
+    EXPECT_EQ(stats.free_regions, 0);
+    EXPECT_EQ(stats.regions, 1);
 
     EXPECT_EQ(cache.get(1).get(), nullptr);
     EXPECT_EQ(cache.get(0).get(), ptr.get());
