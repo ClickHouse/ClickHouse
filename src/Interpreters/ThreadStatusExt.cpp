@@ -134,6 +134,53 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     setupState(thread_group_);
 }
 
+void ThreadStatus::initPerformanceCounters()
+{
+    performance_counters_finalized = false;
+
+    /// Clear stats from previous query if a new query is started
+    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
+    performance_counters.resetCounters();
+    memory_tracker.resetCounters();
+    memory_tracker.setDescription("(for thread)");
+
+    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
+    query_start_time = time(nullptr);
+    ++queries_started;
+
+    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
+
+    if (query_context)
+    {
+        const Settings & settings = query_context->getSettingsRef();
+        if (settings.metrics_perf_events_enabled)
+        {
+            try
+            {
+                PerfEventsCounters::initializeProfileEvents(*perf_events, settings.metrics_perf_events_list);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+    if (!taskstats)
+    {
+        try
+        {
+            taskstats = TasksStatsCounters::create(thread_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+    if (taskstats)
+        taskstats->reset();
+}
+
 void ThreadStatus::finalizePerformanceCounters()
 {
     if (performance_counters_finalized)
@@ -142,9 +189,15 @@ void ThreadStatus::finalizePerformanceCounters()
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
+    bool close_perf_descriptors = true;
+    if (query_context)
+        close_perf_descriptors = !query_context->getSettingsRef().metrics_perf_events_enabled;
+
     try
     {
         PerfEventsCounters::finalizeProfileEvents(*perf_events, performance_counters);
+        if (close_perf_descriptors)
+            PerfEventsCounters::closeEventDescriptors();
     }
     catch (...)
     {

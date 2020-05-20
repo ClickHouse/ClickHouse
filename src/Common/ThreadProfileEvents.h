@@ -169,6 +169,7 @@ struct PerfEventInfo
     ProfileEvents::Event profile_event;
     std::optional<ProfileEvents::Event> profile_event_running;
     std::optional<ProfileEvents::Event> profile_event_enabled;
+    std::string settings_name;
 };
 
 struct PerfEventValue
@@ -182,21 +183,23 @@ struct PerfDescriptorsHolder;
 
 struct PerfEventsCounters
 {
-    // must be unsigned to not cause undefined behaviour on increment
-    using Id = UInt64;
-
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
     static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
+    static constexpr char ALL_EVENTS_NAME[] = "all";
 
-    static const PerfEventInfo raw_events_info[PerfEventsCounters::NUMBER_OF_RAW_EVENTS];
+    static const PerfEventInfo raw_events_info[NUMBER_OF_RAW_EVENTS];
 
-    static void initializeProfileEvents(PerfEventsCounters & counters);
-
+    static void initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list);
     static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
+    static void closeEventDescriptors();
 
     PerfEventsCounters();
 
 private:
+    // must be unsigned to not cause undefined behaviour on increment
+    using Id = UInt64;
+    using ParsedEvents = std::pair<std::string, std::vector<size_t>>;
+
     static std::atomic<Id> counters_id;
     // used to write information about perf unavailability only once for all threads
     static std::atomic<bool> perf_unavailability_logged;
@@ -204,19 +207,19 @@ private:
     static std::atomic<bool> particular_events_unavailability_logged;
 
     static thread_local PerfDescriptorsHolder thread_events_descriptors_holder;
-    static thread_local bool thread_events_descriptors_opened;
-    static thread_local std::optional<PerfEventsCounters::Id> current_thread_counters_id;
+    static thread_local std::optional<Id> current_thread_counters_id;
+    static thread_local std::optional<ParsedEvents> last_parsed_events;
 
     Id id;
     // temp array just to not create it each time event processing finishes
     PerfEventValue raw_event_values[NUMBER_OF_RAW_EVENTS]{};
 
     static Logger * getLogger();
-
-    static bool initializeThreadLocalEvents(PerfEventsCounters & counters);
+    static bool processThreadLocalChanges(const std::string & needed_events_list);
+    static std::vector<size_t> eventIndicesFromString(const std::string & events_list);
 };
 
-struct PerfDescriptorsHolder
+struct PerfDescriptorsHolder : boost::noncopyable
 {
     int descriptors[PerfEventsCounters::NUMBER_OF_RAW_EVENTS]{};
 
@@ -224,6 +227,9 @@ struct PerfDescriptorsHolder
 
     ~PerfDescriptorsHolder();
 
+    void releaseResources();
+
+private:
     static Logger * getLogger();
 };
 

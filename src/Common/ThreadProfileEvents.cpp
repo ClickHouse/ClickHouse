@@ -113,51 +113,53 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
     profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.write_bytes, curr.write_bytes));
 }
 
-static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profile_event)
+static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profile_event, const std::string & settings_name)
 {
     return PerfEventInfo
-        {
-            .event_type = perf_type_id::PERF_TYPE_SOFTWARE,
-            .event_config = event_config,
-            .profile_event = profile_event,
-            .profile_event_running = std::nullopt,
-            .profile_event_enabled = std::nullopt
-        };
+    {
+        .event_type = perf_type_id::PERF_TYPE_SOFTWARE,
+        .event_config = event_config,
+        .profile_event = profile_event,
+        .profile_event_running = std::nullopt,
+        .profile_event_enabled = std::nullopt,
+        .settings_name = settings_name
+    };
 }
 
-#define HARDWARE_EVENT(PERF_NAME, LOCAL_NAME) \
+#define HARDWARE_EVENT(PERF_NAME, LOCAL_NAME, SETTINGS_NAME) \
     PerfEventInfo \
     { \
         .event_type = perf_type_id::PERF_TYPE_HARDWARE, \
         .event_config = (PERF_NAME), \
         .profile_event = ProfileEvents::LOCAL_NAME, \
         .profile_event_running = {ProfileEvents::LOCAL_NAME##Running}, \
-        .profile_event_enabled = {ProfileEvents::LOCAL_NAME##Enabled} \
+        .profile_event_enabled = {ProfileEvents::LOCAL_NAME##Enabled}, \
+        .settings_name = (SETTINGS_NAME) \
     }
 
 // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
 const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
-    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles),
-    HARDWARE_EVENT(PERF_COUNT_HW_INSTRUCTIONS, PerfInstructions),
-    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_REFERENCES, PerfCacheReferences),
-    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_MISSES, PerfCacheMisses),
-    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, PerfBranchInstructions),
-    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_MISSES, PerfBranchMisses),
-    HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles),
-    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend),
-    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend),
-    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles, "cpu-cycles"),
+    HARDWARE_EVENT(PERF_COUNT_HW_INSTRUCTIONS, PerfInstructions, "instructions"),
+    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_REFERENCES, PerfCacheReferences, "cache-references"),
+    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_MISSES, PerfCacheMisses, "cache-misses"),
+    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, PerfBranchInstructions, "branch-instructions"),
+    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_MISSES, PerfBranchMisses, "branch-misses"),
+    HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles, "bus-cycles"),
+    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend, "stalled-cycles-frontend"),
+    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend, "stalled-cycles-backend"),
+    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles, "ref-cpu-cycles"),
     // This reports the CPU clock, a high-resolution per-CPU timer.
     // a bit broken according to this: https://stackoverflow.com/a/56967896
 //    softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PerfCpuClock),
-    softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PerfTaskClock),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PerfPageFaults),
-    softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PerfContextSwitches),
-    softwareEvent(PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PerfCpuMigrations),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MIN, ProfileEvents::PerfPageFaultsMin),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PerfPageFaultsMaj),
-    softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PerfAlignmentFaults),
-    softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PerfEmulationFaults)
+    softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PerfTaskClock, "task-clock"),
+    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PerfPageFaults, "page-faults"),
+    softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PerfContextSwitches, "context-switches"),
+    softwareEvent(PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PerfCpuMigrations, "cpu-migrations"),
+    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MIN, ProfileEvents::PerfPageFaultsMin, "page-faults-min"),
+    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PerfPageFaultsMaj, "page-faults-maj"),
+    softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PerfAlignmentFaults, "alignment-faults"),
+    softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PerfEmulationFaults, "emulation-faults")
     // This is a placeholder event that counts nothing. Informational sample record types such as mmap or
     // comm must be associated with an active event. This dummy event allows gathering such records
     // without requiring a counting event.
@@ -171,17 +173,12 @@ std::atomic<bool> PerfEventsCounters::perf_unavailability_logged = false;
 std::atomic<bool> PerfEventsCounters::particular_events_unavailability_logged = false;
 
 thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
-thread_local bool PerfEventsCounters::thread_events_descriptors_opened = false;
 thread_local std::optional<PerfEventsCounters::Id> PerfEventsCounters::current_thread_counters_id = std::nullopt;
+thread_local std::optional<PerfEventsCounters::ParsedEvents> PerfEventsCounters::last_parsed_events = std::nullopt;
 
 Logger * PerfEventsCounters::getLogger()
 {
     return &Logger::get("PerfEventsCounters");
-}
-
-static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
-{
-    return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
 }
 
 // cat /proc/sys/kernel/perf_event_paranoid
@@ -210,9 +207,14 @@ static bool getPerfEventParanoid(Int32 & result)
     return true;
 }
 
-static void perfEventOpenDisabled(Int32 perf_event_paranoid, bool has_cap_sys_admin, int perf_event_type, int perf_event_config, int & event_file_descriptor)
+static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
 {
-    perf_event_attr pe = perf_event_attr();
+    return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
+}
+
+static int openPerfEventDisabled(Int32 perf_event_paranoid, bool has_cap_sys_admin, UInt32 perf_event_type, UInt64 perf_event_config)
+{
+    perf_event_attr pe{};
     pe.type = perf_event_type;
     pe.size = sizeof(struct perf_event_attr);
     pe.config = perf_event_config;
@@ -222,14 +224,110 @@ static void perfEventOpenDisabled(Int32 perf_event_paranoid, bool has_cap_sys_ad
     pe.exclude_kernel = perf_event_paranoid >= 2 && !has_cap_sys_admin;
     pe.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING;
 
-    event_file_descriptor = openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
+    return openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
 }
 
-bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counters)
+using getLoggerFunc = Logger * ();
+
+static void enablePerfEvent(int event_fd, getLoggerFunc getLogger)
 {
-    if (thread_events_descriptors_opened)
+    if (ioctl(event_fd, PERF_EVENT_IOC_ENABLE, 0))
+        LOG_WARNING(getLogger(), "Can't enable perf event with file descriptor: " << event_fd);
+}
+
+static void resetPerfEvent(int event_fd, getLoggerFunc getLogger)
+{
+    if (ioctl(event_fd, PERF_EVENT_IOC_RESET, 0))
+        LOG_WARNING(getLogger(), "Can't reset perf event with file descriptor: " << event_fd);
+}
+
+static void disablePerfEvent(int event_fd, getLoggerFunc getLogger)
+{
+    if (ioctl(event_fd, PERF_EVENT_IOC_DISABLE, 0))
+        LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << event_fd);
+}
+
+static void releasePerfEvent(int event_fd, getLoggerFunc getLogger)
+{
+    if (close(event_fd))
+    {
+        LOG_WARNING(getLogger(),"Can't close perf event file descriptor: " << event_fd
+                        << "; error: " << errno << " - " << strerror(errno));
+    }
+}
+
+// can process events in format "<symbols><spaces>", e.g. "cpu-cycles" or "cpu-cycles   "
+std::vector<size_t> eventNameToIndices(const std::string & event)
+{
+    std::vector<size_t> indices;
+
+    ssize_t last_non_space_index = event.size() - 1;
+    for (; last_non_space_index >= 0 && isspace(event[last_non_space_index]); --last_non_space_index)
+        ;
+    size_t non_space_width = last_non_space_index + 1;
+
+    if (event.find(PerfEventsCounters::ALL_EVENTS_NAME) == 0 && strlen(PerfEventsCounters::ALL_EVENTS_NAME) == non_space_width)
+    {
+        indices.reserve(PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
+        for (size_t i = 0; i < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++i)
+            indices.push_back(i);
+        return indices;
+    }
+
+    indices.reserve(1);
+    for (size_t event_index = 0; event_index < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++event_index)
+    {
+        const std::string & settings_name = PerfEventsCounters::raw_events_info[event_index].settings_name;
+        if (event.find(settings_name) == 0 && settings_name.size() == non_space_width)
+        {
+            indices.push_back(event_index);
+            break;
+        }
+    }
+
+    return indices;
+}
+
+bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_events_list)
+{
+    std::vector<size_t> valid_event_indices = eventIndicesFromString(needed_events_list);
+
+    // find state changes (if there are any)
+    bool old_state[NUMBER_OF_RAW_EVENTS];
+    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+        old_state[i] = thread_events_descriptors_holder.descriptors[i] != -1;
+
+    bool new_state[NUMBER_OF_RAW_EVENTS];
+    std::fill_n(new_state, NUMBER_OF_RAW_EVENTS, false);
+    for (size_t opened_index : valid_event_indices)
+        new_state[opened_index] = true;
+
+    std::vector<size_t> events_to_open;
+    std::vector<size_t> events_to_release;
+    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+    {
+        if (old_state[i] == new_state[i])
+            continue;
+
+        if (new_state[i])
+            events_to_open.push_back(i);
+        else
+            events_to_release.push_back(i);
+    }
+
+    // release unused descriptors
+    for (size_t i : events_to_release)
+    {
+        int & fd = thread_events_descriptors_holder.descriptors[i];
+        disablePerfEvent(fd, getLogger);
+        releasePerfEvent(fd, getLogger);
+        fd = -1;
+    }
+
+    if (events_to_open.empty())
         return true;
 
+    // check paranoid
     Int32 perf_event_paranoid = 0;
     bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
     if (!is_pref_available)
@@ -240,6 +338,7 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
         return false;
     }
 
+    // check CAP_SYS_ADMIN
     bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
     if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
     {
@@ -249,6 +348,7 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
         return false;
     }
 
+    // check file descriptors limit
     rlimit64 limits{};
     if (getrlimit64(RLIMIT_NOFILE, &limits))
     {
@@ -282,14 +382,15 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
         return false;
     }
 
+    // open descriptors for new events
     bool expected = false;
     bool log_unsupported_event = particular_events_unavailability_logged.compare_exchange_strong(expected, true);
-    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+    for (size_t i : events_to_open)
     {
-        counters.raw_event_values[i] = {};
         const PerfEventInfo & event_info = raw_events_info[i];
         int & fd = thread_events_descriptors_holder.descriptors[i];
-        perfEventOpenDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config, fd);
+        // disable by default to add as little extra time as possible
+        fd = openPerfEventDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config);
 
         if (fd == -1 && log_unsupported_event)
         {
@@ -298,11 +399,57 @@ bool PerfEventsCounters::initializeThreadLocalEvents(PerfEventsCounters & counte
         }
     }
 
-    thread_events_descriptors_opened = true;
     return true;
 }
 
-void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
+// can process events in format "<spaces><symbols><spaces>,<spaces><symbols><spaces>,...",
+// e.g. "cpu-cycles" or " cpu-cycles   " or "cpu-cycles,instructions" or "   cpu-cycles   ,   instructions   "
+std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string & events_list)
+{
+    if (last_parsed_events.has_value())
+    {
+        const ParsedEvents & events = last_parsed_events.value();
+        if (events.first == events_list)
+            return events.second;
+    }
+
+    std::vector<size_t> indices;
+    auto pushBackEvent = [& indices] (const std::string & event_name)
+    {
+        std::vector<size_t> event_indices = eventNameToIndices(event_name);
+        if (event_indices.empty())
+            LOG_WARNING(getLogger(), "Unknown event: `" << event_name << "`");
+        else
+            indices.insert(std::end(indices), std::begin(event_indices), std::end(event_indices));
+    };
+
+    std::string event_name;
+    for (size_t i = 0; i < events_list.size(); ++i)
+    {
+        char symbol = events_list[i];
+
+        if (symbol == ',')
+        {
+            pushBackEvent(event_name);
+            event_name.clear();
+        }
+        else if (i == events_list.size() - 1)
+        {
+            event_name += symbol;
+            pushBackEvent(event_name);
+            event_name.clear();
+        }
+        else if (!isspace(symbol) || !event_name.empty())
+        {
+            event_name += symbol;
+        }
+    }
+
+    last_parsed_events = std::make_pair(events_list, indices);
+    return indices;
+}
+
+void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list)
 {
     if (current_thread_counters_id.has_value())
     {
@@ -311,16 +458,16 @@ void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
         return;
     }
 
-    if (!initializeThreadLocalEvents(counters))
+    if (!processThreadLocalChanges(events_list))
         return;
-
-    for (PerfEventValue & raw_value : counters.raw_event_values)
-        raw_value = {};
 
     for (int fd : thread_events_descriptors_holder.descriptors)
     {
-        if (fd != -1)
-            ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+        if (fd == -1)
+            continue;
+
+        resetPerfEvent(fd, getLogger);
+        enablePerfEvent(fd, getLogger);
     }
 
     current_thread_counters_id = counters.id;
@@ -329,8 +476,6 @@ void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
 void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events)
 {
     if (current_thread_counters_id != counters.id)
-        return;
-    if (!thread_events_descriptors_opened)
         return;
 
     // process raw events
@@ -359,19 +504,28 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
 
         const PerfEventInfo & info = raw_events_info[i];
         const PerfEventValue & raw_value = counters.raw_event_values[i];
+
         profile_events.increment(info.profile_event, raw_value.value);
         if (info.profile_event_running.has_value())
             profile_events.increment(info.profile_event_running.value(), raw_value.time_running);
         if (info.profile_event_enabled.has_value())
             profile_events.increment(info.profile_event_enabled.value(), raw_value.time_enabled);
 
-        if (ioctl(fd, PERF_EVENT_IOC_DISABLE, 0))
-            LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << fd);
-        if (ioctl(fd, PERF_EVENT_IOC_RESET, 0))
-            LOG_WARNING(getLogger(), "Can't reset perf event with file descriptor: " << fd);
+        disablePerfEvent(fd, getLogger);
     }
 
     current_thread_counters_id.reset();
+}
+
+void PerfEventsCounters::closeEventDescriptors()
+{
+    if (current_thread_counters_id.has_value())
+    {
+        LOG_WARNING(getLogger(), "Tried to close event descriptors while measurements are in process; ignoring");
+        return;
+    }
+
+    thread_events_descriptors_holder.releaseResources();
 }
 
 PerfEventsCounters::PerfEventsCounters(): id(counters_id++) {}
@@ -384,17 +538,18 @@ PerfDescriptorsHolder::PerfDescriptorsHolder()
 
 PerfDescriptorsHolder::~PerfDescriptorsHolder()
 {
+    releaseResources();
+}
+
+void PerfDescriptorsHolder::releaseResources()
+{
     for (int & descriptor : descriptors)
     {
         if (descriptor == -1)
             continue;
 
-        if (ioctl(descriptor, PERF_EVENT_IOC_DISABLE, 0))
-            LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << descriptor);
-        if (close(descriptor))
-            LOG_WARNING(getLogger(),"Can't close perf event file descriptor: " << descriptor
-                                                                               << "; error: " << errno << " - " << strerror(errno));
-
+        disablePerfEvent(descriptor, getLogger);
+        releasePerfEvent(descriptor, getLogger);
         descriptor = -1;
     }
 }
