@@ -16,6 +16,16 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->type);
     }
 
+    if (isNULL)
+    {
+        res->isNULL = isNULL;
+    }
+
+    if (isNULL)
+    {
+        res->isNotNULL = isNotNULL;
+    }
+
     if (default_expression)
     {
         res->default_expression = default_expression->clone();
