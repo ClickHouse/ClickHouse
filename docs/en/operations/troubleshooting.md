@@ -1,38 +1,42 @@
-# Troubleshooting
+---
+toc_priority: 46
+toc_title: Troubleshooting
+---
 
-- [Installation](#troubleshooting-installation-errors)
-- [Connecting to the server](#troubleshooting-accepts-no-connections)
-- [Query processing](#troubleshooting-does-not-process-queries)
-- [Efficiency of query processing](#troubleshooting-too-slow)
+# Troubleshooting {#troubleshooting}
+
+-   [Installation](#troubleshooting-installation-errors)
+-   [Connecting to the server](#troubleshooting-accepts-no-connections)
+-   [Query processing](#troubleshooting-does-not-process-queries)
+-   [Efficiency of query processing](#troubleshooting-too-slow)
 
 ## Installation {#troubleshooting-installation-errors}
 
-### You Cannot Get Deb Packages from ClickHouse Repository With apt-get
+### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
-- Check firewall settings.
-- If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
-
+-   Check firewall settings.
+-   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting-started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
 Possible issues:
 
-- The server is not running.
-- Unexpected or wrong configuration parameters.
+-   The server is not running.
+-   Unexpected or wrong configuration parameters.
 
-### Server Is Not Running
+### Server Is Not Running {#server-is-not-running}
 
 **Check if server is runnnig**
 
 Command:
 
-```bash
+``` bash
 $ sudo service clickhouse-server status
 ```
 
 If the server is not running, start it with the command:
 
-```bash
+``` bash
 $ sudo service clickhouse-server start
 ```
 
@@ -42,24 +46,24 @@ The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse
 
 If the server started successfully, you should see the strings:
 
-- `<Information> Application: starting up.` — Server started.
-- `<Information> Application: Ready for connections.` — Server is running and ready for connections.
+-   `<Information> Application: starting up.` — Server started.
+-   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
-```text
+``` text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-If you don't see an error at the end of the file, look through the entire file starting from the string:
+If you don’t see an error at the end of the file, look through the entire file starting from the string:
 
-```text
+``` text
 <Information> Application: starting up.
 ```
 
 If you try to start a second instance of `clickhouse-server` on the server, you see the following log:
 
-```text
+``` text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
 2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
 2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
@@ -75,48 +79,48 @@ Revision: 54413
 
 **See system.d logs**
 
-If you don't find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
+If you don’t find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
 
-```bash
+``` bash
 $ sudo journalctl -u clickhouse-server
 ```
 
 **Start clickhouse-server in interactive mode**
 
-```bash
+``` bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
 This command starts the server as an interactive app with standard parameters of the autostart script. In this mode `clickhouse-server` prints all the event messages in the console.
 
-### Configuration Parameters
+### Configuration Parameters {#configuration-parameters}
 
 Check:
 
-- Docker settings.
+-   Docker settings.
 
     If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
 
-- Endpoint settings.
+-   Endpoint settings.
 
-    Check [listen_host](server_settings/settings.md#server_settings-listen_host) and [tcp_port](server_settings/settings.md#server_settings-tcp_port) settings.
+    Check [listen\_host](server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp\_port](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
-- HTTP protocol settings.
+-   HTTP protocol settings.
 
     Check protocol settings for the HTTP API.
 
-- Secure connection settings.
+-   Secure connection settings.
 
     Check:
 
-    - The [tcp_port_secure](server_settings/settings.md#server_settings-tcp_port_secure) setting.
-    - Settings for [SSL sertificates](server_settings/settings.md#server_settings-openssl).
+    -   The [tcp\_port\_secure](server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
+    -   Settings for [SSL sertificates](server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 
-     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
+    Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 
-- User settings.
+-   User settings.
 
     You might be using the wrong user name or password.
 
@@ -124,7 +128,7 @@ Check:
 
 If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
 
-```bash
+``` bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```

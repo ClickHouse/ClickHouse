@@ -58,7 +58,7 @@ uint64_t getMemoryAmountOrZero()
 #endif
     uint64_t size = 0; /* 64-bit */
     size_t len = sizeof(size);
-    if (sysctl(mib, 2, &size, &len, NULL, 0) == 0)
+    if (sysctl(mib, 2, &size, &len, nullptr, 0) == 0)
         return size;
 
     return 0; /* Failed? */
@@ -69,13 +69,13 @@ uint64_t getMemoryAmountOrZero()
 
 #elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
     /* FreeBSD, Linux, OpenBSD, and Solaris. -------------------- */
-    return (uint64_t)sysconf(_SC_PHYS_PAGES)
-           * (uint64_t)sysconf(_SC_PAGESIZE);
+    return uint64_t(sysconf(_SC_PHYS_PAGES))
+           *uint64_t(sysconf(_SC_PAGESIZE));
 
 #elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGE_SIZE)
     /* Legacy. -------------------------------------------------- */
-    return (uint64_t)sysconf(_SC_PHYS_PAGES)
-           * (uint64_t)sysconf(_SC_PAGE_SIZE);
+    return uint64_t(sysconf(_SC_PHYS_PAGES))
+           * uint64_t(sysconf(_SC_PAGE_SIZE));
 
 #elif defined(CTL_HW) && (defined(HW_PHYSMEM) || defined(HW_REALMEM))
     /* DragonFly BSD, FreeBSD, NetBSD, OpenBSD, and OSX. -------- */
@@ -88,7 +88,7 @@ uint64_t getMemoryAmountOrZero()
 #endif
     unsigned int size = 0; /* 32-bit */
     size_t len = sizeof(size);
-    if (sysctl(mib, 2, &size, &len, NULL, 0) == 0)
+    if (sysctl(mib, 2, &size, &len, nullptr, 0) == 0)
         return size;
 
     return 0; /* Failed? */

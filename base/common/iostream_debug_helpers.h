@@ -80,7 +80,6 @@ dumpImpl(Out & out, T && x)
 }
 
 
-
 /// Tuple, pair
 template <size_t N, typename Out, typename T>
 Out & dumpTupleImpl(Out & out, T && x)

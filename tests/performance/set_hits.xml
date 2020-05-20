@@ -1,0 +1,16 @@
+<test>
+
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+
+    <query>SELECT count() FROM hits_100m_single WHERE UserID IN (SELECT UserID FROM hits_100m_single WHERE AdvEngineID != 0)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE UserID IN (SELECT UserID FROM hits_10m_single)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE SearchPhrase IN (SELECT SearchPhrase FROM hits_10m_single)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE URL IN (SELECT URL FROM hits_10m_single WHERE AdvEngineID != 0)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE URL IN (SELECT URL FROM hits_10m_single WHERE SearchEngineID != 0)</query>
+    <query>SELECT count() FROM hits_10m_single WHERE RegionID IN (SELECT RegionID FROM hits_10m_single)</query>
+</test>

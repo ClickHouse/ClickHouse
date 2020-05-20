@@ -1,0 +1,227 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+import re
+import itertools
+import sys
+import argparse
+
+# Create SQL statement to verify dateTime64 is accepted as argument to functions taking DateTime.
+FUNCTIONS="""
+toTimeZone(N, 'UTC')
+toYear(N)
+toQuarter(N)
+toMonth(N)
+toDayOfYear(N)
+toDayOfMonth(N)
+toDayOfWeek(N)
+toHour(N)
+toMinute(N)
+toSecond(N)
+toUnixTimestamp(N)
+toStartOfYear(N)
+toStartOfISOYear(N)
+toStartOfQuarter(N)
+toStartOfMonth(N)
+toMonday(N)
+toStartOfWeek(N)
+toStartOfDay(N)
+toStartOfHour(N)
+toStartOfMinute(N)
+toStartOfFiveMinute(N)
+toStartOfTenMinutes(N)
+toStartOfFifteenMinutes(N)
+toStartOfInterval(N, INTERVAL 1 year)
+toStartOfInterval(N, INTERVAL 1 month)
+toStartOfInterval(N, INTERVAL 1 day)
+toStartOfInterval(N, INTERVAL 15 minute)
+toTime(N)
+toRelativeYearNum(N)
+toRelativeQuarterNum(N)
+toRelativeMonthNum(N)
+toRelativeWeekNum(N)
+toRelativeDayNum(N)
+toRelativeHourNum(N)
+toRelativeMinuteNum(N)
+toRelativeSecondNum(N)
+toISOYear(N)
+toISOWeek(N)
+toWeek(N)
+toYearWeek(N)
+timeSlot(N)
+toYYYYMM(N)
+toYYYYMMDD(N)
+toYYYYMMDDhhmmss(N)
+addYears(N, 1)
+addMonths(N, 1)
+addWeeks(N, 1)
+addDays(N, 1)
+addHours(N, 1)
+addMinutes(N, 1)
+addSeconds(N, 1)
+addQuarters(N, 1)
+subtractYears(N, 1)
+subtractMonths(N, 1)
+subtractWeeks(N, 1)
+subtractDays(N, 1)
+subtractHours(N, 1)
+subtractMinutes(N, 1)
+subtractSeconds(N, 1)
+subtractQuarters(N, 1)
+CAST(N as DateTime('Europe/Minsk'))
+CAST(N as Date)
+CAST(N as UInt64)
+CAST(N as DateTime64(0, 'Europe/Minsk'))
+CAST(N as DateTime64(3, 'Europe/Minsk'))
+CAST(N as DateTime64(6, 'Europe/Minsk'))
+CAST(N as DateTime64(9, 'Europe/Minsk'))
+# Casting our test values to DateTime(12) will cause an overflow and hence will fail the test under UB sanitizer.
+# CAST(N as DateTime64(12))
+# DateTime64(18) will always fail due to zero precision, but it is Ok to test here:
+# CAST(N as DateTime64(18))
+formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%')
+""".splitlines()
+
+# Expanded later to cartesian product of all arguments.
+# NOTE: {N} to be turned into N after str.format() for keys (format string), but not for list of values!
+extra_ops =\
+[
+    # With same type:
+    (
+        ['N {op} N'],
+        {
+            'op':
+            [
+                '- ', # does not work, but should it?
+                '+ ', # does not work, but should it?
+                '!=', '==', # equality and inequality supposed to take sub-second part in account
+                '< ',
+                '<=',
+                '> ',
+                '>='
+            ]
+        }
+    ),
+    # With other DateTime types:
+    (
+        [
+            'N {op} {arg}',
+            '{arg} {op} N'
+        ],
+        {
+            'op':
+            [
+                '-', # does not work, but should it?
+                '!=', '==',
+                # these are naturally expected to work, but they don't:
+                '< ',
+                '<=',
+                '> ',
+                '>='
+            ],
+            'arg': ['DT', 'D', 'DT64'],
+        }
+    ),
+    # With arithmetic types
+    (
+        [
+            'N {op} {arg}',
+            '{arg} {op} N'
+        ],
+        {
+            'op':
+            [
+                '+ ',
+                '- ',
+                '==',
+                '!=',
+                '< ',
+                '<=',
+                '> ',
+                '>='
+            ],
+            'arg':
+            [
+                'toUInt8(1)',
+                'toInt8(-1)',
+                'toUInt16(1)',
+                'toInt16(-1)',
+                'toUInt32(1)',
+                'toInt32(-1)',
+                'toUInt64(1)',
+                'toInt64(-1)'
+            ],
+        },
+    ),
+]
+
+# Expand extra_ops here
+for funcs, args in extra_ops:
+    args_keys = args.keys()
+    for args_vals in itertools.product(*args.values()):
+        for func in funcs:
+            result_func = func.format(**dict(zip(args_keys, args_vals)))
+            FUNCTIONS.append(result_func)
+
+# filter out empty lines and commented out lines
+COMMENTED_OUT_LINE_RE = re.compile(r"^\s*#")
+FUNCTIONS = list(filter(lambda f: len(f) != 0 and COMMENTED_OUT_LINE_RE.match(f) == None, FUNCTIONS))
+TYPES = ['D', 'DT', 'DT64']
+
+if sys.version_info[0] > 2:
+    escape_string_codec = 'unicode_escape'
+else:
+    escape_string_codec = 'string-escape'
+
+def escape_string(s):
+    return s.encode(escape_string_codec).decode('utf-8')
+
+
+def execute_functions_for_types(functions, types):
+    # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
+    for func in functions:
+        print("""SELECT 'SELECT {func}';""".format(func=escape_string(func)))
+        for dt in types:
+            prologue = "\
+WITH \
+toDateTime64('2019-09-16 19:20:11.234', 3, 'Europe/Minsk') as DT64, \
+toDateTime('2019-09-16 19:20:11', 'Europe/Minsk') as DT, \
+toDate('2019-09-16') as D, {X} as N".format(X=dt)
+            print("""{prologue} SELECT toTypeName(r), {func} as r FORMAT CSV;""".format(prologue=prologue, func=func))
+        print("""SELECT '------------------------------------------';""")
+
+def main():
+    def parse_args():
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--functions_re', type=re.compile, help="RE to enable functions", default=None)
+        parser.add_argument('--types_re',
+                type=lambda s: re.compile('^(' + s + ')$'),
+                help="RE to enable types, supported types: " + ",".join(TYPES), default=None)
+        parser.add_argument('--list_functions', action='store_true', help="List all functions to be tested and exit")
+        return parser.parse_args()
+
+    args = parse_args()
+
+    functions = FUNCTIONS
+    types = TYPES
+
+    if args.functions_re:
+        functions = list(filter(lambda f : args.functions_re.search(f), functions))
+        if len(functions) == 0:
+            print("functions list is empty")
+            return -1
+
+    if args.types_re:
+        types = list(filter(lambda t : args.types_re.match(t), types))
+        if len(types) == 0:
+            print("types list is empty")
+            return -1
+
+    if args.list_functions:
+        print("\n".join(functions))
+        return 0
+
+    execute_functions_for_types(functions, types)
+
+if __name__ == '__main__':
+    exit(main())

@@ -13,7 +13,7 @@
 	url = https://github.com/edenhill/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
-	url = https://github.com/google/cctz.git
+	url = https://github.com/ClickHouse-Extras/cctz.git
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/ClickHouse-Extras/zlib-ng.git
@@ -110,16 +110,16 @@
 	branch = v1.25.0
 [submodule "contrib/aws"]
 	path = contrib/aws
-	url = https://github.com/aws/aws-sdk-cpp.git
+	url = https://github.com/ClickHouse-Extras/aws-sdk-cpp.git
 [submodule "aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
-	url = https://github.com/awslabs/aws-c-event-stream.git
+	url = https://github.com/ClickHouse-Extras/aws-c-event-stream.git
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
-	url = https://github.com/awslabs/aws-c-common.git
+	url = https://github.com/ClickHouse-Extras/aws-c-common.git
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
-	url = https://github.com/awslabs/aws-checksums.git
+	url = https://github.com/ClickHouse-Extras/aws-checksums.git
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
@@ -148,3 +148,12 @@
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
+[submodule "contrib/msgpack-c"]
+	path = contrib/msgpack-c
+	url = https://github.com/msgpack/msgpack-c
+[submodule "contrib/libcpuid"]
+	path = contrib/libcpuid
+	url = https://github.com/ClickHouse-Extras/libcpuid.git
+[submodule "contrib/openldap"]
+	path = contrib/openldap
+	url = https://github.com/openldap/openldap.git

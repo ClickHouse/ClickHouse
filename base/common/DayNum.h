@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Types.h>
+#include <common/types.h>
 #include <common/strong_typedef.h>
 
 /** Represents number of days since 1970-01-01.

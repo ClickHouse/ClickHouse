@@ -53,7 +53,7 @@ void loop(time_t begin, time_t end, int step)
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     loop(orderedIdentifierToDate(20101031), orderedIdentifierToDate(20101101), 15 * 60);
     loop(orderedIdentifierToDate(20100328), orderedIdentifierToDate(20100330), 15 * 60);

@@ -1,0 +1,10 @@
+<test>
+
+
+
+    <preconditions>
+        <table_exists>default.hits_100m_single</table_exists>
+    </preconditions>
+
+    <query>SELECT count(JavaEnable) FROM default.hits_100m_single WHERE WatchID = 1 OR Title = 'next' OR URL = 'prev' OR OriginalURL = '???' OR 1</query>
+</test>

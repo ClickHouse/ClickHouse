@@ -1,2 +1,0 @@
-default
-CREATE QUOTA default KEYED BY \'user name\' FOR INTERVAL 1 HOUR TRACKING TO default, readonly

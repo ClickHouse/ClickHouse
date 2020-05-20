@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #if defined(__SSE2__)
     #include <emmintrin.h>
@@ -291,4 +292,27 @@ template <char... symbols>
 inline char * find_last_not_symbols_or_null(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_last_symbols_sse2<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
+}
+
+
+/// Slightly resembles boost::split. The drawback of boost::split is that it fires a false positive in clang static analyzer.
+/// See https://github.com/boostorg/algorithm/issues/63
+/// And https://bugs.llvm.org/show_bug.cgi?id=41141
+template <char... symbols, typename To>
+inline void splitInto(To & to, const std::string & what, bool token_compress = false)
+{
+    const char * pos = what.data();
+    const char * end = pos + what.size();
+    while (pos < end)
+    {
+        const char * delimiter_or_end = find_first_symbols<symbols...>(pos, end);
+
+        if (!token_compress || pos < delimiter_or_end)
+            to.emplace_back(pos, delimiter_or_end);
+
+        if (delimiter_or_end < end)
+            pos = delimiter_or_end + 1;
+        else
+            pos = delimiter_or_end;
+    }
 }

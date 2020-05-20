@@ -42,8 +42,8 @@ if [ ${CLICKHOUSE_PACKAGES_ARG} != ${NO_REBUILD_FLAG} ]; then
 fi
 
 # # Create a bind-volume to the clickhouse-test script file
-# docker volume create --driver local --opt type=none --opt device=/home/enmk/proj/ClickHouse_master/dbms/tests/clickhouse-test --opt o=bind clickhouse-test-script-volume
-# docker volume create --driver local --opt type=none --opt device=/home/enmk/proj/ClickHouse_master/dbms/tests/queries --opt o=bind clickhouse-test-queries-dir-volume
+# docker volume create --driver local --opt type=none --opt device=/home/enmk/proj/ClickHouse_master/tests/clickhouse-test --opt o=bind clickhouse-test-script-volume
+# docker volume create --driver local --opt type=none --opt device=/home/enmk/proj/ClickHouse_master/tests/queries --opt o=bind clickhouse-test-queries-dir-volume
 
 # Build server image (optional) from local packages
 if [ -z "${CLICKHOUSE_SERVER_IMAGE}" ]; then

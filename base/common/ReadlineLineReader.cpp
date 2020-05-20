@@ -104,6 +104,8 @@ ReadlineLineReader::ReadlineLineReader(const Suggest & suggest_, const String & 
 
     if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
         throw std::runtime_error(std::string("Cannot set signal handler for readline: ") + strerror(errno));
+
+    rl_variable_bind("completion-ignore-case", "on");
 }
 
 ReadlineLineReader::~ReadlineLineReader()

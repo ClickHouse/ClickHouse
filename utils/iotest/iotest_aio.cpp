@@ -1,4 +1,4 @@
-#if __APPLE__ || __FreeBSD__
+#if !defined(OS_LINUX)
 int main(int, char **) { return 0; }
 #else
 
@@ -15,9 +15,6 @@ int main(int, char **) { return 0; }
 #include <Common/Stopwatch.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -141,7 +138,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     int mode = MODE_READ;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;

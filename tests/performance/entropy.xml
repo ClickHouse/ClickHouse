@@ -1,0 +1,27 @@
+<test>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+
+
+    <substitutions>
+        <substitution>
+           <name>args</name>
+           <values>
+               <value>SearchEngineID</value>
+               <value>SearchPhrase</value>
+               <value>MobilePhoneModel</value>
+               <value>URL</value>
+               <value>URLDomain</value>
+               <value>URL, URLDomain</value>
+               <value>ClientIP</value>
+               <value>RegionID</value>
+               <value>ClientIP, RegionID</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT entropy({args}) FROM test.hits</query>
+</test>

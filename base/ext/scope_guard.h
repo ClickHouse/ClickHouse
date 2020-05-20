@@ -12,20 +12,20 @@ class [[nodiscard]] basic_scope_guard
 {
 public:
     constexpr basic_scope_guard() = default;
-    constexpr basic_scope_guard(basic_scope_guard && src) : function{std::exchange(src.function, {})} {}
+    constexpr basic_scope_guard(basic_scope_guard && src) : function{src.release()} {}
 
     constexpr basic_scope_guard & operator=(basic_scope_guard && src)
     {
         if (this != &src)
         {
             invoke();
-            function = std::exchange(src.function, {});
+            function = src.release();
         }
         return *this;
     }
 
     template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
-    constexpr basic_scope_guard(basic_scope_guard<G> && src) : function{std::exchange(src.function, {})} {}
+    constexpr basic_scope_guard(basic_scope_guard<G> && src) : function{src.release()} {}
 
     template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
     constexpr basic_scope_guard & operator=(basic_scope_guard<G> && src)
@@ -33,7 +33,7 @@ public:
         if (this != &src)
         {
             invoke();
-            function = std::exchange(src.function, {});
+            function = src.release();
         }
         return *this;
     }
@@ -46,14 +46,26 @@ public:
 
     ~basic_scope_guard() { invoke(); }
 
+    static constexpr bool is_nullable = std::is_constructible_v<bool, F>;
+
     explicit operator bool() const
     {
-        if constexpr (std::is_constructible_v<bool, F>)
+        if constexpr (is_nullable)
             return static_cast<bool>(function);
         return true;
     }
 
-    void reset() { function = {}; }
+    void reset()
+    {
+        invoke();
+        release();
+    }
+
+    F release()
+    {
+        static_assert(is_nullable);
+        return std::exchange(function, {});
+    }
 
     template <typename G, typename = std::enable_if_t<std::is_convertible_v<G, F>, void>>
     basic_scope_guard<F> & join(basic_scope_guard<G> && other)
@@ -62,14 +74,14 @@ public:
         {
             if (function)
             {
-                function = [x = std::make_shared<std::pair<F, G>>(std::move(function), std::exchange(other.function, {}))]()
+                function = [x = std::make_shared<std::pair<F, G>>(std::move(function), other.release())]()
                 {
                     std::move(x->first)();
                     std::move(x->second)();
                 };
             }
             else
-                function = std::exchange(other.function, {});
+                function = other.release();
         }
         return *this;
     }
@@ -77,7 +89,7 @@ public:
 private:
     void invoke()
     {
-        if constexpr (std::is_constructible_v<bool, F>)
+        if constexpr (is_nullable)
         {
             if (!function)
                 return;

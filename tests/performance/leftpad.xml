@@ -1,0 +1,22 @@
+<test>
+
+    <tags>
+        <tag>string</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>hashfile</table_exists>
+    </preconditions>
+
+
+
+
+    <query><![CDATA[SELECT max(length(MobilePhoneModel)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(Params)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(Title)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(URLDomain)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(PageCharset)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(Referer)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(URL)) FROM hashfile]]></query>
+    <query><![CDATA[SELECT max(length(UTMSource)) FROM hashfile]]></query>
+</test>

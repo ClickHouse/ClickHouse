@@ -215,7 +215,7 @@ JSON::ElementType JSON::getType() const
 
 void JSON::checkPos(Pos pos) const
 {
-    if (pos >= ptr_end)
+    if (pos >= ptr_end || ptr_begin == nullptr)
         throw JSONException("JSON: unexpected end of data.");
 }
 
@@ -341,7 +341,7 @@ JSON::Pos JSON::skipArray() const
     if (*pos == ']')
         return ++pos;
 
-    while (1)
+    while (true)
     {
         pos = JSON(pos, ptr_end, level + 1).skipElement();
 
@@ -373,7 +373,7 @@ JSON::Pos JSON::skipObject() const
     if (*pos == '}')
         return ++pos;
 
-    while (1)
+    while (true)
     {
         pos = JSON(pos, ptr_end, level + 1).skipNameValuePair();
 
@@ -451,7 +451,10 @@ JSON JSON::operator[] (size_t n) const
     size_t i = 0;
     const_iterator it = begin();
     while (i < n && it != end())
-        ++it, ++i;
+    {
+        ++it;
+        ++i;
+    }
 
     if (i != n)
         throw JSONException("JSON: array index " + std::to_string(n) + " out of bounds.");
@@ -626,7 +629,7 @@ std::string JSON::getString() const
                         {
                             unicode = Poco::NumberParser::parseHex(hex);
                         }
-                        catch (const Poco::SyntaxException & e)
+                        catch (const Poco::SyntaxException &)
                         {
                             throw JSONException("JSON: incorrect syntax: incorrect HEX code.");
                         }
@@ -776,7 +779,7 @@ JSON::iterator & JSON::iterator::operator++()
     return *this;
 }
 
-JSON::iterator JSON::iterator::operator++(int)
+JSON::iterator JSON::iterator::operator++(int) // NOLINT
 {
     iterator copy(*this);
     ++*this;

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Poco/Util/Application.h>
 
 namespace Poco::Util

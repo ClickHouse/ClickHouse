@@ -1,0 +1,8 @@
+distributed_group_by_no_merge
+1
+1
+optimize_skip_unused_shards
+1
+optimize_skip_unused_shards lack of WHERE
+0
+1

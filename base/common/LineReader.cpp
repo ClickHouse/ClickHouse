@@ -30,7 +30,7 @@ void trim(String & s)
 bool hasInputData()
 {
     timeval timeout = {0, 0};
-    fd_set fds;
+    fd_set fds{};
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
     return select(1, &fds, nullptr, nullptr, &timeout) == 1;
@@ -53,18 +53,18 @@ LineReader::Suggest::WordsRange LineReader::Suggest::getCompletions(const String
 
     /// last_word can be empty.
 
-    if (case_insensitive)
+    /// Only perform case sensitive completion when the prefix string contains any uppercase characters
+    if (std::none_of(prefix.begin(), prefix.end(), [&](auto c) { return c >= 'A' && c <= 'Z'; }))
         return std::equal_range(
-                words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-                {
-                    return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-                });
+            words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+            {
+                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+            });
     else
-        return std::equal_range(
-                words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
-                {
-                    return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
-                });
+        return std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+        {
+            return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
+        });
 }
 
 LineReader::LineReader(const String & history_file_path_, char extender_, char delimiter_)
@@ -127,7 +127,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 #ifdef OS_LINUX
     if (!readline_ptr)
     {
-        for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
+        for (const auto * name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
         {
             void * dl_handle = dlopen(name, RTLD_LAZY);
             if (dl_handle)

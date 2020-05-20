@@ -12,10 +12,10 @@ function gen_version_string {
 function get_version {
     if [ -z "$VERSION_MAJOR" ] && [ -z "$VERSION_MINOR" ] && [ -z "$VERSION_PATCH" ]; then
         BASEDIR=$(dirname "${BASH_SOURCE[0]}")/../../
-        VERSION_REVISION=`grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//'`
-        VERSION_MAJOR=`grep "set(VERSION_MAJOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//'`
-        VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
-        VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
+        VERSION_REVISION=`grep "set(VERSION_REVISION" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//'`
+        VERSION_MAJOR=`grep "set(VERSION_MAJOR" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//'`
+        VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
+        VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
     fi
     VERSION_PREFIX="${VERSION_PREFIX:-v}"
     VERSION_POSTFIX_TAG="${VERSION_POSTFIX:--testing}"
@@ -97,12 +97,14 @@ function gen_revision_author {
                 -e "s/set(VERSION_MINOR [^) ]*/set(VERSION_MINOR $VERSION_MINOR/g;" \
                 -e "s/set(VERSION_PATCH [^) ]*/set(VERSION_PATCH $VERSION_PATCH/g;" \
                 -e "s/set(VERSION_STRING [^) ]*/set(VERSION_STRING $VERSION_STRING/g;" \
-                dbms/cmake/version.cmake
+                cmake/version.cmake
 
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
             gen_dockerfiles "$VERSION_STRING"
-            dbms/src/Storages/System/StorageSystemContributors.sh ||:
-            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/src/Storages/System/StorageSystemContributors.generated.cpp
+            src/Storages/System/StorageSystemContributors.sh ||:
+            utils/list-versions/list-versions.sh > utils/list-versions/version_date.tsv
+
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" cmake/version.cmake debian/changelog docker/*/Dockerfile src/Storages/System/StorageSystemContributors.generated.cpp utils/list-versions/version_date.tsv
             if [ -z $NO_PUSH ]; then
                 git push
             fi

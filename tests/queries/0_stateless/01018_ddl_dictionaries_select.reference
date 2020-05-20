@@ -1,0 +1,24 @@
+11
+11
+144
+144
+7
+7
+17
+11
+11
+7
+11
+6
+dict1	Dictionary
+dict2	Dictionary
+table_for_dict	MergeTree
+database_for_dict	dict1	ComplexKeyCache
+database_for_dict	dict2	Hashed
+6
+6
+6
+6
+6
+database_for_dict.dict3	6
+6

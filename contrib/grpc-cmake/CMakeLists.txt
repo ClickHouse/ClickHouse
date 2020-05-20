@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.5.1)
 
-set(GRPC_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../grpc)
-set(GRPC_INCLUDE_DIR ${GRPC_SOURCE_DIR}/include/)
 
+set(GRPC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc)
+set(GRPC_INCLUDE_DIR ${GRPC_SOURCE_DIR}/include/)
+set(GRPC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/grpc)
 if(UNIX)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(_gRPC_PLATFORM_LINUX ON)
@@ -41,42 +42,33 @@ set(_gRPC_ADDRESS_SORTING_LIBRARIES address_sorting)
 
 # cares.cmake
 set(CARES_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/cares/cares)
+set(CARES_BINARY_DIR ${GRPC_BINARY_DIR}/third_party/cares/cares)
 set(CARES_SHARED OFF CACHE BOOL "disable shared library")
 set(CARES_STATIC ON CACHE BOOL "link cares statically")
 if(gRPC_BACKWARDS_COMPATIBILITY_MODE)
   # See https://github.com/grpc/grpc/issues/17255
   set(HAVE_LIBNSL OFF CACHE BOOL "avoid cares dependency on libnsl")
 endif()
-add_subdirectory(${CARES_ROOT_DIR} ${CARES_ROOT_DIR})
+add_subdirectory(${CARES_ROOT_DIR} ${CARES_BINARY_DIR})
 if(TARGET c-ares)
   set(_gRPC_CARES_LIBRARIES c-ares)
 endif()
 
 # protobuf.cmake
 set(PROTOBUF_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf)
-# if(NOT protobuf_BUILD_TESTS)
-  # set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
-# endif()
+
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "Build protobuf tests")
 if(NOT protobuf_WITH_ZLIB)
   set(protobuf_WITH_ZLIB OFF CACHE BOOL "Build protobuf with zlib.")
 endif()
 set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "Link static runtime libraries")
-if(NOT USE_INTERNAL_PROTOBUF_LIBRARY)
-  add_subdirectory(${PROTOBUF_ROOT_DIR}/cmake ${GRPC_SOURCE_DIR}/third_party/protobuf)
-endif()
-if(TARGET ${_gRPC_PROTOBUF_LIBRARY_NAME})
-  set(_gRPC_PROTOBUF_LIBRARIES ${_gRPC_PROTOBUF_LIBRARY_NAME})
-endif()
-if(TARGET libprotoc)
-  set(_gRPC_PROTOBUF_PROTOC_LIBRARIES libprotoc)
-endif()
-if(TARGET protoc)
-  set(_gRPC_PROTOBUF_PROTOC protoc)
-  set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
-endif()
-# For well-known .proto files distributed with protobuf
-set(_gRPC_PROTOBUF_WELLKNOWN_INCLUDE_DIR "${PROTOBUF_ROOT_DIR}/src")
+
+set(_gRPC_PROTOBUF_LIBRARIES libprotobuf)
+set(_gRPC_PROTOBUF_PROTOC_LIBRARIES libprotoc)
+set(_gRPC_PROTOBUF_PROTOC protoc)
+set(_gRPC_PROTOBUF_PROTOC_EXECUTABLE $<TARGET_FILE:protoc>)
+set(_gRPC_PROTOBUF_INCLUDE_DIR "${PROTOBUF_ROOT_DIR}/src")
+
 if(gRPC_INSTALL)
   message(WARNING "gRPC_INSTALL will be forced to FALSE because gRPC_PROTOBUF_PROVIDER is \"module\"")
   set(gRPC_INSTALL FALSE)
@@ -96,12 +88,13 @@ set(_gRPC_UPB_GRPC_GENERATED_DIR "${GRPC_SOURCE_DIR}/src/core/ext/upb-generated"
 set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
-set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/../zlib-ng)
 include_directories("${ZLIB_ROOT_DIR}")
-# add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
-set(_gRPC_ZLIB_LIBRARIES zlibstatic)
-set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
-
+## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
+if(TARGET zlibstatic)
+  set(_gRPC_ZLIB_LIBRARIES zlibstatic)
+  set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${GRPC_SOURCE_DIR}/third_party/zlib")
+endif()
 
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -std=c99")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -132,6 +125,7 @@ target_include_directories(address_sorting
 )
 target_link_libraries(address_sorting
   ${_gRPC_BASELIB_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
 )
 
@@ -192,6 +186,7 @@ target_include_directories(gpr
 )
 target_link_libraries(gpr
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
 )
 
 add_library(grpc
@@ -595,6 +590,7 @@ target_link_libraries(grpc
   ${_gRPC_CARES_LIBRARIES}
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   gpr
 )
 if (_gRPC_PLATFORM_MAC)
@@ -941,6 +937,7 @@ target_link_libraries(grpc_cronet
   ${_gRPC_CARES_LIBRARIES}
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   gpr
 )
 if (_gRPC_PLATFORM_MAC)
@@ -1271,6 +1268,7 @@ target_link_libraries(grpc_unsecure
   ${_gRPC_CARES_LIBRARIES}
   ${_gRPC_ADDRESS_SORTING_LIBRARIES}
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  ${_gRPC_PROTOBUF_LIBRARIES}
   gpr
 )
 if (_gRPC_PLATFORM_MAC)

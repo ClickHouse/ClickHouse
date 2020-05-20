@@ -2,13 +2,13 @@
 #include <common/DateLUT.h>
 #include <Poco/Exception.h>
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     try
     {
         const auto & date_lut = DateLUT::instance();
         std::cout << "Detected default timezone: `" << date_lut.getTimeZone() << "'" << std::endl;
-        time_t now = time(NULL);
+        time_t now = time(nullptr);
         std::cout << "Current time: " << date_lut.timeToString(now)
                   << ", UTC: " << DateLUT::instance("UTC").timeToString(now) << std::endl;
     }
