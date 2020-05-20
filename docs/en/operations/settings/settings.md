@@ -421,7 +421,7 @@ Default value: 0.
 
 See also:
 
--   [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
 
 
 ## max\_block\_size {#setting-max_block_size}
