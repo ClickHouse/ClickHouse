@@ -219,9 +219,11 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
 
     const auto size = [] { return sizeof(pointer); };
 
+    ga::Stats stats;
+
     {
         auto&& [ptr, _] = cache.getOrSet(0, size, init);
-        auto stats = cache.getStats();
+        stats = cache.getStats();
 
         EXPECT_EQ(*(ptr->ptr), 42);
 
@@ -232,7 +234,7 @@ TEST(IGrabberAllocator, StatefulCacheUnusedShrinking)
 
     {
         auto&& [ptr, _] = cache.getOrSet(1, size, init);
-        auto stats = cache.getStats();
+        stats = cache.getStats();
 
         EXPECT_EQ(*(ptr->ptr), 42);
 
