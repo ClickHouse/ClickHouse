@@ -66,7 +66,7 @@ set(dbms_sources)
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
-list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp Common/Memory.cpp)
 
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
@@ -114,6 +114,9 @@ set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-bui
 
 add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
+
+add_library (clickhouse_common_memory STATIC Common/Memory.cpp)
+target_link_libraries (clickhouse_common_memory PRIVATE jemalloc)
 
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)

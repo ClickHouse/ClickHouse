@@ -31,6 +31,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Memory.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -223,6 +224,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
     registerDictionaries();
     registerDisks();
+
+    if (!enableBackgroundMemoryPurge())
+        LOG_ERROR(log, "Cannot enable background_thread for jemalloc. Memory usage may be higher.");
 
 #if !defined(ARCADIA_BUILD)
 #if USE_OPENCL

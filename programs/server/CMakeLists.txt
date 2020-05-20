@@ -12,6 +12,11 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
 )
 
+if (ENABLE_JEMALLOC)
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp PROPERTIES
+        COMPILE_DEFINITIONS ENABLE_JEMALLOC)
+endif()
+
 set(CLICKHOUSE_SERVER_SOURCES
     ${CLICKHOUSE_SERVER_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandler.cpp
@@ -24,6 +29,7 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_common_config
         clickhouse_common_io
         clickhouse_common_zookeeper
+        clickhouse_common_memory
         clickhouse_dictionaries
         clickhouse_functions
         clickhouse_parsers
