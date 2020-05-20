@@ -153,11 +153,11 @@ private:
     /// Because we will generate new versions of them after we perform mutation.
     static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
 
-    /// Get the columns list of the resulting part in the same order as all_columns.
+    /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
-        NamesAndTypesList all_columns,
+        NamesAndTypesList storage_columns,
         const MutationCommands & commands_for_removes);
 
     /// Get skip indcies, that should exists in the resulting data part.
