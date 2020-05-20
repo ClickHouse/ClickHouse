@@ -201,7 +201,7 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
+    , client(S3::ClientFactory::instance().create(uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     setColumns(columns_);

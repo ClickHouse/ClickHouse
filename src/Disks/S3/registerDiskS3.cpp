@@ -124,6 +124,7 @@ void registerDiskS3(DiskFactory & factory)
 
         auto client = S3::ClientFactory::instance().create(
             cfg,
+            uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""));
 
