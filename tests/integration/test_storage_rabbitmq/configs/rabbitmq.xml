@@ -1,0 +1,5 @@
+<yandex>
+    <rabbitmq>
+        <auto_offset_reset>earliest</auto_offset_reset>
+    </rabbitmq>
+</yandex>
