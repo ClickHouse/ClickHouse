@@ -317,3 +317,11 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
+
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()
+
+if (USE_LIBEVENT)
+    add_subdirectory(libevent-cmake)
+endif()
