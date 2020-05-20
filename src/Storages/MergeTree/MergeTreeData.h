@@ -334,14 +334,14 @@ public:
     /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
-    ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
-    ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
+    //    ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
+    //ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
 
     //Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
-    Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
-    Names getSortingKeyColumns() const override { return sorting_key_columns; }
+    //Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
+    //Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
+    //Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
+    //Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override;
 
@@ -525,8 +525,7 @@ public:
      */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    bool hasSortingKey() const { return !sorting_key_columns.empty(); }
-    bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
+    //bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
 
     bool hasAnyColumnTTL() const { return !column_ttl_entries_by_name.empty(); }
@@ -659,16 +658,16 @@ public:
 
     /// Names of sorting key columns in ORDER BY expression. For example: 'a',
     /// 'x * y', 'toStartOfMonth(date)', etc.
-    Names sorting_key_columns;
-    ASTPtr sorting_key_expr_ast;
-    ExpressionActionsPtr sorting_key_expr;
+    //Names sorting_key_columns;
+    //ASTPtr sorting_key_expr_ast;
+    //ExpressionActionsPtr sorting_key_expr;
 
     /// Names of columns for primary key.
-    Names primary_key_columns;
-    ASTPtr primary_key_expr_ast;
-    ExpressionActionsPtr primary_key_expr;
-    Block primary_key_sample;
-    DataTypes primary_key_data_types;
+    //Names primary_key_columns;
+    //ASTPtr primary_key_expr_ast;
+    //ExpressionActionsPtr primary_key_expr;
+    //Block primary_key_sample;
+    //DataTypes primary_key_data_types;
 
     struct TTLEntry
     {
@@ -729,8 +728,8 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr order_by_ast;
-    ASTPtr primary_key_ast;
+    ///ASTPtr order_by_ast;
+    ///ASTPtr primary_key_ast;
     ASTPtr ttl_table_ast;
     ASTPtr settings_ast;
 
