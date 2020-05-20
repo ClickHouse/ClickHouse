@@ -124,13 +124,11 @@ public:
 
         if constexpr (UseMultitargetCode)
         {
-            // vec impl 4
             selector.registerImplementation<TargetArch::AVX2,
                 FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl4<4>, ToType, Name>>();
-            
+
             selector.registerImplementation<TargetArch::AVX512F,
                 FunctionRandomImpl<TargetSpecific::AVX512F::RandVecImpl4<8>, ToType, Name>>();
-
         }
     }
 

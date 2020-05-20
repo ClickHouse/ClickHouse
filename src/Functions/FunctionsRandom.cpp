@@ -76,7 +76,8 @@ void RandImpl::execute(char * output, size_t size)
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
 }
 
-namespace {
+namespace
+{
 
 // The array of random numbers from 'head -c8 /dev/urandom | xxd -p'.
 // Can be used for creating seeds for random generators.
@@ -103,11 +104,11 @@ void RandVecImpl<VecSize>::execute(char * output, size_t size)
     static_assert(VecSize <= random_numbers.size());
 
     using VecUInt64 = UInt64x<VecSize>;
-    using VecUInt32 = UInt32x<VecSize>; 
+    using VecUInt32 = UInt32x<VecSize>;
 
     if (size == 0)
         return;
-    
+
     char * end = output + size;
 
     constexpr int safe_overwrite = 15;
@@ -157,11 +158,11 @@ void RandVecImpl2<VecSize>::execute(char * output, size_t size)
     static_assert(2 * VecSize <= random_numbers.size());
 
     using VecUInt64 = UInt64x<VecSize>;
-    using VecUInt32 = UInt32x<VecSize>; 
+    using VecUInt32 = UInt32x<VecSize>;
 
     if (size == 0)
         return;
-    
+
     char * end = output + size;
 
     constexpr int safe_overwrite = 15;
@@ -218,11 +219,11 @@ void RandVecImpl4<VecSize>::execute(char * output, size_t size)
     static_assert(4 * VecSize <= random_numbers.size());
 
     using VecUInt64 = UInt64x<VecSize>;
-    using VecUInt32 = UInt32x<VecSize>; 
+    using VecUInt32 = UInt32x<VecSize>;
 
     if (size == 0)
         return;
-    
+
     char * end = output + size;
 
     constexpr int safe_overwrite = 15;
