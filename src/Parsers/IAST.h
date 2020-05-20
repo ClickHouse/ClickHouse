@@ -215,6 +215,9 @@ public:
         throw Exception("Unknown element in AST: " + getID(), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
     }
 
+    // A simple way to add some user-readable context to an error message.
+    std::string formatForErrorMessage() const;
+
     void cloneChildren();
 
 public:
