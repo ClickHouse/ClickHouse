@@ -7,10 +7,10 @@ toc_title: System Tables
 
 ## Introduction
 
-System tables provide:
+System tables provide information about:
 
-- Information about server states, processes and environment.
-- Support for server's internal processes.
+- Server states, processes, and environment.
+- Server's internal processes.
 
 System tables:
 
