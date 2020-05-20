@@ -12,6 +12,7 @@ SRCS(
     DelayedPortsProcessor.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
+    Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp

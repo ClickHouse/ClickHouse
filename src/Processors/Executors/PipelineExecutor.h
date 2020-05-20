@@ -36,11 +36,9 @@ public:
     void execute(size_t num_threads);
 
     /// Execute single step. Step will be stopped when yield_flag is true.
-    /// Execution is happened in single thread.
+    /// Execution is happened in a single thread.
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
-
-    String getName() const { return "PipelineExecutor"; }
 
     const Processors & getProcessors() const { return processors; }
 
@@ -208,7 +206,7 @@ private:
     ThreadsQueue threads_queue;
     std::mutex task_queue_mutex;
 
-    /// Flag that checks that initExecution was called.
+    /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
     std::atomic_bool cancelled;
     std::atomic_bool finished;
@@ -287,7 +285,7 @@ private:
     /// Continue executor (in case there are tasks in queue).
     void wakeUpExecutor(size_t thread_num);
 
-    void initExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
+    void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
 
     void executeImpl(size_t num_threads);
