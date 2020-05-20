@@ -43,49 +43,26 @@ struct RandImpl
     static void execute(char * output, size_t size);
     static String getImplementationTag() { return ToString(BuildArch); }
 };
-
-struct RandImpl2
-{
-    static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v2"; }
-};
-
-struct RandImpl3
-{
-    static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v3"; }
-};
-
-struct RandImpl4
-{
-    static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v4"; }
-};
-
-struct RandImpl5
-{
-    static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v5"; }
-};
-
-template <int VectorSize>
+// Isn't used now.
+template <int VecSize>
 struct RandVecImpl
 {
-    static void execute(char * outpu, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_vec_" + toString(VectorSize); }
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_vec_" + toString(VecSize); }
 };
-
-template <int VectorSize>
+// Isn't used now.
+template <int VecSize>
 struct RandVecImpl2
 {
-    static void execute(char * outpu, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_vec2_" + toString(VectorSize); }
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_vec2_" + toString(VecSize); }
 };
 
-struct RandImpl6
+template <int VecSize>
+struct RandVecImpl4
 {
-    static void execute(char * outpu, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v6"; }
+    static void execute(char * output, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_vec4_" + toString(VecSize); }
 };
 
 ) // DECLARE_MULTITARGET_CODE
@@ -144,72 +121,16 @@ public:
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>();
 
         if constexpr (UseMultitargetCode)
         {
-            selector.registerImplementation<TargetArch::SSE42,
-                FunctionRandomImpl<TargetSpecific::SSE42::RandImpl, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX,
-                FunctionRandomImpl<TargetSpecific::AVX::RandImpl, ToType, Name>>();
+            // vec impl 4
             selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl4<4>, ToType, Name>>();
+            
             selector.registerImplementation<TargetArch::AVX512F,
-                FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>();
+                FunctionRandomImpl<TargetSpecific::AVX512F::RandVecImpl4<8>, ToType, Name>>();
 
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandImpl3, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl3, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandImpl4, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl4, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandImpl5, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl5, ToType, Name>>();
-
-            // vec impl
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl<4>, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<4>, ToType, Name>>();
-            
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl<8>, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<8>, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl<16>, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<16>, ToType, Name>>();
-
-            // vec impl 2
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl2<4>, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl2<4>, ToType, Name>>();
-            
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl2<8>, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl2<8>, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::Default,
-                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl2<16>, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl2<16>, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl6, ToType, Name>>();
         }
     }
 
