@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-19 11:11+0300\n"
+"POT-Creation-Date: 2020-05-20 15:32+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -84,11 +84,11 @@ msgstr "Рейтинг"
 
 #: templates/docs/footer.html:3
 msgid "votes"
-msgstr "голоса"
+msgstr "голосов"
 
 #: templates/docs/footer.html:4
 msgid "Article Rating"
-msgstr "Рейтинг Статей"
+msgstr "Рейтинг статьи"
 
 #: templates/docs/footer.html:4
 msgid "Was this content helpful?"
