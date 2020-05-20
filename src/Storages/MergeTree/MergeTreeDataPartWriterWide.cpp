@@ -13,18 +13,16 @@ namespace
 }
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
-    DiskPtr disk_,
-    const String & part_path_,
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : IMergeTreeDataPartWriter(disk_, part_path_,
-        storage_, columns_list_, indices_to_recalc_,
-        marks_file_extension_, default_codec_, settings_, index_granularity_)
+    : IMergeTreeDataPartWriter(data_part_, columns_list_,
+           indices_to_recalc_, marks_file_extension_,
+           default_codec_, settings_, index_granularity_)
 {
     const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
@@ -46,7 +44,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
-            disk,
+            data_part->volume->getDisk(),
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
             effective_codec,
