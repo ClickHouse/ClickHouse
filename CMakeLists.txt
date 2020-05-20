@@ -331,6 +331,7 @@ include (cmake/lib_name.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
+include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
 include (cmake/find/boost.cmake)
 include (cmake/find/zlib.cmake)
@@ -384,9 +385,6 @@ if (OS_LINUX AND NOT ENABLE_JEMALLOC)
 endif ()
 
 if (USE_OPENCL)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DUSE_OPENCL=1")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_OPENCL=1")
-
     if (OS_DARWIN)
         set(OPENCL_LINKER_FLAGS "-framework OpenCL")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OPENCL_LINKER_FLAGS}")

@@ -550,7 +550,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
         if (command.type != AlterCommand::Type::ADD_COLUMN
             && command.type != AlterCommand::Type::MODIFY_COLUMN
             && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::RENAME_COLUMN)
 
             throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
@@ -578,7 +579,7 @@ void StorageDistributed::startup()
     if (!volume)
         return;
 
-    for (const DiskPtr & disk : volume->disks)
+    for (const DiskPtr & disk : volume->getDisks())
         createDirectoryMonitors(disk->getPath());
 
     for (const String & path : getDataPaths())
@@ -606,7 +607,7 @@ Strings StorageDistributed::getDataPaths() const
     if (relative_data_path.empty())
         return paths;
 
-    for (const DiskPtr & disk : volume->disks)
+    for (const DiskPtr & disk : volume->getDisks())
         paths.push_back(disk->getPath() + relative_data_path);
 
     return paths;
@@ -810,7 +811,7 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 }
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
-    for (const DiskPtr & disk : volume->disks)
+    for (const DiskPtr & disk : volume->getDisks())
     {
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;

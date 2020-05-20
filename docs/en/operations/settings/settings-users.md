@@ -76,7 +76,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables of disables using of SQL-driven [access control and account management](../access-rights.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](../access-rights.md#access-control) for the user.
 
 Possible values:
 

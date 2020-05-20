@@ -27,6 +27,7 @@ toc_title: "\u7D71\u5408"
 -   メッセージキュ
     -   [カフカ](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) （用途 [Goクライアント](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   ストリーム処理
     -   [フリンク](https://flink.apache.org)
         -   [フリンク-クリックハウス-シンク](https://github.com/ivi-ru/flink-clickhouse-sink)

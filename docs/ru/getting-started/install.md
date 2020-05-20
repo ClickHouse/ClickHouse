@@ -38,7 +38,7 @@ sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
 ```
 
-Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений).
+Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
 
 Для, собственно, установки пакетов необходимо выполнить следующие команды:
 

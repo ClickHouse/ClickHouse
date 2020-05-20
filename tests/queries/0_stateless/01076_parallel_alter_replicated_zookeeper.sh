@@ -105,7 +105,7 @@ sleep 1
 counter=0
 
 while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0" 2>&1) ]]; do
-    if [ "$counter" -gt 20 ]
+    if [ "$counter" -gt 40 ]
     then
         break
     fi
