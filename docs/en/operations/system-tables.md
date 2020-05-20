@@ -536,26 +536,26 @@ Contains logging entries. Logging level which goes to this table can be limited 
 
 Columns:
 
--   `event_date` (`Date`) - Date of the entry.
--   `event_time` (`DateTime`) - Time of the entry.
--   `microseconds` (`UInt32`) - Microseconds of the entry.
+-   `event_date` (Date) — Date of the entry.
+-   `event_time` (DateTime) — Time of the entry.
+-   `microseconds` (UInt32) — Microseconds of the entry.
 -   `thread_name` (String) — Name of the thread from which the logging was done.
 -   `thread_id` (UInt64) — OS thread ID.
--   `level` (`Enum8`) - Entry level.
-    -   `'Fatal' = 1`
-    -   `'Critical' = 2`
-    -   `'Error' = 3`
-    -   `'Warning' = 4`
-    -   `'Notice' = 5`
-    -   `'Information' = 6`
-    -   `'Debug' = 7`
-    -   `'Trace' = 8`
--   `query_id` (`String`) - ID of the query.
--   `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
--   `message` (`String`) - The message itself.
--   `revision` (`UInt32`) - ClickHouse revision.
--   `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
--   `source_line` (`UInt64`) - Source line from which the logging was done.
+-   `level` (`Enum8`) — Entry level. Possible values:
+    -   `1` or `'Fatal'`.
+    -   `2` or `'Critical'`.
+    -   `3` or `'Error'`.
+    -   `4` or `'Warning'`.
+    -   `5` or `'Notice'`.
+    -   `6` or `'Information'`.
+    -   `7` or `'Debug'`.
+    -   `8` or `'Trace'`.
+-   `query_id` (String) — ID of the query.
+-   `logger_name` (LowCardinality(String)) — Name of the logger (i.e. `DDLWorker`).
+-   `message` (String) — The message itself.
+-   `revision` (UInt32) — ClickHouse revision.
+-   `source_file` (LowCardinality(String)) — Source file from which the logging was done.
+-   `source_line` (UInt64) — Source line from which the logging was done.
 
 ## system.query\_log {#system_tables-query_log}
 
