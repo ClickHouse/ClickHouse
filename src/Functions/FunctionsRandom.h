@@ -36,25 +36,19 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each block.
   */
 
-/*
-
 DECLARE_MULTITARGET_CODE(
-
-*/
 
 struct RandImpl
 {
     static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(TargetArch::Default); }
+    static String getImplementationTag() { return ToString(BuildArch); }
 };
 
 struct RandImpl2
 {
     static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(TargetArch::Default) + "_v2"; }
+    static String getImplementationTag() { return ToString(BuildArch) + "_v2"; }
 };
-
-/*
 
 struct RandImpl3
 {
@@ -74,9 +68,27 @@ struct RandImpl5
     static String getImplementationTag() { return ToString(BuildArch) + "_v5"; }
 };
 
-) // DECLARE_MULTITARGET_CODE
+template <int VectorSize>
+struct RandVecImpl
+{
+    static void execute(char * outpu, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_vec_" + toString(VectorSize); }
+};
 
-*/
+template <int VectorSize>
+struct RandVecImpl2
+{
+    static void execute(char * outpu, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_vec2_" + toString(VectorSize); }
+};
+
+struct RandImpl6
+{
+    static void execute(char * outpu, size_t size);
+    static String getImplementationTag() { return ToString(BuildArch) + "_v6"; }
+};
+
+) // DECLARE_MULTITARGET_CODE
 
 template <typename RandImpl, typename ToType, typename Name>
 class FunctionRandomImpl : public IFunction
@@ -125,45 +137,80 @@ public:
 };
 
 template <typename ToType, typename Name>
-class FunctionRandom : public FunctionRandomImpl<RandImpl2, ToType, Name>
+class FunctionRandom : public FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>
 {
 public:
     FunctionRandom(const Context & context) : selector(context)
     {
-        // selector.registerImplementation<TargetArch::Default,
-        //     FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
         selector.registerImplementation<TargetArch::Default,
-            FunctionRandomImpl<RandImpl2, ToType, Name>>();
+            FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomImpl<TargetSpecific::Default::RandImpl2, ToType, Name>>();
 
-        // if constexpr (UseMultitargetCode)
-        // {
-        //     selector.registerImplementation<TargetArch::SSE42,
-        //         FunctionRandomImpl<TargetSpecific::SSE42::RandImpl, ToType, Name>>();
-        //     selector.registerImplementation<TargetArch::AVX,
-        //         FunctionRandomImpl<TargetSpecific::AVX::RandImpl, ToType, Name>>();
-        //     selector.registerImplementation<TargetArch::AVX2,
-        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
-        //     selector.registerImplementation<TargetArch::AVX512F,
-        //         FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>();
+        if constexpr (UseMultitargetCode)
+        {
+            selector.registerImplementation<TargetArch::SSE42,
+                FunctionRandomImpl<TargetSpecific::SSE42::RandImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX,
+                FunctionRandomImpl<TargetSpecific::AVX::RandImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX512F,
+                FunctionRandomImpl<TargetSpecific::AVX512F::RandImpl, ToType, Name>>();
 
-        //     selector.registerImplementation<TargetArch::AVX2,
-        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl2, ToType, Name>>();
 
-        //     selector.registerImplementation<TargetArch::Default,
-        //         FunctionRandomImpl<TargetSpecific::Default::RandImpl3, ToType, Name>>();
-        //     selector.registerImplementation<TargetArch::AVX2,
-        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl3, ToType, Name>>();
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandImpl3, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl3, ToType, Name>>();
 
-        //     selector.registerImplementation<TargetArch::Default,
-        //         FunctionRandomImpl<TargetSpecific::Default::RandImpl4, ToType, Name>>();
-        //     selector.registerImplementation<TargetArch::AVX2,
-        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl4, ToType, Name>>();
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandImpl4, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl4, ToType, Name>>();
 
-        //     selector.registerImplementation<TargetArch::Default,
-        //         FunctionRandomImpl<TargetSpecific::Default::RandImpl5, ToType, Name>>();
-        //     selector.registerImplementation<TargetArch::AVX2,
-        //         FunctionRandomImpl<TargetSpecific::AVX2::RandImpl5, ToType, Name>>();
-        // }
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandImpl5, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl5, ToType, Name>>();
+
+            // vec impl
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl<4>, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<4>, ToType, Name>>();
+            
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl<8>, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<8>, ToType, Name>>();
+
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl<16>, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<16>, ToType, Name>>();
+
+            // vec impl 2
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl2<4>, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl2<4>, ToType, Name>>();
+            
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl2<8>, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl2<8>, ToType, Name>>();
+
+            selector.registerImplementation<TargetArch::Default,
+                FunctionRandomImpl<TargetSpecific::Default::RandVecImpl2<16>, ToType, Name>>();
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl2<16>, ToType, Name>>();
+
+            selector.registerImplementation<TargetArch::AVX2,
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl6, ToType, Name>>();
+        }
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
