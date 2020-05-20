@@ -534,6 +534,7 @@ private:
 
         // One reference.
 
+        /// May be not present if the region was created by calling allocateFromFreeRegion.
         if (metadata.TUnusedRegionHook::is_linked())
             unused_regions.erase(unused_regions.iterator_to(metadata));
 
@@ -957,8 +958,14 @@ private:
         allocated_region->size = size;
 
         free_regions.erase(free_regions.iterator_to(free_region));
+
+        /// chop the beginning of current region of size size.
         free_region.size -= size;
+
+        /// shift current region's start.
         free_region.char_ptr += size;
+
+        /// return the region [start + size; end] to free regions
         free_regions.insert(free_region);
 
         all_regions.insert(all_regions.iterator_to(free_region), *allocated_region);
