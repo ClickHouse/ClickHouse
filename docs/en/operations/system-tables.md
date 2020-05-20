@@ -28,7 +28,7 @@ For collecting system metrics ClickHouse server uses:
 
 **procfs**
 
-If ClickHouse binary file doesn't `CAP_NET_ADMIN` capability, the server tries to fallback to `ProcfsMetricsProvider`. `ProcfsMetricsProvider` allows to collect per-query system metrics (for CPU and I/O).
+If ClickHouse server doesn't have `CAP_NET_ADMIN` capability, it tries to fall back to `ProcfsMetricsProvider`. `ProcfsMetricsProvider` allows collecting per-query system metrics (for CPU and I/O).
 
 If procfs is supported and enabled on the system, ClickHouse server collects:
 
