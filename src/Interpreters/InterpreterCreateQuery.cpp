@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -273,10 +274,13 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns_ast, const Context & context)
 {
+    Settings set;
+
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
+
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
 
@@ -285,9 +289,27 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
+        if (col_decl.isNULL && col_decl.isNotNULL)
+            throw Exception{"Cant use NOT NULL and NULL together", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
+
+            if (col_decl.isNULL) {
+                if (column_type->isNullable())
+                    throw Exception{"Cant use NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+                else {
+                    column_type = makeNullable(column_type);
+                }
+            } else if (col_decl.isNotNULL) {
+                if (column_type->isNullable())
+                    throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+            }
+
+            if (set.data_type_default_nullable && !column_type->isNullable())
+                column_type = makeNullable(column_type);
+
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }
         else

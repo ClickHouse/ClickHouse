@@ -10,6 +10,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Poco/String.h>
 
+#include <iostream>
+
 
 namespace DB
 {
@@ -115,6 +117,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
     ParserKeyword s_default{"DEFAULT"};
+    ParserKeyword s_null{"NULL"};
+    ParserKeyword s_not_null{"NOT NULL"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
@@ -135,6 +139,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       */
     ASTPtr type;
     String default_specifier;
+    bool isNull = false;
+    bool isNotNull = false;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -163,6 +169,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
+    if (s_null.checkWithoutMoving(pos, expected)) {
+        if (s_null.check(pos, expected))
+            isNull = true;
+    } else if (s_not_null.checkWithoutMoving(pos, expected)) {
+        if (s_not_null.check(pos, expected))
+            isNotNull = true;
+    }
 
     if (s_comment.ignore(pos, expected))
     {
@@ -191,6 +204,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->type = type;
         column_declaration->children.push_back(std::move(type));
+    }
+
+    if (isNull) {
+        column_declaration->isNULL = isNull;
+    }
+
+    if (isNull) {
+        column_declaration->isNotNULL = isNotNull;
     }
 
     if (default_expression)
