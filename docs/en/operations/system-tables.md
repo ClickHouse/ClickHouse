@@ -30,7 +30,7 @@ For collecting system metrics ClickHouse server uses:
 
 If ClickHouse server doesn't have `CAP_NET_ADMIN` capability, it tries to fall back to `ProcfsMetricsProvider`. `ProcfsMetricsProvider` allows collecting per-query system metrics (for CPU and I/O).
 
-If procfs is supported and enabled on the system, ClickHouse server collects:
+If procfs is supported and enabled on the system, ClickHouse server collects these metrics:
 
 - `OSCPUVirtualTimeMicroseconds`
 - `OSCPUWaitMicroseconds`
