@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Core/SettingsCollectionImpl.h>
 
-
 namespace DB
 {
 
@@ -41,4 +40,3 @@ void RabbitMQSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 }
-
