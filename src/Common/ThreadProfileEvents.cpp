@@ -562,8 +562,9 @@ Logger * PerfDescriptorsHolder::getLogger()
 
 namespace DB
 {
-    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters &) {}
+    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters &, const std::string &) {}
     void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters &, ProfileEvents::Counters &) {}
+    void PerfEventsCounters::closeEventDescriptors() {}
 }
 
 #endif

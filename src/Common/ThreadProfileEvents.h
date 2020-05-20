@@ -237,8 +237,9 @@ private:
 
 struct PerfEventsCounters
 {
-    static void initializeProfileEvents(PerfEventsCounters & counters);
+    static void initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list);
     static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
+    static void closeEventDescriptors();
 };
 
 #endif
