@@ -705,7 +705,7 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
         return;
     }
 
-    if (storage->supportsReplication() && !config_is_replicated_shard && distributed_ddl_replication_check)
+    if (storage->supportsReplication() && !config_is_replicated_shard)
     {
         throw Exception("Table " + backQuote(table) + " is replicated, but shard #" + toString(task.host_shard_num + 1) +
             " isn't replicated according to its cluster definition."
