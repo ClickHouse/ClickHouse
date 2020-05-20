@@ -1,6 +1,5 @@
 #include <sstream>
 
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
@@ -56,46 +55,6 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
     current_thread = nullptr;
-}
-
-void ThreadStatus::initPerformanceCounters()
-{
-    performance_counters_finalized = false;
-
-    /// Clear stats from previous query if a new query is started
-    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
-    performance_counters.resetCounters();
-    memory_tracker.resetCounters();
-    memory_tracker.setDescription("(for thread)");
-
-    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
-    query_start_time = time(nullptr);
-    ++queries_started;
-
-    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
-
-    try
-    {
-        PerfEventsCounters::initializeProfileEvents(*perf_events);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    if (!taskstats)
-    {
-        try
-        {
-            taskstats = TasksStatsCounters::create(thread_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-    if (taskstats)
-        taskstats->reset();
 }
 
 void ThreadStatus::updatePerformanceCounters()
