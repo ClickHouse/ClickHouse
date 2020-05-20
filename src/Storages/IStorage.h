@@ -101,7 +101,7 @@ public:
     virtual bool isView() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const { return false; }
+    virtual bool supportsSampling() const;
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
@@ -183,9 +183,15 @@ public: /// thread-unsafe part. lockStructure must be acquired
     ///
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
+
     const StorageMetadataKeyField & getPartitionKey() const;
     void setPartitionKey(const StorageMetadataKeyField & partition_key_);
     bool hasPartitionKey() const;
+
+    const StorageMetadataKeyField & getSamplingKey() const;
+    void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
+    bool hasSamplingKey() const;
+
 
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
@@ -206,7 +212,7 @@ private:
     StorageMetadataKeyField partition_key;
     //StorageMetadataKeyField primary_key;
     //StorageMetadataKeyField sorting_key;
-    //StorageMetadataKeyField sample_key;
+    StorageMetadataKeyField sampling_key;
 
     //StorageMetadataField rows_ttl_entry;
 
@@ -464,7 +470,7 @@ public:
     virtual ASTPtr getPrimaryKeyAST() const { return nullptr; }
 
     /// Returns sampling expression AST for storage or nullptr if there is none.
-    virtual ASTPtr getSamplingKeyAST() const { return nullptr; }
+    virtual ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
 
     /// Returns column names that need to be read to calculate partition key.
     virtual Names getColumnsRequiredForPartitionKey() const;
@@ -476,7 +482,7 @@ public:
     virtual Names getColumnsRequiredForPrimaryKey() const { return {}; }
 
     /// Returns column names that need to be read to calculate sampling key.
-    virtual Names getColumnsRequiredForSampling() const { return {}; }
+    virtual Names getColumnsRequiredForSampling() const;
 
     /// Returns column names that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }

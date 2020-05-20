@@ -55,12 +55,13 @@ struct StorageMetadataKeyField
 
     ASTPtr expression_ast;
     ExpressionActionsPtr expressions;
-    Names expression_columns;
+    Names expression_column_names;
 
     Block sample_block;
     DataTypes data_types;
 
-    StorageMetadataKeyField & operator=(const StorageMetadataKeyField & other) = default;
+    static StorageMetadataKeyField getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
+
 
 }

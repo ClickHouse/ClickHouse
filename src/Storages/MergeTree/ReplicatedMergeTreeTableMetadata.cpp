@@ -29,7 +29,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedAST(data.sample_by_ast);
+    sampling_expression = formattedAST(data.getSamplingKeyAST());
     index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;

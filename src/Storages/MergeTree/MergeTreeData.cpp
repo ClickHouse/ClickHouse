@@ -130,7 +130,6 @@ MergeTreeData::MergeTreeData(
     : IStorage(table_id_)
     , global_context(context_)
     , merging_params(merging_params_)
-    , sample_by_ast(metadata.sample_by_ast)
     , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -151,16 +150,15 @@ MergeTreeData::MergeTreeData(
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    if (sample_by_ast)
+    if (metadata.sample_by_ast != nullptr)
     {
-        sampling_expr_column_name = sample_by_ast->getColumnName();
+        StorageMetadataKeyField sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
 
-        if (!primary_key_sample.has(sampling_expr_column_name)
+        if (!primary_key_sample.has(sampling_key.expression_column_names[0])
             && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = syntax->requiredSourceColumns();
+        setSamplingKey(sampling_key);
     }
 
     MergeTreeDataFormatVersion min_format_version(0);
@@ -252,7 +250,7 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
     if (hasPartitionKey())
-        metadata.partition_by_ast = getPartitionKey().definition_ast->clone();
+        metadata.partition_by_ast = getPartitionKeyAST()->clone();
 
     if (order_by_ast)
         metadata.order_by_ast = order_by_ast->clone();
@@ -263,8 +261,8 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (ttl_table_ast)
         metadata.ttl_for_table_ast = ttl_table_ast->clone();
 
-    if (sample_by_ast)
-        metadata.sample_by_ast = sample_by_ast->clone();
+    if (hasSamplingKey())
+        metadata.sample_by_ast = getSamplingKeyAST()->clone();
 
     if (settings_ast)
         metadata.settings_ast = settings_ast->clone();
@@ -512,24 +510,10 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 
 void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 {
-    ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
-    StorageMetadataKeyField new_partition_key;
-    new_partition_key.definition_ast = partition_by_ast;
-    new_partition_key.expression_ast = partition_key_expr_list;
+    StorageMetadataKeyField new_partition_key = StorageMetadataKeyField::getKeyFromAST(partition_by_ast, getColumns(), global_context);
 
-    if (partition_key_expr_list->children.empty())
+    if (new_partition_key.expression_ast->children.empty())
         return;
-
-    {
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(partition_key_expr_list, getColumns().getAllPhysical());
-        new_partition_key.expressions = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
-    }
-
-    for (const ASTPtr & ast : partition_key_expr_list->children)
-    {
-        String col_name = ast->getColumnName();
-        new_partition_key.sample_block.insert(new_partition_key.expressions->getSampleBlock().getByName(col_name));
-    }
 
     checkKeyExpression(*new_partition_key.expressions, new_partition_key.sample_block, "Partition");
 

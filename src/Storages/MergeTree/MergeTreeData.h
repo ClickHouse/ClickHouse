@@ -336,12 +336,10 @@ public:
 
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
-    ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
 
     //Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
     Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getSortingKeyColumns() const override { return sorting_key_columns; }
 
@@ -350,7 +348,6 @@ public:
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool supportsPrewhere() const override { return true; }
-    bool supportsSampling() const override { return sample_by_ast != nullptr; }
 
     bool supportsFinal() const override
     {
@@ -706,9 +703,6 @@ public:
     /// Vector rw operations have to be done under "move_ttl_entries_mutex".
     std::vector<TTLEntry> move_ttl_entries;
 
-    String sampling_expr_column_name;
-    Names columns_required_for_sampling;
-
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
 
@@ -737,7 +731,6 @@ protected:
 
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
-    ASTPtr sample_by_ast;
     ASTPtr ttl_table_ast;
     ASTPtr settings_ast;
 
