@@ -250,11 +250,23 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
+
     /// NOTE: ReadBuffer was implemented with an immutable underlying contents in mind.
     ///       If we failed to poll any message once - don't try again.
     ///       Otherwise, the |poll_timeout| expectations get flawn.
-    if (stalled || stopped || !allowed || rebalance_happened)
+
+    // we can react on stop only during fetching data
+    // after block is formed (i.e. during copying data to MV / commiting)  we ignore stop attempts
+    if (stopped)
+    {
+        was_stopped = true;
+        offsets_stored = 0;
         return false;
+    }
+
+    if (stalled || was_stopped || !allowed || rebalance_happened)
+        return false;
+
 
     if (current == messages.end())
     {
@@ -267,7 +279,13 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             /// Don't drop old messages immediately, since we may need them for virtual columns.
             auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
 
-            if (rebalance_happened)
+            if (stopped)
+            {
+                was_stopped = true;
+                offsets_stored = 0;
+                return false;
+            }
+            else if (rebalance_happened)
             {
                 if (!new_messages.empty())
                 {
@@ -336,17 +354,12 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     return true;
 }
 
-bool ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
+void ReadBufferFromKafkaConsumer::storeLastReadMessageOffset()
 {
-    if (!stalled && !rebalance_happened && !stopped)
+    if (!stalled && !was_stopped && !rebalance_happened)
     {
         consumer->store_offset(*(current - 1));
         ++offsets_stored;
-        return true;
-    }
-    else
-    {
-        return false;
     }
 }
 
