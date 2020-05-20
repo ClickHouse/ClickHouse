@@ -1,4 +1,10 @@
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -79,4 +85,56 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 
     return *this;
 }
+
+namespace
+{
+    ASTPtr extractKeyExpressionList(const ASTPtr & node)
+    {
+        if (!node)
+            return std::make_shared<ASTExpressionList>();
+
+        const auto * expr_func = node->as<ASTFunction>();
+
+        if (expr_func && expr_func->name == "tuple")
+        {
+            /// Primary key is specified in tuple, extract its arguments.
+            return expr_func->arguments->clone();
+        }
+        else
+        {
+            /// Primary key consists of one column.
+            auto res = std::make_shared<ASTExpressionList>();
+            res->children.push_back(node);
+            return res;
+        }
+    }
+}
+
+StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
+{
+    StorageMetadataKeyField result;
+    result.definition_ast = definition_ast;
+    result.expression_ast = extractKeyExpressionList(definition_ast);
+
+    if (result.expression_ast->children.empty())
+        return result;
+
+
+    const auto & children = result.expression_ast->children;
+    for (const auto & child : children)
+        result.expression_column_names.emplace_back(child->getColumnName());
+
+    {
+        auto syntax_result = SyntaxAnalyzer(context).analyze(result.expression_ast, columns.getAllPhysical());
+        result.expressions = ExpressionAnalyzer(result.expression_ast->clone(), syntax_result, context).getActions(true);
+        result.sample_block = result.expressions->getSampleBlock();
+    }
+
+
+    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+        result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
+
+    return result;
+}
+
 }

@@ -446,14 +446,41 @@ void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
 
 Names IStorage::getColumnsRequiredForPartitionKey() const
 {
-    if (partition_key.expressions)
+    if (hasPartitionKey())
         return partition_key.expressions->getRequiredColumns();
+    return {};
+}
+
+Names IStorage::getColumnsRequiredForSampling() const
+{
+    if (hasSamplingKey())
+        return sampling_key.expressions->getRequiredColumns();
     return {};
 }
 
 bool IStorage::hasPartitionKey() const
 {
     return partition_key.expressions != nullptr;
+}
+
+
+bool IStorage::supportsSampling() const
+{
+    return hasSamplingKey();
+}
+
+const StorageMetadataKeyField & IStorage::getSamplingKey() const
+{
+    return sampling_key;
+}
+void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
+{
+    sampling_key = sampling_key_;
+}
+
+bool IStorage::hasSamplingKey() const
+{
+    return sampling_key.expressions != nullptr;
 }
 
 }
