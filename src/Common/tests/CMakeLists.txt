@@ -51,11 +51,6 @@ target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
 
 add_executable (igrabber_allocator igrabber_allocator.cpp)
 target_link_libraries (igrabber_allocator PRIVATE dbms)
-target_compile_options(igrabber_allocator
-    PRIVATE
-    "-fsanitize=address,undefined"
-    "-fno-omit-frame-pointer"
-    )
 
 add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)

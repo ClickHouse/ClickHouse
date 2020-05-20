@@ -779,7 +779,8 @@ private:
             CurrentMemoryTracker::free(size);
         }
 
-        constexpr MemoryChunk(MemoryChunk && other) noexcept : ptr(other.ptr), size(other.size)
+        constexpr MemoryChunk(MemoryChunk && other) noexcept
+            : ptr(other.ptr), size(other.size), used_refcount(other.used_refcount)
         {
             other.ptr = nullptr;
         }
