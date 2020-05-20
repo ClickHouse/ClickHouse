@@ -1,3 +1,4 @@
+#include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -12,6 +13,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/RabbitMQ/RabbitMQSettings.h>
+#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
+#include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -26,10 +30,8 @@
 #include <Common/quoteString.h>
 #include <Common/parseAddress.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-
-#include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <amqpcpp.h>
+
 
 namespace DB
 {
@@ -41,6 +43,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
@@ -70,6 +73,228 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, num_consumers_)
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
 {
+    rabbitmq_context.makeQueryContext();
+
+    setColumns(columns_);
+    task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
+    task->deactivate();
+
+    /// Enable a different routing algorithm.
+    bind_by_id = num_consumers > 1 || num_queues > 1 || bind_by_id;
+}
+
+
+Pipes StorageRabbitMQ::read(
+        const Names & column_names,
+        const SelectQueryInfo & /* query_info */,
+        const Context & context,
+        QueryProcessingStage::Enum /* processed_stage */,
+        size_t /* max_block_size */,
+        unsigned /* num_streams */)
+{
+    if (num_created_consumers == 0)
+        return {};
+
+    Pipes pipes;
+    pipes.reserve(num_created_consumers);
+
+    for (size_t i = 0; i < num_created_consumers; ++i)
+    {
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(
+                        *this, context, column_names, log)));
+    }
+
+    LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
+    return pipes;
+}
+
+
+void StorageRabbitMQ::startup()
+{
+    for (size_t i = 0; i < num_consumers; ++i)
+    {
+        try
+        {
+            pushReadBuffer(createReadBuffer());
+            ++num_created_consumers;
+        }
+        catch (const AMQP::Exception &)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+
+    task->activateAndSchedule();
+}
+
+
+void StorageRabbitMQ::shutdown()
+{
+    stream_cancelled = true;
+
+    for (size_t i = 0; i < num_created_consumers; ++i)
+    {
+        auto buffer = popReadBuffer();
+    }
+
+    task->deactivate();
+}
+
+
+void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
+{
+    std::lock_guard lock(mutex);
+    buffers.push_back(buffer);
+    semaphore.set();
+}
+
+
+ConsumerBufferPtr StorageRabbitMQ::popReadBuffer()
+{
+    return popReadBuffer(std::chrono::milliseconds::zero());
+}
+
+
+ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeout)
+{
+    // Wait for the first free buffer
+    if (timeout == std::chrono::milliseconds::zero())
+        semaphore.wait();
+    else
+    {
+        if (!semaphore.tryWait(timeout.count()))
+            return nullptr;
+    }
+
+    // Take the first available buffer from the list
+    std::lock_guard lock(mutex);
+    auto buffer = buffers.back();
+    buffers.pop_back();
+
+    return buffer;
+}
+
+
+ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
+{
+    if (update_channel_id)
+        next_channel_id += num_queues;
+    update_channel_id = true;
+
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(parsed_address, exchange_name, routing_key, next_channel_id, 
+            log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
+}
+
+
+bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
+{
+    // Check if all dependencies are attached
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
+    if (dependencies.empty())
+        return true;
+
+    // Check the dependencies are ready?
+    for (const auto & db_tab : dependencies)
+    {
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab);
+        if (!table)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+
+        // Check all its dependencies
+        if (!checkDependencies(db_tab))
+            return false;
+    }
+
+    return true;
+}
+
+
+void StorageRabbitMQ::threadFunc()
+{
+    try
+    {
+        auto table_id = getStorageID();
+        // Check if at least one direct dependency is attached
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+
+        if (dependencies_count)
+        {
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!stream_cancelled && num_created_consumers > 0)
+            {
+                if (!checkDependencies(table_id))
+                    break;
+
+                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
+
+                if (!streamToViews())
+                    break;
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    /// Wait for attached views
+    if (!stream_cancelled)
+        task->scheduleAfter(500);
+}
+
+
+bool StorageRabbitMQ::streamToViews()
+{
+    auto table_id = getStorageID();
+    auto table = DatabaseCatalog::instance().getTable(table_id);
+    if (!table)
+        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+
+    // Create an INSERT query for streaming data
+    auto insert = std::make_shared<ASTInsertQuery>();
+    insert->table_id = table_id;
+
+    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
+    auto block_io = interpreter.execute();
+
+    // Create a stream for each consumer and join them in a union stream
+    BlockInputStreams streams;
+    streams.reserve(num_created_consumers);
+
+    for (size_t i = 0; i < num_created_consumers; ++i)
+    {
+        auto stream = std::make_shared<RabbitMQBlockInputStream>(*this, rabbitmq_context, block_io.out->getHeader().getNames(), log);
+        streams.emplace_back(stream);
+
+        // Limit read batch to maximum block size to allow DDL
+        IBlockInputStream::LocalLimits limits;
+        const Settings & settings = global_context.getSettingsRef();
+        limits.speed_limits.max_execution_time = settings.stream_flush_interval_ms;
+        limits.timeout_overflow_mode = OverflowMode::BREAK;
+        stream->setLimits(limits);
+    }
+
+    // Join multiple streams if necessary
+    BlockInputStreamPtr in;
+    if (streams.size() > 1)
+        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
+    else
+        in = streams[0];
+
+    std::atomic<bool> stub = {false};
+    copyData(*in, *block_io.out, &stub);
+
+    // Check whether the limits were applied during query execution
+    bool limits_applied = false;
+    const BlockStreamProfileInfo & info = in->getProfileInfo();
+    limits_applied = info.hasAppliedLimit();
+
+    return limits_applied;
 }
 
 
@@ -246,4 +471,3 @@ NamesAndTypesList StorageRabbitMQ::getVirtuals() const
 }
 
 }
-
