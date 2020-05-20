@@ -45,6 +45,9 @@ void MergeTreeDataPartWriterInMemory::write(
             result_block.insert(block.getByName(col.name));
     }
 
+    index_granularity.appendMark(result_block.rows());
+    if (with_final_mark)
+        index_granularity.appendMark(0);
     part->block = std::move(result_block);
     block_written = true;
 }
@@ -54,10 +57,6 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
     size_t rows = primary_index_block.rows();
     if (!rows)
         return;
-
-    index_granularity.appendMark(rows);
-    if (with_final_mark)
-        index_granularity.appendMark(0);
 
     size_t primary_columns_num = primary_index_block.columns();
     index_columns.resize(primary_columns_num);

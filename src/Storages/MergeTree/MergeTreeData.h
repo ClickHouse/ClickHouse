@@ -921,6 +921,25 @@ protected:
 
     bool areBackgroundMovesNeeded() const;
 
+    struct MergesThrottler
+    {
+        mutable std::mutex mutex;
+        size_t have_bytes = 0;
+        size_t have_rows = 0;
+
+        size_t max_bytes;
+        size_t max_rows;
+
+        MergesThrottler(size_t max_bytes_, size_t max_rows_)
+            : max_bytes(max_bytes_), max_rows(max_rows_) {}
+
+        bool needDelayMerge() const;
+        void add(size_t bytes, size_t rows);
+        void reset();
+    };
+
+    MergesThrottler in_memory_merges_throttler;
+
 private:
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acuire them in constructor and remove them in destructor
