@@ -71,13 +71,13 @@ namespace
         /// Total size of all HDFS objects.
         size_t total_size;
         /// HDFS objects paths and their sizes.
-        std::vector<PathAndSize> s3_objects;
+        std::vector<PathAndSize> hdfs_objects;
         /// Number of references (hardlinks) to this metadata file.
         UInt32 ref_count;
 
         /// Load metadata by path or create empty if `create` flag is set.
         explicit Metadata(const String & disk_path_, const String & metadata_file_path_, bool create = false)
-            : disk_path(disk_path_), metadata_file_path(metadata_file_path_), total_size(0), s3_objects(0), ref_count(0)
+            : disk_path(disk_path_), metadata_file_path(metadata_file_path_), total_size(0), hdfs_objects(0), ref_count(0)
         {
             if (create)
                 return;
@@ -95,22 +95,21 @@ namespace
 
             assertChar('\n', buf);
 
-            UInt32 s3_objects_count;
-            readIntText(s3_objects_count, buf);
-            std::cerr << "Metadata create, objects count " << s3_objects_count << std::endl;
+            UInt32 hdfs_objects_count;
+            readIntText(hdfs_objects_count, buf);
             assertChar('\t', buf);
             readIntText(total_size, buf);
             assertChar('\n', buf);
-            s3_objects.resize(s3_objects_count);
-            for (UInt32 i = 0; i < s3_objects_count; ++i)
+            hdfs_objects.resize(hdfs_objects_count);
+            for (UInt32 i = 0; i < hdfs_objects_count; ++i)
             {
-                String s3_object_path;
-                size_t s3_object_size;
-                readIntText(s3_object_size, buf);
+                String hdfs_object_path;
+                size_t hdfs_object_size;
+                readIntText(hdfs_object_size, buf);
                 assertChar('\t', buf);
-                readEscapedString(s3_object_path, buf);
+                readEscapedString(hdfs_object_path, buf);
                 assertChar('\n', buf);
-                s3_objects[i] = {s3_object_path, s3_object_size};
+                hdfs_objects[i] = {hdfs_object_path, hdfs_object_size};
             }
 
             readIntText(ref_count, buf);
@@ -120,7 +119,7 @@ namespace
         void addObject(const String & path, size_t size)
         {
             total_size += size;
-            s3_objects.emplace_back(path, size);
+            hdfs_objects.emplace_back(path, size);
         }
 
         /// Fsync metadata file if 'sync' flag is set.
@@ -131,15 +130,15 @@ namespace
             writeIntText(VERSION, buf);
             writeChar('\n', buf);
 
-            writeIntText(s3_objects.size(), buf);
+            writeIntText(hdfs_objects.size(), buf);
             writeChar('\t', buf);
             writeIntText(total_size, buf);
             writeChar('\n', buf);
-            for (const auto & [s3_object_path, s3_object_size] : s3_objects)
+            for (const auto & [hdfs_object_path, hdfs_object_size] : hdfs_objects)
             {
-                writeIntText(s3_object_size, buf);
+                writeIntText(hdfs_object_size, buf);
                 writeChar('\t', buf);
-                writeEscapedString(s3_object_path, buf);
+                writeEscapedString(hdfs_object_path, buf);
                 writeChar('\n', buf);
             }
 
@@ -208,23 +207,21 @@ namespace
         std::unique_ptr<ReadBufferFromHDFS> initialize()
         {
             size_t offset = absolute_position;
-            for (size_t i = 0; i < metadata.s3_objects.size(); ++i)
+            
+            for (size_t i = 0; i < metadata.hdfs_objects.size(); ++i)
             {
                 current_buf_idx = i;
-                const auto & [path, size] = metadata.s3_objects[i];
-                std::cerr << "MetaData path and size " << path << " " << size << std::endl;
+                const auto & [path, size] = metadata.hdfs_objects[i];
+                
                 if (size > offset)
                 {
-                    std::cerr << "Make ReadBuffer from " << (hdfs_name + path) << std::endl;
-                    auto buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path);
-                    std::cerr << "Make offset " << offset << std::endl;
+                    auto buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path, buf_size);
                     buf->seek(offset, SEEK_SET);
                     return buf;
                 }
                 offset -= size;
 
             }
-            std::cerr << "We return nullptr\n";
             return nullptr;
         }
 
@@ -243,12 +240,12 @@ namespace
             }
 
             /// If there is no available buffers - nothing to read.
-            if (current_buf_idx + 1 >= metadata.s3_objects.size())
+            if (current_buf_idx + 1 >= metadata.hdfs_objects.size())
                 return false;
 
             ++current_buf_idx;
-            const auto & path = metadata.s3_objects[current_buf_idx].first;
-            current_buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + "/" + path);
+            const auto & path = metadata.hdfs_objects[current_buf_idx].first;
+            current_buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path, buf_size);
             current_buf->next();
             working_buffer = current_buf->buffer();
             absolute_position += working_buffer.size();
@@ -276,9 +273,9 @@ namespace
             Metadata metadata_,
             size_t buf_size_)
             : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-            , impl(WriteBufferFromHDFS(hdfs_name_))
+            , impl(WriteBufferFromHDFS(hdfs_name_, buf_size_))
             , metadata(std::move(metadata_))
-            , s3_path(hdfs_path_)
+            , hdfs_path(hdfs_path_)
         {
         }
 
@@ -302,7 +299,7 @@ namespace
             next();
             impl.finalize();
 
-            metadata.addObject(s3_path, count());
+            metadata.addObject(hdfs_path, count());
             metadata.save();
 
             finalized = true;
@@ -332,7 +329,7 @@ namespace
         WriteBufferFromHDFS impl;
         bool finalized = false;
         Metadata metadata;
-        String s3_path;
+        String hdfs_path;
     };
 }
 
@@ -485,7 +482,7 @@ void DiskHDFS::copyFile(const String & from_path, const String & to_path)
     Metadata from(metadata_path, from_path);
     Metadata to(metadata_path, to_path, true);
 
-    for (const auto & [path, size] : from.s3_objects)
+    for (const auto & [path, size] : from.hdfs_objects)
     {
         auto new_path = hdfs_name + getRandomName();
         /// TODO:: hdfs copy semantics
@@ -507,15 +504,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 {
     Metadata metadata(metadata_path, path);
 
-    std::cerr << "Read Metadata: objects size " << metadata.s3_objects.size() << " "
-              << "files: " << metadata.total_size << " "
-              << "file path: " << metadata.metadata_file_path << " "
-              << "disk path: " << metadata.disk_path << std::endl;
-    
     LOG_DEBUG(
         &Logger::get("DiskHDFS"),
-        "Read from file by path: " << backQuote(metadata_path + path) << " Existing HDFS objects: " << metadata.s3_objects.size());
-
+        "Read from file by path: " << backQuote(metadata_path + path) << " Existing HDFS objects: " << metadata.hdfs_objects.size());
+    
     return std::make_unique<ReadIndirectBufferFromHDFS>(hdfs_name, "", metadata, buf_size);
 }
 
@@ -530,10 +522,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         /// If metadata file exists - remove and new.
         if (exist)
             remove(path);
-        std::cerr << metadata_path << std::endl;
         Metadata metadata(metadata_path, path, true);
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
-        // metadata.save();
+        metadata.save();
 
         LOG_DEBUG(&Logger::get("DiskHDFS"), "Write to file by path: " << backQuote(metadata_path + path) << " New HDFS path: " << HDFS_path);
 
@@ -546,7 +537,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         LOG_DEBUG(
             &Logger::get("DiskHDFS"),
             "Append to file by path: " << backQuote(metadata_path + path) << " New HDFS path: " << HDFS_path
-                                       << " Existing HDFS objects: " << metadata.s3_objects.size());
+                                       << " Existing HDFS objects: " << metadata.hdfs_objects.size());
 
         return std::make_unique<WriteIndirectBufferFromHDFS>(HDFS_path, file_name, metadata, buf_size);
     }
@@ -565,9 +556,10 @@ void DiskHDFS::remove(const String & path)
         if (metadata.ref_count == 0)
         {
             file.remove();
-            for (const auto & [s3_object_path, _] : metadata.s3_objects)
+            for (const auto & [hdfs_object_path, _] : metadata.hdfs_objects)
             {
-                auto hdfs_path = "/gtest/" + s3_object_path;
+                const size_t begin_of_path = hdfs_name.find('/', hdfs_name.find("//") + 2);
+                const std::string hdfs_path = hdfs_name.substr(begin_of_path) + hdfs_object_path;
                 int res = hdfsDelete(fs.get(), hdfs_path.c_str(), 0);
                 if (res == -1)
                     throw Exception("fuck " + hdfs_path, 1);
@@ -707,10 +699,8 @@ void registerDiskHDFS(DiskFactory & factory)
         if (uri.back() != '/')
             throw Exception("HDFS path must ends with '/', but '" + uri + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
         
-        // String metadata_path = context.getPath() + "disks/" + name + "/";
-        String metadata_path = "/home/ershov-ov/metadata/";
-
-
+        String metadata_path = context.getPath() + "disks/" + name + "/";
+        
         return std::make_shared<DiskHDFS>(
             name,
             uri,

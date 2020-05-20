@@ -49,7 +49,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 
     ~WriteBufferFromHDFSImpl()
-    {
+    { 
         hdfsCloseFile(fs.get(), fout);
     }
 
