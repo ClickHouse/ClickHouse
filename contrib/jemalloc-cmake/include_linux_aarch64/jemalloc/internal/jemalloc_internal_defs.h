@@ -369,7 +369,7 @@
 /* #undef JEMALLOC_EXPORT */
 
 /* config.malloc_conf options string. */
-#define JEMALLOC_CONFIG_MALLOC_CONF ""
+#define JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu"
 
 /* If defined, jemalloc takes the malloc/free/etc. symbol names. */
 #define JEMALLOC_IS_MALLOC 1
