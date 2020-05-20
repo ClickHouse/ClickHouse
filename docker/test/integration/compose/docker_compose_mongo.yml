@@ -1,4 +1,4 @@
-version: '2.2'
+version: '2.3'
 services:
     mongo1:
         image: mongo:3.6
