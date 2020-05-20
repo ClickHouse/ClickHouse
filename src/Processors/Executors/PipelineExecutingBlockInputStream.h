@@ -5,6 +5,7 @@ namespace DB
 {
 
 class QueryPipeline;
+class PullingAsyncPipelineExecutor;
 class PullingPipelineExecutor;
 
 /// Implement IBlockInputStream from QueryPipeline.
@@ -34,6 +35,10 @@ protected:
 private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
+    std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
+    bool is_execution_started = false;
+
+    void createExecutor();
 };
 
 }

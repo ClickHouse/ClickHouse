@@ -500,7 +500,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         return false;
 
     if (!is_execution_initialized)
-        initExecution(1);
+        initializeExecution(1);
 
     executeStep(yield_flag);
 
@@ -720,7 +720,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
 #endif
 }
 
-void PipelineExecutor::initExecution(size_t num_threads)
+void PipelineExecutor::initializeExecution(size_t num_threads)
 {
     is_execution_initialized = true;
 
@@ -766,7 +766,7 @@ void PipelineExecutor::initExecution(size_t num_threads)
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
-    initExecution(num_threads);
+    initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;
     ThreadsData threads;

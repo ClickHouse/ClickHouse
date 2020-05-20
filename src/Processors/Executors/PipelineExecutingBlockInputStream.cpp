@@ -1,7 +1,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/Transforms/LimitsCheckingTransform.h>
 
 namespace DB
 {
@@ -20,26 +20,53 @@ PipelineExecutingBlockInputStream::~PipelineExecutingBlockInputStream() = defaul
 
 Block PipelineExecutingBlockInputStream::getHeader() const
 {
-    return executor ? executor->getHeader()
-                    : pipeline->getHeader();
+    if (executor)
+        return executor->getHeader();
+
+    if (async_executor)
+        return async_executor->getHeader();
+
+    return pipeline->getHeader();
+}
+
+void PipelineExecutingBlockInputStream::createExecutor()
+{
+    if (pipeline->getNumThreads() > 1)
+        async_executor = std::make_unique<PullingAsyncPipelineExecutor>(*pipeline);
+    else
+        executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
+
+    is_execution_started = true;
 }
 
 void PipelineExecutingBlockInputStream::readPrefixImpl()
 {
-    executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
+    createExecutor();
 }
 
 Block PipelineExecutingBlockInputStream::readImpl()
 {
-    if (!executor)
-        executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
+    if (!is_execution_started)
+        createExecutor();
 
     Block block;
-    while (executor->pull(block))
+    bool can_continue = true;
+    while (can_continue)
     {
+        if (executor)
+            can_continue = executor->pull(block);
+        else
+            can_continue = async_executor->pull(block);
+
         if (block)
             return block;
     }
+
+    totals = executor ? executor->getTotalsBlock()
+                      : async_executor->getTotalsBlock();
+
+    extremes = executor ? executor->getExtremesBlock()
+                        : async_executor->getExtremesBlock();
 
     return {};
 }
@@ -70,20 +97,20 @@ void PipelineExecutingBlockInputStream::cancel(bool kill)
 
 void PipelineExecutingBlockInputStream::setProgressCallback(const ProgressCallback & callback)
 {
-    throwIfExecutionStarted(executor != nullptr, "setProgressCallback");
+    throwIfExecutionStarted(is_execution_started, "setProgressCallback");
     pipeline->setProgressCallback(callback);
 }
 
 void PipelineExecutingBlockInputStream::setProcessListElement(QueryStatus * elem)
 {
-    throwIfExecutionStarted(executor != nullptr, "setProcessListElement");
+    throwIfExecutionStarted(is_execution_started, "setProcessListElement");
     IBlockInputStream::setProcessListElement(elem);
     pipeline->setProcessListElement(elem);
 }
 
 void PipelineExecutingBlockInputStream::setLimits(const IBlockInputStream::LocalLimits & limits_)
 {
-    throwIfExecutionStarted(executor != nullptr, "setLimits");
+    throwIfExecutionStarted(is_execution_started, "setLimits");
 
     if (limits_.mode == LimitsMode::LIMITS_TOTAL)
         throw Exception("Total limits are not supported by PipelineExecutingBlockInputStream",
