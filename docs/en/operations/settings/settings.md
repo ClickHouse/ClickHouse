@@ -404,6 +404,26 @@ Possible values:
 
 Default value: 0.
 
+## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
+
+Enables or disables specific ClickHouse server behavior in `ANY JOIN` operations.
+
+When the behavior enabled, ClickHouse uses the logic with many-to-one left-to-right table keys mapping in `ANY JOIN` operations. This leads to confusing not equal results for queries with `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` constructions.
+
+When the behavior disabled, ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations. This guaranties equality of results for queries with `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` constructions.
+
+Possible values:
+
+- 1 — ClickHouse uses the logic with many-to-one left-to-right table keys mapping in `ANY JOIN` operations.
+- 0 — ClickHouse uses the logic with one-to-many keys in `ANY RIGHT JOIN` operations.
+
+Default value: 0.
+
+See also:
+
+-   [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
+
+
 ## max\_block\_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
@@ -1264,5 +1284,7 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
