@@ -160,24 +160,24 @@ TEST(DiskHdfsTest, testHdfsCreation)
     }
     
     {
-        std::unique_ptr<DB::WriteBuffer> out = disk.writeFile("test_file", 1024, DB::WriteMode::Rewrite, 1024, 1024);
+        std::unique_ptr<DB::WriteBufferFromFileBase> out = disk.writeFile("test_file", 1, DB::WriteMode::Rewrite, 1024, 1);
         writeString("test data", *out);
     }
 
     // Test SEEK_SET
     {
         String buf(4, '0');
-        std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile("test_file", 1024, 1024, 1024, 1024);
+        std::unique_ptr<DB::ReadBufferFromFileBase> in = disk.readFile("test_file", 1, 1024, 1024, 1);
 
         in->seek(5, SEEK_SET);
 
         in->readStrict(buf.data(), 4);
         EXPECT_EQ("data", buf);
-    }
+        }
 
     // Test SEEK_CUR
     {
-        std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile("test_file", 1024, 1024, 1024, 1024);
+        std::unique_ptr<DB::ReadBufferFromFileBase> in = disk.readFile("test_file", 1, 1024, 1024, 1);
         String buf(4, '0');
 
         in->readStrict(buf.data(), 4);

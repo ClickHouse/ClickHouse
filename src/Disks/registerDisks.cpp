@@ -13,6 +13,8 @@ void registerDiskMemory(DiskFactory & factory);
 #if USE_AWS_S3
 void registerDiskS3(DiskFactory & factory);
 #endif
+void registerDiskHDFS(DiskFactory & factory);
+
 
 void registerDisks()
 {
@@ -20,6 +22,8 @@ void registerDisks()
 
     registerDiskLocal(factory);
     registerDiskMemory(factory);
+    registerDiskHDFS(factory);
+
 #if USE_AWS_S3
     registerDiskS3(factory);
 #endif
