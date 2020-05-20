@@ -21,7 +21,7 @@ void MergeTreeDataPartWriterOnDisk::Stream::finalize()
     marks.next();
 }
 
-void MergeTreeDataPartWriterOnDisk::Stream::sync()
+void MergeTreeDataPartWriterOnDisk::Stream::sync() const
 {
     plain_file->sync();
     marks_file->sync();

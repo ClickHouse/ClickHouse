@@ -81,7 +81,8 @@ static MergeTreeDataPartChecksum createUncompressedChecksum(size_t size, SipHash
 void MergeTreeDataPartWriterInMemory::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
     SipHash hash;
-    part->block.updateHash(hash);
+    for (const auto & column : part->block)
+        column.column->updateHashFast(hash);
     checksums.files["data.bin"] = createUncompressedChecksum(part->block.bytes(), hash);
 }
 

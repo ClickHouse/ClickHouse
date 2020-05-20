@@ -124,6 +124,12 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
+void ColumnFixedString::updateHashFast(SipHash & hash) const
+{
+    hash.update(n);
+    hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
+}
+
 template <bool positive>
 struct ColumnFixedString::less
 {
