@@ -414,7 +414,7 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
     }
 
     std::vector<size_t> indices;
-    auto pushBackEvent = [& indices] (const std::string & event_name)
+    auto push_back_event = [& indices] (const std::string & event_name)
     {
         std::vector<size_t> event_indices = eventNameToIndices(event_name);
         if (event_indices.empty())
@@ -430,13 +430,13 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
 
         if (symbol == ',')
         {
-            pushBackEvent(event_name);
+            push_back_event(event_name);
             event_name.clear();
         }
         else if (i == events_list.size() - 1)
         {
             event_name += symbol;
-            pushBackEvent(event_name);
+            push_back_event(event_name);
             event_name.clear();
         }
         else if (!isspace(symbol) || !event_name.empty())
