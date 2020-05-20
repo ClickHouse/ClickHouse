@@ -51,7 +51,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
+        partition_key = formattedAST(data.getPartitionKey().expression_ast);
 
     ttl_table = formattedAST(data.ttl_table_ast);
 

@@ -138,18 +138,19 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.check(block, true);
     block.checkNumberOfRows();
 
-    if (!data.partition_key_expr) /// Table is not partitioned.
+    if (!data.hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;
     }
 
     Block block_copy = block;
-    data.partition_key_expr->execute(block_copy);
+    const auto & partition_key = data.getPartitionKey();
+    partition_key.expressions->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(data.partition_key_sample.columns());
-    for (const ColumnWithTypeAndName & element : data.partition_key_sample)
+    partition_columns.reserve(partition_key.sample_block.columns());
+    for (const ColumnWithTypeAndName & element : partition_key.sample_block)
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
@@ -203,7 +204,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
 
-    MergeTreePartInfo new_part_info(partition.getID(data.partition_key_sample), temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(data.getPartitionKey().sample_block), temp_index, temp_index, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {

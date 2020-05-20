@@ -43,4 +43,24 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };
 
+struct StorageMetadataField
+{
+    ASTPtr ast;
+    ExpressionActionsPtr actions;
+};
+
+struct StorageMetadataKeyField
+{
+    ASTPtr definition_ast;
+
+    ASTPtr expression_ast;
+    ExpressionActionsPtr expressions;
+    Names expression_columns;
+
+    Block sample_block;
+    DataTypes data_types;
+
+    StorageMetadataKeyField & operator=(const StorageMetadataKeyField & other) = default;
+};
+
 }

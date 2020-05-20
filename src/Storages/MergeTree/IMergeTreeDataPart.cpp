@@ -494,7 +494,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
             minmax_idx.load(storage, volume->getDisk(), path);
     }
 
-    String calculated_partition_id = partition.getID(storage.partition_key_sample);
+    String calculated_partition_id = partition.getID(storage.getPartitionKey().sample_block);
     if (calculated_partition_id != info.partition_id)
         throw Exception(
             "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id
@@ -852,7 +852,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (!checksums.files.count("count.txt"))
                 throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
+            if (storage.hasPartitionKey() && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             if (!isEmpty())
@@ -885,7 +885,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         {
             check_file_not_empty(volume->getDisk(), path + "count.txt");
 
-            if (storage.partition_key_expr)
+            if (storage.hasPartitionKey())
                 check_file_not_empty(volume->getDisk(), path + "partition.dat");
 
             for (const String & col_name : storage.minmax_idx_columns)

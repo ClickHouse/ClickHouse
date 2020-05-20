@@ -130,7 +130,6 @@ MergeTreeData::MergeTreeData(
     : IStorage(table_id_)
     , global_context(context_)
     , merging_params(merging_params_)
-    , partition_by_ast(metadata.partition_by_ast)
     , sample_by_ast(metadata.sample_by_ast)
     , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
@@ -169,8 +168,8 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
-            initPartitionKey();
+            auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
+            initPartitionKey(partition_by_ast);
 
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -185,7 +184,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        initPartitionKey();
+        initPartitionKey(metadata.partition_by_ast);
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
@@ -252,8 +251,8 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
-    if (partition_by_ast)
-        metadata.partition_by_ast = partition_by_ast->clone();
+    if (hasPartitionKey())
+        metadata.partition_by_ast = getPartitionKey().definition_ast->clone();
 
     if (order_by_ast)
         metadata.order_by_ast = order_by_ast->clone();
@@ -511,28 +510,31 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 }
 
 
-void MergeTreeData::initPartitionKey()
+void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 {
     ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
+    StorageMetadataKeyField new_partition_key;
+    new_partition_key.definition_ast = partition_by_ast;
+    new_partition_key.expression_ast = partition_key_expr_list;
 
     if (partition_key_expr_list->children.empty())
         return;
 
     {
         auto syntax_result = SyntaxAnalyzer(global_context).analyze(partition_key_expr_list, getColumns().getAllPhysical());
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
+        new_partition_key.expressions = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
     }
 
     for (const ASTPtr & ast : partition_key_expr_list->children)
     {
         String col_name = ast->getColumnName();
-        partition_key_sample.insert(partition_key_expr->getSampleBlock().getByName(col_name));
+        new_partition_key.sample_block.insert(new_partition_key.expressions->getSampleBlock().getByName(col_name));
     }
 
-    checkKeyExpression(*partition_key_expr, partition_key_sample, "Partition");
+    checkKeyExpression(*new_partition_key.expressions, new_partition_key.sample_block, "Partition");
 
     /// Add all columns used in the partition key to the min-max index.
-    const NamesAndTypesList & minmax_idx_columns_with_types = partition_key_expr->getRequiredColumnsWithTypes();
+    const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expressions->getRequiredColumnsWithTypes();
     minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, global_context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
@@ -577,6 +579,7 @@ void MergeTreeData::initPartitionKey()
             }
         }
     }
+    setPartitionKey(new_partition_key);
 }
 
 namespace
@@ -631,8 +634,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
     {
         NameSet columns_ttl_forbidden;
 
-        if (partition_key_expr)
-            for (const auto & col : partition_key_expr->getRequiredColumns())
+        if (hasPartitionKey())
+            for (const auto & col : getPartitionKey().expressions->getRequiredColumns())
                 columns_ttl_forbidden.insert(col);
 
         if (sorting_key_expr)
@@ -1419,12 +1422,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_type_metadata_only;
 
-    if (partition_key_expr)
+    if (hasPartitionKey())
     {
         /// Forbid altering partition key columns because it can change partition ID format.
         /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
         /// We should allow it.
-        for (const String & col : partition_key_expr->getRequiredColumns())
+        for (const String & col : getColumnsRequiredForPartitionKey())
             columns_alter_type_forbidden.insert(col);
     }
 
@@ -2621,7 +2624,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
 
     /// Re-parse partition key fields using the information about expected field types.
 
-    size_t fields_count = partition_key_sample.columns();
+    size_t fields_count = getPartitionKey().sample_block.columns();
     if (partition_ast.fields_count != fields_count)
         throw Exception(
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
@@ -2638,7 +2641,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        auto input_stream = FormatFactory::instance().getInput("Values", buf, partition_key_sample, context, context.getSettingsRef().max_block_size);
+        auto input_stream = FormatFactory::instance().getInput("Values", buf, getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
 
         auto block = input_stream->read();
         if (!block || !block.rows())
@@ -3161,7 +3164,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (query_to_string(order_by_ast) != query_to_string(src_data->order_by_ast))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
-    if (query_to_string(partition_by_ast) != query_to_string(src_data->partition_by_ast))
+    if (query_to_string(getPartitionKey().definition_ast) != query_to_string(src_data->getPartitionKey().definition_ast))
         throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
 
     if (format_version != src_data->format_version)

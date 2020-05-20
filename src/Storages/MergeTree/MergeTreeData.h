@@ -334,12 +334,11 @@ public:
     /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
-    ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
     ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
 
-    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
+    //Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
     Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
@@ -648,8 +647,6 @@ public:
     const MergingParams merging_params;
 
     bool is_custom_partitioned = false;
-    ExpressionActionsPtr partition_key_expr;
-    Block partition_key_sample;
 
     ExpressionActionsPtr minmax_idx_expr;
     Names minmax_idx_columns;
@@ -738,7 +735,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr partition_by_ast;
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
@@ -853,7 +849,7 @@ protected:
 
     void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false, bool attach = false);
 
-    void initPartitionKey();
+    void initPartitionKey(ASTPtr partition_by_ast);
 
     void setTTLExpressions(const ColumnsDescription & columns,
         const ASTPtr & new_ttl_table_ast, bool only_check = false);
