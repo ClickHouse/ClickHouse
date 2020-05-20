@@ -251,7 +251,7 @@ static void releasePerfEvent(int event_fd, getLoggerFunc getLogger)
 {
     if (close(event_fd))
     {
-        LOG_WARNING(getLogger(),"Can't close perf event file descriptor: " << event_fd
+        LOG_WARNING(getLogger(), "Can't close perf event file descriptor: " << event_fd
                         << "; error: " << errno << " - " << strerror(errno));
     }
 }
