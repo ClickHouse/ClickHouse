@@ -61,13 +61,12 @@
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
-#if USE_OPENCL
-#include "Common/BitonicSort.h"
-#endif
-
 #if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#    include "Common/config_version.h"
+#   include "config_core.h"
+#   include "Common/config_version.h"
+#   if USE_OPENCL
+#       include "Common/BitonicSort.h" // Y_IGNORE
+#   endif
 #endif
 
 #if defined(OS_LINUX)
@@ -225,8 +224,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
 
+#if !defined(ARCADIA_BUILD)
 #if USE_OPENCL
-        BitonicSort::getInstance().configure();
+    BitonicSort::getInstance().configure();
+#endif
 #endif
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
@@ -379,7 +380,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
-        for (const DiskPtr & disk : volume->disks)
+        for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
 

@@ -106,7 +106,7 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    Block getSampleBlockImpl(bool try_move_to_prewhere);
+    Block getSampleBlockImpl();
 
     struct Pipeline
     {
@@ -185,6 +185,7 @@ private:
     void executeUnion(Pipeline & pipeline, Block header);
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
+    void executeOffset(Pipeline & pipeline);
     static void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
@@ -203,6 +204,7 @@ private:
     void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
+    void executeOffset(QueryPipeline & pipeline);
     static void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);

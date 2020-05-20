@@ -124,7 +124,7 @@ struct AlterCommand
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata) const;
 };
 
 /// Return string representation of AlterCommand::Type
@@ -165,7 +165,7 @@ public:
     /// Return mutation commands which some storages may execute as part of
     /// alter. If alter can be performed is pure metadata update, than result is
     /// empty.
-    MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata, bool materialize_ttl) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl) const;
 };
 
 }
