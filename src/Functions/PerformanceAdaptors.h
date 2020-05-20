@@ -186,6 +186,7 @@ public:
         {
             rows_summary += block.getByPosition(i).column->size();
         }
+        rows_summary += block.getByPosition(result).column->size();
 
         if (rows_summary >= 1000)
         {
