@@ -167,6 +167,7 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 
 void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
+    const Settings & settings = context.getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
     size_t num_shards = shards_info.size();
@@ -180,14 +181,14 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
         const auto & shard_info = shards_info[shard_index];
         auto & shard_jobs = per_shard_jobs[shard_index];
 
-        /// If hasInternalReplication, than prefer local replica
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal())
+        /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings.prefer_localhost_replica)
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
             for (size_t replica_index : ext::range(0, replicas.size()))
             {
-                if (!replicas[replica_index].is_local)
+                if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
                 {
                     shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
@@ -198,7 +199,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
             }
         }
 
-        if (shard_info.isLocal())
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
         {
             shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
@@ -275,12 +276,12 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
+        const Settings & settings = context.getSettingsRef();
 
-        if (!job.is_local_job)
+        if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
             if (!job.stream)
             {
-                const Settings & settings = context.getSettingsRef();
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
                 {
@@ -311,14 +312,14 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings, &context.getClientInfo());
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, settings, context.getClientInfo());
                 job.stream->writePrefix();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
             job.stream->write(shard_block);
         }
-        else
+        else // local
         {
             if (!job.stream)
             {
@@ -507,31 +508,25 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
+    const auto & settings = context.getSettingsRef();
 
     if (shard_info.hasInternalReplication())
     {
-        if (shard_info.getLocalNodeCount() > 0)
-        {
+        if (shard_info.isLocal() && settings.prefer_localhost_replica)
             /// Prefer insert into current instance directly
             writeToLocal(block, shard_info.getLocalNodeCount());
-        }
         else
-        {
-            if (shard_info.dir_name_for_internal_replication.empty())
-                throw Exception("Directory name for async inserts is empty, table " + storage.getStorageID().getNameForLogs(), ErrorCodes::LOGICAL_ERROR);
-
-            writeToShard(block, {shard_info.dir_name_for_internal_replication});
-        }
+            writeToShard(block, {shard_info.pathForInsert(settings.prefer_localhost_replica)});
     }
     else
     {
-        if (shard_info.getLocalNodeCount() > 0)
+        if (shard_info.isLocal())
             writeToLocal(block, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
-            if (!address.is_local)
-                dir_names.push_back(address.toFullString(context.getSettingsRef().use_compact_format_in_distributed_parts_names));
+            if (!address.is_local || !settings.prefer_localhost_replica)
+                dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);
@@ -574,31 +569,34 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
 
         first_file_tmp_path = tmp_path + file_name;
 
-        WriteBufferFromFile out{first_file_tmp_path};
-        CompressedWriteBuffer compress{out};
-        NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
+        /// Write batch to temporary location
+        {
+            WriteBufferFromFile out{first_file_tmp_path};
+            CompressedWriteBuffer compress{out};
+            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
-        /// Prepare the header.
-        /// We wrap the header into a string for compatibility with older versions:
-        /// a shard will able to read the header partly and ignore other parts based on its version.
-        WriteBufferFromOwnString header_buf;
-        writeVarUInt(ClickHouseRevision::get(), header_buf);
-        writeStringBinary(query_string, header_buf);
-        context.getSettingsRef().serialize(header_buf);
-        context.getClientInfo().write(header_buf, ClickHouseRevision::get());
+            /// Prepare the header.
+            /// We wrap the header into a string for compatibility with older versions:
+            /// a shard will able to read the header partly and ignore other parts based on its version.
+            WriteBufferFromOwnString header_buf;
+            writeVarUInt(ClickHouseRevision::get(), header_buf);
+            writeStringBinary(query_string, header_buf);
+            context.getSettingsRef().serialize(header_buf);
+            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
-        /// Add new fields here, for example:
-        /// writeVarUInt(my_new_data, header_buf);
+            /// Add new fields here, for example:
+            /// writeVarUInt(my_new_data, header_buf);
 
-        /// Write the header.
-        const StringRef header = header_buf.stringRef();
-        writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-        writeStringBinary(header, out);
-        writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
+            /// Write the header.
+            const StringRef header = header_buf.stringRef();
+            writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+            writeStringBinary(header, out);
+            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-        stream.writePrefix();
-        stream.write(block);
-        stream.writeSuffix();
+            stream.writePrefix();
+            stream.write(block);
+            stream.writeSuffix();
+        }
 
         // Create hardlink here to reuse increment number
         const std::string block_file_path(path + '/' + file_name);

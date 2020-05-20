@@ -753,7 +753,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_transform = std::make_unique<CollapsingSortedTransform>(
-                header, pipes.size(), sort_description, data.merging_params.sign_column,
+                header, pipes.size(), sort_description, data.merging_params.sign_column, false,
                 merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
