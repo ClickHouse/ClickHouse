@@ -478,8 +478,6 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
     if (current_thread_counters_id != counters.id)
         return;
 
-    // process raw events
-
     // only read counters here to have as little overhead for processing as possible
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
