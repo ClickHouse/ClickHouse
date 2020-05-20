@@ -209,10 +209,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -767,8 +767,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = table_join;
-    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+
+    if (table_join)
+    {
+        result.analyzed_join = table_join;
+        result.analyzed_join->resetCollected();
+    }
+    else /// TODO: remove. For now ExpressionAnalyzer expects some not empty object here
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
@@ -801,7 +806,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
@@ -846,7 +851,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     normalize(query, result.aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, context, 0, result.scalars);
+    executeScalarSubqueries(query, context, 0, result.scalars, false);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 

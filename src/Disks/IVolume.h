@@ -8,6 +8,17 @@
 namespace DB
 {
 
+enum class VolumeType
+{
+    JBOD,
+    SINGLE_DISK,
+    UNKNOWN
+};
+
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
+using Volumes = std::vector<VolumePtr>;
+
 /**
  * Disks group by some (user) criteria. For example,
  * - VolumeJBOD("slow_disks", [d1, d2], 100)
@@ -22,7 +33,7 @@ namespace DB
 class IVolume : public Space
 {
 public:
-    IVolume(String name_, Disks disks_): disks(std::move(disks_)), name(std::move(name_))
+    IVolume(String name_, Disks disks_): disks(std::move(disks_)), name(name_)
     {
     }
 
@@ -37,16 +48,17 @@ public:
 
     /// Volume name from config
     const String & getName() const override { return name; }
+    virtual VolumeType getType() const = 0;
 
     /// Return biggest unreserved space across all disks
     UInt64 getMaxUnreservedFreeSpace() const;
 
-    Disks disks;
+    DiskPtr getDisk(size_t i = 0) const { return disks[i]; }
+    const Disks & getDisks() const { return disks; }
+
 protected:
+    Disks disks;
     const String name;
 };
-
-using VolumePtr = std::shared_ptr<IVolume>;
-using Volumes = std::vector<VolumePtr>;
 
 }

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "\u06A9\u0627\u0631\u06A9\u0631\u062F(\u0646\u0627\u0645 \u0648 \u0646\u0627\
   \u0645 \u062E\u0627\u0646\u0648\u0627\u062F\u06AF\u06CC..)"
@@ -8,7 +8,7 @@ toc_title: "\u06A9\u0627\u0631\u06A9\u0631\u062F(\u0646\u0627\u0645 \u0648 \u064
 
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
-Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [مشاهده محقق](../../sql-reference/statements/select.md#create-view). راه معمول برای تولید یک دولت تابع جمع است با فراخوانی تابع جمع با `-State` پسوند. برای دریافت نتیجه نهایی از تجمع در اینده, شما باید همان تابع کل با استفاده از `-Merge`پسوند.
+Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(…) data type and stored in a table, usually, by means of [مشاهده محقق](../../sql-reference/statements/create.md#create-view). راه معمول برای تولید یک دولت تابع جمع است با فراخوانی تابع جمع با `-State` پسوند. برای دریافت نتیجه نهایی از تجمع در اینده, شما باید همان تابع کل با استفاده از `-Merge`پسوند.
 
 `AggregateFunction` — parametric data type.
 
@@ -52,7 +52,7 @@ quantilesState(0.5, 0.9)(SendTiming)
 
 ### گزینش داده {#data-selection}
 
-هنگام انتخاب داده ها از `AggregatingMergeTree` جدول استفاده کنید `GROUP BY` بند و همان مجموع توابع به عنوان زمانی که قرار دادن داده اما با استفاده از `-Merge`پسوند.
+هنگام انتخاب داده ها از `AggregatingMergeTree` جدول استفاده کنید `GROUP BY` بند و توابع کل همان هنگام قرار دادن داده, اما با استفاده از `-Merge`پسوند.
 
 یک تابع جمع با `-Merge` پسوند مجموعه ای از ایالت ها را ترکیب می کند و نتیجه تجمع کامل داده ها را باز می گرداند.
 

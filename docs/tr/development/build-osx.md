@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 65
 toc_title: "Mac OS X \xFCzerinde ClickHouse nas\u0131l olu\u015Fturulur"
 ---
@@ -15,7 +15,7 @@ Build Mac OS X 10.15 (Catalina) üzerinde çalışmalıdır)
 $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Gerekli Derleyicileri, araçları Ve kitaplıkları yükleyin {#install-required-compilers-tools-and-libraries}
+## Gerekli derleyicileri, araçları ve kitaplıkları yükleyin {#install-required-compilers-tools-and-libraries}
 
 ``` bash
 $ brew install cmake ninja libtool gettext

@@ -375,6 +375,9 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
     if (settings.distributed_group_by_no_merge)
         return true;
+    if (!settings.optimize_distributed_group_by_sharding_key)
+        return false;
+
     /// Distributed-over-Distributed (see getQueryProcessingStageImpl())
     if (to_stage == QueryProcessingStage::WithMergeableState)
         return false;
@@ -385,7 +388,16 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
     const auto & select = query_ptr->as<ASTSelectQuery &>();
 
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return false;
+
+    // TODO: The following can be optimized too (but with some caveats, will be addressed later):
+    // - ORDER BY
+    // - LIMIT BY
+    // - LIMIT
     if (select.orderBy())
+        return false;
+    if (select.limitBy() || select.limitLength())
         return false;
 
     if (select.distinct)
@@ -401,11 +413,6 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
         reason = "DISTINCT " + backQuote(serializeAST(*select.select(), true));
     }
-
-    // This can use distributed_group_by_no_merge but in this case limit stage
-    // should be done later (which is not the case right now).
-    if (select.limitBy() || select.limitLength())
-        return false;
 
     const ASTPtr group_by = select.groupBy();
     if (!group_by)
@@ -543,7 +550,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
         if (command.type != AlterCommand::Type::ADD_COLUMN
             && command.type != AlterCommand::Type::MODIFY_COLUMN
             && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::RENAME_COLUMN)
 
             throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
@@ -571,7 +579,7 @@ void StorageDistributed::startup()
     if (!volume)
         return;
 
-    for (const DiskPtr & disk : volume->disks)
+    for (const DiskPtr & disk : volume->getDisks())
         createDirectoryMonitors(disk->getPath());
 
     for (const String & path : getDataPaths())
@@ -599,7 +607,7 @@ Strings StorageDistributed::getDataPaths() const
     if (relative_data_path.empty())
         return paths;
 
-    for (const DiskPtr & disk : volume->disks)
+    for (const DiskPtr & disk : volume->getDisks())
         paths.push_back(disk->getPath() + relative_data_path);
 
     return paths;
@@ -803,7 +811,7 @@ void StorageDistributed::rename(const String & new_path_to_table_data, const Sto
 }
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {
-    for (const DiskPtr & disk : volume->disks)
+    for (const DiskPtr & disk : volume->getDisks())
     {
         const String path(disk->getPath());
         auto new_path = path + new_path_to_table_data;

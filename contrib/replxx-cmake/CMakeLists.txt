@@ -20,14 +20,14 @@ if (ENABLE_REPLXX)
         )
 
         add_library (replxx ${SRCS})
-        target_include_directories(replxx PUBLIC ${LIBRARY_DIR}/include)
+        target_include_directories(replxx SYSTEM PUBLIC ${LIBRARY_DIR}/include)
     else ()
         find_library(LIBRARY_REPLXX NAMES replxx replxx-static)
         find_path(INCLUDE_REPLXX replxx.hxx)
 
         add_library(replxx UNKNOWN IMPORTED)
         set_property(TARGET replxx PROPERTY IMPORTED_LOCATION ${LIBRARY_REPLXX})
-        target_include_directories(replxx PUBLIC ${INCLUDE_REPLXX})
+        target_include_directories(replxx SYSTEM PUBLIC ${INCLUDE_REPLXX})
 
         set(CMAKE_REQUIRED_LIBRARIES replxx)
         check_cxx_source_compiles(

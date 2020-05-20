@@ -63,18 +63,16 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
-    DiskPtr disk_,
-    const String & part_path_,
-    const MergeTreeData & storage_,
+    const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : disk(std::move(disk_))
-    , part_path(part_path_)
-    , storage(storage_)
+    : data_part(data_part_)
+    , part_path(data_part_->getFullRelativePath())
+    , storage(data_part_->storage)
     , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
     , index_granularity(index_granularity_)
@@ -87,6 +85,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
+    auto disk = data_part->volume->getDisk();
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 }
@@ -165,7 +164,7 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
 {
     if (storage.hasPrimaryKey())
     {
-        index_file_stream = disk->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
@@ -180,7 +179,7 @@ void IMergeTreeDataPartWriter::initSkipIndices()
         skip_indices_streams.emplace_back(
                 std::make_unique<IMergeTreeDataPartWriter::Stream>(
                         stream_name,
-                        disk,
+                        data_part->volume->getDisk(),
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size,

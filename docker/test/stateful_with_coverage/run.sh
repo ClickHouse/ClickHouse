@@ -48,6 +48,13 @@ mkdir -p /var/lib/clickhouse
 mkdir -p /var/log/clickhouse-server
 chmod 777 -R /var/log/clickhouse-server/
 
+# Temorary way to keep CI green while moving dictionaries to separate directory
+mkdir -p /etc/clickhouse-server/dict_examples
+chmod 777 -R /etc/clickhouse-server/dict_examples
+ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-server/dict_examples/; \
+    ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/dict_examples/; \
+    ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/dict_examples/;
+
 ln -s /usr/share/clickhouse-test/config/zookeeper.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/listen.xml /etc/clickhouse-server/config.d/; \
     ln -s /usr/share/clickhouse-test/config/part_log.xml /etc/clickhouse-server/config.d/; \

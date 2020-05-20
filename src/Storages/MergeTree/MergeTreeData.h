@@ -194,14 +194,14 @@ public:
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
         MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
-        const DiskPtr & disk, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// After this methods 'loadColumnsChecksumsIndexes' must be called
     MutableDataPartPtr createPart(const String & name,
-        const DiskPtr & disk, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
-        const DiskPtr & disk, const String & relative_path) const;
+        const VolumePtr & volume, const String & relative_path) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -331,7 +331,9 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
 
+    /// See comments about methods below in IStorage interface
     StorageInMemoryMetadata getInMemoryMetadata() const override;
+
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
@@ -543,7 +545,7 @@ public:
     bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const;
+    MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -667,7 +669,8 @@ public:
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
-    /// Names of columns for primary key + secondary sorting columns.
+    /// Names of sorting key columns in ORDER BY expression. For example: 'a',
+    /// 'x * y', 'toStartOfMonth(date)', etc.
     Names sorting_key_columns;
     ASTPtr sorting_key_expr_ast;
     ExpressionActionsPtr sorting_key_expr;

@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
+    extern const int INCORRECT_DISK_INDEX;
 }
 
 namespace
@@ -369,7 +370,16 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    DiskPtr getDisk() const override { return disk; }
+    DiskPtr getDisk(size_t i) const override
+    {
+        if (i != 0)
+        {
+            throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+        }
+        return disk;
+    }
+
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override
     {
@@ -391,7 +401,7 @@ private:
 DiskS3::DiskS3(
     String name_,
     std::shared_ptr<Aws::S3::S3Client> client_,
-    std::shared_ptr<S3::DynamicProxyConfiguration> proxy_configuration_,
+    std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,

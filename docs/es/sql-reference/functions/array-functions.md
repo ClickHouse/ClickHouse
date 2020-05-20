@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: Trabajar con matrices
 ---
 
-# Funciones Para Trabajar Con Matrices {#functions-for-working-with-arrays}
+# Funciones para trabajar con matrices {#functions-for-working-with-arrays}
 
 ## vaciar {#function-empty}
 
@@ -25,11 +25,11 @@ Devuelve el número de elementos de la matriz.
 El tipo de resultado es UInt64.
 La función también funciona para cadenas.
 
-## Para Obtener más información, Consulta Nuestra Política De Privacidad y Nuestras Condiciones De Uso {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
+## Para obtener más información, consulta nuestra Política de privacidad y nuestras Condiciones de uso {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
-## Para Obtener más información, Consulta Nuestra Política De Privacidad y Nuestras Condiciones De Uso {#emptyarrayint8-emptyarrayint16-emptyarrayint32-emptyarrayint64}
+## Para obtener más información, consulta nuestra Política de privacidad y nuestras Condiciones de uso {#emptyarrayint8-emptyarrayint16-emptyarrayint32-emptyarrayint64}
 
-## Para Obtener más información, Consulta Nuestra Política De Privacidad y Nuestras Condiciones De Uso {#emptyarrayfloat32-emptyarrayfloat64}
+## Para obtener más información, consulta nuestra Política de privacidad y nuestras Condiciones de uso {#emptyarrayfloat32-emptyarrayfloat64}
 
 ## emptyArrayDate, emptyArrayDateTime {#emptyarraydate-emptyarraydatetime}
 
@@ -80,7 +80,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 └───────────────┘
 ```
 
-## Por Ejemplo, El Operador Arr\[n\] {#arrayelementarr-n-operator-arrn}
+## Por ejemplo, el operador arr\[n\] {#arrayelementarr-n-operator-arrn}
 
 Obtener el elemento con el índice `n` de la matriz `arr`. `n` debe ser de cualquier tipo entero.
 Los índices de una matriz comienzan desde uno.
@@ -88,7 +88,7 @@ Los índices negativos son compatibles. En este caso, selecciona el elemento cor
 
 Si el índice cae fuera de los límites de una matriz, devuelve algún valor predeterminado (0 para números, una cadena vacía para cadenas, etc.), a excepción del caso con una matriz no constante y un índice constante 0 (en este caso habrá un error `Array indices are 1-based`).
 
-## Tiene(arr, Elem) {#hasarr-elem}
+## Tiene(arr, elem) {#hasarr-elem}
 
 Comprueba si el ‘arr’ la matriz tiene el ‘elem’ elemento.
 Devuelve 0 si el elemento no está en la matriz, o 1 si es.
@@ -196,7 +196,7 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 Elementos establecidos en `NULL` se manejan como valores normales.
 
-## Cuenta Igual (arr, X) {#countequalarr-x}
+## Cuenta igual (arr, x) {#countequalarr-x}
 
 Devuelve el número de elementos de la matriz igual a x. Equivalente a arrayCount (elem -\> elem = x, arr).
 
@@ -214,7 +214,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## Información Detallada) {#array_functions-arrayenumerate}
+## Información detallada) {#array_functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, …, length (arr) \]
 
@@ -551,7 +551,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Aquí, los elementos que se pasan en la segunda matriz (\[2, 1\]) definen una clave de ordenación para el elemento correspondiente de la matriz de origen (\[‘hello’, ‘world’Es decir,, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x`, los valores reales de la matriz de origen no afectan el orden en el resultado. Tan, ‘hello’ será el segundo elemento en el resultado, y ‘world’ será la primera.
+Aquí, los elementos que se pasan en la segunda matriz (\[2, 1\]) definen una clave de ordenación para el elemento correspondiente de la matriz de origen (\[‘hello’, ‘world’Es decir,, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn't use `x`, los valores reales de la matriz de origen no afectan el orden en el resultado. Tan, ‘hello’ será el segundo elemento en el resultado, y ‘world’ será la primera.
 
 Otros ejemplos se muestran a continuación.
 
@@ -686,7 +686,7 @@ Si se pasan varios argumentos, cuenta el número de tuplas diferentes de element
 
 Si desea obtener una lista de elementos únicos en una matriz, puede usar arrayReduce(‘groupUniqArray’ arr).
 
-## Información Adicional) {#array-functions-join}
+## Información adicional) {#array-functions-join}
 
 Una función especial. Vea la sección [“ArrayJoin function”](array-join.md#functions_arrayjoin).
 
@@ -776,7 +776,7 @@ Resultado:
 └────────────────────────────────┘
 ```
 
-## Aquí Hay Algunas Opciones) {#array_functions-arrayenumeratedense}
+## Aquí hay algunas opciones) {#array_functions-arrayenumeratedense}
 
 Devuelve una matriz del mismo tamaño que la matriz de origen, lo que indica dónde aparece cada elemento por primera vez en la matriz de origen.
 
@@ -792,7 +792,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 └───────────────────────────────────────┘
 ```
 
-## Información Detallada) {#array-functions-arrayintersect}
+## Información detallada) {#array-functions-arrayintersect}
 
 Toma varias matrices, devuelve una matriz con elementos que están presentes en todas las matrices de origen. El orden de los elementos en la matriz resultante es el mismo que en la primera matriz.
 
@@ -990,7 +990,7 @@ Resultado:
 
 ## arrayZip {#arrayzip}
 
-Combine multiple Array type columns into one Array\[Tuple(…)\] column
+Combina varias matrices en una sola matriz. La matriz resultante contiene los elementos correspondientes de las matrices de origen agrupadas en tuplas en el orden de argumentos enumerado.
 
 **Sintaxis**
 
@@ -1000,26 +1000,30 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **Parámetros**
 
-`arr` — Any number of [matriz](../../sql-reference/data-types/array.md) escriba columnas para combinar.
+-   `arrN` — [Matriz](../data-types/array.md).
+
+La función puede tomar cualquier cantidad de matrices de diferentes tipos. Todas las matrices de entrada deben ser del mismo tamaño.
 
 **Valor devuelto**
 
-The result of Array\[Tuple(…)\] type after the combination of these arrays
+-   Matriz con elementos de las matrices de origen agrupadas en [tuplas](../data-types/tuple.md). Los tipos de datos en la tupla son los mismos que los tipos de las matrices de entrada y en el mismo orden en que se pasan las matrices.
+
+Tipo: [Matriz](../data-types/array.md).
 
 **Ejemplo**
 
 Consulta:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']);
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 ```
 
 Resultado:
 
 ``` text
-┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
-│ [('a','d'),('b','e'),('c','f')]            │
-└────────────────────────────────────────────┘
+┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
+│ [('a',5),('b',2),('c',1)]            │
+└──────────────────────────────────────┘
 ```
 
 ## arrayAUC {#arrayauc}
