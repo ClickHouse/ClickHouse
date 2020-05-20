@@ -67,6 +67,10 @@
 #include <sys/mman.h>
 #endif
 
+#if USE_CUDA
+#include <Common/Cuda/cudaInitDevice.h>
+#endif
+
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
@@ -538,6 +542,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     if (compiled_expression_cache_size)
         global_context->setCompiledExpressionCache(compiled_expression_cache_size);
+#endif
+
+#if USE_CUDA
+    LOG_INFO(log, "Initializaing CUDA context");
+    //cudaInitDevice(0, 8589934592);
+    cudaInitDevice(0, 17179869184);
 #endif
 
     /// Set path for format schema files

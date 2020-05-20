@@ -21,12 +21,12 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
 
 add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_sources})
 if (USE_CUDA)
-    target_link_libraries(clickhouse_aggregate_functions dbms dbms_cuda)
-else ()
-    target_link_libraries(clickhouse_aggregate_functions dbms)
-endif ()
-target_include_directories (clickhouse_aggregate_functions BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
-
-if (USE_CUDA)
+    target_link_libraries(clickhouse_aggregate_functions PRIVATE dbms dbms_cuda PUBLIC ${CITYHASH_LIBRARIES})
     add_subdirectory (Cuda)
+else ()
+    target_link_libraries(clickhouse_aggregate_functions PRIVATE dbms PUBLIC ${CITYHASH_LIBRARIES})
 endif ()
+
+if(ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()

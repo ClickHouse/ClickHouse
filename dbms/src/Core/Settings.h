@@ -398,6 +398,16 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, partial_revokes, false, "Makes it possible to revoke privileges partially.", 0) \
     M(SettingBool, deduplicate_blocks_in_dependent_materialized_views, false, "Should deduplicate blocks for materialized views if the block is not a duplicate for the table. Use true to always deduplicate in dependent tables.", 0) \
     \
+    M(SettingBool, use_cuda_aggregation, false, "Whether to use CUDA aggregation", 0)\
+    M(SettingUInt64, cuda_device_number, 0, "CUDA device number (temporal)", 0)\
+    M(SettingUInt64, cuda_host_pinned_mem_pool_size, 2147483648, "Size of pinned memory pool for cpu/gpu transfers", 0)\
+    M(SettingUInt64, cuda_chunks_number, 2, "number of CUDA working streams per device", 0)\
+    M(SettingUInt64, cuda_hash_table_max_size, 16384, "CUDA maximum result size (temporal)", 0)\
+    M(SettingUInt64, cuda_hash_table_strings_buffer_max_size, 262144, "CUDA maximum total size of all strings keys in result (temporal)", 0)\
+    M(SettingUInt64, cuda_buffer_max_strings_number, 2097152, "CUDA maximum rows number in one time processed block", 0)\
+    M(SettingUInt64, cuda_buffer_max_size, 134217728, "CUDA maximum total size of all strings in one time processed block", 0)\
+    M(SettingUInt64, cuda_memcpy_threads_num, 1, "CUDA maximum threads to copy block into pinned buffer", 0)\
+    \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
     M(SettingBool, allow_experimental_low_cardinality_type, true, "Obsolete setting, does nothing. Will be removed after 2019-08-13", 0) \

@@ -333,6 +333,44 @@ protected:
     }
 };
 
+#if 0
+#include <Common/Cuda/CudaHostPinnedMemPool.h>
+
+template <bool clear_memory_>
+void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
+{
+    CurrentMemoryTracker::alloc(size);
+
+    void * buf = CudaHostPinnedMemPool::instance().alloc(size, alignment);
+
+    if (clear_memory)
+        memset(buf, 0, size);
+
+    return buf;
+}
+
+template <bool clear_memory_>
+void Allocator<clear_memory_>::free(void * buf, size_t size)
+{
+    CudaHostPinnedMemPool::instance().free(buf);
+
+    CurrentMemoryTracker::free(size);
+}
+
+template <bool clear_memory_>
+void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
+{
+    CurrentMemoryTracker::realloc(old_size, new_size);
+
+    void * new_buf = CudaHostPinnedMemPool::instance().realloc(buf, old_size, new_size, alignment);
+
+    if (clear_memory && new_size > old_size)
+        memset(reinterpret_cast<char *>(new_buf) + old_size, 0, new_size - old_size);
+
+    return new_buf;
+}
+#endif
+
 
 #if !__clang__
 #pragma GCC diagnostic pop
