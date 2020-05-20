@@ -214,15 +214,14 @@ public:
 
         const auto disposer = [this](auto& container)
         {
-            for (auto it = container.begin(); it != container.end(); ++it)
-                all_regions.erase_and_dispose(all_regions.iterator_to(*it),
-                                              region_metadata_disposer);
+            for (const auto& e : container)
+                all_regions.erase(all_regions.iterator_to(e));
 
-            container.clear();
+            container.clear_and_dispose(region_metadata_disposer);
         };
 
-        disposer(free_regions);
         disposer(unused_regions);
+        disposer(free_regions);
 
         chunks.remove_if([](const auto& chunk) { return chunk.used_refcount == 0; });
 
