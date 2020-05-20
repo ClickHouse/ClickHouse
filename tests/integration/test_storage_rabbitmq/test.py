@@ -114,6 +114,732 @@ def rabbitmq_setup_teardown():
 
 # Tests
 
+@pytest.mark.timeout(180)
+def test_rabbitmq_select_from_new_syntax_table(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'new',
+                     rabbitmq_exchange_name = 'clickhouse-exchange',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+    messages = []
+    for i in range(25):
+        messages.append(json.dumps({'key': i, 'value': i}))
+
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='new', body=message)
+
+    messages = []
+    for i in range(25, 50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='new', body=message)
+
+    result = instance.query('SELECT * FROM test.rabbitmq', ignore_error=False)
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_select_from_old_syntax_table(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ('rabbitmq1:5672', 'old', 'clickhouse-exchange', 'JSONEachRow', '\\n');
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='old', body=message)
+
+    result = instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_select_empty(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'empty',
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_row_delimiter = '\\n';
+        ''')
+
+    assert int(instance.query('SELECT count() FROM test.rabbitmq')) == 0
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'json',
+                     rabbitmq_exchange_name = 'clickhouse-exchange',
+                     rabbitmq_format = 'JSONEachRow'
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+    messages = ''
+    for i in range(25):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+
+    all_messages = [messages]
+    for message in all_messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='json', body=message)
+
+    messages = ''
+    for i in range(25, 50):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    all_messages = [messages]
+    for message in all_messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='json', body=message)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'csv',
+                     rabbitmq_exchange_name = 'clickhouse-exchange',
+                     rabbitmq_format = 'CSV',
+                     rabbitmq_row_delimiter = '\\n';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}, {i}'.format(i=i))
+
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='csv', body=message)
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+        if rabbitmq_check_result(result):
+            break
+
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'tsv',
+                     rabbitmq_exchange_name = 'clickhouse-exchange',
+                     rabbitmq_format = 'TSV',
+                     rabbitmq_row_delimiter = '\\n';
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}\t{i}'.format(i=i))
+
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='tsv', body=message)
+
+    result = instance.query('SELECT * FROM test.rabbitmq', ignore_error=True)
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_materialized_view(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'mv',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='mv', body=message)
+
+    while True:
+        result = instance.query('SELECT * FROM test.view')
+        if (rabbitmq_check_result(result)):
+            break;
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    connection.close()
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'mvsq',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM (SELECT * FROM test.rabbitmq);
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='mvsq', body=message)
+
+    while True:
+        result = instance.query('SELECT * FROM test.view')
+        if rabbitmq_check_result(result):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    connection.close();
+    rabbitmq_check_result(result, True)
+
+
+@pytest.mark.timeout(180)
+def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view1;
+        DROP TABLE IF EXISTS test.view2;
+        DROP TABLE IF EXISTS test.consumer1;
+        DROP TABLE IF EXISTS test.consumer2;
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'mmv',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view1 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer1 TO test.view1 AS
+            SELECT * FROM test.rabbitmq;
+        CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
+            SELECT * FROM test.rabbitmq;
+    ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = []
+    for i in range(50):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='mmv', body=message)
+
+    while True:
+        result1 = instance.query('SELECT * FROM test.view1')
+        result2 = instance.query('SELECT * FROM test.view2')
+        if rabbitmq_check_result(result1) and rabbitmq_check_result(result2):
+            break
+
+    instance.query('''
+        DROP TABLE test.consumer1;
+        DROP TABLE test.consumer2;
+        DROP TABLE test.view1;
+        DROP TABLE test.view2;
+    ''')
+
+    rabbitmq_check_result(result1, True)
+    rabbitmq_check_result(result2, True)
+
+
+@pytest.mark.timeout(240)
+def test_rabbitmq_big_message(rabbitmq_cluster):
+    # Create batchs of messages of size ~100Kb
+    rabbitmq_messages = 1000
+    batch_messages = 1000
+    messages = [json.dumps({'key': i, 'value': 'x' * 100}) * batch_messages for i in range(rabbitmq_messages)]
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.rabbitmq (key UInt64, value String)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'big',
+                     rabbitmq_format = 'JSONEachRow';
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    ''')
+
+    for message in messages:
+        channel.basic_publish(exchange='clickhouse-exchange', routing_key='big', body=message)
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        if int(result) == batch_messages * rabbitmq_messages:
+            break
+
+    connection.close()
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert int(result) == rabbitmq_messages*batch_messages, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(320)
+def test_rabbitmq_sharding_between_tables(rabbitmq_cluster):
+
+    NUMBER_OF_CONCURRENT_CONSUMERS = 10
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination(key UInt64, value UInt64, 
+            _consumed_by LowCardinality(String))
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+    for consumer_id in range(NUMBER_OF_CONCURRENT_CONSUMERS):
+        table_name = 'rabbitmq_consumer{}'.format(consumer_id)
+        print("Setting up {}".format(table_name))
+
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+            CREATE TABLE test.{0} (key UInt64, value UInt64)
+                ENGINE = RabbitMQ
+                SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                         rabbitmq_hash_exchange = 1,
+                         rabbitmq_format = 'JSONEachRow',
+                         rabbitmq_row_delimiter = '\\n';
+            CREATE MATERIALIZED VIEW test.{0}_mv TO test.destination AS
+                SELECT key, value, '{0}' as _consumed_by FROM test.{0};
+        '''.format(table_name))
+
+    i = [0]
+    messages_num = 1000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+
+    def produce():
+        # init connection here because otherwise python rabbitmq client fails sometimes
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        key = 'topic_' + str(randrange(0, NUMBER_OF_CONCURRENT_CONSUMERS))
+        for message in messages:
+            channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
+        connection.close()
+        time.sleep(1)
+
+    threads = []
+    threads_num = 20
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.destination')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    for consumer_id in range(NUMBER_OF_CONCURRENT_CONSUMERS):
+        print("dropping rabbitmq_consumer{}".format(consumer_id))
+        table_name = 'rabbitmq_consumer{}'.format(consumer_id)
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+        '''.format(table_name))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(320)
+def test_rabbitmq_sharding_between_channels_publish(rabbitmq_cluster):
+
+    NUM_CHANNELS = 5
+
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_routing_key = 'clickhouse',
+                     rabbitmq_num_consumers = 5,
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    ''')
+
+    time.sleep(1)
+
+    i = [0]
+    messages_num = 10000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        key = 'clickhouse_' + str(randrange(0, NUM_CHANNELS))
+        for message in messages:
+            channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
+        connection.close()
+
+    threads = []
+    threads_num = 20
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(320)
+def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
+
+    NUM_QUEUES = 4
+
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_num_queues = 4,
+                     rabbitmq_routing_key = 'clickhouse',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    ''')
+
+    time.sleep(1)
+
+    i = [0]
+    messages_num = 10000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        key = 'clickhouse_' + str(randrange(0, NUM_QUEUES))
+        for message in messages:
+            channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
+        connection.close()
+
+    threads = []
+    threads_num = 20
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(320)
+def test_rabbitmq_sharding_between_channels_and_queues_publish(rabbitmq_cluster):
+
+    NUM_CONSUMERS = 10
+    NUM_QUEUES = 2
+
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_num_queues = 2,
+                     rabbitmq_num_consumers = 10,
+                     rabbitmq_routing_key = 'clickhouse',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
+    ''')
+
+    time.sleep(1)
+
+    i = [0]
+    messages_num = 10000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        key = 'clickhouse_' + str(randrange(0, NUM_QUEUES * NUM_CONSUMERS))
+        for message in messages:
+            channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
+        connection.close()
+
+    threads = []
+    threads_num = 20
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = instance.query('SELECT count() FROM test.view')
+        time.sleep(1)
+        if int(result) == messages_num * threads_num:
+            break
+
+    for thread in threads:
+        thread.join()
+
+    assert int(result) == messages_num * threads_num, 'ClickHouse lost some messages: {}'.format(result)
+
+
+@pytest.mark.timeout(320)
+def test_rabbitmq_read_only_combo(rabbitmq_cluster):
+
+    NUM_MV = 5;
+    NUM_CONSUMERS = 4
+
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_num_consumers = 4,
+                     rabbitmq_routing_key = 'clickhouse',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_row_delimiter = '\\n';
+    ''')
+
+    for mv_id in range(NUM_MV):
+        table_name = 'view{}'.format(mv_id)
+        print("Setting up {}".format(table_name))
+
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+            CREATE TABLE test.{0} (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{0}_mv TO test.{0} AS
+                SELECT * FROM test.rabbitmq;
+        '''.format(table_name))
+
+    time.sleep(2)
+
+    i = [0]
+    messages_num = 10000
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    def produce():
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        channel.exchange_declare(exchange='clickhouse-exchange', exchange_type='fanout')
+
+        messages = []
+        for _ in range(messages_num):
+            messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+            i[0] += 1
+        key = 'clickhouse_' + str(randrange(0, NUM_CONSUMERS))
+        for message in messages:
+            channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
+        connection.close()
+
+    threads = []
+    threads_num = 20
+
+    for _ in range(threads_num):
+        threads.append(threading.Thread(target=produce))
+    for thread in threads:
+        time.sleep(random.uniform(0, 1))
+        thread.start()
+
+    while True:
+        result = 0
+        for view in range(NUM_MV):
+            result += int(instance.query('SELECT count() FROM test.view{0}'.format(view)))
+        if int(result) == messages_num * threads_num * NUM_MV:
+            break
+        time.sleep(1)
+
+    for thread in threads:
+        thread.join()
+
+    for mv_id in range(NUM_MV):
+        table_name = 'view{}'.format(mv_id)
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+        '''.format(table_name))
+
+
+    assert int(result) == messages_num * threads_num * NUM_MV, 'ClickHouse lost some messages: {}'.format(result)
 
 
 if __name__ == '__main__':
