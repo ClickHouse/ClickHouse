@@ -1260,7 +1260,7 @@ Default value: 16.
 
 ## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
 
-Maximum size in rows of shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents problems with RAM in case of unlimited dictionary growth. All the data that was not dictionary encoded are written in not encoded way as ClickHouse do for non-`LowCardinality`-columns.
+Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents problems with RAM in case of unlimited dictionary growth. All the data that was not dictionary encoded are written in not encoded way as ClickHouse do for non-`LowCardinality`-columns.
 
 Possible values:
 
@@ -1268,6 +1268,45 @@ Possible values:
 
 Default value: 8192.
 
+## low_cardinality_use_single_dictionary_for_part {#low_cardinality_use_single_dictionary_for_part}
+
+Turns on or turns off using of single dictionary for data part.
+
+By default, ClickHouse server monitors size of dictionaries and if a dictionary overflows then server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
+
+Possible values:
+
+- 1 — Creating of several dictionaries for data part is prohibited.
+- 0 — Creating of several dictionaries for data part is not prohibited.
+
+Default value: 0.
+
+## low_cardinality_allow_in_native_format {#low_cardinality_allow_in_native_format}
+
+Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](../../interfaces/formats.mdnative) format.
+
+If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
+
+Possible values:
+
+- 1 — Usage of `LowCardinality` is not restricted.
+- 0 — Usage of `LowCardinality` is restricted.
+
+Default value: 1.
+
+
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
+
+Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types of small fixed size (8 bits or less).
+
+When allowed, merge times and memory consumption can increase.
+
+Possible values:
+
+- 1 — Usage of `LowCardinality` is not restricted.
+- 0 — Usage of `LowCardinality` is restricted.
+
+Default value: 0.
 
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
