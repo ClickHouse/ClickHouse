@@ -125,6 +125,8 @@ private:
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
+    /// Should cluster config and table engine be checked against each other
+    bool distributed_ddl_replication_check = true;
 
     ThreadGroupStatusPtr thread_group;
 
