@@ -309,6 +309,13 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
     }
 }
 
+void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
+{
+    /// Fallback to per-element hashing, as there is no faster way
+    for (size_t i = 0; i < size(); ++i)
+        updateHashWithValue(i, hash);
+}
+
 /// The returned size is less than real size. The reason is that some parts of
 /// aggregate function data may be allocated on shared arenas. These arenas are
 /// used for several blocks, and also may be updated concurrently from other

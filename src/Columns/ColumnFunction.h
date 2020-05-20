@@ -106,6 +106,11 @@ public:
         throw Exception("updateWeakHash32 is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void updateHashFast(SipHash &) const override
+    {
+        throw Exception("updateHashFast is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     void popBack(size_t) override
     {
         throw Exception("popBack is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

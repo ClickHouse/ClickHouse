@@ -90,6 +90,12 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 }
 
 template <typename T>
+void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+}
+
+template <typename T>
 void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
 #if 1 /// TODO: perf test

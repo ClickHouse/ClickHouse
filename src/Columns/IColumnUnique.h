@@ -141,6 +141,11 @@ public:
     {
         throw Exception("Method updateWeakHash32 is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    void updateHashFast(SipHash &) const override
+    {
+        throw Exception("Method updateHashFast is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

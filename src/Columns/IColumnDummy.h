@@ -69,6 +69,10 @@ public:
     {
     }
 
+    void updateHashFast(SipHash & /*hash*/) const override
+    {
+    }
+
     void insertFrom(const IColumn &, size_t) override
     {
         ++s;

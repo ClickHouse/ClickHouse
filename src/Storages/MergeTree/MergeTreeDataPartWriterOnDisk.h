@@ -54,7 +54,7 @@ public:
 
         void finalize();
 
-        void sync();
+        void sync() const;
 
         void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
     };
