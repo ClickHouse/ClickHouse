@@ -58,17 +58,6 @@ def build_for_lang(lang, args):
             'custom_dir': os.path.join(os.path.dirname(__file__), '..', args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
-            # TODO: cleanup
-            'feature': {
-                'tabs': False
-            },
-            'palette': {
-                'primary': 'white',
-                'accent': 'white'
-            },
-            'font': False,
-            'logo': 'images/logo.svg',
-            'favicon': 'assets/images/favicon.ico',
             'static_templates': ['404.html'],
             'extra': {
                 'now': int(time.mktime(datetime.datetime.now().timetuple()))  # TODO better way to avoid caching
