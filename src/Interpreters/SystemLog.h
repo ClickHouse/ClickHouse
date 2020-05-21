@@ -199,8 +199,8 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     size_t flush_interval_milliseconds_)
     : context(context_)
     , table_id(database_name_, table_name_)
-    , storage_def(storage_def_),
-    flush_interval_milliseconds(flush_interval_milliseconds_)
+    , storage_def(storage_def_)
+    , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");

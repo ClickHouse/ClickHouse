@@ -334,7 +334,7 @@ void StorageDistributed::createStorage()
     }
     else
     {
-        auto policy = global_context.getStoragePolicySelector()->get(storage_policy);
+        auto policy = global_context.getStoragePolicy(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
         volume = policy->getVolume(0);
@@ -628,7 +628,7 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 {
     if (storage_policy.empty())
         return {};
-    return global_context.getStoragePolicySelector()->get(storage_policy);
+    return global_context.getStoragePolicy(storage_policy);
 }
 
 void StorageDistributed::createDirectoryMonitors(const std::string & disk)
