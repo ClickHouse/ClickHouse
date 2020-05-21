@@ -145,7 +145,9 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
 
         /// move_ttl_info
         {
-            Array expression_array, min_array, max_array;
+            Array expression_array;
+            Array min_array;
+            Array max_array;
             expression_array.reserve(part->ttl_infos.moves_ttl.size());
             min_array.reserve(part->ttl_infos.moves_ttl.size());
             max_array.reserve(part->ttl_infos.moves_ttl.size());
