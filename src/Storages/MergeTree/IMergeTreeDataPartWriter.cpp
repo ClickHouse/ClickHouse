@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
-
+#include <Storages/MergeTree/IMergeTreeDataPartIndexWriter.h>
 #include <utility>
 
 namespace DB
@@ -7,11 +7,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    constexpr auto INDEX_FILE_EXTENSION = ".idx";
 }
 
 void IMergeTreeDataPartWriter::Stream::finalize()
@@ -160,203 +155,41 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(size_t index_granularity_for
         rows_in_block);
 }
 
-void IMergeTreeDataPartWriter::initPrimaryIndex()
-{
-    if (storage.hasPrimaryKey())
-    {
-        index_file_stream = data_part->volume->getDisk()->writeFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
-    }
-
-    primary_index_initialized = true;
-}
-
-void IMergeTreeDataPartWriter::initSkipIndices()
-{
-    for (const auto & index : skip_indices)
-    {
-        String stream_name = index->getFileName();
-        skip_indices_streams.emplace_back(
-                std::make_unique<IMergeTreeDataPartWriter::Stream>(
-                        stream_name,
-                        data_part->volume->getDisk(),
-                        part_path + stream_name, INDEX_FILE_EXTENSION,
-                        part_path + stream_name, marks_file_extension,
-                        default_codec, settings.max_compress_block_size,
-                        0, settings.aio_threshold));
-        skip_indices_aggregators.push_back(index->createIndexAggregator());
-        skip_index_filling.push_back(0);
-    }
-
-    skip_indices_initialized = true;
-}
-
-void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows)
-{
-    if (!primary_index_initialized)
-        throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
-
-    size_t primary_columns_num = primary_index_block.columns();
-    if (index_columns.empty())
-    {
-        index_types = primary_index_block.getDataTypes();
-        index_columns.resize(primary_columns_num);
-        last_index_row.resize(primary_columns_num);
-        for (size_t i = 0; i < primary_columns_num; ++i)
-            index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
-    }
-
-    /** While filling index (index_columns), disable memory tracker.
-     * Because memory is allocated here (maybe in context of INSERT query),
-     *  but then freed in completely different place (while merging parts), where query memory_tracker is not available.
-     * And otherwise it will look like excessively growing memory consumption in context of query.
-     *  (observed in long INSERT SELECTs)
-     */
-    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
-
-    /// Write index. The index contains Primary Key value for each `index_granularity` row.
-
-    size_t current_row = index_offset;
-    size_t total_marks = index_granularity.getMarksCount();
-
-    while (index_mark < total_marks && current_row < rows)
-    {
-        if (storage.hasPrimaryKey())
-        {
-            for (size_t j = 0; j < primary_columns_num; ++j)
-            {
-                const auto & primary_column = primary_index_block.getByPosition(j);
-                index_columns[j]->insertFrom(*primary_column.column, current_row);
-                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
-            }
-        }
-
-        current_row += index_granularity.getMarkRows(index_mark++);
-    }
-
-    /// store last index row to write final mark at the end of column
-    for (size_t j = 0; j < primary_columns_num; ++j)
-    {
-        const IColumn & primary_column = *primary_index_block.getByPosition(j).column.get();
-        primary_column.get(rows - 1, last_index_row[j]);
-    }
-}
-
-void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
-        const Block & skip_indexes_block, size_t rows)
-{
-    if (!skip_indices_initialized)
-        throw Exception("Skip indices are not initialized", ErrorCodes::LOGICAL_ERROR);
-
-    size_t skip_index_current_data_mark = 0;
-
-    /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-    {
-        const auto index = skip_indices[i];
-        auto & stream = *skip_indices_streams[i];
-        size_t prev_pos = 0;
-        skip_index_current_data_mark = skip_index_data_mark;
-        while (prev_pos < rows)
-        {
-            UInt64 limit = 0;
-            if (prev_pos == 0 && index_offset != 0)
-            {
-                limit = index_offset;
-            }
-            else
-            {
-                limit = index_granularity.getMarkRows(skip_index_current_data_mark);
-                if (skip_indices_aggregators[i]->empty())
-                {
-                    skip_indices_aggregators[i] = index->createIndexAggregator();
-                    skip_index_filling[i] = 0;
-
-                    if (stream.compressed.offset() >= settings.min_compress_block_size)
-                        stream.compressed.next();
-
-                    writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                    writeIntBinary(stream.compressed.offset(), stream.marks);
-                    /// Actually this numbers is redundant, but we have to store them
-                    /// to be compatible with normal .mrk2 file format
-                    if (settings.can_use_adaptive_granularity)
-                        writeIntBinary(1UL, stream.marks);
-                }
-                /// this mark is aggregated, go to the next one
-                skip_index_current_data_mark++;
-            }
-
-            size_t pos = prev_pos;
-            skip_indices_aggregators[i]->update(skip_indexes_block, &pos, limit);
-
-            if (pos == prev_pos + limit)
-            {
-                ++skip_index_filling[i];
-
-                /// write index if it is filled
-                if (skip_index_filling[i] == index->granularity)
-                {
-                    skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-                    skip_index_filling[i] = 0;
-                }
-            }
-            prev_pos = pos;
-        }
-    }
-    skip_index_data_mark = skip_index_current_data_mark;
-}
-
-void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
-{
-    bool write_final_mark = (with_final_mark && data_written);
-    if (write_final_mark && compute_granularity)
-        index_granularity.appendMark(0);
-
-    if (index_stream)
-    {
-        if (write_final_mark)
-        {
-            for (size_t j = 0; j < index_columns.size(); ++j)
-            {
-                index_columns[j]->insert(last_index_row[j]);
-                index_types[j]->serializeBinary(last_index_row[j], *index_stream);
-            }
-
-            last_index_row.clear();
-        }
-
-        index_stream->next();
-        checksums.files["primary.idx"].file_size = index_stream->count();
-        checksums.files["primary.idx"].file_hash = index_stream->getHash();
-        index_stream = nullptr;
-    }
-}
-
-void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(
-        MergeTreeData::DataPart::Checksums & checksums)
-{
-    for (size_t i = 0; i < skip_indices.size(); ++i)
-    {
-        auto & stream = *skip_indices_streams[i];
-        if (!skip_indices_aggregators[i]->empty())
-            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
-    }
-
-    for (auto & stream : skip_indices_streams)
-    {
-        stream->finalize();
-        stream->addToChecksums(checksums);
-    }
-
-    skip_indices_streams.clear();
-    skip_indices_aggregators.clear();
-    skip_index_filling.clear();
-}
-
 void IMergeTreeDataPartWriter::next()
 {
     current_mark = next_mark;
     index_offset = next_index_offset;
 }
+
+void IMergeTreeDataPartWriter::initPrimaryIndex()
+{
+    index_writer->initPrimaryIndex();
+}
+
+void IMergeTreeDataPartWriter::initSkipIndices()
+{
+    index_writer->initSkipIndices();
+}
+
+void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows)
+{
+    index_writer->calculateAndSerializePrimaryIndex(primary_index_block, rows);
+}
+
+void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows)
+{
+    index_writer->calculateAndSerializeSkipIndices(skip_indexes_block, rows);
+}
+
+void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(IMergeTreeDataPart::Checksums & checksums)
+{
+    index_writer->finishPrimaryIndexSerialization(checksums);
+}
+
+void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(IMergeTreeDataPart::Checksums & checksums)
+{
+    index_writer->finishSkipIndicesSerialization(checksums);
+}
+
 
 }

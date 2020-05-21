@@ -13,11 +13,14 @@
 namespace DB
 {
 
+class IMergeTreeDataPartIndexWriter;
+using MergeTreeIndexWriterPtr = std::unique_ptr<IMergeTreeDataPartIndexWriter>;
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
 class IMergeTreeDataPartWriter : private boost::noncopyable
 {
+    friend class MergeTreeDataPartIndexWriterSingleDisk;
 public:
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -115,6 +118,8 @@ protected:
 
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
+
+    MergeTreeIndexWriterPtr index_writer;
 
     MergeTreeData::DataPartPtr data_part;
     String part_path;

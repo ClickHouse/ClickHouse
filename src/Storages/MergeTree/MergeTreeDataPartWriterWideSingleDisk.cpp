@@ -1,5 +1,7 @@
 #include "MergeTreeDataPartWriterWideSingleDisk.h"
 
+#include <Storages/MergeTree/MergeTreeDataPartIndexWriterSingleDisk.h>
+
 namespace DB
 {
 
@@ -26,6 +28,7 @@ MergeTreeDataPartWriterWideSingleDisk::MergeTreeDataPartWriterWideSingleDisk(
     marks_file_extension_, default_codec_, settings_, index_granularity_
 )
 {
+    index_writer = std::make_unique<MergeTreeDataPartIndexWriterSingleDisk>(*this);
     const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
         addStreams(it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec), settings.estimated_size);

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartIndexWriterSingleDisk.h>
 
 namespace DB
 {
@@ -29,6 +30,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         settings.max_compress_block_size,
         settings.estimated_size,
         settings.aio_threshold);
+
+    index_writer = std::make_unique<MergeTreeDataPartIndexWriterSingleDisk>(*this);
 }
 
 void MergeTreeDataPartWriterCompact::write(
