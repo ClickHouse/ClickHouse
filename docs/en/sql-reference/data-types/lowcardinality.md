@@ -5,7 +5,7 @@ toc_title: LowCardinality
 
 # LowCardinality data type {#lowcardinality-data-type}
 
-Modifies other data types.
+Changes the internal representation of other data types to be dictionary-encoded. 
 
 ## Syntax {#lowcardinality-syntax}
 
