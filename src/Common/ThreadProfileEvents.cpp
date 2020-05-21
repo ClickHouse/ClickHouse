@@ -7,6 +7,7 @@
 #include "hasLinuxCapability.h"
 
 #include <optional>
+#include <fcntl.h>
 #include <unistd.h>
 #include <linux/perf_event.h>
 #include <syscall.h>
@@ -288,6 +289,27 @@ std::vector<size_t> eventNameToIndices(const std::string & event)
     return indices;
 }
 
+static bool validatePerfEventDescriptor(int & fd, getLoggerFunc getLogger)
+{
+    if (fcntl(fd, F_GETFL) != -1)
+        return true;
+
+    if (errno == EBADF)
+    {
+        LOG_WARNING(getLogger(), "Event descriptor " << fd << " was closed from the outside; reopening");
+    }
+    else
+    {
+        LOG_WARNING(getLogger(), "Error while checking event descriptor's (" << fd << ") availability: "
+                        << "errno = " << errno << ", message = `" << strerror(errno) << "`; reopening event descriptor");
+        disablePerfEvent(fd, getLogger);
+        releasePerfEvent(fd, getLogger);
+    }
+
+    fd = -1;
+    return false;
+}
+
 bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_events_list)
 {
     std::vector<size_t> valid_event_indices = eventIndicesFromString(needed_events_list);
@@ -306,10 +328,17 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     std::vector<size_t> events_to_release;
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
-        if (old_state[i] == new_state[i])
-            continue;
+        bool old_one = old_state[i];
+        bool new_one = new_state[i];
 
-        if (new_state[i])
+        if (old_one == new_one)
+        {
+            if (old_one && !validatePerfEventDescriptor(thread_events_descriptors_holder.descriptors[i], getLogger))
+                events_to_open.push_back(i);
+            continue;
+        }
+
+        if (new_one)
             events_to_open.push_back(i);
         else
             events_to_release.push_back(i);
