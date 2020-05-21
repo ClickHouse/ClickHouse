@@ -40,7 +40,8 @@ CassandraBlockInputStream::CassandraBlockInputStream(
 CassandraBlockInputStream::~CassandraBlockInputStream() {
     if (iterator != nullptr)
         cass_iterator_free(iterator);
-    cass_result_free(result);
+    if (result)
+        cass_result_free(result);
 }
 
 namespace
@@ -166,7 +167,7 @@ namespace
         MutableColumns columns(description.sample_block.columns());
         CassFuture* query_future = cass_session_execute(session, statement);
 
-        const CassResult* result_tmp = cass_future_get_result(query_future);
+        result = cass_future_get_result(query_future);
 
         if (result == nullptr) {
             const char* error_message;
@@ -176,12 +177,12 @@ namespace
             throw Exception{error_message, ErrorCodes::CASSANDRA_INTERNAL_ERROR};
         }
 
-        const CassRow* row = cass_result_first_row(result_tmp);
+        const CassRow* row = cass_result_first_row(result);
         const CassValue* map = cass_row_get_column(row, 0);
-        CassIterator* iterator_tmp = cass_iterator_from_map(map);
-        while (cass_iterator_next(iterator_tmp)) {
-            const CassValue* _key = cass_iterator_get_map_key(iterator_tmp);
-            const CassValue* _value = cass_iterator_get_map_value(iterator_tmp);
+        iterator = cass_iterator_from_map(map);
+        while (cass_iterator_next(iterator)) {
+            const CassValue* _key = cass_iterator_get_map_key(iterator);
+            const CassValue* _value = cass_iterator_get_map_value(iterator);
             auto pair_values = {std::make_pair(_key, 0ul), std::make_pair(_value, 1ul)};
             for (const auto &[value, idx]: pair_values) {
                 if (description.types[idx].second) {
@@ -194,13 +195,13 @@ namespace
             }
         }
 
-        has_more_pages = cass_result_has_more_pages(result_tmp);
+        has_more_pages = cass_result_has_more_pages(result);
 
         if (has_more_pages) {
-            cass_statement_set_paging_state(statement, result_tmp);
+            cass_statement_set_paging_state(statement, result);
         }
 
-        cass_result_free(result_tmp);
+        cass_result_free(result);
 
         return description.sample_block.cloneWithColumns(std::move(columns));
     }
