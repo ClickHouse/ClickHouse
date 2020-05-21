@@ -150,9 +150,8 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend, "stalled-cycles-frontend"),
     HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend, "stalled-cycles-backend"),
     HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles, "ref-cpu-cycles"),
-    // This reports the CPU clock, a high-resolution per-CPU timer.
-    // a bit broken according to this: https://stackoverflow.com/a/56967896
-//    softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PerfCpuClock),
+    // `cpu-clock` is a bit broken according to this: https://stackoverflow.com/a/56967896
+    softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PerfCpuClock, "cpu-clock"),
     softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PerfTaskClock, "task-clock"),
     softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PerfPageFaults, "page-faults"),
     softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PerfContextSwitches, "context-switches"),
@@ -161,10 +160,6 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
     softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PerfPageFaultsMaj, "page-faults-maj"),
     softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PerfAlignmentFaults, "alignment-faults"),
     softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PerfEmulationFaults, "emulation-faults")
-    // This is a placeholder event that counts nothing. Informational sample record types such as mmap or
-    // comm must be associated with an active event. This dummy event allows gathering such records
-    // without requiring a counting event.
-//            softwareEventInfo(PERF_COUNT_SW_DUMMY, ProfileEvents::PERF_COUNT_SW_DUMMY)
 };
 
 #undef HARDWARE_EVENT

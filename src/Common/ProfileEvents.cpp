@@ -209,6 +209,7 @@
     M(PerfRefCpuCyclesRunning, "Total cycles; not affected by CPU frequency scaling (<time running>).") \
     M(PerfRefCpuCyclesEnabled, "Total cycles; not affected by CPU frequency scaling (<time enabled>).") \
     \
+    M(PerfCpuClock, "The CPU clock, a high-resolution per-CPU timer") \
     M(PerfTaskClock, "A clock count specific to the task that is running") \
     M(PerfPageFaults, "Number of page faults") \
     M(PerfContextSwitches, "Number of context switches") \
