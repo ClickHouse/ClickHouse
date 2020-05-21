@@ -26,13 +26,19 @@ using Source = std::vector<Key>;
 
 using Map = HashMap<Key, Value>;
 using MapTwoLevel = TwoLevelHashMap<Key, Value>;
-
+using MapTwoLevel512 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 9>;
+using MapTwoLevel128 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 7>;
+using MapTwoLevel1024 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 10>;
+using MapTwoLevel2048 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 11>;
+using MapTwoLevel4096 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 12>;
+using MapTwoLevel8192 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 13>;
+using MapTwoLevel16384 = TwoLevelHashMap<Key, Value, DefaultHash<Key>, TwoLevelHashTableGrower<>, HashTableAllocator, HashMapTable, 14>;
 
 struct SmallLock
 {
     std::atomic<int> locked {false};
 
-    bool tryLock()
+    bool try_lock()
     {
         int expected = 0;
         return locked.compare_exchange_strong(expected, 1, std::memory_order_acquire);
@@ -44,11 +50,35 @@ struct SmallLock
     }
 };
 
+struct SmallLockExt
+{
+    std::atomic<int> locked = 0;
+
+    bool is_ready()
+    {
+        return locked == 1;
+    }
+
+    void set_ready()
+    {
+        locked = 1;
+    }
+
+    void set_done()
+    {
+        locked = 0;
+    }
+};
+
 struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 {
     char dummy[64 - sizeof(SmallLock)];
 };
 
+struct __attribute__((__aligned__(64))) AlignedSmallLockExt : public SmallLockExt
+{
+    char dummy[64 - sizeof(SmallLockExt)];
+};
 
 using Mutex = std::mutex;
 
@@ -62,6 +92,10 @@ using Mutex = std::mutex;
     HashTableGrower<21>,
     HashTableAllocator>;*/
 
+static size_t getThreadNum(size_t hash, __uint128_t num_threads)
+{
+    return static_cast<size_t>((static_cast<__uint128_t>(hash) * num_threads) >> 64);
+}
 
 static void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -95,6 +129,59 @@ static void aggregate12(Map & map, Source::const_iterator begin, Source::const_i
     }
 }
 
+static void aggregate15(Map & map, Source::const_iterator begin,Source::const_iterator end,
+                        size_t min_value, size_t max_value)
+{
+    Map::LookupResult found = nullptr;
+    auto prev_it = end;
+    for (auto it = begin; it != end; ++it)
+    {
+        size_t hash = map.hash(*it);
+        if (hash < min_value || hash > max_value)
+            continue;
+        if (prev_it != end && *it == *prev_it)
+        {
+            assert(found != nullptr);
+            ++found->getMapped();
+            continue;
+        }
+        prev_it = it;
+
+        bool inserted;
+        map.emplace(*it, found, inserted, hash);
+        assert(found != nullptr);
+        ++found->getMapped();
+    }
+}
+
+static void aggregate151(Map & map, Source::const_iterator begin,Source::const_iterator end,
+                         size_t num_threads, size_t bucket)
+{
+    Map::LookupResult found = nullptr;
+    auto prev_it = end;
+
+    __uint128_t num_threads_128 = num_threads;
+    for (auto it = begin; it != end; ++it)
+    {
+        size_t hash = map.hash(*it);
+        size_t cur_bucket = getThreadNum(hash, num_threads_128);
+        if (cur_bucket != bucket)
+            continue;
+        if (prev_it != end && *it == *prev_it)
+        {
+            assert(found != nullptr);
+            ++found->getMapped();
+            continue;
+        }
+        prev_it = it;
+
+        bool inserted;
+        map.emplace(*it, found, inserted, hash);
+        assert(found != nullptr);
+        ++found->getMapped();
+    }
+}
+
 static void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
     for (auto it = begin; it != end; ++it)
@@ -107,7 +194,7 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
     auto prev_it = end;
     for (auto it = begin; it != end; ++it)
     {
-        if (*it == *prev_it)
+        if (prev_it != end && *it == *prev_it)
         {
             assert(found != nullptr);
             ++found->getMapped();
@@ -139,12 +226,15 @@ static void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source:
 
     for (auto it = begin; it != end; ++it)
     {
-        auto * found = local_map.find(*it);
+        if (local_map.size() < threshold)
+        {
+            ++local_map[*it];
+            continue;
+        }
 
+        auto found = local_map.find(*it);
         if (found)
             ++found->getMapped();
-        else if (local_map.size() < threshold)
-            ++local_map[*it];    /// TODO You could do one lookup, not two.
         else
         {
             if (mutex.try_lock())
@@ -199,7 +289,7 @@ static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexe
         {
             for (; it != block_end; ++it)
             {
-                auto * found = local_map.find(*it);
+                auto found = local_map.find(*it);
 
                 if (found)
                     ++found->getMapped();
@@ -220,6 +310,202 @@ static void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexe
         }
     }
 }
+
+static void aggregate41(Map & local_map, MapTwoLevel & global_map, AlignedSmallLock * mutexes, Source::const_iterator begin, Source::const_iterator end)
+{
+    static constexpr size_t threshold = 65536;
+    static constexpr size_t block_size = 8192;
+
+    auto it = begin;
+    while (it != end)
+    {
+        auto block_end = std::min(end, it + block_size);
+
+        if (local_map.size() < threshold)
+        {
+            for (; it != block_end; ++it)
+                ++local_map[*it];
+        }
+        else
+        {
+            for (; it != block_end; ++it)
+            {
+                auto found = local_map.find(*it);
+
+                if (found)
+                    ++found->getMapped();
+                else
+                {
+                    size_t hash_value = global_map.hash(*it);
+                    size_t bucket = global_map.getBucketFromHash(hash_value);
+
+                    if (mutexes[bucket].try_lock())
+                    {
+                        ++global_map.impls[bucket][*it];
+                        mutexes[bucket].unlock();
+                    }
+                    else
+                        ++local_map[*it];
+                }
+            }
+        }
+    }
+}
+
+static void aggregate42(Map & local_map, MapTwoLevel512 & global_map, AlignedSmallLock * mutexes,
+                             Source::const_iterator begin, Source::const_iterator end,
+                             size_t threshold_buffer_size)
+{
+    static constexpr size_t threshold = 4096;
+    static constexpr size_t block_size = 512;
+
+    std::vector<std::vector<Key>> buffer(MapTwoLevel512::NUM_BUCKETS);
+    std::vector<size_t> buffer_idx(MapTwoLevel512::NUM_BUCKETS);
+    auto it = begin;
+    while (it != end)
+    {
+        auto block_end = std::min(end, it + block_size);
+
+        if (local_map.size() < threshold)
+        {
+            for (; it != block_end; ++it)
+                ++local_map[*it];
+        }
+        else
+        {
+            for (; it != block_end; ++it)
+            {
+                auto found = local_map.find(*it);
+
+                if (found)
+                    ++found->getMapped();
+                else
+                {
+                    size_t hash_value = global_map.hash(*it);
+                    size_t bucket = global_map.getBucketFromHash(hash_value);
+
+                    if (buffer[bucket].size() - buffer_idx[bucket] >= threshold_buffer_size && mutexes[bucket].try_lock())
+                    {
+                        if (buffer_idx[bucket] < buffer[bucket].size())
+                        {
+                            for (size_t j = buffer_idx[bucket]; j < buffer[bucket].size(); ++j)
+                                ++global_map.impls[bucket][buffer[bucket][j]];
+                            buffer_idx[bucket] = buffer[bucket].size();
+                        }
+                        ++global_map.impls[bucket][*it];
+                        mutexes[bucket].unlock();
+                    }
+                    else
+                        buffer[bucket].push_back(*it);
+                }
+            }
+        }
+    }
+    for (size_t i = 0; i < MapTwoLevel512::NUM_BUCKETS; ++i)
+        for (size_t j = buffer_idx[i]; j < buffer[i].size(); ++j)
+            ++local_map[buffer[i][j]];
+}
+
+static void aggregate43(Map & local_map,
+                        Map & global_map,
+                        std::vector<std::vector<std::list<Key>>> & buffer,
+                        std::vector<std::vector<std::pair<std::list<Key>::iterator, std::list<Key>::iterator>>> & buffer_ranges,
+                        std::vector<std::vector<AlignedSmallLockExt>> & mutexes,
+                        Source::const_iterator begin,
+                        Source::const_iterator end,
+                        size_t cur_thread,
+                        size_t num_threads)
+{
+    static constexpr size_t threshold = 16384;
+    static constexpr size_t block_size = 8192;
+
+    __uint128_t num_threads_128 = num_threads;
+    auto it = begin;
+    while (it != end)
+    {
+        auto block_end = std::min(end, it + block_size);
+
+        if (local_map.size() < threshold)
+        {
+            for (; it != block_end; ++it)
+            {
+                size_t hash_value = global_map.hash(*it);
+                size_t bucket = getThreadNum(hash_value, num_threads_128);
+
+                if (bucket == cur_thread)
+                    ++global_map[*it];
+                else
+                    ++local_map[*it];
+            }
+        }
+        else
+        {
+            for (; it != block_end; ++it)
+            {
+                size_t hash_value = global_map.hash(*it);
+                size_t bucket = getThreadNum(hash_value, num_threads_128);
+
+                if (bucket == cur_thread)
+                {
+                    ++global_map[*it];
+                    continue;
+                }
+
+                auto found = local_map.find(*it);
+                if (found)
+                    ++found->getMapped();
+                else
+                    buffer[cur_thread][bucket].push_back(*it);
+            }
+
+            for (size_t i = 0; i < num_threads; ++i)
+                if (i != cur_thread && !buffer[cur_thread][i].empty() &&
+                    buffer_ranges[cur_thread][i].second != std::prev(buffer[cur_thread][i].end()) &&
+                    !mutexes[cur_thread][i].is_ready())
+                {
+                    buffer_ranges[cur_thread][i] = {std::next(buffer_ranges[cur_thread][i].second), std::prev(buffer[cur_thread][i].end())};
+                    mutexes[cur_thread][i].set_ready();
+                }
+        }
+
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            if (i != cur_thread && mutexes[i][cur_thread].is_ready())
+            {
+                auto iter = buffer_ranges[i][cur_thread].first;
+                auto iter_end = buffer_ranges[i][cur_thread].second;
+                while (iter != iter_end)
+                {
+                    ++global_map[*iter];
+                    ++iter;
+                }
+                ++global_map[*iter];
+                mutexes[i][cur_thread].set_done();
+            }
+        }
+    }
+}
+
+static void merge43(Map & global_map,
+                    std::vector<std::vector<std::list<Key>>> & buffers,
+                    std::vector<std::vector<std::pair<std::list<Key>::iterator, std::list<Key>::iterator>>> & buffer_ranges,
+                    std::vector<std::vector<AlignedSmallLockExt>> & mutexes,
+                    size_t cur_thread,
+                    size_t num_threads)
+{
+    for (size_t i = 0; i < num_threads; ++i)
+        if (i != cur_thread && !buffers[i][cur_thread].empty() &&
+            (buffer_ranges[i][cur_thread].second != std::prev(buffers[i][cur_thread].end()) || mutexes[i][cur_thread].is_ready()))
+        {
+            auto it = mutexes[i][cur_thread].is_ready() ? buffer_ranges[i][cur_thread].first : std::next(buffer_ranges[i][cur_thread].second);
+            while (it != buffers[i][cur_thread].end())
+            {
+                ++global_map[*it];
+                ++it;
+            }
+        }
+}
+
 /*
 void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -265,7 +551,8 @@ int main(int argc, char ** argv)
         DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
         DB::CompressedReadBuffer in2(in1);
 
-        in2.readStrict(reinterpret_cast<char*>(data.data()), sizeof(data[0]) * n);
+        for (size_t i = 0; i < n; ++i)
+            DB::readBinary(data[i], in2);
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
@@ -287,7 +574,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate1(
+            pool.scheduleOrThrowOnError([&, i] { aggregate1(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
@@ -341,7 +628,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate12(
+            pool.scheduleOrThrowOnError([&, i] { aggregate12(
                                     std::ref(maps[i]),
                                     data.begin() + (data.size() * i) / num_threads,
                                     data.begin() + (data.size() * (i + 1)) / num_threads); });
@@ -400,7 +687,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate1(
+            pool.scheduleOrThrowOnError([&, i] { aggregate1(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
@@ -461,6 +748,113 @@ int main(int argc, char ** argv)
         std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
     }
 
+    if (!method || method == 15)
+    {
+        /** Option 15.
+         * Splitting-aggregator. Works vary fast when there are many different keys.
+         */
+
+        std::vector<Map> maps(num_threads);
+
+        Stopwatch watch;
+
+        size_t hash = maps[0].hash(data[0]);
+        size_t min_hash = hash;
+        size_t max_hash = min_hash;
+
+        for (size_t i = 1; i < n; ++i)
+        {
+            hash = maps[0].hash(data[i]);
+            max_hash = std::max(max_hash, hash);
+            min_hash = std::min(min_hash, hash);
+        }
+
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            pool.scheduleOrThrowOnError([&, i] {
+                aggregate15(
+                    std::ref(maps[i]),
+                    data.begin(),
+                    data.end(),
+                    min_hash + (max_hash - min_hash) / num_threads * i,
+                    i + 1 == num_threads ? max_hash : min_hash + (max_hash - min_hash) / num_threads * (i + 1) - 1);
+            });
+        }
+
+        pool.wait();
+
+        watch.stop();
+        double time_aggregated = watch.elapsedSeconds();
+        std::cerr
+            << "Aggregated in " << time_aggregated
+            << " (" << n / time_aggregated << " elem/sec.)"
+            << std::endl;
+
+        size_t size_before_merge = 0;
+        std::cerr << "Sizes: ";
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            std::cerr << (i == 0 ? "" : ", ") << maps[i].size();
+            size_before_merge += maps[i].size();
+        }
+        std::cerr << std::endl;
+
+        double time_total = time_aggregated;
+        std::cerr
+            << "Total in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << size_before_merge << std::endl << std::endl;
+    }
+
+    if (!method || method == 151)
+    {
+        /** Option 151.
+         *  Splitting-aggregator with fast division. Works faster than method 15 in all cases.
+         */
+
+        std::vector<Map> maps(num_threads);
+
+        Stopwatch watch;
+
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            pool.scheduleOrThrowOnError([&, i] {
+                aggregate151(
+                    std::ref(maps[i]),
+                    data.begin(),
+                    data.end(),
+                    num_threads,
+                    i);
+            });
+        }
+
+        pool.wait();
+
+        watch.stop();
+        double time_aggregated = watch.elapsedSeconds();
+        std::cerr
+            << "Aggregated in " << time_aggregated
+            << " (" << n / time_aggregated << " elem/sec.)"
+            << std::endl;
+
+        size_t size_before_merge = 0;
+        std::cerr << "Sizes: ";
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            std::cerr << (i == 0 ? "" : ", ") << maps[i].size();
+            size_before_merge += maps[i].size();
+        }
+        std::cerr << std::endl;
+
+        double time_total = time_aggregated;
+        std::cerr
+            << "Total in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+        std::cerr << "Size: " << size_before_merge << std::endl << std::endl;
+    }
+
     if (!method || method == 2)
     {
         /** Option 2.
@@ -476,7 +870,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate2(
+            pool.scheduleOrThrowOnError([&, i] { aggregate2(
                 std::ref(maps[i]),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads); });
@@ -502,7 +896,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
+            pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
 
@@ -529,7 +923,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate22(
+            pool.scheduleOrThrowOnError([&, i] { aggregate22(
                                     std::ref(maps[i]),
                                     data.begin() + (data.size() * i) / num_threads,
                                     data.begin() + (data.size() * (i + 1)) / num_threads); });
@@ -555,7 +949,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.scheduleOrThrowOnError([&] { merge2(maps.data(), num_threads, i); });
+            pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
 
@@ -594,7 +988,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate3(
+            pool.scheduleOrThrowOnError([&, i] { aggregate3(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 std::ref(mutex),
@@ -660,7 +1054,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate33(
+            pool.scheduleOrThrowOnError([&, i] { aggregate33(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 std::ref(mutex),
@@ -729,7 +1123,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (size_t i = 0; i < num_threads; ++i)
-            pool.scheduleOrThrowOnError([&] { aggregate4(
+            pool.scheduleOrThrowOnError([&, i] { aggregate4(
                 std::ref(local_maps[i]),
                 std::ref(global_map),
                 mutexes.data(),
@@ -774,6 +1168,275 @@ int main(int argc, char ** argv)
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
+        std::cerr
+            << "Total in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+
+        std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
+    }
+
+    if (!method || method == 41)
+    {
+        /** Option 4.
+          * Same as method 4, but with atomic flags instead of mutexes. Works faster.
+          */
+
+        std::vector<Map> local_maps(num_threads);
+        MapTwoLevel global_map;
+        std::vector<AlignedSmallLock> mutexes(MapTwoLevel::NUM_BUCKETS);
+
+        Stopwatch watch;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] { aggregate41(
+                std::ref(local_maps[i]),
+                std::ref(global_map),
+                mutexes.data(),
+                data.begin() + (data.size() * i) / num_threads,
+                data.begin() + (data.size() * (i + 1)) / num_threads); });
+
+        pool.wait();
+
+        watch.stop();
+        double time_aggregated = watch.elapsedSeconds();
+        std::cerr
+            << "Aggregated in " << time_aggregated
+            << " (" << n / time_aggregated << " elem/sec.)"
+            << std::endl;
+
+        size_t size_before_merge = 0;
+        std::cerr << "Sizes (local): ";
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            std::cerr << (i == 0 ? "" : ", ") << local_maps[i].size();
+            size_before_merge += local_maps[i].size();
+        }
+        std::cerr << std::endl;
+
+        size_t sum_size = global_map.size();
+        std::cerr << "Size (global): " << sum_size << std::endl;
+        size_before_merge += sum_size;
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
+                global_map[it->getKey()] += it->getMapped();
+
+        pool.wait();
+
+        watch.stop();
+        double time_merged = watch.elapsedSeconds();
+        std::cerr
+            << "Merged in " << time_merged
+            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << std::endl;
+
+        double time_total = time_aggregated + time_merged;
+        std::cerr
+            << "Total in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+
+        std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
+    }
+
+    if (!method || method == 42)
+    {
+        /** Option 4.
+          * Local hash tables with buffers + global shared table. Works very fast, especially when there are many
+          * different keys.
+          */
+
+        std::vector<Map> local_maps(num_threads);
+        std::vector<std::vector<std::vector<Key>>> buffers(num_threads, std::vector<std::vector<Key>>(MapTwoLevel512::NUM_BUCKETS));
+        MapTwoLevel512 global_map;
+        std::vector<AlignedSmallLock> mutexes(MapTwoLevel512::NUM_BUCKETS);
+
+        Stopwatch watch;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] { aggregate42(
+                std::ref(local_maps[i]),
+                std::ref(global_map),
+                mutexes.data(),
+                data.begin() + (data.size() * i) / num_threads,
+                data.begin() + (data.size() * (i + 1)) / num_threads,
+                n >= 70000000 ? 8 : 0); });
+
+        pool.wait();
+
+        watch.stop();
+        double time_aggregated = watch.elapsedSeconds();
+        std::cerr
+            << "Aggregated in " << time_aggregated
+            << " (" << n / time_aggregated << " elem/sec.)"
+            << std::endl;
+
+        size_t size_before_merge = 0;
+        std::cerr << "Sizes (local): ";
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            std::cerr << (i == 0 ? "" : ", ") << local_maps[i].size();
+            size_before_merge += local_maps[i].size();
+        }
+        std::cerr << std::endl;
+
+        size_t sum_size = global_map.size();
+        std::cerr << "Size (global): " << sum_size << std::endl;
+        size_before_merge += sum_size;
+
+        /*for (size_t i = 0; i < MapTwoLevel4096::NUM_BUCKETS; ++i)
+            std::cerr << global_map.impls[i].size() << ", ";*/
+        std::cerr << std::endl;
+
+        watch.restart();
+
+        for (size_t i = 0; i < num_threads; ++i)
+            for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
+                global_map[it->getKey()] += it->getMapped();
+
+        pool.wait();
+
+        watch.stop();
+        double time_merged = watch.elapsedSeconds();
+        std::cerr
+            << "Merged in " << time_merged
+            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << std::endl;
+
+        double time_total = time_aggregated + time_merged;
+        std::cerr
+            << "Total in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+
+        std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
+    }
+
+    if (!method || method == 43)
+    {
+        /** Option 43.
+         *  Local hash tables with queues + Splitting-aggregator. Works rather fast but slower than method 42.
+          */
+
+        std::vector<Map> local_maps(num_threads);
+        std::vector<Map> global_maps(num_threads);
+        std::vector<std::vector<std::list<Key>>> buffers(num_threads, std::vector<std::list<Key>>(num_threads));
+        std::vector<std::vector<std::pair<std::list<Key>::iterator, std::list<Key>::iterator>>> buffer_ranges(
+            num_threads, std::vector<std::pair<std::list<Key>::iterator, std::list<Key>::iterator>>(num_threads));
+        for (size_t i = 0; i < num_threads; ++i)
+            for (size_t j = 0; j < num_threads; ++j)
+                buffer_ranges[i][j] = {buffers[i][j].end(), buffers[i][j].end()};
+        std::vector<std::vector<AlignedSmallLockExt>> mutexes(num_threads);
+        for (size_t i = 0; i < num_threads; ++i)
+            mutexes[i] = std::vector<AlignedSmallLockExt>(num_threads);
+
+        Stopwatch watch;
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] { aggregate43(
+                std::ref(local_maps[i]),
+                std::ref(global_maps[i]),
+                std::ref(buffers),
+                std::ref(buffer_ranges),
+                std::ref(mutexes),
+                data.begin() + (data.size() * i) / num_threads,
+                data.begin() + (data.size() * (i + 1)) / num_threads,
+                i,
+                num_threads); });
+
+        pool.wait();
+
+        watch.stop();
+        double time_aggregated = watch.elapsedSeconds();
+        std::cerr
+            << "Aggregated in " << time_aggregated
+            << " (" << n / time_aggregated << " elem/sec.)"
+            << std::endl;
+
+        size_t size_before_merge = 0;
+        std::cerr << "Sizes (local): ";
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            std::cerr << (i == 0 ? "" : ", ") << local_maps[i].size();
+            size_before_merge += local_maps[i].size();
+        }
+        std::cerr << std::endl;
+
+        std::cerr << "Sizes (global): ";
+        size_t sum_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            std::cerr << (i == 0 ? "" : ", ") << global_maps[i].size();
+            sum_size += global_maps[i].size();
+        }
+        std::cerr << std::endl;
+        std::cerr << "Size (global): " << sum_size << std::endl;
+        size_before_merge += sum_size;
+
+        watch.restart();
+
+        __uint128_t num_threads_128 = num_threads;
+        for (size_t i = 0; i < num_threads; ++i)
+            for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
+            {
+                size_t bucket_num = getThreadNum(it.getHash(), num_threads_128);
+                global_maps[bucket_num][it->getKey()] += it->getMapped();
+            }
+
+        for (size_t i = 0; i < num_threads; ++i)
+            pool.scheduleOrThrowOnError([&, i] { merge43(
+                 std::ref(global_maps[i]),
+                 std::ref(buffers),
+                 std::ref(buffer_ranges),
+                 std::ref(mutexes),
+                 i,
+                 num_threads); });
+
+        pool.wait();
+
+        watch.stop();
+
+        double time_merged = watch.elapsedSeconds();
+        std::cerr
+            << "Merged in " << time_merged
+            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << std::endl;
+
+        double time_total = time_aggregated + time_merged;
+        std::cerr
+            << "Total in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+
+        sum_size = 0;
+        for (size_t i = 0; i < num_threads; ++i)
+            sum_size += global_maps[i].size();
+        std::cerr << "Size: " << sum_size << std::endl << std::endl;
+    }
+
+    if (!method || method == 7)
+    {
+        /** Option 7.
+         * The simplest baseline. One hash table with one thread and optimization for consecutive identical values.
+         * Just to compare.
+         */
+
+        Map global_map;
+
+        Stopwatch watch;
+
+        aggregate12(global_map, data.begin(), data.end());
+
+        watch.stop();
+        double time_total = watch.elapsedSeconds();
+        std::cerr
+            << "Aggregated in " << time_total
+            << " (" << n / time_total << " elem/sec.)"
+            << std::endl;
+
         std::cerr
             << "Total in " << time_total
             << " (" << n / time_total << " elem/sec.)"
