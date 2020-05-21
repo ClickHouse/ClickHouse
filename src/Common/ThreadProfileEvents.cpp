@@ -169,7 +169,7 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
 
 #undef HARDWARE_EVENT
 
-std::atomic<PerfEventsCounters::Id> PerfEventsCounters::counters_id = 0;
+std::atomic<PerfEventsCounters::Id> PerfEventsCounters::latest_counters_id = 0;
 
 thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
 thread_local std::optional<PerfEventsCounters::Id> PerfEventsCounters::current_thread_counters_id = std::nullopt;
@@ -546,7 +546,7 @@ void PerfEventsCounters::closeEventDescriptors()
     thread_events_descriptors_holder.releaseResources();
 }
 
-PerfEventsCounters::PerfEventsCounters(): id(counters_id++) {}
+PerfEventsCounters::PerfEventsCounters(): id(latest_counters_id++) {}
 
 PerfDescriptorsHolder::PerfDescriptorsHolder()
 {
