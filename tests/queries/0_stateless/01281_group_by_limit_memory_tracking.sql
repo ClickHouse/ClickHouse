@@ -9,7 +9,7 @@ CREATE MATERIALIZED VIEW trace_log_01281_mv TO trace_log_01281 AS SELECT * FROM 
 CREATE VIEW trace_log_01281_assert AS SELECT
         *,
         throwIf(cnt < 0,                   'no memory profile captured'),
-        throwIf(queries > 1,               'too many queries'),
+-- this check is disabled because it's not reliable: throwIf(queries > 1, 'too many queries'),
         throwIf(alloc < 100e6,             'minimal allocation had not been done'),
         throwIf((alloc+free)/alloc > 0.05, 'memory accounting leaked more than 5%')
     FROM (
