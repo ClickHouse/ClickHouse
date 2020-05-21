@@ -36,6 +36,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
+class MarkCache;
 
 namespace ErrorCodes
 {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SimpleIncrement.h>
-#include <Interpreters/Context.h>
+#include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -34,6 +34,7 @@ class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
+class Context;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

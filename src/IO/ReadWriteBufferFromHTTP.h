@@ -14,6 +14,7 @@
 #include <Poco/URI.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
+#include <Common/RemoteHostFilter.h>
 #include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 

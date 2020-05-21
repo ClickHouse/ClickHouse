@@ -31,6 +31,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 
 #include <Interpreters/DNSCacheUpdater.h>

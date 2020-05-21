@@ -9,6 +9,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/Context.h>
 #include <Poco/DirectoryIterator.h>
 
 
