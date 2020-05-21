@@ -52,7 +52,7 @@ namespace DB
 
         static std::string name();
         static Block createBlock();
-        void appendToBlock(Block & block) const;
+        void appendToBlock(MutableColumns & columns) const;
     };
     */
 
@@ -340,9 +340,8 @@ void SystemLog<LogElement>::savingThreadFunction()
             uint64_t to_flush_end = 0;
 
             {
-                LOG_TRACE(log, "Sleeping");
                 std::unique_lock lock(mutex);
-                const bool predicate = flush_event.wait_for(lock,
+                flush_event.wait_for(lock,
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
@@ -359,13 +358,6 @@ void SystemLog<LogElement>::savingThreadFunction()
                 queue.swap(to_flush);
 
                 exit_this_thread = is_shutdown;
-
-                LOG_TRACE(log, "Woke up"
-                    << (predicate ? " by condition" : " by timeout ("
-                            + toString(flush_interval_milliseconds) + " ms)")
-                    << ", " << to_flush.size() << " elements to flush"
-                    << " up to " << to_flush_end
-                    << (is_shutdown ? ", shutdown requested" : ""));
             }
 
             if (to_flush.empty())
@@ -399,8 +391,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
 
         Block block = LogElement::createBlock();
+        MutableColumns columns = block.mutateColumns();
         for (const auto & elem : to_flush)
-            elem.appendToBlock(block);
+            elem.appendToBlock(columns);
+        block.setColumns(std::move(columns));
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
