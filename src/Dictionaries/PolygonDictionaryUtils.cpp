@@ -31,10 +31,18 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
+inline void shift(Point & point, Coord val) {
+    point.x(point.x() + val);
+    point.y(point.y() + val);
+}
+
 FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_)
 {
+    auto extended = box_;
+    shift(extended.min_corner(), -GridRoot<FinalCellWithSlabs>::kEps);
+    shift(extended.max_corner(), GridRoot<FinalCellWithSlabs>::kEps);
     Polygon tmp_poly;
-    bg::convert(box_, tmp_poly);
+    bg::convert(extended, tmp_poly);
     std::vector<Polygon> intersections;
     for (const auto id : polygon_ids_)
     {
@@ -43,7 +51,10 @@ FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_,
             first_covered = id;
             break;
         }
-        bg::intersection(tmp_poly, polygons_[id], intersections);
+        std::vector<Polygon> intersection;
+        bg::intersection(box_, polygons_[id], intersection);
+        for (auto & polygon : intersection)
+            intersections.emplace_back(std::move(polygon));
         while (corresponding_ids.size() < intersections.size())
             corresponding_ids.push_back(id);
     }
