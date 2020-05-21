@@ -531,7 +531,7 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 
 ## toLowCardinality {#tolowcardinality}
 
-Converts input parameter to the [LowCardianlity](../data-types/lowcardinality.md) data type.
+Converts input parameter to the [LowCardianlity](../data-types/lowcardinality.md) version of same data type.
 
 **Syntax**
 
