@@ -3,7 +3,7 @@ toc_priority: 51
 toc_title: LowCardinality
 ---
 
-# LowCardinality data type {#lowcardinality-data-type}
+# LowCardinality Data Type {#lowcardinality-data-type}
 
 Changes the internal representation of other data types to be dictionary-encoded. 
 
