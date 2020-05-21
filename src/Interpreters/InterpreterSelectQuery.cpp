@@ -1749,7 +1749,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
     pipeline.dropTotalsAndExtremes();
 
-    /// TODO better case determination
     if (group_by_info && settings.optimize_aggregation_in_order)
     {
         auto & query = getSelectQuery();
@@ -1771,7 +1770,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
                     return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, settings.max_block_size, many_data, counter++);
                 });
 
-                /// TODO remove code duplication
                 for (auto & column_description : group_by_descr)
                 {
                     if (!column_description.column_name.empty())
@@ -1797,13 +1795,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
                 });
             }
 
-            if (final)
+            pipeline.addSimpleTransform([&](const Block & header)
             {
-                pipeline.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<FinalizingSimpleTransform>(header, transform_params);
-                });
-            }
+                return std::make_shared<FinalizingSimpleTransform>(header, transform_params);
+            });
 
             pipeline.enableQuotaForCurrentStreams();
             return;
