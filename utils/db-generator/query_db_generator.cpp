@@ -190,24 +190,22 @@ public:
 
 
 std::map<std::string, FuncRet> func_to_return_type = {
-                      {"divide", FuncRet(type::f, "")}, {"e", FuncRet(type::f, "e()")}, {"pi", FuncRet(type::f, "pi()")}, {"exp", FuncRet(type::f, "")}, {"log", FuncRet(
-                type::f,
-                "")}, {"exp2", FuncRet(type::f, "")}, {"log2", FuncRet(type::f, "")}, {"exp10", FuncRet(type::f, "")}, {"log10", FuncRet(type::f, "")}, {"sqrt",
-                                 FuncRet(type::f, "")}, {"cbrt", FuncRet(type::f, "")}, {"erf", FuncRet(type::f, "")}, {"erfc", FuncRet(type::f, "")}, {"lgamma", FuncRet(type::f, "")},
-        {"tgamma", FuncRet(type::f, "")}, {"sin", FuncRet(type::f, "")}, {"cos", FuncRet(type::f, "")}, {"tan", FuncRet(type::f, "")}, {"asin", FuncRet(
-                type::f,
-                "")}, {"acos", FuncRet(type::f, "")}, {"atan", FuncRet(type::f, "")}, {"pow", FuncRet(type::f, "")}, {"splitbystring", FuncRet(
-                type::s | type::a,
-                "")}, {"splitbychar", FuncRet(type::s | type::a, "")}, {"alphatokens", FuncRet(type::s | type::a, "")}, {"toyear", FuncRet(type::i, "")},
+        {"divide", FuncRet(type::f, "")}, {"e", FuncRet(type::f, "e()")}, {"pi", FuncRet(type::f, "pi()")}, {"exp", FuncRet(type::f, "")},
+        {"log", FuncRet(type::f,"")}, {"exp2", FuncRet(type::f, "")}, {"log2", FuncRet(type::f, "")}, {"exp10", FuncRet(type::f, "")},
+        {"log10", FuncRet(type::f, "")}, {"sqrt", FuncRet(type::f, "")}, {"cbrt", FuncRet(type::f, "")}, {"erf", FuncRet(type::f, "")},
+        {"erfc", FuncRet(type::f, "")}, {"lgamma", FuncRet(type::f, "")}, {"tgamma", FuncRet(type::f, "")}, {"sin", FuncRet(type::f, "")},
+        {"cos", FuncRet(type::f, "")}, {"tan", FuncRet(type::f, "")}, {"asin", FuncRet(type::f, "")}, {"acos", FuncRet(type::f, "")},
+        {"atan", FuncRet(type::f, "")}, {"pow", FuncRet(type::f, "")}, {"splitbystring", FuncRet(type::s | type::a,"")},
+        {"splitbychar", FuncRet(type::s | type::a, "")}, {"alphatokens", FuncRet(type::s | type::a, "")}, {"toyear", FuncRet(type::i, "")},
         {"tomonth", FuncRet(type::i, "")}, {"todayofmonth", FuncRet(type::i, "")}, {"tohour", FuncRet(type::dt, "")}, {"tominute", FuncRet(type::dt, "")},
-        {"toseconds", FuncRet(type::dt, "")}, {"tounixtimestamp", FuncRet(type::i, "")}, {"tostartofyear", FuncRet(type::dt | type::d, "")}, {"tostartofquater",
-                              FuncRet(type::dt | type::d, "")}, {"tostartofmonth", FuncRet(type::dt | type::d, "")}, {"tomonday", FuncRet(type::dt | type::d, "")},
+        {"toseconds", FuncRet(type::dt, "")}, {"tounixtimestamp", FuncRet(type::i, "")}, {"tostartofyear", FuncRet(type::dt | type::d, "")},
+        {"tostartofquater",FuncRet(type::dt | type::d, "")}, {"tostartofmonth", FuncRet(type::dt | type::d, "")}, {"tomonday", FuncRet(type::dt | type::d, "")},
         {"tostartoffiveminutes", FuncRet(type::dt, "")}, {"tostartoftenminutes", FuncRet(type::dt, "")}, {"tostartoffifteenminutes", FuncRet(type::dt, "")},
-        {"tostartofinterval", FuncRet(type::dt, "")}, {"totime", FuncRet(type::dt, "")}, {"torelativemonthnum", FuncRet(type::i, "")}, {"torelativeweeknum",
-                              FuncRet(type::i, "")}, {"torelativedaynum", FuncRet(type::i, "")}, {"torelativehournum", FuncRet(type::i, "")}, {"torelativeminutenum", FuncRet(
-                type::i,
-                "")}, {"torelativesecondsnum", FuncRet(type::i, "")}, {"datediff", FuncRet(type::d | type::dt, "")}, {"formatdatetime", FuncRet(type::s, "")},
-        {"now", FuncRet(type::dt | type::d, "now()")}, {"today", FuncRet(type::d | type::dt, "today()")}, {"yesterday", FuncRet(type::d | type::dt, "yesterday()")}
+        {"tostartofinterval", FuncRet(type::dt, "")}, {"totime", FuncRet(type::dt, "")}, {"torelativemonthnum", FuncRet(type::i, "")},
+        {"torelativeweeknum", FuncRet(type::i, "")}, {"torelativedaynum", FuncRet(type::i, "")}, {"torelativehournum", FuncRet(type::i, "")},
+        {"torelativeminutenum", FuncRet(type::i, "")}, {"torelativesecondsnum", FuncRet(type::i, "")}, {"datediff", FuncRet(type::d | type::dt, "")},
+        {"formatdatetime", FuncRet(type::s, "")}, {"now", FuncRet(type::dt | type::d, "now()")}, {"today", FuncRet(type::d | type::dt, "today()")},
+        {"yesterday", FuncRet(type::d | type::dt, "yesterday()")}
 };
 
 std::set<std::string> func_args_same_types = {
@@ -215,20 +213,22 @@ std::set<std::string> func_args_same_types = {
 };
 
 std::map<std::string, column_type> func_to_param_type = {
-        {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f}, {"minus", type::i | type::f | type::d |
-                                                                                                                                    type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f}, {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i |
-                                                                                                                                                                                                                                                                             type::f}, {"modulo", type::i | type::f}, {"intDivOrZero", type::i}, {"intDiv", type::i}, {"bitAnd", type::i}, {"bitOr", type::i}, {"bitXor", type::i},
-        {"bitNot", type::i}, {"bitShiftLeft", type::i}, {"bitShiftRight", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
-        {"exp2", type::i | type::f}, {"log2", type::i | type::f}, {"exp10", type::i | type::f}, {"log10", type::i | type::f}, {"sqrt", type::i | type::f}, {"cbrt",
-                type::i | type::f}, {"erf", type::i | type::f}, {"erfc", type::i | type::f}, {"lgamma", type::i | type::f}, {"tgamma", type::i | type::f}, {"sin",
-                type::i | type::f}, {"cos", type::i | type::f}, {"tan", type::i | type::f}, {"asin", type::i | type::f}, {"acos", type::i | type::f}, {"atan", type::i |
-                                                                                                                                                               type::f}, {"pow", type::i | type::f}, {"arrayjoin", type::all | type::a}, {"substring", type::s}, {"splitbystring", type::s}, {"splitbychar", type::s},
+        {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f},
+        {"minus", type::i | type::f | type::d | type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f},
+        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | {"bitNot", type::i}, {"bitShiftLeft", type::i},
+         {"bitShiftRight", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
+        {"exp2", type::i | type::f}, {"log2", type::i | type::f}, {"exp10", type::i | type::f}, {"log10", type::i | type::f},
+        {"sqrt", type::i | type::f}, {"cbrt", type::i | type::f}, {"erf", type::i | type::f}, {"erfc", type::i | type::f},
+        {"lgamma", type::i | type::f}, {"tgamma", type::i | type::f}, {"sin", type::i | type::f}, {"cos", type::i | type::f},
+        {"tan", type::i | type::f}, {"asin", type::i | type::f}, {"acos", type::i | type::f}, {"atan", type::i | type::f},
+        {"pow", type::i | type::f}, {"arrayjoin", type::all | type::a}, {"substring", type::s}, {"splitbystring", type::s}, {"splitbychar", type::s},
         {"alphatokens", type::s}, {"toyear", type::d | type::dt}, {"tomonth", type::d | type::dt}, {"todayofmonth", type::d | type::dt}, {"tohour", type::dt},
-        {"tominute", type::dt}, {"tosecond", type::dt}, {"touixtimestamp", type::dt}, {"tostartofyear", type::d | type::dt}, {"tostartofquarter", type::d |
-                                                                                                                                                  type::dt}, {"tostartofmonth", type::d | type::dt}, {"tomonday", type::d | type::dt}, {"tostartoffiveminute", type::dt}, {"tostartoftenminutes",
-                type::dt}, {"tostartoffifteenminutes", type::d | type::dt}, {"tostartofinterval", type::d | type::dt}, {"totime", type::d | type::dt},
-        {"torelativehonthnum", type::d | type::dt}, {"torelativeweeknum", type::d | type::dt}, {"torelativedaynum", type::d | type::dt}, {"torelativehournum",
-                type::d | type::dt}, {"torelativeminutenum", type::d | type::dt}, {"torelativesecondnum", type::d | type::dt}, {"datediff", type::d | type::dt},
+        {"tominute", type::dt}, {"tosecond", type::dt}, {"touixtimestamp", type::dt}, {"tostartofyear", type::d | type::dt},
+        {"tostartofquarter", type::d | type::dt}, {"tostartofmonth", type::d | type::dt}, {"tomonday", type::d | type::dt},
+        {"tostartoffiveminute", type::dt}, {"tostartoftenminutes", type::dt}, {"tostartoffifteenminutes", type::d | type::dt},
+        {"tostartofinterval", type::d | type::dt}, {"totime", type::d | type::dt}, {"torelativehonthnum", type::d | type::dt},
+        {"torelativeweeknum", type::d | type::dt}, {"torelativedaynum", type::d | type::dt}, {"torelativehournum", type::d | type::dt},
+        {"torelativeminutenum", type::d | type::dt}, {"torelativesecondnum", type::d | type::dt}, {"datediff", type::d | type::dt},
         {"formatdatetime", type::dt}
 };
 
