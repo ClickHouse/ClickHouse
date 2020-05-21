@@ -15,6 +15,7 @@
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -45,6 +46,9 @@
 namespace ProfileEvents
 {
     extern const Event QueryMaskingRulesMatch;
+    extern const Event FailedQuery;
+    extern const Event FailedInsertQuery;
+    extern const Event FailedSelectQuery;
 }
 
 namespace DB
@@ -146,7 +150,7 @@ static void logException(Context & context, QueryLogElement & elem)
 }
 
 
-static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, ASTPtr ast)
 {
     /// Exception before the query execution.
     if (auto quota = context.getQuota())
@@ -178,6 +182,20 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
+
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+
+    if (ast)
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+        }
+        else if (ast->as<ASTInsertQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+        }
+    }
 }
 
 static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
@@ -249,7 +267,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
 
         throw;
     }
@@ -501,7 +519,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
@@ -544,6 +562,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
+
+                ProfileEvents::increment(ProfileEvents::FailedQuery);
+                if (ast->as<ASTInsertQuery>()) {
+                    ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+                } else if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>()) {
+                    ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+                }
+
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -565,7 +591,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
         }
 
         throw;
