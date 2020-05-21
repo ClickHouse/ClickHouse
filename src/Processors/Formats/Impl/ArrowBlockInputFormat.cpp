@@ -39,12 +39,12 @@ Chunk ArrowBlockInputFormat::generate()
     if (stream)
     {
         read_status = stream_reader->ReadNext(&single_batch[0]);
+        if (!single_batch[0])
+            return res;
     }
     else
     {
         read_status = file_reader->ReadRecordBatch(record_batch_current, &single_batch[0]);
-        if (!single_batch[0])
-            return res;
     }
     if (!read_status.ok())
         throw Exception{"Error while reading batch of Arrow data: " + read_status.ToString(),
