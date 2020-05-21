@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

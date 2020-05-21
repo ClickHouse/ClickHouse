@@ -11,7 +11,6 @@
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -65,6 +64,12 @@ namespace ErrorCodes
 
 
 class Context;
+class QueryLog;
+class QueryThreadLog;
+class PartLog;
+class TextLog;
+class TraceLog;
+class MetricLog;
 
 
 class ISystemLog

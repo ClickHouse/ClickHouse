@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents

@@ -26,6 +26,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/Context.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
