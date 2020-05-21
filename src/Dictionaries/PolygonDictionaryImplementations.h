@@ -77,7 +77,7 @@ private:
     bool find(const Point & point, size_t & id) const override;
 
     std::vector<BucketsPolygonIndex> buckets;
-    GridRoot grid;
+    GridRoot<FinalCell> grid;
     static constexpr size_t kMinIntersections = 1;
     static constexpr size_t kMaxDepth = 5;
 };
