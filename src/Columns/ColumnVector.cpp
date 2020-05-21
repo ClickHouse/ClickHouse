@@ -125,15 +125,18 @@ namespace
 }
 
 template <typename T>
-void shiftArrayRight(T& arr, size_t bound)
+void shiftArrayRight(T & arr, size_t bound)
 {
     bound %= arr.size();
     size_t gcd = std::gcd(arr.size(), bound);
-    for (size_t i = 0; i < gcd; ++i) {
+    for (size_t i = 0; i < gcd; ++i)
+    {
         size_t j = i;
-        do {
+        do
+        {
             size_t next = j + bound;
-            if (next >= arr.size()) next -= arr.size();
+            if (next >= arr.size())
+                next -= arr.size();
             std::swap(arr[j], arr[next]);
             j = next;
         } while (j != i);
