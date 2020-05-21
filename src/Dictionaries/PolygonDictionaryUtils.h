@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
@@ -9,6 +10,8 @@
 #include <boost/geometry/geometries/polygon.hpp>
 
 #include "PolygonDictionary.h"
+
+#include <numeric>
 
 namespace DB
 {
@@ -21,26 +24,15 @@ using Polygon = IPolygonDictionary::Polygon;
 using Ring = IPolygonDictionary::Ring;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
-class FinalCell;
-
+template <class ReturnCell>
 class ICell
 {
 public:
     virtual ~ICell() = default;
-    [[nodiscard]] virtual const FinalCell * find(Coord x, Coord y) const = 0;
+    [[nodiscard]] virtual const ReturnCell * find(Coord x, Coord y) const = 0;
 };
 
-class DividedCell : public ICell
-{
-public:
-    explicit DividedCell(std::vector<std::unique_ptr<ICell>> children_);
-    [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
-
-private:
-    std::vector<std::unique_ptr<ICell>> children;
-};
-
-class FinalCell : public ICell
+class FinalCell : public ICell<FinalCell>
 {
 public:
     explicit FinalCell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_);
@@ -51,6 +43,27 @@ private:
     [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
 };
 
+template <class ReturnCell>
+class DividedCell : public ICell<ReturnCell>
+{
+public:
+    explicit DividedCell(std::vector<std::unique_ptr<ICell<ReturnCell>>> children_): children(std::move(children_)) {}
+
+    [[nodiscard]] const ReturnCell * find(Coord x, Coord y) const override
+    {
+        auto x_ratio = x * kSplit;
+        auto y_ratio = y * kSplit;
+        auto x_bin = static_cast<int>(x_ratio);
+        auto y_bin = static_cast<int>(y_ratio);
+        return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
+    }
+
+    static constexpr size_t kSplit = 4;
+
+private:
+    std::vector<std::unique_ptr<ICell<ReturnCell>>> children;
+};
+
 /** A recursively built grid containing information about polygons intersecting each cell.
  *  The starting cell is the bounding box of the given polygons which are stored by reference.
  *  For every cell a vector of indices of intersecting polygons is stored, in the order originally provided upon
@@ -58,21 +71,36 @@ private:
  *  intersects a small enough number of polygons or the maximum allowed depth is exceeded.
  *  Both of these parameters are set in the constructor.
  */
-class GridRoot : public ICell
+template <class ReturnCell>
+class GridRoot : public ICell<ReturnCell>
 {
 public:
-    GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_);
+    GridRoot(size_t min_intersections_, size_t max_depth_, const std::vector<Polygon> & polygons_):
+    kMinIntersections(min_intersections_), kMaxDepth(max_depth_), polygons(polygons_)
+    {
+        setBoundingBox();
+        std::vector<size_t> order(polygons.size());
+        std::iota(order.begin(), order.end(), 0);
+        root = makeCell(min_x, min_y, max_x, max_y, order);
+    }
+
     /** Retrieves the cell containing a given point.
      *  A null pointer is returned when the point falls outside the grid.
      */
-    [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
+    [[nodiscard]] const ReturnCell * find(Coord x, Coord y) const override
+    {
+        if (x < min_x || x >= max_x)
+            return nullptr;
+        if (y < min_y || y >= max_y)
+            return nullptr;
+        return root->find((x - min_x) / (max_x - min_x), (y - min_y) / (max_y - min_y));
+    }
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
-    static constexpr size_t kSplit = 4;
     static constexpr size_t kMultiProcessingDepth = 2;
 
 private:
-    std::unique_ptr<ICell> root = nullptr;
+    std::unique_ptr<ICell<ReturnCell>> root = nullptr;
     Coord min_x = 0, min_y = 0;
     Coord max_x = 0, max_y = 0;
     const size_t kMinIntersections;
@@ -80,9 +108,61 @@ private:
 
     const std::vector<Polygon> & polygons;
 
-    std::unique_ptr<ICell> makeCell(Coord min_x, Coord min_y, Coord max_x, Coord max_y, std::vector<size_t> intersecting_ids, size_t depth = 0);
+    std::unique_ptr<ICell<ReturnCell>> makeCell(Coord current_min_x, Coord current_min_y, Coord current_max_x, Coord current_max_y, std::vector<size_t> possible_ids, size_t depth = 0)
+    {
+        auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
+        possible_ids.erase(std::remove_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
+        {
+            return !bg::intersects(current_box, polygons[id]);
+        }), possible_ids.end());
+        if (possible_ids.size() <= kMinIntersections || depth++ == kMaxDepth)
+            return std::make_unique<ReturnCell>(possible_ids, polygons, current_box);
+        auto x_shift = (current_max_x - current_min_x) / DividedCell<ReturnCell>::kSplit;
+        auto y_shift = (current_max_y - current_min_y) / DividedCell<ReturnCell>::kSplit;
+        std::vector<std::unique_ptr<ICell<ReturnCell>>> children;
+        children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
+        std::vector<ThreadFromGlobalPool> threads{};
+        for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
+        {
+            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Coord x, Coord y)
+            {
+                for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
+                {
+                    children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
+                }
+            };
+            if (depth <= kMultiProcessingDepth)
+                threads.emplace_back(handle_row, current_min_x, current_min_y);
+            else
+                handle_row(current_min_x, current_min_y);
+        }
+        for (auto & thread : threads)
+            thread.join();
+        return std::make_unique<DividedCell<ReturnCell>>(std::move(children));
+    }
 
-    void setBoundingBox();
+    void setBoundingBox()
+    {
+        bool first = true;
+        std::for_each(polygons.begin(), polygons.end(), [&](const auto & polygon)
+        {
+            bg::for_each_point(polygon, [&](const Point & point)
+            {
+                auto x = point.get<0>();
+                auto y = point.get<1>();
+                if (first || x < min_x)
+                    min_x = x;
+                if (first || x > max_x)
+                    max_x = x;
+                if (first || y < min_y)
+                    min_y = y;
+                if (first || y > max_y)
+                    max_y = y;
+                if (first)
+                    first = false;
+            });
+        });
+    }
 };
 
 /** Generate edge indexes during its construction in
