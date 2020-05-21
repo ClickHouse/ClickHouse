@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <atomic>
 
 namespace DB
 {
