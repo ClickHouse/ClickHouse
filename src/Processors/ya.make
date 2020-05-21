@@ -59,6 +59,7 @@ SRCS(
     Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
+    Formats/PullingOutputFormat.cpp
     Formats/RowInputFormatWithDiagnosticInfo.cpp
     IAccumulatingTransform.cpp
     IInflatingTransform.cpp
