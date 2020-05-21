@@ -108,7 +108,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         /// Do not check last volume
         for (size_t i = 0; i != volumes.size() - 1; ++i)
         {
-            for (const auto & disk : volumes[i]->disks)
+            for (const auto & disk : volumes[i]->getDisks())
             {
                 UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
                 UInt64 unreserved_space = disk->getUnreservedSpace();
@@ -129,7 +129,7 @@ bool MergeTreePartsMover::selectPartsForMove(
             continue;
 
         auto ttl_entry = part->storage.selectTTLEntryForTTLInfos(part->ttl_infos, time_of_move);
-        auto to_insert = need_to_move.find(part->disk);
+        auto to_insert = need_to_move.find(part->volume->getDisk());
         ReservationPtr reservation;
         if (ttl_entry)
         {
@@ -196,8 +196,9 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Cloning part " << moving_part.part->name);
     moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
     MergeTreeData::MutableDataPartPtr cloned_part =
-        data->createPart(moving_part.part->name, moving_part.reserved_space->getDisk(), "detached/" + moving_part.part->name);
+        data->createPart(moving_part.part->name, single_disk_volume, "detached/" + moving_part.part->name);
     LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);

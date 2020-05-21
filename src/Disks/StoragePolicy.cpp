@@ -55,7 +55,7 @@ StoragePolicy::StoragePolicy(
     std::set<String> disk_names;
     for (const auto & volume : volumes)
     {
-        for (const auto & disk : volume->disks)
+        for (const auto & disk : volume->getDisks())
         {
             if (disk_names.find(disk->getName()) != disk_names.end())
                 throw Exception(
@@ -102,7 +102,7 @@ bool StoragePolicy::isDefaultPolicy() const
     if (volumes[0]->getName() != "default")
         return false;
 
-    const auto & disks = volumes[0]->disks;
+    const auto & disks = volumes[0]->getDisks();
     if (disks.size() != 1)
         return false;
 
@@ -117,7 +117,7 @@ Disks StoragePolicy::getDisks() const
 {
     Disks res;
     for (const auto & volume : volumes)
-        for (const auto & disk : volume->disks)
+        for (const auto & disk : volume->getDisks())
             res.push_back(disk);
     return res;
 }
@@ -130,17 +130,17 @@ DiskPtr StoragePolicy::getAnyDisk() const
     if (volumes.empty())
         throw Exception("StoragePolicy has no volumes. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (volumes[0]->disks.empty())
+    if (volumes[0]->getDisks().empty())
         throw Exception("Volume '" + volumes[0]->getName() + "' has no disks. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    return volumes[0]->disks[0];
+    return volumes[0]->getDisks()[0];
 }
 
 
 DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
-        for (auto && disk : volume->disks)
+        for (auto && disk : volume->getDisks())
             if (disk->getName() == disk_name)
                 return disk;
     return {};
@@ -181,7 +181,7 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
     DiskPtr max_disk;
     for (const auto & volume : volumes)
     {
-        for (const auto & disk : volume->disks)
+        for (const auto & disk : volume->getDisks())
         {
             auto avail_space = disk->getAvailableSpace();
             if (avail_space > max_space)
@@ -207,10 +207,10 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
             throw Exception("New storage policy shall contain volumes of old one", ErrorCodes::LOGICAL_ERROR);
 
         std::unordered_set<String> new_disk_names;
-        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->disks)
+        for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
             new_disk_names.insert(disk->getName());
 
-        for (const auto & disk : volume->disks)
+        for (const auto & disk : volume->getDisks())
             if (new_disk_names.count(disk->getName()) == 0)
                 throw Exception("New storage policy shall contain disks of old one", ErrorCodes::LOGICAL_ERROR);
     }
@@ -222,7 +222,7 @@ size_t StoragePolicy::getVolumeIndexByDisk(const DiskPtr & disk_ptr) const
     for (size_t i = 0; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
-        for (const auto & disk : volume->disks)
+        for (const auto & disk : volume->getDisks())
             if (disk->getName() == disk_ptr->getName())
                 return i;
     }

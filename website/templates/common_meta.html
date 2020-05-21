@@ -12,7 +12,7 @@
 <meta property="og:type" content="{{ og_type or 'website' }}" />
 <meta property="og:image" content="https://clickhouse.tech/images/logo.png" />
 <meta property="og:url" content="{{ url or 'https://clickhouse.tech/' }}"/>
-<link rel="canonical" href="{{ url or 'https://clickhouse.tech/' }}" />
+<link rel="canonical" href="{{ canonical_url or 'https://clickhouse.tech/' }}" />
 {% if page and not single_page %}
 <link rel="amphtml" href="{{ url or 'https://clickhouse.tech/' }}amp/">
 {% endif %}

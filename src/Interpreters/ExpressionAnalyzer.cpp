@@ -1025,6 +1025,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         chain.clear();
     };
 
+    if (storage)
+    {
+        query_analyzer.makeSetsForIndex(query.where());
+        query_analyzer.makeSetsForIndex(query.prewhere());
+    }
+
     {
         ExpressionActionsChain chain(context);
         Names additional_required_columns_after_prewhere;
