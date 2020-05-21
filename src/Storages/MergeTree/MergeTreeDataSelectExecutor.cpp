@@ -223,9 +223,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     const Settings & settings = context.getSettingsRef();
     const auto & primary_key = data.getPrimaryKey();
-    Names primary_key_columns = primary_key.expression_column_names;
+    Names primary_key_columns = primary_key.column_names;
 
-    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expressions);
+    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -461,14 +461,14 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
             if (select.final())
             {
-                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.expression_column_names[0]);
+                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
                 /// We do spoil available_real_columns here, but it is not used later.
-                available_real_columns.emplace_back(sampling_key.expression_column_names[0], std::move(sampling_column_type));
+                available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
             }
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(sampling_key.expression_column_names[0], Range::createLeftBounded(lower, true)))
+                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -485,7 +485,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(sampling_key.expression_column_names[0], Range::createRightBounded(upper, false)))
+                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -640,7 +640,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     else if (settings.optimize_read_in_order && query_info.input_sorting_info)
     {
         size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
-        auto order_key_prefix_ast = data.getSortingKey().expression_ast->clone();
+        auto order_key_prefix_ast = data.getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
         auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, data.getColumns().getAllPhysical());
@@ -1025,7 +1025,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         {
             SortDescription sort_description;
             for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
-                sort_description.emplace_back(data.getSortingKey().expression_column_names[j],
+                sort_description.emplace_back(data.getSortingKey().column_names[j],
                     input_sorting_info->direction, 1);
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
@@ -1098,11 +1098,11 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         if (!out_projection)
             out_projection = createProjection(pipe, data);
 
-        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.getSortingKey().expressions));
+        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.getSortingKey().expression));
         pipes.emplace_back(std::move(pipe));
     }
 
-    Names sort_columns = data.getSortingKey().expression_column_names;
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -1300,7 +1300,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         {
             auto index_block = std::make_shared<Block>();
             for (size_t i = 0; i < used_key_size; ++i)
-                index_block->insert({index[i], primary_key.data_types[i], primary_key.expression_column_names[i]});
+                index_block->insert({index[i], primary_key.data_types[i], primary_key.column_names[i]});
 
             create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
             {

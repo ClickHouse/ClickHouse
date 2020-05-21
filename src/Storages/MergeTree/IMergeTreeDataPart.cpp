@@ -439,7 +439,7 @@ void IMergeTreeDataPart::loadIndex()
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
 
     const auto & primary_key = storage.getPrimaryKey();
-    size_t key_size = primary_key.expression_column_names.size();
+    size_t key_size = primary_key.column_names.size();
 
     if (key_size)
     {
@@ -845,7 +845,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
     if (!checksums.empty())
     {
-        if (!storage.getPrimaryKey().expression_column_names.empty() && !checksums.files.count("primary.idx"))
+        if (storage.hasPrimaryKey() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -879,7 +879,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.getPrimaryKey().expression_column_names.empty())
+        if (storage.hasPrimaryKey())
             check_file_not_empty(volume->getDisk(), path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)

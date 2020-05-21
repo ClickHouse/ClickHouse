@@ -607,7 +607,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        storage_columns, data.getSortingKey().expressions, data.skip_indices,
+        storage_columns, data.getSortingKey().expression, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -726,7 +726,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         pipes.emplace_back(std::move(pipe));
     }
 
-    Names sort_columns = data.getSortingKey().expression_column_names;
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

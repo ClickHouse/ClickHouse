@@ -52,22 +52,22 @@ struct StorageMetadataKeyField
     ASTPtr definition_ast;
 
     /// ASTExpressionList with key fields, example: (x, toStartOfMonth(date))).
-    ASTPtr expression_ast;
+    ASTPtr expression_list_ast;
 
-    /// Expressions from expression_list_ast from expression_analyzer. Useful,
+    /// Expression from expression_list_ast created by ExpressionAnalyzer. Useful,
     /// when you need to get required columns for key, example: a, date, b.
-    ExpressionActionsPtr expressions;
-
-    /// Column names in key definition, example: x, toStartOfMonth(date), a * b.
-    Names expression_column_names;
+    ExpressionActionsPtr expression;
 
     /// Sample block with key columns (names, types, empty column)
     Block sample_block;
 
+    /// Column names in key definition, example: x, toStartOfMonth(date), a * b.
+    Names column_names;
+
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 
-    /// Parse key structure from key definition. Requires all columns available
+    /// Parse key structure from key definition. Requires all columns, available
     /// in storage.
     static StorageMetadataKeyField getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
