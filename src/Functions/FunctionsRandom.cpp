@@ -101,121 +101,6 @@ template <int VecSize>
 void RandVecImpl<VecSize>::execute(char * output, size_t size)
 {
     static_assert(VecSize >= 4);
-    static_assert(VecSize <= random_numbers.size());
-
-    using VecUInt64 = UInt64x<VecSize>;
-    using VecUInt32 = UInt32x<VecSize>;
-
-    if (size == 0)
-        return;
-
-    char * end = output + size;
-
-    constexpr int safe_overwrite = 15;
-    constexpr int bytes_per_write = sizeof(VecUInt32);
-
-    UInt64 rand_seed = randomSeed();
-
-    UInt64 a = LinearCongruentialGenerator::a;
-    // TODO(dakovalkov): try to remove this.
-    /// Note: GCC likes to expand multiplication by a constant into shifts + additions.
-    /// In this case a few multiplications become tens of shifts and additions. That leads to a huge slow down.
-    /// To avoid it we pretend that 'a' is not a constant. Actually we hope that rand_seed is never 0.
-    if (rand_seed == 0)
-        a = LinearCongruentialGenerator::a + 2;
-
-    constexpr UInt64 c = LinearCongruentialGenerator::c;
-
-    VecUInt64 generators{};
-    for (int i = 0; i < VecSize; ++i)
-        generators[i] = calcSeed(rand_seed, random_numbers[i] + reinterpret_cast<intptr_t>(output));
-
-    while ((end - output) + safe_overwrite >= bytes_per_write)
-    {
-        generators = generators * a + c;;
-        VecUInt32 values = __builtin_convertvector(generators >> 16, VecUInt32);
-        unalignedStore<VecUInt32>(output, values);
-        output += bytes_per_write;
-    }
-
-    // Process tail
-    while ((end - output) > 0)
-    {
-        generators = generators * a + c;;
-        VecUInt32 values = __builtin_convertvector(generators >> 16, VecUInt32);
-        for (int i = 0; i < VecSize && (end - output) > 0; ++i)
-        {
-            unalignedStore<UInt32>(output, values[i]);
-            output += sizeof(UInt32);
-        }
-    }
-}
-
-template <int VecSize>
-void RandVecImpl2<VecSize>::execute(char * output, size_t size)
-{
-    static_assert(VecSize >= 4);
-    static_assert(2 * VecSize <= random_numbers.size());
-
-    using VecUInt64 = UInt64x<VecSize>;
-    using VecUInt32 = UInt32x<VecSize>;
-
-    if (size == 0)
-        return;
-
-    char * end = output + size;
-
-    constexpr int safe_overwrite = 15;
-    constexpr int bytes_per_write = 2 * sizeof(VecUInt32);
-
-    UInt64 rand_seed = randomSeed();
-
-    UInt64 a = LinearCongruentialGenerator::a;
-    // TODO(dakovalkov): try to remove this.
-    /// Note: GCC likes to expand multiplication by a constant into shifts + additions.
-    /// In this case a few multiplications become tens of shifts and additions. That leads to a huge slow down.
-    /// To avoid it we pretend that 'a' is not a constant. Actually we hope that rand_seed is never 0.
-    if (rand_seed == 0)
-        a = LinearCongruentialGenerator::a + 2;
-
-    constexpr UInt64 c = LinearCongruentialGenerator::c;
-
-    VecUInt64 gens1{};
-    VecUInt64 gens2{};
-    for (int i = 0; i < VecSize; ++i)
-    {
-        gens1[i] = calcSeed(rand_seed, random_numbers[i] + reinterpret_cast<intptr_t>(output));
-        gens2[i] = calcSeed(rand_seed, random_numbers[i + VecSize] + reinterpret_cast<intptr_t>(output));
-    }
-
-    while ((end - output) + safe_overwrite >= bytes_per_write)
-    {
-        gens1 = gens1 * a + c;;
-        VecUInt32 values1 = __builtin_convertvector(gens1 >> 16, VecUInt32);
-        unalignedStore<VecUInt32>(output, values1);
-        gens2 = gens2 * a + c;;
-        VecUInt32 values2 = __builtin_convertvector(gens2 >> 16, VecUInt32);
-        unalignedStore<VecUInt32>(output + sizeof(VecUInt32), values2);
-        output += bytes_per_write;
-    }
-
-    // Process tail
-    while ((end - output) > 0)
-    {
-        gens1 = gens1 * a + c;;
-        VecUInt32 values = __builtin_convertvector(gens1 >> 16, VecUInt32);
-        for (int i = 0; i < VecSize && (end - output) > 0; ++i)
-        {
-            unalignedStore<UInt32>(output, values[i]);
-            output += sizeof(UInt32);
-        }
-    }
-}
-
-template <int VecSize>
-void RandVecImpl4<VecSize>::execute(char * output, size_t size)
-{
-    static_assert(VecSize >= 4);
     static_assert(4 * VecSize <= random_numbers.size());
 
     using VecUInt64 = UInt64x<VecSize>;
@@ -286,11 +171,11 @@ void RandVecImpl4<VecSize>::execute(char * output, size_t size)
 ) // DECLARE_MULTITARGET_CODE
 
 DECLARE_AVX2_SPECIFIC_CODE(
-    template struct RandVecImpl4<4>;
+    template struct RandVecImpl<4>;
 ) // DECLARE_AVX2_SPECIFIC_CODE
 
 DECLARE_AVX512F_SPECIFIC_CODE(
-    template struct RandVecImpl4<8>;
+    template struct RandVecImpl<8>;
 ) // DECLARE_AVX512F_SPECIFIC_CODE
 
 }

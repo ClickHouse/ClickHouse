@@ -13,13 +13,11 @@
         <substitution>
            <name>table</name>
            <values>
-               <value>numbers(10000000)</value>
+               <value>zeros(100000000)</value>
            </values>
         </substitution>
     </substitutions>
 
     <query>SELECT count() FROM (SELECT rand() FROM {table}) </query>
-    <query>SELECT count() FROM (SELECT randxorshift() FROM {table}) </query>
     <query>SELECT count() FROM (SELECT rand64() FROM {table}) </query>
-    <query>SELECT count() FROM (SELECT randxorshift64() FROM {table}) </query>
 </test>
