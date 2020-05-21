@@ -151,7 +151,7 @@ for query_index, q in enumerate(test_queries):
     # use the test name + the test-wide query index.
     query_display_name = q
     if len(query_display_name) > 1000:
-        query_display_name = f'{query_display_name[:1000]}...({i})'
+        query_display_name = f'{query_display_name[:1000]}...({query_index})'
 
     print(f'display-name\t{query_index}\t{tsv_escape(query_display_name)}')
 

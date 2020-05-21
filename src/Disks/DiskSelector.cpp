@@ -5,6 +5,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 #include <set>
 

@@ -44,6 +44,7 @@
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -2272,7 +2273,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
 void StorageReplicatedMergeTree::mutationsFinalizingTask()
 {
-    LOG_DEBUG(log, "Trying to finalize mutations");
     bool needs_reschedule = false;
 
     try

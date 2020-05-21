@@ -289,7 +289,7 @@ private:
                     connection_entries.emplace_back(std::make_shared<Entry>(
                             connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+                pool.scheduleOrThrowOnError([this, connection_entries]() mutable { thread(connection_entries); });
             }
         }
         catch (...)

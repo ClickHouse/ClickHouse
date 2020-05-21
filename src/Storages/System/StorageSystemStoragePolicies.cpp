@@ -3,6 +3,7 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
