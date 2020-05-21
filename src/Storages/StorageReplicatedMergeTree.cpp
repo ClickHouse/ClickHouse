@@ -2341,7 +2341,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
 void StorageReplicatedMergeTree::mutationsFinalizingTask()
 {
-    LOG_DEBUG(log, "Trying to finalize mutations");
     bool needs_reschedule = false;
 
     try
