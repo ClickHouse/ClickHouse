@@ -32,7 +32,7 @@ std::string random_integer(unsigned int max = 4294967295)
     int r = rand() % max;
     return std::to_string(r);
 }
-std::string random_float(int max = 4294967295)
+std::string random_float(unsigned int max = 4294967295)
 {
     float r = static_cast<float>(rand() % max) / (static_cast<float>(rand() % 100));
     return std::to_string(r);
@@ -111,64 +111,36 @@ column_type time_type(std::string value)
 {
     if (value.length() == 12)
     {
-        if (value[0] != '\'')
-            goto not_date;
-        if (value[11] != '\'')
-            goto not_date;
-        for (int i = 1; i < 5; ++i)
+        for (size_t i : {5, 8})
+        {
+            if (value[i] != '-')
+                return type::s;
+        }
+        for (size_t i : {1, 2, 3, 4, 6, 7, 9, 10})
+        {
             if (!isdigit(value[i]))
-                goto not_date;
-        if (value[5] != '-')
-            goto not_date;
-        for (int i = 6; i < 8; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
-        if (value[8] != '-')
-            goto not_date;
-        for (int i = 9; i < 11; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
+                return type::s;
+        }
         return type::d;
     }
 
     if (value.length() == 21)
     {
-        if (value[0] != '\'')
-            goto not_date;
-        if (value[20] != '\'')
-            goto not_date;
-        for (int i = 1; i < 5; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
-        if (value[5] != '-')
-            goto not_date;
-        for (int i = 6; i < 8; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
-        if (value[8] != '-')
-            goto not_date;
-        for (int i = 9; i < 11; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
-        if (value[11] != ' ')
-            goto not_date;
-        for (int i = 12; i < 14; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
-        if (value[14] != ':')
-            goto not_date;
-        for (int i = 15; i < 17; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
-        if (value[17] != ':')
-            goto not_date;
-        for (int i = 18; i < 20; ++i)
-            if (!isdigit(value[i]))
-                goto not_date;
+        for (size_t i : {5, 8})
+        {
+            if (value[i] != '-')
+                return type::s;
+        }
+        for (size_t i : {14, 17})
+        {
+            if (value[i] != '-')
+                return type::s;
+        }
+        if (value[11] != '-')
+            return type::s;
         return type::dt;
     }
-
-    not_date: return type::s;
+    return type::s;
 }
 // Casting inner clickhouse parser type to our type
 column_type type_cast(int t)
@@ -455,7 +427,7 @@ public:
         for (auto column = columns.begin(); column != columns.end(); ++column)
         {
             if (column != columns.begin())
-                create += ", -s\n";
+                create += ", \n";
             create += *column + " ";
             create += column_description[*column].is_array ? "ARRAY(" : "";
             create += type_definition[column_description[*column].type];
