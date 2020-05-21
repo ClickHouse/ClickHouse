@@ -28,6 +28,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include <Functions/TargetSpecific.h>
+
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
@@ -52,12 +54,7 @@ namespace ErrorCodes
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
 }
 
-
-/** Arithmetic operations: +, -, *, /, %,
-  * intDiv (integer division)
-  * Bitwise operations: |, &, ^, ~.
-  * Etc.
-  */
+DECLARE_MULTITARGET_CODE(
 
 template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
 struct BinaryOperationImplBase
@@ -81,6 +78,68 @@ struct BinaryOperationImplBase
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a, b[i]);
+    }
+
+    static ResultType constantConstant(A a, B b)
+    {
+        return Op::template apply<ResultType>(a, b);
+    }
+};
+
+) // DECLARE_MULTITARGET_CODE
+
+
+/** Arithmetic operations: +, -, *, /, %,
+  * intDiv (integer division)
+  * Bitwise operations: |, &, ^, ~.
+  * Etc.
+  */
+template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
+struct BinaryOperationImplBase
+{
+    using ResultType = ResultType_;
+    static const constexpr bool allow_fixed_string = false;
+
+    static void vectorVector(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    {
+        if (IsArchSupported(TargetArch::AVX512F))
+            TargetSpecific::AVX512F::BinaryOperationImplBase<A, B, Op, ResultType>::vectorVector(a, b, c, size);
+        else if (IsArchSupported(TargetArch::AVX2))
+            TargetSpecific::AVX2::BinaryOperationImplBase<A, B, Op, ResultType>::vectorVector(a, b, c, size);
+        else if (IsArchSupported(TargetArch::AVX))
+            TargetSpecific::AVX::BinaryOperationImplBase<A, B, Op, ResultType>::vectorVector(a, b, c, size);
+        else if (IsArchSupported(TargetArch::SSE42))
+            TargetSpecific::SSE42::BinaryOperationImplBase<A, B, Op, ResultType>::vectorVector(a, b, c, size);
+        else
+            TargetSpecific::Default::BinaryOperationImplBase<A, B, Op, ResultType>::vectorVector(a, b, c, size);
+    }
+
+    static void vectorConstant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
+    {
+        if (IsArchSupported(TargetArch::AVX512F))
+            TargetSpecific::AVX512F::BinaryOperationImplBase<A, B, Op, ResultType>::vectorConstant(a, b, c, size);
+        else if (IsArchSupported(TargetArch::AVX2))
+            TargetSpecific::AVX2::BinaryOperationImplBase<A, B, Op, ResultType>::vectorConstant(a, b, c, size);
+        else if (IsArchSupported(TargetArch::AVX))
+            TargetSpecific::AVX::BinaryOperationImplBase<A, B, Op, ResultType>::vectorConstant(a, b, c, size);
+        else if (IsArchSupported(TargetArch::SSE42))
+            TargetSpecific::SSE42::BinaryOperationImplBase<A, B, Op, ResultType>::vectorConstant(a, b, c, size);
+        else
+            TargetSpecific::Default::BinaryOperationImplBase<A, B, Op, ResultType>::vectorConstant(a, b, c, size);
+    }
+
+    static void constantVector(A a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    {
+        if (IsArchSupported(TargetArch::AVX512F))
+            TargetSpecific::AVX512F::BinaryOperationImplBase<A, B, Op, ResultType>::constantVector(a, b, c, size);
+        else if (IsArchSupported(TargetArch::AVX2))
+            TargetSpecific::AVX2::BinaryOperationImplBase<A, B, Op, ResultType>::constantVector(a, b, c, size);
+        else if (IsArchSupported(TargetArch::AVX))
+            TargetSpecific::AVX::BinaryOperationImplBase<A, B, Op, ResultType>::constantVector(a, b, c, size);
+        else if (IsArchSupported(TargetArch::SSE42))
+            TargetSpecific::SSE42::BinaryOperationImplBase<A, B, Op, ResultType>::constantVector(a, b, c, size);
+        else
+            TargetSpecific::Default::BinaryOperationImplBase<A, B, Op, ResultType>::constantVector(a, b, c, size);
     }
 
     static ResultType constantConstant(A a, B b)
