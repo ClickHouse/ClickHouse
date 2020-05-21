@@ -217,13 +217,8 @@ function get_profiles
     clickhouse-client --port 9002 --query "select 1"
 }
 
-# Build and analyze randomization distribution for all queries.
-function analyze_queries
+function build_log_column_definitions
 {
-rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
-rm -rfv analyze ||:
-mkdir analyze ||:
-
 # FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
 # absolutely atrocious way. This should be done by the file() function itself.
 for x in {right,left}-{addresses,{query,query-thread,trace,metric}-log}.tsv
@@ -233,6 +228,16 @@ do
         <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
         | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
 done
+}
+
+# Build and analyze randomization distribution for all queries.
+function analyze_queries
+{
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
+rm -rfv analyze ||:
+mkdir analyze ||:
+
+build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
 IFS=$'\n'
@@ -278,6 +283,7 @@ create table query_metrics engine File(TSV, -- do not add header -- will parse w
     ) query_logs
     right join query_runs
     using (query_id, version)
+    order by test, query_index
     ;
 "
 
@@ -291,8 +297,8 @@ query_index=1
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
 do
-    file="analyze/q$query_index.tmp"
-    grep -F "$prefix	" "analyze/query-run-metrics.tsv" > "$file" &
+    file="analyze/$(echo "$prefix" | sed 's/\t/_/g').tmp"
+    grep "^$prefix	" "analyze/query-run-metrics.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
             --file \"$file\" \
@@ -301,13 +307,11 @@ do
             >> \"analyze/query-reports.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
-
-    query_index=$((query_index + 1))
 done
 wait
 unset IFS
 
-parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt
+parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 }
 
 # Analyze results
@@ -317,6 +321,8 @@ rm -r report ||:
 mkdir report ||:
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
+build_log_column_definitions
 
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
@@ -570,8 +576,16 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
     select
         -- first goes the key used to split the file with grep
         test, query_index, any(query_display_name),
+        -- next go the stacks in flamegraph format: 'func1;...;funcN count'
         arrayStringConcat(
-            arrayMap(x -> joinGet(addresses_join_$version, 'name', x),
+            arrayMap(addr -> replaceRegexpOne(
+                    joinGet(addresses_join_$version, 'name', addr),
+                    -- This function is at the base of the stack, and its name changes
+                    -- surprisingly often between builds, e.g. '__clone' or 'clone' or
+                    -- even '__GI__clone'. This breaks differential flame graphs, so
+                    -- filter it out here.
+                    '^clone\\.S.*', 'clone.S (name filtered by comparison script)'
+                ),
                 arrayReverse(trace)
             ),
             ';'
@@ -580,6 +594,7 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
     from trace_log
     join unstable_query_runs using query_id
     group by test, query_index, trace
+    order by test, query_index, trace
     ;
 " 2> >(tee -a report/errors.log 1>&2) # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
 done
@@ -592,21 +607,36 @@ do
     for query in $(cut -d'	' -f1,2,3 "stacks.$version.rep" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
+        echo "$query_file" >> report/query-files.txt
 
         # Build separate .svg flamegraph for each query.
+        # -F is somewhat unsafe because it might match not the beginning of the
+        # string, but this is unlikely and escaping the query for grep is a pain.
         grep -F "$query	" "stacks.$version.rep" \
-            | cut -d'	' -f 2- \
+            | cut -f 4- \
             | sed 's/\t/ /g' \
             | tee "$query_file.stacks.$version.rep" \
-            | ~/fg/flamegraph.pl > "$query_file.$version.svg" &
+            | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
 
         # Copy metric stats into separate files as well.
+        # Ditto the above comment about -F.
         grep -F "$query	" "metric-deviation.$version.rep" \
-            | cut -f2- > "$query_file.$version.metrics.rep" &
+            | cut -f4- > "$query_file.$version.metrics.rep" &
     done
 done
 wait
 unset IFS
+
+# Create differential flamegraphs.
+IFS=$'\n'
+for query_file in $(cat report/query-files.txt)
+do
+    ~/fg/difffolded.pl "$query_file.stacks.left.rep" "$query_file.stacks.right.rep" \
+        | tee "$query_file.stacks.diff.rep" \
+        | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
+done
+unset IFS
+wait
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
