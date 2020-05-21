@@ -195,6 +195,8 @@ struct AggregateFunctionSumKahanData
     {
         auto raw_sum = to_sum + from_sum;
         auto rhs_compensated = raw_sum - to_sum;
+        /// Kahan summation is tricky because it depends on non-associativity of float arithmetic.
+        /// Do not simplify this expression if you are not sure.
         auto compensations = ((from_sum - rhs_compensated) + (to_sum - (raw_sum - rhs_compensated))) + compensation + from_compensation;
         to_sum = raw_sum + compensations;
         to_compensation = compensations - (to_sum - raw_sum);
