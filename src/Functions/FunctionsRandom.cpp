@@ -293,5 +293,4 @@ DECLARE_AVX512F_SPECIFIC_CODE(
     template struct RandVecImpl4<8>;
 ) // DECLARE_AVX512F_SPECIFIC_CODE
 
-
 }
