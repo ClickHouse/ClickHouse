@@ -27,11 +27,10 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
-FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &polygons_, const Box &box_)
+FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_)
 {
     Polygon tmp_poly;
     bg::convert(box_, tmp_poly);
-    first_covered = polygon_ids_.size();
     std::vector<Polygon> intersections;
     for (const auto id : polygon_ids_) {
         if (bg::covered_by(tmp_poly, polygons_[id]))
