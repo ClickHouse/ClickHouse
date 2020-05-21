@@ -24,6 +24,7 @@ if (COMPILER_CLANG)
     add_warning(pedantic)
     no_warning(vla-extension)
     no_warning(zero-length-array)
+    no_warning(documentation)
 
     add_warning(comma)
     add_warning(conditional-uninitialized)

@@ -157,6 +157,11 @@ add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 
+if(USE_HYPERSCAN)
+    target_link_libraries(clickhouse_common_uatraitsfast PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories(clickhouse_common_uatraitsfast SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+endif()
+
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})

@@ -19,7 +19,7 @@
 #endif
 
 #if USE_HYPERSCAN
-#    include <hs.h>
+#    include <../contrib/hyperscan/src/hs.h>
 #endif
 
 namespace ProfileEvents

@@ -14,7 +14,6 @@
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <Storages/IStorage_fwd.h>
-#include <Functions/Regexps.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
