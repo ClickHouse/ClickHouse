@@ -135,6 +135,9 @@ namespace
     template <typename BridgeHelperMixin>
     void registerXDBCStorage(StorageFactory & factory, const std::string & name)
     {
+        StorageFactory::StorageFeatures features;
+        features.source_access_type = BridgeHelperMixin::getSourceAccessType();
+
         factory.registerStorage(name, [name](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
@@ -157,9 +160,7 @@ namespace
                 bridge_helper);
 
         },
-        {
-            .source_access_type = BridgeHelperMixin::getSourceAccessType(),
-        });
+        features);
     }
 }
 

@@ -12,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -572,7 +573,7 @@ VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & p
     if (policy_name.empty())
     {
         shared->tmp_path = path;
-        if (!shared->tmp_path.ends_with('/'))
+        if (!endsWith(shared->tmp_path, "/"))
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);

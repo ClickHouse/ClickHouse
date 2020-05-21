@@ -190,6 +190,9 @@ BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Cont
 
 void registerStorageURL(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features;
+    features.source_access_type = AccessType::URL;
+
     factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
@@ -221,8 +224,6 @@ void registerStorageURL(StorageFactory & factory)
             args.columns, args.constraints, args.context,
             compression_method);
     },
-    {
-        .source_access_type = AccessType::URL,
-    });
+    features);
 }
 }

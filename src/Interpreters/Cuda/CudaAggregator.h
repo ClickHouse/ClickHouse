@@ -47,16 +47,18 @@ struct CudaAggregatedDataVariants : private boost::noncopyable
         /// There are no variants for now
         strings_agg = std::make_unique<decltype(strings_agg)::element_type>(
             settings.cuda_device_number, settings.cuda_chunks_number,
-            settings.cuda_hash_table_max_size, settings.cuda_hash_table_strings_buffer_max_size, 
-            settings.cuda_buffer_max_strings_number, settings.cuda_buffer_max_size, 
+            settings.cuda_hash_table_max_size, settings.cuda_hash_table_strings_buffer_max_size,
+            settings.cuda_buffer_max_strings_number, settings.cuda_buffer_max_size,
             cuda_agg_function);
         empty_ = false;
     }
+
     void startProcessing()
     {
         assert(!empty());
         strings_agg->startProcessing();
     }
+
     void waitProcessed()
     {
         assert(!empty());
@@ -73,15 +75,14 @@ class CudaAggregator
 {
 public:
     using Params = Aggregator::Params;
+    using AggregateColumns = std::vector<ColumnRawPtrs>;
+    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
+    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
 
     CudaAggregator(const Context & context_, const Params & params_);
 
     /// Aggregate the source. Get the result in the form of one of the data structures.
     void execute(const BlockInputStreamPtr & stream, CudaAggregatedDataVariants & result);
-
-    using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, CudaAggregatedDataVariants & result,
@@ -101,7 +102,7 @@ public:
 
 protected:
     friend struct CudaAggregatedDataVariants;
-    
+
     /// NOTE i took it form RemoteBlockInputStream; not sure if it's ok to copy wholy 'context'
     Context context;
     Params  params;
@@ -126,6 +127,5 @@ protected:
 
     Block prepareBlockAndFillSingleLevel(CudaAggregatedDataVariants & data_variants, bool final) const;
 };
-
 
 }

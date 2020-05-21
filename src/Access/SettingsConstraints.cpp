@@ -1,5 +1,6 @@
 #include <Access/SettingsConstraints.h>
 #include <Core/Settings.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -322,7 +323,7 @@ void SettingsConstraints::setProfile(const String & profile_name, const Poco::Ut
 
     for (const std::string & key : config_keys)
     {
-        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
+        if (key == "profile" || startsWith(key, "profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             continue;

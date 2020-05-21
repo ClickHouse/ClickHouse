@@ -533,6 +533,9 @@ void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context 
 
 void registerStorageFile(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features;
+    features.source_access_type = AccessType::FILE,
+
     factory.registerStorage(
         "File",
         [](const StorageFactory::Arguments & args)
@@ -596,9 +599,7 @@ void registerStorageFile(StorageFactory & factory)
             else /// User's file
                 return StorageFile::create(source_path, args.context.getUserFilesPath(), common_args);
         },
-        {
-            .source_access_type = AccessType::FILE,
-        });
+        features);
 }
 NamesAndTypesList StorageFile::getVirtuals() const
 {

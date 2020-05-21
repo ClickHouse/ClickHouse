@@ -4,6 +4,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
+#include <Common/StringUtils/StringUtils.h>
 #include "HierarchyFormatReader.h"
 
 
@@ -36,7 +37,7 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
     {
         std::string candidate_basename = dir_it.path().getBaseName();
 
-        if (candidate_basename.starts_with(basename)
+        if (startsWith(candidate_basename, basename)
             && (candidate_basename.size() > basename.size() + 1)
             && (candidate_basename[basename.size()] == '_'))
         {

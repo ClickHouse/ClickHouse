@@ -516,7 +516,7 @@ private:
                     break;
 
                 has_vertical_output_suffix = false;
-                if (input.ends_with("\\G"))
+                if (endsWith(input, "\\G"))
                 {
                     input.resize(input.size() - 2);
                     has_vertical_output_suffix = true;

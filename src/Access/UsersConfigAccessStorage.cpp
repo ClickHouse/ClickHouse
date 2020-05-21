@@ -98,11 +98,11 @@ namespace
             for (const String & key : keys)
             {
                 String value = config.getString(networks_config + "." + key);
-                if (key.starts_with("ip"))
+                if (startsWith(key, "ip"))
                     user->allowed_client_hosts.addSubnet(value);
-                else if (key.starts_with("host_regexp"))
+                else if (startsWith(key, "host_regexp"))
                     user->allowed_client_hosts.addNameRegexp(value);
-                else if (key.starts_with("host"))
+                else if (startsWith(key, "host"))
                     user->allowed_client_hosts.addName(value);
                 else
                     throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
@@ -301,7 +301,7 @@ namespace
                             String table_name = key_in_database_config;
                             String filter_config = database_config + "." + table_name + ".filter";
 
-                            if (key_in_database_config.starts_with("table["))
+                            if (startsWith(key_in_database_config, "table["))
                             {
                                 const auto table_name_config = database_config + "." + table_name + "[@name]";
                                 if (config.has(table_name_config))
@@ -384,7 +384,7 @@ namespace
 
         for (const std::string & key : keys)
         {
-            if (key == "profile" || key.starts_with("profile["))
+            if (key == "profile" || startsWith(key, "profile["))
             {
                 String parent_profile_name = config.getString(profile_config + "." + key);
                 SettingsProfileElement profile_element;
@@ -393,7 +393,7 @@ namespace
                 continue;
             }
 
-            if (key == "constraints" || key.starts_with("constraints["))
+            if (key == "constraints" || startsWith(key, "constraints["))
             {
                 profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
                 continue;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ProxyConfiguration.h"
+#include <atomic>
 
 namespace DB::S3
 {

@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemPrivileges.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -95,9 +96,9 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, const Conte
             std::string_view alias = aliases.substr(pos, next_pos - pos);
             pos = ((next_pos == std::string_view::npos) ? next_pos : next_pos + 1);
 
-            while (alias.starts_with(' '))
+            while (startsWith(std::string(alias), " "))
                 alias.remove_prefix(1);
-            while (alias.ends_with(' '))
+            while (endsWith(std::string(alias), " "))
                 alias.remove_suffix(1);
             column_aliases.insertData(alias.data(), alias.length());
         }

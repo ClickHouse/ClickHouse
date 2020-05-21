@@ -11,18 +11,17 @@
 #include <Common/Exception.h>
 #include <Core/Field.h>
 
-#include <Common/config.h>
-#if USE_CUDA
-#include <AggregateFunctions/Cuda/ICudaAggregateFunction.h> // Y_IGNORE
-#endif
-
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int CUDA_UNSUPPORTED_AGGREGATE_FUNCTION;
 }
+
+class ICudaAggregateFunction;
+using CudaAggregateFunctionPtr = std::shared_ptr<ICudaAggregateFunction>;
 
 class Arena;
 class ReadBuffer;

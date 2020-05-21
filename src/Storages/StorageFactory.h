@@ -78,15 +78,8 @@ public:
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
-        .supports_settings = false,
-        .supports_skipping_indices = false,
-        .supports_sort_order = false,
-        .supports_ttl = false,
-        .supports_replication = false,
-        .supports_deduplication = false,
-        .source_access_type = AccessType::NONE,
-    });
+    void registerStorage(const std::string & name, CreatorFn creator_fn,
+                         StorageFeatures features = {false, false, false, false, false, false, AccessType::NONE});
 
     const Storages & getAllStorages() const
     {

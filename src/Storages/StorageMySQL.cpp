@@ -204,6 +204,9 @@ BlockOutputStreamPtr StorageMySQL::write(
 
 void registerStorageMySQL(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features;
+    features.source_access_type = AccessType::MYSQL;
+
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
@@ -249,9 +252,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.constraints,
             args.context);
     },
-    {
-        .source_access_type = AccessType::MYSQL,
-    });
+    features);
 }
 
 }

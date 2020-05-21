@@ -308,6 +308,9 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context 
 
 void registerStorageHDFS(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features;
+    features.source_access_type = AccessType::HDFS;
+
     factory.registerStorage("HDFS", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
@@ -333,9 +336,7 @@ void registerStorageHDFS(StorageFactory & factory)
 
         return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
     },
-    {
-        .source_access_type = AccessType::HDFS,
-    });
+    features);
 }
 
 NamesAndTypesList StorageHDFS::getVirtuals() const

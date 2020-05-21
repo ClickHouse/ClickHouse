@@ -25,60 +25,61 @@ struct CudaAggregateFunctionUniqHLL12Data
     {
         set.initNonzeroData();
     }
+
     __device__ __host__ CudaAggregateFunctionUniqHLL12Data()
     {
     }
 };
 
-//using AggregateFunctionUniqHLL12Data = CudaAggregateFunctionUniqHLL12Data;
 
-/// The only supported Data here is CudaAggregateFunctionUniqHLL12Data
-template <typename T, typename Data>
+template <typename T>
 class CudaAggregateFunctionUniq final : public ICudaAggregateFunction
 {
-    typedef ICudaAggregateFunction::CudaSizeType        CudaSizeType;
+    using CudaSizeType = ICudaAggregateFunction::CudaSizeType;
+    using Data = CudaAggregateFunctionUniqHLL12Data;
+
 public:
-    size_t  cudaSizeOfData() const override;
-    void    cudaAddBulk(CudaAggregateDataPtr places, const CudaColumnString *str_column,
-        CudaSizeType elements_num, CudaSizeType *res_buckets, cudaStream_t stream = 0) const override;
+    size_t cudaSizeOfData() const override;
+    void cudaAddBulk(CudaAggregateDataPtr places, const CudaColumnString *str_column,
+                     CudaSizeType elements_num, CudaSizeType *res_buckets, cudaStream_t stream = 0) const override;
 
     virtual ~CudaAggregateFunctionUniq() override {}
-private:
-    //static_assert();
 };
 
-/// The only supported Data here is CudaAggregateFunctionUniqHLL12Data
+
 template <>
-class CudaAggregateFunctionUniq<String, CudaAggregateFunctionUniqHLL12Data> final : public ICudaAggregateFunction
+class CudaAggregateFunctionUniq<String> final : public ICudaAggregateFunction
 {
-    typedef ICudaAggregateFunction::CudaSizeType        CudaSizeType;
-    typedef ICudaAggregateFunction::ResultType          ResultType;
+    using ResultType = ICudaAggregateFunction::ResultType;
+    using Data = CudaAggregateFunctionUniqHLL12Data;
 
 public:
-    size_t      cudaSizeOfData() const override
+    size_t cudaSizeOfData() const override
     {
-        return sizeof(CudaAggregateFunctionUniqHLL12Data);
+        return sizeof(Data);
     }
-    bool        isDataNeeded() const override
+
+    bool isDataNeeded() const override
     {
         return true;
     }
-    void        cudaInitAggregateData(CudaSizeType places_num, CudaAggregateDataPtr places, cudaStream_t stream = 0) const override;
-    size_t      cudaSizeOfAddBulkInternalBuf(CudaSizeType max_elements_num) override
+
+    void cudaInitAggregateData(CudaSizeType places_num, CudaAggregateDataPtr places, cudaStream_t stream = 0) const override;
+
+    size_t cudaSizeOfAddBulkInternalBuf(CudaSizeType max_elements_num) override
     {
         return sizeof(UInt64)*max_elements_num;
         //hashes = CudaArrayPtr<UInt64>(new CudaArray<UInt64>(max_elements_num));
     }
-    void        cudaAddBulk(CudaAggregateDataPtr places, CudaColumnStringPtr str_column,
-                            CudaSizeType elements_num, CudaSizeType *res_buckets, 
-                            char *tmp_buf, cudaStream_t stream = 0) const override;
-    void        cudaMergeBulk(CudaAggregateDataPtr places, CudaSizeType elements_num,
-                              CudaAggregateDataPtr places_from, CudaSizeType *res_buckets, 
-                              cudaStream_t stream = 0) const override;
 
-    ResultType  getResult(CudaAggregateDataPtr place) const override
+    void cudaAddBulk(CudaAggregateDataPtr places, CudaColumnStringPtr str_column,
+                     CudaSizeType elements_num, CudaSizeType * res_buckets, char * tmp_buf, cudaStream_t stream = 0) const override;
+    void cudaMergeBulk(CudaAggregateDataPtr places, CudaSizeType elements_num,
+                       CudaAggregateDataPtr places_from, CudaSizeType * res_buckets, cudaStream_t stream = 0) const override;
+
+    ResultType getResult(CudaAggregateDataPtr place) const override
     {
-        return ((CudaAggregateFunctionUniqHLL12Data*)place)->set.size();
+        return ((Data *)place)->set.size();
     }
 
     virtual ~CudaAggregateFunctionUniq() override {}

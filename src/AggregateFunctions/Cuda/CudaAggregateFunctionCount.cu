@@ -6,6 +6,8 @@
 namespace DB
 {
 
+using CudaAggregateFunctionCountData = CudaAggregateFunctionCount::Data;
+    
 __global__ void  kerCudaAddBulkCount(CudaAggregateFunctionCountData *places, 
     ICudaAggregateFunction::CudaSizeType elements_num, 
     ICudaAggregateFunction::CudaSizeType *res_buckets)

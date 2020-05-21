@@ -1,6 +1,7 @@
 #include "Settings.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <string.h>
@@ -37,7 +38,7 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
+        if (key == "profile" || startsWith(key, "profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));

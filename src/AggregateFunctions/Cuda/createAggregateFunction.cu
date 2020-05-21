@@ -8,14 +8,14 @@
 namespace DB
 {
 
-CudaAggregateFunctionPtr    createCudaAggregateFunctionCount()
+CudaAggregateFunctionPtr createCudaAggregateFunctionCount()
 {
-    return CudaAggregateFunctionPtr(new CudaAggregateFunctionCount());
+    return std::make_shared<CudaAggregateFunctionCount>();
 }
 
-CudaAggregateFunctionPtr    createCudaAggregateFunctionUniq()
+CudaAggregateFunctionPtr createCudaAggregateFunctionUniq()
 {
-    return CudaAggregateFunctionPtr(new CudaAggregateFunctionUniq<String, CudaAggregateFunctionUniqHLL12Data>());
+    return std::make_shared<CudaAggregateFunctionUniq<String>>();
 }
 
 }

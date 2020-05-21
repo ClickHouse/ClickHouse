@@ -7,6 +7,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Poco/File.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
@@ -514,7 +515,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         /// database_name.table_name.uuid.sql
 
         /// Ignore unexpected files
-        if (!it.name().ends_with(".sql"))
+        if (!endsWith(it.name(), ".sql"))
             continue;
 
         /// Process .sql files with metadata of tables which were marked as dropped

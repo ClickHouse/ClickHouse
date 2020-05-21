@@ -1,6 +1,7 @@
 #include "Loggers.h"
 
 #include <iostream>
+#include <Common/StringUtils/StringUtils.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
@@ -174,7 +175,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         {
             for (const auto & key : loggers_level)
             {
-                if (key == "logger" || key.starts_with("logger["))
+                if (key == "logger" || startsWith(key, "logger["))
                 {
                     const std::string name(config.getString("logger.levels." + key + ".name"));
                     const std::string level(config.getString("logger.levels." + key + ".level"));

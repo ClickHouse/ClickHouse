@@ -3,8 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cuda/CudaAggregator.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -12,18 +11,18 @@ namespace DB
 
 
 /** See description of AggregatingBlockInputStream
-  * 
-  * 
-  * 
+  *
+  *
+  *
   */
-class CudaAggregatingBlockInputStream : public IProfilingBlockInputStream
+class CudaAggregatingBlockInputStream : public IBlockInputStream
 {
 public:
     /** keys are taken from the GROUP BY part of the query
       * Aggregate functions are searched everywhere in the expression.
       * Columns corresponding to keys and arguments of aggregate functions must already be computed.
       */
-    CudaAggregatingBlockInputStream(const BlockInputStreamPtr & input, const Aggregator::Params & params_, 
+    CudaAggregatingBlockInputStream(const BlockInputStreamPtr & input, const Aggregator::Params & params_,
       const Context & context_, bool final_)
         : params(params_), aggregator(context_, params), final(final_)
     {

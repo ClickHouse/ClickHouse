@@ -53,8 +53,7 @@ Block CudaAggregatingBlockInputStream::readImpl()
         return res;
     }
 
-    throw Exception("CudaAggregatingBlockInputStream::readImpl: blocks.size() is greater then 1", 
-        ErrorCodes::LOGICAL_ERROR);
+    throw Exception("CudaAggregatingBlockInputStream::readImpl: blocks.size() is greater then 1", ErrorCodes::LOGICAL_ERROR);
 }
 
 

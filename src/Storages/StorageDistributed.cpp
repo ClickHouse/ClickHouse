@@ -20,6 +20,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -327,7 +328,7 @@ void StorageDistributed::createStorage()
     {
         std::string path(global_context.getPath());
         /// Disk must ends with '/'
-        if (!path.ends_with('/'))
+        if (!endsWith(path, "/"))
             path += '/';
         auto disk = std::make_shared<DiskLocal>("default", path, 0);
         volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
@@ -830,6 +831,9 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 
 void registerStorageDistributed(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features;
+    features.source_access_type = AccessType::REMOTE;
+
     factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args)
     {
         /** Arguments of engine is following:
@@ -893,9 +897,7 @@ void registerStorageDistributed(StorageFactory & factory)
             args.relative_data_path,
             args.attach);
     },
-    {
-        .source_access_type = AccessType::REMOTE,
-    });
+    features);
 }
 
 }

@@ -3,6 +3,7 @@
 
 #include <numeric>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
 #include <Core/Field.h>
 
@@ -479,7 +480,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         /// continue traversal only if some column name starts with current_path
         auto keep_going = std::any_of(header.begin(), header.end(), [&current_path](const ColumnWithTypeAndName & col)
         {
-            return col.name.starts_with(current_path);
+            return startsWith(col.name, current_path);
         });
         auto resolved_node = avro::resolveSymbol(node);
         if (keep_going)

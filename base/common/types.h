@@ -11,11 +11,11 @@ using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
 
-#if __cplusplus <= 201703L
+#if !defined(__cpp_char8_t)
 using char8_t = unsigned char;
 #endif
 
-using UInt8 = char8_t;
+using UInt8 = char8_t; /// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;

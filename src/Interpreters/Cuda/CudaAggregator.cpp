@@ -12,19 +12,15 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
 
 #include <Interpreters/Cuda/CudaAggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
-#include <Common/demangle.h>
-#include <Interpreters/config_compile.h>
 
 
 namespace ProfileEvents
@@ -102,15 +98,15 @@ CudaAggregator::CudaAggregator(const Context & context_, const Params & params_)
 
     if (params.keys_size != 1)
         throw Exception("CudaAggregator: params.keys_size is not equal 1", ErrorCodes::CUDA_UNSUPPORTED_CASE);
-    if (params.aggregates_size != 1) 
+    if (params.aggregates_size != 1)
         throw Exception("CudaAggregator: params.aggregates_size is not equal 1", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 
     const auto & key_pos = params.keys[0];
     const auto & key_type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(key_pos).type;
-    
+
     if (key_type->isNullable())
         throw Exception("CudaAggregator: have no idea what is nullable key", ErrorCodes::CUDA_UNSUPPORTED_CASE);
-    if (!key_type->isString())
+    if (!isString(*key_type))
         throw Exception("CudaAggregator: key is not String", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 
     /// Throws an exception if function CUDA version is not implemented
@@ -124,8 +120,8 @@ CudaAggregator::CudaAggregator(const Context & context_, const Params & params_)
 
     if (arg_type->isNullable())
         throw Exception("CudaAggregator: have no idea what is nullable argument", ErrorCodes::CUDA_UNSUPPORTED_CASE);
-    if (!arg_type->isString())
-        throw Exception("CudaAggregator: argument is not String", ErrorCodes::CUDA_UNSUPPORTED_CASE);    
+    if (!isString(*arg_type))
+        throw Exception("CudaAggregator: argument is not String", ErrorCodes::CUDA_UNSUPPORTED_CASE);
 }
 
 
@@ -186,13 +182,12 @@ bool CudaAggregator::executeOnBlock(const Block & block, CudaAggregatedDataVaria
     }
 
     /// TODO get rid of this const_cast (problems is getChars and getOffsets been nonconst methods)
-    ColumnString    *keys_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(key_columns[0])),
-                    *vals_column = const_cast<ColumnString*>(static_cast<const ColumnString*>(aggregate_columns[0][0]));
+    ColumnString * keys_column = const_cast<ColumnString *>(static_cast<const ColumnString *>(key_columns[0]));
+    ColumnString * vals_column = const_cast<ColumnString *>(static_cast<const ColumnString *>(aggregate_columns[0][0]));
 
-    const Settings & settings = context.getSettingsRef();
-    result.strings_agg->queueData(rows, 
-        keys_column->getChars().size(), reinterpret_cast<const char*>(keys_column->getChars().data()), keys_column->getOffsets().data(),
-        vals_column->getChars().size(), reinterpret_cast<const char*>(vals_column->getChars().data()), vals_column->getOffsets().data());
+    result.strings_agg->queueData(rows,
+        keys_column->getChars().size(), reinterpret_cast<const char *>(keys_column->getChars().data()), keys_column->getOffsets().data(),
+        vals_column->getChars().size(), reinterpret_cast<const char *>(vals_column->getChars().data()), vals_column->getOffsets().data());
     result.strings_agg->waitQueueData();
 
     return true;
@@ -240,7 +235,7 @@ void NO_INLINE CudaAggregator::convertToBlockImplFinal(
     MutableColumns & key_columns,
     MutableColumns & final_aggregate_columns) const
 {
-    for (const auto &elem : data_variants.strings_agg->getResult() ) 
+    for (const auto &elem : data_variants.strings_agg->getResult() )
     {
         key_columns[0]->insertData(elem.first.c_str(), elem.first.length());
 
@@ -304,7 +299,7 @@ Block CudaAggregator::prepareBlockAndFill(
     /// Change the size of the columns-constants in the block.
     size_t columns = header.columns();
     for (size_t i = 0; i < columns; ++i)
-        if (res.getByPosition(i).column->isColumnConst())
+        if (isColumnConst(*res.getByPosition(i).column))
             res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
     return res;
@@ -336,7 +331,7 @@ BlocksList CudaAggregator::convertToBlocks(CudaAggregatedDataVariants & data_var
     Stopwatch watch;
 
     if (!final) {
-        throw Exception("CudaAggregator::convertToBlocks: not final case is not supported yet ", 
+        throw Exception("CudaAggregator::convertToBlocks: not final case is not supported yet ",
             ErrorCodes::CUDA_UNSUPPORTED_CASE);
     }
 

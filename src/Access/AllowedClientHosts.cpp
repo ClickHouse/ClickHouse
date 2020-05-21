@@ -5,6 +5,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <ext/scope_guard.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <ifaddrs.h>
@@ -231,7 +232,7 @@ namespace
         }
 
         size_t first_not_hex = pattern.find_first_not_of("0123456789ABCDEFabcdef");
-        if (((first_not_hex == 4) && pattern[first_not_hex] == ':') || pattern.starts_with("::"))
+        if (((first_not_hex == 4) && pattern[first_not_hex] == ':') || startsWith(pattern, "::"))
         {
             parseLikePatternIfIPSubnet(pattern, subnet.emplace(), IPAddress::IPv6);
             return;

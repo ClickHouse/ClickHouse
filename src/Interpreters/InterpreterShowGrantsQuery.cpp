@@ -4,6 +4,7 @@
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
@@ -141,7 +142,7 @@ BlockInputStreamPtr InterpreterShowGrantsQuery::executeImpl()
     formatAST(show_query, desc_ss, false, true);
     String desc = desc_ss.str();
     String prefix = "SHOW ";
-    if (desc.starts_with(prefix))
+    if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
     return std::make_shared<OneBlockInputStream>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}});

@@ -2,11 +2,11 @@
 ```
 mkdir build_cuda
 cd build_cuda
-cmake -DCMAKE_BUILD_TYPE=Release -DUSE_CUDA=1 -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-9.1 -DNO_WERROR=1 ..
+cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=1 -DUSE_LIBCXX=0 -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8` ..
+# make -jX clickhouse or ninja clickhouse
 ```
-Здесь: -DUSE_CUDA наш параметер, т.е. компилим CUDA; -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-9.1 - путь к cuda toolkit (если default 9.1, то можно не указывать); -DNO_WERROR=1 - это временно т.к. сил нет вычищать warnings.
-make -j X clickhouse
-Здесь X - количество потоков при сборке 
+Здесь: -DENABLE_CUDA - включаем CUDA. Остальные флаги - собратемся gcc8.
+Если само не находит, нужно добавить toolkit dir -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-10.2
 
 ##Делаем генератор строк, на котором тестировали:
 ```
@@ -15,7 +15,7 @@ make generator
 
 ##Создаем таблицу в CH:
 1. Запускаем сервер
-   cd build_cuda/dbms/src/Server
+   cd build_cuda/programs
    sudo ./clickhouse --server
 2. Запускаем клиент
    ./clickhouse --clien
@@ -24,7 +24,7 @@ make generator
 
 4. Экспортируем данные в CH из string generator в таблицу nnn:
    ```
-   cd build_cuda/dbms/src/Interpreters/Cuda/tests/StringGenerator
+   cd build_cuda/src/Interpreters/Cuda/tests/StringGenerator
    ```
    В файле test_initialize.info устанавливаются нужные параметры таблицы.
    ```

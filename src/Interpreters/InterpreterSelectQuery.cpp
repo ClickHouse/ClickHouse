@@ -1656,8 +1656,8 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 #if USE_CUDA
         if (settings.use_cuda_aggregation)
         {
-            executeUnion(pipeline);
-            pipeline.firstStream() = std::make_shared<CudaAggregatingBlockInputStream>(pipeline.firstStream(), params, context, final);
+            executeUnion(pipeline, {});
+            pipeline.firstStream() = std::make_shared<CudaAggregatingBlockInputStream>(pipeline.firstStream(), params, *context, final);
         }
         else
 #endif
@@ -1688,7 +1688,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         if (settings.use_cuda_aggregation)
         {
             pipeline.firstStream() = std::make_shared<CudaAggregatingBlockInputStream>(
-                std::make_shared<ConcatBlockInputStream>(inputs), params, context, final);
+                std::make_shared<ConcatBlockInputStream>(inputs), params, *context, final);
         }
         else
 #endif

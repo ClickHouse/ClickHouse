@@ -1285,11 +1285,10 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
                 }
                 else if (command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
-                    for_interpreter.push_back(
-                    {
-                        .type = MutationCommand::Type::READ_COLUMN,
-                        .column_name = command.rename_to,
-                    });
+                    MutationCommand cmd;
+                    cmd.type = MutationCommand::Type::READ_COLUMN;
+                    cmd.column_name = command.rename_to;
+                    for_interpreter.push_back(cmd);
                     mutated_columns.emplace(command.column_name);
                     part_columns.rename(command.column_name, command.rename_to);
                 }

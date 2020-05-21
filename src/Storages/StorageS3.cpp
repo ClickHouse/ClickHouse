@@ -311,6 +311,9 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & 
 
 void registerStorageS3(StorageFactory & factory)
 {
+    StorageFactory::StorageFeatures features;
+    features.source_access_type = AccessType::S3;
+
     factory.registerStorage("S3", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
@@ -346,9 +349,7 @@ void registerStorageS3(StorageFactory & factory)
 
         return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
     },
-    {
-        .source_access_type = AccessType::S3,
-    });
+    features);
 }
 
 NamesAndTypesList StorageS3::getVirtuals() const

@@ -1,14 +1,12 @@
-#pragma once 
-
-#include <Core/Cuda/Types.h>
-
-#include <AggregateFunctions/Cuda/ICudaAggregateFunction.h>
-
+#pragma once
 
 namespace DB
 {
 
-CudaAggregateFunctionPtr    createCudaAggregateFunctionCount();
-CudaAggregateFunctionPtr    createCudaAggregateFunctionUniq();
+class ICudaAggregateFunction;
+using CudaAggregateFunctionPtr = std::shared_ptr<ICudaAggregateFunction>;
+
+CudaAggregateFunctionPtr createCudaAggregateFunctionCount();
+CudaAggregateFunctionPtr createCudaAggregateFunctionUniq();
 
 }
