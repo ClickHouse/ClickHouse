@@ -194,7 +194,7 @@ std::shared_ptr<const IExternalLoadable> OneBucketPolygonDictionary::clone() con
 bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
 {
     auto cell = index.find(point.x(), point.y());
-    if (cell) {
+    if (cell != nullptr && !cell->corresponding_ids.empty()) {
         if (cell->index.find(point, id)) {
             id = cell->corresponding_ids[id];
             return true;
