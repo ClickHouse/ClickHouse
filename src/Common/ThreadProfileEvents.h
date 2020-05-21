@@ -200,7 +200,7 @@ private:
     using Id = UInt64;
     using ParsedEvents = std::pair<std::string, std::vector<size_t>>;
 
-    static std::atomic<Id> counters_id;
+    static std::atomic<Id> latest_counters_id;
 
     static thread_local PerfDescriptorsHolder thread_events_descriptors_holder;
     static thread_local std::optional<Id> current_thread_counters_id;
