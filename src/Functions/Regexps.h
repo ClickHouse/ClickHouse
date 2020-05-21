@@ -146,7 +146,7 @@ namespace MultiRegexps
              * as it is said in the Hyperscan documentation. https://intel.github.io/hyperscan/dev-reference/performance.html#single-match-flag
              * HS_FLAG_SOM_LEFTMOST enable leftmost start of match reporting
              */
-            flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8 | HS_FLAG_SOM_LEFTMOST);
+            flags.push_back(HS_FLAG_DOTALL |  HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8 | HS_FLAG_SOM_LEFTMOST);
             if constexpr (CompileForEditDistance)
             {
                 /// Hyperscan currently does not support UTF8 matching with edit distance.
