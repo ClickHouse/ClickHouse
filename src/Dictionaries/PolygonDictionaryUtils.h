@@ -40,7 +40,7 @@ public:
     using Ring = IPolygonDictionary::Ring;
 
     BucketsPolygonIndex() = default;
-    
+
     /** Builds an index by splitting all edges with provided sorted x coordinates. */
     BucketsPolygonIndex(const std::vector<Polygon> & polygons, const std::vector<Coord> & splits);
 
