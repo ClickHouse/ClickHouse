@@ -101,6 +101,10 @@ private:
     bool find(const Point & point, size_t & id) const override;
 
     BucketsPolygonIndex buckets_idx;
+    GridRoot<FinalCellWithSlabs> index;
+
+    static constexpr size_t kMinIntersections = 1;
+    static constexpr size_t kMaxDepth = 5;
 };
 
 }

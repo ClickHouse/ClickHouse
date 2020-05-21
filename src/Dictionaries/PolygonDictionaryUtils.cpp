@@ -11,8 +11,8 @@
 namespace DB
 {
 
-FinalCell::FinalCell(std::vector<size_t> polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_):
-polygon_ids(std::move(polygon_ids_))
+FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_):
+polygon_ids(polygon_ids_)
 {
     Polygon tmp_poly;
     bg::convert(box_, tmp_poly);
@@ -23,6 +23,31 @@ polygon_ids(std::move(polygon_ids_))
 }
 
 const FinalCell * FinalCell::find(Coord, Coord) const
+{
+    return this;
+}
+
+FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &polygons_, const Box &box_):
+{
+    Polygon tmp_poly;
+    bg::convert(box_, tmp_poly);
+    first_covered = polygon_ids_.size();
+    std::vector<Polygon> intersections;
+    for (const auto id : polygon_ids_) {
+        if (bg::covered_by(tmp_poly, polygons_[id]))
+        {
+            first_covered = id;
+            break;
+        }
+        auto old_size = intersections.size();
+        bg::intersection(tmp_poly, polygons_[id], intersections);
+        for (; old_size < intersections.size(); ++old_size)
+            corresponding_ids.push_back(id);
+    }
+    index = BucketsPolygonIndex{intersections};
+}
+
+const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
 {
     return this;
 }

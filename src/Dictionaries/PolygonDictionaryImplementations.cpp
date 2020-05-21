@@ -175,7 +175,7 @@ OneBucketPolygonDictionary::OneBucketPolygonDictionary(
     InputType input_type_,
     PointType point_type_)
     : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-      buckets_idx(this->polygons)
+      index(kMinIntersections, kMaxDepth, polygons)
 {
 }
 
@@ -193,7 +193,18 @@ std::shared_ptr<const IExternalLoadable> OneBucketPolygonDictionary::clone() con
 
 bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
 {
-    return this->buckets_idx.find(point, id);
+    auto cell = index.find(point.x(), point.y());
+    if (cell) {
+        if (cell->index.find(point, id)) {
+            id = cell->corresponding_ids[id];
+            return true;
+        }
+        if (cell->first_covered != static_cast<size_t>(-1)) {
+            id = cell->first_covered;
+            return true;
+        }
+    }
+    return false;
 }
 
 template <class PolygonDictionary>
