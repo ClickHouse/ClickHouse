@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 61
 toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\u0648\
   \u0633\u0639\u0647 \u062F\u0647\u0646\u062F\u0647 \u06A9\u0644\u06CC\u06A9 \u0645\
@@ -43,7 +43,7 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 در خط فرمان ترمینال اجرا:
 
-    git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
+    git clone --recursive git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 توجه: لطفا جایگزین کنید *تغییر \_نامهی تو* با چه مناسب است!
@@ -81,7 +81,7 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 پس از موفقیت در حال اجرا این دستور شما قادر خواهید بود به جلو و به روز رسانی از مخزن کلیک اصلی در حال اجرا خواهد بود `git pull upstream master`.
 
-## کار با submodules {#working-with-submodules}
+## کار با Submodules {#working-with-submodules}
 
 کار با زیربول در دستگاه گوارش می تواند دردناک باشد. دستورات بعدی کمک خواهد کرد که برای مدیریت:
 
@@ -133,7 +133,7 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 # کتابخانه های خارجی اختیاری {#optional-external-libraries}
 
-تاتر با استفاده از چندین کتابخانه خارجی برای ساخت و ساز. همه آنها نمی نیاز به نصب به طور جداگانه به عنوان آنها ساخته شده است همراه با clickhouse از منابع واقع در submodules. شما می توانید لیست را بررسی کنید `contrib`.
+تاتر با استفاده از چندین کتابخانه خارجی برای ساخت و ساز. همه آنها نمی نیاز به نصب به طور جداگانه به عنوان آنها ساخته شده است همراه با ClickHouse از منابع واقع در submodules. شما می توانید لیست را بررسی کنید `contrib`.
 
 # ج ++ کامپایلر {#c-compiler}
 
@@ -210,17 +210,17 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 برای اجرای سرور تحت کاربر فعلی شما نیاز به حرکت به `ClickHouse/programs/server/` (واقع در خارج از `build`) و اجرا:
 
-    ../../../build/programs/clickhouse server
+    ../../build/programs/clickhouse server
 
 در این مورد, تاتر خواهد فایل های پیکربندی واقع در دایرکتوری جاری استفاده. شما می توانید اجرا کنید `clickhouse server` از هر دایرکتوری مشخص کردن مسیر به یک فایل پیکربندی به عنوان یک پارامتر خط فرمان `--config-file`.
 
-برای اتصال به clickhouse با clickhouse-مشتری در یکی دیگر از ترمینال حرکت به `ClickHouse/build/programs/` و فرار کن `clickhouse client`.
+برای اتصال به ClickHouse با clickhouse-مشتری در یکی دیگر از ترمینال حرکت به `ClickHouse/build/programs/` و فرار کن `clickhouse client`.
 
 اگر شما `Connection refused` سعی کنید مشخص نشانی میزبان 127.0.0.1:
 
     clickhouse client --host 127.0.0.1
 
-شما می توانید جایگزین تولید نسخه clickhouse باینری در سیستم شما نصب شده خود را با سفارشی ساخته شده clickhouse دودویی. برای انجام این کار نصب کلیک بر روی دستگاه خود را به دنبال دستورالعمل از وب سایت رسمی. بعد زیر را اجرا کنید:
+شما می توانید جایگزین تولید نسخه ClickHouse باینری در سیستم شما نصب شده خود را با سفارشی ساخته شده ClickHouse دودویی. برای انجام این کار نصب کلیک بر روی دستگاه خود را به دنبال دستورالعمل از وب سایت رسمی. بعد زیر را اجرا کنید:
 
     sudo service clickhouse-server stop
     sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
@@ -228,30 +228,30 @@ toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\
 
 توجه داشته باشید که `clickhouse-client`, `clickhouse-server` و دیگران به طور معمول به اشتراک گذاشته می شوند `clickhouse` دودویی.
 
-شما همچنین می توانید خود را سفارشی ساخته شده clickhouse دودویی با فایل پیکربندی از clickhouse بسته نصب شده در سیستم شما:
+شما همچنین می توانید خود را سفارشی ساخته شده ClickHouse دودویی با فایل پیکربندی از ClickHouse بسته نصب شده در سیستم شما:
 
     sudo service clickhouse-server stop
     sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # محیط توسعه یکپارچه) {#ide-integrated-development-environment}
 
-اگر شما نمی دانید که محیط برنامه نویسی برای استفاده, توصیه می کنیم که شما با استفاده از کلون. کلوون نرم افزار تجاری است, اما 30 روز رایگان دوره محاکمه. این نیز رایگان برای دانشجویان. clion می توان هم بر روی لینوکس و mac os x.
+اگر شما نمی دانید که محیط برنامه نویسی برای استفاده, توصیه می کنیم که شما با استفاده از کلون. کلوون نرم افزار تجاری است, اما 30 روز رایگان دوره محاکمه. این نیز رایگان برای دانشجویان. CLion می توان هم بر روی لینوکس و Mac OS X.
 
 KDevelop و QTCreator دیگر از جایگزین های بسیار خوبی از یک IDE برای توسعه ClickHouse. توسعه و توسعه به عنوان یک محیط برنامه نویسی بسیار مفید هر چند ناپایدار. اگر توسعه پس از مدتی پس از باز کردن پروژه سقوط, شما باید کلیک کنید “Stop All” دکمه به محض این که لیستی از فایل های پروژه را باز کرده است. پس از انجام این کار کدولاپ باید خوب باشد برای کار با.
 
 به عنوان ویراستاران کد ساده, شما می توانید متن والا و یا کد ویژوال استودیو استفاده, یا کیت (که همه در دسترس هستند در لینوکس).
 
-فقط در مورد لازم به ذکر است که clion ایجاد `build` مسیر خود را نیز در انتخاب خود `debug` برای ساخت نوع پیکربندی آن را با استفاده از یک نسخه از CMake که تعریف شده است در CLion و نه یک نصب شده توسط شما, و در نهایت, CLion استفاده خواهد کرد `make` برای اجرای وظایف ساخت به جای `ninja`. این رفتار طبیعی است, فقط نگه دارید که در ذهن برای جلوگیری از سردرگمی.
+فقط در مورد لازم به ذکر است که CLion ایجاد `build` مسیر خود را نیز در انتخاب خود `debug` برای ساخت نوع پیکربندی آن را با استفاده از یک نسخه از CMake که تعریف شده است در CLion و نه یک نصب شده توسط شما, و در نهایت, CLion استفاده خواهد کرد `make` برای اجرای وظایف ساخت به جای `ninja`. این رفتار طبیعی است, فقط نگه دارید که در ذهن برای جلوگیری از سردرگمی.
 
 # نوشتن کد {#writing-code}
 
-شرح clickhouse معماری را می توان در اینجا یافت نشد: https://clickhouse.فناوری / اسناد/مهندسی / توسعه / معماری/
+شرح ClickHouse معماری را می توان در اینجا یافت نشد: https://clickhouse.فناوری / اسناد/مهندسی / توسعه / معماری/
 
 راهنمای سبک کد: https://clickhouse.فناوری / اسناد/در/توسعه / سبک/
 
 تست نوشتن: https://clickhouse.فناوری / اسناد/توسعه/تست/
 
-فهرست تکلیفها: https://github.com/clickhouse/clickhouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+فهرست تکلیفها: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
 
 # داده های تست {#test-data}
 
@@ -266,6 +266,8 @@ KDevelop و QTCreator دیگر از جایگزین های بسیار خوبی ا
     xz -v -d visits_v1.tsv.xz
 
     clickhouse-client
+
+    CREATE DATABASE IF NOT EXISTS test
 
     CREATE TABLE test.hits ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8,  UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8,  SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8,  IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8,  HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16,  SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32,  DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32,  NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64,  ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime);
 

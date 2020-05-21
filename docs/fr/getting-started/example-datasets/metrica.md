@@ -1,7 +1,7 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
-toc_priority: 21
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 14
 toc_title: "Yandex.Metrica De Donn\xE9es"
 ---
 
@@ -9,9 +9,9 @@ toc_title: "Yandex.Metrica De Donn\xE9es"
 
 Dataset se compose de deux tables contenant des données anonymisées sur les hits (`hits_v1`) et les visites (`visits_v1`) de Yandex.Metrica. Vous pouvez en savoir plus sur Yandex.Metrica dans [Histoire de ClickHouse](../../introduction/history.md) section.
 
-L’ensemble de données se compose de deux tables, l’une d’elles peut être téléchargée sous forme compressée `tsv.xz` fichier ou comme partitions préparées. En outre, une version étendue de l’ `hits` table contenant 100 millions de lignes est disponible comme TSV à https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz et comme partitions préparées à https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
+L'ensemble de données se compose de deux tables, l'une d'elles peut être téléchargée sous forme compressée `tsv.xz` fichier ou comme partitions préparées. En outre, une version étendue de l' `hits` table contenant 100 millions de lignes est disponible comme TSV à https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz et comme partitions préparées à https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
-## Obtention De Tables à Partir De Partitions préparées {#obtaining-tables-from-prepared-partitions}
+## Obtention de Tables à partir de Partitions préparées {#obtaining-tables-from-prepared-partitions}
 
 Télécharger et importer la table hits:
 
@@ -33,7 +33,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Obtention De Tables à Partir D’un Fichier TSV compressé {#obtaining-tables-from-compressed-tsv-file}
+## Obtention de Tables à partir D'un fichier TSV compressé {#obtaining-tables-from-compressed-tsv-file}
 
 Télécharger et importer des hits à partir du fichier TSV compressé:
 
@@ -67,4 +67,4 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 [Tutoriel ClickHouse](../../getting-started/tutorial.md) est basé sur Yandex.Metrica dataset et la façon recommandée pour commencer avec cet ensemble de données est de simplement passer par tutoriel.
 
-D’autres exemples de requêtes pour ces tables peuvent être trouvés parmi [tests avec État](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) de ClickHouse (ils sont nommés `test.hists` et `test.visits` y).
+D'autres exemples de requêtes pour ces tables peuvent être trouvés parmi [tests avec État](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) de ClickHouse (ils sont nommés `test.hists` et `test.visits` y).

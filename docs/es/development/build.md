@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 64
 toc_title: "C\xF3mo crear ClickHouse en Linux"
 ---
 
-# Cómo Construir ClickHouse Para El Desarrollo {#how-to-build-clickhouse-for-development}
+# Cómo construir ClickHouse para el desarrollo {#how-to-build-clickhouse-for-development}
 
 El siguiente tutorial se basa en el sistema Ubuntu Linux.
 Con los cambios apropiados, también debería funcionar en cualquier otra distribución de Linux.
@@ -23,7 +23,7 @@ O cmake3 en lugar de cmake en sistemas más antiguos.
 
 Hay varias formas de hacer esto.
 
-### Instalar Desde Un Paquete PPA {#install-from-a-ppa-package}
+### Instalar desde un paquete PPA {#install-from-a-ppa-package}
 
 ``` bash
 $ sudo apt-get install software-properties-common
@@ -32,18 +32,18 @@ $ sudo apt-get update
 $ sudo apt-get install gcc-9 g++-9
 ```
 
-### Instalar Desde Fuentes {#install-from-sources}
+### Instalar desde fuentes {#install-from-sources}
 
 Mira [Sistema abierto.](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Usar GCC 9 Para Compilaciones {#use-gcc-9-for-builds}
+## Usar GCC 9 para compilaciones {#use-gcc-9-for-builds}
 
 ``` bash
 $ export CC=gcc-9
 $ export CXX=g++-9
 ```
 
-## Fuentes De ClickHouse De Pago {#checkout-clickhouse-sources}
+## Fuentes de ClickHouse de pago {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
@@ -69,7 +69,7 @@ $ cd ..
 Para crear un ejecutable, ejecute `ninja clickhouse`.
 Esto creará el `programs/clickhouse` ejecutable, que se puede usar con `client` o `server` argumento.
 
-# Cómo Construir ClickHouse En Cualquier Linux {#how-to-build-clickhouse-on-any-linux}
+# Cómo construir ClickHouse en cualquier Linux {#how-to-build-clickhouse-on-any-linux}
 
 La compilación requiere los siguientes componentes:
 
@@ -108,7 +108,7 @@ Ejemplo de Fedora Rawhide:
     cmake ../ClickHouse
     make -j $(nproc)
 
-# No Tienes Que Construir ClickHouse {#you-dont-have-to-build-clickhouse}
+# No tienes que construir ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse está disponible en binarios y paquetes preconstruidos. Los binarios son portátiles y se pueden ejecutar en cualquier tipo de Linux.
 
@@ -116,7 +116,7 @@ Están diseñados para lanzamientos estables, preestablecidos y de prueba, siemp
 
 Para encontrar la construcción más fresca de `master`, ir a [se compromete página](https://github.com/ClickHouse/ClickHouse/commits/master), haga clic en la primera marca de verificación verde o cruz roja cerca de confirmar, y haga clic en “Details” enlace justo después “ClickHouse Build Check”.
 
-# Cómo Construir El Paquete Debian ClickHouse {#how-to-build-clickhouse-debian-package}
+# Cómo construir el paquete Debian ClickHouse {#how-to-build-clickhouse-debian-package}
 
 ## Instalar Git y Pbuilder {#install-git-and-pbuilder}
 
@@ -125,14 +125,14 @@ $ sudo apt-get update
 $ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
-## Fuentes De ClickHouse De Pago {#checkout-clickhouse-sources-1}
+## Fuentes de ClickHouse de pago {#checkout-clickhouse-sources-1}
 
 ``` bash
 $ git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
-## Ejecutar Secuencia De Comandos De Lanzamiento {#run-release-script}
+## Ejecutar secuencia de comandos de lanzamiento {#run-release-script}
 
 ``` bash
 $ ./release

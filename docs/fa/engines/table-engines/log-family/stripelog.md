@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 32
 toc_title: "\u062E\u0637 \u0632\u062F\u0646"
 ---
@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## خواندن داده ها {#table_engines-stripelog-reading-the-data}
 
-فایل را با نشانه اجازه می دهد تا clickhouse به parallelize خواندن داده ها. این به این معنی است که یک `SELECT` پرس و جو ردیف در جهت غیر قابل پیش بینی می گرداند. استفاده از `ORDER BY` بند برای مرتب کردن ردیف.
+فایل را با نشانه اجازه می دهد تا ClickHouse به parallelize خواندن داده ها. این به این معنی است که یک `SELECT` پرس و جو ردیف در جهت غیر قابل پیش بینی می گرداند. استفاده از `ORDER BY` بند برای مرتب کردن ردیف.
 
 ## مثال استفاده {#table_engines-stripelog-example-of-use}
 

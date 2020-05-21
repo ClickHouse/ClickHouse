@@ -7,6 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -21,9 +23,8 @@
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <optional>
-#include <Interpreters/MutationsInterpreter.h>
 #include <Processors/Pipe.h>
+#include <optional>
 
 
 namespace DB
@@ -93,9 +94,18 @@ void StorageMergeTree::startup()
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup.restart();
-    merging_mutating_task_handle = global_context.getBackgroundPool().addTask([this] { return mergeMutateTask(); });
+
+    auto & merge_pool = global_context.getBackgroundPool();
+    merging_mutating_task_handle = merge_pool.createTask([this] { return mergeMutateTask(); });
+    /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
+    merge_pool.startTask(merging_mutating_task_handle);
+
     if (areBackgroundMovesNeeded())
-        moving_task_handle = global_context.getBackgroundMovePool().addTask([this] { return movePartsTask(); });
+    {
+        auto & move_pool = global_context.getBackgroundMovePool();
+        moving_task_handle = move_pool.createTask([this] { return movePartsTask(); });
+        move_pool.startTask(moving_task_handle);
+    }
 }
 
 
@@ -280,7 +290,7 @@ public:
 
         /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
         if (is_mutation)
-            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->disk);
+            reserved_space = storage.tryReserveSpace(total_size, future_part_.parts[0]->volume);
         else
         {
             IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -288,7 +298,7 @@ public:
             for (auto & part_ptr : future_part_.parts)
             {
                 ttl_infos.update(part_ptr->ttl_infos);
-                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+                max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
             }
 
             reserved_space = storage.tryReserveSpacePreferringTTLRules(total_size, ttl_infos, time(nullptr), max_volume_index);
@@ -1241,7 +1251,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
 
     for (auto & part : data_parts)
     {
-        auto disk = part->disk;
+        auto disk = part->volume->getDisk();
         String part_path = part->getFullRelativePath();
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         String checksums_path = part_path + "checksums.txt";

@@ -3,16 +3,15 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
-    contrib/libs/protobuf_std
+    contrib/libs/protobuf
 )
 
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
-    Executors/ParallelPipelineExecutor.cpp
     Executors/PipelineExecutor.cpp
-    Executors/SequentialPipelineExecutor.cpp
+    Executors/PullingPipelineExecutor.cpp
     Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
@@ -99,6 +98,7 @@ SRCS(
     Merges/ReplacingSortedTransform.h
     Merges/SummingSortedTransform.h
     Merges/VersionedCollapsingTransform.h
+    OffsetTransform.cpp
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
@@ -107,8 +107,10 @@ SRCS(
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
     Transforms/AddingMissedTransform.cpp
+    Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ConvertingTransform.cpp
+    Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
     Transforms/DistinctTransform.cpp

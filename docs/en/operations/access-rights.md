@@ -22,7 +22,7 @@ You can configure access entities using:
 
 - Server [configuration files](configuration-files.md) `users.xml` and `config.xml`.
 
-We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can softly move to SQL-driven workflow. 
+We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can smoothly switch to SQL-driven workflow.
 
 !!! note "Warning"
     You can't manage the same access entity by both configuration methods simultaneously.
@@ -30,32 +30,32 @@ We recommend using SQL-driven workflow. Both of the configuration methods work s
 
 ## Usage {#access-control-usage}
 
-By default, the ClickHouse server provides the user account `default` which is not allowed using SQL-driven access control and account management but have all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table-engines/special/distributed.md) properties.
+By default, the ClickHouse server provides the `default` user account which is not allowed using SQL-driven access control and account management but has all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table-engines/special/distributed.md) properties.
 
-If you just start using ClickHouse, you can use the following scenario:
+If you just started using ClickHouse, consider the following scenario:
 
 1. [Enable](#enabling-access-control) SQL-driven access control and account management for the `default` user.
-2. Login under the `default` user account and create all the required users. Don't forget to create an administrator account (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
+2. Log in to the `default` user account and create all the required users. Don't forget to create an administrator account (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
 3. [Restrict permissions](settings/permissions-for-queries.md#permissions_for_queries) for the `default` user and disable SQL-driven access control and account management for it.
 
 ### Properties of Current Solution {#access-control-properties}
 
-- You can grant permissions for databases and tables even if they are not exist.
-- If a table was deleted, all the privileges that correspond to this table are not revoked. So, if a new table is created later with the same name all the privileges become again actual. To revoke privileges corresponding to the deleted table, you need to perform, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
-- There is no lifetime settings for privileges.
+- You can grant permissions for databases and tables even if they do not exist.
+- If a table was deleted, all the privileges that correspond to this table are not revoked. This means that even if you create a new table with the same name later, all the privileges remain valid. To revoke privileges corresponding to the deleted table, you need to execute, for example, the `REVOKE ALL PRIVILEGES ON db.table FROM ALL` query.
+- There are no lifetime settings for privileges.
 
 ## User account {#user-account-management}
 
 A user account is an access entity that allows to authorize someone in ClickHouse. A user account contains:
 
 - Identification information.
-- [Privileges](../sql-reference/statements/grant.md#grant-privileges) that define a scope of queries the user can perform.
-- Hosts from which connection to the ClickHouse server is allowed.
-- Granted and default roles.
-- Settings with their constraints that apply by default at the user's login.
+- [Privileges](../sql-reference/statements/grant.md#grant-privileges) that define a scope of queries the user can execute.
+- Hosts allowed to connect to the ClickHouse server.
+- Assigned and default roles.
+- Settings with their constraints applied by default at user login.
 - Assigned settings profiles.
 
-Privileges to a user account can be granted by the [GRANT](../sql-reference/statements/grant.md) query or by assigning [roles](#role-management). To revoke privileges from a user, ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query. To list privileges for a user, use the - [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) statement.
+Privileges can be granted to a user account by the [GRANT](../sql-reference/statements/grant.md) query or by assigning [roles](#role-management). To revoke privileges from a user, ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query. To list privileges for a user, use the [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement) statement.
 
 Management queries:
 
@@ -66,11 +66,11 @@ Management queries:
 
 ### Settings Applying {#access-control-settings-applying}
 
-Settings can be set by different ways: for a user account, in its granted roles and settings profiles. At a user login, if a setting is set in different access entities, the value and constrains of this setting are applied by the following priorities (from higher to lower):
+Settings can be configured differently: for a user account, in its granted roles and in settings profiles. At user login, if a setting is configured for different access entities, the value and constraints of this setting are applied as follows (from higher to lower priority):
 
-1. User account setting.
-2. The settings of default roles of the user account. If a setting is set in some roles, then order of the setting applying is undefined.
-3. The settings in settings profiles assigned to a user or to its default roles. If a setting is set in some profiles, then order of setting applying is undefined.
+1. User account settings.
+2. The settings of default roles of the user account. If a setting is configured in some roles, then order of the setting application is undefined.
+3. The settings from settings profiles assigned to a user or to its default roles. If a setting is configured in some profiles, then order of setting application is undefined.
 4. Settings applied to all the server by default or from the [default profile](server-configuration-parameters/settings.md#default-profile).
 
 
@@ -82,7 +82,7 @@ Role contains:
 
 - [Privileges](../sql-reference/statements/grant.md#grant-privileges)
 - Settings and constraints
-- List of granted roles
+- List of assigned roles
 
 Management queries:
 
@@ -93,11 +93,11 @@ Management queries:
 - [SET DEFAULT ROLE](../sql-reference/statements/misc.md#set-default-role-statement)
 - [SHOW CREATE ROLE](../sql-reference/statements/show.md#show-create-role-statement)
 
-Privileges to a role can be granted by the [GRANT](../sql-reference/statements/grant.md) query. To revoke privileges from a role ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query.
+Privileges can be granted to a role by the [GRANT](../sql-reference/statements/grant.md) query. To revoke privileges from a role ClickHouse provides the [REVOKE](../sql-reference/statements/revoke.md) query.
 
 ## Row Policy {#row-policy-management}
 
-Row policy is a filter that defines which or rows is available for a user or for a role. Row policy contains filters for one specific table and list of roles and/or users which should use this row policy.
+Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
 Management queries:
 
@@ -109,7 +109,7 @@ Management queries:
 
 ## Settings Profile {#settings-profiles-management}
 
-Settings profile is a collection of [settings](settings/index.md). Settings profile contains settings and constraints, and list of roles and/or users to which this quota is applied.
+Settings profile is a collection of [settings](settings/index.md). Settings profile contains settings and constraints, as well as a list of roles and/or users to which this profile is applied.
 
 Management queries:
 
@@ -123,7 +123,7 @@ Management queries:
 
 Quota limits resource usage. See [Quotas](quotas.md).
 
-Quota contains a set of limits for some durations, and list of roles and/or users which should use this quota.
+Quota contains a set of limits for some durations, as well as a list of roles and/or users which should use this quota.
 
 Management queries:
 
@@ -141,7 +141,7 @@ Management queries:
 
 - Enable SQL-driven access control and account management for at least one user account.
 
-    By default SQL-driven access control and account management is turned of for all users. You need to configure at least one user in the `users.xml` configuration file and assign 1 to the [access_management](settings/settings-users.md#access_management-user-setting) setting.
+    By default, SQL-driven access control and account management is disabled for all users. You need to configure at least one user in the `users.xml` configuration file and set the value of the [access_management](settings/settings-users.md#access_management-user-setting) setting to 1.
 
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

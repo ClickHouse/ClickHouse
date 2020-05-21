@@ -31,6 +31,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 
 #include <Interpreters/DNSCacheUpdater.h>
@@ -317,7 +318,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = allow_processors && interpreter->canExecuteWithProcessors();
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())

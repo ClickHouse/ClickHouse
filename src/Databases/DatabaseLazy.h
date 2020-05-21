@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Databases/DatabaseOnDisk.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 
 
@@ -10,6 +9,7 @@ namespace DB
 
 
 class DatabaseLazyIterator;
+class Context;
 
 /** Lazy engine of databases.
   * Works like DatabaseOrdinary, but stores in memory only cache.

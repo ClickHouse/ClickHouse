@@ -4,6 +4,7 @@
 
 #if defined(linux) || defined(__linux) || defined(__linux__)
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <linux/fs.h>
 #include <sys/utsname.h>
@@ -51,13 +52,11 @@ static void renameat2(const std::string & old_path, const std::string & new_path
 {
     if (old_path.empty() || new_path.empty())
         throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is empty", ErrorCodes::LOGICAL_ERROR);
-    if (old_path[0] != '/' || new_path[0] != '/')
-        throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is relative", ErrorCodes::LOGICAL_ERROR);
 
     /// int olddirfd (ignored for absolute oldpath), const char *oldpath,
     /// int newdirfd (ignored for absolute newpath), const char *newpath,
     /// unsigned int flags
-    if (0 == syscall(__NR_renameat2, 0, old_path.c_str(), 0, new_path.c_str(), flags))
+    if (0 == syscall(__NR_renameat2, AT_FDCWD, old_path.c_str(), AT_FDCWD, new_path.c_str(), flags))
         return;
 
     if (errno == EEXIST)

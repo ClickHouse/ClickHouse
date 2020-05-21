@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 11
 toc_title: Kurulum
 ---
@@ -11,36 +11,27 @@ toc_title: Kurulum
 
 ClickHouse, x86\_64, AArch64 veya PowerPC64LE CPU mimarisine sahip herhangi bir Linux, FreeBSD veya Mac OS X üzerinde çalışabilir.
 
-Resmi önceden oluşturulmuş ikili dosyalar genellikle x86\_64 ve kaldıraç sse 4.2 komut seti için derlenir, bu nedenle destekleyen CPU’nun aksi belirtilmedikçe ek bir sistem gereksinimi haline gelir. Geçerli CPU’nun sse 4.2 desteği olup olmadığını kontrol etmek için komut:
+Resmi önceden oluşturulmuş ikili dosyalar genellikle x86\_64 ve kaldıraç sse 4.2 komut seti için derlenir, bu nedenle destekleyen CPU'nun aksi belirtilmedikçe ek bir sistem gereksinimi haline gelir. Geçerli CPU'nun sse 4.2 desteği olup olmadığını kontrol etmek için komut:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-SSE 4.2’yi desteklemeyen veya AArch64 veya PowerPC64LE mimarisine sahip işlemcilerde Clickhouse’u çalıştırmak için şunları yapmalısınız [kaynaklardan ClickHouse oluşturun](#from-sources) uygun yapılandırma ayarlamaları ile.
+SSE 4.2'yi desteklemeyen veya AArch64 veya PowerPC64LE mimarisine sahip işlemcilerde Clickhouse'u çalıştırmak için şunları yapmalısınız [kaynaklardan ClickHouse oluşturun](#from-sources) uygun yapılandırma ayarlamaları ile.
 
 ## Mevcut Kurulum Seçenekleri {#available-installation-options}
 
-### DEB Paket Fromlerinden {#install-from-deb-packages}
+### DEB paket fromlerinden {#install-from-deb-packages}
 
-Resmi önceden derlenmiş kullanılması tavsiye edilir `deb` Debian veya Ubuntu için paketler.
+Resmi önceden derlenmiş kullanılması tavsiye edilir `deb` Debian veya Ubuntu için paketler. Paketleri yüklemek için bu komutları çalıştırın:
 
-Resmi paketleri yüklemek için Yandex deposunu ekleyin `/etc/apt/sources.list` veya ayrı bir `/etc/apt/sources.list.d/clickhouse.list` Dosya:
-
-      deb https://repo.clickhouse.tech/deb/stable/ main/
+``` bash
+{% include 'install/deb.sh' %}
+```
 
 En son sürümü kullanmak istiyorsanız, değiştirin `stable` ile `testing` (bu, test ortamlarınız için önerilir).
 
-Sonra paketleri yüklemek için bu komutları çalıştırın:
-
-``` bash
-sudo apt-get install apt-transport-https ca-certificates dirmngr # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
-sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server
-```
-
-Paketleri buradan manuel olarak indirebilir ve kurabilirsiniz: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+Ayrıca paketleri manuel olarak indirebilir ve yükleyebilirsiniz [burada](https://repo.clickhouse.tech/deb/stable/main/).
 
 #### Paketler {#packages}
 
@@ -49,7 +40,7 @@ Paketleri buradan manuel olarak indirebilir ve kurabilirsiniz: https://repo.yand
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` ve diğer istemci ile ilgili araçlar. ve istemci yapılandırma dosyalarını yükler.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-### RPM Paket Fromlerinden {#from-rpm-packages}
+### RPM paket fromlerinden {#from-rpm-packages}
 
 Resmi önceden derlenmiş kullanılması tavsiye edilir `rpm` CentOS, RedHat ve diğer tüm rpm tabanlı Linux dağıtımları için paketler.
 
@@ -69,7 +60,7 @@ Sonra paketleri yüklemek için bu komutları çalıştırın:
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-Paketleri buradan manuel olarak indirebilir ve kurabilirsiniz: https://repo.clickhouse.teknoloji / rpm / kararlı / x86\_64.
+Ayrıca paketleri manuel olarak indirebilir ve yükleyebilirsiniz [burada](https://repo.clickhouse.tech/rpm/stable/x86_64).
 
 ### Tgz Arşivlerinden {#from-tgz-archives}
 
@@ -107,9 +98,9 @@ Docker içinde ClickHouse çalıştırmak için kılavuzu izleyin [Docker Hub](h
 
 ### Kaynaklardan {#from-sources}
 
-Clickhouse’u el ile derlemek için aşağıdaki talimatları izleyin [Linux](../development/build.md) veya [Mac OS X](../development/build-osx.md).
+Clickhouse'u el ile derlemek için aşağıdaki talimatları izleyin [Linux](../development/build.md) veya [Mac OS X](../development/build-osx.md).
 
-Paketleri derleyebilir ve yükleyebilir veya paketleri yüklemeden programları kullanabilirsiniz. Ayrıca elle inşa ederek SSE 4.2 gereksinimini devre dışı bırakabilir veya AArch64 CPU’lar için oluşturabilirsiniz.
+Paketleri derleyebilir ve yükleyebilir veya paketleri yüklemeden programları kullanabilirsiniz. Ayrıca elle inşa ederek SSE 4.2 gereksinimini devre dışı bırakabilir veya AArch64 CPU'lar için oluşturabilirsiniz.
 
       Client: programs/clickhouse-client
       Server: programs/clickhouse-server
@@ -119,9 +110,9 @@ Bir veri ve meta veri klasörleri oluşturmanız gerekir ve `chown` onları iste
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/
 
-Gentoo üzerinde, sadece kullanabilirsiniz `emerge clickhouse` Clickhouse’u kaynaklardan yüklemek için.
+Gentoo üzerinde, sadece kullanabilirsiniz `emerge clickhouse` Clickhouse'u kaynaklardan yüklemek için.
 
-## Başlamak {#launch}
+## Başlatmak {#launch}
 
 Sunucuyu bir daemon olarak başlatmak için çalıştırın:
 
@@ -158,7 +149,7 @@ Sunucuyu başlattıktan sonra, ona bağlanmak için komut satırı istemcisini k
 $ clickhouse-client
 ```
 
-Varsayılan olarak, bağlanır `localhost:9000` kullanıcı adına `default` şifre olmadan. Kullanarak uzak bir sunucuya bağlanmak için de kullanılabilir `--host` değişken.
+Varsayılan olarak, bağlanır `localhost:9000` kullanıcı adına `default` şifre olmadan. Kullanarak uzak bir sunucuya bağlanmak için de kullanılabilir `--host` tartışma.
 
 Terminal UTF-8 kodlamasını kullanmalıdır.
 Daha fazla bilgi için bölüme bakın [“Command-line client”](../interfaces/cli.md).

@@ -50,6 +50,8 @@ void MetricLogElement::appendToBlock(Block & block) const
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         columns[column_idx++]->insert(current_metrics[i]);
+
+    block.setColumns(std::move(columns));
 }
 
 

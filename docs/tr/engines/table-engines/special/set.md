@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: Koymak
 ---
@@ -12,7 +12,7 @@ Her zaman RAM olan bir veri kümesi. In operatörünün sağ tarafında kullanı
 Tabloya veri eklemek için INSERT kullanabilirsiniz. Veri kümesine yeni öğeler eklenirken, yinelenenler göz ardı edilir.
 Ancak tablodan seçim yapamazsınız. Verileri almak için tek yol, IN operatörünün sağ yarısında kullanmaktır.
 
-Veri her zaman RAM yer almaktadır. INSERT için, eklenen veri blokları da diskteki tabloların dizinine yazılır. Sunucuyu başlatırken, bu veriler RAM’e yüklenir. Başka bir deyişle, yeniden başlattıktan sonra veriler yerinde kalır.
+Veri her zaman RAM yer almaktadır. INSERT için, eklenen veri blokları da diskteki tabloların dizinine yazılır. Sunucuyu başlatırken, bu veriler RAM'e yüklenir. Başka bir deyişle, yeniden başlattıktan sonra veriler yerinde kalır.
 
 Kaba bir sunucu yeniden başlatma için diskteki veri bloğu kaybolabilir veya zarar görebilir. İkinci durumda, dosyayı hasarlı verilerle el ile silmeniz gerekebilir.
 

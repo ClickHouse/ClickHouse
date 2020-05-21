@@ -126,7 +126,7 @@ DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 
 Deletes a role.
 
-Deleted role is revoked from all the entities where it was granted.
+Deleted role is revoked from all the entities where it was assigned.
 
 ### Syntax {#drop-role-syntax}
 
@@ -162,9 +162,9 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 
 ## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
 
-Deletes a quota.
+Deletes a settings profile.
 
-Deleted quota is revoked from all the entities where it was assigned.
+Deleted settings profile is revoked from all the entities where it was assigned.
 
 ### Syntax {#drop-settings-profile-syntax}
 
@@ -360,4 +360,4 @@ Lets you set the current database for the session.
 The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
 This query can’t be made when using the HTTP protocol, since there is no concept of a session.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/misc/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/misc/)

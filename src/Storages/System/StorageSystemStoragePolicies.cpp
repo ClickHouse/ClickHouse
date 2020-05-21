@@ -3,6 +3,7 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -55,8 +56,8 @@ Pipes StorageSystemStoragePolicies::read(
             col_volume_name->insert(volumes[i]->getName());
             col_priority->insert(i + 1);
             Array disks;
-            disks.reserve(volumes[i]->disks.size());
-            for (const auto & disk_ptr : volumes[i]->disks)
+            disks.reserve(volumes[i]->getDisks().size());
+            for (const auto & disk_ptr : volumes[i]->getDisks())
                 disks.push_back(disk_ptr->getName());
             col_disks->insert(disks);
             col_max_part_size->insert(volumes[i]->max_data_part_size);

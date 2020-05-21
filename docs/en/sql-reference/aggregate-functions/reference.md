@@ -3,7 +3,7 @@ toc_priority: 36
 toc_title: Reference
 ---
 
-# Function Reference {#aggregate-functions-reference}
+# Aggregate Function Reference {#aggregate-functions-reference}
 
 ## count {#agg_function-count}
 
@@ -729,19 +729,93 @@ For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
 
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
-## groupArrayInsertAt(value, position) {#grouparrayinsertatvalue-position}
+## groupArrayInsertAt {#grouparrayinsertat}
 
-Inserts a value into the array in the specified position.
+Inserts a value into the array at the specified position.
 
-!!! note "Note"
-    This function uses zero-based positions, contrary to the conventional one-based positions for SQL arrays.
+**Syntax**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+```sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-Optional parameters:
+If in one query several values are inserted into the same position, the function behaves in the following ways:
 
--   The default value for substituting in empty positions.
--   The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
+- If a query is executed in a single thread, the first one of the inserted values is used.
+- If a query is executed in multiple threads, the resulting value is an undetermined one of the inserted values.
+
+**Parameters**
+
+- `x` — Value to be inserted. [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../../sql-reference/data-types/index.md).
+- `pos` — Position at which the specified element `x` is to be inserted. Index numbering in the array starts from zero. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+- `default_x`— Default value for substituting in empty positions. Optional parameter. [Expression](../syntax.md#syntax-expressions) resulting in the data type configured for the `x` parameter. If `default_x` is not defined, the [default values](../../sql-reference/statements/create.md#create-default-values) are used.
+- `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` must be specified. [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**Returned value**
+
+- Array with inserted values.
+
+Type: [Array](../../sql-reference/data-types/array.md#data-type-array).
+
+**Example**
+
+Query:
+
+```sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+Result:
+
+```text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+Result:
+
+```text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+Result:
+
+```text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Multi-threaded insertion of elements into one position.
+
+Query:
+
+```sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+As a result of this query you get random integer in the `[0,9]` range. For example:
+
+```text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
@@ -1185,7 +1259,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 Type: `Float32`.
 
 !!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select.md#select-order-by) for notes on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
 
 **Example**
 
@@ -1270,7 +1344,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 Type: `Float32`.
 
 !!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select.md#select-order-by) for notes on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
 
 **Example**
 
@@ -1469,19 +1543,31 @@ It represents an unbiased estimate of the variance of a random variable if passe
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower but provides a lower computational error.
+
 ## varPop(x) {#varpopx}
 
 Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
+
 ## stddevSamp(x) {#stddevsampx}
 
 The result is equal to the square root of `varSamp(x)`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevSampStable` function. It works slower but provides a lower computational error.
+
 ## stddevPop(x) {#stddevpopx}
 
 The result is equal to the square root of `varPop(x)`.
+
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower but provides a lower computational error.
 
 ## topK(N)(x) {#topknx}
 
@@ -1567,13 +1653,22 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Returns Float64. When `n <= 1`, returns +∞.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarSampStable` function. It works slower but provides a lower computational error.
+
 ## covarPop(x, y) {#covarpopx-y}
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarPopStable` function. It works slower but provides a lower computational error.
+
 ## corr(x, y) {#corrx-y}
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `corrStable` function. It works slower but provides a lower computational error.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 

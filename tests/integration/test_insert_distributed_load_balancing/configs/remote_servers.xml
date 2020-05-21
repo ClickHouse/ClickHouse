@@ -1,0 +1,18 @@
+<yandex>
+    <remote_servers>
+        <integration_test_cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </integration_test_cluster>
+    </remote_servers>
+</yandex>
+

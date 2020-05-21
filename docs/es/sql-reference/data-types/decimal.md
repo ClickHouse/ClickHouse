@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: Decimal
 ---
@@ -19,7 +19,7 @@ Dependiendo del valor del parámetro P Decimal(P, S) es un sinónimo de:
 - P de \[ 10 : 18 \] - para Decimal64(S)
 - P de \[ 19 : 38 \] - para Decimal128(S)
 
-## Rangos De Valores Decimales {#decimal-value-ranges}
+## Rangos de valores decimales {#decimal-value-ranges}
 
 -   Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
 -   Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
@@ -27,13 +27,13 @@ Dependiendo del valor del parámetro P Decimal(P, S) es un sinónimo de:
 
 Por ejemplo, Decimal32(4) puede contener números de -99999.9999 a 99999.9999 con el paso 0.0001.
 
-## Representación Interna {#internal-representation}
+## Representación interna {#internal-representation}
 
 Internamente, los datos se representan como enteros con signo normal con el ancho de bits respectivo. Los rangos de valores reales que se pueden almacenar en la memoria son un poco más grandes que los especificados anteriormente, que se verifican solo en la conversión de una cadena.
 
 Debido a que las CPU modernas no admiten enteros de 128 bits de forma nativa, las operaciones en Decimal128 se emulan. Debido a esto, Decimal128 funciona significativamente más lento que Decimal32 / Decimal64.
 
-## Operaciones y Tipo De Resultado {#operations-and-result-type}
+## Operaciones y tipo de resultado {#operations-and-result-type}
 
 Las operaciones binarias en Decimal dan como resultado un tipo de resultado más amplio (con cualquier orden de argumentos).
 
@@ -53,7 +53,7 @@ Las operaciones entre Decimal y Float32 / Float64 no están definidas. Si los ne
 
 Algunas funciones en Decimal devuelven el resultado como Float64 (por ejemplo, var o stddev). Los cálculos intermedios aún se pueden realizar en Decimal, lo que podría dar lugar a resultados diferentes entre las entradas Float64 y Decimal con los mismos valores.
 
-## Comprobaciones De Desbordamiento {#overflow-checks}
+## Comprobaciones de desbordamiento {#overflow-checks}
 
 Durante los cálculos en Decimal, pueden producirse desbordamientos de enteros. Los dígitos excesivos en una fracción se descartan (no se redondean). Los dígitos excesivos en la parte entera conducirán a una excepción.
 
