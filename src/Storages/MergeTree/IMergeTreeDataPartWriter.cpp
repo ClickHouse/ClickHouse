@@ -1,5 +1,6 @@
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/IMergeTreeDataPartIndexWriter.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+
 #include <utility>
 
 namespace DB
