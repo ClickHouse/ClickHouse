@@ -38,6 +38,7 @@ SYSTEM FLUSH LOGS;
 -- }
 SELECT * FROM trace_log_01281_assert FORMAT Null;
 
+SYSTEM FLUSH LOGS;
 TRUNCATE TABLE trace_log_01281;
 -- single limit {
 SET max_threads=1;
@@ -48,6 +49,7 @@ SYSTEM FLUSH LOGS;
 -- }
 SELECT * FROM trace_log_01281_assert FORMAT Null;
 
+SYSTEM FLUSH LOGS;
 TRUNCATE TABLE trace_log_01281;
 -- two-level {
 -- need to have multiple threads for two-level aggregation
@@ -59,6 +61,7 @@ SYSTEM FLUSH LOGS;
 -- }
 SELECT * FROM trace_log_01281_assert FORMAT Null;
 
+SYSTEM FLUSH LOGS;
 TRUNCATE TABLE trace_log_01281;
 -- two-level limit {
 -- need to have multiple threads for two-level aggregation
@@ -70,6 +73,7 @@ SYSTEM FLUSH LOGS;
 -- }
 SELECT * FROM trace_log_01281_assert FORMAT Null;
 
+SYSTEM FLUSH LOGS;
 TRUNCATE TABLE trace_log_01281;
 -- two-level MEMORY_LIMIT_EXCEEDED {
 -- need to have multiple threads for two-level aggregation
