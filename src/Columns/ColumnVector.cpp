@@ -125,25 +125,6 @@ namespace
 }
 
 template <typename T>
-void shiftArrayRight(T & arr, size_t bound)
-{
-    bound %= arr.size();
-    size_t gcd = std::gcd(arr.size(), bound);
-    for (size_t i = 0; i < gcd; ++i)
-    {
-        size_t j = i;
-        do
-        {
-            size_t next = j + bound;
-            if (next >= arr.size())
-                next -= arr.size();
-            std::swap(arr[j], arr[next]);
-            j = next;
-        } while (j != i);
-    }
-}
-
-template <typename T>
 void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
                                             IColumn::SpecialSort special_sort) const
 {
@@ -219,7 +200,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 
                     if (nans_to_move)
                     {
-                        shiftArrayRight(res, reverse ? s - nans_to_move : nans_to_move);
+                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
                     }
                 }
                 return;
