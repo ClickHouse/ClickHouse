@@ -406,11 +406,17 @@ Default value: 0.
 
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
-Enables or disables specific ClickHouse server behavior in `ANY JOIN` operations.
+Enables or disables specific ClickHouse server behavior in `ANY INNER|LEFT|RIGHT| JOIN` operations.
 
-When the behavior enabled, ClickHouse uses the logic with many-to-one left-to-right table keys mapping in `ANY JOIN` operations. This leads to confusing not equal results for queries with `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` constructions.
+When the behavior enabled:
 
-When the behavior disabled, ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations. This guaranties equality of results for queries with `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` constructions.
+- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
+- Results of `ANY INNER JOIN` operations contain all rows from left table like the `SEMI LEFT JOIN` operations do.
+
+When the behavior disabled:
+
+- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping.
+- Results of `ANY INNER JOIN` operations contain one row per key from both left and right tables.
 
 Possible values:
 
