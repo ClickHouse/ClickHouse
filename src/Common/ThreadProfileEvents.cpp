@@ -394,7 +394,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         ++opened_descriptors;
     closedir(fd_dir);
 
-    UInt64 fd_count_afterwards = opened_descriptors + NUMBER_OF_RAW_EVENTS;
+    UInt64 fd_count_afterwards = opened_descriptors + events_to_open.size();
     UInt64 threshold = static_cast<UInt64>(maximum_open_descriptors * FILE_DESCRIPTORS_THRESHOLD);
     if (fd_count_afterwards > threshold)
     {
