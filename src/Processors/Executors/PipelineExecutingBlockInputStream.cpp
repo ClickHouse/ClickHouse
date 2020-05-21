@@ -89,11 +89,14 @@ inline static void throwIfExecutionNotStarted(bool is_execution_started, const c
 
 void PipelineExecutingBlockInputStream::cancel(bool kill)
 {
-    throwIfExecutionNotStarted(executor != nullptr, "cancel");
     IBlockInputStream::cancel(kill);
-    executor->cancel();
-}
 
+    if (is_execution_started)
+    {
+        executor ? executor->cancel()
+                 : async_executor->cancel();
+    }
+}
 
 void PipelineExecutingBlockInputStream::setProgressCallback(const ProgressCallback & callback)
 {
