@@ -415,7 +415,7 @@ When the behavior enabled:
 
 When the behavior disabled:
 
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping.
+- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
 - Results of `ANY INNER JOIN` operations contain one row per key from both left and right tables.
 
 Possible values:
