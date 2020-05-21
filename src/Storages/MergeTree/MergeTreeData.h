@@ -70,7 +70,7 @@ namespace ErrorCodes
 /// [Column].mrk - marks, pointing to seek positions allowing to skip n * k rows.
 ///
 /// File structure of tables with custom partitioning (format_version >= 1):
-/// Part directory - / partiiton-id _ min-id _ max-id _ level /
+/// Part directory - / partition-id _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// The same files as for month-partitioned tables, plus
 /// count.txt - contains total number of rows in this part.
