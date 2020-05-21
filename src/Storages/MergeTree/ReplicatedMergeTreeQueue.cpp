@@ -331,18 +331,13 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 
 void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
 {
-    auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
-
-    if (code)
-        LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "
-            << zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
-
     std::optional<time_t> min_unprocessed_insert_time_changed;
     std::optional<time_t> max_processed_insert_time_changed;
 
     bool found = false;
     size_t queue_size = 0;
 
+    /// First remove from memory then from ZooKeeper
     {
         std::unique_lock lock(state_mutex);
 
@@ -371,6 +366,11 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
         throw Exception("Can't find " + entry->znode_name + " in the memory queue. It is a bug", ErrorCodes::LOGICAL_ERROR);
 
     notifySubscribers(queue_size);
+
+    auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
+    if (code)
+        LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "
+            << zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 }
