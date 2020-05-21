@@ -170,8 +170,6 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
 #undef HARDWARE_EVENT
 
 std::atomic<PerfEventsCounters::Id> PerfEventsCounters::counters_id = 0;
-std::atomic<bool> PerfEventsCounters::perf_unavailability_logged = false;
-std::atomic<bool> PerfEventsCounters::particular_events_unavailability_logged = false;
 
 thread_local PerfDescriptorsHolder PerfEventsCounters::thread_events_descriptors_holder{};
 thread_local std::optional<PerfEventsCounters::Id> PerfEventsCounters::current_thread_counters_id = std::nullopt;
@@ -356,24 +354,19 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     if (events_to_open.empty())
         return true;
 
-    // check paranoid
+    // check permissions
     Int32 perf_event_paranoid = 0;
     bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
     if (!is_pref_available)
     {
-        bool expected_value = false;
-        if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
-            LOG_INFO(getLogger(), "Perf events are unsupported");
+        LOG_WARNING(getLogger(), "Perf events are unsupported");
         return false;
     }
 
-    // check CAP_SYS_ADMIN
     bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
     if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
     {
-        bool expected_value = false;
-        if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
-            LOG_INFO(getLogger(), "Not enough permissions to record perf events");
+        LOG_WARNING(getLogger(), "Not enough permissions to record perf events");
         return false;
     }
 
@@ -392,8 +385,8 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     DIR * fd_dir = opendir(dir_path.c_str());
     if (fd_dir == nullptr)
     {
-        LOG_WARNING(getLogger(), "Unable to get file descriptors used by the current process errno = " << errno
-                        << ", message = " << strerror(errno));
+        LOG_WARNING(getLogger(), "Unable to get file descriptors used by the current process: "
+                        << "errno = " << errno << ", message = " << strerror(errno));
         return false;
     }
     UInt64 opened_descriptors = 0;
@@ -412,8 +405,6 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     }
 
     // open descriptors for new events
-    bool expected = false;
-    bool log_unsupported_event = particular_events_unavailability_logged.compare_exchange_strong(expected, true);
     for (size_t i : events_to_open)
     {
         const PerfEventInfo & event_info = raw_events_info[i];
@@ -421,9 +412,9 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         // disable by default to add as little extra time as possible
         fd = openPerfEventDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config);
 
-        if (fd == -1 && log_unsupported_event)
+        if (fd == -1)
         {
-            LOG_INFO(getLogger(), "Perf event is unsupported: `" << event_info.settings_name
+            LOG_WARNING(getLogger(), "Perf event is unsupported: `" << event_info.settings_name
                         << "` (event_type=" << event_info.event_type << ", event_config=" << event_info.event_config << ")");
         }
     }
