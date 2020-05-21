@@ -5,13 +5,15 @@
 
 #include <mysqlxx/Pool.h>
 #include <Databases/DatabasesCommon.h>
-#include <Interpreters/Context.h>
 #include <memory>
 #include <Parsers/ASTCreateQuery.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
 {
+
+class Context;
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.

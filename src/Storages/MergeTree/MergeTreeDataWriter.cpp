@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/Context.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>

@@ -1,0 +1,6 @@
+<test>
+    <create_query>CREATE TABLE point_in_polygon(`polygon` Array(Array(Float64, Float64))) ENGINE = Log()</create_query>
+    <create_query>insert into point_in_polygon SELECT arrayJoin(arrayMap(y -> [arrayMap(x -> (cos(x / 90. * pi()) * y, sin(x / 90. * pi()) * y), range(180))], arraySlice(range(35000), 2, 35000)))</create_query>
+    <query>SELECT pointInPolygon((100, 100), `polygon`) from point_in_polygon</query>
+    <drop_query>DROP TABLE IF EXISTS point_in_polygon</drop_query>
+</test>
