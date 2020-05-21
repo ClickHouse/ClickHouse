@@ -405,6 +405,9 @@
     </prometheus>
     -->
 
+    <!-- Lazy system.*_log table creation -->
+    <!-- <system_tables_lazy_load>false</system_tables_lazy_load> -->
+
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>
         <!-- What table to insert data. If table is not exist, it will be created.
