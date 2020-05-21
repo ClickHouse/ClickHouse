@@ -116,19 +116,20 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
 {
     StorageMetadataKeyField result;
     result.definition_ast = definition_ast;
-    result.expression_ast = extractKeyExpressionList(definition_ast);
+    result.expression_list_ast = extractKeyExpressionList(definition_ast);
 
-    if (result.expression_ast->children.empty())
+    if (result.expression_list_ast->children.empty())
         return result;
 
-    const auto & children = result.expression_ast->children;
+    const auto & children = result.expression_list_ast->children;
     for (const auto & child : children)
-        result.expression_column_names.emplace_back(child->getColumnName());
+        result.column_names.emplace_back(child->getColumnName());
 
     {
-        auto syntax_result = SyntaxAnalyzer(context).analyze(result.expression_ast, columns.getAllPhysical());
-        result.expressions = ExpressionAnalyzer(result.expression_ast->clone(), syntax_result, context).getActions(true);
-        result.sample_block = result.expressions->getSampleBlock();
+        auto expr = result.expression_list_ast->clone();
+        auto syntax_result = SyntaxAnalyzer(context).analyze(expr, columns.getAllPhysical());
+        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(true);
+        result.sample_block = result.expression->getSampleBlock();
     }
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)

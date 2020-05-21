@@ -101,7 +101,7 @@ public:
     virtual bool isView() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const;
+    virtual bool supportsSampling() const { return hasSamplingKey(); }
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
@@ -184,23 +184,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
 
-    const StorageMetadataKeyField & getPartitionKey() const;
-    void setPartitionKey(const StorageMetadataKeyField & partition_key_);
-    bool hasPartitionKey() const;
-
-    const StorageMetadataKeyField & getSamplingKey() const;
-    void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
-    bool hasSamplingKey() const;
-
-    const StorageMetadataKeyField & getSortingKey() const;
-    void setSortingKey(const StorageMetadataKeyField & sorting_key_);
-    bool hasSortingKey() const;
-
-    const StorageMetadataKeyField & getPrimaryKey() const;
-    void setPrimaryKey(const StorageMetadataKeyField & primary_key_);
-    bool hasPrimaryKey() const;
-
-
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
 
@@ -221,11 +204,6 @@ private:
     StorageMetadataKeyField primary_key;
     StorageMetadataKeyField sorting_key;
     StorageMetadataKeyField sampling_key;
-
-    //StorageMetadataField rows_ttl_entry;
-
-    //std::vector<StorageMetadataField> column_ttl_entries;
-    //std::vector<StorageMetadataField> move_ttl_entries;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -468,36 +446,66 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
+    /// Returns structure with partition key
+    const StorageMetadataKeyField & getPartitionKey() const;
+    /// Set partition key for storage (methods bellow, are just wrappers for this
+    /// struct)
+    void setPartitionKey(const StorageMetadataKeyField & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
-    virtual ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
-
-    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
-    virtual ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
-
-    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
-    virtual ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
-
-    /// Returns sampling expression AST for storage or nullptr if there is none.
-    virtual ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
-
+    ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
+    /// Storage has partition key
+    bool hasPartitionKey() const;
     /// Returns column names that need to be read to calculate partition key.
-    virtual Names getColumnsRequiredForPartitionKey() const;
+    Names getColumnsRequiredForPartitionKey() const;
 
+
+    /// Returns structure with sorting key
+    const StorageMetadataKeyField & getSortingKey() const;
+    /// Set sorting key for storage (methods bellow, are just wrappers for this
+    /// struct)
+    void setSortingKey(const StorageMetadataKeyField & sorting_key_);
+    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
+    ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
+    /// Storage has sorting key
+    bool hasSortingKey() const;
     /// Returns column names that need to be read to calculate sorting key.
-    virtual Names getColumnsRequiredForSortingKey() const;
-
-    /// Returns column names that need to be read to calculate primary key.
-    virtual Names getColumnsRequiredForPrimaryKey() const;
-
-    /// Returns column names that need to be read to calculate sampling key.
-    virtual Names getColumnsRequiredForSampling() const;
-
-    /// Returns column names that need to be read for FINAL to work.
-    virtual Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
-
+    Names getColumnsRequiredForSortingKey() const;
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
-    virtual Names getSortingKeyColumns() const;
+    Names getSortingKeyColumns() const;
+
+    /// Returns structure with primary key
+    const StorageMetadataKeyField & getPrimaryKey() const;
+    /// Set primary key for storage (methods bellow, are just wrappers for this
+    /// struct)
+    void setPrimaryKey(const StorageMetadataKeyField & primary_key_);
+    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
+    ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sorting key
+    bool isPrimaryKeyDefined() const;
+    /// Storage has primary key (maybe part of some other key)
+    bool hasPrimaryKey() const;
+    /// Returns column names that need to be read to calculate primary key.
+    Names getColumnsRequiredForPrimaryKey() const;
+    /// Returns columns names in sorting key specified by. For example: 'a', 'x
+    /// * y', 'toStartOfMonth(date)', etc.
+    Names getPrimaryKeyColumns() const;
+
+    /// Returns structure with sampling key
+    const StorageMetadataKeyField & getSamplingKey() const;
+    /// Set sampling key for storage (methods bellow, are just wrappers for this
+    /// struct)
+    void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
+    /// Returns sampling expression AST for storage or nullptr if there is none.
+    ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
+    /// Storage has sampling key
+    bool hasSamplingKey() const;
+    /// Returns column names that need to be read to calculate sampling key.
+    Names getColumnsRequiredForSampling() const;
+
+    /// Returns column names that need to be read for FINAL to work.
+    Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
+
 
     /// Returns columns, which will be needed to calculate dependencies
     /// (skip indices, TTL expressions) if we update @updated_columns set of columns.

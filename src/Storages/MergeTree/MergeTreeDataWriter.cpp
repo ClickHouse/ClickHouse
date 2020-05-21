@@ -146,7 +146,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     Block block_copy = block;
     const auto & partition_key = data.getPartitionKey();
-    partition_key.expressions->execute(block_copy);
+    partition_key.expression->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
     partition_columns.reserve(partition_key.sample_block.columns());
@@ -262,7 +262,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     if (data.hasSortingKey() || data.hasSkipIndices())
         data.sorting_key_and_skip_indices_expr->execute(block);
 
-    Names sort_columns = data.getSortingKey().expression_column_names;
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

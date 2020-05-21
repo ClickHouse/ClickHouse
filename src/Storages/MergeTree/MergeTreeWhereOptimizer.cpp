@@ -40,8 +40,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         log{log_}
 {
     const auto & primary_key = data.getPrimaryKey();
-    if (!primary_key.expression_column_names.empty())
-        first_primary_key_column = primary_key.expression_column_names[0];
+    if (!primary_key.column_names.empty())
+        first_primary_key_column = primary_key.column_names[0];
 
     calculateColumnSizes(data, queried_columns);
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
