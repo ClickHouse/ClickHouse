@@ -288,6 +288,7 @@ private:
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
 
+    /// Methods connected to execution.
     void executeImpl(size_t num_threads);
     void executeStepImpl(size_t thread_num, size_t num_threads, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, size_t num_threads);
