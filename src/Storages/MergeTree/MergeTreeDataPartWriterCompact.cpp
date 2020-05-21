@@ -1,6 +1,6 @@
-#include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartIndexWriterSingleDisk.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 
 namespace DB
 {
