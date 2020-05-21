@@ -63,15 +63,25 @@ private:
 class FinalizingSimpleTransform : public ISimpleTransform
 {
 public:
-    FinalizingSimpleTransform(Block header, AggregatingTransformParamsPtr params)
-        : ISimpleTransform({std::move(header)}, {params->getHeader(true)}, true) {}
+    FinalizingSimpleTransform(Block header, AggregatingTransformParamsPtr params_)
+        : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+        , params(params_) {}
 
     void transform(Chunk & chunk) override
     {
-        finalizeChunk(chunk);
+        if (!chunk.getChunkInfo())
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            chunk.setChunkInfo(std::move(info));
+        }
+        if (params->final)
+            finalizeChunk(chunk);
     }
 
     String getName() const override { return "FinalizingSimpleTransform"; }
+
+private:
+    AggregatingTransformParamsPtr params;
 };
 
 

@@ -29,8 +29,7 @@ struct AggregatingTransformParams
 
     Block getHeader() const { return aggregator.getHeader(final); }
 
-    /// TODO remove that logic
-    Block getHeader(bool final_) const { return aggregator.getHeader(final_); }
+    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
 struct ManyAggregatedData
