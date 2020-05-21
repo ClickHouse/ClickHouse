@@ -256,7 +256,7 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (hasSortingKey())
         metadata.order_by_ast = getSortingKeyAST()->clone();
 
-    if (hasPrimaryKey())
+    if (isPrimaryKeyDefined())
         metadata.primary_key_ast = getPrimaryKeyAST()->clone();
 
     if (ttl_table_ast)

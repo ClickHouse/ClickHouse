@@ -40,7 +40,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// So rules in zookeeper metadata is following:
     /// - When we have only ORDER BY, than store it in "primary key:" row of /metadata
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
-    if (!data.hasPrimaryKey())
+    if (!data.isPrimaryKeyDefined())
         primary_key = formattedAST(data.getSortingKey().expression_ast);
     else
     {

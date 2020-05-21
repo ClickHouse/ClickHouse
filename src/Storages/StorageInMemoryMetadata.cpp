@@ -1,13 +1,15 @@
+#include <Storages/StorageInMemoryMetadata.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/queryToString.h>
 
 namespace DB
 {
+
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
@@ -119,7 +121,6 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
     if (result.expression_ast->children.empty())
         return result;
 
-
     const auto & children = result.expression_ast->children;
     for (const auto & child : children)
         result.expression_column_names.emplace_back(child->getColumnName());
@@ -129,7 +130,6 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
         result.expressions = ExpressionAnalyzer(result.expression_ast->clone(), syntax_result, context).getActions(true);
         result.sample_block = result.expressions->getSampleBlock();
     }
-
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
         result.data_types.emplace_back(result.sample_block.getByPosition(i).type);

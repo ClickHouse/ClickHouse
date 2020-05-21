@@ -52,10 +52,6 @@ public:
         return part->storage.getInMemoryMetadata();
     }
 
-    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
-
-    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
-
     NamesAndTypesList getVirtuals() const override
     {
         return part->storage.getVirtuals();
@@ -68,6 +64,7 @@ protected:
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());
+        setSortingKey(part_->storage.getSortingKey());
     }
 
 private:
