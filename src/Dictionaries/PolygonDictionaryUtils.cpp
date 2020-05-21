@@ -52,7 +52,7 @@ FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_,
             break;
         }
         std::vector<Polygon> intersection;
-        bg::intersection(box_, polygons_[id], intersection);
+        bg::intersection(tmp_poly, polygons_[id], intersection);
         for (auto & polygon : intersection)
             intersections.emplace_back(std::move(polygon));
         while (corresponding_ids.size() < intersections.size())
