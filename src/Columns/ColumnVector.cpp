@@ -17,6 +17,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
 #include <pdqsort.h>
+#include <numeric>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -124,11 +125,19 @@ namespace
 }
 
 template <typename T>
-void inplacePartialSwapHelper(T& arr, size_t bound)
+void shiftArrayRight(T& arr, size_t bound)
 {
-    std::reverse(std::begin(arr), std::begin(arr) + bound);
-    std::reverse(std::begin(arr) + bound, std::end(arr));
-    std::reverse(std::begin(arr), std::end(arr));
+    bound %= arr.size();
+    size_t gcd = std::gcd(arr.size(), bound);
+    for (size_t i = 0; i < gcd; ++i) {
+        size_t j = i;
+        do {
+            size_t next = j + bound;
+            if (next >= arr.size()) next -= arr.size();
+            std::swap(arr[j], arr[next]);
+            j = next;
+        } while (j != i);
+    }
 }
 
 template <typename T>
@@ -207,7 +216,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 
                     if (nans_to_move)
                     {
-                        inplacePartialSwapHelper(res, reverse ? nans_to_move : s - nans_to_move);
+                        shiftArrayRight(res, reverse ? s - nans_to_move : nans_to_move);
                     }
                 }
                 return;

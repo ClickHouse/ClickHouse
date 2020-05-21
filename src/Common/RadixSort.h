@@ -381,15 +381,24 @@ public:
             Index * writer = destination;
             Element * reader = pass % 2 ? swap_buffer : arr;
 
-            for (size_t i = 0; i < size; ++i)
+            if (reverse)
             {
-                size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
 
-                /// Place the element on the next free position.
-                if (reverse)
+                    /// Place the element on the next free position.
                     writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractIndex(reader[i]);
-                else
+                }
+            } else
+            {
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
+
+                    /// Place the element on the next free position.
                     writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractIndex(reader[i]);
+                }
             }
         } else if (NUM_PASSES % 2)
         {
