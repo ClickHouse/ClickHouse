@@ -47,7 +47,7 @@ namespace Coordination
 
     static String childName(const String & raw_child_path, const String & path)
     {
-        String child_path = raw_child_path.substr(path.length() + 1);
+        String child_path = raw_child_path.substr(path.length());
         auto slash_pos = child_path.find('/');
         return child_path.substr(0, slash_pos);
     }
@@ -340,11 +340,11 @@ namespace Coordination
         }
         std::vector<String> getRelatedKeys() const
         {
-            return std::vector<String> {getFullEtcdKey(), getSequentialCounterKey(), getChildsFlagKey(), getEphimeralFlagKey(), getSequentialFlagKey()};
+            return std::vector<String> {getFullEtcdKey(), getSequentialCounterKey(), getChildsFlagKey(), getEphimeralFlagKey(), getSequentialFlagKey(), getCtimeKey()};
         }
         String getChildsPrefix() const
         {
-            return generateFullPathFromParts(EtcdKeyPrefix::VALUE, level + 1, zk_path);
+            return generateFullPathFromParts(EtcdKeyPrefix::VALUE, level + 1, zk_path + "/");
         }
         String getParentChildsFlagKey() const
         {
@@ -1079,7 +1079,9 @@ namespace Coordination
                         {
                             if (checking_etcd_keys.count(kv.key()))
                             {
-                                founded_keys.insert(kv.key());
+                                EtcdKey ek;
+                                ek.setFullPath(kv.key());
+                                founded_keys.insert(ek.zk_path);
                             }
                         }
                     }
@@ -1100,10 +1102,15 @@ namespace Coordination
                     }
                 }
             }
-            if (responses[0]->error != Error::ZOK)
+            int indx = 0;
+            while (indx < responses.size() && faked_responses[indx] && responses[indx]->error == Error::ZOK)
+            {
+                indx++;
+            }
+            if (indx < responses.size() && !faked_responses[indx] && responses[indx]->error != Error::ZOK)
             {
                 EtcdKeeperMultiResponse multi_response;
-                multi_response.error = responses[0]->error;
+                multi_response.error = responses[indx]->error;
                 multi_response.responses = responses;
                 response = std::make_shared<EtcdKeeperResponse>(multi_response);
             }
@@ -1305,7 +1312,6 @@ namespace Coordination
     {
         EtcdKeeperExistsResponse exists_response;
         exists_response.error = Error::ZNONODE;
-        exists_response.stat = Stat();
         for (auto resp: responses)
         {
             if (ResponseOp::ResponseCase::kResponseRange == resp.response_case())
