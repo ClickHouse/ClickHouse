@@ -27,7 +27,7 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
-FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &polygons_, const Box &box_):
+FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &polygons_, const Box &box_)
 {
     Polygon tmp_poly;
     bg::convert(box_, tmp_poly);
