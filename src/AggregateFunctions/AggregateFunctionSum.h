@@ -134,6 +134,8 @@ struct AggregateFunctionSumKahanData
     template <typename Value>
     void NO_INLINE addMany(const Value * __restrict ptr, size_t count)
     {
+        /// Less than in ordinary sum, because the algorithm is more complicated and too large loop unrolling is questionable.
+        /// But this is just a guess.
         constexpr size_t unroll_count = 4;
         T partial_sums[unroll_count]{};
         T partial_compensations[unroll_count]{};
