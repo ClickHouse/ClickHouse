@@ -543,6 +543,13 @@ toLowCardinality(expr)
 
 - `expr` — [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../data-types/index.md#data_types).
 
+
+**Returned values**
+
+- Result of `expr`.
+
+Type: `LowCardinality(expr_result_type)`
+
 **Example**
 
 Query:
