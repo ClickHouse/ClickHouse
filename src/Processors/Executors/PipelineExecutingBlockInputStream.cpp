@@ -79,14 +79,6 @@ inline static void throwIfExecutionStarted(bool is_execution_started, const char
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-inline static void throwIfExecutionNotStarted(bool is_execution_started, const char * method)
-{
-    if (!is_execution_started)
-        throw Exception(String("Cannot call ") + method +
-                        " for PipelineExecutingBlockInputStream because execution was not started",
-                        ErrorCodes::LOGICAL_ERROR);
-}
-
 void PipelineExecutingBlockInputStream::cancel(bool kill)
 {
     IBlockInputStream::cancel(kill);
