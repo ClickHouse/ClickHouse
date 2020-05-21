@@ -502,7 +502,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     if (!is_execution_initialized)
         initializeExecution(1);
 
-    executeStep(yield_flag);
+    executeStepImpl(0, 1, yield_flag);
 
     if (!finished)
         return true;
