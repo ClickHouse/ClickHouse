@@ -201,10 +201,6 @@ private:
     using ParsedEvents = std::pair<std::string, std::vector<size_t>>;
 
     static std::atomic<Id> counters_id;
-    // used to write information about perf unavailability only once for all threads
-    static std::atomic<bool> perf_unavailability_logged;
-    // used to write information about particular perf events unavailability only once for all threads
-    static std::atomic<bool> particular_events_unavailability_logged;
 
     static thread_local PerfDescriptorsHolder thread_events_descriptors_holder;
     static thread_local std::optional<Id> current_thread_counters_id;
