@@ -124,7 +124,9 @@ class FinalCell : public ICell<FinalCell>
 public:
     explicit FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_);
     std::vector<size_t> polygon_ids;
-    std::vector<uint8_t> is_covered_by;
+    size_t first_covered = kNone;
+
+    static constexpr size_t kNone = -1;
 
 private:
     [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
@@ -137,7 +139,9 @@ public:
 
     BucketsPolygonIndex index;
     std::vector<size_t> corresponding_ids;
-    size_t first_covered = -1;
+    size_t first_covered = kNone;
+
+    static constexpr size_t kNone = -1;
 
 private:
     [[nodiscard]] const FinalCellWithSlabs * find(Coord x, Coord y) const override;

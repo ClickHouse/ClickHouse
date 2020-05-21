@@ -11,15 +11,19 @@
 namespace DB
 {
 
-FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_):
-polygon_ids(polygon_ids_)
+FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_)
 {
     Polygon tmp_poly;
     bg::convert(box_, tmp_poly);
-    std::transform(polygon_ids.begin(), polygon_ids.end(), std::back_inserter(is_covered_by), [&](const auto id)
+    for (const auto id : polygon_ids_)
     {
-        return bg::covered_by(tmp_poly, polygons_[id]);
-    });
+        if (bg::covered_by(tmp_poly, polygons_[id]))
+        {
+            first_covered = id;
+            break;
+        }
+        polygon_ids.push_back(id);
+    }
 }
 
 const FinalCell * FinalCell::find(Coord, Coord) const
@@ -32,7 +36,8 @@ FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_,
     Polygon tmp_poly;
     bg::convert(box_, tmp_poly);
     std::vector<Polygon> intersections;
-    for (const auto id : polygon_ids_) {
+    for (const auto id : polygon_ids_)
+    {
         if (bg::covered_by(tmp_poly, polygons_[id]))
         {
             first_covered = id;
