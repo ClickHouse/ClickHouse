@@ -2,6 +2,7 @@
 #ifndef JEMALLOC_INTERNAL_DEFS_H_
 #define JEMALLOC_INTERNAL_DEFS_H_
 
+
 #ifndef _GNU_SOURCE
     #define _GNU_SOURCE
 #endif
@@ -38,9 +39,9 @@
  * Hyper-threaded CPUs may need a special instruction inside spin loops in
  * order to yield to another virtual CPU.
  */
-#define CPU_SPINWAIT __asm__ volatile("pause")
+#define CPU_SPINWAIT
 /* 1 if CPU_SPINWAIT is defined, 0 otherwise. */
-#define HAVE_CPU_SPINWAIT 1
+#define HAVE_CPU_SPINWAIT 0
 
 /*
  * Number of significant bits in virtual addresses.  This may be less than the
@@ -96,8 +97,7 @@
 /*
  * Defined if secure_getenv(3) is available.
  */
-// Don't want dependency on newer GLIBC
-//#define JEMALLOC_HAVE_SECURE_GETENV
+#define JEMALLOC_HAVE_SECURE_GETENV
 
 /*
  * Defined if issetugid(2) is available.
@@ -160,6 +160,9 @@
 /* JEMALLOC_STATS enables statistics calculation. */
 #define JEMALLOC_STATS
 
+/* JEMALLOC_EXPERIMENTAL_SMALLOCX_API enables experimental smallocx API. */
+/* #undef JEMALLOC_EXPERIMENTAL_SMALLOCX_API */
+
 /* JEMALLOC_PROF enables allocation profiling. */
 /* #undef JEMALLOC_PROF */
 
@@ -197,14 +200,14 @@
 /* #undef LG_QUANTUM */
 
 /* One page is 2^LG_PAGE bytes. */
-#define LG_PAGE 12
+#define LG_PAGE 16
 
 /*
  * One huge page is 2^LG_HUGEPAGE bytes.  Note that this is defined even if the
  * system does not explicitly support huge pages; system calls that require
  * explicit huge page support are separately configured.
  */
-#define LG_HUGEPAGE 21
+#define LG_HUGEPAGE 29
 
 /*
  * If defined, adjacent virtual memory mappings with identical attributes
@@ -253,6 +256,12 @@
 /* #undef JEMALLOC_LOG */
 
 /*
+ * If defined, use readlinkat() (instead of readlink()) to follow
+ * /etc/malloc_conf.
+ */
+/* #undef JEMALLOC_READLINKAT */
+
+/*
  * Darwin (OS X) uses zones to work around Mach-O symbol override shortcomings.
  */
 /* #undef JEMALLOC_ZONE */
@@ -288,7 +297,7 @@
  *                                 MADV_FREE, though typically with higher
  *                                 system overhead.
  */
-//#define JEMALLOC_PURGE_MADVISE_FREE
+// #define JEMALLOC_PURGE_MADVISE_FREE
 #define JEMALLOC_PURGE_MADVISE_DONTNEED
 #define JEMALLOC_PURGE_MADVISE_DONTNEED_ZEROS
 
@@ -360,7 +369,7 @@
 /* #undef JEMALLOC_EXPORT */
 
 /* config.malloc_conf options string. */
-#define JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu"
+#define JEMALLOC_CONFIG_MALLOC_CONF "@JEMALLOC_CONFIG_MALLOC_CONF@"
 
 /* If defined, jemalloc takes the malloc/free/etc. symbol names. */
 #define JEMALLOC_IS_MALLOC 1
