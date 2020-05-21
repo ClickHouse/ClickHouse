@@ -76,22 +76,25 @@ std::shared_ptr<const IExternalLoadable> GridPolygonDictionary::clone() const
 
 bool GridPolygonDictionary::find(const Point &point, size_t & id) const
 {
-    bool found = false;
-    auto cell = grid.find(point.get<0>(), point.get<1>());
+    auto cell = grid.find(point.x(), point.y());
     if (cell)
     {
         for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
         {
             const auto & candidate = (cell->polygon_ids)[i];
-            if ((cell->is_covered_by)[i] || bg::covered_by(point, polygons[candidate]))
+            if (bg::covered_by(point, polygons[candidate]))
             {
-                found = true;
                 id = candidate;
-                break;
+                return true;
             }
         }
+        if (cell->first_covered != FinalCell::kNone)
+        {
+            id = cell->first_covered;
+            return true;
+        }
     }
-    return found;
+    return false;
 }
 
 SmartPolygonDictionary::SmartPolygonDictionary(
@@ -128,42 +131,26 @@ std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
 
 bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
 {
-    /*
-    bool found = false;
-    double area = 0;
-    for (size_t i = 0; i < polygons.size(); ++i)
-    {
-        size_t unused;
-        if (buckets[i].find(point, unused))
-        {
-            double new_area = areas[i];
-            if (!found || new_area < area)
-            {
-                found = true;
-                id = i;
-                area = new_area;
-            }
-        }
-    }
-    return found;
-    */
-    bool found = false;
-    auto cell = grid.find(point.get<0>(), point.get<1>());
+    auto cell = grid.find(point.x(), point.y());
     if (cell)
     {
         for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
         {
             const auto & candidate = (cell->polygon_ids)[i];
             size_t unused;
-            if ((cell->is_covered_by)[i] || buckets[candidate].find(point, unused))
+            if (buckets[candidate].find(point, unused))
             {
-                found = true;
                 id = candidate;
-                break;
+                return true;
             }
         }
+        if (cell->first_covered != FinalCell::kNone)
+        {
+            id = cell->first_covered;
+            return true;
+        }
     }
-    return found;
+    return false;
 }
 
 OneBucketPolygonDictionary::OneBucketPolygonDictionary(
@@ -194,12 +181,13 @@ std::shared_ptr<const IExternalLoadable> OneBucketPolygonDictionary::clone() con
 bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
 {
     auto cell = index.find(point.x(), point.y());
-    if (cell != nullptr) {
-        if (!cell->corresponding_ids.empty() && cell->index.find(point, id)) {
+    if (cell) {
+        if (!(cell->corresponding_ids).empty() && cell->index.find(point, id)) {
             id = cell->corresponding_ids[id];
             return true;
         }
-        if (cell->first_covered != static_cast<size_t>(-1)) {
+        if (cell->first_covered != FinalCellWithSlabs::kNone)
+        {
             id = cell->first_covered;
             return true;
         }
