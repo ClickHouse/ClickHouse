@@ -38,9 +38,8 @@ FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_,
             first_covered = id;
             break;
         }
-        auto old_size = intersections.size();
         bg::intersection(tmp_poly, polygons_[id], intersections);
-        for (; old_size < intersections.size(); ++old_size)
+        while (corresponding_ids.size() < intersections.size())
             corresponding_ids.push_back(id);
     }
     index = BucketsPolygonIndex{intersections};
