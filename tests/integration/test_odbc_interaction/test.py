@@ -111,6 +111,21 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nulla
 
     conn.close()
 
+def test_mysql_insert(started_cluster):
+    mysql_setup = node1.odbc_drivers["MySQL"]
+    table_name = 'test_insert'
+    conn = get_mysql_conn()
+    create_mysql_table(conn, table_name)
+    odbc_args = "'DSN={}', '{}', '{}'".format(mysql_setup["DSN"], mysql_setup["Database"], table_name)
+
+    node1.query("create table mysql_insert (id Int64, name String, age UInt8, money Float, column_x Nullable(Int16)) Engine=ODBC({})".format(odbc_args))
+    node1.query("insert into mysql_insert values (1, 'test', 11, 111, 1111), (2, 'odbc', 22, 222, NULL)")
+    assert node1.query("select * from mysql_insert") == "1\ttest\t11\t111\t1111\n2\todbc\t22\t222\t\\N\n"
+
+    node1.query("insert into table function odbc({}) values (3, 'insert', 33, 333, 3333)".format(odbc_args))
+    node1.query("insert into table function odbc({}) (id, name, age, money) select id*4, upper(name), age*4, money*4 from odbc({}) where id=1".format(odbc_args, odbc_args))
+    assert node1.query("select * from mysql_insert where id in (3, 4)") == "3\tinsert\t33\t333\t3333\n4\tTEST\t44\t444\t\\N\n"
+
 
 def test_sqlite_simple_select_function_works(started_cluster):
     sqlite_setup = node1.odbc_drivers["SQLite3"]
@@ -170,7 +185,11 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))") == "3\n"
 
-    node1.exec_in_container(["bash", "-c", "echo 'INSERT INTO t3 values(200, 2, 7);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
+    # Allow insert
+    node1.exec_in_container(["bash", "-c", "chmod a+rw /tmp"], privileged=True, user='root')
+    node1.exec_in_container(["bash", "-c", "chmod a+rw {}".format(sqlite_db)], privileged=True, user='root')
+
+    node1.query("insert into table function odbc('DSN={};', '', 't3') values (200, 2, 7)".format(node1.odbc_drivers["SQLite3"]["DSN"]))
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(200))") == "7\n" # new value
 
@@ -199,6 +218,17 @@ def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
             assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
 
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))") == "xxx\n"
+
+def test_postgres_insert(started_cluster):
+    conn = get_postgres_conn()
+    conn.cursor().execute("truncate table clickhouse.test_table")
+    node1.query("create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;', 'clickhouse', 'test_table')")
+    node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
+    assert node1.query("select * from pg_insert") == '1\thello\n2\tworld\n'
+    node1.query("insert into table function odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table') format CSV 3,test")
+    node1.query("insert into table function odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table') select number, 's' || toString(number) from numbers (4, 7)")
+    assert node1.query("select sum(column1), count(column1) from pg_insert") == "55\t10\n"
+    assert node1.query("select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc;', 'clickhouse', 'test_table')))") == "55\t10\n"
 
 def test_bridge_dies_with_parent(started_cluster):
     node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")

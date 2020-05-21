@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 60
 toc_title: IPv6
 ---
 
 ## IPv6 {#ipv6}
 
-`IPv6` ドメインは以下に基づきます `FixedString(16)` タイプと入力の代替品の保管IPv6数値です。 それは点検で人間に適する入出力形式およびコラムのタイプ情報を密集した貯蔵に与える。
+`IPv6` に基づくドメインです `FixedString(16)` IPv6値を格納するための型指定された置換として機能します。 それは点検で人間に適する入出力フォーマットおよびコラムのタイプ情報を密集した貯蔵に与える。
 
 ### 基本的な使用法 {#basic-usage}
 
@@ -24,13 +24,13 @@ DESCRIBE TABLE hits;
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-またはあなたが使用 `IPv6` 鍵としてのドメイン:
+または、 `IPv6` キーとしてのドメイン:
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv6` ドメイン対応のカスタム入力としてIPv6-文字列:
+`IPv6` ドメイ:
 
 ``` sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.tech', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.yandex/docs/en/', '2a02:e980:1e::1');
@@ -58,8 +58,8 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴──────────────────────────────────┘
 ```
 
-ドメイン値は、以下の型以外の型に暗黙的に変換できません `FixedString(16)`.
-変換したい場合 `IPv6` 値を文字列に変換するには、それを明示的に行う必要があります `IPv6NumToString()` 機能:
+ドメイン値は、暗黙的に型以外に変換できません `FixedString(16)`.
+変換したい場合 `IPv6` 文字列への値は、明示的にそれを行う必要があります `IPv6NumToString()` 関数:
 
 ``` sql
 SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
@@ -71,7 +71,7 @@ SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
 └───────────────────────────────────┴───────────────────────────────┘
 ```
 
-または `FixedString(16)` 値:
+またはaにキャスト `FixedString(16)` 値:
 
 ``` sql
 SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;

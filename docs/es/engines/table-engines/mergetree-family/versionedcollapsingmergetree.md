@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: VersionedCollapsingMergeTree
 ---
 
-# Versionedcollapsingmergetree {#versionedcollapsingmergetree}
+# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 Este motor:
 
@@ -16,7 +16,7 @@ Vea la sección [Derrumbar](#table_engines_versionedcollapsingmergetree) para m�
 
 El motor hereda de [Método de codificación de datos:](mergetree.md#table_engines-mergetree) y agrega la lógica para colapsar filas al algoritmo para fusionar partes de datos. `VersionedCollapsingMergeTree` tiene el mismo propósito que [ColapsarMergeTree](collapsingmergetree.md) pero usa un algoritmo de colapso diferente que permite insertar los datos en cualquier orden con múltiples hilos. En particular, el `Version` columna ayuda a contraer las filas correctamente, incluso si se insertan en el orden incorrecto. En contraste, `CollapsingMergeTree` sólo permite la inserción estrictamente consecutiva.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -64,7 +64,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
+) ENGINE [=] VersionedCollapsingMergeTree(date-column [, samp#table_engines_versionedcollapsingmergetreeling_expression], (primary, key), index_granularity, sign, version)
 ```
 
 Todos los parámetros excepto `sign` y `version` el mismo significado que en `MergeTree`.
@@ -133,7 +133,7 @@ Cuando ClickHouse combina partes de datos, elimina cada par de filas que tienen 
 
 Cuando ClickHouse inserta datos, ordena filas por la clave principal. Si el `Version` la columna no está en la clave principal, ClickHouse la agrega a la clave principal implícitamente como el último campo y la usa para ordenar.
 
-## Selección De Datos {#selecting-data}
+## Selección de datos {#selecting-data}
 
 ClickHouse no garantiza que todas las filas con la misma clave principal estén en la misma parte de datos resultante o incluso en el mismo servidor físico. Esto es cierto tanto para escribir los datos como para la posterior fusión de las partes de datos. Además, ClickHouse procesa `SELECT` consultas con múltiples subprocesos, y no puede predecir el orden de las filas en el resultado. Esto significa que la agregación es necesaria si hay una necesidad de obtener completamente “collapsed” datos de un `VersionedCollapsingMergeTree` tabla.
 
@@ -143,7 +143,7 @@ Los agregados `count`, `sum` y `avg` se puede calcular de esta manera. El agrega
 
 Si necesita extraer los datos con “collapsing” pero sin agregación (por ejemplo, para verificar si hay filas presentes cuyos valores más nuevos coinciden con ciertas condiciones), puede usar el `FINAL` modificador para el `FROM` clausula. Este enfoque es ineficiente y no debe usarse con tablas grandes.
 
-## Ejemplo De Uso {#example-of-use}
+## Ejemplo de uso {#example-of-use}
 
 Datos de ejemplo:
 
@@ -198,7 +198,7 @@ SELECT * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-¿qué vemos aquí y dónde están las partes colapsadas?
+¿Qué vemos aquí y dónde están las partes colapsadas?
 Creamos dos partes de datos usando dos `INSERT` consulta. El `SELECT` la consulta se realizó en dos subprocesos, y el resultado es un orden aleatorio de filas.
 No se produjo el colapso porque las partes de datos aún no se han fusionado. ClickHouse fusiona partes de datos en un punto desconocido en el tiempo que no podemos predecir.
 

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 70
 toc_title: Bibliotecas de terceros utilizadas
 ---
 
-# Bibliotecas De Terceros Utilizadas {#third-party-libraries-used}
+# Bibliotecas de terceros utilizadas {#third-party-libraries-used}
 
 | Biblioteca         | Licencia                                                                                                                                         |
 |--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|

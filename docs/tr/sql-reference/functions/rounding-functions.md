@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: "D\xF6nm\xFC\u015F"
 ---
 
-# Yuvarlama fonksiyonları {#rounding-functions}
+# Yuvarlama Fonksiyonları {#rounding-functions}
 
 ## kat(x \[, N\]) {#floorx-n}
 
-Küçük veya eşit olan en büyük yuvarlak sayıyı döndürür `x`. Yuvarlak bir sayı, 1/10N’NİN katları veya 1 / 10N tam değilse, uygun veri türünün en yakın sayısıdır.
+Küçük veya eşit olan en büyük yuvarlak sayıyı döndürür `x`. Yuvarlak bir sayı, 1/10N'NİN katları veya 1 / 10N tam değilse, uygun veri türünün en yakın sayısıdır.
 ‘N’ bir tamsayı sabiti, isteğe bağlı parametredir. Varsayılan olarak sıfırdır, bu da bir tam sayıya yuvarlamak anlamına gelir.
 ‘N’ negatif olabilir.
 
@@ -181,7 +181,7 @@ Bir sayı kabul eder. Sayı birden az ise, 0 döndürür. Aksi takdirde, sayıy�
 
 ## roundAge (num) {#roundagenum}
 
-Bir sayı kabul eder. Sayı 18’den küçükse, 0 döndürür. Aksi takdirde, sayıyı kümeden bir sayıya yuvarlar: 18, 25, 35, 45, 55. Bu fonksiyon (kayıt olmak için özeldir.Metrica ve kullanıcı yaş raporu uygulamak için kullanılır.
+Bir sayı kabul eder. Sayı 18'den küçükse, 0 döndürür. Aksi takdirde, sayıyı kümeden bir sayıya yuvarlar: 18, 25, 35, 45, 55. Bu fonksiyon (kayıt olmak için özeldir.Metrica ve kullanıcı yaş raporu uygulamak için kullanılır.
 
 ## roundDown (num, arr) {#rounddownnum-arr}
 

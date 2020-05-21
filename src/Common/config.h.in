@@ -8,4 +8,5 @@
 #cmakedefine01 USE_AWS_S3
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_UNWIND
+#cmakedefine01 USE_OPENCL
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY

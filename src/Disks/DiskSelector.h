@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
 
@@ -10,6 +9,7 @@
 
 namespace DB
 {
+class Context;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
@@ -29,6 +29,10 @@ public:
 
     /// Get all disks with names
     const auto & getDisksMap() const { return disks; }
+    void addToDiskMap(String name, DiskPtr disk)
+    {
+        disks.emplace(name, disk);
+    }
 
 private:
     std::map<String, DiskPtr> disks;

@@ -286,7 +286,7 @@ static void appendBlock(const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = (*std::move(to.getByPosition(column_no).column)).mutate();
+            MutableColumnPtr col_to = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
             col_to->insertRangeFrom(col_from, 0, rows);
 
@@ -302,7 +302,7 @@ static void appendBlock(const Block & from, Block & to)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = (*std::move(col_to)).mutate()->cut(0, old_rows);
+                    col_to = col_to->cut(0, old_rows);
             }
         }
         catch (...)

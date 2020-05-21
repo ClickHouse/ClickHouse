@@ -1,22 +1,22 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: url
 ---
 
 # url {#url}
 
-`url(URL, format, structure)` -から作成されたテーブルを返します `URL` 与えられると
+`url(URL, format, structure)` -から作成されたテーブルを返します `URL` 与えられたと
 `format` と `structure`.
 
-URL-受け入れることができるHTTPまたはHTTPSサーバアドレス `GET` および/または `POST` 要求。
+URL-HTTPまたはHTTPSサーバーアドレス。 `GET` および/または `POST` リクエスト
 
-書式 - [書式](../../interfaces/formats.md#formats) データの。
+形式 - [形式](../../interfaces/formats.md#formats) データの。
 
-構造-テーブルの構造 `'UserID UInt64, Name String'` フォーマット。 列の名前と型を決定します。
+structure-テーブルの構造 `'UserID UInt64, Name String'` 形式。 列名と型を決定します。
 
-**例えば**
+**例**
 
 ``` sql
 -- getting the first 3 lines of a table that contains columns of String and UInt32 type from HTTP-server which answers in CSV format.

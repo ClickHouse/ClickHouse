@@ -28,9 +28,10 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ## Comments {#comments}
 
-ClickHouse supports either SQL-style and C-style comments.
-SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
-C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
+ClickHouse supports either SQL-style and C-style comments:
+
+-   SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+-   C-style are from `/*` to `*/`and can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
 
@@ -101,7 +102,7 @@ Depending on the data format (input or output), `NULL` may have a different repr
 
 There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
-In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md) operators and the related functions `isNull` and `isNotNull`.
+In queries, you can check `NULL` using the [IS NULL](operators/index.md#operator-is-null) and [IS NOT NULL](operators/index.md) operators and the related functions `isNull` and `isNotNull`.
 
 ## Functions {#functions}
 

@@ -7,7 +7,7 @@ toc_title: Settings
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Изменяет поведение [распределенных подзапросов](../../sql-reference/statements/select.md).
+Изменяет поведение [распределенных подзапросов](../../sql-reference/operators/index.md).
 
 ClickHouse применяет настройку в тех случаях, когда запрос содержит произведение распределённых таблиц, т.е. когда запрос к распределенной таблице содержит не-GLOBAL подзапрос к также распределенной таблице.
 
@@ -367,7 +367,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-Устанавливает строгость по умолчанию для [JOIN](../../sql-reference/statements/select.md#select-join).
+Устанавливает строгость по умолчанию для [JOIN](../../sql-reference/statements/select/join.md#select-join).
 
 Возможные значения
 
@@ -393,13 +393,13 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 См. также:
 
--   [Секция JOIN](../../sql-reference/statements/select.md#select-join)
+-   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
 -   [Движок таблиц Join](../../engines/table-engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Устанавливает тип поведения [JOIN](../../sql-reference/statements/select.md). При объединении таблиц могут появиться пустые ячейки. ClickHouse заполняет их по-разному в зависимости от настроек.
+Устанавливает тип поведения [JOIN](../../sql-reference/statements/select/join.md). При объединении таблиц могут появиться пустые ячейки. ClickHouse заполняет их по-разному в зависимости от настроек.
 
 Возможные значения
 
@@ -1024,6 +1024,29 @@ ClickHouse генерирует исключение
         Если шард недоступен, то ClickHouse генерирует исключение.
 
 Значение по умолчанию: 0.
+
+## optimize_skip_unused_shards {#optimize-skip-unused-shards}
+
+Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
+
+Возможные значения:
+
+-    0 — Выключена.
+-    1 — Включена.
+
+Значение по умолчанию: 0
+
+## force_optimize_skip_unused_shards {#force-optimize-skip-unused-shards}
+
+Разрешает или запрещает выполнение запроса, если настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards) включена, а пропуск неиспользуемых шардов невозможен. Если данная настройка включена и пропуск невозможен, ClickHouse генерирует исключение.
+
+Возможные значения:
+
+-   0 — Выключена. ClickHouse не генерирует исключение.
+-   1 — Включена. Выполнение запроса запрещается, только если у таблицы есть ключ шардирования.
+-   2 — Включена. Выполнение запроса запрещается, даже если для таблицы не определен ключ шардирования.
+
+Значение по умолчанию: 0
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 

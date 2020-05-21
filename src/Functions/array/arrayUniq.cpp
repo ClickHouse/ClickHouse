@@ -119,7 +119,8 @@ private:
 void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
-    size_t num_arguments = arguments.size();
+    const size_t num_arguments = arguments.size();
+    assert(num_arguments > 0);
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;

@@ -13,7 +13,7 @@ server_logs_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
 server_logs="--server_logs_file=$server_logs_file"
 rm -f "$server_logs_file"
 
-settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1 --experimental_use_processors=0"
+settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1"
 
 
 # Test insert logging on each block and checkPacket() method
@@ -47,7 +47,7 @@ SELECT
     threads_realtime >= threads_time_user_system_io,
     any(length(thread_ids)) >= 1
     FROM
-        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
+        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE type='QueryFinish' ORDER BY event_time DESC LIMIT 1)
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
 # Check per-thread and per-query ProfileEvents consistency
@@ -58,7 +58,7 @@ SELECT PN, PVq, PVt FROM
     SELECT PN, sum(PV) AS PVt
     FROM system.query_thread_log
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-    WHERE event_date >= today()-1 AND query_id='$query_id'
+    WHERE query_id='$query_id'
     GROUP BY PN
 ) js1
 ANY INNER JOIN
@@ -66,7 +66,7 @@ ANY INNER JOIN
     SELECT PN, PV AS PVq
     FROM system.query_log
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-    WHERE event_date >= today()-1 AND query_id='$query_id'
+    WHERE query_id='$query_id'
 ) js2
 USING PN
 WHERE

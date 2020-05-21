@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

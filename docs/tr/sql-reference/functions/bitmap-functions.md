@@ -1,17 +1,17 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: "E\u015Flem"
 ---
 
-# Bitmap işlevleri {#bitmap-functions}
+# Bitmap İşlevleri {#bitmap-functions}
 
 Bitmap işlevleri iki bit eşlemler nesne değeri hesaplama için çalışmak, yeni bitmap veya kardinality formül hesaplama, and, or, xor ve not, vb gibi kullanırken döndürmektir.
 
 Bitmap nesnesi için 2 çeşit inşaat yöntemi vardır. Biri-State ile toplama işlevi groupBitmap tarafından inşa edilecek, diğeri Array nesnesi tarafından inşa edilecek. Ayrıca bitmap nesnesini dizi nesnesine dönüştürmektir.
 
-Roaringbitmap, Bitmap nesnelerinin gerçek depolanması sırasında bir veri yapısına sarılır. Önemlilik 32’den küçük veya eşit olduğunda, Set objet kullanır. Kardinality 32’den büyük olduğunda, roaringbitmap nesnesi kullanır. Bu nedenle düşük kardinalite kümesinin depolanması daha hızlıdır.
+Roaringbitmap, Bitmap nesnelerinin gerçek depolanması sırasında bir veri yapısına sarılır. Önemlilik 32'den küçük veya eşit olduğunda, Set objet kullanır. Kardinality 32'den büyük olduğunda, roaringbitmap nesnesi kullanır. Bu nedenle düşük kardinalite kümesinin depolanması daha hızlıdır.
 
 RoaringBitmap hakkında daha fazla bilgi için bkz: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
@@ -41,7 +41,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res)
 
 ## bitmapToArray {#bitmaptoarray}
 
-Bitmap’i tamsayı dizisine dönüştürün.
+Bitmap'i tamsayı dizisine dönüştürün.
 
 ``` sql
 bitmapToArray(bitmap)
@@ -167,7 +167,7 @@ SELECT bitmapContains(bitmapBuild([1,5,7,9]), toUInt32(9)) AS res
 bitmapHasAny(bitmap1, bitmap2)
 ```
 
-Eğer eminseniz `bitmap2` kesinlikle bir öğe içerir, kullanmayı düşünün [bitmapContains](#bitmap_functions-bitmapcontains) işlev. Daha verimli çalışır.
+Eğer eminseniz `bitmap2` kesinlikle bir öğe içerir, kullanmayı düşünün [bitmapContains](#bitmap_functions-bitmapcontains) İşlev. Daha verimli çalışır.
 
 **Parametre**
 
@@ -281,7 +281,7 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapTransform {#bitmaptransform}
 
-Bitmap’teki bir değer dizisini başka bir değer dizisine dönüştürün, sonuç yeni bir bitmap’tir.
+Bitmap'teki bir değer dizisini başka bir değer dizisine dönüştürün, sonuç yeni bir bitmap'tir.
 
     bitmapTransform(bitmap, from_array, to_array)
 
@@ -303,7 +303,7 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 ## bitmapAnd {#bitmapand}
 
-İki bitmap ve hesaplama, sonuç yeni bir bitmap’tir.
+İki bitmap ve hesaplama, sonuç yeni bir bitmap'tir.
 
 ``` sql
 bitmapAnd(bitmap,bitmap)
@@ -327,7 +327,7 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
 
 ## bitmapOr {#bitmapor}
 
-İki bitmap veya hesaplama, sonuç yeni bir bitmap’tir.
+İki bitmap veya hesaplama, sonuç yeni bir bitmap'tir.
 
 ``` sql
 bitmapOr(bitmap,bitmap)

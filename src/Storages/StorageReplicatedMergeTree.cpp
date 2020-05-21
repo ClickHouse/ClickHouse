@@ -44,6 +44,7 @@
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -361,8 +362,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             else if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
                 break;                                      /// (numbers like 0000000000 and 0000000001)
 
-            /// We wait without timeout.
-            wait_event->wait();
+            /// Replica can become inactive, so wait with timeout and recheck it
+            if (wait_event->tryWait(1000))
+                break;
         }
 
         if (partial_shutdown_called)
@@ -1049,7 +1051,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
-        max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+        max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
     }
     ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
             ttl_infos, time(nullptr), max_volume_index);
@@ -1188,7 +1190,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->disk);
+    ReservationPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->volume);
 
     auto table_lock = lockStructureForShare(
             false, RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
@@ -2271,7 +2273,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
 void StorageReplicatedMergeTree::mutationsFinalizingTask()
 {
-    LOG_DEBUG(log, "Trying to finalize mutations");
     bool needs_reschedule = false;
 
     try
@@ -2980,7 +2981,6 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
-    queue.pull_log_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
@@ -2992,6 +2992,11 @@ void StorageReplicatedMergeTree::shutdown()
         /// queue processes finished and after that reset queue_task_handle.
         auto lock = queue.lockQueue();
         queue_task_handle.reset();
+
+        /// Cancel logs pulling after background task were cancelled. It's still
+        /// required because we can trigger pullLogsToQueue during manual OPTIMIZE,
+        /// MUTATE, etc. query.
+        queue.pull_log_blocker.cancelForever();
     }
 
     if (move_parts_task_handle)
@@ -3837,7 +3842,8 @@ Strings StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Re
     {
         if (wait_for_non_active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
         {
-            waitForReplicaToProcessLogEntry(replica, entry);
+            if (!waitForReplicaToProcessLogEntry(replica, entry, wait_for_non_active))
+                unwaited.push_back(replica);
         }
         else
         {
@@ -3850,7 +3856,7 @@ Strings StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Re
 }
 
 
-void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & replica, const ReplicatedMergeTreeLogEntryData & entry)
+bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & replica, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active)
 {
     String entry_str = entry.toString();
     String log_node_name;
@@ -3871,6 +3877,12 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
       * To do this, check its node `log_pointer` - the maximum number of the element taken from `log` + 1.
       */
 
+    const auto & check_replica_become_inactive = [this, &replica]()
+    {
+        return !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
+    };
+    constexpr auto event_wait_timeout_ms = 1000;
+
     if (startsWith(entry.znode_name, "log-"))
     {
         /** In this case, just take the number from the node name `log-xxxxxxxxxx`.
@@ -3882,7 +3894,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
         LOG_DEBUG(log, "Waiting for " << replica << " to pull " << log_node_name << " to queue");
 
         /// Let's wait until entry gets into the replica queue.
-        while (true)
+        while (wait_for_non_active || !check_replica_become_inactive())
         {
             zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -3890,7 +3902,10 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 break;
 
-            event->wait();
+            if (wait_for_non_active)
+                event->wait();
+            else
+                event->tryWait(event_wait_timeout_ms);
         }
     }
     else if (startsWith(entry.znode_name, "queue-"))
@@ -3927,7 +3942,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
             LOG_DEBUG(log, "Waiting for " << replica << " to pull " << log_node_name << " to queue");
 
             /// Let's wait until the entry gets into the replica queue.
-            while (true)
+            while (wait_for_non_active || !check_replica_become_inactive())
             {
                 zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
@@ -3935,7 +3950,10 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
                 if (!log_pointer_new.empty() && parse<UInt64>(log_pointer_new) > log_index)
                     break;
 
-                event->wait();
+                if (wait_for_non_active)
+                    event->wait();
+                else
+                    event->tryWait(event_wait_timeout_ms);
             }
         }
     }
@@ -3970,13 +3988,17 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
     if (queue_entry_to_wait_for.empty())
     {
         LOG_DEBUG(log, "No corresponding node found. Assuming it has been already processed." " Found " << queue_entries.size() << " nodes.");
-        return;
+        return true;
     }
 
     LOG_DEBUG(log, "Waiting for " << queue_entry_to_wait_for << " to disappear from " << replica << " queue");
 
-    /// Third - wait until the entry disappears from the replica queue.
-    getZooKeeper()->waitForDisappear(zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for);
+    /// Third - wait until the entry disappears from the replica queue or replica become inactive.
+    String path_to_wait_on = zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
+    if (wait_for_non_active)
+        return getZooKeeper()->waitForDisappear(path_to_wait_on);
+
+    return getZooKeeper()->waitForDisappear(path_to_wait_on, check_replica_become_inactive);
 }
 
 

@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: IPv4
 ---
 
 ## IPv4 {#ipv4}
 
-`IPv4` ドメインは以下に基づきます `UInt32` 入力し、IPv4値を格納するための型指定された置換として機能します。 それは点検で人間に適する入出力形式およびコラムのタイプ情報を密集した貯蔵に与える。
+`IPv4` に基づくドメインです `UInt32` IPv4値を格納するための型指定された置換として機能します。 それは点検で人間に適する入出力フォーマットおよびコラムのタイプ情報を密集した貯蔵に与える。
 
 ### 基本的な使用法 {#basic-usage}
 
@@ -24,7 +24,7 @@ DESCRIBE TABLE hits;
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-または、ipv4ドメインをキーとして使用できます:
+または、IPv4ドメインをキーとして使用できます:
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
@@ -58,8 +58,8 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴───────────┘
 ```
 
-ドメイン値は、以下の型以外の型に暗黙的に変換できません `UInt32`.
-変換したい場合 `IPv4` 値を文字列に変換するには、それを明示的に行う必要があります `IPv4NumToString()` 機能:
+ドメイン値は、暗黙的に型以外に変換できません `UInt32`.
+変換したい場合 `IPv4` 文字列への値は、明示的にそれを行う必要があります `IPv4NumToString()` 関数:
 
 ``` sql
 SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
@@ -69,7 +69,7 @@ SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
     │ String                            │ 183.247.232.58 │
     └───────────────────────────────────┴────────────────┘
 
-または `UInt32` 値:
+またはaにキャスト `UInt32` 値:
 
 ``` sql
 SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
