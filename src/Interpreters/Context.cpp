@@ -296,7 +296,7 @@ struct ContextShared
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for storage policies. During server startup we may
-    /// initialize some important storages (system tables with MergeTree engine)
+    /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
