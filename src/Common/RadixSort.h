@@ -390,7 +390,8 @@ public:
                     /// Place the element on the next free position.
                     writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractIndex(reader[i]);
                 }
-            } else
+            }
+            else
             {
                 for (size_t i = 0; i < size; ++i)
                 {
