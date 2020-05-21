@@ -423,8 +423,8 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
 
         if (fd == -1 && log_unsupported_event)
         {
-            LOG_INFO(getLogger(), "Perf event is unsupported: event_type=" << event_info.event_type
-                                                                           << ", event_config=" << event_info.event_config);
+            LOG_INFO(getLogger(), "Perf event is unsupported: `" << event_info.settings_name
+                        << "` (event_type=" << event_info.event_type << ", event_config=" << event_info.event_config << ")");
         }
     }
 
