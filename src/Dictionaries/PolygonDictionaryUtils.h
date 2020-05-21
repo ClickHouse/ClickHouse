@@ -202,6 +202,7 @@ public:
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kMultiProcessingDepth = 2;
+    static constexpr Coord kEps = 1e-6;
 
 private:
     std::unique_ptr<ICell<ReturnCell>> root = nullptr;
@@ -252,8 +253,8 @@ private:
         {
             bg::for_each_point(polygon, [&](const Point & point)
             {
-                auto x = point.get<0>();
-                auto y = point.get<1>();
+                auto x = point.x();
+                auto y = point.y();
                 if (first || x < min_x)
                     min_x = x;
                 if (first || x > max_x)
@@ -266,6 +267,8 @@ private:
                     first = false;
             });
         });
+        max_x += kEps;
+        max_y += kEps;
     }
 };
 
