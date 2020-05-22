@@ -82,7 +82,7 @@ if [ "$REF_PR" == "" ]; then echo Reference PR is not specified ; exit 1 ; fi
 ) | tee right-commit.txt
 
 # Prepare the list of changed tests for use by compare.sh
-git -C ch diff --name-only "$SHA_TO_TEST" "$(git -C ch merge-base "$SHA_TO_TEST"~ master)" -- tests/performance | tee changed-tests.txt
+git -C ch diff --name-only "$REF_SHA" "$SHA_TO_TEST" -- tests/performance | tee changed-tests.txt
 
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
@@ -119,5 +119,5 @@ done
 
 dmesg -T > dmesg.log
 
-7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs,scripts} ./report
+7z a /output/output.7z ./*.{log,tsv,html,txt,rep,svg} {right,left}/{performance,db/preprocessed_configs,scripts} report analyze
 cp compare.log /output

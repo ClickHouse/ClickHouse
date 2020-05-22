@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

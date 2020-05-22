@@ -81,13 +81,13 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
-    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.global_context->getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context->getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+    , default_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
+    , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
     , bg_pool(bg_pool_)
@@ -214,7 +214,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
-    const auto settings = storage.global_context.getSettings();
+    const auto settings = storage.global_context->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -262,7 +262,7 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
     LOG_TRACE(log, "Started processing `" << file_path << '`');
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
     auto connection = pool->get(timeouts);
 
     try
@@ -437,7 +437,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;

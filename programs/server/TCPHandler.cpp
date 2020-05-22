@@ -278,8 +278,11 @@ void TCPHandler::runImpl()
             sendLogs();
             sendEndOfStream();
 
-            query_scope.reset();
+            /// QueryState should be cleared before QueryScope, since otherwise
+            /// the MemoryTracker will be wrong for possible deallocations.
+            /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            query_scope.reset();
         }
         catch (const Exception & e)
         {
@@ -359,8 +362,11 @@ void TCPHandler::runImpl()
 
         try
         {
-            query_scope.reset();
+            /// QueryState should be cleared before QueryScope, since otherwise
+            /// the MemoryTracker will be wrong for possible deallocations.
+            /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            query_scope.reset();
         }
         catch (...)
         {

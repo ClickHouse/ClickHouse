@@ -1,6 +1,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemDisks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
