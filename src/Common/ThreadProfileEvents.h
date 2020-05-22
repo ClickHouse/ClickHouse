@@ -69,11 +69,8 @@ namespace ProfileEvents
 
     extern const Event PerfCpuClock;
     extern const Event PerfTaskClock;
-    extern const Event PerfPageFaults;
     extern const Event PerfContextSwitches;
     extern const Event PerfCpuMigrations;
-    extern const Event PerfPageFaultsMin;
-    extern const Event PerfPageFaultsMaj;
     extern const Event PerfAlignmentFaults;
     extern const Event PerfEmulationFaults;
 #endif
@@ -183,7 +180,7 @@ struct PerfDescriptorsHolder;
 
 struct PerfEventsCounters
 {
-    static constexpr size_t NUMBER_OF_RAW_EVENTS = 19;
+    static constexpr size_t NUMBER_OF_RAW_EVENTS = 16;
     static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
     static constexpr char ALL_EVENTS_NAME[] = "all";
 
