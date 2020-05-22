@@ -564,10 +564,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
 
                 ProfileEvents::increment(ProfileEvents::FailedQuery);
-                if (ast->as<ASTInsertQuery>()) {
-                    ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-                } else if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>()) {
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
                     ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
 
             };
