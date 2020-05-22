@@ -411,7 +411,7 @@ Enables or disables specific ClickHouse server behavior in `ANY INNER|LEFT|RIGHT
 When the behavior enabled:
 
 - Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
-- Results of `ANY INNER JOIN` operations contain all rows from left table like the `SEMI LEFT JOIN` operations do.
+- Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
 
 When the behavior disabled:
 
