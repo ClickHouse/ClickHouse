@@ -51,6 +51,7 @@ namespace
 {
     const auto RESCHEDULE_MS = 500;
     const auto CLEANUP_TIMEOUT_MS = 3000;
+    const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
 
     /// Configuration prefix
     const String CONFIG_PREFIX = "kafka";
@@ -386,6 +387,8 @@ void StorageKafka::threadFunc()
         size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
         if (dependencies_count)
         {
+            auto start_time = std::chrono::steady_clock::now();
+
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!stream_cancelled && num_created_consumers > 0)
             {
@@ -394,9 +397,21 @@ void StorageKafka::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                // Reschedule if not limited
-                if (!streamToViews())
+                // Exit the loop & reschedule if some stream stalled
+                auto some_stream_is_stalled = streamToViews();
+                if (some_stream_is_stalled)
+                {
+                    LOG_TRACE(log, "Stream(s) stalled. Reschedule.");
                     break;
+                }
+
+                auto ts = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
+                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                {
+                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                    break;
+                }
             }
         }
     }
@@ -459,15 +474,15 @@ bool StorageKafka::streamToViews()
     // It will be cancelled on underlying layer (kafka buffer)
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
+
+    bool some_stream_is_stalled = false;
     for (auto & stream : streams)
+    {
+        some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
         stream->as<KafkaBlockInputStream>()->commit();
+    }
 
-    // Check whether the limits were applied during query execution
-    bool limits_applied = false;
-    const BlockStreamProfileInfo & info = in->getProfileInfo();
-    limits_applied = info.hasAppliedLimit();
-
-    return limits_applied;
+    return some_stream_is_stalled;
 }
 
 void registerStorageKafka(StorageFactory & factory)
