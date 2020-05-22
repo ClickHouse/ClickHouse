@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 
 namespace DB
 {
@@ -21,7 +21,7 @@ namespace ErrorCodes
 // FunctionStringHash
 // Simhash: String -> UInt64
 // Minhash: String -> (UInt64, UInt64)
-template <typename Impl, typename Name, bool IsSimhash>
+template <typename Impl, typename Name, bool is_simhash>
 class FunctionsStringHash : public IFunction
 {
 public:
@@ -38,7 +38,7 @@ public:
         if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        if (IsSimhash)
+        if constexpr (is_simhash)
             return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
         auto element = DataTypeFactory::instance().get("UInt64");
         return std::make_shared<DataTypeTuple>(DataTypes{element, element});
@@ -49,7 +49,7 @@ public:
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
         const ColumnConst * col_const = typeid_cast<const ColumnConst *>(&*column);
         using ResultType = typename Impl::ResultType;
-        if constexpr (IsSimhash)
+        if constexpr (is_simhash)
         {
             if (col_const)
             {

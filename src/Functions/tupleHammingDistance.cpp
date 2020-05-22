@@ -51,19 +51,7 @@ struct TupleHammingDistanceImpl
     static ResultType constant_constant(UInt64 a1, UInt64 b1, UInt64 a2, UInt64 b2) { return apply(a1, a2) + apply(b1, b2); }
 
 private:
-    static UInt8 pop_cnt(UInt64 res)
-    {
-        UInt8 count = 0;
-        for (; res; res >>= 1)
-            count += res & 1u;
-        return count;
-    }
-
-    static inline UInt8 apply(UInt64 a, UInt64 b)
-    {
-        UInt64 res = a ^ b;
-        return pop_cnt(res);
-    }
+    static inline UInt8 apply(UInt64 a, UInt64 b) { return a != b; }
 };
 
 template <typename F>
@@ -83,12 +71,10 @@ bool castType(const IDataType * type, F && f)
 template <typename F>
 static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 {
-    return castType(left, [&](const auto & left_) {
-        return castType(right, [&](const auto & right_) { return f(left_, right_); });
-    });
+    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
-// tupleHammingDistance function: (Tuple(Integer, Integer), Tuple(Integer, Integer))->UInt8
+// tupleHammingDistance function: (Tuple(Integer, Integer), Tuple(Integer, Integer))->0/1/2
 // in order to avoid code bloating, for non-constant tuple, we make sure that the elements
 // in the tuple should have same data type, and for constant tuple, elements can be any integer
 // data type, we cast all of them into UInt64
@@ -126,8 +112,7 @@ public:
             throw Exception(
                 "Illegal column of arguments of function " + getName() + ", tuple should have exactly two elements.",
                 ErrorCodes::ILLEGAL_COLUMN);
-        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right)
-        {
+        bool valid = castBothTypes(left_elems[0].get(), right_elems[0].get(), [&](const auto & left, const auto & right) {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
@@ -138,7 +123,9 @@ public:
 
             using OpImpl = TupleHammingDistanceImpl<T0, T1>;
 
-            // constant tuple - constant tuple
+            // we can not useDefaultImplementationForConstants,
+            // because with that, tupleHammingDistance((10, 300), (10, 20)) does not work,
+            // since 10 has data type UInt8, and 300 has data type UInt16
             if (const ColumnConst * const_col_left = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
             {
                 if (const ColumnConst * const_col_right = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
