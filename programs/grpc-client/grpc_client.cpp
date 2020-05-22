@@ -4,10 +4,26 @@
 #include <vector>
 #include <thread>
 #include <stdlib.h>
+
+#if defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Weverything"
+#endif
+#if defined (__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Weverything"
+#endif
 #include <grpc++/channel.h>
 #include <grpc++/client_context.h>
 #include <grpc++/create_channel.h>
 #include <grpc++/security/credentials.h>
+#if defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
+#if defined (__clang__)
+#  pragma clang diagnostic pop
+#endif
+
 #include "GrpcConnection.grpc.pb.h"
 
 class GRPCClient
@@ -43,8 +59,8 @@ class GRPCClient
 
             request.set_allocated_query_info(querySettigs.release());
 
-            void* got_tag = (void*)1;
-            bool ok = false;
+            //void* got_tag = (void*)1;
+            //bool ok = false;
 
             std::unique_ptr<grpc::ClientReaderWriter<GRPCConnection::QueryRequest, GRPCConnection::QueryResponse> > reader(stub_->Query(&context));
             reader->Write(request);
@@ -123,7 +139,7 @@ class GRPCClient
         std::unique_ptr<GRPCConnection::GRPC::Stub> stub_;
 };
 
-int main(int argc, char** argv)
+int main(int /* argc */, char** argv)
 {
     GRPCConnection::User userInfo1;
     userInfo1.set_user("default");

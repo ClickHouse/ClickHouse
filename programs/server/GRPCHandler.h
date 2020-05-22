@@ -13,9 +13,24 @@
 #include <Poco/RunnableAdapter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+#if defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Weverything"
+#endif
+#if defined (__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Weverything"
+#endif
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
 #include <grpc++/server_context.h>
+#if defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
+#if defined (__clang__)
+#  pragma clang diagnostic pop
+#endif
+
 #include "GrpcConnection.grpc.pb.h"
 
 #include "WriteBufferFromGRPC.h"
@@ -56,7 +71,7 @@ class CallDataQuery : public CommonCallData
           {
                detailsStatus = SEND_TOTALS;
                status = START_QUERY;
-               out = std::make_shared<WriteBufferFromGRPC>(&responder, (void*)this, nullptr);
+               out = std::make_shared<WriteBufferFromGRPC>(&responder, static_cast<void*>(this), nullptr);
                service->RequestQuery(&gRPCcontext, &responder, new_call_cq, notification_cq, this);
           }
           void ParseQuery();

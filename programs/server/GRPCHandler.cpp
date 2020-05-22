@@ -47,7 +47,7 @@ void CallDataQuery::respond()
             {
                 new CallDataQuery(service, notification_cq, new_call_cq, iServer, log);
                 status = PARSE_QUERY;
-                responder.Read(&request, (void*)this);
+                responder.Read(&request, static_cast<void*>(this));
                 break;
             }
             case PARSE_QUERY:
@@ -78,10 +78,10 @@ void CallDataQuery::respond()
 
         tryLogCurrentException(log);
         std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-        int exception_code = getCurrentExceptionCode();
+        //int exception_code = getCurrentExceptionCode();
         response.set_exception_occured(exception_message);
         status = FINISH_QUERY;
-        responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), (void*)this);
+        responder.WriteAndFinish(response, grpc::WriteOptions(), grpc::Status(), static_cast<void*>(this));
     }
 }
 
@@ -208,7 +208,7 @@ void CallDataQuery::ParseData()
         if (request.query_info().data_stream())
         {
             status = READ_DATA;
-            responder.Read(&request, (void*)this);
+            responder.Read(&request, static_cast<void*>(this));
             return;
         }
         io.out->writeSuffix();
@@ -232,7 +232,7 @@ void CallDataQuery::ReadData()
 
         while (auto block = res_stream->read())
             io.out->write(block);
-        responder.Read(&request, (void*)this);
+        responder.Read(&request, static_cast<void*>(this));
     }
 }
 void CallDataQuery::ExecuteQuery()
@@ -262,8 +262,10 @@ void CallDataQuery::ProgressQuery()
         if (block)
         {
             if (!io.null_format)
+            {
                 sent = sendData(block);
                 break;
+            }
         }
         if (progress_watch.elapsedMilliseconds() >= interactive_delay)
         {
@@ -301,7 +303,10 @@ void CallDataQuery::SendDetails()
             {
                 sent = true;
                 FinishQuery();
+                break;
             }
+            case SEND_PROFILEINFO:
+                break;
         }
     }
 }
@@ -336,20 +341,20 @@ bool CallDataQuery::sendProgress()
             auto in = std::make_unique<ReadBufferFromString>(buffer);
             ProgressValues progressValues;
             progressValues.read(*in, DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO);
-            GRPCConnection::Progress progress;
-            progress.set_read_rows(progressValues.read_rows);
-            progress.set_read_bytes(progressValues.read_bytes);
-            progress.set_total_rows_to_read(progressValues.total_rows_to_read);
-            progress.set_written_rows(progressValues.written_rows);
-            progress.set_written_bytes(progressValues.written_bytes);
-            return progress;
+            GRPCConnection::Progress progress2;
+            progress2.set_read_rows(progressValues.read_rows);
+            progress2.set_read_bytes(progressValues.read_bytes);
+            progress2.set_total_rows_to_read(progressValues.total_rows_to_read);
+            progress2.set_written_rows(progressValues.written_rows);
+            progress2.set_written_bytes(progressValues.written_bytes);
+            return progress2;
         };
 
     out->setResponse([&grpcProgress](const String& buffer)
                     {
                         QueryResponse tmp_response;
-                        auto progress = std::make_unique<GRPCConnection::Progress>(grpcProgress(buffer));
-                        tmp_response.set_allocated_progress(progress.release());
+                        auto progress2 = std::make_unique<GRPCConnection::Progress>(grpcProgress(buffer));
+                        tmp_response.set_allocated_progress(progress2.release());
                         return tmp_response;
                     });
     auto increment = progress.fetchAndResetPiecewiseAtomically();

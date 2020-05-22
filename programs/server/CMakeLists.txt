@@ -12,8 +12,6 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/StaticRequestHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
-    ${PROTO_SRCS}
-    ${PROTO_HDRS}
     ${GRPC_SRCS}
     ${GRPC_HDRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/GRPCHandler.cpp
@@ -23,6 +21,10 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CLICKHOUSE_SERVER_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandlerFactory.cpp
+)
+
+set (CLICKHOUSE_SERVER_INCLUDE
+    PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 set (CLICKHOUSE_SERVER_LINK
@@ -37,12 +39,10 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_storages_system
         clickhouse_table_functions
         string_utils
+        libgrpc++
 
     PUBLIC
         daemon
-        grpc++
-        libprotobuf
-
 )
 
 clickhouse_program_add(server)
