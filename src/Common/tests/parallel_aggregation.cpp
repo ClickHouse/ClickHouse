@@ -114,9 +114,8 @@ static void aggregate12(Map & map, Source::const_iterator begin, Source::const_i
     auto prev_it = end;
     for (auto it = begin; it != end; ++it)
     {
-        if (prev_it != end && *it == *prev_it)
+        if (prev_it != end && *it == *prev_it && found)
         {
-            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -139,9 +138,8 @@ static void aggregate15(Map & map, Source::const_iterator begin,Source::const_it
         size_t hash = map.hash(*it);
         if (hash < min_value || hash > max_value)
             continue;
-        if (prev_it != end && *it == *prev_it)
+        if (prev_it != end && *it == *prev_it && found)
         {
-            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -167,9 +165,8 @@ static void aggregate151(Map & map, Source::const_iterator begin,Source::const_i
         size_t cur_bucket = getThreadNum(hash, num_threads_128);
         if (cur_bucket != bucket)
             continue;
-        if (prev_it != end && *it == *prev_it)
+        if (prev_it != end && *it == *prev_it && found)
         {
-            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
