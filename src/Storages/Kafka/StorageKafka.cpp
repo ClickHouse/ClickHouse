@@ -454,7 +454,10 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    copyData(*in, *block_io.out, &stream_cancelled);
+    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
+    // It will be cancelled on underlying layer (kafka buffer)
+    std::atomic<bool> stub = {false};
+    copyData(*in, *block_io.out, &stub);
     for (auto & stream : streams)
         stream->as<KafkaBlockInputStream>()->commit();
 
