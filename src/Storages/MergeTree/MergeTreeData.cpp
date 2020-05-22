@@ -621,7 +621,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
 
         auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, new_columns.getAllPhysical());
         result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
-        result.destination_type = PartDestinationType::DELETE;
+        result.destination_type = DataDestinationType::DELETE;
         result.result_column = ttl_ast->getColumnName();
 
         checkTTLExpression(result.expression, result.result_column);
@@ -665,7 +665,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             if (!ttl_element)
                 throw Exception("Unexpected AST element in TTL expression", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-            if (ttl_element->destination_type == PartDestinationType::DELETE)
+            if (ttl_element->destination_type == DataDestinationType::DELETE)
             {
                 if (seen_delete_ttl)
                 {
@@ -688,7 +688,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
                 if (!new_ttl_entry.getDestination(getStoragePolicy()))
                 {
                     String message;
-                    if (new_ttl_entry.destination_type == PartDestinationType::DISK)
+                    if (new_ttl_entry.destination_type == DataDestinationType::DISK)
                         message = "No such disk " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
                     else
                         message = "No such volume " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
@@ -2921,11 +2921,11 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         SpacePtr destination_ptr = ttl_entry->getDestination(getStoragePolicy());
         if (!destination_ptr)
         {
-            if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+            if (ttl_entry->destination_type == DataDestinationType::VOLUME)
                 LOG_WARNING(log, "Would like to reserve space on volume '"
                         << ttl_entry->destination_name << "' by TTL rule of table '"
                         << log_name << "' but volume was not found");
-            else if (ttl_entry->destination_type == PartDestinationType::DISK)
+            else if (ttl_entry->destination_type == DataDestinationType::DISK)
                 LOG_WARNING(log, "Would like to reserve space on disk '"
                         << ttl_entry->destination_name << "' by TTL rule of table '"
                         << log_name << "' but disk was not found");
@@ -2936,11 +2936,11 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
             if (reservation)
                 return reservation;
             else
-                if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                if (ttl_entry->destination_type == DataDestinationType::VOLUME)
                     LOG_WARNING(log, "Would like to reserve space on volume '"
                             << ttl_entry->destination_name << "' by TTL rule of table '"
                             << log_name << "' but there is not enough space");
-                else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                else if (ttl_entry->destination_type == DataDestinationType::DISK)
                     LOG_WARNING(log, "Would like to reserve space on disk '"
                             << ttl_entry->destination_name << "' by TTL rule of table '"
                             << log_name << "' but there is not enough space");
@@ -2954,9 +2954,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
 
 SpacePtr MergeTreeData::TTLEntry::getDestination(StoragePolicyPtr policy) const
 {
-    if (destination_type == PartDestinationType::VOLUME)
+    if (destination_type == DataDestinationType::VOLUME)
         return policy->getVolumeByName(destination_name);
-    else if (destination_type == PartDestinationType::DISK)
+    else if (destination_type == DataDestinationType::DISK)
         return policy->getDiskByName(destination_name);
     else
         return {};
@@ -2964,13 +2964,13 @@ SpacePtr MergeTreeData::TTLEntry::getDestination(StoragePolicyPtr policy) const
 
 bool MergeTreeData::TTLEntry::isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const
 {
-    if (destination_type == PartDestinationType::VOLUME)
+    if (destination_type == DataDestinationType::VOLUME)
     {
         for (const auto & disk : policy->getVolumeByName(destination_name)->getDisks())
             if (disk->getName() == part.volume->getDisk()->getName())
                 return true;
     }
-    else if (destination_type == PartDestinationType::DISK)
+    else if (destination_type == DataDestinationType::DISK)
         return policy->getDiskByName(destination_name)->getName() == part.volume->getDisk()->getName();
     return false;
 }

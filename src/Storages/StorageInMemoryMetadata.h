@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/DataDestinationType.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -72,5 +73,17 @@ struct StorageMetadataKeyField
     static StorageMetadataKeyField getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
+struct StorageMetadataTTLField
+{
+    ASTPtr definition_ast;
+
+    ExpressionActionsPtr expression;
+
+    String result_column;
+
+    DataDestinationType destination_type;
+
+    String destination_name;
+};
 
 }
