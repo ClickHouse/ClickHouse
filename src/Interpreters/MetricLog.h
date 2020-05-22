@@ -25,7 +25,7 @@ struct MetricLogElement
 
     static std::string name() { return "MetricLog"; }
     static Block createBlock();
-    void appendToBlock(Block & block) const;
+    void appendToBlock(MutableColumns & columns) const;
 };
 
 
