@@ -107,7 +107,7 @@ private:
 
 
 /// Simple algorithm with bounding box.
-template <typename Strategy, typename CoordinateType>
+template <typename CoordinateType>
 class PointInPolygon
 {
 public:
@@ -136,7 +136,7 @@ public:
         if (!boost::geometry::within(point, box))
             return false;
 
-        return boost::geometry::covered_by(point, polygon, strategy);
+        return boost::geometry::covered_by(point, polygon);
     }
 
     UInt64 getAllocatedBytes() const { return sizeof(*this); }
@@ -145,7 +145,6 @@ private:
     const Polygon & polygon;
     Box box;
     bool has_empty_bound = false;
-    Strategy strategy;
 };
 
 
