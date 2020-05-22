@@ -6,6 +6,8 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -31,7 +33,7 @@
 #include <iterator>
 #include <cmath>
 #include <algorithm>
-#include <IO/WriteBufferFromString.h>
+
 
 namespace DB
 {
@@ -627,24 +629,19 @@ std::string serialize(Polygon && polygon)
 {
     WriteBufferFromOwnString buffer;
 
-    using RingType = typename std::decay_t<Polygon>::ring_type;
-
-    auto serializeRing = [&buffer](const RingType & ring)
+    auto serialize_ring = [&buffer](const auto & ring)
     {
-        writeBinary(ring.size(), buffer);
-        for (const auto & point : ring)
-        {
-            writeBinary(point.x(), buffer);
-            writeBinary(point.y(), buffer);
-        }
+        UInt32 size = ring.size();
+        writeBinary(size, buffer);
+        buffer.write(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
     };
 
-    serializeRing(polygon.outer());
+    serialize_ring(polygon.outer());
 
     const auto & inners = polygon.inners();
     writeBinary(inners.size(), buffer);
     for (auto & inner : inners)
-        serializeRing(inner);
+        serialize_ring(inner);
 
     return buffer.str();
 }
