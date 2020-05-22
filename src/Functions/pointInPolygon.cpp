@@ -186,7 +186,7 @@ public:
         const auto & tuple_columns = tuple_col->getColumns();
 
         const IColumn * poly_col = block.getByPosition(arguments[1]).column.get();
-        const auto * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
+        const ColumnConst * const_poly_col = checkAndGetColumn<ColumnConst>(poly_col);
 
         bool point_is_const = const_tuple_col != nullptr;
         bool poly_is_const = const_poly_col != nullptr;
@@ -204,17 +204,22 @@ public:
         {
             if (!poly_is_const || i == 0)
             {
-                polygon = parsePolygon(block, arguments, i);
+                /// Validation is used only for constant polygons, otherwise it's too computational heavy.
+                polygon = parsePolygon(block, arguments, i, validate && poly_is_const);
             }
 
             size_t point_index = point_is_const ? 0 : i;
             data[i] = call_impl(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), polygon);
         }
 
-        auto & result_column = block.safeGetByPosition(result).column;
-        result_column = std::move(execution_result);
         if (point_is_const && poly_is_const)
-            result_column = ColumnConst::create(result_column, const_tuple_col->size());
+        {
+            block.getByPosition(result).column = ColumnConst::create(std::move(execution_result), const_tuple_col->size());
+        }
+        else
+        {
+            block.getByPosition(result).column = std::move(execution_result);
+        }
     }
 
 
@@ -330,7 +335,7 @@ private:
         return polygon;
     }
 
-    Polygon parsePolygon(Block & block, const ColumnNumbers & arguments, size_t i) const
+    Polygon parsePolygon(Block & block, const ColumnNumbers & arguments, size_t i, bool validate_polygon) const
     {
         Polygon polygon;
         if (arguments.size() == 2)
@@ -345,7 +350,7 @@ private:
         boost::geometry::correct(polygon);
 
 #if !defined(__clang_analyzer__) /// It does not like boost.
-        if (validate)
+        if (validate_polygon)
         {
             std::string failure_message;
             auto is_valid = boost::geometry::is_valid(polygon, failure_message);
