@@ -97,8 +97,10 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
+using DisksMap = std::map<String, DiskPtr>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
@@ -545,8 +547,8 @@ public:
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
 
-    std::map<String, StoragePolicyPtr> getPoliciesMap() const;
-    std::map<String, DiskPtr> getDisksMap() const;
+    StoragePoliciesMap getPoliciesMap() const;
+    DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
