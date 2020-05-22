@@ -15,6 +15,7 @@ namespace ErrorCodes
 
 using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
+const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
 ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
@@ -80,9 +81,65 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     });
 }
 
-// NOTE on removed desctuctor: There is no need to unsubscribe prior to calling rd_kafka_consumer_close().
-// check: https://github.com/edenhill/librdkafka/blob/master/INTRODUCTION.md#termination
-// manual destruction was source of weird errors (hangs during droping kafka table, etc.)
+ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
+{
+    try
+    {
+        if (!consumer->get_subscription().empty())
+        {
+            try
+            {
+                consumer->unsubscribe();
+            }
+            catch (const cppkafka::HandleException & e)
+            {
+                LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor (unsubscribe): " << e.what());
+            }
+            drain();
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor: " << e.what());
+    }
+
+}
+
+// Needed to drain rest of the messages / queued callback calls from the consumer
+// after unsubscribe, otherwise consumer will hang on destruction
+// see https://github.com/edenhill/librdkafka/issues/2077
+//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+void ReadBufferFromKafkaConsumer::drain()
+{
+    auto start_time = std::chrono::steady_clock::now();
+    cppkafka::Error last_error(RD_KAFKA_RESP_ERR_NO_ERROR);
+
+    while (true)
+    {
+        auto msg = consumer->poll(100ms);
+        if (!msg)
+            break;
+
+        if (auto err = msg.get_error())
+        {
+            if (msg.is_eof() || err == last_error)
+            {
+                break;
+            }
+            else
+            {
+                LOG_WARNING(log, "Error during ReadBufferFromKafkaConsumer draining: " << err);
+            }
+        }
+
+        auto ts = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
+        {
+            break;
+        }
+    }
+}
+
 
 void ReadBufferFromKafkaConsumer::commit()
 {
