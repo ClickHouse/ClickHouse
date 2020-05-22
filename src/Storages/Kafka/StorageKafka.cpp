@@ -325,7 +325,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & /* facility */, const std::string & message)
     {
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-        LOG_SIMPLE(log, message, client_logs_level, poco_level);
+        LOG_IMPL(log, client_logs_level, poco_level, message);
     });
 
     // Configure interceptor to change thread name
@@ -334,7 +334,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     // XXX:  rdkafka uses pthread_set_name_np(), but glibc-compatibliity overrides it to noop.
     {
         // This should be safe, since we wait the rdkafka object anyway.
-        void * self = reinterpret_cast<void *>(this);
+        void * self = static_cast<void *>(this);
 
         int status;
 
