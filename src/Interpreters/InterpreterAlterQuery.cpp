@@ -244,12 +244,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::MOVE_PARTITION:
         {
-            if ((command.move_destination_type == PartDestinationType::DISK)
-                || (command.move_destination_type == PartDestinationType::VOLUME))
+            if ((command.move_destination_type == DataDestinationType::DISK)
+                || (command.move_destination_type == DataDestinationType::VOLUME))
             {
                 required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
             }
-            else if (command.move_destination_type == PartDestinationType::TABLE)
+            else if (command.move_destination_type == DataDestinationType::TABLE)
             {
                 required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                 required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
