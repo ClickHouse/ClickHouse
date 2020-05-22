@@ -446,27 +446,27 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
-    /// Returns structure with partition key
+    /// Returns structure with partition key.
     const StorageMetadataKeyField & getPartitionKey() const;
     /// Set partition key for storage (methods bellow, are just wrappers for this
-    /// struct)
+    /// struct).
     void setPartitionKey(const StorageMetadataKeyField & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
     ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
-    /// Storage has partition key
+    /// Storage has partition key.
     bool hasPartitionKey() const;
     /// Returns column names that need to be read to calculate partition key.
     Names getColumnsRequiredForPartitionKey() const;
 
 
-    /// Returns structure with sorting key
+    /// Returns structure with sorting key.
     const StorageMetadataKeyField & getSortingKey() const;
     /// Set sorting key for storage (methods bellow, are just wrappers for this
-    /// struct)
+    /// struct).
     void setSortingKey(const StorageMetadataKeyField & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
     ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
-    /// Storage has sorting key
+    /// Storage has sorting key.
     bool hasSortingKey() const;
     /// Returns column names that need to be read to calculate sorting key.
     Names getColumnsRequiredForSortingKey() const;
@@ -474,16 +474,16 @@ public:
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     Names getSortingKeyColumns() const;
 
-    /// Returns structure with primary key
+    /// Returns structure with primary key.
     const StorageMetadataKeyField & getPrimaryKey() const;
     /// Set primary key for storage (methods bellow, are just wrappers for this
-    /// struct)
+    /// struct).
     void setPrimaryKey(const StorageMetadataKeyField & primary_key_);
     /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
     ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) sorting key
+    /// Storage has user-defined (in CREATE query) sorting key.
     bool isPrimaryKeyDefined() const;
-    /// Storage has primary key (maybe part of some other key)
+    /// Storage has primary key (maybe part of some other key).
     bool hasPrimaryKey() const;
     /// Returns column names that need to be read to calculate primary key.
     Names getColumnsRequiredForPrimaryKey() const;
@@ -491,14 +491,14 @@ public:
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
-    /// Returns structure with sampling key
+    /// Returns structure with sampling key.
     const StorageMetadataKeyField & getSamplingKey() const;
     /// Set sampling key for storage (methods bellow, are just wrappers for this
-    /// struct)
+    /// struct).
     void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
     ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
-    /// Storage has sampling key
+    /// Storage has sampling key.
     bool hasSamplingKey() const;
     /// Returns column names that need to be read to calculate sampling key.
     Names getColumnsRequiredForSampling() const;
