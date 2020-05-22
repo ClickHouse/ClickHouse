@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/ClientInfo.h>
 
 
 namespace ProfileEvents

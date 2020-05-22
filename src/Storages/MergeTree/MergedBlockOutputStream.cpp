@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Interpreters/Context.h>
 #include <Poco/File.h>
 
 
