@@ -3,7 +3,6 @@
 
 namespace DB
 {
-
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
@@ -37,6 +36,9 @@ void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
+void registerFunctionBitHammingDistance(FunctionFactory & factory);
+void registerFunctionTupleHammingDistance(FunctionFactory & factory);
+void registerFunctionsStringHash(FunctionFactory & factory);
 
 
 void registerFunctions()
@@ -78,6 +80,9 @@ void registerFunctions()
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
+    registerFunctionBitHammingDistance(factory);
+    registerFunctionTupleHammingDistance(factory);
+    registerFunctionsStringHash(factory);
 }
 
 }

@@ -72,18 +72,18 @@ struct ExtractStringImpl
     // read a ASCII word from pos to word
     // if the word size exceeds max_word_size, only read max_word_size byte
     // in  FuntionsStringHash, the default value of max_word_size is 128
-    static ALWAYS_INLINE inline size_t readOneASCIIWord(UInt8 * word, const char *& pos, const char * end, const size_t & max_word_size)
+    static ALWAYS_INLINE inline size_t readOneASCIIWord(UInt8 * word, const char *& pos, const char * end, size_t max_word_size)
     {
         // jump seperators
-        while (pos < end && !isAlphaNum(*pos))
+        while (pos < end && !isAlphaNumericASCII(*pos))
             ++pos;
 
         // word start from here
         const char * word_start = pos;
-        while (pos < end && isAlphaNum(*pos))
+        while (pos < end && isAlphaNumericASCII(*pos))
             ++pos;
 
-        size_t word_size = (static_cast<size_t>(pos - word_start) <= max_word_size) ? pos - word_start : max_word_size;
+        size_t word_size = std::min<size_t>(pos - word_start, max_word_size);
 
         memcpy(word, word_start, word_size);
         if (CaseInsensitive)
@@ -107,7 +107,7 @@ struct ExtractStringImpl
 
     // read one UTF8 word from pos to word
     // also, we assume that one word size cann't exceed max_word_size with default value 128
-    static ALWAYS_INLINE inline size_t readOneUTF8Word(UInt32 * word, const char *& pos, const char * end, const size_t & max_word_size)
+    static ALWAYS_INLINE inline size_t readOneUTF8Word(UInt32 * word, const char *& pos, const char * end, size_t max_word_size)
     {
         // jump UTF8 seperator
         while (pos < end && isUTF8Sep(*pos))
@@ -122,7 +122,7 @@ struct ExtractStringImpl
     }
 
 private:
-    static ALWAYS_INLINE inline bool isAlphaNum(const UInt8 c)
+    static ALWAYS_INLINE inline bool isAlphaNumericASCII(const UInt8 c)
     {
         return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
     }
@@ -134,7 +134,7 @@ private:
     }
 
     // we use ASCII non-alphanum character as UTF8 seperator
-    static ALWAYS_INLINE inline bool isUTF8Sep(const UInt8 c) { return c < 128 && !isAlphaNum(c); }
+    static ALWAYS_INLINE inline bool isUTF8Sep(const UInt8 c) { return c < 128 && !isAlphaNumericASCII(c); }
 
     // read one UTF8 character and return it
     static ALWAYS_INLINE inline UInt32 readOneUTF8Code(const char *& pos, const char * end)

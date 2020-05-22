@@ -40,21 +40,11 @@ struct BitHammingDistanceImpl
             c[i] = apply(a, b[i]);
     }
 
-    static ResultType constant_constant(A a, B b) { return apply(a, b); }
-
 private:
-    static UInt8 pop_cnt(UInt64 res)
-    {
-        UInt8 count = 0;
-        for (; res; res >>= 1)
-            count += res & 1u;
-        return count;
-    }
-
     static inline UInt8 apply(UInt64 a, UInt64 b)
     {
         UInt64 res = a ^ b;
-        return pop_cnt(res);
+        return __builtin_popcountll(res);
     }
 };
 
@@ -75,9 +65,7 @@ bool castType(const IDataType * type, F && f)
 template <typename F>
 static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
 {
-    return castType(left, [&](const auto & left_) {
-        return castType(right, [&](const auto & right_) { return f(left_, right_); });
-    });
+    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 
 // bitHammingDistance function: (Integer, Integer) -> UInt8
@@ -103,12 +91,13 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         auto * left_generic = block.getByPosition(arguments[0]).type.get();
         auto * right_generic = block.getByPosition(arguments[1]).type.get();
-        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
-        {
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right) {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
             using T0 = typename LeftDataType::FieldType;
@@ -121,16 +110,6 @@ public:
 
             auto col_left_raw = block.getByPosition(arguments[0]).column.get();
             auto col_right_raw = block.getByPosition(arguments[1]).column.get();
-            if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
-            {
-                if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                {
-                    // constant integer - constant integer
-                    auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
-                    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
-                    return true;
-                }
-            }
 
             typename ColVecResult::MutablePtr col_res = nullptr;
             col_res = ColVecResult::create();

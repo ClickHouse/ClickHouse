@@ -31,47 +31,35 @@ struct Hash
 #endif
     }
 
-    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes, const size_t & size, const size_t & offset)
+    static ALWAYS_INLINE inline UInt64 wordShinglesHash(const UInt64 * hashes, size_t size, size_t offset)
     {
-        UInt64 res = 0;
-        UInt8 flag = 0;
+        UInt64 crc = -1ULL;
+#ifdef __SSE4_2__
         for (size_t i = offset; i < size; ++i)
-        {
-            if (flag)
-                res &= intHashCRC32(hashes[i]);
-            else
-                res |= intHashCRC32(hashes[i]);
-            flag = (flag + 1) % 2;
-        }
+            crc = _mm_crc32_u64(crc, hashes[i]);
         for (size_t i = 0; i < offset; ++i)
-        {
-            if (flag)
-                res &= intHashCRC32(hashes[i]);
-            else
-                res |= intHashCRC32(hashes[i]);
-            flag = (flag + 1) % 2;
-        }
-        return res;
+            crc = _mm_crc32_u64(crc, hashes[i]);
+#else
+        for (size_t i = offset; i < size; ++i)
+            crc = intHashCRC32(crc) ^ intHashCRC32(hashes[i]);
+        for (size_t i = 0; i < offset; ++i)
+            crc = intHashCRC32(crc) ^ intHashCRC32(hashes[i]);
+#endif
+        return crc;
     }
 
     template <typename CodePoint>
-    static ALWAYS_INLINE inline UInt64 hashSum(const CodePoint * hashes, const size_t & K)
+    static ALWAYS_INLINE inline UInt64 hashSum(const CodePoint * hashes, size_t K)
     {
-        UInt64 even = 0;
-        UInt64 odd = 0;
-        size_t i = 0;
-        for (; i + 1 < K; i += 2)
-        {
-            even |= intHashCRC32(hashes[i]);
-            odd |= intHashCRC32(hashes[i + 1]);
-        }
-        if (i < K)
-            even |= intHashCRC32(hashes[K - 1]);
+        UInt64 crc = -1ULL;
 #ifdef __SSE4_2__
-        return _mm_crc32_u64(even, odd);
+        for (size_t i = 0; i < K; ++i)
+            crc = _mm_crc32_u64(crc, hashes[i]);
 #else
-        return (intHashCRC32(even) ^ intHashCRC32(odd));
+        for (size_t i = 0; i < K; ++i)
+            crc = intHashCRC32(crc) ^ intHashCRC32(hashes[i]);
 #endif
+        return crc;
     }
 };
 
@@ -93,7 +81,7 @@ struct SimhashImpl
     // finally return a 64 bit value(UInt64), i'th bit is 1 means vector[i] > 0, otherwise, vector[i] < 0
     static ALWAYS_INLINE inline UInt64 ngramCalculateHashValue(
         const char * data,
-        const size_t size,
+        size_t size,
         size_t (*read_code_points)(CodePoint *, const char *&, const char *),
         UInt64 (*hash_functor)(const CodePoint *))
     {
@@ -146,9 +134,9 @@ struct SimhashImpl
     // values to caculate the next word shingle hash value
     static ALWAYS_INLINE inline UInt64 wordShinglesCalculateHashValue(
         const char * data,
-        const size_t size,
-        size_t (*read_one_word)(CodePoint *, const char *&, const char *, const size_t &),
-        UInt64 (*hash_functor)(const UInt64 *, const size_t &, const size_t &))
+        size_t size,
+        size_t (*read_one_word)(CodePoint *, const char *&, const char *, size_t),
+        UInt64 (*hash_functor)(const UInt64 *, size_t, size_t))
     {
         const char * start = data;
         const char * end = data + size;
@@ -156,7 +144,7 @@ struct SimhashImpl
         // Also, a 64 bit vector initialized to zero
         Int64 finger_vec[64] = {};
         // a array to store N word hash values
-        UInt64 nwordHashes[N] = {};
+        UInt64 nword_hashes[N] = {};
         // word buffer to store one word
         CodePoint word_buf[max_word_size] = {};
         size_t word_size;
@@ -167,16 +155,16 @@ struct SimhashImpl
             if (word_size)
             {
                 // for each word, calculate a hash value and stored into the array
-                nwordHashes[i++] = Hash::hashSum(word_buf, word_size);
+                nword_hashes[i++] = Hash::hashSum(word_buf, word_size);
             }
         }
 
         // calculate the first word shingle hash value
-        UInt64 hash_value = hash_functor(nwordHashes, N, 0);
-        std::bitset<64> bits_(hash_value);
+        UInt64 hash_value = hash_functor(nword_hashes, N, 0);
+        std::bitset<64> first_bits(hash_value);
         for (size_t i = 0; i < 64; ++i)
         {
-            finger_vec[i] += ((bits_.test(i)) ? 1 : -1);
+            finger_vec[i] += ((first_bits.test(i)) ? 1 : -1);
         }
 
         size_t offset = 0;
@@ -187,12 +175,12 @@ struct SimhashImpl
             // so we need to store new word hash into location of a0, then ,this array become
             // |a5|a1|a2|a3|a4|, next time, a1 become the oldest location, we need to store new
             // word hash value into locaion of a1, then array become |a5|a6|a2|a3|a4|
-            nwordHashes[offset] = Hash::hashSum(word_buf, word_size);
+            nword_hashes[offset] = Hash::hashSum(word_buf, word_size);
             offset = (offset + 1) % N;
             // according to the word hash storation way, in order to not lose the word shingle's
             // sequence information, when calculation word shingle hash value, we need provide the offset
             // inforation, which is the offset of the first word's hash value of the word shingle
-            hash_value = hash_functor(nwordHashes, N, offset);
+            hash_value = hash_functor(nword_hashes, N, offset);
             std::bitset<64> bits(hash_value);
             for (size_t i = 0; i < 64; ++i)
             {
@@ -272,7 +260,7 @@ struct MinhashImpl
 
     // insert a new value into K minimum hash array if this value
     // is smaller than the greatest value in the array
-    static ALWAYS_INLINE inline void insert_minValue(UInt64 * hashes, UInt64 v)
+    static ALWAYS_INLINE inline void insertMinValue(UInt64 * hashes, UInt64 v)
     {
         size_t i = 0;
         for (; i < K && hashes[i] <= v; ++i)
@@ -286,7 +274,7 @@ struct MinhashImpl
 
     // insert a new value into K maximum hash array if this value
     // is greater than the smallest value in the array
-    static ALWAYS_INLINE inline void insert_maxValue(UInt64 * hashes, UInt64 v)
+    static ALWAYS_INLINE inline void insertMaxValue(UInt64 * hashes, UInt64 v)
     {
         int i = K - 1;
         for (; i >= 0 && hashes[i] >= v; --i)
@@ -305,7 +293,7 @@ struct MinhashImpl
     // return this two hashsum: Tuple(hashsum1, hashsum2)
     static ALWAYS_INLINE inline std::tuple<UInt64, UInt64> ngramCalculateHashValue(
         const char * data,
-        const size_t size,
+        size_t size,
         size_t (*read_code_points)(CodePoint *, const char *&, const char *),
         UInt64 (*hash_functor)(const CodePoint *))
     {
@@ -326,8 +314,8 @@ struct MinhashImpl
                 auto new_hash = hash_functor(cp + iter);
                 // insert the new hash value into array used to store K minimum value
                 // and K maximum value
-                insert_minValue(k_minimum, new_hash);
-                insert_maxValue(k_maxinum, new_hash);
+                insertMinValue(k_minimum, new_hash);
+                insertMaxValue(k_maxinum, new_hash);
             }
             iter = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
@@ -343,9 +331,9 @@ struct MinhashImpl
     // K minimum and K maximum hash value
     static ALWAYS_INLINE inline std::tuple<UInt64, UInt64> wordShinglesCalculateHashValue(
         const char * data,
-        const size_t size,
-        size_t (*read_one_word)(CodePoint *, const char *&, const char *, const size_t &),
-        UInt64 (*hash_functor)(const UInt64 *, const size_t &, const size_t &))
+        size_t size,
+        size_t (*read_one_word)(CodePoint *, const char *&, const char *, size_t),
+        UInt64 (*hash_functor)(const UInt64 *, size_t, size_t))
     {
         const char * start = data;
         const char * end = start + size;
@@ -353,7 +341,7 @@ struct MinhashImpl
         UInt64 k_minimum[K] = {};
         UInt64 k_maxinum[K] = {};
         // array to store n word hashes
-        UInt64 nwordHashes[N] = {};
+        UInt64 nword_hashes[N] = {};
         // word buffer to store one word
         CodePoint word_buf[max_word_size] = {};
         size_t word_size;
@@ -364,22 +352,22 @@ struct MinhashImpl
             word_size = read_one_word(word_buf, start, end, max_word_size);
             if (word_size)
             {
-                nwordHashes[i++] = Hash::hashSum(word_buf, word_size);
+                nword_hashes[i++] = Hash::hashSum(word_buf, word_size);
             }
         }
 
-        auto new_hash = hash_functor(nwordHashes, N, 0);
-        insert_minValue(k_minimum, new_hash);
-        insert_maxValue(k_maxinum, new_hash);
+        auto new_hash = hash_functor(nword_hashes, N, 0);
+        insertMinValue(k_minimum, new_hash);
+        insertMaxValue(k_maxinum, new_hash);
 
         size_t offset = 0;
         while (start < end && (word_size = read_one_word(word_buf, start, end, max_word_size)))
         {
-            nwordHashes[offset] = Hash::hashSum(word_buf, word_size);
+            nword_hashes[offset] = Hash::hashSum(word_buf, word_size);
             offset = (offset + 1) % N;
-            new_hash = hash_functor(nwordHashes, N, offset);
-            insert_minValue(k_minimum, new_hash);
-            insert_maxValue(k_maxinum, new_hash);
+            new_hash = hash_functor(nword_hashes, N, offset);
+            insertMinValue(k_minimum, new_hash);
+            insertMaxValue(k_maxinum, new_hash);
         }
 
         // calculate hashsum
