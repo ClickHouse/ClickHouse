@@ -1709,13 +1709,13 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 }
 
 
-const std::map<String, DiskPtr> & Context::getDisksMap() const
+std::map<String, DiskPtr> Context::getDisksMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
     return getDiskSelector(lock)->getDisksMap();
 }
 
-const std::map<String, StoragePolicyPtr> & Context::getPoliciesMap() const
+std::map<String, StoragePolicyPtr> Context::getPoliciesMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
     return getStoragePolicySelector(lock)->getPoliciesMap();
