@@ -153,11 +153,8 @@ const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
     // `cpu-clock` is a bit broken according to this: https://stackoverflow.com/a/56967896
     softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PerfCpuClock, "cpu-clock"),
     softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PerfTaskClock, "task-clock"),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS, ProfileEvents::PerfPageFaults, "page-faults"),
     softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PerfContextSwitches, "context-switches"),
     softwareEvent(PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PerfCpuMigrations, "cpu-migrations"),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MIN, ProfileEvents::PerfPageFaultsMin, "page-faults-min"),
-    softwareEvent(PERF_COUNT_SW_PAGE_FAULTS_MAJ, ProfileEvents::PerfPageFaultsMaj, "page-faults-maj"),
     softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PerfAlignmentFaults, "alignment-faults"),
     softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PerfEmulationFaults, "emulation-faults")
 };

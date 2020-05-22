@@ -211,11 +211,8 @@
     \
     M(PerfCpuClock, "The CPU clock, a high-resolution per-CPU timer") \
     M(PerfTaskClock, "A clock count specific to the task that is running") \
-    M(PerfPageFaults, "Number of page faults") \
     M(PerfContextSwitches, "Number of context switches") \
     M(PerfCpuMigrations, "Number of times the process has migrated to a new CPU") \
-    M(PerfPageFaultsMin, "Number of minor page faults. These did not require disk I/O to handle") \
-    M(PerfPageFaultsMaj, "Number of major page faults. These required disk I/O to handle") \
     M(PerfAlignmentFaults, "Number of alignment faults. These happen when unaligned memory accesses happen; the kernel can handle these but it reduces performance. This happens only on some architectures (never on x86).") \
     M(PerfEmulationFaults, "Number of emulation faults. The kernel sometimes traps on unimplemented instructions and emulates them for user space. This can negatively impact performance.") \
     \
