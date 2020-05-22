@@ -205,7 +205,7 @@ public:
             if (!poly_is_const || i == 0)
             {
                 /// Validation is used only for constant polygons, otherwise it's too computational heavy.
-                polygon = parsePolygon(block, arguments, i, validate && poly_is_const);
+                parsePolygon(block, arguments, i, validate && poly_is_const, polygon);
             }
 
             size_t point_index = point_is_const ? 0 : i;
@@ -231,7 +231,7 @@ private:
         return "Argument " + toString(i + 1) + " for function " + getName();
     }
 
-    Polygon parsePolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, size_t i) const
+    void parsePolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, size_t i, Polygon & out_polygon) const
     {
         const auto & poly = block.getByPosition(arguments[1]).column.get();
         const auto * column_const = checkAndGetColumn<ColumnConst>(poly);
@@ -264,21 +264,20 @@ private:
             }
         };
 
-        Polygon polygon;
         if (nested_array_col)
         {
             for (auto j : ext::range(array_col->getOffsets()[i - 1], array_col->getOffsets()[i]))
             {
                 size_t l = nested_array_col->getOffsets()[j - 1];
                 size_t r = nested_array_col->getOffsets()[j];
-                if (polygon.outer().empty())
+                if (out_polygon.outer().empty())
                 {
-                    parse_polygon_part(polygon.outer(), l, r);
+                    parse_polygon_part(out_polygon.outer(), l, r);
                 }
                 else
                 {
-                    polygon.inners().emplace_back();
-                    parse_polygon_part(polygon.inners().back(), l, r);
+                    out_polygon.inners().emplace_back();
+                    parse_polygon_part(out_polygon.inners().back(), l, r);
                 }
             }
         }
@@ -287,16 +286,12 @@ private:
             size_t l = array_col->getOffsets()[i - 1];
             size_t r = array_col->getOffsets()[i];
 
-            parse_polygon_part(polygon.outer(), l, r);
+            parse_polygon_part(out_polygon.outer(), l, r);
         }
-
-        return polygon;
     }
 
-    Polygon parsePolygonFromMultipleColumns(Block & block, const ColumnNumbers & arguments, size_t) const
+    void parsePolygonFromMultipleColumns(Block & block, const ColumnNumbers & arguments, size_t, Polygon & out_polygon) const
     {
-        Polygon polygon;
-
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             const auto * const_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
@@ -314,10 +309,10 @@ private:
             const auto & column_x = tuple_columns[0];
             const auto & column_y = tuple_columns[1];
 
-            if (!polygon.outer().empty())
-                polygon.inners().emplace_back();
+            if (!out_polygon.outer().empty())
+                out_polygon.inners().emplace_back();
 
-            auto & container = polygon.outer().empty() ? polygon.outer() : polygon.inners().back();
+            auto & container = out_polygon.outer().empty() ? out_polygon.outer() : out_polygon.inners().back();
 
             auto size = column_x->size();
 
@@ -331,34 +326,28 @@ private:
                 container.push_back(Point(x_coord, y_coord));
             }
         }
-
-        return polygon;
     }
 
-    Polygon parsePolygon(Block & block, const ColumnNumbers & arguments, size_t i, bool validate_polygon) const
+    void parsePolygon(Block & block, const ColumnNumbers & arguments, size_t i, bool validate_polygon, Polygon & out_polygon) const
     {
-        Polygon polygon;
-        if (arguments.size() == 2)
-        {
-            polygon = parsePolygonFromSingleColumn(block, arguments, i);
-        }
-        else
-        {
-            polygon = parsePolygonFromMultipleColumns(block, arguments, i);
-        }
+        out_polygon.clear();
 
-        boost::geometry::correct(polygon);
+        if (arguments.size() == 2)
+            parsePolygonFromSingleColumn(block, arguments, i, out_polygon);
+        else
+            parsePolygonFromMultipleColumns(block, arguments, i, out_polygon);
+
+        boost::geometry::correct(out_polygon);
 
 #if !defined(__clang_analyzer__) /// It does not like boost.
         if (validate_polygon)
         {
             std::string failure_message;
-            auto is_valid = boost::geometry::is_valid(polygon, failure_message);
+            auto is_valid = boost::geometry::is_valid(out_polygon, failure_message);
             if (!is_valid)
                 throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
         }
 #endif
-        return polygon;
     }
 };
 
