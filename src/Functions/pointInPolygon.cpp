@@ -227,10 +227,15 @@ private:
 
     void parsePolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, size_t i, Polygon & out_polygon) const
     {
-        const auto & poly = block.getByPosition(arguments[1]).column.get();
+        const auto * poly = block.getByPosition(arguments[1]).column.get();
         const auto * column_const = checkAndGetColumn<ColumnConst>(poly);
-        const auto * array_col =
-            column_const ? checkAndGetColumn<ColumnArray>(column_const->getDataColumn()) : checkAndGetColumn<ColumnArray>(poly);
+
+        parsePolygonFromSingleColumnImpl(column_const ? column_const->getDataColumn() : *poly, i, out_polygon);
+    }
+
+    void parsePolygonFromSingleColumnImpl(const IColumn & column, size_t i, Polygon & out_polygon) const
+    {
+        const auto * array_col = checkAndGetColumn<ColumnArray>(&column);
 
         if (!array_col)
             throw Exception(getMessagePrefix(1) + " must contain an array of tuples or an array of arrays of tuples",
