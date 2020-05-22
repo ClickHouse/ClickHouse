@@ -152,14 +152,14 @@ MergeTreeData::MergeTreeData(
 
     if (metadata.sample_by_ast != nullptr)
     {
-        StorageMetadataKeyField sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
+        StorageMetadataKeyField candidate_sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
 
-        const auto & primary_key = getPrimaryKey();
-        if (!primary_key.sample_block.has(sampling_key.column_names[0])
-            && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
+        const auto & pk_sample_block = getPrimaryKey().sample_block;
+        if (!pk_sample_block.has(candidate_sampling_key.column_names[0]) && !attach
+            && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        setSamplingKey(sampling_key);
+        setSamplingKey(candidate_sampling_key);
     }
 
     MergeTreeDataFormatVersion min_format_version(0);
