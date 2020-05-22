@@ -415,7 +415,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
 }
 
 // can process events in format "<spaces><symbols><spaces>,<spaces><symbols><spaces>,...",
-// e.g. "cpu-cycles" or " cpu-cycles   " or "cpu-cycles,instructions" or "   cpu-cycles   ,   instructions   "
+// e.g. "cpu-cycles" or " cpu-cycles    " or "cpu-cycles,instructions" or "    cpu-cycles    ,    instructions    "
 std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string & events_list)
 {
     if (last_parsed_events.has_value())
