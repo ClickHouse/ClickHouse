@@ -260,11 +260,20 @@ private:
     }
 
     template <typename T>
-    void parsePolygonPart(const IColumn & x_column, const IColumn & y_column, size_t begin, size_t end, T & out_container) const
+    void parsePolygonPart(
+        const IColumn & x_column,
+        const IColumn & y_column,
+        size_t begin,
+        size_t end,
+        T & out_container) const
     {
         out_container.reserve(end - begin);
         for (size_t i = begin; i < end; ++i)
-            out_container.emplace_back(x_column.getFloat64(i), y_column.getFloat64(i));
+        {
+            Float64 x = x_column.getFloat64(i);
+            Float64 y = y_column.getFloat64(i);
+            out_container.emplace_back(x, y);
+        }
     }
 
     void parsePolygonFromSingleColumn1D(const IColumn & column, size_t i, Polygon & out_polygon) const
@@ -372,7 +381,7 @@ private:
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, PointInPolygonTrivial<Float64>>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, PointInPolygon<Float64>>>();
 }
 
 }
