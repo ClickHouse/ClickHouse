@@ -357,8 +357,8 @@ if (USE_OPENCL)
 endif ()
 
 if (USE_CASSANDRA)
-    dbms_target_link_libraries(PRIVATE ${CASSANDRA_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${CASS_INCLUDE_DIR})
+    dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
 endif()
 
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})

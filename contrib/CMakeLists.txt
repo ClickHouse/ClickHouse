@@ -319,6 +319,6 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_CASSANDRA)
-    add_subdirectory(libuv)
+    add_subdirectory(libuv-cmake)
     add_subdirectory(cassandra)
 endif()
