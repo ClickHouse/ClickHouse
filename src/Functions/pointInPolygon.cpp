@@ -50,7 +50,7 @@ using Polygon = boost::geometry::model::polygon<Point, false>;
 using Box = boost::geometry::model::box<Point>;
 
 
-template <typename PointInConstPolygonImpl, typename PointInNonConstPolygonImpl>
+template <typename PointInConstPolygonImpl>
 class FunctionPointInPolygon : public IFunction
 {
 public:
@@ -60,7 +60,7 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl, PointInNonConstPolygonImpl>>(
+        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(
             context.getSettingsRef().validate_polygons);
     }
 
@@ -210,8 +210,6 @@ public:
             auto res_column = ColumnVector<UInt8>::create(input_rows_count);
             auto & data = res_column->getData();
 
-            Polygon polygon;
-
             if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
             {
                 ColumnPtr polygon_column_float64 = castColumn(
@@ -224,12 +222,12 @@ public:
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    polygon.clear();
-                    parsePolygonFromSingleColumn2D(*polygon_column_float64, i, polygon);
-
-                    PointInNonConstPolygonImpl impl(polygon);
                     size_t point_index = point_is_const ? 0 : i;
-                    data[i] = impl.contains(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index));
+                    data[i] = isInsidePolygonFromSingleColumn2D(
+                        tuple_columns[0]->getFloat64(point_index),
+                        tuple_columns[1]->getFloat64(point_index),
+                        *polygon_column_float64,
+                        i);
                 }
             }
             else
@@ -243,12 +241,12 @@ public:
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    polygon.clear();
-                    parsePolygonFromSingleColumn1D(*polygon_column_float64, i, polygon);
-
-                    PointInNonConstPolygonImpl impl(polygon);
                     size_t point_index = point_is_const ? 0 : i;
-                    data[i] = impl.contains(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index));
+                    data[i] = isInsidePolygonFromSingleColumn1D(
+                        tuple_columns[0]->getFloat64(point_index),
+                        tuple_columns[1]->getFloat64(point_index),
+                        *polygon_column_float64,
+                        i);
                 }
             }
 
@@ -295,6 +293,40 @@ private:
             out_container.emplace_back(x_data[i], y_data[i]);
     }
 
+    bool isInsidePolygonPart(
+        Float64 point_x,
+        Float64 point_y,
+        const Float64 * ring_x_data,
+        const Float64 * ring_y_data,
+        size_t ring_begin,
+        size_t ring_end) const
+    {
+        size_t size = ring_end - ring_begin;
+
+        if (size < 2)
+            return false;
+
+        /// https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
+
+        size_t vertex1_idx = ring_begin;
+        size_t vertex2_idx = ring_end - 1;
+        bool res = false;
+
+        while (vertex1_idx < ring_end)
+        {
+            if (((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
+                && (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
+                    * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
+                    + ring_x_data[vertex1_idx]))
+                res = !res;
+
+            vertex2_idx = vertex1_idx;
+            ++vertex1_idx;
+        }
+
+        return res;
+    }
+
     void parsePolygonFromSingleColumn1D(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
@@ -306,6 +338,28 @@ private:
         const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
 
         parsePolygonPart(x_data, y_data, begin, end, out_polygon.outer());
+    }
+
+    bool isInsidePolygonFromSingleColumn1D(
+        Float64 point_x,
+        Float64 point_y,
+        const IColumn & polygon_column,
+        size_t i) const
+    {
+        const auto & array_col = static_cast<const ColumnArray &>(polygon_column);
+
+        size_t begin = array_col.getOffsets()[i - 1];
+        size_t end = array_col.getOffsets()[i];
+        size_t size = end - begin;
+
+        if (size < 2)
+            return false;
+
+        const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
+        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
+
+        return isInsidePolygonPart(point_x, point_y, x_data, y_data, begin, end);
     }
 
     void parsePolygonFromSingleColumn2D(const IColumn & column, size_t i, Polygon & out_polygon) const
@@ -334,6 +388,41 @@ private:
                 parsePolygonPart(x_data, y_data, begin, end, out_polygon.inners().back());
             }
         }
+    }
+
+    bool isInsidePolygonFromSingleColumn2D(
+        Float64 point_x,
+        Float64 point_y,
+        const IColumn & polygon_column,
+        size_t i) const
+    {
+        const auto & array_col = static_cast<const ColumnArray &>(polygon_column);
+        size_t rings_begin = array_col.getOffsets()[i - 1];
+        size_t rings_end = array_col.getOffsets()[i];
+
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+        const auto & tuple_columns = static_cast<const ColumnTuple &>(nested_array_col.getData()).getColumns();
+        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
+
+        for (size_t j = rings_begin; j < rings_end; ++j)
+        {
+            size_t begin = nested_array_col.getOffsets()[j - 1];
+            size_t end = nested_array_col.getOffsets()[j];
+
+            if (j == rings_begin)
+            {
+                if (!isInsidePolygonPart(point_x, point_y, x_data, y_data, begin, end))
+                    return false;
+            }
+            else
+            {
+                if (isInsidePolygonPart(point_x, point_y, x_data, y_data, begin, end))
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     void parseConstPolygonFromMultipleColumns(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
@@ -404,9 +493,7 @@ private:
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<
-        PointInPolygonWithGrid<Float64>,
-        PointInPolygon<boost::geometry::strategy::within::franklin<Point>, Float64>>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>>>();
 }
 
 }
