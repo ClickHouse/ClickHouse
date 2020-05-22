@@ -404,6 +404,38 @@ Possible values:
 
 Default value: 0.
 
+## partial_merge_join_optimizations {#partial_merge_join_optimizations}
+
+Enables of disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
+
+Optimizations:
+
+- Skipping of  unneeded right blocks instead of pass through them.
+
+Possible values:
+
+-   0 — Optimizations disabled.
+-   1 — Optimizations enabled.
+
+Default value: 1.
+
+## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
+
+Limits a size of right-hand join data blocks.
+
+ClickHouse server:
+
+- Splits right-hand join data in blocks of the specified size.
+- Indexes each block with minimum and maximum values
+- Unloads prepared blocks to disk if possible.
+
+Possible values:
+
+- Any positive integer.
+- 0 — Limitation is turned off.
+
+Default value: 65536.
+
 ## max\_block\_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
