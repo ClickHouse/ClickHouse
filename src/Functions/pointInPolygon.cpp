@@ -341,6 +341,8 @@ private:
             if (!is_valid)
                 throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
         }
+#else
+        (void)validate_polygon;
 #endif
     }
 };
