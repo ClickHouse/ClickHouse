@@ -230,7 +230,6 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
-        distributed_ddl_replication_check = config->getBool(prefix + ".distributed_ddl_replication_check", distributed_ddl_replication_check);
 
         if (config->has(prefix + ".profile"))
             context.setSetting("profile", config->getString(prefix + ".profile"));
@@ -713,7 +712,7 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
             ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
 
-    if (!storage->supportsReplication() && config_is_replicated_shard && distributed_ddl_replication_check)
+    if (!storage->supportsReplication() && config_is_replicated_shard && context.getSettingsRef().distributed_ddl_replication_check)
     {
         throw Exception("Table " + backQuote(table) + " isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
             " is replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
