@@ -1192,6 +1192,158 @@ def test_exception_from_destructor(kafka_cluster):
     assert TSV(instance.query('SELECT 1')) == TSV('1')
 
 
+@pytest.mark.timeout(120)
+def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(1)]
+    kafka_produce('commits_of_unprocessed_messages_on_drop', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination (
+            key UInt64,
+            value UInt64,
+            _topic String,
+            _key String,
+            _offset UInt64,
+            _partition UInt64,
+            _timestamp Nullable(DateTime),
+            _consumed_by LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        ORDER BY key;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'commits_of_unprocessed_messages_on_drop',
+                    kafka_group_name = 'commits_of_unprocessed_messages_on_drop_test_group',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 1000;
+
+        CREATE MATERIALIZED VIEW test.kafka_consumer TO test.destination AS
+            SELECT
+            key,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+    while int(instance.query("SELECT count() FROM test.destination")) == 0:
+        print("Waiting for test.kafka_consumer to start consume")
+        time.sleep(1)
+
+    cancel = threading.Event()
+
+    i = [2]
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            for _ in range(113):
+                messages.append(json.dumps({'key': i[0], 'value': i[0]}))
+                i[0] += 1
+            kafka_produce('commits_of_unprocessed_messages_on_drop', messages)
+            time.sleep(1)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+    time.sleep(12)
+
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'commits_of_unprocessed_messages_on_drop',
+                    kafka_group_name = 'commits_of_unprocessed_messages_on_drop_test_group',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 10000;
+    ''')
+
+    cancel.set()
+    time.sleep(15)
+
+    #kafka_cluster.open_bash_shell('instance')
+    # SELECT key, _timestamp, _offset FROM test.destination where runningDifference(key) <> 1 ORDER BY key;
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.destination')
+    print(result)
+
+    instance.query('''
+        DROP TABLE test.kafka_consumer;
+        DROP TABLE test.destination;
+    ''')
+
+    kafka_thread.join()
+    assert TSV(result) == TSV('{0}\t{0}\t{0}'.format(i[0]-1)), 'Missing data!'
+
+
+@pytest.mark.timeout(1200)
+def test_kafka_duplicates_when_commit_failed(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': 'x' * 300}) for j in range(22)]
+    kafka_produce('duplicates_when_commit_failed', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'duplicates_when_commit_failed',
+                     kafka_group_name = 'duplicates_when_commit_failed',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 20;
+
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka
+            WHERE NOT sleepEachRow(0.5);
+    ''')
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    time.sleep(12) # 5-6 sec to connect to kafka, do subscription, and fetch 20 rows, another 10 sec for MV, after that commit should happen
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    kafka_cluster.pause_container('kafka1')
+    # that timeout it VERY important, and picked after lot of experiments
+    # when too low (<30sec) librdkafka will not report any timeout (alternative is to decrease the default session timeouts for librdkafka)
+    # when too high (>50sec) broker will decide to remove us from the consumer group, and will start answering "Broker: Unknown member"
+    time.sleep(40)
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    kafka_cluster.unpause_container('kafka1')
+
+    #kafka_cluster.open_bash_shell('instance')
+
+    # connection restored and it will take a while until next block will be flushed
+    # it takes years on CI :\
+    time.sleep(30)
+
+    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
+    assert instance.contains_in_log("Local: Waiting for coordinator")
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV('22\t22\t22')
+
+
+
 if __name__ == '__main__':
     cluster.start()
     raw_input("Cluster created, press any key to destroy...")
