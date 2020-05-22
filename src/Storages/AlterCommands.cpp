@@ -594,6 +594,27 @@ bool AlterCommand::isCommentAlter() const
     return false;
 }
 
+bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
+{
+    if (type == MODIFY_TTL)
+        return true;
+
+    if (!ttl || type != MODIFY_COLUMN)
+        return false;
+
+    bool ttl_changed = true;
+    for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
+    {
+        if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
+        {
+            ttl_changed = false;
+            break;
+        }
+    }
+
+    return ttl_changed;
+}
+
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata) const
 {
     if (!isRequireMutationStage(metadata))
@@ -944,13 +965,35 @@ bool AlterCommands::isCommentAlter() const
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isCommentAlter(); });
 }
 
+static MutationCommand createMaterializeTTLCommand()
+{
+    MutationCommand command;
+    auto ast = std::make_shared<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_TTL;
+    command.type = MutationCommand::MATERIALIZE_TTL;
+    command.ast = std::move(ast);
+    return command;
+}
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata); mutation_cmd)
             result.push_back(*mutation_cmd);
+
+    if (materialize_ttl)
+    {
+        for (const auto & alter_cmd : *this)
+        {
+            if (alter_cmd.isTTLAlter(metadata))
+            {
+                result.push_back(createMaterializeTTLCommand());
+                break;
+            }
+        }
+    }
+
     return result;
 }
 
