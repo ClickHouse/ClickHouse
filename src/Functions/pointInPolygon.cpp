@@ -195,30 +195,42 @@ public:
             ? callPointInPolygonImplWithPool<Polygon, PointInConstPolygonImpl>
             : callPointInPolygonImpl<Polygon, PointInNonConstPolygonImpl>;
 
-        size_t size = point_is_const && poly_is_const ? 1 : input_rows_count;
-        auto execution_result = ColumnVector<UInt8>::create(size);
-        auto & data = execution_result->getData();
-
-        Polygon polygon;
-        for (auto i : ext::range(0, size))
+        if (poly_is_const)
         {
-            if (!poly_is_const || i == 0)
+            Polygon polygon;
+            parsePolygon(block, arguments, 0, validate, polygon);
+
+            if (point_is_const)
             {
-                /// Validation is used only for constant polygons, otherwise it's too computational heavy.
-                parsePolygon(block, arguments, i, validate && poly_is_const, polygon);
+                bool is_in = call_impl(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0), polygon);
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, is_in);
             }
+            else
+            {
+                auto res_column = ColumnVector<UInt8>::create(input_rows_count);
+                auto & data = res_column->getData();
 
-            size_t point_index = point_is_const ? 0 : i;
-            data[i] = call_impl(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), polygon);
-        }
+                for (auto i : ext::range(0, input_rows_count))
+                    data[i] = call_impl(tuple_columns[0]->getFloat64(i), tuple_columns[1]->getFloat64(i), polygon);
 
-        if (point_is_const && poly_is_const)
-        {
-            block.getByPosition(result).column = ColumnConst::create(std::move(execution_result), const_tuple_col->size());
+                block.getByPosition(result).column = std::move(res_column);
+            }
         }
         else
         {
-            block.getByPosition(result).column = std::move(execution_result);
+            auto res_column = ColumnVector<UInt8>::create(input_rows_count);
+            auto & data = res_column->getData();
+
+            Polygon polygon;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                /// Validation is used only for constant polygons, otherwise it's too computational heavy.
+                parsePolygon(block, arguments, i, false, polygon);
+                size_t point_index = point_is_const ? 0 : i;
+                data[i] = call_impl(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), polygon);
+            }
+
+            block.getByPosition(result).column = std::move(res_column);
         }
     }
 
