@@ -6,8 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 #include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -625,25 +624,27 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 
 
 template <typename Polygon>
-std::string serialize(Polygon && polygon)
+UInt128 sipHash128(Polygon && polygon)
 {
-    WriteBufferFromOwnString buffer;
+    SipHash hash;
 
-    auto serialize_ring = [&buffer](const auto & ring)
+    auto hash_ring = [&hash](const auto & ring)
     {
         UInt32 size = ring.size();
-        writeBinary(size, buffer);
-        buffer.write(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
+        hash.update(size);
+        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
     };
 
-    serialize_ring(polygon.outer());
+    hash_ring(polygon.outer());
 
     const auto & inners = polygon.inners();
-    writeBinary(inners.size(), buffer);
+    hash.update(inners.size());
     for (auto & inner : inners)
-        serialize_ring(inner);
+        hash_ring(inner);
 
-    return buffer.str();
+    UInt128 res;
+    hash.get128(res.low, res.high);
+    return res;
 }
 
 }
