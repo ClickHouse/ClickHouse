@@ -3,13 +3,13 @@ import sys
 import time
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from helpers.test_tools import TSV
 from .cluster import ClickHouseClusterWithDDLHelpers
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-@pytest.fixture(scope="module", params=["configs", "configs_secure"])
+
+@pytest.fixture(scope="module", params=["configs"])#, "configs_secure"])
 def test_cluster(request):
     cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param)
 
@@ -91,3 +91,21 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
 
     test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster")
     test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster")
+
+
+def test_distributed_ddl_replication_check(test_cluster):
+    instance = test_cluster.instances['ch1']
+
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS view ON CLUSTER cluster")
+    # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
+    firewall_drops_rules = test_cluster.pm_random_drops.pop_rules()
+    test_cluster.ddl_check_query(instance, """
+CREATE VIEW IF NOT EXISTS view ON CLUSTER cluster AS SELECT * FROM system.settings
+""")
+    instance.query("""
+ALTER TABLE view ON CLUSTER cluster MODIFY QUERY SELECT * FROM system.settings WHERE changed
+""", settings={'distributed_ddl_replication_check': 1})
+    test_cluster.ddl_check_query(instance, "DROP TABLE view ON CLUSTER cluster")
+
+    # Enable random ZK packet drops
+    test_cluster.pm_random_drops.push_rules(firewall_drops_rules)
