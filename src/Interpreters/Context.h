@@ -545,8 +545,8 @@ public:
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
 
-    const std::map<String, StoragePolicyPtr> & getPoliciesMap() const;
-    const std::map<String, DiskPtr> & getDisksMap() const;
+    std::map<String, StoragePolicyPtr> getPoliciesMap() const;
+    std::map<String, DiskPtr> getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
