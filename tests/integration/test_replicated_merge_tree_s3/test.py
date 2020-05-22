@@ -85,7 +85,7 @@ def drop_table(cluster):
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
 
-
+@pytest.mark.skip(reason="Cannot correctly start server")
 def test_insert_select_replicated(cluster):
     create_table(cluster)
 

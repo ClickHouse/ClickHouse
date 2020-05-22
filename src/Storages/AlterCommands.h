@@ -118,6 +118,9 @@ struct AlterCommand
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
 
+    /// Checks that any TTL changed by alter
+    bool isTTLAlter(const StorageInMemoryMetadata & metadata) const;
+
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
@@ -160,9 +163,10 @@ public:
     bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
-    /// alter. If alter can be performed is pure metadata update, than result is
-    /// empty.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata) const;
+    /// alter. If alter can be performed as pure metadata update, than result is
+    /// empty. If some TTL changes happened than, depending on materialize_ttl
+    /// additional mutation command (MATERIALIZE_TTL) will be returned.
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl) const;
 };
 
 }

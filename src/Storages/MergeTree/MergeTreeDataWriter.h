@@ -9,7 +9,6 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

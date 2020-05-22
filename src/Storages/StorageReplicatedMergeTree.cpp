@@ -44,6 +44,7 @@
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/Context.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -2272,7 +2273,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
 void StorageReplicatedMergeTree::mutationsFinalizingTask()
 {
-    LOG_DEBUG(log, "Trying to finalize mutations");
     bool needs_reschedule = false;
 
     try
@@ -3388,7 +3388,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands = params.getMutationCommands(current_metadata);
+        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", alter_entry->toString(), zkutil::CreateMode::PersistentSequential));
