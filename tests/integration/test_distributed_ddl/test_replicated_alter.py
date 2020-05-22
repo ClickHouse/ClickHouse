@@ -104,7 +104,7 @@ CREATE VIEW IF NOT EXISTS view ON CLUSTER cluster AS SELECT * FROM system.settin
 """)
     instance.query("""
 ALTER TABLE view ON CLUSTER cluster MODIFY QUERY SELECT * FROM system.settings WHERE changed
-""", settings={'distributed_ddl_replication_check': 1})
+""", settings={'distributed_ddl_replication_check': 0})
     test_cluster.ddl_check_query(instance, "DROP TABLE view ON CLUSTER cluster")
 
     # Enable random ZK packet drops
