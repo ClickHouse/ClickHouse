@@ -18,6 +18,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>

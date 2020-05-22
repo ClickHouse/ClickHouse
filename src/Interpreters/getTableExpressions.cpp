@@ -1,4 +1,5 @@
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>

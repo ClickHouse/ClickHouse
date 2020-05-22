@@ -7,6 +7,8 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -21,9 +23,8 @@
 #include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <optional>
-#include <Interpreters/MutationsInterpreter.h>
 #include <Processors/Pipe.h>
+#include <optional>
 
 
 namespace DB
@@ -229,7 +230,7 @@ void StorageMergeTree::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(metadata);
+    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify);
     commands.apply(metadata);
 
     /// This alter can be performed at metadata level only
