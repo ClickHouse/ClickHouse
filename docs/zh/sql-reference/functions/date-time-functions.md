@@ -18,19 +18,19 @@ SELECT
 
 仅支持与UTC相差一整小时的时区。
 
-## toTimeZone {#totimezone}
+## 转换为时区 {#totimezone}
 
 将Date或DateTime转换为指定的时区。
 
-## 玩一年 {#toyear}
+## 转换为年 {#toyear}
 
 将Date或DateTime转换为包含年份编号（AD）的UInt16类型的数字。
 
-## 到四分钟 {#toquarter}
+## 转换为季度 {#toquarter}
 
 将Date或DateTime转换为包含季度编号的UInt8类型的数字。
 
-## toMonth {#tomonth}
+## 转换为月份 {#tomonth}
 
 将Date或DateTime转换为包含月份编号（1-12）的UInt8类型的数字。
 
