@@ -172,8 +172,8 @@ public:
             Polygon polygon;
             parsePolygon(block, arguments, 0, validate, polygon);
 
-            using Pool = ObjectPoolMap<PointInConstPolygonImpl, std::string>;
-            /// C++11 has thread-safe function-local statics on most modern compilers.
+            using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
+            /// C++11 has thread-safe function-local statics.
             static Pool known_polygons;
 
             auto factory = [&polygon]()
@@ -186,8 +186,7 @@ public:
                 return ptr.release();
             };
 
-            std::string serialized_polygon = serialize(polygon);
-            auto impl = known_polygons.get(serialized_polygon, factory);
+            auto impl = known_polygons.get(sipHash128(polygon), factory);
 
             if (point_is_const)
             {
