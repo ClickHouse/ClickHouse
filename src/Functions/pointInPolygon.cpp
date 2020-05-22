@@ -195,13 +195,7 @@ public:
             }
             else
             {
-                auto res_column = ColumnVector<UInt8>::create(input_rows_count);
-                auto & data = res_column->getData();
-
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    data[i] = impl->contains(tuple_columns[0]->getFloat64(i), tuple_columns[1]->getFloat64(i));
-
-                block.getByPosition(result).column = std::move(res_column);
+                block.getByPosition(result).column = pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
             }
         }
         else
@@ -222,7 +216,6 @@ public:
             block.getByPosition(result).column = std::move(res_column);
         }
     }
-
 
 private:
     bool validate;
