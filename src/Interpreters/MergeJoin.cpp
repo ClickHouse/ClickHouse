@@ -515,7 +515,7 @@ bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
     return saveRightBlock(std::move(block));
 }
 
-void MergeJoin::setKeepGoing(ExtraBlockPtr & not_processed) const
+void MergeJoin::setKeepGoing(ExtraBlockPtr & not_processed)
 {
     if (!not_processed)
         not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0});
