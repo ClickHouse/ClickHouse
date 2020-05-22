@@ -22,6 +22,15 @@ add_subdirectory (consistent-hashing)
 add_subdirectory (croaring)
 add_subdirectory (FastMemcpy)
 add_subdirectory (grpc-cmake)
+# ThreadPool select job randomly, and there can be some threads that had been
+# performed some memory heavy task before and will be inactive for some time,
+# but until it will became active again, the memory will not be freed since by
+# default each thread has it's own arena, but there should be not more then
+# 4*CPU arenas (see opt.nareans description).
+#
+# By enabling percpu_arena number of arenas limited to number of CPUs and hence
+# this problem should go away.
+set(JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu")
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
 add_subdirectory (murmurhash)
