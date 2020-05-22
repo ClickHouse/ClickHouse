@@ -616,7 +616,7 @@ struct CallPointInPolygon<>
 };
 
 template <typename PointInPolygonImpl>
-ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
+NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
     using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
