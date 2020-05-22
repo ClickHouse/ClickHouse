@@ -42,16 +42,16 @@ namespace ErrorCodes
 }
 
 
+using CoordinateType = Float64;
+using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+using Polygon = boost::geometry::model::polygon<Point, false>;
+using Box = boost::geometry::model::box<Point>;
+
+
 template <typename PointInConstPolygonImpl, typename PointInNonConstPolygonImpl>
 class FunctionPointInPolygon : public IFunction
 {
 public:
-    using CoordinateType = Float64;
-
-    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-    using Polygon = boost::geometry::model::polygon<Point, false>;
-    using Box = boost::geometry::model::box<Point>;
-
     static inline const char * name = "pointInPolygon";
 
     explicit FunctionPointInPolygon(bool validate_) : validate(validate_) {}
@@ -381,7 +381,9 @@ private:
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, PointInPolygon<Float64>>>();
+    factory.registerFunction<FunctionPointInPolygon<
+        PointInPolygonWithGrid<Float64>,
+        PointInPolygon<boost::geometry::strategy::within::franklin<Point>, Float64>>>();
 }
 
 }
