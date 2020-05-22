@@ -10,6 +10,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeArray.h>
@@ -19,6 +20,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <string>
 #include <memory>
@@ -212,10 +214,18 @@ public:
 
             if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
             {
+                ColumnPtr polygon_column_float64 = castColumn(
+                    block.getByPosition(arguments[1]),
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeArray>(
+                            std::make_shared<DataTypeTuple>(DataTypes{
+                                std::make_shared<DataTypeFloat64>(),
+                                std::make_shared<DataTypeFloat64>()}))));
+
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     polygon.clear();
-                    parsePolygonFromSingleColumn2D(*poly_col, i, polygon);
+                    parsePolygonFromSingleColumn2D(*polygon_column_float64, i, polygon);
 
                     PointInNonConstPolygonImpl impl(polygon);
                     size_t point_index = point_is_const ? 0 : i;
@@ -224,10 +234,17 @@ public:
             }
             else
             {
+                ColumnPtr polygon_column_float64 = castColumn(
+                    block.getByPosition(arguments[1]),
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeTuple>(DataTypes{
+                            std::make_shared<DataTypeFloat64>(),
+                            std::make_shared<DataTypeFloat64>()})));
+
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     polygon.clear();
-                    parsePolygonFromSingleColumn1D(*poly_col, i, polygon);
+                    parsePolygonFromSingleColumn1D(*polygon_column_float64, i, polygon);
 
                     PointInNonConstPolygonImpl impl(polygon);
                     size_t point_index = point_is_const ? 0 : i;
@@ -249,8 +266,14 @@ private:
 
     void parseConstPolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
     {
-        const auto & poly = *block.getByPosition(arguments[1]).column;
-        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(poly);
+        ColumnPtr polygon_column_float64 = castColumn(
+            block.getByPosition(arguments[1]),
+            std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeTuple>(DataTypes{
+                    std::make_shared<DataTypeFloat64>(),
+                    std::make_shared<DataTypeFloat64>()})));
+
+        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
         const IColumn & column_const_data = column_const.getDataColumn();
 
         if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
@@ -261,40 +284,40 @@ private:
 
     template <typename T>
     void parsePolygonPart(
-        const IColumn & x_column,
-        const IColumn & y_column,
+        const Float64 * x_data,
+        const Float64 * y_data,
         size_t begin,
         size_t end,
         T & out_container) const
     {
         out_container.reserve(end - begin);
         for (size_t i = begin; i < end; ++i)
-        {
-            Float64 x = x_column.getFloat64(i);
-            Float64 y = y_column.getFloat64(i);
-            out_container.emplace_back(x, y);
-        }
+            out_container.emplace_back(x_data[i], y_data[i]);
     }
 
     void parsePolygonFromSingleColumn1D(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
-        const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
-
         size_t begin = array_col.getOffsets()[i - 1];
         size_t end = array_col.getOffsets()[i];
 
-        parsePolygonPart(*tuple_columns[0], *tuple_columns[1], begin, end, out_polygon.outer());
+        const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
+        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
+
+        parsePolygonPart(x_data, y_data, begin, end, out_polygon.outer());
     }
 
     void parsePolygonFromSingleColumn2D(const IColumn & column, size_t i, Polygon & out_polygon) const
     {
         const auto & array_col = static_cast<const ColumnArray &>(column);
-        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
-        const auto & tuple_columns = static_cast<const ColumnTuple &>(nested_array_col.getData()).getColumns();
-
         size_t rings_begin = array_col.getOffsets()[i - 1];
         size_t rings_end = array_col.getOffsets()[i];
+
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+        const auto & tuple_columns = static_cast<const ColumnTuple &>(nested_array_col.getData()).getColumns();
+        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
 
         for (size_t j = rings_begin; j < rings_end; ++j)
         {
@@ -303,12 +326,12 @@ private:
 
             if (out_polygon.outer().empty())
             {
-                parsePolygonPart(*tuple_columns[0], *tuple_columns[1], begin, end, out_polygon.outer());
+                parsePolygonPart(x_data, y_data, begin, end, out_polygon.outer());
             }
             else
             {
                 out_polygon.inners().emplace_back();
-                parsePolygonPart(*tuple_columns[0], *tuple_columns[1], begin, end, out_polygon.inners().back());
+                parsePolygonPart(x_data, y_data, begin, end, out_polygon.inners().back());
             }
         }
     }
