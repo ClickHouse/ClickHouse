@@ -11,7 +11,7 @@ namespace DB
 
     void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
     {
-        auto createTableSource = [=](const DictionaryStructure & dict_struct,
+        auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                      const Poco::Util::AbstractConfiguration & config,
                                      const std::string & config_prefix,
                                      Block & sample_block,
@@ -28,7 +28,7 @@ namespace DB
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         };
-        factory.registerSource("cassandra", createTableSource);
+        factory.registerSource("cassandra", create_table_source);
     }
 
 }

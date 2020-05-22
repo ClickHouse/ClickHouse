@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 CassandraBlockInputStream::CassandraBlockInputStream(
-    CassSession *session_,
+    CassSession * session_,
     const std::string &query_str_,
     const DB::Block &sample_block,
     const size_t max_block_size_)
@@ -48,108 +48,108 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(IColumn & column, const ValueType type, const CassValue * value)
+    void insertValue(IColumn & column, const ValueType type, const CassValue * cass_value)
     {
         switch (type)
         {
             case ValueType::vtUInt8:
             {
-                cass_uint32_t _value;
-                cass_value_get_uint32(value, &_value);
-                static_cast<ColumnUInt8 &>(column).insertValue(_value);
+                cass_uint32_t value;
+                cass_value_get_uint32(cass_value, &value);
+                static_cast<ColumnUInt8 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtUInt16:
             {
-                cass_uint32_t _value;
-                cass_value_get_uint32(value, &_value);
-                static_cast<ColumnUInt16 &>(column).insertValue(_value);
+                cass_uint32_t value;
+                cass_value_get_uint32(cass_value, &value);
+                static_cast<ColumnUInt16 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtUInt32:
             {
-                cass_uint32_t _value;
-                cass_value_get_uint32(value, &_value);
-                static_cast<ColumnUInt32 &>(column).insertValue(_value);
+                cass_uint32_t value;
+                cass_value_get_uint32(cass_value, &value);
+                static_cast<ColumnUInt32 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtUInt64:
             {
-                cass_int64_t _value;
-                cass_value_get_int64(value, &_value);
-                static_cast<ColumnUInt64 &>(column).insertValue(_value);
+                cass_int64_t value;
+                cass_value_get_int64(cass_value, &value);
+                static_cast<ColumnUInt64 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtInt8:
             {
-                cass_int8_t _value;
-                cass_value_get_int8(value, &_value);
-                static_cast<ColumnInt8 &>(column).insertValue(_value);
+                cass_int8_t value;
+                cass_value_get_int8(cass_value, &value);
+                static_cast<ColumnInt8 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtInt16:
             {
-                cass_int16_t _value;
-                cass_value_get_int16(value, &_value);
-                static_cast<ColumnInt16 &>(column).insertValue(_value);
+                cass_int16_t value;
+                cass_value_get_int16(cass_value, &value);
+                static_cast<ColumnInt16 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtInt32:
             {
-                cass_int32_t _value;
-                cass_value_get_int32(value, &_value);
-                static_cast<ColumnInt32 &>(column).insertValue(_value);
+                cass_int32_t value;
+                cass_value_get_int32(cass_value, &value);
+                static_cast<ColumnInt32 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtInt64:
             {
-                cass_int64_t _value;
-                cass_value_get_int64(value, &_value);
-                static_cast<ColumnInt64 &>(column).insertValue(_value);
+                cass_int64_t value;
+                cass_value_get_int64(cass_value, &value);
+                static_cast<ColumnInt64 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtFloat32:
             {
-                cass_float_t _value;
-                cass_value_get_float(value, &_value);
-                static_cast<ColumnFloat32 &>(column).insertValue(_value);
+                cass_float_t value;
+                cass_value_get_float(cass_value, &value);
+                static_cast<ColumnFloat32 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtFloat64:
             {
-                cass_double_t _value;
-                cass_value_get_double(value, &_value);
-                static_cast<ColumnFloat64 &>(column).insertValue(_value);
+                cass_double_t value;
+                cass_value_get_double(cass_value, &value);
+                static_cast<ColumnFloat64 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtString:
             {
-                const char* _value;
-                size_t _value_length;
-                cass_value_get_string(value, &_value, &_value_length);
-                static_cast<ColumnString &>(column).insertData(_value, _value_length);
+                const char * value;
+                size_t value_length;
+                cass_value_get_string(cass_value, &value, &value_length);
+                static_cast<ColumnString &>(column).insertData(value, value_length);
                 break;
             }
             case ValueType::vtDate:
             {
-                cass_int64_t _value;
-                cass_value_get_int64(value, &_value);
-                static_cast<ColumnUInt16 &>(column).insertValue(UInt32{cass_date_from_epoch(_value)}); // FIXME
+                cass_int64_t value;
+                cass_value_get_int64(cass_value, &value);
+                static_cast<ColumnUInt16 &>(column).insertValue(UInt32{cass_date_from_epoch(value)}); // FIXME
                 break;
             }
             case ValueType::vtDateTime:
             {
-                cass_int64_t _value;
-                cass_value_get_int64(value, &_value);
-                static_cast<ColumnUInt32 &>(column).insertValue(_value);
+                cass_int64_t value;
+                cass_value_get_int64(cass_value, &value);
+                static_cast<ColumnUInt32 &>(column).insertValue(value);
                 break;
             }
             case ValueType::vtUUID:
             {
-                CassUuid _value;
-                cass_value_get_uuid(value, &_value);
+                CassUuid value;
+                cass_value_get_uuid(cass_value, &value);
                 std::array<char, CASS_UUID_STRING_LENGTH> uuid_str;
-                cass_uuid_string(_value, uuid_str.data());
+                cass_uuid_string(value, uuid_str.data());
                 static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(uuid_str.data(), uuid_str.size()));
                 break;
             }
@@ -181,9 +181,9 @@ namespace
         const CassValue* map = cass_row_get_column(row, 0);
         iterator = cass_iterator_from_map(map);
         while (cass_iterator_next(iterator)) {
-            const CassValue* _key = cass_iterator_get_map_key(iterator);
-            const CassValue* _value = cass_iterator_get_map_value(iterator);
-            auto pair_values = {std::make_pair(_key, 0ul), std::make_pair(_value, 1ul)};
+            const CassValue* cass_key = cass_iterator_get_map_key(iterator);
+            const CassValue* cass_value = cass_iterator_get_map_value(iterator);
+            auto pair_values = {std::make_pair(cass_key, 0ul), std::make_pair(cass_value, 1ul)};
             for (const auto &[value, idx]: pair_values) {
                 if (description.types[idx].second) {
                     ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
