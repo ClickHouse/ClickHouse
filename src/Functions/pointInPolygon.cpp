@@ -41,40 +41,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace
-{
-
-template <typename Polygon, typename PointInPolygonImpl>
-UInt8 callPointInPolygonImplWithPool(Float64 x, Float64 y, Polygon & polygon)
-{
-    using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
-    /// C++11 has thread-safe function-local statics on most modern compilers.
-    static Pool known_polygons;
-
-    auto factory = [& polygon]()
-    {
-        auto ptr = std::make_unique<PointInPolygonImpl>(polygon);
-
-        ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
-        ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
-
-        return ptr.release();
-    };
-
-    std::string serialized_polygon = serialize(polygon);
-    auto impl = known_polygons.get(serialized_polygon, factory);
-
-    return impl->contains(x, y);
-}
-
-template <typename Polygon, typename PointInPolygonImpl>
-UInt8 callPointInPolygonImpl(Float64 x, Float64 y, Polygon & polygon)
-{
-    PointInPolygonImpl impl(polygon);
-    return impl.contains(x, y);
-}
-
-}
 
 template <typename PointInConstPolygonImpl, typename PointInNonConstPolygonImpl>
 class FunctionPointInPolygon : public IFunction
@@ -117,6 +83,16 @@ public:
         {
             throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
+
+        /** We allow function invocation in one of the following forms:
+          *
+          * pointInPolygon((x, y), [(x1, y1), (x2, y2), ...])
+          * - simple polygon
+          * pointInPolygon((x, y), [(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...)
+          * - polygon with a number of holes, each hole as a subsequent argument.
+          * pointInPolygon((x, y), [[(x1, y1), (x2, y2), ...], [(x21, y21), (x22, y22), ...], ...])
+          * - polygon with a number of holes, all as multidimensional array
+          */
 
         auto validate_tuple = [this](size_t i, const DataTypeTuple * tuple)
         {
@@ -191,18 +167,31 @@ public:
         bool point_is_const = const_tuple_col != nullptr;
         bool poly_is_const = const_poly_col != nullptr;
 
-        auto call_impl = poly_is_const
-            ? callPointInPolygonImplWithPool<Polygon, PointInConstPolygonImpl>
-            : callPointInPolygonImpl<Polygon, PointInNonConstPolygonImpl>;
-
         if (poly_is_const)
         {
             Polygon polygon;
             parsePolygon(block, arguments, 0, validate, polygon);
 
+            using Pool = ObjectPoolMap<PointInConstPolygonImpl, std::string>;
+            /// C++11 has thread-safe function-local statics on most modern compilers.
+            static Pool known_polygons;
+
+            auto factory = [&polygon]()
+            {
+                auto ptr = std::make_unique<PointInConstPolygonImpl>(polygon);
+
+                ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
+                ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+
+                return ptr.release();
+            };
+
+            std::string serialized_polygon = serialize(polygon);
+            auto impl = known_polygons.get(serialized_polygon, factory);
+
             if (point_is_const)
             {
-                bool is_in = call_impl(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0), polygon);
+                bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
                 block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, is_in);
             }
             else
@@ -210,8 +199,8 @@ public:
                 auto res_column = ColumnVector<UInt8>::create(input_rows_count);
                 auto & data = res_column->getData();
 
-                for (auto i : ext::range(0, input_rows_count))
-                    data[i] = call_impl(tuple_columns[0]->getFloat64(i), tuple_columns[1]->getFloat64(i), polygon);
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    data[i] = impl->contains(tuple_columns[0]->getFloat64(i), tuple_columns[1]->getFloat64(i));
 
                 block.getByPosition(result).column = std::move(res_column);
             }
@@ -226,8 +215,9 @@ public:
             {
                 /// Validation is used only for constant polygons, otherwise it's too computational heavy.
                 parsePolygon(block, arguments, i, false, polygon);
+                PointInNonConstPolygonImpl impl(polygon);
                 size_t point_index = point_is_const ? 0 : i;
-                data[i] = call_impl(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), polygon);
+                data[i] = impl.contains(tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index));
             }
 
             block.getByPosition(result).column = std::move(res_column);
