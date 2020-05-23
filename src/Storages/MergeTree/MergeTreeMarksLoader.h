@@ -14,6 +14,11 @@ extern const int LOGICAL_ERROR;
 
 struct MergeTreeIndexGranularityInfo;
 
+/**
+ * @brief Loads marks from a single file identified by #mrk_path.
+ *
+ * @see DB::MergeTreeReaderStream
+ */
 class MergeTreeMarksLoader
 {
 public:

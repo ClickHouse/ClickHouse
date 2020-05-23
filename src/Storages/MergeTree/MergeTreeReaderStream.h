@@ -8,22 +8,44 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 
-
 namespace DB
 {
-
-/// Class for reading a single column (or index).
+/**
+ * @brief Loads a single column or index from #disk.
+ *
+ * - Marks are loaded via #marks_loader (paseed a DB::MarkCache ptr).
+ * - Uncompressed data is loaded via #cached_buffer (passed a DB::UncompressedCache ptr).
+ *
+ * To understand how data is stored:
+ *
+ * @see DB::MarkCache
+ * @see DB::UncompressedCache
+ *
+ * To understand how data is loaded:
+ *
+ * @see DB::MergeTreeMarksLoader
+ * @see DB::CachedCompressedReadBuffer
+ *
+ * To understand where this class is used:
+ *
+ * @see DB::MergeTreeReaderWide
+ */
 class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
         DiskPtr disk_,
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        const String & path_prefix_,
+        const String & data_file_extension_,
+        size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
-        MarkCache * mark_cache, UncompressedCache * uncompressed_cache,
-        size_t file_size, const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        size_t file_size,
+        const MergeTreeIndexGranularityInfo * index_granularity_info_,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback,
+        clockid_t clock_type);
 
     void seekToMark(size_t index);
 

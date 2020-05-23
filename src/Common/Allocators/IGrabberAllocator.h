@@ -489,7 +489,7 @@ public:
 
         try
         {
-            onSharedValueCreate(cache_lock, *region);
+            onSharedValueCreate<true>(cache_lock, *region);
 
             // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
@@ -526,6 +526,7 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
+    template <bool MayBeInUnused>
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
         if (++metadata.refcount != 1)
@@ -533,9 +534,10 @@ private:
 
         // One reference.
 
-        /// May be not present if the region was created by calling allocateFromFreeRegion.
-        if (metadata.TUnusedRegionHook::is_linked())
-            unused_regions.erase(unused_regions.iterator_to(metadata));
+        if constexpr (MayBeInUnused)
+            if (metadata.TUnusedRegionHook::is_linked())
+                /// May be not present if the region was created by calling allocateFromFreeRegion.
+                unused_regions.erase(unused_regions.iterator_to(metadata));
 
         // already present in used_regions (in getOrSet), see line 506
 
@@ -552,8 +554,8 @@ private:
 
         auto it = value_to_region.find(value);
 
-        // it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
-        // invoking this function), thus value_to_region contains a metadata struct associated with #value.
+        /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
+        /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
         if (value_to_region.end() == it)
             throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
 
@@ -562,7 +564,7 @@ private:
         if (--metadata.refcount != 0)
             return;
 
-        // Deleting last reference.
+        /// Deleting last reference.
 
         value_to_region.erase(it);
 
@@ -573,11 +575,14 @@ private:
 
         total_size_in_use -= metadata.size;
 
-        // No delete value here because we do not need to (it will be unmmap'd on MemoreChunk disposal).
+        /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
     }
 
     struct InsertionAttemptDisposer;
 
+    /**
+     * @brief Returns a ValuePtr for a given key or nullptr if not found.
+     */
     inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {
         {
@@ -591,7 +596,7 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                onSharedValueCreate(cache_lock, metadata);
+                onSharedValueCreate<false>(cache_lock, metadata);
 
                 // can't use std::make_shared due to custom deleter.
                 return std::shared_ptr<Value>( //not a nullptr
@@ -694,6 +699,12 @@ private:
             attempt_disposed = true;
         }
 
+        /**
+         * @brief Disposes the handled InsertionAttempt if possible.
+         *
+         * - Requires a @e read access to #attempt.
+         * - May require a @e write access to #attempt and a @e write attempt to #insertion_attempts via dispose().
+         */
         ~InsertionAttemptDisposer() noexcept
         {
             if (!attempt)
@@ -788,7 +799,7 @@ private:
 
     /**
      * @brief Element referenced in all intrusive containers here.
-     *        Includes a #Key-#Value pair and a pointer to some IGrabberAllocator::MemoryChunkChunk part storage
+     *        Includes a #Key-#Value pair and a pointer to some IGrabberAllocator::MemoryChunk part storage
      *        holding some #Value's data.
      *
      * Consider #Value = std::vector of size 10.
@@ -808,6 +819,10 @@ private:
 
         std::aligned_storage_t<sizeof(Key), alignof(Key)> key_storage;
         std::aligned_storage_t<sizeof(Value), alignof(Value)> value_storage;
+
+        /// No need for std::optional
+        bool key_initialized{false};
+        bool value_initialized{false};
 
         union {
             /// Pointer to a IGrabberAllocator::MemoryChunk part storage for a given region.
@@ -834,31 +849,55 @@ private:
         [[nodiscard]] static RegionMetadata * create() { return new RegionMetadata(); }
 
         constexpr void destroy() noexcept {
-            std::destroy_at(std::launder(reinterpret_cast<Key*>(&key_storage)));
-            std::destroy_at(std::launder(reinterpret_cast<Value*>(&value_storage)));
+            if (key_initialized)
+                std::destroy_at(std::launder(reinterpret_cast<Key*>(&key_storage)));
+
+            if (value_initialized)
+                std::destroy_at(std::launder(reinterpret_cast<Value*>(&value_storage)));
+
             delete this;
         }
 
-        /// Exceptions will be propagated to the caller.
+        /**
+         * @brief Tries to initialize the key.
+         *
+         * @note Exceptions occuring in Key's const lvalue ctor will be propagated to the caller.
+         * @note It is the caller's responsibility to ensure this method is called on uninitialized key.
+         */
         constexpr void init_key(const Key& key)
         {
             /// TODO Replace with std version
             ga::construct_at<Key>(&key_storage, key);
+            key_initialized = true;
         }
 
-        /// Exceptions will be propagated to the caller.
+        /**
+         * @brief Tries to initialize the value.
+         *
+         * @note Exceptions occuring in Value's rvalue ctor will be propagated to the caller.
+         * @note It is the caller's responsibility to ensure this method is called on uninitialized value.
+         */
         template <class Init>
         constexpr void init_value(Init&& init_func)
         {
             /// TODO Replace with std version
             ga::construct_at<Value>(&value_storage, init_func(ptr));
+            value_initialized = true;
         }
 
+        /**
+         * @brief Tries to approach the key.
+         * @note It is the caller's responsibility to ensure this method is called on initialized key.
+         */
         constexpr const Key& key() const noexcept
         {
             return *std::launder(reinterpret_cast<const Key*>(&key_storage));
         }
 
+        /**
+         * @brief Tries to approach the value.
+         * @note It is the caller's responsibility to ensure this method is called on initialized value.
+         */
         constexpr Value * value() noexcept
         {
             return std::launder(reinterpret_cast<Value*>(&value_storage));
