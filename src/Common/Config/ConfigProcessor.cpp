@@ -568,7 +568,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         if (!zk_exception)
             throw;
 
-        LOG_WARNING(log, "Error while processing from_zk config includes: " + zk_exception->message() + ". Config will be loaded from preprocessed file: " + preprocessed_path);
+        LOG_WARNING_FORMATTED(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
         config_xml = dom_parser.parse(preprocessed_path);
     }

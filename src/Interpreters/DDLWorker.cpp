@@ -238,7 +238,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
 
     if (context.getSettingsRef().readonly)
     {
-        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
+        LOG_WARNING_FORMATTED(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -424,7 +424,7 @@ void DDLWorker::processTasks()
             {
                 if (server_startup && e.code == Coordination::ZNONODE)
                 {
-                    LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry " << task.entry_name << " (" << task.entry.query << ") : " << getCurrentExceptionMessage(true));
+                    LOG_WARNING_FORMATTED(log, "ZooKeeper NONODE error during startup. Ignoring entry {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
                 }
                 else
                 {
@@ -433,7 +433,7 @@ void DDLWorker::processTasks()
             }
             catch (...)
             {
-                LOG_WARNING(log, "An error occurred while processing task " << task.entry_name << " (" << task.entry.query << ") : " << getCurrentExceptionMessage(true));
+                LOG_WARNING_FORMATTED(log, "An error occurred while processing task {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
                 throw;
             }
         }

@@ -189,7 +189,7 @@ Pipes StorageBuffer::read(
             {
                 if (!dest_columns.hasPhysical(column_name))
                 {
-                    LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs() << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
+                    LOG_WARNING_FORMATTED(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
@@ -204,7 +204,7 @@ Pipes StorageBuffer::read(
 
             if (columns_intersection.empty())
             {
-                LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs() << " has no common columns with block in buffer. Block of data is skipped.");
+                LOG_WARNING_FORMATTED(log, "Destination table {} has no common columns with block in buffer. Block of data is skipped.", destination_id.getNameForLogs());
             }
             else
             {
@@ -447,7 +447,7 @@ void StorageBuffer::startup()
 {
     if (global_context.getSettingsRef().readonly)
     {
-        LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.");
+        LOG_WARNING_FORMATTED(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
 
@@ -669,7 +669,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
 
     if (block_to_write.columns() != block.columns())
-        LOG_WARNING(log, "Not all columns from block in buffer exist in destination table " << destination_id.getNameForLogs() << ". Some columns are discarded.");
+        LOG_WARNING_FORMATTED(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
