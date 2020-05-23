@@ -745,7 +745,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
 
         if (entry->isAlterMutation())
         {
-            LOG_DEBUG(log, "Removed alter " << entry->alter_version << " because mutation " << entry->znode_name << " were killed.");
+            LOG_DEBUG_FORMATTED(log, "Removed alter {} because mutation {} were killed.", entry->alter_version, entry->znode_name);
             alter_sequence.finishDataAlter(entry->alter_version, state_lock);
         }
 

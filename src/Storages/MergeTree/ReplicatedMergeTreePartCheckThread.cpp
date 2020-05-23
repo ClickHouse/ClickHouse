@@ -82,7 +82,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     /// If the part is in ZooKeeper, remove it from there and add the task to download it to the queue.
     if (zookeeper->exists(part_path))
     {
-        LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. Removing from ZooKeeper and queueing a fetch.");
+        LOG_WARNING_FORMATTED(log, "Part {} exists in ZooKeeper but not locally. Removing from ZooKeeper and queueing a fetch.", part_name);
         ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
         storage.removePartAndEnqueueFetch(part_name);
