@@ -95,7 +95,7 @@ void ClusterCopierApp::mainImpl()
     ThreadStatus thread_status;
 
     auto * log = &logger();
-    LOG_INFO(log, "Starting clickhouse-copier (id " << process_id << ", host_id " << host_id << ", path " << process_path << ", revision " << ClickHouseRevision::get() << ")");
+    LOG_INFO_FORMATTED(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::get());
 
     SharedContextHolder shared_context = Context::createShared();
     auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));

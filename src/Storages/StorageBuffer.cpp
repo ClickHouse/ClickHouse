@@ -197,7 +197,7 @@ Pipes StorageBuffer::read(
                 const auto & col = our_columns.getPhysical(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
-                    LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs() << " has different type of column " << backQuoteIfNeed(column_name) << " (" << dst_col.type->getName() << " != " << col.type->getName() << "). Data from destination table are converted.");
+                    LOG_WARNING_FORMATTED(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dst_col.type->getName(), col.type->getName());
                     header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dst_col.type, column_name);
                 }
             }
@@ -589,7 +589,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds " << (check_thresholds ? "(bg)" : "(direct)") << ".");
+    LOG_TRACE_FORMATTED(log, "Flushing buffer with {} rows, {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
 
     if (!destination_id)
         return;
@@ -653,7 +653,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             auto column = block.getByName(dst_col.name);
             if (!column.type->equals(*dst_col.type))
             {
-                LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs() << " have different type of column " << backQuoteIfNeed(column.name) << " (" << dst_col.type->getName() << " != " << column.type->getName() << "). Block of data is converted.");
+                LOG_WARNING_FORMATTED(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
                 column.column = castColumn(column, dst_col.type);
                 column.type = dst_col.type;
             }
