@@ -542,7 +542,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     }
     else
     {
-        LOG_INFO(log, "Resolved host " << task.host_id.readableString() << " from task " << task.entry_name             << " as host " << task.address_in_cluster.readableString() << " in definition of cluster " << task.cluster_name);
+        LOG_INFO(log, "Resolved host " << task.host_id.readableString() << " from task " << task.entry_name << " as host " << task.address_in_cluster.readableString() << " in definition of cluster " << task.cluster_name);
     }
 }
 
@@ -755,7 +755,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         String executed_by;
         if (zookeeper->tryGet(is_executed_path, executed_by))
         {
-            LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by leader replica ("                 << executed_by << ") of the same shard.");
+            LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by leader replica (" << executed_by << ") of the same shard.");
             return true;
         }
 
@@ -940,7 +940,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     }
     catch (...)
     {
-        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in " << node_path << " . They will be created later"             << ". Error : " << getCurrentExceptionMessage(true));
+        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in " << node_path << " . They will be created later" << ". Error : " << getCurrentExceptionMessage(true));
     }
 
     return node_path;

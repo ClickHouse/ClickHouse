@@ -56,7 +56,7 @@ IProcessor::Status CreatingSetsTransform::prepare()
 
 void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
 {
-    LOG_TRACE(log, (subquery.set ? "Creating set. " : "")             << (subquery.join ? "Creating join. " : "")             << (subquery.table ? "Filling temporary table. " : ""));
+    LOG_TRACE(log, (subquery.set ? "Creating set. " : "") << (subquery.join ? "Creating join. " : "") << (subquery.table ? "Filling temporary table. " : ""));
 
     elapsed_nanoseconds = 0;
 

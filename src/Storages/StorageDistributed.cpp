@@ -477,12 +477,12 @@ Pipes StorageDistributed::read(
         ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
         if (optimized_cluster)
         {
-            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): " <<                            makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): " << makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
         }
         else
         {
-            LOG_DEBUG(log, (has_sharding_key ? "" : " (no sharding key)") << ": "                            "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "                            "the query will be sent to all shards of the cluster");
+            LOG_DEBUG(log, (has_sharding_key ? "" : " (no sharding key)") << ": " "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - " "the query will be sent to all shards of the cluster");
         }
     }
 

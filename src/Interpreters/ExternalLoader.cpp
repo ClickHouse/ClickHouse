@@ -439,7 +439,7 @@ public:
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
-                        LOG_TRACE(log, "Will reload '" << name << "'"                             " because its configuration has been changed and"                             " there were attempts to load it before");
+                        LOG_TRACE(log, "Will reload '" << name << "'" " because its configuration has been changed and" " there were attempts to load it before");
                         startLoading(info, true);
                     }
                 }
@@ -454,7 +454,7 @@ public:
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
                 {
-                    LOG_TRACE(log, "Will load '" << name << "'"                         " because always_load_everything flag is set.");
+                    LOG_TRACE(log, "Will load '" << name << "'" " because always_load_everything flag is set.");
                     startLoading(info);
                 }
             }
@@ -664,7 +664,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '" << info.name << "'"                                 " not modified, will not reload. "                                 "Next update at "                                 << ext::to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '" << info.name << "'" " not modified, will not reload. " "Next update at " << ext::to_string(info.next_update_time));
                             continue;
                         }
 
@@ -676,7 +676,7 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '" << info.name << "' is neither"                         " loaded nor failed, so it will not be reloaded as outdated.");
+                    LOG_TRACE(log, "Object '" << info.name << "' is neither" " loaded nor failed, so it will not be reloaded as outdated.");
                 }
             }
         }
@@ -869,7 +869,7 @@ private:
     {
         if (info.isLoading())
         {
-            LOG_TRACE(log, "The object '" << info.name <<                       "' is already being loaded, force = " << forced_to_reload << ".");
+            LOG_TRACE(log, "The object '" << info.name << "' is already being loaded, force = " << forced_to_reload << ".");
 
             if (!forced_to_reload)
             {
@@ -885,7 +885,7 @@ private:
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
 
-        LOG_TRACE(log, "Will load the object '" << info.name << "' "                   << (enable_async_loading ? std::string("in background")                                            : "immediately")                   << ", force = " << forced_to_reload                   << ", loading_id = " << info.loading_id);
+        LOG_TRACE(log, "Will load the object '" << info.name << "' " << (enable_async_loading ? std::string("in background") : "immediately") << ", force = " << forced_to_reload << ", loading_id = " << info.loading_id);
 
         if (enable_async_loading)
         {
@@ -924,7 +924,7 @@ private:
                 info = prepareToLoadSingleObject(name, loading_id, min_id_to_finish_loading_dependencies_, lock);
                 if (!info)
                 {
-                    LOG_TRACE(log, "Could not lock object '" << name                         << "' for loading");
+                    LOG_TRACE(log, "Could not lock object '" << name << "' for loading");
                     return;
                 }
             }
@@ -1037,7 +1037,7 @@ private:
         }
         if (info->loading_id != loading_id)
         {
-            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object's current loading_id "                       << info->loading_id << " is different from the specified " << loading_id << ".");
+            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object's current loading_id " << info->loading_id << " is different from the specified " << loading_id << ".");
             return;
         }
 
@@ -1067,7 +1067,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '" << info->name                   << "' was set to " << ext::to_string(next_update_time));
+        LOG_TRACE(log, "Next update time for '" << info->name << "' was set to " << ext::to_string(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1099,7 +1099,7 @@ private:
         {
             if (!loaded_object->supportUpdates())
             {
-                LOG_TRACE(log, "Supposed update time for "                     "'" + loaded_object->getLoadableName() + "'"                     " is never (loaded, does not support updates)");
+                LOG_TRACE(log, "Supposed update time for " "'" + loaded_object->getLoadableName() + "'" " is never (loaded, does not support updates)");
 
                 return never;
             }
@@ -1108,7 +1108,7 @@ private:
             const auto & lifetime = loaded_object->getLifetime();
             if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
             {
-                LOG_TRACE(log, "Supposed update time for "                     "'" + loaded_object->getLoadableName() + "'"                     " is never (loaded, lifetime 0)");
+                LOG_TRACE(log, "Supposed update time for " "'" + loaded_object->getLoadableName() + "'" " is never (loaded, lifetime 0)");
                 return never;
             }
 
@@ -1116,18 +1116,18 @@ private:
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                 auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-                LOG_TRACE(log, "Supposed update time for "                     "'" << loaded_object->getLoadableName() << "'"                     " is " << ext::to_string(result)                     << " (loaded, lifetime [" << lifetime.min_sec                     << ", " << lifetime.max_sec << "], no errors)");
+                LOG_TRACE(log, "Supposed update time for " "'" << loaded_object->getLoadableName() << "'" " is " << ext::to_string(result) << " (loaded, lifetime [" << lifetime.min_sec << ", " << lifetime.max_sec << "], no errors)");
                 return result;
             }
 
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "'"                 " is " << ext::to_string(result)                 << " (backoff, " << error_count << " errors)");
+            LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "'" " is " << ext::to_string(result) << " (backoff, " << error_count << " errors)");
             return result;
         }
         else
         {
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object "                 " is " << ext::to_string(result)                 << " (backoff, " << error_count << " errors.");
+            LOG_TRACE(log, "Supposed update time for unspecified object " " is " << ext::to_string(result) << " (backoff, " << error_count << " errors.");
             return result;
         }
     }

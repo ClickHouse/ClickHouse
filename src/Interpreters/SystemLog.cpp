@@ -41,7 +41,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     if (database != default_database_name)
     {
         /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
-        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. "                                              "Table `" << table << "` will be created in `system` database "                                              "instead of `" << database << "`");
+        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. " "Table `" << table << "` will be created in `system` database " "instead of `" << database << "`");
         database = default_database_name;
     }
 

@@ -256,7 +256,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
             // TextLog sets its logger level to 0, so this log is a noop and
             // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '"                 << demangle(typeid(*this).name()) << "'"                 << " at " << queue_front_index);
+            LOG_ERROR(log, "Queue is full for system log '" << demangle(typeid(*this).name()) << "'" << " at " << queue_front_index);
         }
 
         return;
@@ -378,7 +378,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, "             << to_flush.size() << " entries to flush");
+        LOG_TRACE(log, "Flushing system log, " << to_flush.size() << " entries to flush");
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
@@ -456,7 +456,7 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."                 " Renaming it to " << backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure." " Renaming it to " << backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
