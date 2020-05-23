@@ -6,12 +6,14 @@
 #include <Common/EventCounter.h>
 #include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/DistributedTracing.h>
 
 #include <Common/Stopwatch.h>
 #include <Processors/ISource.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/ProcessList.h>
 
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -150,6 +152,8 @@ void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
 
 static void executeJob(IProcessor * processor)
 {
+//    opentracing::SpanGuard span_guard("executeJob");
+
     try
     {
         processor->work();
@@ -168,6 +172,9 @@ void PipelineExecutor::addJob(ExecutionState * execution_state)
     {
         try
         {
+//            if (!!CurrentThread::getSpan())
+//                opentracing::SpanGuard("lalala");
+
             // Stopwatch watch;
             executeJob(execution_state->processor);
             // execution_state->execution_time_ns += watch.elapsed();
@@ -190,6 +197,11 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
 
     try
     {
+        std::optional<opentracing::ParkingSpanGuard> span_guard = std::nullopt;
+        if (auto span = cur_node.processor->getSpan())
+            span_guard.emplace(span);
+        opentracing::SpanGuard inner_span_guard("expandPipeline");
+
         new_processors = cur_node.processor->expandPipeline();
     }
     catch (...)
@@ -288,6 +300,14 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
 
         try
         {
+            std::optional<opentracing::ParkingSpanGuard> span_guard = std::nullopt;
+            if (auto span = node.processor->getSpan())
+                span_guard.emplace(span);
+//            String span_name = node.status == ExecStatus::Idle
+//                    ? "prepare from Idle"
+//                    : "prepare";
+            opentracing::SpanGuard inner_span_guard("prepare");
+
             node.last_processor_status = node.processor->prepare(node.updated_input_ports, node.updated_output_ports);
         }
         catch (...)
@@ -295,6 +315,31 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             node.execution_state->exception = std::current_exception();
             return false;
         }
+
+
+        if (!node.processor->getSpan() &&
+            node.last_processor_status != IProcessor::Status::NeedData &&
+            node.last_processor_status != IProcessor::Status::PortFull)
+        {
+
+            auto tracer = CurrentThread::getGroup()->query_context->getDistributedTracer();
+            if (tracer->IsActiveTracer())
+            {
+                // opentracing::getSpan.
+                if (auto span = CurrentThread::getSpan())
+                {
+                    // fixme. (note that we are under mutex)
+                    if (!node.processor->getSpan())
+                    {
+                        node.processor->setSpan(tracer->CreateSpan(
+                                node.processor->getName(),
+                                {{opentracing::SpanReferenceType::ChildOfRef, span->getReferences()[0].second}},
+                                std::nullopt));
+                    }
+                }
+            }
+        }
+
 
 #ifndef NDEBUG
         node.execution_state->preparation_time_ns += watch.elapsed();
@@ -314,6 +359,10 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             case IProcessor::Status::Finished:
             {
                 node.status = ExecStatus::Finished;
+                if (auto span = node.processor->getSpan())
+                {
+                    span->finishSpan();
+                }
                 break;
             }
             case IProcessor::Status::Ready:
@@ -336,6 +385,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             }
             case IProcessor::Status::ExpandPipeline:
             {
+                // now span is created even if this status was first. check that this logic is OK for tracing.
                 need_expand_pipeline = true;
                 break;
             }
@@ -632,6 +682,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 Stopwatch execution_time_watch;
 #endif
 
+                // Now tracing is off if there is no span inside processor.
+                std::optional<opentracing::ParkingSpanGuard> span_guard = std::nullopt;
+                if (auto span = state->processor->getSpan())
+                    span_guard.emplace(span);
+                opentracing::SpanGuard inner_span_guard("work");
+
                 state->job();
 
 #ifndef NDEBUG
@@ -768,6 +824,13 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 {
     initializeExecution(num_threads);
 
+    std::shared_ptr<opentracing::SpanContext> span_context = nullptr;
+    if (auto span = CurrentThread::getSpan())
+    {
+        // fixme.
+        span_context = std::make_shared<opentracing::SpanContext>(*span->getReferences()[0].second);
+    }
+
     using ThreadsData = std::vector<ThreadFromGlobalPool>;
     ThreadsData threads;
     threads.reserve(num_threads);
@@ -791,14 +854,14 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
         for (size_t i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([this, thread_group, thread_num = i, num_threads]
+            threads.emplace_back([this, thread_group, thread_num = i, num_threads, span_context]
             {
                 /// ThreadStatus thread_status;
 
                 setThreadName("QueryPipelineEx");
 
                 if (thread_group)
-                    CurrentThread::attachTo(thread_group);
+                    CurrentThread::attachTo(thread_group, span_context);
 
                 SCOPE_EXIT(
                         if (thread_group)
@@ -817,6 +880,13 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         executeSingleThread(0, num_threads);
 
     finished_flag = true;
+
+//    for (auto& node : graph)
+//    {
+//        if (auto span = node.processor->getSpan()) {
+//            span->finishSpan();
+//        }
+//    }
 }
 
 String PipelineExecutor::dumpPipeline() const

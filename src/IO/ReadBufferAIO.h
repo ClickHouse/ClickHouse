@@ -105,7 +105,7 @@ private:
     /// Did the asynchronous operation fail?
     bool aio_failed = false;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead}; //, 1, CurrentMetrics::TracingMode::COMPLETE};
 };
 
 }

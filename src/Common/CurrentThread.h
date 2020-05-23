@@ -18,6 +18,11 @@ class MemoryTracker;
 namespace DB
 {
 
+namespace opentracing
+{
+    class SpanContext;
+}
+
 class Context;
 class QueryStatus;
 struct Progress;
@@ -67,6 +72,9 @@ public:
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
     static void attachTo(const ThreadGroupStatusPtr & thread_group);
+
+    static void attachTo(const ThreadGroupStatusPtr & thread_group, std::shared_ptr<opentracing::SpanContext> parent_span_context);
+
     /// Is useful for a ThreadPool tasks
     static void attachToIfDetached(const ThreadGroupStatusPtr & thread_group);
 
@@ -84,6 +92,13 @@ public:
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();
     static void detachQueryIfNotDetached();
+
+//    static std::shared_ptr<opentracing::IDistributedTracer> getDistributedTracer();
+//    static void setDistributedTracer(std::shared_ptr<opentracing::IDistributedTracer>&& tracer);
+    static std::shared_ptr<opentracing::Span> getSpan();
+    static void setSpan(const std::shared_ptr<opentracing::Span>& span);
+    static void setSpan(std::shared_ptr<opentracing::Span>&& span);
+    static void finishQuerySpan();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope

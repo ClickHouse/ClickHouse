@@ -4,7 +4,9 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPipeline.h>
 
+#include <Common/DistributedTracer.h>
 #include <Common/setThreadName.h>
+
 #include <ext/scope_guard.h>
 
 namespace DB
@@ -57,10 +59,14 @@ const Block & PullingAsyncPipelineExecutor::getHeader() const
     return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+static void threadFunction(
+    PullingAsyncPipelineExecutor::Data & data,
+    ThreadGroupStatusPtr thread_group,
+    size_t num_threads,
+    std::shared_ptr<opentracing::SpanContext> span_context)
 {
     if (thread_group)
-        CurrentThread::attachTo(thread_group);
+        CurrentThread::attachTo(thread_group, std::move(span_context));
 
     SCOPE_EXIT(
         if (thread_group)
@@ -88,9 +94,15 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         data = std::make_unique<Data>();
         data->executor = pipeline.execute();
 
-        auto func = [&, thread_group = CurrentThread::getGroup()]()
+        std::shared_ptr<opentracing::SpanContext> span_context;
+        if (auto span = CurrentThread::getSpan())
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads());
+            span_context = std::make_shared<opentracing::SpanContext>(span->getSpanContext());
+        }
+
+        auto func = [&, span_context = std::move(span_context), thread_group = CurrentThread::getGroup()]()
+        {
+            threadFunction(*data, thread_group, pipeline.getNumThreads(), span_context);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));

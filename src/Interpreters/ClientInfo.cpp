@@ -6,6 +6,8 @@
 #include <Core/Defines.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/CurrentThread.h>
+#include <Common/DistributedTracing.h>
 #include <unistd.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -60,6 +62,12 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             writeVarUInt(client_version_patch, out);
     }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_DISTRIBUTED_TRACING)
+    {
+        auto tracer = opentracing::getCurrentTracer();
+        tracer->InjectSpanContext(opentracing::getCurrentSpan(), out);
+    }
 }
 
 
@@ -113,6 +121,9 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         else
             client_version_patch = client_revision;
     }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_DISTRIBUTED_TRACING)
+        parent_span_context = opentracing::getCurrentTracer()->ExtractSpanContext(in);
 }
 
 

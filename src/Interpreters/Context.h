@@ -10,6 +10,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Access/RowPolicy.h>
+#include <Common/DistributedTracing.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
@@ -181,6 +182,12 @@ private:
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
 
+
+    /// Tracer for distributed tracing propagation.
+    std::shared_ptr<opentracing::IDistributedTracer> distributed_tracer = std::make_shared<opentracing::NoopTracer>();
+    /// Distributed tracing entity, which corresponds to a specific subquery.
+    std::shared_ptr<opentracing::Span> span = nullptr;
+
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
@@ -334,6 +341,11 @@ public:
     const Block & getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    const std::shared_ptr<opentracing::IDistributedTracer> & getDistributedTracer() const;
+    void setDistributedTracer(std::shared_ptr<opentracing::IDistributedTracer>&& tracer);
+    const std::shared_ptr<opentracing::Span> & getSpan() const;
+    void setSpan(std::shared_ptr<opentracing::Span>&& span);
 
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 

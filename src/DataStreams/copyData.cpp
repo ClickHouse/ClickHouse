@@ -4,6 +4,7 @@
 #include <DataStreams/copyData.h>
 #include <DataStreams/ParallelInputsProcessor.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/DistributedTracing.h>
 #include <Common/ThreadPool.h>
 
 
@@ -23,6 +24,8 @@ bool isAtomicSet(std::atomic<bool> * val)
 template <typename TCancelCallback, typename TProgressCallback>
 void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCallback && is_cancelled, TProgressCallback && progress)
 {
+    opentracing::SpanGuard span_guard("copyDataImpl (not parallel)");
+
     from.readPrefix();
     to.writePrefix();
 
@@ -106,6 +109,8 @@ struct ParallelInsertsHandler
 
 static void copyDataImpl(BlockInputStreams & inputs, BlockOutputStreams & outputs)
 {
+    opentracing::SpanGuard span_guard("copyDataImpl (parallel)");
+
     for (auto & output : outputs)
         output->writePrefix();
 

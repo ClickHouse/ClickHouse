@@ -31,7 +31,7 @@ private:
     int fd = -1;
     std::string file_name;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead}; //, 1, CurrentMetrics::TracingMode::COMPLETE};
 
     void open();
 };

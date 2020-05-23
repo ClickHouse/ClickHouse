@@ -201,7 +201,7 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 
 void ReadBufferAIO::synchronousRead()
 {
-    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read};
+    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read, 1, CurrentMetrics::TracingMode::COMPLETE};
 
     prepare();
     bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
@@ -237,7 +237,7 @@ bool ReadBufferAIO::waitForAIOCompletion()
     if (is_eof || !is_pending_read)
         return false;
 
-    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read};
+    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read, 1, CurrentMetrics::TracingMode::COMPLETE};
 
     bytes_read = future_bytes_read.get();
     is_pending_read = false;

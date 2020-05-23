@@ -531,6 +531,44 @@ void HTTPHandler::processQuery(
     client_info.initial_user = client_info.current_user;
     client_info.initial_query_id = client_info.current_query_id;
     client_info.initial_address = client_info.current_address;
+    // TODO: should we check its correctness here?
+
+    if (settings.enable_distributed_tracing)
+    {
+        context.setDistributedTracer(std::make_shared<opentracing::DistributedTracer>());
+
+        auto tracer = context.getDistributedTracer();
+        if (tracer->IsActiveTracer())
+        {
+            opentracing::SpanReferenceList references;
+
+            String parent_span_context_string = request.get("X-ClickHouse-Traceparent", "");
+            if (!parent_span_context_string.empty())
+            {
+                // TODO: support other SpanReferenceType.
+                auto parent_span_context = std::make_shared<opentracing::SpanContext>(tracer->DeserializeSpanContext(parent_span_context_string));
+                references.push_back({opentracing::SpanReferenceType::ChildOfRef, std::move(parent_span_context)});
+            }
+
+            /// If we are in initial query then we may initialize new trace with some probability.
+            if (!references.empty()
+                || (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+                    && std::uniform_real_distribution<>()(thread_local_rng) <= settings.distributed_tracing_probability))
+            {
+                // TODO full_query
+                context.setSpan(tracer->CreateSpan(full_query, std::move(references), std::nullopt));
+
+                if (const auto& span = context.getSpan())
+                {
+                    span->setTag("http.url", request.getURI());
+                    span->setTag("peer.address", client_info.current_address.toString());
+                    span->setTag("db.user", client_info.current_user);
+                    // span->setTag("db.statement", ) - is it the same as operation_name of the span?
+                    span->setTag("peer.hostname", getFQDNOrHostName());
+                }
+            }
+        }
+    }
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)

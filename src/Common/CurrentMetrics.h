@@ -18,6 +18,13 @@
   * For periodically (asynchronously) updated metrics, see AsynchronousMetrics.h
   */
 
+
+namespace DB::opentracing
+{
+    class SpanGuard;
+}
+
+
 namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
@@ -52,12 +59,21 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
-    /// For lifetime of object, add amout for specified metric. Then subtract.
+    enum TracingMode
+    {
+        NONE = 1,
+        COMPLETE = 2,
+        NO_PROPAGATION = 3
+    };
+
+    /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {
     private:
         std::atomic<Value> * what;
         Value amount;
+
+        std::shared_ptr<DB::opentracing::SpanGuard> span_guard = nullptr;
 
         Increment(std::atomic<Value> * what_, Value amount_)
             : what(what_), amount(amount_)
@@ -65,9 +81,14 @@ namespace CurrentMetrics
             *what += amount;
         }
 
+        void InitializeDistributedTracing(Metric metric, TracingMode tracing_mode);
+
     public:
-        Increment(Metric metric, Value amount_ = 1)
-            : Increment(&values[metric], amount_) {}
+        Increment(Metric metric, Value amount_ = 1, TracingMode tracing_mode = TracingMode::NONE)
+            : Increment(&values[metric], amount_)
+        {
+            InitializeDistributedTracing(metric, tracing_mode);
+        }
 
         ~Increment()
         {
@@ -84,7 +105,11 @@ namespace CurrentMetrics
         {
             what = old.what;
             amount = old.amount;
+            span_guard = std::move(old.span_guard);
+
             old.what = nullptr;
+            old.span_guard.reset();
+
             return *this;
         }
 

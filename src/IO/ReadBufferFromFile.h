@@ -22,7 +22,7 @@ class ReadBufferFromFile : public ReadBufferFromFileDescriptor
 {
 protected:
     std::string file_name;
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead}; //, 1, CurrentMetrics::TracingMode::COMPLETE};
 
 public:
     ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,

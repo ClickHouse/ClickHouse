@@ -92,4 +92,59 @@ ThreadGroupStatusPtr CurrentThread::getGroup()
     return current_thread->getThreadGroup();
 }
 
+
+//// TODO stop using shared_ptr.
+//std::shared_ptr<opentracing::IDistributedTracer> CurrentThread::getDistributedTracer()
+//{
+//    if (unlikely(!current_thread))
+//        return std::make_shared<opentracing::NoopTracer>();
+//
+//    return current_thread->distributed_tracer;
+//}
+//
+//void CurrentThread::setDistributedTracer(std::shared_ptr<opentracing::IDistributedTracer>&& tracer)
+//{
+//    if (unlikely(!current_thread))
+//        return;
+//
+//    current_thread->distributed_tracer = std::move(tracer);
+//}
+
+std::shared_ptr<opentracing::Span> CurrentThread::getSpan()
+{
+    // It is checked that `getSpan` is called only when current_thread exists.
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    return current_thread->span;
+}
+
+void CurrentThread::setSpan(const std::shared_ptr<opentracing::Span>& span_)
+{
+    if (unlikely(!current_thread))
+        return;
+
+    current_thread->span = span_;
+}
+
+void CurrentThread::setSpan(std::shared_ptr<opentracing::Span>&& span_)
+{
+    if (unlikely(!current_thread))
+        return;
+
+    current_thread->span = std::move(span_);
+}
+
+void CurrentThread::finishQuerySpan()
+{
+    if (unlikely(!current_thread))
+        return;
+
+    if (!current_thread->query_context)
+        abort();
+
+    if (const auto& span = current_thread->query_context->getSpan())
+        span->finishSpan();
+}
+
 }

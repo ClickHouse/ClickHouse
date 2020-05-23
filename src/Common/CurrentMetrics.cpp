@@ -1,5 +1,6 @@
 #include <Common/CurrentMetrics.h>
 
+#include <Common/DistributedTracing.h>
 
 /// Available metrics. Add something here as you wish.
 #define APPLY_FOR_METRICS(M) \
@@ -96,6 +97,12 @@ namespace CurrentMetrics
     }
 
     Metric end() { return END; }
+
+    void Increment::InitializeDistributedTracing(Metric metric, TracingMode tracing_mode)
+    {
+        if (tracing_mode != TracingMode::NONE)
+            span_guard = std::make_shared<DB::opentracing::SpanGuard>(getName(metric));
+    }
 }
 
 #undef APPLY_FOR_METRICS

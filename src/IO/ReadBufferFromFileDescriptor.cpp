@@ -52,7 +52,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
         ssize_t res = 0;
         {
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::Read, 1, CurrentMetrics::TracingMode::COMPLETE};
             res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
         }
         if (!res)

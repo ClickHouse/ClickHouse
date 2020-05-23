@@ -9,6 +9,12 @@ class EventCounter;
 
 namespace DB
 {
+
+namespace opentracing
+{
+    class Span;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -288,6 +294,19 @@ public:
     void enableQuota() { has_quota = true; }
     bool hasQuota() const { return has_quota; }
 
+    void setSpan(std::shared_ptr<opentracing::Span> span_)
+    {
+        if (!!span)
+            abort();
+
+        span = std::move(span_);
+    }
+
+    std::shared_ptr<opentracing::Span> getSpan()
+    {
+        return span;
+    }
+
 protected:
     virtual void onCancel() {}
 
@@ -299,6 +318,9 @@ private:
     size_t stream_number = NO_STREAM;
 
     bool has_quota = false;
+
+    // looks like this isn't properly destroyed...
+    std::shared_ptr<opentracing::Span> span = nullptr;
 };
 
 

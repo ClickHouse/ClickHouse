@@ -34,6 +34,8 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
+#include <Common/DistributedTracing.h>
+#include <Common/thread_local_rng.h>
 
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Common/SensitiveDataMasker.h>
@@ -517,6 +519,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
+
+//                if (const auto& span = CurrentThread::getSpan())
+//                {
+//                    span->finishSpan();
+//                }
             };
 
             auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
@@ -573,6 +580,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
 
+                if (const auto& span = opentracing::getCurrentSpan())
+                {
+                    span->setTag("error", true);
+                    opentracing::LogEntity log_entity //(std::initializer_list<opentracing::LogEvent>(
+                        {{"event", "error"},
+                         {"error.kind", std::to_string(elem.exception_code)},
+                         {"message", String(elem.exception)},
+                         {"stack", String(elem.stack_trace)}};
+                    span->addLog(std::move(log_entity));
+
+//                    span->finishSpan();
+                }
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -611,6 +630,8 @@ BlockIO executeQuery(
     QueryProcessingStage::Enum stage,
     bool may_have_embedded_data)
 {
+//    opentracing::SpanGuard span_guard("lalala");
+
     ASTPtr ast;
     BlockIO streams;
     std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,

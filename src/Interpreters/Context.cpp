@@ -825,6 +825,25 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
+const std::shared_ptr<opentracing::IDistributedTracer> & Context::getDistributedTracer() const
+{
+    return distributed_tracer;
+}
+
+void Context::setDistributedTracer(std::shared_ptr<opentracing::IDistributedTracer>&& tracer)
+{
+    distributed_tracer = std::move(tracer);
+}
+
+const std::shared_ptr<opentracing::Span> & Context::getSpan() const
+{
+    return span;
+}
+
+void Context::setSpan(std::shared_ptr<opentracing::Span>&& span_)
+{
+    span = std::move(span_);
+}
 
 Tables Context::getExternalTables() const
 {

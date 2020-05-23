@@ -50,7 +50,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
 
         ssize_t res = 0;
         {
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::Write, 1, CurrentMetrics::TracingMode::COMPLETE};
             res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
 

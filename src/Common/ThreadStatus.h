@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DistributedTracing.h>
 #include <common/StringRef.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
@@ -104,6 +105,11 @@ public:
     /// Statistics of read and write rows/bytes
     Progress progress_in;
     Progress progress_out;
+
+//    /// Tracer for distributed tracing propagation.
+//    std::shared_ptr<opentracing::IDistributedTracer> distributed_tracer = std::make_shared<opentracing::DistributedTracer>();
+    /// Distributed tracing entity, which corresponds to a specific subquery.
+    std::shared_ptr<opentracing::Span> span = nullptr;
 
     using Deleter = std::function<void()>;
     Deleter deleter;

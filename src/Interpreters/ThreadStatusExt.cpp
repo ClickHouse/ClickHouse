@@ -60,6 +60,9 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 {
     assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
 
+    if (!!span)
+        abort();
+
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
 
@@ -201,6 +204,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     finalizeQueryProfiler();
     finalizePerformanceCounters();
+    span = nullptr;
+//    if (!!span)
+//        abort();
+//    query_context->setSpan(nullptr);
 
     /// Detach from thread group
     performance_counters.setParent(&ProfileEvents::global_counters);
@@ -288,6 +295,25 @@ void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
     current_thread->deleter = CurrentThread::defaultThreadDeleter;
 }
 
+void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group, std::shared_ptr<opentracing::SpanContext> parent_span_context)
+{
+    if (unlikely(!current_thread))
+        return;
+
+    attachTo(thread_group);
+
+    auto tracer = current_thread->query_context->getDistributedTracer();
+    if (!!parent_span_context && tracer->IsActiveTracer())
+    {
+        // these are per-thread spans. don't forget about to per-transform spans.
+        current_thread->span = tracer->CreateSpan(
+                getThreadName(),
+                {{opentracing::SpanReferenceType::ChildOfRef, parent_span_context}},
+                std::nullopt);
+    }
+}
+
+
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
     if (unlikely(!current_thread))
@@ -348,6 +374,7 @@ CurrentThread::QueryScope::~QueryScope()
         if (log_peak_memory_usage_in_destructor)
             logPeakMemoryUsage();
 
+        CurrentThread::finishQuerySpan();
         CurrentThread::detachQueryIfNotDetached();
     }
     catch (...)

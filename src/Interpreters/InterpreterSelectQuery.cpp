@@ -65,6 +65,7 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Columns/Collator.h>
+#include <Common/DistributedTracing.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
@@ -701,6 +702,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
      *  then perform the remaining operations with one resulting stream.
      */
 
+    opentracing::SpanGuard span_guard("InterpreterSelectQuery::executeImpl");
+
     constexpr bool pipeline_with_processors = std::is_same<TPipeline, QueryPipeline>::value;
 
     /// Now we will compose block streams that perform the necessary actions.
@@ -1071,6 +1074,8 @@ void InterpreterSelectQuery::executeFetchColumns(
         const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere,
         QueryPipeline & save_context_and_storage)
 {
+    opentracing::SpanGuard span_guard("executeFetchColumns");
+
     constexpr bool pipeline_with_processors = std::is_same<TPipeline, QueryPipeline>::value;
 
     auto & query = getSelectQuery();
@@ -1385,6 +1390,8 @@ void InterpreterSelectQuery::executeFetchColumns(
     }
     else if (storage)
     {
+//        opentracing::SpanGuard inner_span_guard("STORAGE");
+
         /// Table.
 
         if (max_streams == 0)
@@ -1454,6 +1461,8 @@ void InterpreterSelectQuery::executeFetchColumns(
         /// Code is temporarily copy-pasted while moving to new pipeline.
         if (pipes.empty() && pipeline_with_processors)
         {
+            opentracing::SpanGuard inner_span_guard("EMPTY_PIPE");
+
             Pipe pipe(std::make_shared<NullSource>(storage->getSampleBlockForColumns(required_columns)));
 
             if (query_info.prewhere_info)
@@ -1580,6 +1589,8 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         if constexpr (pipeline_with_processors)
         {
+            opentracing::SpanGuard inner_span_guard("Add ExpressionTransform");
+
             pipeline.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<ExpressionTransform>(header, alias_actions);
@@ -1598,6 +1609,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
 void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
+    opentracing::SpanGuard span_guard("executeWhere");
+
     pipeline.transform([&](auto & stream)
     {
         stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where()->getColumnName(), remove_filter);
@@ -1606,6 +1619,8 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 
 void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter)
 {
+    opentracing::SpanGuard span_guard("executeWhere");
+
     pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
@@ -1615,6 +1630,8 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
+    opentracing::SpanGuard span_guard("executeAggregation");
+
     pipeline.transform([&](auto & stream)
     {
         stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
@@ -1679,6 +1696,8 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 
 void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
+    opentracing::SpanGuard span_guard("executeAggregation");
+
     pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, expression);
@@ -1751,6 +1770,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
 void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final)
 {
+    opentracing::SpanGuard span_guard("executeMergeAggregated");
+
     Block header = pipeline.firstStream()->getHeader();
 
     ColumnNumbers keys;
@@ -1798,6 +1819,8 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
 
 void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final)
 {
+    opentracing::SpanGuard span_guard("executeMergeAggregated");
+
     Block header_before_merge = pipeline.getHeader();
 
     ColumnNumbers keys;
@@ -1858,6 +1881,8 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
 
 void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression)
 {
+    opentracing::SpanGuard span_guard("executeHaving");
+
     pipeline.transform([&](auto & stream)
     {
         stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().having()->getColumnName());
@@ -1866,6 +1891,8 @@ void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const Expression
 
 void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
+    opentracing::SpanGuard span_guard("executeHaving");
+
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
@@ -1878,6 +1905,8 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 
 void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
+    opentracing::SpanGuard span_guard("executeTotalsAndHaving");
+
     executeUnion(pipeline, {});
 
     const Settings & settings = context->getSettingsRef();
@@ -1894,6 +1923,8 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
 
 void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
+    opentracing::SpanGuard span_guard("executeTotalsAndHaving");
+
     const Settings & settings = context->getSettingsRef();
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
@@ -1907,6 +1938,8 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bo
 
 void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificator modificator)
 {
+    opentracing::SpanGuard span_guard("executeRollupOrCube");
+
     executeUnion(pipeline, {});
 
     Block header = pipeline.firstStream()->getHeader();
@@ -1932,6 +1965,8 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificato
 
 void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator)
 {
+    opentracing::SpanGuard span_guard("executeRollupOrCube");
+
     pipeline.resize(1);
 
     Block header_before_transform = pipeline.getHeader();
@@ -1966,6 +2001,8 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 
 void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression)
 {
+    opentracing::SpanGuard span_guard("executeExpression");
+
     pipeline.transform([&](auto & stream)
     {
         stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
@@ -1974,6 +2011,8 @@ void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
+    opentracing::SpanGuard span_guard("executeExpression");
+
     pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(header, expression);
@@ -1982,6 +2021,8 @@ void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const E
 
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
+    opentracing::SpanGuard span_guard("executeOrder");
+
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
     const Settings & settings = context->getSettingsRef();
@@ -2045,6 +2086,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
 
 void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
+    opentracing::SpanGuard span_guard("executeOrder");
+
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
@@ -2140,6 +2183,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeMergeSorted");
+
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
@@ -2155,6 +2200,8 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
 {
+    opentracing::SpanGuard span_guard("executeMergeSorted");
+
     if (pipeline.hasMoreThanOneStream())
     {
         const Settings & settings = context->getSettingsRef();
@@ -2175,6 +2222,8 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortD
 
 void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeMergeSorted");
+
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query, *context);
     UInt64 limit = getLimitForSorting(query, *context);
@@ -2184,6 +2233,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
 {
+    opentracing::SpanGuard span_guard("executeMergeSorted");
+
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
@@ -2204,6 +2255,8 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const 
 
 void InterpreterSelectQuery::executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression)
 {
+    opentracing::SpanGuard span_guard("executeProjection");
+
     pipeline.transform([&](auto & stream)
     {
         stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
@@ -2212,6 +2265,8 @@ void InterpreterSelectQuery::executeProjection(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
+    opentracing::SpanGuard span_guard("executeProjection");
+
     pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
     {
        return std::make_shared<ExpressionTransform>(header, expression);
@@ -2221,6 +2276,8 @@ void InterpreterSelectQuery::executeProjection(QueryPipeline & pipeline, const E
 
 void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_order, Names columns)
 {
+    opentracing::SpanGuard span_guard("executeDistinct");
+
     auto & query = getSelectQuery();
     if (query.distinct)
     {
@@ -2243,6 +2300,8 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
 
 void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns)
 {
+    opentracing::SpanGuard span_guard("executeDistinct");
+
     auto & query = getSelectQuery();
     if (query.distinct)
     {
@@ -2270,6 +2329,8 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 
 void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header)
 {
+    opentracing::SpanGuard span_guard("executeUnion");
+
     /// If there are still several streams, then we combine them into one
     if (pipeline.hasMoreThanOneStream())
     {
@@ -2294,6 +2355,8 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, Block header)
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executePreLimit");
+
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
@@ -2316,6 +2379,8 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset)
 {
+    opentracing::SpanGuard span_guard("executePreLimit");
+
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
@@ -2336,6 +2401,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_n
 
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeLimitBy");
+
     auto & query = getSelectQuery();
     if (!query.limitByLength() || !query.limitBy())
         return;
@@ -2354,6 +2421,8 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeLimitBy");
+
     auto & query = getSelectQuery();
     if (!query.limitByLength() || !query.limitBy())
         return;
@@ -2402,6 +2471,8 @@ namespace
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeLimit");
+
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
@@ -2446,6 +2517,8 @@ void InterpreterSelectQuery::executeOffset(Pipeline & /* pipeline */) {}
 
 void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeWithFill");
+
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
@@ -2469,6 +2542,8 @@ void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeWithFill(QueryPipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeWithFill");
+
     auto & query = getSelectQuery();
     if (query.orderBy())
     {
@@ -2493,6 +2568,8 @@ void InterpreterSelectQuery::executeWithFill(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeLimit");
+
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
@@ -2560,6 +2637,8 @@ void InterpreterSelectQuery::executeOffset(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeExtremes");
+
     if (!context->getSettingsRef().extremes)
         return;
 
@@ -2571,6 +2650,8 @@ void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 {
+    opentracing::SpanGuard span_guard("executeExtremes");
+
     if (!context->getSettingsRef().extremes)
         return;
 
@@ -2580,6 +2661,8 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
+    opentracing::SpanGuard span_guard("executeSubqueriesInSetsAndJoins");
+
     /// Merge streams to one. Use MergeSorting if data was read in sorted order, Union otherwise.
     if (query_info.input_sorting_info)
     {
@@ -2596,6 +2679,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const SubqueriesForSets & subqueries_for_sets)
 {
+    opentracing::SpanGuard span_guard("executeSubqueriesInSetsAndJoins");
+
     if (query_info.input_sorting_info)
         executeMergeSorted(pipeline, query_info.input_sorting_info->order_key_prefix_descr, 0);
 
@@ -2612,6 +2697,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 
 void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
 {
+    opentracing::SpanGuard span_guard("unifyStreams");
+
     /// Unify streams in case they have different headers.
 
     /// TODO: remove previous addition of _dummy column.

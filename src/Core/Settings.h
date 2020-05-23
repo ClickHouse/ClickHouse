@@ -160,6 +160,10 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingLogQueriesType, log_queries_min_type, QueryLogElementType::QUERY_START, "query_log minimal type to log, possible values (from low to high): QUERY_START, QUERY_FINISH, EXCEPTION_BEFORE_START, EXCEPTION_WHILE_PROCESSING.", 0) \
     M(SettingUInt64, log_queries_cut_to_length, 100000, "If query length is greater than specified threshold (in bytes), then cut query when writing to query log. Also limit length of printed query in ordinary text log.", 0) \
     \
+    M(SettingBool, enable_distributed_tracing, false, "Produce OpenTracing-compatible tracing (implemented over query_log)", 0) \
+    M(SettingBool, use_noop_tracer, false, "Use special NoopTracer (may be useful for tests or to avoid tracing specific parts of code)", 0) \
+    M(SettingFloat, distributed_tracing_probability, 1., "Probability of a request to be traced (in case distributed tracing is enabled)", 0) \
+    \
     M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, "How are distributed subqueries performed inside IN or JOIN sections?", IMPORTANT) \
     \
     M(SettingUInt64, max_concurrent_queries_for_user, 0, "The maximum number of concurrent requests per user.", 0) \

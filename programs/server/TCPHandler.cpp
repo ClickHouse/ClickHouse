@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
+#include <common/getFQDNOrHostName.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
@@ -491,6 +492,8 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
 
 void TCPHandler::processOrdinaryQuery()
 {
+    opentracing::SpanGuard span_guard("processOrdinaryQuery");
+
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
@@ -555,6 +558,8 @@ void TCPHandler::processOrdinaryQuery()
 
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
+    opentracing::SpanGuard span_guard("processOrdinaryQueryWithProcessors");
+
     auto & pipeline = state.io.pipeline;
 
     /// Send header-block, to allow client to prepare output format for data to send.
@@ -615,6 +620,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     }
 
     state.io.onFinish();
+
+//    for (auto proc : state.io.pipeline.)
 
     sendProgress();
 }
@@ -884,6 +891,41 @@ void TCPHandler::receiveQuery()
     }
     query_context->applySettingsChanges(settings_changes);
     const Settings & settings = query_context->getSettingsRef();
+
+    if (settings.enable_distributed_tracing)
+    {
+        query_context->setDistributedTracer(std::make_shared<opentracing::DistributedTracer>());
+
+        auto tracer = query_context->getDistributedTracer();
+        if (tracer->IsActiveTracer())
+        {
+            opentracing::SpanReferenceList references;
+
+            if (!!client_info.parent_span_context)
+            {
+                // TODO: support other SpanReferenceType.
+                references.emplace_back(opentracing::SpanReferenceType::ChildOfRef, client_info.parent_span_context);
+            }
+
+            /// If we are in initial query then we may initialize new trace with some probability.
+            if (!references.empty()
+                || (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+                    && std::uniform_real_distribution<>()(thread_local_rng) <= settings.distributed_tracing_probability))
+            {
+                // TODO state.query
+                query_context->setSpan(tracer->CreateSpan(state.query, std::move(references), std::nullopt));
+
+                if (const auto & span = query_context->getSpan())
+                {
+                    span->setTag("peer.address", client_info.current_address.toString());
+                    span->setTag("db.user", client_info.current_user);
+                    // span->setTag("db.statement", ) - is it the same as operation_name of the span?
+                    span->setTag("peer.hostname", getFQDNOrHostName());
+                }
+            }
+        }
+    }
+
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),

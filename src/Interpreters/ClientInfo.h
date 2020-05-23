@@ -3,6 +3,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Core/Types.h>
 
+#include <Common/DistributedTracing.h>
 
 namespace DB
 {
@@ -54,6 +55,9 @@ public:
     String initial_user;
     String initial_query_id;
     Poco::Net::SocketAddress initial_address;
+
+    /// Used for distributed tracing propagation.
+    std::shared_ptr<opentracing::SpanContext> parent_span_context = nullptr;
 
     /// All below are parameters related to initial query.
 
