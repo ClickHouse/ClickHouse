@@ -411,7 +411,7 @@ void DistributedBlockOutputStream::writeSuffix()
     auto log_performance = [this] ()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took " << elapsed << " sec. to insert " << inserted_blocks << " blocks, " << inserted_rows / elapsed << " rows per second. " << getCurrentStateDescription());
+        LOG_DEBUG_FORMATTED(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, LOG_DEBUG0);
     };
 
     if (insert_sync && pool)
