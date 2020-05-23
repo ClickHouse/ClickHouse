@@ -1619,6 +1619,7 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         const auto max_partitions_count = config.getInt(layout_prefix + ".ssd_cache.max_partitions_count", DEFAULT_PARTITIONS_COUNT);
         if (max_partitions_count <= 0)
             throw Exception{name + ": dictionary of layout 'ssd_cache' cannot have 0 (or less) max_partitions_count", ErrorCodes::BAD_ARGUMENTS};
+        max_partitions_count = 1;
 
         const auto block_size = config.getInt(layout_prefix + ".ssd_cache.block_size", DEFAULT_SSD_BLOCK_SIZE);
         if (block_size <= 0)
