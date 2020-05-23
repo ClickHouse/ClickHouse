@@ -179,9 +179,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     if (!parts_to_move.empty())
     {
-        LOG_TRACE(log, "Selected " << parts_to_move_by_policy_rules << " parts to move according to storage policy rules and "
-            << parts_to_move_by_ttl_rules << " parts according to TTL rules, "
-            << formatReadableSizeWithBinarySuffix(parts_to_move_total_size_bytes) << " total");
+        LOG_TRACE(log, "Selected " << parts_to_move_by_policy_rules << " parts to move according to storage policy rules and "             << parts_to_move_by_ttl_rules << " parts according to TTL rules, "             << formatReadableSizeWithBinarySuffix(parts_to_move_total_size_bytes) << " total");
         return true;
     }
     else
@@ -217,8 +215,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part->name)
     {
-        LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
-            << " Possible it was merged or mutated. Will remove copy on path '" << cloned_part->getFullPath() << "'.");
+        LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."             << " Possible it was merged or mutated. Will remove copy on path '" << cloned_part->getFullPath() << "'.");
         return;
     }
 

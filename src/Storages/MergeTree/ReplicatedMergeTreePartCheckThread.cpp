@@ -82,8 +82,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     /// If the part is in ZooKeeper, remove it from there and add the task to download it to the queue.
     if (zookeeper->exists(part_path))
     {
-        LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. "
-            "Removing from ZooKeeper and queueing a fetch.");
+        LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. "             "Removing from ZooKeeper and queueing a fetch.");
         ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
         storage.removePartAndEnqueueFetch(part_name);
@@ -144,9 +143,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
-                    LOG_WARNING(log,
-                        "Found parts with the same min block and with the same max block as the missing part "
-                        << part_name << ". Hoping that it will eventually appear as a result of a merge.");
+                    LOG_WARNING(log,                         "Found parts with the same min block and with the same max block as the missing part "                         << part_name << ". Hoping that it will eventually appear as a result of a merge.");
                     return;
                 }
             }
@@ -161,8 +158,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         not_found_msg = "a smaller part with the same min block.";
     else
         not_found_msg = "smaller parts with either the same min block or the same max block.";
-    LOG_ERROR(log, "No replica has part covering " << part_name
-              << " and a merge is impossible: we didn't find " << not_found_msg);
+    LOG_ERROR(log, "No replica has part covering " << part_name               << " and a merge is impossible: we didn't find " << not_found_msg);
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
@@ -289,9 +285,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             ///  but remained in the filesystem and in a number of active parts.
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
-            LOG_TRACE(log, "Young part " << part_name
-                << " with age " << (time(nullptr) - part->modification_time)
-                << " seconds hasn't been added to ZooKeeper yet. It's ok.");
+            LOG_TRACE(log, "Young part " << part_name                 << " with age " << (time(nullptr) - part->modification_time)                 << " seconds hasn't been added to ZooKeeper yet. It's ok.");
         }
     }
     else

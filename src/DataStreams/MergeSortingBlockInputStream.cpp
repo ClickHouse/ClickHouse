@@ -264,9 +264,7 @@ void MergeSortingBlockInputStream::remerge()
     }
     merger.readSuffix();
 
-    LOG_DEBUG(log, "Memory usage is lowered from "
-        << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to "
-        << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+    LOG_DEBUG(log, "Memory usage is lowered from "         << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to "         << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
     if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)

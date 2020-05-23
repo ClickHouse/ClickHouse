@@ -366,12 +366,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         if (now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
-            LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
-                << " because not enough free space: "
-                << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved, "
-                << formatReadableSizeWithBinarySuffix(sum_bytes)
-                << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
-                << "% on overhead); suppressing similar warnings for the next hour");
+            LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name                 << " because not enough free space: "                 << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved, "                 << formatReadableSizeWithBinarySuffix(sum_bytes)                 << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)                 << "% on overhead); suppressing similar warnings for the next hour");
         }
 
         if (out_disable_reason)
@@ -588,9 +583,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
-    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from "
-              << parts.front()->name << " to " << parts.back()->name
-              << " into " << TMP_PREFIX + future_part.name + " with type " + future_part.type.toString());
+    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from "               << parts.front()->name << " to " << parts.back()->name               << " into " << TMP_PREFIX + future_part.name + " with type " + future_part.type.toString());
 
     auto disk = space_reservation->getDisk();
     String part_path = data.relative_data_path;
@@ -949,10 +942,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG_FORMATTED(log, "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
-            merge_entry->rows_read, all_column_names.size(), merging_column_names.size(), gathering_column_names.size(),
-            elapsed_seconds, merge_entry->rows_read / elapsed_seconds,
-            formatReadableSizeWithBinarySuffix(merge_entry->bytes_read_uncompressed / elapsed_seconds));
+        LOG_DEBUG_FORMATTED(log, "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",             merge_entry->rows_read, all_column_names.size(), merging_column_names.size(), gathering_column_names.size(),             elapsed_seconds, merge_entry->rows_read / elapsed_seconds,             formatReadableSizeWithBinarySuffix(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 
     if (merge_alg != MergeAlgorithm::Vertical)
@@ -1224,8 +1214,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
-            << " instead of " << parts.size());
+        LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()             << " instead of " << parts.size());
     }
     else
     {

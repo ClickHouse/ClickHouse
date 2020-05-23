@@ -327,8 +327,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             cached_block_stats.erase(first_outdated_block->node);
         }
         else if (rc)
-            LOG_WARNING(log,
-                "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
+            LOG_WARNING(log,                 "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
         else
         {
             /// Successfully removed blocks have to be removed from cache
@@ -369,8 +368,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"
-                                   << " to clear old ones from ZooKeeper.");
+        LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"                                    << " to clear old ones from ZooKeeper.");
     }
 
     zkutil::AsyncResponses<Coordination::ExistsResponse> exists_futures;

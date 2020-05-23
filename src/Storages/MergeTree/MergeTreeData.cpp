@@ -204,8 +204,7 @@ MergeTreeData::MergeTreeData(
         {
             if (!version_file.first.empty())
             {
-                LOG_ERROR(log, "Duplication of version file " <<
-                fullPath(version_file.second, version_file.first) << " and " << current_version_file_path);
+                LOG_ERROR(log, "Duplication of version file " <<                 fullPath(version_file.second, version_file.first) << " and " << current_version_file_path);
                 throw Exception("Multiple format_version.txt file", ErrorCodes::CORRUPTED_DATA);
             }
             version_file = {current_version_file_path, disk};
@@ -1009,8 +1008,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     }
                     else
                     {
-                        LOG_ERROR(log, "Detaching broken part " << getFullPathOnDisk(part_disk_ptr) << part_name
-                            << " because it covers less than 2 parts. You need to resolve this manually");
+                        LOG_ERROR(log, "Detaching broken part " << getFullPathOnDisk(part_disk_ptr) << part_name                             << " because it covers less than 2 parts. You need to resolve this manually");
                         std::lock_guard loading_lock(mutex);
                         broken_parts_to_detach.push_back(part);
                         ++suspicious_broken_parts;
@@ -2090,9 +2088,7 @@ restore_covered)
 
         if (error)
         {
-            LOG_ERROR(log, "The set of parts restored in place of " << part->name << " looks incomplete."
-                           << " There might or might not be a data loss."
-                           << (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
+            LOG_ERROR(log, "The set of parts restored in place of " << part->name << " looks incomplete."                            << " There might or might not be a data loss."                            << (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
         }
     }
 }
@@ -2245,8 +2241,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
-    LOG_INFO(log, "Delaying inserting block by "
-        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count_in_partition << " parts");
+    LOG_INFO(log, "Delaying inserting block by "         << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count_in_partition << " parts");
 
     if (until)
         until->tryWait(delay_milliseconds);
@@ -2444,9 +2439,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
             if (value > from)
-                LOG_ERROR(log, "Possibly incorrect column size subtraction: "
-                    << from << " - " << value << " = " << from - value
-                    << ", column: " << column.name << ", field: " << field);
+                LOG_ERROR(log, "Possibly incorrect column size subtraction: "                     << from << " - " << value << " = " << from - value                     << ", column: " << column.name << ", field: " << field);
 
             from -= value;
         };
@@ -2921,13 +2914,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         if (!destination_ptr)
         {
             if (ttl_entry->destination_type == PartDestinationType::VOLUME)
-                LOG_WARNING(log, "Would like to reserve space on volume '"
-                        << ttl_entry->destination_name << "' by TTL rule of table '"
-                        << log_name << "' but volume was not found");
+                LOG_WARNING(log, "Would like to reserve space on volume '"                         << ttl_entry->destination_name << "' by TTL rule of table '"                         << log_name << "' but volume was not found");
             else if (ttl_entry->destination_type == PartDestinationType::DISK)
-                LOG_WARNING(log, "Would like to reserve space on disk '"
-                        << ttl_entry->destination_name << "' by TTL rule of table '"
-                        << log_name << "' but disk was not found");
+                LOG_WARNING(log, "Would like to reserve space on disk '"                         << ttl_entry->destination_name << "' by TTL rule of table '"                         << log_name << "' but disk was not found");
         }
         else
         {
@@ -2936,13 +2925,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
                 return reservation;
             else
                 if (ttl_entry->destination_type == PartDestinationType::VOLUME)
-                    LOG_WARNING(log, "Would like to reserve space on volume '"
-                            << ttl_entry->destination_name << "' by TTL rule of table '"
-                            << log_name << "' but there is not enough space");
+                    LOG_WARNING(log, "Would like to reserve space on volume '"                             << ttl_entry->destination_name << "' by TTL rule of table '"                             << log_name << "' but there is not enough space");
                 else if (ttl_entry->destination_type == PartDestinationType::DISK)
-                    LOG_WARNING(log, "Would like to reserve space on disk '"
-                            << ttl_entry->destination_name << "' by TTL rule of table '"
-                            << log_name << "' but there is not enough space");
+                    LOG_WARNING(log, "Would like to reserve space on disk '"                             << ttl_entry->destination_name << "' by TTL rule of table '"                             << log_name << "' but there is not enough space");
         }
     }
 
@@ -3068,8 +3053,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
             if (covering_part)
             {
-                LOG_WARNING(data.log, "Tried to commit obsolete part " << part->name
-                    << " covered by " << covering_part->getNameWithState());
+                LOG_WARNING(data.log, "Tried to commit obsolete part " << part->name                     << " covered by " << covering_part->getNameWithState());
 
                 part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                 data.modifyPartState(part, DataPartState::Outdated);

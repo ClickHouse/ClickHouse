@@ -60,9 +60,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
-
-
+#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576  
 class Context;
 class QueryLog;
 class QueryThreadLog;
@@ -234,9 +232,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     if (is_shutdown)
         return;
 
-    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
-    {
-        // The queue more than half full, time to flush.
+    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)     {         // The queue more than half full, time to flush.
         // We only check for strict equality, because messages are added one
         // by one, under exclusive lock, so we will see each message count.
         // It is enough to only wake the flushing thread once, after the message
@@ -249,9 +245,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
         LOG_INFO_FORMATTED(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
     }
 
-    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
-    {
-        // Ignore all further entries until the queue is flushed.
+    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)     {         // Ignore all further entries until the queue is flushed.
         // Log a message about that. Don't spam it -- this might be especially
         // problematic in case of trace log. Remember what the front index of the
         // queue was when we last logged the message. If it changed, it means the
@@ -262,9 +256,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
             // TextLog sets its logger level to 0, so this log is a noop and
             // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '"
-                << demangle(typeid(*this).name()) << "'"
-                << " at " << queue_front_index);
+            LOG_ERROR(log, "Queue is full for system log '"                 << demangle(typeid(*this).name()) << "'"                 << " at " << queue_front_index);
         }
 
         return;
@@ -386,8 +378,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, "
-            << to_flush.size() << " entries to flush");
+        LOG_TRACE(log, "Flushing system log, "             << to_flush.size() << " entries to flush");
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
@@ -465,8 +456,7 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
-                " Renaming it to " << backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."                 " Renaming it to " << backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
