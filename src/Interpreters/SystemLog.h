@@ -246,7 +246,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
             requested_flush_before = queue_end;
 
         flush_event.notify_all();
-        LOG_INFO(log, "Queue is half full for system log '" + demangle(typeid(*this).name()) + "'.");
+        LOG_INFO_FORMATTED(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
     }
 
     if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)

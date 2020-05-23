@@ -618,11 +618,11 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
             {
                 if (!it->second.is_done)
                 {
-                    LOG_DEBUG(log, "Removing killed mutation " + entry.znode_name + " from local state.");
+                    LOG_DEBUG_FORMATTED(log, "Removing killed mutation {} from local state.", entry.znode_name);
                     some_active_mutations_were_killed = true;
                 }
                 else
-                    LOG_DEBUG(log, "Removing obsolete mutation " + entry.znode_name + " from local state.");
+                    LOG_DEBUG_FORMATTED(log, "Removing obsolete mutation {} from local state.", entry.znode_name);
 
                 for (const auto & partition_and_block_num : entry.block_numbers)
                 {
@@ -727,7 +727,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
 
     auto rc = zookeeper->tryRemove(zookeeper_path + "/mutations/" + mutation_id);
     if (rc == Coordination::ZOK)
-        LOG_DEBUG(log, "Removed mutation " + mutation_id + " from ZooKeeper.");
+        LOG_DEBUG_FORMATTED(log, "Removed mutation {} from ZooKeeper.", mutation_id);
 
     ReplicatedMergeTreeMutationEntryPtr entry;
     bool mutation_was_active = false;
@@ -756,7 +756,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
         }
 
         mutations_by_znode.erase(it);
-        LOG_DEBUG(log, "Removed mutation " + entry->znode_name + " from local state.");
+        LOG_DEBUG_FORMATTED(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
     if (mutation_was_active)
@@ -1161,13 +1161,13 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     for (const String & new_part_name : entry->getBlockingPartNames())
     {
         if (!queue.future_parts.erase(new_part_name))
-            LOG_ERROR(queue.log, "Untagging already untagged future part " + new_part_name + ". This is a bug.");
+            LOG_ERROR_FORMATTED(queue.log, "Untagging already untagged future part {}. This is a bug.", new_part_name);
     }
 
     if (!entry->actual_new_part_name.empty())
     {
         if (entry->actual_new_part_name != entry->new_part_name && !queue.future_parts.erase(entry->actual_new_part_name))
-            LOG_ERROR(queue.log, "Untagging already untagged future part " + entry->actual_new_part_name + ". This is a bug.");
+            LOG_ERROR_FORMATTED(queue.log, "Untagging already untagged future part {}. This is a bug.", entry->actual_new_part_name);
 
         entry->actual_new_part_name.clear();
     }

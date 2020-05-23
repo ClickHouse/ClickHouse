@@ -440,7 +440,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    LOG_DEBUG(log, "Processing configuration file '" + path + "'.");
+    LOG_DEBUG_FORMATTED(log, "Processing configuration file '{}'.", path);
 
     XMLDocumentPtr config = dom_parser.parse(path);
 
@@ -451,7 +451,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
-            LOG_DEBUG(log, "Merging configuration file '" + merge_file + "'.");
+            LOG_DEBUG_FORMATTED(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with = dom_parser.parse(merge_file);
             merge(config, with);
@@ -488,7 +488,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
         if (!include_from_path.empty())
         {
-            LOG_DEBUG(log, "Including configuration file '" + include_from_path + "'.");
+            LOG_DEBUG_FORMATTED(log, "Including configuration file '{}'.", include_from_path);
 
             contributing_files.push_back(include_from_path);
             include_from = dom_parser.parse(include_from_path);
