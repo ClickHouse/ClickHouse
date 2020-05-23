@@ -244,7 +244,7 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
     consumer->assign(committed_offset);
-    LOG_TRACE(log, msg << " Returned to committed position: " << committed_offset);
+    LOG_TRACE_FORMATTED(log, "{} Returned to committed position: {}", msg, committed_offset);
 }
 
 /// Do commit messages implicitly after we processed the previous batch.
