@@ -319,16 +319,8 @@ private:
             radixSortMSDInternal<PASS>(arr, size, limit);
     }
 
-public:
-    /** Least significant digit radix sort (stable).
-      *
-      * This function will sort inplace (modify 'arr')
-      *  but if 'destination' is provided, it will write result directly to destination
-      *  instead of finishing sorting 'arr' at the last step.
-      * In this case it will fill only Result parts of the Element into destination.
-      * It is handy to avoid unnecessary data movements.
-      */
-    static void executeLSD(Element * arr, size_t size, bool reverse = false, Result * destination = nullptr)
+    template <bool DIRECT_WRITE_TO_DESTINATION>
+    static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
@@ -368,10 +360,8 @@ public:
             }
         }
 
-        bool direct_copy_to_destination = (destination);
-
         /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
-        for (size_t pass = 0; pass < NUM_PASSES - direct_copy_to_destination; ++pass)
+        for (size_t pass = 0; pass < NUM_PASSES - DIRECT_WRITE_TO_DESTINATION; ++pass)
         {
             Element * writer = pass % 2 ? arr : swap_buffer;
             Element * reader = pass % 2 ? swap_buffer : arr;
@@ -390,9 +380,9 @@ public:
             }
         }
 
-        if (direct_copy_to_destination)
+        if (DIRECT_WRITE_TO_DESTINATION)
         {
-            size_t pass = NUM_PASSES - 1;
+            constexpr size_t pass = NUM_PASSES - 1;
             Result * writer = destination;
             Element * reader = pass % 2 ? swap_buffer : arr;
 
@@ -401,8 +391,6 @@ public:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
-
-                    /// Place the element on the next free position.
                     writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
                 }
             }
@@ -411,24 +399,42 @@ public:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
-
-                    /// Place the element on the next free position.
                     writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
                 }
             }
         }
-        else if (NUM_PASSES % 2)
+        else
         {
             /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
-            /// NOTE Sometimes it will be more optimal to provide non-destructive interface, that will not modify original array.
-            memcpy(arr, swap_buffer, size * sizeof(Element));
-        }
-        else if (reverse)
-        {
-            std::reverse(arr, arr + size);
+            if (NUM_PASSES % 2)
+                memcpy(arr, swap_buffer, size * sizeof(Element));
+
+            /// This is suboptimal, we can embed it to the last pass.
+            if (reverse)
+                std::reverse(arr, arr + size);
         }
 
         allocator.deallocate(swap_buffer, size * sizeof(Element));
+    }
+
+public:
+    /** Least significant digit radix sort (stable).
+      * This function will sort inplace (modify 'arr')
+      */
+    static void executeLSD(Element * arr, size_t size)
+    {
+        radixSortLSDInternal<false>(arr, size, false, nullptr);
+    }
+
+    /** This function will start to sort inplace (modify 'arr')
+      *  but on the last step it will write result directly to the destination
+      *  instead of finishing sorting 'arr'.
+      * In this case it will fill only Result parts of the Element into destination.
+      * It is handy to avoid unnecessary data movements.
+      */
+    static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
+    {
+        radixSortLSDInternal<true>(arr, size, reverse, destination);
     }
 
     /* Most significant digit radix sort
