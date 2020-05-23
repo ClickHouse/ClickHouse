@@ -157,25 +157,25 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     using ToFieldType = typename ToDataType::FieldType;
     using ToNativeType = typename ToFieldType::NativeType;
 
-    if (std::is_same_v<FromFieldType, BFloat16>)
+    if constexpr (std::is_same_v<FromFieldType, BFloat16>)
     {
-        if (!static_cast<BFloat16>(value).isInfinity())
+        if (static_cast<BFloat16>(static_cast<float>(value)).isInfinity())
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
                             ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = static_cast<BFloat16>(value) * ToFieldType::getScaleMultiplier(scale);
+        float out = static_cast<BFloat16>(static_cast<float>(value)) * ToFieldType::getScaleMultiplier(scale);
         if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
                             ErrorCodes::DECIMAL_OVERFLOW);
         return out;
     }
-    else if (std::is_same_v<FromFieldType, Float16>)
+    else if constexpr (std::is_same_v<FromFieldType, Float16>)
     {
-        if (!static_cast<Float16>(value).isInfinity())
+        if (static_cast<Float16>(static_cast<float>(value)).isInfinity())
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Cannot convert infinity or NaN to decimal",
                             ErrorCodes::DECIMAL_OVERFLOW);
 
-        auto out = static_cast<Float16>(value) * ToFieldType::getScaleMultiplier(scale);
+        float out = static_cast<Float16>(static_cast<float>(value)) * ToFieldType::getScaleMultiplier(scale);
         if (out <= std::numeric_limits<ToNativeType>::min() || out >= std::numeric_limits<ToNativeType>::max())
             throw Exception(std::string(ToDataType::family_name) + " convert overflow. Float is out of Decimal range",
                             ErrorCodes::DECIMAL_OVERFLOW);
@@ -210,7 +210,13 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
             if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 return convertDecimals<DataTypeDecimal<Decimal128>, ToDataType>(value, 0, scale);
 
-        return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
+        if (std::is_same_v<FromFieldType, Float16> || std::is_same_v<FromFieldType, BFloat16>) {
+            return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(static_cast<float>(value), 0, scale);
+        }
+        else
+        {
+            return convertDecimals<DataTypeDecimal<Decimal64>, ToDataType>(value, 0, scale);
+        }
     }
 }
 

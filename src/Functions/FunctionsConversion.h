@@ -1393,7 +1393,7 @@ struct ToNumberMonotonicity
             return {true, true, true};
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
-        if (WhichDataType(type).isFloat())
+        if (WhichDataType(type).isNativeFloat())
         {
             if (left.isNull() || right.isNull())
                 return {};
@@ -1834,7 +1834,7 @@ private:
         bool ok = which.isNativeInt() ||
             which.isNativeUInt() ||
             which.isDecimal() ||
-            which.isFloat() ||
+            which.isNativeFloat() ||
             which.isDateOrDateTime() ||
             which.isStringOrFixedString();
         if (!ok)

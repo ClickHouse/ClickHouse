@@ -2,6 +2,8 @@
 
 #include <Core/Types.h>
 #include <Common/UInt128.h>
+//#include <Common/Floats/Float16.h>
+//#include <Common/Floats/BFloat16.h>
 #include <common/unaligned.h>
 
 #include <type_traits>
@@ -239,6 +241,8 @@ DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)
 DEFINE_HASH(DB::Int64)
+//DEFINE_HASH(DB::BFloat16)
+//DEFINE_HASH(DB::Float16)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 

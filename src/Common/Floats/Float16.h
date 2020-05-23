@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iomanip>
 #include <Core/Types.h>
+#include <Common/HashTable/Hash.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
@@ -44,6 +45,14 @@ struct Float16 {
 
     explicit Float16(const long int &l) {
         value = Float16(static_cast<double>(l)).getValue();
+    }
+
+    explicit Float16(const int i) {
+        value = Float16(static_cast<float>(i)).getValue();
+    }
+
+    explicit Float16(const __int128 &i) {
+        value = Float16(static_cast<float>(i)).getValue();
     }
 
     Float16(const Float16 &) = default;
@@ -305,8 +314,9 @@ struct Float16 {
     template <typename T> Float16 inline operator* (const T rhs) { return *this * Float16(rhs); }
     template <typename T> Float16 inline operator/ (const T rhs) { return *this / Float16(rhs); }
     template <typename T> explicit operator T() const { return static_cast<T>(value); }
-    explicit operator float() const { return asFloat();  }
-    explicit operator double() const { return static_cast<double>(asFloat());  }
+    explicit operator float() const { return asFloat(); }
+    explicit operator double() const { return static_cast<double>(asFloat()); }
+    explicit operator long int() const { return static_cast<long int>(asFloat()); }
 };
 
 template <typename T> bool inline operator== (T a, const Float16 b) { return Float16(a) == b; }
@@ -349,3 +359,13 @@ template <> struct is_arithmetic<DB::Float16>
 {
     static constexpr bool value = false;
 };
+
+namespace std
+{
+template <>
+struct hash<DB::Float16>
+{
+    size_t operator()(const DB::Float16 & u) const { return std::hash<DB::Int32>()(static_cast<unsigned int>(u.getValue())); }
+};
+
+}
