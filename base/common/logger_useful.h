@@ -48,13 +48,13 @@ using DB::CurrentThread;
 #define LOG_FATAL(logger, message)   LOG_IMPL(logger, LogsLevel::error, Message::PRIO_FATAL, message)
 
 
-#define LOG_IMPL_FORMATTED(logger, priority, PRIORITY, message, ...) do         \
+#define LOG_IMPL_FORMATTED(logger, priority, PRIORITY, ...) do                    \
 {                                                                                 \
     const bool is_clients_log = (CurrentThread::getGroup() != nullptr) &&         \
             (CurrentThread::getGroup()->client_logs_level >= (priority));         \
     if ((logger)->is((PRIORITY)) || is_clients_log)                               \
     {                                                                             \
-        std::string formatted_message = fmt::format(message, __VA_ARGS__);        \
+        std::string formatted_message = fmt::format(__VA_ARGS__);                 \
         if (auto channel = (logger)->getChannel())                                \
         {                                                                         \
             std::string file_function;                                            \
@@ -69,9 +69,9 @@ using DB::CurrentThread;
 } while (false)
 
 
-#define LOG_TRACE_FORMATTED(logger, message, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::trace, Message::PRIO_TRACE, message, __VA_ARGS__)
-#define LOG_DEBUG_FORMATTED(logger, message, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::debug, Message::PRIO_DEBUG, message, __VA_ARGS__)
-#define LOG_INFO_FORMATTED(logger, message, ...)    LOG_IMPL_FORMATTED(logger, LogsLevel::information, Message::PRIO_INFORMATION, message, __VA_ARGS__)
-#define LOG_WARNING_FORMATTED(logger, message, ...) LOG_IMPL_FORMATTED(logger, LogsLevel::warning, Message::PRIO_WARNING, message, __VA_ARGS__)
-#define LOG_ERROR_FORMATTED(logger, message, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::error, Message::PRIO_ERROR, message, __VA_ARGS__)
-#define LOG_FATAL_FORMATTED(logger, message, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::error, Message::PRIO_FATAL, message, __VA_ARGS__)
+#define LOG_TRACE_FORMATTED(logger, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::trace, Message::PRIO_TRACE, __VA_ARGS__)
+#define LOG_DEBUG_FORMATTED(logger, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::debug, Message::PRIO_DEBUG, __VA_ARGS__)
+#define LOG_INFO_FORMATTED(logger, ...)    LOG_IMPL_FORMATTED(logger, LogsLevel::information, Message::PRIO_INFORMATION, __VA_ARGS__)
+#define LOG_WARNING_FORMATTED(logger, ...) LOG_IMPL_FORMATTED(logger, LogsLevel::warning, Message::PRIO_WARNING, __VA_ARGS__)
+#define LOG_ERROR_FORMATTED(logger, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::error, Message::PRIO_ERROR, __VA_ARGS__)
+#define LOG_FATAL_FORMATTED(logger, ...)   LOG_IMPL_FORMATTED(logger, LogsLevel::error, Message::PRIO_FATAL, __VA_ARGS__)
