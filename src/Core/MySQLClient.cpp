@@ -71,11 +71,14 @@ void MySQLClient::handshake()
         client_capability_flags, max_packet_size, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    PacketResponse packet_response(client_capability_flags);
+    PacketResponse packet_response(client_capability_flags, true);
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
+
     if (packet_response.getType() == PACKET_ERR)
         throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+    else if (packet_response.getType() == PACKET_AUTH_SWITCH)
+        throw MySQLClientError("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::writeCommand(char command, String query)
