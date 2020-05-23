@@ -161,8 +161,12 @@ namespace MySQLReplication
         readLengthEncodedString(meta, payload);
         parseMeta(meta);
 
-        size_t len = (column_count + 8) / 7;
-        payload.readStrict(reinterpret_cast<char *>(null_bitmap.data()), len);
+        size_t null_bitmap_size = (column_count + 8) / 7;
+        readBitmap(payload, null_bitmap, null_bitmap_size);
+
+        /// Ignore MySQL 8.0 optional metadata fields.
+        /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
+        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
     }
 
     void TableMapEvent::parseMeta(String meta)
