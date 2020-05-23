@@ -589,7 +589,7 @@ void AggregatingTransform::initGenerate()
         for (const auto & file : files.files)
             processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
 
-        LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size " << (files.sum_size_compressed / 1048576.0) << " MiB compressed, " << (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
+        LOG_TRACE_FORMATTED(log, "Will merge {} temporary files of size {} MiB compressed, {} MiB uncompressed.", files.files.size(), (files.sum_size_compressed / 1048576.0), (files.sum_size_uncompressed / 1048576.0));
 
         auto pipe = createMergingAggregatedMemoryEfficientPipe(
                 header, params, files.files.size(), temporary_data_merge_threads);

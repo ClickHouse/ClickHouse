@@ -1037,7 +1037,7 @@ private:
         }
         if (info->loading_id != loading_id)
         {
-            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object's current loading_id " << info->loading_id << " is different from the specified " << loading_id << ".");
+            LOG_TRACE_FORMATTED(log, "Next update time for '{}' will not be set because this object's current loading_id {} is different from the specified {}.", name, info->loading_id, loading_id);
             return;
         }
 

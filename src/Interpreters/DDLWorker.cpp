@@ -334,7 +334,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason,
         if (host_in_hostlist)
         {
             /// This check could be slow a little bit
-            LOG_WARNING(log, "There are two the same ClickHouse instances in task " << entry_name << ": " << task->host_id.readableString() << " and " << host.readableString() << ". Will use the first one only.");
+            LOG_WARNING_FORMATTED(log, "There are two the same ClickHouse instances in task {}: {} and {}. Will use the first one only.", entry_name, task->host_id.readableString(), host.readableString());
         }
         else
         {
@@ -506,7 +506,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     if (found_exact_match)
         return;
 
-    LOG_WARNING(log, "Not found the exact match of host " << task.host_id.readableString() << " from task " << task.entry_name << " in cluster " << task.cluster_name << " definition. Will try to find it using host name resolving.");
+    LOG_WARNING_FORMATTED(log, "Not found the exact match of host {} from task {} in cluster {} definition. Will try to find it using host name resolving.", task.host_id.readableString(), task.entry_name, task.cluster_name);
 
     bool found_via_resolving = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
