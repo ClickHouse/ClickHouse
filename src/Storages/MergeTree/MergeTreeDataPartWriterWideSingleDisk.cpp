@@ -1,5 +1,6 @@
 #include "MergeTreeDataPartWriterWideSingleDisk.h"
 
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataPartIndexWriterSingleDisk.h>
 
 namespace DB
