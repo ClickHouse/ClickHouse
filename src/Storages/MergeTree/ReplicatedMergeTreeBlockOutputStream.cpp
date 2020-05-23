@@ -147,11 +147,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             /// That is, do not insert the same data to the same partition twice.
             block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-            LOG_DEBUG_FORMATTED(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
+            LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else
         {
-            LOG_DEBUG_FORMATTED(log, "Wrote block with {} rows", current_block.block.rows());
+            LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
         try
@@ -214,7 +214,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     if (!block_number_lock)
     {
-        LOG_INFO_FORMATTED(log, "Block with ID {} already exists; ignoring it.", block_id);
+        LOG_INFO(log, "Block with ID {} already exists; ignoring it.", block_id);
         part->is_duplicate = true;
         last_block_is_duplicate = true;
         ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
@@ -329,7 +329,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         if (multi_code == Coordination::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
-            LOG_INFO_FORMATTED(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
+            LOG_INFO(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
 
             part->is_duplicate = true;
             transaction.rollback();
@@ -367,7 +367,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     if (quorum)
     {
         /// We are waiting for quorum to be satisfied.
-        LOG_TRACE_FORMATTED(log, "Waiting for quorum");
+        LOG_TRACE(log, "Waiting for quorum");
 
         String quorum_status_path = storage.zookeeper_path + "/quorum/status";
 
@@ -406,7 +406,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                 ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
         }
 
-        LOG_TRACE_FORMATTED(log, "Quorum satisfied");
+        LOG_TRACE(log, "Quorum satisfied");
     }
 }
 

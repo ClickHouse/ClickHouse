@@ -118,7 +118,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     auto connection = pool.get();
     last_modification = getLastModification(connection, false);
 
-    LOG_TRACE_FORMATTED(log, load_all_query);
+    LOG_TRACE(log, load_all_query);
     return std::make_shared<MySQLBlockInputStream>(connection, load_all_query, sample_block, max_block_size, close_connection);
 }
 
@@ -128,7 +128,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE_FORMATTED(log, load_update_query);
+    LOG_TRACE(log, load_update_query);
     return std::make_shared<MySQLBlockInputStream>(connection, load_update_query, sample_block, max_block_size, close_connection);
 }
 
@@ -213,7 +213,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
     {
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(table));
 
-        LOG_TRACE_FORMATTED(log, query.str());
+        LOG_TRACE(log, query.str());
 
         auto result = query.use();
 
@@ -227,7 +227,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
             if (!update_time_value.isNull())
             {
                 modification_time = update_time_value.getDateTime();
-                LOG_TRACE_FORMATTED(log, "Got modification time: {}", modification_time);
+                LOG_TRACE(log, "Got modification time: {}", modification_time);
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error
@@ -241,10 +241,10 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
         }
 
         if (0 == fetched_rows)
-            LOG_ERROR_FORMATTED(log, "Cannot find table in SHOW TABLE STATUS result.");
+            LOG_ERROR(log, "Cannot find table in SHOW TABLE STATUS result.");
 
         if (fetched_rows > 1)
-            LOG_ERROR_FORMATTED(log, "Found more than one table in SHOW TABLE STATUS result.");
+            LOG_ERROR(log, "Found more than one table in SHOW TABLE STATUS result.");
     }
     catch (...)
     {

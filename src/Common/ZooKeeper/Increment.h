@@ -16,7 +16,7 @@ public:
 
     size_t get()
     {
-        LOG_TRACE_FORMATTED(log, "Get increment");
+        LOG_TRACE(log, "Get increment");
 
         size_t result = 0;
         std::string result_str;

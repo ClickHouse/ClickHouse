@@ -183,11 +183,11 @@ public:
                         switch (rsp.type)
                         {
                             case Coordination::CREATED:
-                                LOG_DEBUG_FORMATTED(logger, "CleanStateClock change: CREATED, at {}", rsp.path);
+                                LOG_DEBUG(logger, "CleanStateClock change: CREATED, at {}", rsp.path);
                                 stale->store(true);
                                 break;
                             case Coordination::CHANGED:
-                                LOG_DEBUG_FORMATTED(logger, "CleanStateClock change: CHANGED, at{}", rsp.path);
+                                LOG_DEBUG(logger, "CleanStateClock change: CHANGED, at{}", rsp.path);
                                 stale->store(true);
                         }
                     }

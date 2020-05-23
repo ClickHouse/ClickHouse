@@ -20,7 +20,7 @@ Aws::Client::ClientConfigurationPerRequest ProxyListConfiguration::getConfigurat
     cfg.proxyHost = proxies[index].getHost();
     cfg.proxyPort = proxies[index].getPort();
 
-    LOG_DEBUG_FORMATTED(&Logger::get("AWSClient"), "Use proxy: {}", proxies[index].toString());
+    LOG_DEBUG(&Logger::get("AWSClient"), "Use proxy: {}", proxies[index].toString());
 
     return cfg;
 }

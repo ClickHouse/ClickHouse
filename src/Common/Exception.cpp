@@ -36,7 +36,7 @@ Exception::Exception(const std::string & msg, int code)
 #ifndef NDEBUG
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_ERROR_FORMATTED(&Poco::Logger::root(), "Logical error: '{}'.", msg);
+        LOG_ERROR(&Poco::Logger::root(), "Logical error: '{}'.", msg);
         assert(false);
     }
 #endif
@@ -126,9 +126,9 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     try
     {
         if (start_of_message.empty())
-            LOG_ERROR_FORMATTED(logger, "{}", getCurrentExceptionMessage(true));
+            LOG_ERROR(logger, "{}", getCurrentExceptionMessage(true));
         else
-            LOG_ERROR_FORMATTED(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
+            LOG_ERROR(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
     }
     catch (...)
     {

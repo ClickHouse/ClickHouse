@@ -180,18 +180,18 @@ public:
             // levels and more info, but for completeness we log all signals
             // here at trace level.
             // Don't use strsignal here, because it's not thread-safe.
-            LOG_TRACE_FORMATTED(log, "Received signal {}", sig);
+            LOG_TRACE(log, "Received signal {}", sig);
 
             if (sig == Signals::StopThread)
             {
-                LOG_INFO_FORMATTED(log, "Stop SignalListener thread");
+                LOG_INFO(log, "Stop SignalListener thread");
                 break;
             }
             else if (sig == SIGHUP || sig == SIGUSR1)
             {
-                LOG_DEBUG_FORMATTED(log, "Received signal to close logs.");
+                LOG_DEBUG(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
-                LOG_INFO_FORMATTED(log, "Opened new log file after received signal.");
+                LOG_INFO(log, "Opened new log file after received signal.");
             }
             else if (sig == Signals::StdTerminate)
             {
@@ -236,7 +236,7 @@ private:
 
     void onTerminate(const std::string & message, UInt32 thread_num) const
     {
-        LOG_FATAL_FORMATTED(log, "(version {}{}) (from thread {}) {}", VERSION_STRING, VERSION_OFFICIAL, thread_num, message);
+        LOG_FATAL(log, "(version {}{}) (from thread {}) {}", VERSION_STRING, VERSION_OFFICIAL, thread_num, message);
     }
 
     void onFault(
@@ -247,7 +247,7 @@ private:
         UInt32 thread_num,
         const std::string & query_id) const
     {
-        LOG_FATAL_FORMATTED(log, "########################################");
+        LOG_FATAL(log, "########################################");
 
         {
             std::stringstream message;
@@ -259,10 +259,10 @@ private:
                 message << " (query_id: " << query_id << ")";
             message << " Received signal " << strsignal(sig) << " (" << sig << ").";
 
-            LOG_FATAL_FORMATTED(log, message.str());
+            LOG_FATAL(log, message.str());
         }
 
-        LOG_FATAL_FORMATTED(log, signalToErrorMessage(sig, info, context));
+        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
 
         if (stack_trace.getSize())
         {
@@ -274,11 +274,11 @@ private:
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFrames()[i];
 
-            LOG_FATAL_FORMATTED(log, bare_stacktrace.str());
+            LOG_FATAL(log, bare_stacktrace.str());
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL_FORMATTED(log, s); });
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
     }
 };
 
@@ -318,7 +318,7 @@ static void sanitizerDeathCallback()
     }
 
     /// Write symbolized stack trace line by line for better grep-ability.
-    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL_FORMATTED(log, s); });
+    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
 }
 #endif
 
@@ -379,7 +379,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
     }
     catch (...)
     {
-        LOG_WARNING_FORMATTED(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, DB::getCurrentExceptionMessage(true));
+        LOG_WARNING(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, DB::getCurrentExceptionMessage(true));
     }
     return false;
 }
@@ -498,10 +498,10 @@ void debugIncreaseOOMScore()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING_FORMATTED(&Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
+        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
         return;
     }
-    LOG_INFO_FORMATTED(&Logger::root(), "Set OOM score adjustment to {}", new_score);
+    LOG_INFO(&Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
 void debugIncreaseOOMScore() {}
@@ -733,7 +733,7 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
     task_failed = true;
     Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
     Logger *lg = &(logger());
-    LOG_ERROR_FORMATTED(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
+    LOG_ERROR(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
     ServerApplication::terminate();
 }
 
@@ -849,11 +849,11 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO_FORMATTED(&logger(), "Received termination signal ({})", strsignal(signal_id));
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {
-        LOG_INFO_FORMATTED(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
         kill();
     }
 }

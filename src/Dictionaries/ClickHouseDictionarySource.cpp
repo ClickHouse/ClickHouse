@@ -168,7 +168,7 @@ bool ClickHouseDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
-        LOG_TRACE_FORMATTED(log, "Invalidate query has returned: {}, previous value: {}", response, invalidate_query_response);
+        LOG_TRACE(log, "Invalidate query has returned: {}, previous value: {}", response, invalidate_query_response);
         if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
@@ -202,7 +202,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    LOG_TRACE_FORMATTED(log, "Performing invalidate query");
+    LOG_TRACE(log, "Performing invalidate query");
     if (is_local)
     {
         Context query_context = context;

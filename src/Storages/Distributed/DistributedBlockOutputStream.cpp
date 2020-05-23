@@ -114,7 +114,7 @@ void DistributedBlockOutputStream::write(const Block & block)
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
-            LOG_DEBUG_FORMATTED(log, "{}: column {} will be removed, because it is MATERIALIZED",
+            LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
                 storage.getStorageID().getNameForLogs(), col.name);
         }
     }
@@ -228,7 +228,7 @@ void DistributedBlockOutputStream::waitForJobs()
     size_t num_finished_jobs = finished_jobs_count;
 
     if (num_finished_jobs < jobs_count)
-        LOG_WARNING_FORMATTED(log, "Expected {} writing jobs, but finished only {}", jobs_count, num_finished_jobs);
+        LOG_WARNING(log, "Expected {} writing jobs, but finished only {}", jobs_count, num_finished_jobs);
 }
 
 
@@ -412,7 +412,7 @@ void DistributedBlockOutputStream::writeSuffix()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG_FORMATTED(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
     if (insert_sync && pool)

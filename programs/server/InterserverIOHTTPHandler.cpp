@@ -53,7 +53,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 {
     HTMLForm params(request);
 
-    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
@@ -96,14 +96,14 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
-            LOG_INFO_FORMATTED(log, "Done processing query");
+            LOG_INFO(log, "Done processing query");
         }
         else
         {
             response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString(message, *used_output.out);
-            LOG_WARNING_FORMATTED(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
         }
     }
     catch (Exception & e)
@@ -121,9 +121,9 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
             writeString(message, *used_output.out);
 
         if (is_real_error)
-            LOG_ERROR_FORMATTED(log, message);
+            LOG_ERROR(log, message);
         else
-            LOG_INFO_FORMATTED(log, message);
+            LOG_INFO(log, message);
     }
     catch (...)
     {
@@ -132,7 +132,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
         if (!response.sent())
             writeString(message, *used_output.out);
 
-        LOG_ERROR_FORMATTED(log, message);
+        LOG_ERROR(log, message);
     }
 }
 

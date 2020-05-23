@@ -35,12 +35,12 @@ public:
     {
         try
         {
-            LOG_TRACE_FORMATTED(log, "TCP Request. Address: {}", socket.peerAddress().toString());
+            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
             return new TCPHandler(server, socket);
         }
         catch (const Poco::Net::NetException &)
         {
-            LOG_TRACE_FORMATTED(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
+            LOG_TRACE(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
             return new DummyTCPHandler(socket);
         }
     }

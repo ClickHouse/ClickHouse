@@ -91,11 +91,11 @@ void CreatingSetsBlockInputStream::createAll()
 void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 {
     if (subquery.set)
-        LOG_TRACE_FORMATTED(log, "Creating set.");
+        LOG_TRACE(log, "Creating set.");
     if (subquery.join)
-        LOG_TRACE_FORMATTED(log, "Creating join.");
+        LOG_TRACE(log, "Creating join.");
     if (subquery.table)
-        LOG_TRACE_FORMATTED(log, "Filling temporary table.");
+        LOG_TRACE(log, "Filling temporary table.");
 
     Stopwatch watch;
 
@@ -117,7 +117,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     {
         if (isCancelled())
         {
-            LOG_DEBUG_FORMATTED(log, "Query was cancelled during set / join or temporary table creation.");
+            LOG_DEBUG(log, "Query was cancelled during set / join or temporary table creation.");
             return;
         }
 
@@ -172,15 +172,15 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
         auto seconds = watch.elapsedSeconds();
 
         if (subquery.set)
-            LOG_DEBUG_FORMATTED(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
         if (subquery.join)
-            LOG_DEBUG_FORMATTED(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
+            LOG_DEBUG(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
         if (subquery.table)
-            LOG_DEBUG_FORMATTED(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
     }
     else
     {
-        LOG_DEBUG_FORMATTED(log, "Subquery has empty result.");
+        LOG_DEBUG(log, "Subquery has empty result.");
     }
 }
 

@@ -422,7 +422,7 @@ void HashJoin::setSampleBlock(const Block & block)
     /// You have to restore this lock if you call the function outside of ctor.
     //std::unique_lock lock(rwlock);
 
-    LOG_DEBUG_FORMATTED(log, "setSampleBlock: {}", block.dumpStructure());
+    LOG_DEBUG(log, "setSampleBlock: {}", block.dumpStructure());
 
     if (!empty())
         return;

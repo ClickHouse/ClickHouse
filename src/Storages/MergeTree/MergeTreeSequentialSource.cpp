@@ -27,10 +27,10 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     {
         /// Print column name but don't pollute logs in case of many columns.
         if (columns_to_read.size() == 1)
-            LOG_TRACE_FORMATTED(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
         else
-            LOG_TRACE_FORMATTED(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 

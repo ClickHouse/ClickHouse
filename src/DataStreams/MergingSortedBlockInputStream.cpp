@@ -264,9 +264,9 @@ void MergingSortedBlockInputStream::readSuffixImpl()
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
 
     if (!seconds)
-        LOG_DEBUG_FORMATTED(log, "Merge sorted {} blocks, {} rows in 0 sec.", profile_info.blocks, profile_info.rows);
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", profile_info.blocks, profile_info.rows);
     else
-        LOG_DEBUG_FORMATTED(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
             profile_info.blocks, profile_info.rows, seconds,
             profile_info.rows / seconds,
             formatReadableSizeWithBinarySuffix(profile_info.bytes / seconds));

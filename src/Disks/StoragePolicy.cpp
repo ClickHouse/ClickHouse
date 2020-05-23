@@ -245,7 +245,7 @@ StoragePolicySelector::StoragePolicySelector(
                 "StoragePolicy name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO_FORMATTED(&Logger::get("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
+        LOG_INFO(&Logger::get("StoragePolicySelector"), "Storage policy {} loaded", backQuote(name));
     }
 
     constexpr auto default_storage_policy_name = "default";

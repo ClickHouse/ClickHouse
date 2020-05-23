@@ -8,12 +8,12 @@ RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_p
 {
     Logger * log = &Logger::get("RegionsHierarchies");
 
-    LOG_DEBUG_FORMATTED(log, "Adding default regions hierarchy");
+    LOG_DEBUG(log, "Adding default regions hierarchy");
     data.emplace("", data_provider->getDefaultHierarchySource());
 
     for (const auto & name : data_provider->listCustomHierarchies())
     {
-        LOG_DEBUG_FORMATTED(log, "Adding regions hierarchy for {}", name);
+        LOG_DEBUG(log, "Adding regions hierarchy for {}", name);
         data.emplace(name, data_provider->getHierarchySource(name));
     }
 

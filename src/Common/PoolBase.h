@@ -122,7 +122,7 @@ public:
                 return Entry(*items.back());
             }
 
-            LOG_INFO_FORMATTED(log, "No free connections in pool. Waiting.");
+            LOG_INFO(log, "No free connections in pool. Waiting.");
 
             if (timeout < 0)
                 available.wait(lock);

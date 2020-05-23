@@ -149,7 +149,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::cancel(bool kill)
               * (example: connection reset during distributed query execution)
               * - then don't care.
               */
-            LOG_ERROR_FORMATTED(log, "Exception while cancelling {}", input.stream->getName());
+            LOG_ERROR(log, "Exception while cancelling {}", input.stream->getName());
         }
     }
 }
@@ -292,12 +292,12 @@ void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
     if (!started)
         return;
 
-    LOG_TRACE_FORMATTED(log, "Waiting for threads to finish");
+    LOG_TRACE(log, "Waiting for threads to finish");
 
     if (parallel_merge_data)
         parallel_merge_data->pool.wait();
 
-    LOG_TRACE_FORMATTED(log, "Waited for threads to finish");
+    LOG_TRACE(log, "Waited for threads to finish");
 }
 
 
@@ -555,7 +555,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
                 /// Not yet partitioned (splitted to buckets) block. Will partition it and place result to 'splitted_blocks'.
                 if (input.block.info.bucket_num == -1 && input.block && input.splitted_blocks.empty())
                 {
-                    LOG_TRACE_FORMATTED(&Logger::get("MergingAggregatedMemoryEfficient"), "Having block without bucket: will split.");
+                    LOG_TRACE(&Logger::get("MergingAggregatedMemoryEfficient"), "Having block without bucket: will split.");
 
                     input.splitted_blocks = aggregator.convertBlockToTwoLevel(input.block);
                     input.block = Block();

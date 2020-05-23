@@ -61,7 +61,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE_FORMATTED(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+        LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
@@ -107,7 +107,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello();
 
-        LOG_TRACE_FORMATTED(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
+        LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
     }
     catch (Poco::Net::NetException & e)
@@ -284,14 +284,14 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     }
     else if (!ping())
     {
-        LOG_TRACE_FORMATTED(log_wrapper.get(), "Connection was closed, will reconnect.");
+        LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
     }
 }
 
 bool Connection::ping()
 {
-    // LOG_TRACE_FORMATTED(log_wrapper.get(), "Ping");
+    // LOG_TRACE(log_wrapper.get(), "Ping");
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
@@ -321,7 +321,7 @@ bool Connection::ping()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_TRACE_FORMATTED(log_wrapper.get(), e.displayText());
+        LOG_TRACE(log_wrapper.get(), e.displayText());
         return false;
     }
 
@@ -504,7 +504,7 @@ void Connection::sendScalarsData(Scalars & data)
     double elapsed = watch.elapsedSeconds();
 
     if (compression == Protocol::Compression::Enable)
-        LOG_DEBUG_FORMATTED(log_wrapper.get(),
+        LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
@@ -514,7 +514,7 @@ void Connection::sendScalarsData(Scalars & data)
             formatReadableSizeWithBinarySuffix(out_bytes),
             formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()));
     else
-        LOG_DEBUG_FORMATTED(log_wrapper.get(),
+        LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
@@ -608,7 +608,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     double elapsed = watch.elapsedSeconds();
 
     if (compression == Protocol::Compression::Enable)
-        LOG_DEBUG_FORMATTED(log_wrapper.get(),
+        LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
@@ -618,7 +618,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             formatReadableSizeWithBinarySuffix(out_bytes),
             formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()));
     else
-        LOG_DEBUG_FORMATTED(log_wrapper.get(),
+        LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(rows / watch.elapsedSeconds()),
@@ -651,7 +651,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        // LOG_TRACE_FORMATTED(log_wrapper.get(), "Receiving packet type");
+        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
         UInt64 packet_type;
         readVarUInt(packet_type, *in);
 

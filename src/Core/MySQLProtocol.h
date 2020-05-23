@@ -1044,17 +1044,17 @@ public:
             AuthSwitchResponse response;
             packet_sender->receivePacket(response);
             auth_response = response.value;
-            LOG_TRACE_FORMATTED(log, "Authentication method mismatch.");
+            LOG_TRACE(log, "Authentication method mismatch.");
         }
         else
         {
-            LOG_TRACE_FORMATTED(log, "Authentication method match.");
+            LOG_TRACE(log, "Authentication method match.");
         }
 
         bool sent_public_key = false;
         if (auth_response == "\1")
         {
-            LOG_TRACE_FORMATTED(log, "Client requests public key.");
+            LOG_TRACE(log, "Client requests public key.");
             BIO * mem = BIO_new(BIO_s_mem());
             SCOPE_EXIT(BIO_free(mem));
             if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
@@ -1068,7 +1068,7 @@ public:
 #    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
-            LOG_TRACE_FORMATTED(log, "Key: {}", pem);
+            LOG_TRACE(log, "Key: {}", pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
@@ -1080,7 +1080,7 @@ public:
         }
         else
         {
-            LOG_TRACE_FORMATTED(log, "Client didn't request public key.");
+            LOG_TRACE(log, "Client didn't request public key.");
         }
 
         String password;
@@ -1092,7 +1092,7 @@ public:
          */
         if (!is_secure_connection && !auth_response->empty() && auth_response != String("\0", 1))
         {
-            LOG_TRACE_FORMATTED(log, "Received nonempty password.");
+            LOG_TRACE(log, "Received nonempty password.");
             auto ciphertext = reinterpret_cast<unsigned char *>(auth_response->data());
 
             unsigned char plaintext[RSA_size(&private_key)];
@@ -1100,7 +1100,7 @@ public:
             if (plaintext_size == -1)
             {
                 if (!sent_public_key)
-                    LOG_WARNING_FORMATTED(log, "Client could have encrypted password with different public key since it didn't request it from server.");
+                    LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
                 throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
             }
 
@@ -1116,7 +1116,7 @@ public:
         }
         else
         {
-            LOG_TRACE_FORMATTED(log, "Received empty password");
+            LOG_TRACE(log, "Received empty password");
         }
 
         if (!password.empty() && password.back() == 0)

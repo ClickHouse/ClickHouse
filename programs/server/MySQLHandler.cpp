@@ -73,7 +73,7 @@ void MySQLHandler::run()
         Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, auth_plugin->getName(), auth_plugin->getAuthPluginData());
         packet_sender->sendPacket<Handshake>(handshake, true);
 
-        LOG_TRACE_FORMATTED(log, "Sent handshake");
+        LOG_TRACE(log, "Sent handshake");
 
         HandshakeResponse handshake_response;
         finishHandshake(handshake_response);
@@ -83,7 +83,7 @@ void MySQLHandler::run()
         if (!connection_context.mysql.max_packet_size)
             connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
-        LOG_TRACE_FORMATTED(log,
+        LOG_TRACE(log,
             "Capabilities: {}, max_packet_size: {}, character_set: {}, user: {}, auth_response length: {}, database: {}, auth_plugin_name: {}",
             handshake_response.capability_flags,
             handshake_response.max_packet_size,
@@ -125,7 +125,7 @@ void MySQLHandler::run()
             // For commands which are executed without MemoryTracker.
             LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
 
-            LOG_DEBUG_FORMATTED(log, "Received command: {}. Connection id: {}.",
+            LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
 
             try
@@ -195,7 +195,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
     read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
     size_t payload_size = unalignedLoad<uint32_t>(buf) & 0xFFFFFFu;
-    LOG_TRACE_FORMATTED(log, "payload size: {}", payload_size);
+    LOG_TRACE(log, "payload size: {}", payload_size);
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
@@ -232,18 +232,18 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     }
     catch (const Exception & exc)
     {
-        LOG_ERROR_FORMATTED(log, "Authentication for user {} failed.", user_name);
+        LOG_ERROR(log, "Authentication for user {} failed.", user_name);
         packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_INFO_FORMATTED(log, "Authentication for user {} succeeded.", user_name);
+    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)
 {
     String database;
     readStringUntilEOF(database, payload);
-    LOG_DEBUG_FORMATTED(log, "Setting current database to {}", database);
+    LOG_DEBUG(log, "Setting current database to {}", database);
     connection_context.setCurrentDatabase(database);
     packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
 }

@@ -95,10 +95,10 @@ Block MergeSortingBlockInputStream::readImpl()
                 const std::string & path = temporary_files.back()->path();
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
-                LOG_INFO_FORMATTED(log, "Sorting and writing part of data into temporary file {}", path);
+                LOG_INFO(log, "Sorting and writing part of data into temporary file {}", path);
                 ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
                 TemporaryFileStream::write(path, header_without_constants, block_in, &is_cancelled, codec); /// NOTE. Possibly limit disk usage.
-                LOG_INFO_FORMATTED(log, "Done writing part of data into temporary file {}", path);
+                LOG_INFO(log, "Done writing part of data into temporary file {}", path);
 
                 blocks.clear();
                 sum_bytes_in_blocks = 0;
@@ -118,7 +118,7 @@ Block MergeSortingBlockInputStream::readImpl()
             /// If there was temporary files.
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
 
-            LOG_INFO_FORMATTED(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
+            LOG_INFO(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
 
             /// Create sorted streams to merge.
             for (const auto & file : temporary_files)
@@ -246,7 +246,7 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 
 void MergeSortingBlockInputStream::remerge()
 {
-    LOG_DEBUG_FORMATTED(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", blocks.size(), sum_rows_in_blocks);
+    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", blocks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
     MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);
@@ -264,7 +264,7 @@ void MergeSortingBlockInputStream::remerge()
     }
     merger.readSuffix();
 
-    LOG_DEBUG_FORMATTED(log, "Memory usage is lowered from {} to {}", formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks), formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+    LOG_DEBUG(log, "Memory usage is lowered from {} to {}", formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks), formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
     if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)

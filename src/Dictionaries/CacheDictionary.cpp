@@ -768,7 +768,7 @@ void CacheDictionary::updateThreadFunction()
         const size_t current_queue_size = update_queue.size();
 
         if (current_queue_size > 0)
-            LOG_TRACE_FORMATTED(log, "Performing bunch of keys update in cache dictionary with {} keys", current_queue_size + 1);
+            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with {} keys", current_queue_size + 1);
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);

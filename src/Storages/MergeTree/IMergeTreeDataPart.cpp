@@ -257,7 +257,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
                 if (!startsWith(file_name, "tmp"))
                 {
-                    LOG_ERROR_FORMATTED(storage.log, "~DataPart() should remove part {} but its name doesn't start with tmp. Too suspicious, keeping the part.", path);
+                    LOG_ERROR(storage.log, "~DataPart() should remove part {} but its name doesn't start with tmp. Too suspicious, keeping the part.", path);
                     return;
                 }
             }
@@ -266,7 +266,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
             if (state == State::DeleteOnDestroy)
             {
-                LOG_TRACE_FORMATTED(storage.log, "Removed part from old location {}", path);
+                LOG_TRACE(storage.log, "Removed part from old location {}", path);
             }
         }
         catch (...)
@@ -668,7 +668,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
             Names files;
             volume->getDisk()->listFiles(to, files);
 
-            LOG_WARNING_FORMATTED(storage.log, "Part directory {} already exists and contains {} files. Removing it.", fullPath(volume->getDisk(), to), files.size());
+            LOG_WARNING(storage.log, "Part directory {} already exists and contains {} files. Removing it.", fullPath(volume->getDisk(), to), files.size());
 
             volume->getDisk()->removeRecursive(to);
         }
@@ -710,7 +710,7 @@ void IMergeTreeDataPart::remove() const
 
     if (volume->getDisk()->exists(to))
     {
-        LOG_WARNING_FORMATTED(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(volume->getDisk(), to));
+        LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(volume->getDisk(), to));
 
         try
         {
@@ -718,7 +718,7 @@ void IMergeTreeDataPart::remove() const
         }
         catch (...)
         {
-            LOG_ERROR_FORMATTED(storage.log, "Cannot recursively remove directory {}. Exception: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
+            LOG_ERROR(storage.log, "Cannot recursively remove directory {}. Exception: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
             throw;
         }
     }
@@ -729,7 +729,7 @@ void IMergeTreeDataPart::remove() const
     }
     catch (const Poco::FileNotFoundException &)
     {
-        LOG_ERROR_FORMATTED(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(volume->getDisk(), to));
+        LOG_ERROR(storage.log, "Directory {} (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.", fullPath(volume->getDisk(), to));
 
         return;
     }
@@ -765,7 +765,7 @@ void IMergeTreeDataPart::remove() const
         {
             /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
-            LOG_ERROR_FORMATTED(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
+            LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
             volume->getDisk()->removeRecursive(to + "/");
         }
@@ -791,7 +791,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
         if (!volume->getDisk()->exists(getFullRelativePath() + res))
             return res;
 
-        LOG_WARNING_FORMATTED(storage.log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
+        LOG_WARNING(storage.log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
 
     return res;
@@ -806,7 +806,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 {
     assertOnDisk();
-    LOG_INFO_FORMATTED(storage.log, "Detaching {}", relative_path);
+    LOG_INFO(storage.log, "Detaching {}", relative_path);
 
     String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
 

@@ -48,9 +48,9 @@ void MergingSortedTransform::onFinish()
     double seconds = total_stopwatch.elapsedSeconds();
 
     if (!seconds)
-        LOG_DEBUG_FORMATTED(log, "Merge sorted {} blocks, {} rows in 0 sec.", merged_data.totalChunks(), merged_data.totalMergedRows());
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", merged_data.totalChunks(), merged_data.totalMergedRows());
     else
-        LOG_DEBUG_FORMATTED(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
+        LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
             merged_data.totalChunks(), merged_data.totalMergedRows(), seconds,
             merged_data.totalMergedRows() / seconds,
             formatReadableSizeWithBinarySuffix(merged_data.totalAllocatedBytes() / seconds));

@@ -572,7 +572,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     else
     {
         /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
-        LOG_INFO_FORMATTED(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
+        LOG_INFO(log, "Trying load partially dropped table {} from {}", table_id.getNameForLogs(), dropped_metadata_path);
         ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(log, *global_context, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
         assert(!create || create->uuid == table_id.uuid);
@@ -597,7 +597,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
         else
         {
-            LOG_WARNING_FORMATTED(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
+            LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
@@ -633,7 +633,7 @@ void DatabaseCatalog::dropTableDataTask()
         if (it != tables_marked_dropped.end())
         {
             table = std::move(*it);
-            LOG_INFO_FORMATTED(log, "Will try drop {}", table.table_id.getNameForLogs());
+            LOG_INFO(log, "Will try drop {}", table.table_id.getNameForLogs());
             tables_marked_dropped.erase(it);
         }
         need_reschedule = !tables_marked_dropped.empty();
@@ -683,11 +683,11 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
     Poco::File table_data_dir{data_path};
     if (table_data_dir.exists())
     {
-        LOG_INFO_FORMATTED(log, "Removing data directory {} of dropped table {}", data_path, table.table_id.getNameForLogs());
+        LOG_INFO(log, "Removing data directory {} of dropped table {}", data_path, table.table_id.getNameForLogs());
         table_data_dir.remove(true);
     }
 
-    LOG_INFO_FORMATTED(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
+    LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     Poco::File(table.metadata_path).remove();
 }
 

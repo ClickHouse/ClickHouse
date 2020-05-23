@@ -251,7 +251,7 @@ public:
 
     void logTree(Poco::Logger * log) const
     {
-        LOG_TRACE_FORMATTED(log, "Tree({}): name={}, access={}, final_access={}, min_access={}, max_access={}, num_children={}",
+        LOG_TRACE(log, "Tree({}): name={}, access={}, final_access={}, min_access={}, max_access={}, num_children={}",
             level, node_name ? *node_name : "NULL", access.toString(),
             final_access.toString(), min_access.toString(), max_access.toString(),
             (children ? children->size() : 0));
@@ -793,6 +793,6 @@ void AccessRights::logTree() const
     if (root)
         root->logTree(log);
     else
-        LOG_TRACE_FORMATTED(log, "Tree: NULL");
+        LOG_TRACE(log, "Tree: NULL");
 }
 }

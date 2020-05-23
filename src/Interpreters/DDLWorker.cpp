@@ -238,7 +238,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
 
     if (context.getSettingsRef().readonly)
     {
-        LOG_WARNING_FORMATTED(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
+        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -334,7 +334,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason,
         if (host_in_hostlist)
         {
             /// This check could be slow a little bit
-            LOG_WARNING_FORMATTED(log, "There are two the same ClickHouse instances in task {}: {} and {}. Will use the first one only.", entry_name, task->host_id.readableString(), host.readableString());
+            LOG_WARNING(log, "There are two the same ClickHouse instances in task {}: {} and {}. Will use the first one only.", entry_name, task->host_id.readableString(), host.readableString());
         }
         else
         {
@@ -362,7 +362,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 
 void DDLWorker::processTasks()
 {
-    LOG_DEBUG_FORMATTED(log, "Processing tasks");
+    LOG_DEBUG(log, "Processing tasks");
     auto zookeeper = tryGetZooKeeper();
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
@@ -384,11 +384,11 @@ void DDLWorker::processTasks()
         {
             if (current_task->entry_name == entry_name)
             {
-                LOG_INFO_FORMATTED(log, "Trying to process task {} again", entry_name);
+                LOG_INFO(log, "Trying to process task {} again", entry_name);
             }
             else
             {
-                LOG_INFO_FORMATTED(log, "Task {} was deleted from ZooKeeper before current host committed it", current_task->entry_name);
+                LOG_INFO(log, "Task {} was deleted from ZooKeeper before current host committed it", current_task->entry_name);
                 current_task = nullptr;
             }
         }
@@ -398,7 +398,7 @@ void DDLWorker::processTasks()
             String reason;
             if (!initAndCheckTask(entry_name, reason, zookeeper))
             {
-                LOG_DEBUG_FORMATTED(log, "Will not execute task {}: {}", entry_name, reason);
+                LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
                 last_processed_task_name = entry_name;
                 continue;
             }
@@ -424,7 +424,7 @@ void DDLWorker::processTasks()
             {
                 if (server_startup && e.code == Coordination::ZNONODE)
                 {
-                    LOG_WARNING_FORMATTED(log, "ZooKeeper NONODE error during startup. Ignoring entry {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
+                    LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
                 }
                 else
                 {
@@ -433,13 +433,13 @@ void DDLWorker::processTasks()
             }
             catch (...)
             {
-                LOG_WARNING_FORMATTED(log, "An error occurred while processing task {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
+                LOG_WARNING(log, "An error occurred while processing task {} ({}) : {}", task.entry_name, task.entry.query, getCurrentExceptionMessage(true));
                 throw;
             }
         }
         else
         {
-            LOG_DEBUG_FORMATTED(log, "Task {} ({}) has been already processed", task.entry_name, task.entry.query);
+            LOG_DEBUG(log, "Task {} ({}) has been already processed", task.entry_name, task.entry.query);
         }
 
         last_processed_task_name = task.entry_name;
@@ -506,7 +506,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     if (found_exact_match)
         return;
 
-    LOG_WARNING_FORMATTED(log, "Not found the exact match of host {} from task {} in cluster {} definition. Will try to find it using host name resolving.", task.host_id.readableString(), task.entry_name, task.cluster_name);
+    LOG_WARNING(log, "Not found the exact match of host {} from task {} in cluster {} definition. Will try to find it using host name resolving.", task.host_id.readableString(), task.entry_name, task.cluster_name);
 
     bool found_via_resolving = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
@@ -542,7 +542,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     }
     else
     {
-        LOG_INFO_FORMATTED(log, "Resolved host {} from task {} as host {} in definition of cluster {}", task.host_id.readableString(), task.entry_name, task.address_in_cluster.readableString(), task.cluster_name);
+        LOG_INFO(log, "Resolved host {} from task {} as host {} in definition of cluster {}", task.host_id.readableString(), task.entry_name, task.address_in_cluster.readableString(), task.cluster_name);
     }
 }
 
@@ -573,7 +573,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     }
 
     status = ExecutionStatus(0);
-    LOG_DEBUG_FORMATTED(log, "Executed query: {}", query);
+    LOG_DEBUG(log, "Executed query: {}", query);
 
     return true;
 }
@@ -595,7 +595,7 @@ void DDLWorker::attachToThreadGroup()
 
 void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG_FORMATTED(log, "Processing task {} ({})", task.entry_name, task.entry.query);
+    LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.entry.query);
 
     String dummy;
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;
@@ -625,7 +625,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 
             ASTPtr rewritten_ast = task.query_on_cluster->getRewrittenASTWithoutOnCluster(task.address_in_cluster.default_database);
             String rewritten_query = queryToString(rewritten_ast);
-            LOG_DEBUG_FORMATTED(log, "Executing query: {}", rewritten_query);
+            LOG_DEBUG(log, "Executing query: {}", rewritten_query);
 
             if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
             {
@@ -695,7 +695,7 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
 
     if (dynamic_cast<const StorageDistributed *>(storage.get()))
     {
-        LOG_TRACE_FORMATTED(log, "Table {} is distributed, skip checking config.", backQuote(table));
+        LOG_TRACE(log, "Table {} is distributed, skip checking config.", backQuote(table));
         return;
     }
 
@@ -755,7 +755,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         String executed_by;
         if (zookeeper->tryGet(is_executed_path, executed_by))
         {
-            LOG_DEBUG_FORMATTED(log, "Task {} has already been executed by leader replica ({}) of the same shard.", task.entry_name, executed_by);
+            LOG_DEBUG(log, "Task {} has already been executed by leader replica ({}) of the same shard.", task.entry_name, executed_by);
             return true;
         }
 
@@ -816,7 +816,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
 void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG_FORMATTED(log, "Cleaning queue");
+    LOG_DEBUG(log, "Cleaning queue");
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir);
     filterAndSortQueueNodes(queue_nodes);
@@ -856,7 +856,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             /// Skip if there are active nodes (it is weak guard)
             if (zookeeper->exists(node_path + "/active", &stat) && stat.numChildren > 0)
             {
-                LOG_INFO_FORMATTED(log, "Task {} should be deleted, but there are active workers. Skipping it.", node_name);
+                LOG_INFO(log, "Task {} should be deleted, but there are active workers. Skipping it.", node_name);
                 continue;
             }
 
@@ -865,14 +865,14 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
             if (!lock->tryLock())
             {
-                LOG_INFO_FORMATTED(log, "Task {} should be deleted, but it is locked. Skipping it.", node_name);
+                LOG_INFO(log, "Task {} should be deleted, but it is locked. Skipping it.", node_name);
                 continue;
             }
 
             if (node_lifetime_is_expired)
-                LOG_INFO_FORMATTED(log, "Lifetime of task {} is expired, deleting it", node_name);
+                LOG_INFO(log, "Lifetime of task {} is expired, deleting it", node_name);
             else if (node_is_outside_max_window)
-                LOG_INFO_FORMATTED(log, "Task {} is outdated, deleting it", node_name);
+                LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
 
             /// Deleting
             {
@@ -894,7 +894,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
         }
         catch (...)
         {
-            LOG_INFO_FORMATTED(log, "An error occured while checking and cleaning task {} from queue: {}", node_name, getCurrentExceptionMessage(false));
+            LOG_INFO(log, "An error occured while checking and cleaning task {} from queue: {}", node_name, getCurrentExceptionMessage(false));
         }
     }
 }
@@ -940,7 +940,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     }
     catch (...)
     {
-        LOG_INFO_FORMATTED(log, "An error occurred while creating auxiliary ZooKeeper directories in {} . They will be created later. Error : {}", node_path, getCurrentExceptionMessage(true));
+        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in {} . They will be created later. Error : {}", node_path, getCurrentExceptionMessage(true));
     }
 
     return node_path;
@@ -950,7 +950,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 void DDLWorker::runMainThread()
 {
     setThreadName("DDLWorker");
-    LOG_DEBUG_FORMATTED(log, "Started DDLWorker thread");
+    LOG_DEBUG(log, "Started DDLWorker thread");
 
     bool initialized = false;
     do
@@ -988,14 +988,14 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             processTasks();
 
-            LOG_DEBUG_FORMATTED(log, "Waiting a watch");
+            LOG_DEBUG(log, "Waiting a watch");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
             if (Coordination::isHardwareError(e.code))
             {
-                LOG_DEBUG_FORMATTED(log, "Recovering ZooKeeper session after: {}", getCurrentExceptionMessage(false));
+                LOG_DEBUG(log, "Recovering ZooKeeper session after: {}", getCurrentExceptionMessage(false));
 
                 while (!stop_flag)
                 {
@@ -1015,11 +1015,11 @@ void DDLWorker::runMainThread()
             }
             else if (e.code == Coordination::ZNONODE)
             {
-                LOG_ERROR_FORMATTED(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
+                LOG_ERROR(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
             }
             else
             {
-                LOG_ERROR_FORMATTED(log, "Unexpected ZooKeeper error: {}. Terminating.", getCurrentExceptionMessage(true));
+                LOG_ERROR(log, "Unexpected ZooKeeper error: {}. Terminating.", getCurrentExceptionMessage(true));
                 return;
             }
         }
@@ -1035,7 +1035,7 @@ void DDLWorker::runMainThread()
 void DDLWorker::runCleanupThread()
 {
     setThreadName("DDLWorkerClnr");
-    LOG_DEBUG_FORMATTED(log, "Started DDLWorker cleanup thread");
+    LOG_DEBUG(log, "Started DDLWorker cleanup thread");
 
     Int64 last_cleanup_time_seconds = 0;
     while (!stop_flag)
@@ -1049,7 +1049,7 @@ void DDLWorker::runCleanupThread()
             Int64 current_time_seconds = Poco::Timestamp().epochTime();
             if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_delay_period)
             {
-                LOG_TRACE_FORMATTED(log, "Too early to clean queue, will do it later.");
+                LOG_TRACE(log, "Too early to clean queue, will do it later.");
                 continue;
             }
 
@@ -1217,7 +1217,7 @@ private:
                 if (!ignoring_hosts.count(host))
                 {
                     ignoring_hosts.emplace(host);
-                    LOG_INFO_FORMATTED(log, "Unexpected host {} appeared  in task {}", host, node_path);
+                    LOG_INFO(log, "Unexpected host {} appeared  in task {}", host, node_path);
                 }
                 continue;
             }

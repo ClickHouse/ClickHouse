@@ -87,7 +87,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
         ConfigProcessor::LoadedConfig loaded_config;
         try
         {
-            LOG_DEBUG_FORMATTED(log, "Loading config '{}'", path);
+            LOG_DEBUG(log, "Loading config '{}'", path);
 
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)

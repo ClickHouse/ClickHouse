@@ -144,13 +144,13 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
         }
         else
         {
-            LOG_WARNING_FORMATTED(logger, "Unused param {}.{}", config_prefix, rule);
+            LOG_WARNING(logger, "Unused param {}.{}", config_prefix, rule);
         }
     }
 
     auto rules_count = rulesCount();
     if (rules_count > 0)
-        LOG_INFO_FORMATTED(logger, "{} query masking rules loaded.", rules_count);
+        LOG_INFO(logger, "{} query masking rules loaded.", rules_count);
 }
 
 void SensitiveDataMasker::addMaskingRule(

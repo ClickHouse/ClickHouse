@@ -95,7 +95,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         Int32 new_os_thread_priority = settings.os_thread_priority;
         if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
         {
-            LOG_TRACE_FORMATTED(log, "Setting nice to {}", new_os_thread_priority);
+            LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
             if (0 != setpriority(PRIO_PROCESS, thread_id, new_os_thread_priority))
                 throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
@@ -218,10 +218,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 #if defined(__linux__)
     if (os_thread_priority)
     {
-        LOG_TRACE_FORMATTED(log, "Resetting nice");
+        LOG_TRACE(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
-            LOG_ERROR_FORMATTED(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
+            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));
 
         os_thread_priority = 0;
     }

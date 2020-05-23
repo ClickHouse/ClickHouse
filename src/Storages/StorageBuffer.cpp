@@ -189,7 +189,7 @@ Pipes StorageBuffer::read(
             {
                 if (!dest_columns.hasPhysical(column_name))
                 {
-                    LOG_WARNING_FORMATTED(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
+                    LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
@@ -197,14 +197,14 @@ Pipes StorageBuffer::read(
                 const auto & col = our_columns.getPhysical(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
-                    LOG_WARNING_FORMATTED(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dst_col.type->getName(), col.type->getName());
+                    LOG_WARNING(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dst_col.type->getName(), col.type->getName());
                     header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dst_col.type, column_name);
                 }
             }
 
             if (columns_intersection.empty())
             {
-                LOG_WARNING_FORMATTED(log, "Destination table {} has no common columns with block in buffer. Block of data is skipped.", destination_id.getNameForLogs());
+                LOG_WARNING(log, "Destination table {} has no common columns with block in buffer. Block of data is skipped.", destination_id.getNameForLogs());
             }
             else
             {
@@ -346,7 +346,7 @@ public:
         {
             if (storage.destination_id)
             {
-                LOG_TRACE_FORMATTED(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
+                LOG_TRACE(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
                 storage.writeBlockToDestination(block, destination);
             }
             return;
@@ -447,7 +447,7 @@ void StorageBuffer::startup()
 {
     if (global_context.getSettingsRef().readonly)
     {
-        LOG_WARNING_FORMATTED(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
+        LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate system_profile to fix this.", getName());
     }
 
 
@@ -589,7 +589,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE_FORMATTED(log, "Flushing buffer with {} rows, {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
+    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
 
     if (!destination_id)
         return;
@@ -631,7 +631,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (!table)
     {
-        LOG_ERROR_FORMATTED(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
+        LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
 
@@ -653,7 +653,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             auto column = block.getByName(dst_col.name);
             if (!column.type->equals(*dst_col.type))
             {
-                LOG_WARNING_FORMATTED(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
+                LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
                 column.column = castColumn(column, dst_col.type);
                 column.type = dst_col.type;
             }
@@ -664,12 +664,12 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (block_to_write.columns() == 0)
     {
-        LOG_ERROR_FORMATTED(log, "Destination table {} have no common columns with block in buffer. Block of data is discarded.", destination_id.getNameForLogs());
+        LOG_ERROR(log, "Destination table {} have no common columns with block in buffer. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
 
     if (block_to_write.columns() != block.columns())
-        LOG_WARNING_FORMATTED(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
+        LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;

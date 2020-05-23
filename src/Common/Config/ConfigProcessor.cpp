@@ -304,7 +304,7 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
-                LOG_WARNING_FORMATTED(log, "{}{}", error_msg, name);
+                LOG_WARNING(log, "{}{}", error_msg, name);
         }
         else
         {
@@ -441,7 +441,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event)
 {
-    LOG_DEBUG_FORMATTED(log, "Processing configuration file '{}'.", path);
+    LOG_DEBUG(log, "Processing configuration file '{}'.", path);
 
     XMLDocumentPtr config = dom_parser.parse(path);
 
@@ -452,7 +452,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     {
         try
         {
-            LOG_DEBUG_FORMATTED(log, "Merging configuration file '{}'.", merge_file);
+            LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with = dom_parser.parse(merge_file);
             merge(config, with);
@@ -489,7 +489,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
         if (!include_from_path.empty())
         {
-            LOG_DEBUG_FORMATTED(log, "Including configuration file '{}'.", include_from_path);
+            LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
             contributing_files.push_back(include_from_path);
             include_from = dom_parser.parse(include_from_path);
@@ -569,7 +569,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         if (!zk_exception)
             throw;
 
-        LOG_WARNING_FORMATTED(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
+        LOG_WARNING(log, "Error while processing from_zk config includes: {}. Config will be loaded from preprocessed file: {}", zk_exception->message(), preprocessed_path);
 
         config_xml = dom_parser.parse(preprocessed_path);
     }
@@ -617,11 +617,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 Poco::File(preprocessed_path_parent).createDirectories();
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
-        LOG_DEBUG_FORMATTED(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
+        LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
     }
     catch (Poco::Exception & e)
     {
-        LOG_WARNING_FORMATTED(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
+        LOG_WARNING(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
 }
 

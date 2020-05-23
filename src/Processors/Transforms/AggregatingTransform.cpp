@@ -515,7 +515,7 @@ void AggregatingTransform::consume(Chunk chunk)
 
     if (!is_consume_started)
     {
-        LOG_TRACE_FORMATTED(log, "Aggregating");
+        LOG_TRACE(log, "Aggregating");
         is_consume_started = true;
     }
 
@@ -541,7 +541,7 @@ void AggregatingTransform::initGenerate()
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
 
-    LOG_TRACE_FORMATTED(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
         src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
         formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
@@ -593,7 +593,7 @@ void AggregatingTransform::initGenerate()
         for (const auto & file : files.files)
             processors.emplace_back(std::make_unique<SourceFromNativeStream>(header, file->path()));
 
-        LOG_TRACE_FORMATTED(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), formatReadableSizeWithBinarySuffix(files.sum_size_compressed), formatReadableSizeWithBinarySuffix(files.sum_size_uncompressed));
+        LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), formatReadableSizeWithBinarySuffix(files.sum_size_compressed), formatReadableSizeWithBinarySuffix(files.sum_size_uncompressed));
 
         auto pipe = createMergingAggregatedMemoryEfficientPipe(
                 header, params, files.files.size(), temporary_data_merge_threads);
