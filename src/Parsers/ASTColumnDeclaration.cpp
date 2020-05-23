@@ -22,10 +22,10 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->isNULL);
     }
 
-    if (isNULL)
+    if (isNot)
     {
-        res->isNotNULL = isNotNULL;
-        res->children.push_back(res->isNotNULL);
+        res->isNot = isNot;
+        res->children.push_back(res->isNot);
     }
 
     if (default_expression)
@@ -71,17 +71,19 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
         type->formatImpl(settings, state, frame);
     }
 
+    if (isNot)
+    {
+        settings.ostr << ' ';
+        isNot->formatImpl(settings, state, frame);
+    }
+
     if (isNULL)
     {
         settings.ostr << ' ';
         isNULL->formatImpl(settings, state, frame);
     }
 
-    if (isNotNULL)
-    {
-        settings.ostr << ' ';
-        isNotNULL->formatImpl(settings, state, frame);
-    }
+
 
     if (default_expression)
     {
