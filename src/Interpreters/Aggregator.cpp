@@ -5,6 +5,7 @@
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/formatReadable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -857,7 +858,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE_FORMATTED(log, "Max size of temporary block: {} rows, {} MiB.", max_temporary_block_size_rows, (max_temporary_block_size_bytes / 1048576.0));
+    LOG_TRACE_FORMATTED(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, formatReadableSizeWithBinarySuffix(max_temporary_block_size_bytes));
 }
 
 
@@ -1293,7 +1294,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, "Converted aggregated data to blocks. " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << elapsed_seconds << " sec. (" << rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds) << "/sec.)");
+    LOG_TRACE(log, "Converted aggregated data to blocks. " << rows << " rows, " << formatReadableSizeWithBinarySuffix(bytes) << " in " << elapsed_seconds << " sec. (" << rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds) << "/sec.)");
 
     return blocks;
 }
@@ -2155,7 +2156,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, "Merged partially aggregated blocks. " << rows << " rows, " << bytes / 1048576.0 << " MiB. in " << elapsed_seconds << " sec. (" << rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds) << "/sec.)");
+    LOG_TRACE(log, "Merged partially aggregated blocks. " << rows << " rows, " << formatReadableSizeWithBinarySuffix(bytes) << ". in " << elapsed_seconds << " sec. (" << rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds) << "/sec.)");
 
     if (isCancelled())
         return {};
