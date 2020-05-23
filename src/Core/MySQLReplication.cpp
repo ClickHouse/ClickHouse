@@ -704,12 +704,7 @@ namespace MySQLReplication
         }
     }
 
-    void DryRunEvent::parseImpl(ReadBuffer & payload)
-    {
-        while (payload.next())
-        {
-        }
-    }
+    void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }
 
     void DryRunEvent::dump() const
     {
