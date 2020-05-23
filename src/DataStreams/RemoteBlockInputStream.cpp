@@ -372,7 +372,7 @@ void RemoteBlockInputStream::tryCancel(const char * reason)
         multiplexed_connections->sendCancel();
     }
 
-    LOG_TRACE(log, "(" << multiplexed_connections->dumpAddresses() << ") " << reason);
+    LOG_TRACE_FORMATTED(log, "({}) {}", multiplexed_connections->dumpAddresses(), reason);
 }
 
 bool RemoteBlockInputStream::isQueryPending() const

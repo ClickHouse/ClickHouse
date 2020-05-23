@@ -1036,7 +1036,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
             if (!replica.empty())
             {
-                LOG_DEBUG(log, "Prefer to fetch " << entry.new_part_name << " from replica " << replica);
+                LOG_DEBUG_FORMATTED(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
                 return false;
             }
         }
@@ -1151,7 +1151,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 {
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = getSettings();
-    LOG_TRACE(log, "Executing log entry to mutate part " << source_part_name << " to " << entry.new_part_name);
+    LOG_TRACE_FORMATTED(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
 
     DataPartPtr source_part = getActiveContainingPart(source_part_name);
     if (!source_part)
@@ -1178,7 +1178,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
         if (!replica.empty())
         {
-            LOG_DEBUG(log, "Prefer to fetch " << entry.new_part_name << " from replica " << replica);
+            LOG_DEBUG_FORMATTED(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
             return false;
         }
     }
@@ -1623,7 +1623,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             auto src_part = src_data->getPartIfExists(part_desc->src_part_info, valid_states);
             if (!src_part)
             {
-                LOG_DEBUG(log, "There is no part " << part_desc->src_part_name << " in " << source_table_id.getNameForLogs());
+                LOG_DEBUG_FORMATTED(log, "There is no part {} in {}", part_desc->src_part_name, source_table_id.getNameForLogs());
                 continue;
             }
 
@@ -2793,7 +2793,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         currently_fetching_parts.erase(part_name);
     });
 
-    LOG_DEBUG(log, "Fetching part " << part_name << " from " << source_replica_path);
+    LOG_DEBUG_FORMATTED(log, "Fetching part {} from {}", part_name, source_replica_path);
 
     TableStructureReadLockHolder table_lock_holder;
     if (!to_detached)
@@ -2841,7 +2841,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
             if (source_part_checksums == desired_checksums)
             {
-                LOG_TRACE(log, "Found local part " << source_part->name << " with the same checksums as " << part_name);
+                LOG_TRACE_FORMATTED(log, "Found local part {} with the same checksums as {}", source_part->name, part_name);
                 part_to_clone = source_part;
             }
         }
@@ -2903,7 +2903,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
             for (const auto & replaced_part : replaced_parts)
             {
-                LOG_DEBUG(log, "Part " << replaced_part->name << " is rendered obsolete by fetching part " << part_name);
+                LOG_DEBUG_FORMATTED(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
@@ -3682,7 +3682,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         String old_name = loaded_parts[i]->name;
         output.writeExistingPart(loaded_parts[i]);
         renamed_parts.old_and_new_names[i].first.clear();
-        LOG_DEBUG(log, "Attached part " << old_name << " as " << loaded_parts[i]->name);
+        LOG_DEBUG_FORMATTED(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
     }
 }
 
@@ -4271,7 +4271,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
     if (from.back() == '/')
         from.resize(from.size() - 1);
 
-    LOG_INFO(log, "Will fetch partition " << partition_id << " from shard " << from_);
+    LOG_INFO_FORMATTED(log, "Will fetch partition {} from shard {}", partition_id, from_);
 
     /** Let's check that there is no such partition in the `detached` directory (where we will write the downloaded parts).
       * Unreliable (there is a race condition) - such a partition may appear a little later.
@@ -4869,7 +4869,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
                 "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
     }
 
-    LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
+    LOG_TRACE_FORMATTED(log, "Deleted {} deduplication block IDs in partition ID {}", to_delete_futures.size(), partition_id);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,

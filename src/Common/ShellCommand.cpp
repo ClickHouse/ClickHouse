@@ -134,7 +134,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
-    LOG_TRACE(getLogger(), "Started shell command '" << filename << "' with pid " << pid);
+    LOG_TRACE_FORMATTED(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
 
     /// Now the ownership of the file descriptors is passed to the result.
     pipe_stdin.fds_rw[1] = -1;
@@ -194,7 +194,7 @@ int ShellCommand::tryWait()
     if (-1 == waitpid(pid, &status, 0))
         throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
 
-    LOG_TRACE(getLogger(), "Wait for shell command pid " << pid << " completed with status " << status);
+    LOG_TRACE_FORMATTED(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 
     if (WIFEXITED(status))
         return WEXITSTATUS(status);

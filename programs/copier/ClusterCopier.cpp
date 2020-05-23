@@ -169,7 +169,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
                          << task_shard->getDescription() << " :" << ss.str());
     }
 
-    LOG_DEBUG(log, "Will copy " << task_shard->partition_tasks.size() << " partitions from shard " << task_shard->getDescription());
+    LOG_DEBUG_FORMATTED(log, "Will copy {} partitions from shard {}", task_shard->partition_tasks.size(), task_shard->getDescription());
 }
 
 void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads)
@@ -911,7 +911,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                     {
                         const size_t number_of_splits = task_table.number_of_splits;
                         shard->partition_tasks.emplace(partition_name, ShardPartition(*shard, partition_name, number_of_splits));
-                        LOG_DEBUG(log, "Discovered partition " << partition_name << " in shard " << shard->getDescription());
+                        LOG_DEBUG_FORMATTED(log, "Discovered partition {} in shard {}", partition_name, shard->getDescription());
                         /// To save references in the future.
                         auto shard_partition_it = shard->partition_tasks.find(partition_name);
                         PartitionPieces & shard_partition_pieces = shard_partition_it->second.pieces;
@@ -924,7 +924,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                     }
                     else
                     {
-                        LOG_DEBUG(log, "Found that shard " << shard->getDescription() << " does not contain current partition " << partition_name);
+                        LOG_DEBUG_FORMATTED(log, "Found that shard {} does not contain current partition {}", shard->getDescription(), partition_name);
                         continue;
                     }
                 }
@@ -1744,7 +1744,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
         }
     }
 
-    LOG_DEBUG(log, "There are " << res.size() << " destination partitions in shard " << task_shard.getDescription());
+    LOG_DEBUG_FORMATTED(log, "There are {} destination partitions in shard {}", res.size(), task_shard.getDescription());
 
     return res;
 }

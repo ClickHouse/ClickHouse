@@ -64,7 +64,7 @@ Lock::Status Lock::tryCheck() const
     }
 
     if (locked && lock_status != LOCKED_BY_ME)
-        LOG_WARNING(log, "Lock is lost. It is normal if session was expired. Path: " << lock_path << "/" << lock_message);
+        LOG_WARNING_FORMATTED(log, "Lock is lost. It is normal if session was expired. Path: {}/{}", lock_path, lock_message);
 
     return lock_status;
 }

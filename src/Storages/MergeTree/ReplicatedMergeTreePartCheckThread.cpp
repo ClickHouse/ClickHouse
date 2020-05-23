@@ -298,7 +298,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
     {
         /// If we have a covering part, ignore all the problems with this part.
         /// In the worst case, errors will still appear `old_parts_lifetime` seconds in error log until the part is removed as the old one.
-        LOG_WARNING(log, "We have part " << part->name << " covering part " << part_name);
+        LOG_WARNING_FORMATTED(log, "We have part {} covering part {}", part->name, part_name);
     }
 
     return {part_name, true, ""};

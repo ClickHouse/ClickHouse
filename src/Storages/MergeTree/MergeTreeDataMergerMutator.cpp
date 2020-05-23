@@ -268,7 +268,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
             && part->info.min_block <= (*prev_part)->info.max_block)
         {
-            LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
+            LOG_ERROR_FORMATTED(log, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;
@@ -1000,12 +1000,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
-        LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
+        LOG_TRACE_FORMATTED(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
     }
     else
     {
-        LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+        LOG_TRACE_FORMATTED(log, "Mutating part {} to mutation version {}", source_part->name, future_part.part_info.mutation);
     }
 
     BlockInputStreamPtr in = nullptr;

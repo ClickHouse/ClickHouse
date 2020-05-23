@@ -623,7 +623,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     }
     catch (Poco::Exception & e)
     {
-        LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
+        LOG_WARNING_FORMATTED(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
 }
 

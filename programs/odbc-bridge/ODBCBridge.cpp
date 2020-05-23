@@ -198,7 +198,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         {
             if (server.currentConnections() == 0)
                 break;
-            LOG_DEBUG(log, "Waiting for " << server.currentConnections() << " connections, try " << count);
+            LOG_DEBUG_FORMATTED(log, "Waiting for {} connections, try {}", server.currentConnections(), count);
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     });
