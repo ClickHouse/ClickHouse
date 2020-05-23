@@ -366,7 +366,14 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         if (now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
-            LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name << " because not enough free space: " << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved, " << formatReadableSizeWithBinarySuffix(sum_bytes) << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100) << "% on overhead); suppressing similar warnings for the next hour");
+            LOG_WARNING_FORMATTED(log,
+                "Won't merge parts from {} to {} because not enough free space: {} free and unreserved"
+                ", {} required now (+{}% on overhead); suppressing similar warnings for the next hour",
+                parts.front()->name,
+                (*prev_it)->name,
+                formatReadableSizeWithBinarySuffix(available_disk_space),
+                formatReadableSizeWithBinarySuffix(sum_bytes),
+                static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100));
         }
 
         if (out_disable_reason)
