@@ -2564,7 +2564,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
                 String reject_reason;
                 if (!queue.addFuturePartIfNotCoveredByThem(largest_part_found, entry, reject_reason))
                 {
-                    LOG_INFO(log, "Will not fetch part " << largest_part_found << " covering " << entry.new_part_name << ". " << reject_reason);
+                    LOG_INFO_FORMATTED(log, "Will not fetch part {} covering {}. {}", largest_part_found, entry.new_part_name, reject_reason);
                     return {};
                 }
             }

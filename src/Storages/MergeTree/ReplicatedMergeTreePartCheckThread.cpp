@@ -131,7 +131,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
             if (part_on_replica_info.contains(part_info))
             {
-                LOG_WARNING(log, "Found part " << part_on_replica << " on " << replica << " that covers the missing part " << part_name);
+                LOG_WARNING_FORMATTED(log, "Found part {} on {} that covers the missing part {}", part_on_replica, replica, part_name);
                 return;
             }
 

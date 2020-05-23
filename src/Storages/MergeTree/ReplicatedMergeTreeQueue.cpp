@@ -486,7 +486,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 
             UInt64 last_entry_index = parse<UInt64>(last_entry.substr(strlen("log-")));
 
-            LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
+            LOG_DEBUG_FORMATTED(log, "Pulling {} entries to queue: {} - {}", (end - begin), *begin, *last);
 
             zkutil::AsyncResponses<Coordination::GetResponse> futures;
             futures.reserve(end - begin);
