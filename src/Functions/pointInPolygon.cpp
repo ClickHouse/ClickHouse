@@ -170,10 +170,18 @@ public:
         bool point_is_const = const_tuple_col != nullptr;
         bool poly_is_const = const_poly_col != nullptr;
 
+        /// Two different algorithms are used for constant and non constant polygons.
+        /// Constant polygons are preprocessed to speed up matching.
+        /// For non-constant polygons, we cannot spend time for preprocessing
+        ///  and have to quickly match on the fly without creating temporary data structures.
+
         if (poly_is_const)
         {
             Polygon polygon;
             parseConstPolygon(block, arguments, polygon);
+
+            /// Polygons are preprocessed and saved in cache.
+            /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
             using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
             /// C++11 has thread-safe function-local statics.
@@ -210,8 +218,18 @@ public:
             auto res_column = ColumnVector<UInt8>::create(input_rows_count);
             auto & data = res_column->getData();
 
+            /// A polygon, possibly with holes, is represented by 2d array:
+            /// [[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...]
+            ///
+            /// Or, a polygon without holes can be represented by 1d array:
+            /// [(outer_x_1, outer_y_1, ...)]
+
             if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
             {
+                /// We cast everything to Float64 in advance (in batch fashion)
+                ///  to avoid casting with virtual calls in a loop.
+                /// Note that if the type is already Float64, the operation in noop.
+
                 ColumnPtr polygon_column_float64 = castColumn(
                     block.getByPosition(arguments[1]),
                     std::make_shared<DataTypeArray>(
@@ -223,7 +241,7 @@ public:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     size_t point_index = point_is_const ? 0 : i;
-                    data[i] = isInsidePolygonFromSingleColumn2D(
+                    data[i] = isInsidePolygonWithHoles(
                         tuple_columns[0]->getFloat64(point_index),
                         tuple_columns[1]->getFloat64(point_index),
                         *polygon_column_float64,
@@ -242,7 +260,7 @@ public:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     size_t point_index = point_is_const ? 0 : i;
-                    data[i] = isInsidePolygonFromSingleColumn1D(
+                    data[i] = isInsidePolygonWithoutHoles(
                         tuple_columns[0]->getFloat64(point_index),
                         tuple_columns[1]->getFloat64(point_index),
                         *polygon_column_float64,
@@ -262,36 +280,13 @@ private:
         return "Argument " + toString(i + 1) + " for function " + getName();
     }
 
-    void parseConstPolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
+    bool isTwoDimensionalArray(const IDataType & type) const
     {
-        ColumnPtr polygon_column_float64 = castColumn(
-            block.getByPosition(arguments[1]),
-            std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeTuple>(DataTypes{
-                    std::make_shared<DataTypeFloat64>(),
-                    std::make_shared<DataTypeFloat64>()})));
-
-        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
-        const IColumn & column_const_data = column_const.getDataColumn();
-
-        if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
-            parsePolygonFromSingleColumn2D(column_const_data, 0, out_polygon);
-        else
-            parsePolygonFromSingleColumn1D(column_const_data, 0, out_polygon);
+        return WhichDataType(type).isArray()
+            && WhichDataType(static_cast<const DataTypeArray &>(type).getNestedType()).isArray();
     }
 
-    template <typename T>
-    void parseRing(
-        const Float64 * x_data,
-        const Float64 * y_data,
-        size_t begin,
-        size_t end,
-        T & out_container) const
-    {
-        out_container.reserve(end - begin);
-        for (size_t i = begin; i < end; ++i)
-            out_container.emplace_back(x_data[i], y_data[i]);
-    }
+    /// Implementation methods to check point-in-polygon on the fly (for non-const polygons).
 
     bool isInsideRing(
         Float64 point_x,
@@ -354,20 +349,7 @@ private:
         return res;
     }
 
-    void parsePolygonFromSingleColumn1D(const IColumn & column, size_t i, Polygon & out_polygon) const
-    {
-        const auto & array_col = static_cast<const ColumnArray &>(column);
-        size_t begin = array_col.getOffsets()[i - 1];
-        size_t end = array_col.getOffsets()[i];
-
-        const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
-        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
-        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
-
-        parseRing(x_data, y_data, begin, end, out_polygon.outer());
-    }
-
-    bool isInsidePolygonFromSingleColumn1D(
+    bool isInsidePolygonWithoutHoles(
         Float64 point_x,
         Float64 point_y,
         const IColumn & polygon_column,
@@ -389,35 +371,7 @@ private:
         return isInsideRing(point_x, point_y, x_data, y_data, begin, end);
     }
 
-    void parsePolygonFromSingleColumn2D(const IColumn & column, size_t i, Polygon & out_polygon) const
-    {
-        const auto & array_col = static_cast<const ColumnArray &>(column);
-        size_t rings_begin = array_col.getOffsets()[i - 1];
-        size_t rings_end = array_col.getOffsets()[i];
-
-        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
-        const auto & tuple_columns = static_cast<const ColumnTuple &>(nested_array_col.getData()).getColumns();
-        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
-        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
-
-        for (size_t j = rings_begin; j < rings_end; ++j)
-        {
-            size_t begin = nested_array_col.getOffsets()[j - 1];
-            size_t end = nested_array_col.getOffsets()[j];
-
-            if (out_polygon.outer().empty())
-            {
-                parseRing(x_data, y_data, begin, end, out_polygon.outer());
-            }
-            else
-            {
-                out_polygon.inners().emplace_back();
-                parseRing(x_data, y_data, begin, end, out_polygon.inners().back());
-            }
-        }
-    }
-
-    bool isInsidePolygonFromSingleColumn2D(
+    bool isInsidePolygonWithHoles(
         Float64 point_x,
         Float64 point_y,
         const IColumn & polygon_column,
@@ -452,7 +406,64 @@ private:
         return true;
     }
 
-    void parseConstPolygonFromMultipleColumns(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
+    /// Implementation methods to create boost::geometry::polygon for subsequent preprocessing.
+    /// They are used to optimize matching for constant polygons. Preprocessing may take significant amount of time.
+
+    template <typename T>
+    void parseRing(
+        const Float64 * x_data,
+        const Float64 * y_data,
+        size_t begin,
+        size_t end,
+        T & out_container) const
+    {
+        out_container.reserve(end - begin);
+        for (size_t i = begin; i < end; ++i)
+            out_container.emplace_back(x_data[i], y_data[i]);
+    }
+
+    void parseConstPolygonWithoutHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
+    {
+        const auto & array_col = static_cast<const ColumnArray &>(column);
+        size_t begin = array_col.getOffsets()[i - 1];
+        size_t end = array_col.getOffsets()[i];
+
+        const auto & tuple_columns = static_cast<const ColumnTuple &>(array_col.getData()).getColumns();
+        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
+
+        parseRing(x_data, y_data, begin, end, out_polygon.outer());
+    }
+
+    void parseConstPolygonWithHolesFromSingleColumn(const IColumn & column, size_t i, Polygon & out_polygon) const
+    {
+        const auto & array_col = static_cast<const ColumnArray &>(column);
+        size_t rings_begin = array_col.getOffsets()[i - 1];
+        size_t rings_end = array_col.getOffsets()[i];
+
+        const auto & nested_array_col = static_cast<const ColumnArray &>(array_col.getData());
+        const auto & tuple_columns = static_cast<const ColumnTuple &>(nested_array_col.getData()).getColumns();
+        const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
+        const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
+
+        for (size_t j = rings_begin; j < rings_end; ++j)
+        {
+            size_t begin = nested_array_col.getOffsets()[j - 1];
+            size_t end = nested_array_col.getOffsets()[j];
+
+            if (out_polygon.outer().empty())
+            {
+                parseRing(x_data, y_data, begin, end, out_polygon.outer());
+            }
+            else
+            {
+                out_polygon.inners().emplace_back();
+                parseRing(x_data, y_data, begin, end, out_polygon.inners().back());
+            }
+        }
+    }
+
+    void parseConstPolygonWithHolesFromMultipleColumns(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
     {
         for (size_t i = 1; i < arguments.size(); ++i)
         {
@@ -490,10 +501,22 @@ private:
         }
     }
 
-    bool isTwoDimensionalArray(const IDataType & type) const
+    void parseConstPolygonFromSingleColumn(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
     {
-        return WhichDataType(type).isArray()
-            && WhichDataType(static_cast<const DataTypeArray &>(type).getNestedType()).isArray();
+        ColumnPtr polygon_column_float64 = castColumn(
+            block.getByPosition(arguments[1]),
+            std::make_shared<DataTypeArray>(
+                std::make_shared<DataTypeTuple>(DataTypes{
+                    std::make_shared<DataTypeFloat64>(),
+                    std::make_shared<DataTypeFloat64>()})));
+
+        const ColumnConst & column_const = typeid_cast<const ColumnConst &>(*polygon_column_float64);
+        const IColumn & column_const_data = column_const.getDataColumn();
+
+        if (isTwoDimensionalArray(*block.getByPosition(arguments[1]).type))
+            parseConstPolygonWithHolesFromSingleColumn(column_const_data, 0, out_polygon);
+        else
+            parseConstPolygonWithoutHolesFromSingleColumn(column_const_data, 0, out_polygon);
     }
 
     void parseConstPolygon(Block & block, const ColumnNumbers & arguments, Polygon & out_polygon) const
@@ -501,8 +524,9 @@ private:
         if (arguments.size() == 2)
             parseConstPolygonFromSingleColumn(block, arguments, out_polygon);
         else
-            parseConstPolygonFromMultipleColumns(block, arguments, out_polygon);
+            parseConstPolygonWithHolesFromMultipleColumns(block, arguments, out_polygon);
 
+        /// Fix orientation and close rings. It's required for subsequent processing.
         boost::geometry::correct(out_polygon);
 
 #if !defined(__clang_analyzer__) /// It does not like boost.
