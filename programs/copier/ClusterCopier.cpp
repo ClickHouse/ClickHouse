@@ -164,7 +164,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         for (const String & missing_partition : missing_partitions)
             ss << " " << missing_partition;
 
-        LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard "                          << task_shard->getDescription() << " :" << ss.str());
+        LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard " << task_shard->getDescription() << " :" << ss.str());
     }
 
     LOG_DEBUG_FORMATTED(log, "Will copy {} partitions from shard {}", task_shard->partition_tasks.size(), task_shard->getDescription());
@@ -1297,7 +1297,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             /// NOTE: partition is still fresh if dirt discovery happens before cleaning
             if (stat_shards.numChildren == 0)
             {
-                LOG_WARNING(log, "There are no workers for partition " << task_partition.name                                   << " piece " << toString(current_piece_number)                                   << ", but destination table contains " << count << " rows"                                   << ". Partition will be dropped and refilled.");
+                LOG_WARNING(log, "There are no workers for partition " << task_partition.name << " piece " << toString(current_piece_number) << ", but destination table contains " << count << " rows" << ". Partition will be dropped and refilled.");
 
                 create_is_dirty_node(clean_state_clock);
                 return TaskStatus::Error;

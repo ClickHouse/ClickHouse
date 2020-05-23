@@ -1328,7 +1328,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     if (part->info.getDataVersion() > desired_mutation_version)
     {
-        LOG_WARNING(log, "Data version of part " << part->name << " is already greater than "             "desired mutation version " << desired_mutation_version);
+        LOG_WARNING(log, "Data version of part " << part->name << " is already greater than " "desired mutation version " << desired_mutation_version);
         return MutationCommands{};
     }
 
@@ -1337,7 +1337,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_WARNING(log, "There are no mutations for partition ID " << part->info.partition_id             << " (trying to mutate part " << part->name << " to " << toString(desired_mutation_version) << ")");
+        LOG_WARNING(log, "There are no mutations for partition ID " << part->info.partition_id << " (trying to mutate part " << part->name << " to " << toString(desired_mutation_version) << ")");
         return MutationCommands{};
     }
 
@@ -1345,7 +1345,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     auto end = in_partition->second.lower_bound(desired_mutation_version);
     if (end == in_partition->second.end() || end->first != desired_mutation_version)
-        LOG_WARNING(log, "Mutation with version " << desired_mutation_version             << " not found in partition ID " << part->info.partition_id             << " (trying to mutate part " << part->name + ")");
+        LOG_WARNING(log, "Mutation with version " << desired_mutation_version << " not found in partition ID " << part->info.partition_id << " (trying to mutate part " << part->name + ")");
     else
         ++end;
 

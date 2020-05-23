@@ -18,7 +18,7 @@ CollapsingFinalBlockInputStream::~CollapsingFinalBlockInputStream()
 void CollapsingFinalBlockInputStream::reportBadCounts()
 {
     /// With inconsistent data, this is an unavoidable error that can not be easily fixed by admins. Therefore Warning.
-    LOG_WARNING(log, "Incorrect data: number of rows with sign = 1 (" << count_positive         << ") differs with number of rows with sign = -1 (" << count_negative         << ") by more than one");
+    LOG_WARNING(log, "Incorrect data: number of rows with sign = 1 (" << count_positive << ") differs with number of rows with sign = -1 (" << count_negative << ") by more than one");
 }
 
 void CollapsingFinalBlockInputStream::reportBadSign(Int8 sign)

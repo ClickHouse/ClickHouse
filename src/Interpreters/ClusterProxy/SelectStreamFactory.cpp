@@ -200,7 +200,7 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"),                         "There is no table " << main_table.getNameForLogs()                         << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
+                LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"), "There is no table " << main_table.getNameForLogs() << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
                 emplace_remote_stream();
             }
             else
@@ -236,7 +236,7 @@ void SelectStreamFactory::createForShard(
 
         /// If we reached this point, local replica is stale.
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"),             "Local replica of shard " << shard_info.shard_num << " is stale (delay: " << local_delay << "s.)");
+        LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"), "Local replica of shard " << shard_info.shard_num << " is stale (delay: " << local_delay << "s.)");
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
@@ -284,7 +284,7 @@ void SelectStreamFactory::createForShard(
             catch (const Exception & ex)
             {
                 if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-                    LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"),                         "Connections to remote replicas of local shard " << shard_num << " failed, will use stale local replica");
+                    LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"), "Connections to remote replicas of local shard " << shard_num << " failed, will use stale local replica");
                 else
                     throw;
             }

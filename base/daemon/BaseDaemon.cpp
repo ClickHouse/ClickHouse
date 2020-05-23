@@ -498,7 +498,7 @@ void debugIncreaseOOMScore()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" +                     e.displayText() + "'.");
+        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '" + e.displayText() + "'.");
         return;
     }
     LOG_INFO_FORMATTED(&Logger::root(), "Set OOM score adjustment to {}", new_score);
