@@ -515,7 +515,7 @@ void AggregatingTransform::consume(Chunk chunk)
 
     if (!is_consume_started)
     {
-        LOG_TRACE(log, "Aggregating");
+        LOG_TRACE_FORMATTED(log, "Aggregating");
         is_consume_started = true;
     }
 

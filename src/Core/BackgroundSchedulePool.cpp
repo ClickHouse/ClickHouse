@@ -179,7 +179,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         queue.wakeUpAll();
         delayed_thread.join();
 
-        LOG_TRACE(&Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
+        LOG_TRACE_FORMATTED(&Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
         for (auto & thread : threads)
             thread.join();
     }

@@ -40,7 +40,7 @@ public:
         }
         catch (const Poco::Net::NetException &)
         {
-            LOG_TRACE(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
+            LOG_TRACE_FORMATTED(log, "TCP Request. Client is not connected (most likely RST packet was sent).");
             return new DummyTCPHandler(socket);
         }
     }

@@ -43,7 +43,7 @@ std::string RegionsNames::dumpSupportedLanguagesNames()
 void RegionsNames::reload()
 {
     Logger * log = &Logger::get("RegionsNames");
-    LOG_DEBUG(log, "Reloading regions names");
+    LOG_DEBUG_FORMATTED(log, "Reloading regions names");
 
     RegionID max_region_id = 0;
     for (size_t language_id = 0; language_id < total_languages; ++language_id)

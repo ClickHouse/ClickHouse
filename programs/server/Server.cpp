@@ -234,7 +234,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     if (ThreadFuzzer::instance().isEffective())
-        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+        LOG_WARNING_FORMATTED(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -274,11 +274,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
+                LOG_TRACE_FORMATTED(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
                 if (0 != mlockall(MCL_CURRENT))
                     LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
                 else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
+                    LOG_TRACE_FORMATTED(log, "The memory map of clickhouse executable has been mlock'ed");
             }
             else
             {
@@ -326,11 +326,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
           * It is important to do early, not in destructor of Context, because
           *  table engines could use Context on destroy.
           */
-        LOG_INFO(log, "Shutting down storages.");
+        LOG_INFO_FORMATTED(log, "Shutting down storages.");
 
         global_context->shutdown();
 
-        LOG_DEBUG(log, "Shut down storages.");
+        LOG_DEBUG_FORMATTED(log, "Shut down storages.");
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -338,7 +338,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context_ptr = nullptr;
         global_context.reset();
         shared_context.reset();
-        LOG_DEBUG(log, "Destroyed global context.");
+        LOG_DEBUG_FORMATTED(log, "Destroyed global context.");
     });
 
     /// Try to increase limit on number of open files.
@@ -370,7 +370,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Poco::ErrorHandler::set(&error_handler);
 
     /// Initialize DateLUT early, to not interfere with running time of first query.
-    LOG_DEBUG(log, "Initializing DateLUT.");
+    LOG_DEBUG_FORMATTED(log, "Initializing DateLUT.");
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
 
@@ -550,7 +550,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (!mark_cache_size)
-        LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
+        LOG_ERROR_FORMATTED(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
@@ -610,7 +610,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
-    LOG_DEBUG(log, "Loaded metadata.");
+    LOG_DEBUG_FORMATTED(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
     /// Disable it if we collect test coverage information, because it will work extremely slow.
@@ -650,11 +650,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Describe multiple reasons when query profiler cannot work.
 
 #if !USE_UNWIND
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
+    LOG_INFO_FORMATTED(log, "Query Profiler and TraceCollector are disabled because they cannot work without bundled unwind (stack unwinding) library.");
 #endif
 
 #if WITH_COVERAGE
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
+    LOG_INFO_FORMATTED(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
 #endif
 
 #if defined(SANITIZER)
@@ -707,7 +707,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
-    LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
+    LOG_INFO_FORMATTED(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
 #endif
 
     {
@@ -974,11 +974,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
             LOG_INFO(log, message.str());
         }
 
-        LOG_INFO(log, "Ready for connections.");
+        LOG_INFO_FORMATTED(log, "Ready for connections.");
 
         SCOPE_EXIT({
-            LOG_DEBUG(log, "Received termination signal.");
-            LOG_DEBUG(log, "Waiting for current connections to close.");
+            LOG_DEBUG_FORMATTED(log, "Received termination signal.");
+            LOG_DEBUG_FORMATTED(log, "Waiting for current connections to close.");
 
             is_cancelled = true;
 
@@ -1030,7 +1030,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
-                LOG_INFO(log, "Will shutdown forcefully.");
+                LOG_INFO_FORMATTED(log, "Will shutdown forcefully.");
                 _exit(Application::EXIT_OK);
             }
         });
@@ -1051,7 +1051,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
         catch (...)
         {
-            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            LOG_ERROR_FORMATTED(log, "Caught exception while loading dictionaries.");
             throw;
         }
 

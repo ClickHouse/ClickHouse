@@ -106,7 +106,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, {});
 
-    LOG_TRACE(log, "Loaded queue");
+    LOG_TRACE_FORMATTED(log, "Loaded queue");
     return updated;
 }
 

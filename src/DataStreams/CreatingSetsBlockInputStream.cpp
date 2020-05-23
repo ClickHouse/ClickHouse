@@ -113,7 +113,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     {
         if (isCancelled())
         {
-            LOG_DEBUG(log, "Query was cancelled during set / join or temporary table creation.");
+            LOG_DEBUG_FORMATTED(log, "Query was cancelled during set / join or temporary table creation.");
             return;
         }
 
@@ -181,7 +181,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     }
     else
     {
-        LOG_DEBUG(log, "Subquery has empty result.");
+        LOG_DEBUG_FORMATTED(log, "Subquery has empty result.");
     }
 }
 

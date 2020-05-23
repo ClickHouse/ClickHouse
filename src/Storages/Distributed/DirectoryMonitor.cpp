@@ -153,7 +153,7 @@ void StorageDistributedDirectoryMonitor::run()
         }
         else
         {
-            LOG_DEBUG(log, "Skipping send data over distributed table.");
+            LOG_DEBUG_FORMATTED(log, "Skipping send data over distributed table.");
         }
 
         const auto now = std::chrono::system_clock::now();

@@ -100,7 +100,7 @@ void MySQLHandlerFactory::readRSAKeys()
 
 void MySQLHandlerFactory::generateRSAKeys()
 {
-    LOG_TRACE(log, "Generating new RSA key pair.");
+    LOG_TRACE_FORMATTED(log, "Generating new RSA key pair.");
     public_key.reset(RSA_new());
     if (!public_key)
         throw Exception("Failed to allocate RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);

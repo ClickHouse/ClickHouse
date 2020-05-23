@@ -76,7 +76,7 @@ void TCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data.");
+        LOG_WARNING_FORMATTED(log, "Client has not sent any data.");
         return;
     }
 
@@ -89,13 +89,13 @@ void TCPHandler::runImpl()
     {
         if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
         {
-            LOG_DEBUG(log, "Client has connected to wrong port.");
+            LOG_DEBUG_FORMATTED(log, "Client has connected to wrong port.");
             return;
         }
 
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
-            LOG_WARNING(log, "Client has gone away.");
+            LOG_WARNING_FORMATTED(log, "Client has gone away.");
             return;
         }
 
@@ -140,7 +140,7 @@ void TCPHandler::runImpl()
             {
                 if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
                 {
-                    LOG_TRACE(log, "Closing idle connection");
+                    LOG_TRACE_FORMATTED(log, "Closing idle connection");
                     return;
                 }
             }
@@ -345,7 +345,7 @@ void TCPHandler::runImpl()
         {
             /** Could not send exception information to the client. */
             network_error = true;
-            LOG_WARNING(log, "Client has gone away.");
+            LOG_WARNING_FORMATTED(log, "Client has gone away.");
         }
 
         try
@@ -356,7 +356,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             network_error = true;
-            LOG_WARNING(log, "Can't read external tables after query failure.");
+            LOG_WARNING_FORMATTED(log, "Can't read external tables after query failure.");
         }
 
 
@@ -1080,7 +1080,7 @@ bool TCPHandler::isQueryCancelled()
             case Protocol::Client::Cancel:
                 if (state.empty())
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-                LOG_INFO(log, "Query was cancelled.");
+                LOG_INFO_FORMATTED(log, "Query was cancelled.");
                 state.is_cancelled = true;
                 return true;
 
@@ -1198,7 +1198,7 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_INFO(log, "Done processing connection.");
+        LOG_INFO_FORMATTED(log, "Done processing connection.");
     }
     catch (Poco::Exception & e)
     {

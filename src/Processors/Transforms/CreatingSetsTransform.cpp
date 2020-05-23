@@ -103,7 +103,7 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
     }
     else
     {
-        LOG_DEBUG(log, "Subquery has empty result.");
+        LOG_DEBUG_FORMATTED(log, "Subquery has empty result.");
     }
 }
 

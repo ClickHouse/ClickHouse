@@ -377,7 +377,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    LOG_TRACE(log, "Terminating");
+    LOG_TRACE_FORMATTED(log, "Terminating");
 }
 
 
@@ -426,7 +426,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         flush_event.notify_all();
     }
 
-    LOG_TRACE(log, "Flushed system log");
+    LOG_TRACE_FORMATTED(log, "Flushed system log");
 }
 
 

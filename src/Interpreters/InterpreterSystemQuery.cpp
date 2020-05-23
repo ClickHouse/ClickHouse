@@ -398,7 +398,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
-        LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
+        LOG_TRACE_FORMATTED(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
         {
             LOG_ERROR(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": Timed out!");

@@ -794,6 +794,6 @@ void AccessRights::logTree() const
     if (root)
         root->logTree(log);
     else
-        LOG_TRACE(log, "Tree: NULL");
+        LOG_TRACE_FORMATTED(log, "Tree: NULL");
 }
 }

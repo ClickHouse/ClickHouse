@@ -241,7 +241,7 @@ void ClusterCopier::updateConfigIfNeeded()
     if (!is_outdated_version && !is_expired_session)
         return;
 
-    LOG_DEBUG(log, "Updating task description");
+    LOG_DEBUG_FORMATTED(log, "Updating task description");
     reloadTaskDescription();
 
     task_description_current_version = version_to_update;
@@ -384,7 +384,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
                 /// Try to make fast retries
                 if (num_bad_version_errors > 3)
                 {
-                    LOG_DEBUG(log, "A concurrent worker has just been added, will check free worker slots again");
+                    LOG_DEBUG_FORMATTED(log, "A concurrent worker has just been added, will check free worker slots again");
                     std::chrono::milliseconds random_sleep_time(std::uniform_int_distribution<int>(1, 1000)(task_cluster->random_engine));
                     std::this_thread::sleep_for(random_sleep_time);
                     num_bad_version_errors = 0;
@@ -854,7 +854,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         }
         else
         {
-            LOG_DEBUG(log, "Clean state is altered when dropping the partition, cowardly bailing");
+            LOG_DEBUG_FORMATTED(log, "Clean state is altered when dropping the partition, cowardly bailing");
             /// clean state is stale
             return false;
         }
@@ -1165,17 +1165,17 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     auto create_is_dirty_node = [&] (const CleanStateClock & clock)
     {
         if (clock.is_stale())
-            LOG_DEBUG(log, "Clean state clock is stale while setting dirty flag, cowardly bailing");
+            LOG_DEBUG_FORMATTED(log, "Clean state clock is stale while setting dirty flag, cowardly bailing");
         else if (!clock.is_clean())
-            LOG_DEBUG(log, "Thank you, Captain Obvious");
+            LOG_DEBUG_FORMATTED(log, "Thank you, Captain Obvious");
         else if (clock.discovery_version)
         {
-            LOG_DEBUG(log, "Updating clean state clock");
+            LOG_DEBUG_FORMATTED(log, "Updating clean state clock");
             zookeeper->set(piece_is_dirty_flag_path, host_id, clock.discovery_version.value());
         }
         else
         {
-            LOG_DEBUG(log, "Creating clean state clock");
+            LOG_DEBUG_FORMATTED(log, "Creating clean state clock");
             zookeeper->create(piece_is_dirty_flag_path, host_id, zkutil::CreateMode::Persistent);
         }
     };
@@ -1571,7 +1571,7 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 
 void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
 {
-    LOG_DEBUG(log, "Removing helping tables");
+    LOG_DEBUG_FORMATTED(log, "Removing helping tables");
     for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
     {
         DatabaseAndTableName original_table = task_table.table_push;
@@ -1598,7 +1598,7 @@ void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
 
 void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskTable & task_table, const String & partition_name)
 {
-    LOG_DEBUG(log, "Try drop partition partition from all helping tables.");
+    LOG_DEBUG_FORMATTED(log, "Try drop partition partition from all helping tables.");
     for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
     {
         DatabaseAndTableName original_table = task_table.table_push;

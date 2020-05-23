@@ -530,7 +530,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     if (no_data)
     {
-        LOG_DEBUG(log, "Sampling yields no data.");
+        LOG_DEBUG_FORMATTED(log, "Sampling yields no data.");
         return {};
     }
 

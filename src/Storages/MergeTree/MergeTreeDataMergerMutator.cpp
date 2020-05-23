@@ -694,7 +694,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             total_size += part->getBytesOnDisk();
             if (total_size >= data_settings->min_merge_bytes_to_use_direct_io)
             {
-                LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
+                LOG_DEBUG_FORMATTED(log, "Will merge parts reading files in O_DIRECT");
                 read_with_direct_io = true;
 
                 break;
