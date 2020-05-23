@@ -164,7 +164,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         for (const String & missing_partition : missing_partitions)
             ss << " " << missing_partition;
 
-        LOG_WARNING(log, "There are no " << missing_partitions.size() << " partitions from enabled_partitions in shard " << task_shard->getDescription() << " :" << ss.str());
+        LOG_WARNING_FORMATTED(log, "There are no {} partitions from enabled_partitions in shard {} :{}", missing_partitions.size(), task_shard->getDescription(), ss.str());
     }
 
     LOG_DEBUG_FORMATTED(log, "Will copy {} partitions from shard {}", task_shard->partition_tasks.size(), task_shard->getDescription());

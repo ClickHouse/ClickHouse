@@ -214,7 +214,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         skip_sanity_checks = true;
         current_zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag " << replica_path << "/flags/force_restore_data).");
+        LOG_WARNING_FORMATTED(log, "Skipping the limits on severity of changes to data parts and columns (flag {}/flags/force_restore_data).", replica_path);
     }
     else if (has_force_restore_data_flag)
     {
@@ -830,7 +830,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
     }
     else
     {
-        LOG_WARNING(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part_name << " already exists. Will not commit any nodes.");
+        LOG_WARNING_FORMATTED(log, "checkPartAndAddToZooKeeper: node {} already exists. Will not commit any nodes.", replica_path + "/parts/" + part_name);
     }
 }
 
@@ -2297,7 +2297,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
             const auto & part = parts[i];
             if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
-                LOG_WARNING(log, "Part " << part->name << " (that was selected for merge) with age " << (time(nullptr) - part->modification_time) << " seconds exists locally but not in ZooKeeper. Won't do merge with that part and will check it.");
+                LOG_WARNING_FORMATTED(log, "Part {} (that was selected for merge) with age {} seconds exists locally but not in ZooKeeper. Won't do merge with that part and will check it.", part->name, (time(nullptr) - part->modification_time));
                 enqueuePartForCheck(part->name);
             }
         }
@@ -2339,7 +2339,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const IMergeTreeData
     {
         if (part.modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
         {
-            LOG_WARNING(log, "Part " << part.name << " (that was selected for mutation) with age " << (time(nullptr) - part.modification_time) << " seconds exists locally but not in ZooKeeper. Won't mutate that part and will check it.");
+            LOG_WARNING_FORMATTED(log, "Part {} (that was selected for mutation) with age {} seconds exists locally but not in ZooKeeper. Won't mutate that part and will check it.", part.name, (time(nullptr) - part.modification_time));
             enqueuePartForCheck(part.name);
         }
 
@@ -4775,7 +4775,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             continue;
         }
         else
-            LOG_WARNING(log, "Cannot remove part " << part_names[i] << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(response.error));
+            LOG_WARNING_FORMATTED(log, "Cannot remove part {} from ZooKeeper: {}", part_names[i], zkutil::ZooKeeper::error2string(response.error));
     }
 }
 

@@ -354,7 +354,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
-                LOG_WARNING(log, "Cannot set max number of file descriptors to " << rlim.rlim_cur << ". Try to specify max_open_files according to your system limits. error: " << strerror(errno));
+                LOG_WARNING_FORMATTED(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, strerror(errno));
             else
                 LOG_DEBUG_FORMATTED(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
