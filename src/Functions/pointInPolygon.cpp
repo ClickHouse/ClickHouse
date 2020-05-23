@@ -306,7 +306,8 @@ private:
           *
           * Basically it works like this:
           * From the point, cast a horizontal ray to the right
-          *  and count the number of intersections with polygon edges.
+          *  and count the number of intersections with polygon edges
+          *  (every edge is considered semi-closed, e.g. includes the first vertex and does not include the last)
           *
           * Advantages:
           * - works regardless to the orientation;
@@ -320,7 +321,7 @@ private:
           *
           * Why not to apply the same algorithm available in boost::geometry?
           * It will require to move data from columns to temporary containers.
-          * Despite the fact that the boost library is template based and allows arbitrary containers,
+          * Despite the fact that the boost library is template based and allows arbitrary containers and points,
           *  it's diffucult to use without data movement because
           *  we use structure-of-arrays for coordinates instead of arrays-of-structures.
           */
