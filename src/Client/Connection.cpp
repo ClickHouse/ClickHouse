@@ -507,11 +507,12 @@ void Connection::sendScalarsData(Scalars & data)
     msg << std::fixed << std::setprecision(3);
     msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
         << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+        << formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes) << " ("
+        << formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()) << "/sec.)";
 
     if (compression == Protocol::Compression::Enable)
         msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+            << formatReadableSizeWithBinarySuffix(out_bytes) << " (" << formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()) << "/sec.)";
     else
         msg << ", no compression.";
 
@@ -607,11 +608,11 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     msg << std::fixed << std::setprecision(3);
     msg << "Sent data for " << data.size() << " external tables, total " << rows << " rows in " << elapsed << " sec., "
         << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << maybe_compressed_out_bytes / 1048576.0 << " MiB (" << maybe_compressed_out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+        << formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes) << " (" << formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()) << "/sec.)";
 
     if (compression == Protocol::Compression::Enable)
         msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << out_bytes / 1048576.0 << " MiB (" << out_bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.)";
+            << formatReadableSizeWithBinarySuffix(out_bytes) << " (" << formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()) << "/sec.)";
     else
         msg << ", no compression.";
 

@@ -184,7 +184,7 @@ void ParallelAggregatingBlockInputStream::execute()
                 << " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"
             << " in " << elapsed_seconds << " sec."
             << " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "
-                << threads_data[i].src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+                << formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds) << "/sec.)");
 
         total_src_rows += threads_data[i].src_rows;
         total_src_bytes += threads_data[i].src_bytes;
@@ -192,7 +192,7 @@ void ParallelAggregatingBlockInputStream::execute()
     LOG_TRACE(log,
         "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
-        << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+        << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds) << "/sec.)");
 
     /// If there was no data, and we aggregate without keys, we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.

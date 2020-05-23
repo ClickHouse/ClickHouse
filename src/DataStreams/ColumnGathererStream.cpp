@@ -1,6 +1,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteHelpers.h>
 #include <iomanip>
 
@@ -98,17 +99,13 @@ void ColumnGathererStream::readSuffixImpl()
 
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
 
-    std::stringstream message;
-    message << std::fixed << std::setprecision(2)
-        << "Gathered column " << column_name
-        << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
-        << " in " << seconds << " sec.";
-
-    if (seconds)
-        message << ", " << profile_info.rows / seconds << " rows/sec., "
-            << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
-
-    LOG_TRACE(log, message.str());
+    if (!seconds)
+        LOG_DEBUG_FORMATTED(log, "Gathered column {} ({} bytes/elem.) in 0 sec.",
+            column_name, static_cast<double>(profile_info.bytes) / profile_info.rows);
+    else
+        LOG_DEBUG_FORMATTED(log, "Gathered column {} ({} bytes/elem.) in {} sec., {} rows/sec., {}/sec.",
+            column_name, static_cast<double>(profile_info.bytes) / profile_info.rows, seconds,
+            profile_info.rows / seconds, formatReadableSizeWithBinarySuffix(profile_info.bytes / seconds));
 }
 
 }

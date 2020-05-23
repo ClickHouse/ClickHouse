@@ -543,7 +543,7 @@ void AggregatingTransform::initGenerate()
     LOG_TRACE(log,
         "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
-        << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+        << " (" << src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds) << "/sec.)");
 
     if (params->aggregator.hasTemporaryFiles())
     {
