@@ -281,7 +281,7 @@ private:
     }
 
     template <typename T>
-    void parsePolygonPart(
+    void parseRing(
         const Float64 * x_data,
         const Float64 * y_data,
         size_t begin,
@@ -293,7 +293,7 @@ private:
             out_container.emplace_back(x_data[i], y_data[i]);
     }
 
-    bool isInsidePolygonPart(
+    bool isInsideRing(
         Float64 point_x,
         Float64 point_y,
         const Float64 * ring_x_data,
@@ -306,7 +306,29 @@ private:
         if (size < 2)
             return false;
 
-        /// https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
+        /** This is the algorithm by W. Randolph Franklin
+          * https://wrf.ecse.rpi.edu//Research/Short_Notes/pnpoly.html
+          *
+          * Basically it works like this:
+          * From the point, cast a horizontal ray to the right
+          *  and count the number of intersections with polygon edges.
+          *
+          * Advantages:
+          * - works regardless to the orientation;
+          * - for polygon without holes:
+          *   works regardless to whether the polygon is closed by last vertex equals to first vertex or not;
+          *   (no need to preprocess polygon in any way)
+          * - easy to apply for polygons with holes and for multi-polygons;
+          * - it even works for polygons with self-intersections in a reasonable way;
+          * - simplicity and performance;
+          * - can be additionally speed up with loop unrolling and/or binary search for possible intersecting edges.
+          *
+          * Why not to apply the same algorithm available in boost::geometry?
+          * It will require to move data from columns to temporary containers.
+          * Despite the fact that the boost library is template based and allows arbitrary containers,
+          *  it's diffucult to use without data movement because
+          *  we use structure-of-arrays for coordinates instead of arrays-of-structures.
+          */
 
         size_t vertex1_idx = ring_begin;
         size_t vertex2_idx = ring_end - 1;
@@ -314,11 +336,16 @@ private:
 
         while (vertex1_idx < ring_end)
         {
+            /// First condition checks that the point is inside horizontal row.
+            /// Second condition checks for intersection with the edge.
+
             if (((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
                 && (point_x < (ring_x_data[vertex2_idx] - ring_x_data[vertex1_idx])
                     * (point_y - ring_y_data[vertex1_idx]) / (ring_y_data[vertex2_idx] - ring_y_data[vertex1_idx])
                     + ring_x_data[vertex1_idx]))
+            {
                 res = !res;
+            }
 
             vertex2_idx = vertex1_idx;
             ++vertex1_idx;
@@ -337,7 +364,7 @@ private:
         const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
         const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
 
-        parsePolygonPart(x_data, y_data, begin, end, out_polygon.outer());
+        parseRing(x_data, y_data, begin, end, out_polygon.outer());
     }
 
     bool isInsidePolygonFromSingleColumn1D(
@@ -359,7 +386,7 @@ private:
         const auto * x_data = static_cast<const ColumnFloat64 &>(*tuple_columns[0]).getData().data();
         const auto * y_data = static_cast<const ColumnFloat64 &>(*tuple_columns[1]).getData().data();
 
-        return isInsidePolygonPart(point_x, point_y, x_data, y_data, begin, end);
+        return isInsideRing(point_x, point_y, x_data, y_data, begin, end);
     }
 
     void parsePolygonFromSingleColumn2D(const IColumn & column, size_t i, Polygon & out_polygon) const
@@ -380,12 +407,12 @@ private:
 
             if (out_polygon.outer().empty())
             {
-                parsePolygonPart(x_data, y_data, begin, end, out_polygon.outer());
+                parseRing(x_data, y_data, begin, end, out_polygon.outer());
             }
             else
             {
                 out_polygon.inners().emplace_back();
-                parsePolygonPart(x_data, y_data, begin, end, out_polygon.inners().back());
+                parseRing(x_data, y_data, begin, end, out_polygon.inners().back());
             }
         }
     }
@@ -412,12 +439,12 @@ private:
 
             if (j == rings_begin)
             {
-                if (!isInsidePolygonPart(point_x, point_y, x_data, y_data, begin, end))
+                if (!isInsideRing(point_x, point_y, x_data, y_data, begin, end))
                     return false;
             }
             else
             {
-                if (isInsidePolygonPart(point_x, point_y, x_data, y_data, begin, end))
+                if (isInsideRing(point_x, point_y, x_data, y_data, begin, end))
                     return false;
             }
         }
