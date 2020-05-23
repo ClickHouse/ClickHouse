@@ -109,6 +109,7 @@ class QuantileTDigest
         using KeyBits = UInt32;
 
         static constexpr size_t PART_SIZE_BITS = 8;
+        static constexpr bool DIRECT_WRITE_TO_DESTINATION = false;
 
         using Transform = RadixSortFloatTransform<KeyBits>;
         using Allocator = RadixSortMallocAllocator;
