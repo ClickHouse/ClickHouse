@@ -503,20 +503,23 @@ void Connection::sendScalarsData(Scalars & data)
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
     double elapsed = watch.elapsedSeconds();
 
-    std::stringstream msg;
-    msg << std::fixed << std::setprecision(3);
-    msg << "Sent data for " << data.size() << " scalars, total " << rows << " rows in " << elapsed << " sec., "
-        << static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., "
-        << formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes) << " ("
-        << formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()) << "/sec.)";
-
     if (compression == Protocol::Compression::Enable)
-        msg << ", compressed " << static_cast<double>(maybe_compressed_out_bytes) / out_bytes << " times to "
-            << formatReadableSizeWithBinarySuffix(out_bytes) << " (" << formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()) << "/sec.)";
+        LOG_DEBUG_FORMATTED(log_wrapper.get(),
+            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes),
+            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            formatReadableSizeWithBinarySuffix(out_bytes),
+            formatReadableSizeWithBinarySuffix(out_bytes / watch.elapsedSeconds()));
     else
-        msg << ", no compression.";
-
-    LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
+        LOG_DEBUG_FORMATTED(log_wrapper.get(),
+            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            data.size(), rows, elapsed,
+            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes),
+            formatReadableSizeWithBinarySuffix(maybe_compressed_out_bytes / watch.elapsedSeconds()));
 }
 
 namespace

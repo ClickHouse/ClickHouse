@@ -230,7 +230,7 @@ void DatabaseOnDisk::dropTable(const Context & context, const String & table_nam
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
+        LOG_WARNING_FORMATTED(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
         attachTable(table_name, table, table_data_path_relative);
         if (renamed)
             Poco::File(table_metadata_path_drop).renameTo(table_metadata_path);

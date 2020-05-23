@@ -177,12 +177,17 @@ void ParallelAggregatingBlockInputStream::execute()
     for (size_t i = 0; i < max_threads; ++i)
     {
         size_t rows = many_data[i]->size();
-        LOG_TRACE(log, "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows (from " << formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes) << ") in " << elapsed_seconds << " sec. (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds) << "/sec.)");
+        LOG_TRACE_FORMATTED(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+            threads_data[i].src_rows, rows, formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes),
+            elapsed_seconds, threads_data[i].src_rows / elapsed_seconds,
+            formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds));
 
         total_src_rows += threads_data[i].src_rows;
         total_src_bytes += threads_data[i].src_bytes;
     }
-    LOG_TRACE(log, "Total aggregated. " << total_src_rows << " rows (from " << formatReadableSizeWithBinarySuffix(total_src_bytes) << ") in " << elapsed_seconds << " sec. (" << total_src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds) << "/sec.)");
+    LOG_TRACE_FORMATTED(log, "Total aggregated. {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+        total_src_rows, formatReadableSizeWithBinarySuffix(total_src_bytes), elapsed_seconds,
+        total_src_rows / elapsed_seconds, formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds));
 
     /// If there was no data, and we aggregate without keys, we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.

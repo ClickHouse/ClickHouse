@@ -40,13 +40,13 @@ public:
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, std::string(tag) + ": " + format_str);
+        LOG_IMPL_FORMATTED(log, level, prio, "{}: {}", tag, format_str);
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_IMPL(log, level, prio, std::string(tag) + ": " + message_stream.str());
+        LOG_IMPL_FORMATTED(log, level, prio, "{}: {}", tag, message_stream.str());
     }
 
     void Flush() final {}
