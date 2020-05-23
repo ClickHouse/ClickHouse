@@ -129,17 +129,13 @@ void WriteBufferFromS3::writePart(const String & data)
 
     auto outcome = client_ptr->UploadPart(req);
 
-    LOG_TRACE(
-        log, "Writing part. Bucket: " << bucket << ", Key: " << key << ", Upload_id: " << upload_id << ", Data size: " << data.size());
+    LOG_TRACE( log, "Writing part. Bucket: " << bucket << ", Key: " << key << ", Upload_id: " << upload_id << ", Data size: " << data.size());
 
     if (outcome.IsSuccess())
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG(
-            log,
-            "Writing part finished. "
-                << "Total parts: " << part_tags.size() << ", Upload_id: " << upload_id << ", Etag: " << etag);
+        LOG_DEBUG( log, "Writing part finished. " << "Total parts: " << part_tags.size() << ", Upload_id: " << upload_id << ", Etag: " << etag);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
