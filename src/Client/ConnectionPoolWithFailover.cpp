@@ -222,9 +222,9 @@ ConnectionPoolWithFailover::tryGetEntry(
         auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
         if (table_status_it == status_response.table_states_by_id.end())
         {
-            fail_message = "There is no table " + table_to_check->database + "." + table_to_check->table
-                + " on server: " + result.entry->getDescription();
-            LOG_WARNING(log, fail_message);
+            auto message_pattern = "There is no table {}.{} on server: {}";
+            fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
+            LOG_WARNING_FORMATTED(log, fail_message);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
 
             return result;
