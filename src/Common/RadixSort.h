@@ -87,7 +87,6 @@ struct RadixSortFloatTraits
     using KeyBits = std::conditional_t<sizeof(Key) == 8, uint64_t, uint32_t>;
 
     static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, in bits, to do one pass - reshuffle of the array.
-    static constexpr bool DIRECT_WRITE_TO_DESTINATION = false;
 
     /// Converting a key into KeyBits is such that the order relation over the key corresponds to the order relation over KeyBits.
     using Transform = RadixSortFloatTransform<KeyBits>;
@@ -132,7 +131,6 @@ struct RadixSortUIntTraits
     using KeyBits = Key;
 
     static constexpr size_t PART_SIZE_BITS = 8;
-    static constexpr bool DIRECT_WRITE_TO_DESTINATION = false;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
     using Allocator = RadixSortMallocAllocator;
@@ -167,7 +165,6 @@ struct RadixSortIntTraits
     using KeyBits = std::make_unsigned_t<Key>;
 
     static constexpr size_t PART_SIZE_BITS = 8;
-    static constexpr bool DIRECT_WRITE_TO_DESTINATION = false;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
     using Allocator = RadixSortMallocAllocator;
@@ -322,16 +319,8 @@ private:
             radixSortMSDInternal<PASS>(arr, size, limit);
     }
 
-public:
-    /** Least significant digit radix sort (stable).
-      *
-      * This function will sort inplace (modify 'arr')
-      *  but if 'destination' is provided, it will write result directly to destination
-      *  instead of finishing sorting 'arr' at the last step.
-      * In this case it will fill only Result parts of the Element into destination.
-      * It is handy to avoid unnecessary data movements.
-      */
-    static NO_INLINE void executeLSD(Element * arr, size_t size, bool reverse = false, Result * destination = nullptr)
+    template <bool DIRECT_WRITE_TO_DESTINATION>
+    static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
@@ -372,7 +361,7 @@ public:
         }
 
         /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
-        for (size_t pass = 0; pass < NUM_PASSES - Traits::DIRECT_WRITE_TO_DESTINATION; ++pass)
+        for (size_t pass = 0; pass < NUM_PASSES - DIRECT_WRITE_TO_DESTINATION; ++pass)
         {
             Element * writer = pass % 2 ? arr : swap_buffer;
             Element * reader = pass % 2 ? swap_buffer : arr;
@@ -391,7 +380,7 @@ public:
             }
         }
 
-        if (Traits::DIRECT_WRITE_TO_DESTINATION)
+        if (DIRECT_WRITE_TO_DESTINATION)
         {
             constexpr size_t pass = NUM_PASSES - 1;
             Result * writer = destination;
@@ -426,6 +415,26 @@ public:
         }
 
         allocator.deallocate(swap_buffer, size * sizeof(Element));
+    }
+
+public:
+    /** Least significant digit radix sort (stable).
+      * This function will sort inplace (modify 'arr')
+      */
+    static void executeLSD(Element * arr, size_t size)
+    {
+        radixSortLSDInternal<false>(arr, size, false, nullptr);
+    }
+
+    /** This function will start to sort inplace (modify 'arr')
+      *  but on the last step it will write result directly to the destination
+      *  instead of finishing sorting 'arr'.
+      * In this case it will fill only Result parts of the Element into destination.
+      * It is handy to avoid unnecessary data movements.
+      */
+    static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
+    {
+        radixSortLSDInternal<true>(arr, size, reverse, destination);
     }
 
     /* Most significant digit radix sort
