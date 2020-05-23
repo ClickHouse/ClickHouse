@@ -132,7 +132,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         {
             if (!task_table.enabled_partitions_set.count(partition_name))
             {
-                LOG_DEBUG(log, "Partition " << partition_name << " will not be processed, since it is not in " << "enabled_partitions of " << task_table.table_id);
+                LOG_DEBUG(log, "Partition " << partition_name << " will not be processed, since it is not in enabled_partitions of " << task_table.table_id);
             }
         }
     }
@@ -353,7 +353,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
 
         if (static_cast<UInt64>(stat.numChildren) >= task_cluster->max_workers)
         {
-            LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")" << ". Postpone processing " << description);
+            LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << "). Postpone processing " << description);
 
             if (unprioritized)
                 current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
@@ -1010,7 +1010,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             task_table.rows_copied += cluster_partition.rows_copied;
             double elapsed = cluster_partition.elapsed_time_seconds;
 
-            LOG_INFO(log, "It took " << std::fixed << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied) << " uncompressed bytes" << ", " << formatReadableQuantity(cluster_partition.rows_copied) << " rows" << " and " << cluster_partition.blocks_copied << " source blocks are copied");
+            LOG_INFO(log, "It took " << std::fixed << std::setprecision(2) << elapsed << " seconds to copy partition " << partition_name << ": " << formatReadableSizeWithDecimalSuffix(cluster_partition.bytes_copied) << " uncompressed bytes, " << formatReadableQuantity(cluster_partition.rows_copied) << " rows and " << cluster_partition.blocks_copied << " source blocks are copied");
 
             if (cluster_partition.rows_copied)
             {
@@ -1030,7 +1030,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
     if (!table_is_done)
     {
-        LOG_INFO(log, "Table " + task_table.table_id + " is not processed yet." << "Copied " << finished_partitions << " of " << required_partitions << ", will retry");
+        LOG_INFO(log, "Table " + task_table.table_id + " is not processed yet.Copied " << finished_partitions << " of " << required_partitions << ", will retry");
     }
 
     return table_is_done;
@@ -1297,7 +1297,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             /// NOTE: partition is still fresh if dirt discovery happens before cleaning
             if (stat_shards.numChildren == 0)
             {
-                LOG_WARNING(log, "There are no workers for partition " << task_partition.name << " piece " << toString(current_piece_number) << ", but destination table contains " << count << " rows" << ". Partition will be dropped and refilled.");
+                LOG_WARNING(log, "There are no workers for partition " << task_partition.name << " piece " << toString(current_piece_number) << ", but destination table contains " << count << " rows. Partition will be dropped and refilled.");
 
                 create_is_dirty_node(clean_state_clock);
                 return TaskStatus::Error;

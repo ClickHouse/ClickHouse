@@ -257,7 +257,7 @@ private:
                 message << " (no query)";
             else
                 message << " (query_id: " << query_id << ")";
-            message << " Received signal " << strsignal(sig) << " (" << sig << ")" << ".";
+            message << " Received signal " << strsignal(sig) << " (" << sig << ").";
 
             LOG_FATAL(log, message.rdbuf());
         }

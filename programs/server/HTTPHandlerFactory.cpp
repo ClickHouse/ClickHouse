@@ -30,7 +30,7 @@ HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string &
 
 Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactoryMain::createRequestHandler(const Poco::Net::HTTPServerRequest & request)
 {
-    LOG_TRACE(log, "HTTP Request for " << name << ". " << "Method: " << request.getMethod() << ", Address: " << request.clientAddress().toString() << ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none") << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")) << ", Content Type: " << request.getContentType() << ", Transfer Encoding: " << request.getTransferEncoding());
+    LOG_TRACE(log, "HTTP Request for " << name << ". Method: " << request.getMethod() << ", Address: " << request.clientAddress().toString() << ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none") << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")) << ", Content Type: " << request.getContentType() << ", Transfer Encoding: " << request.getTransferEncoding());
 
     for (auto & handler_factory : child_factories)
     {
