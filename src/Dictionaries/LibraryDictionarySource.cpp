@@ -77,7 +77,7 @@ namespace
         if (!data)
             throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
 
-        auto columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
+        const auto * columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
         if (columns_received->error_code)
             throw Exception(
                 "LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " "
@@ -188,7 +188,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
                                         dict_struct.attributes.size()};
     size_t i = 0;
-    for (auto & a : dict_struct.attributes)
+    for (const auto & a : dict_struct.attributes)
     {
         columns.data[i] = a.name.c_str();
         ++i;
@@ -199,7 +199,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     auto func_load_all
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v3_loadAll");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_load_all(data_ptr, &settings->strings, &columns);
+    auto * data = func_load_all(data_ptr, &settings->strings, &columns);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -214,7 +214,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
                                              dict_struct.attributes.size()};
     size_t i = 0;
-    for (auto & a : dict_struct.attributes)
+    for (const auto & a : dict_struct.attributes)
     {
         columns_pass.data[i] = a.name.c_str();
         ++i;
@@ -226,7 +226,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
             "ClickHouseDictionary_v3_loadIds");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_load_ids(data_ptr, &settings->strings, &columns_pass, &ids_data);
+    auto * data = func_load_ids(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -259,7 +259,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
     auto func_load_keys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
         "ClickHouseDictionary_v3_loadKeys");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_load_keys(data_ptr, &settings->strings, &request_cols);
+    auto * data = func_load_keys(data_ptr, &settings->strings, &request_cols);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);

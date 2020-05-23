@@ -55,13 +55,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime
+/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
+ *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
 class ParserCompoundIdentifier : public IParserBase
 {
+public:
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
+    : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool table_name_with_optional_uuid;
 };
 
 /// Just *

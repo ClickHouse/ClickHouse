@@ -159,13 +159,17 @@ void ColumnArray::insertData(const char * pos, size_t length)
 
     size_t field_size = data->sizeOfValueIfFixed();
 
-    const char * end = pos + length;
     size_t elems = 0;
-    for (; pos + field_size <= end; pos += field_size, ++elems)
-        data->insertData(pos, field_size);
 
-    if (pos != end)
-        throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+    if (length)
+    {
+        const char * end = pos + length;
+        for (; pos + field_size <= end; pos += field_size, ++elems)
+            data->insertData(pos, field_size);
+
+        if (pos != end)
+            throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+    }
 
     getOffsets().push_back(getOffsets().back() + elems);
 }
@@ -226,7 +230,7 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
     data->updateWeakHash32(internal_hash);
 
     Offset prev_offset = 0;
-    auto & offsets_data = getOffsets();
+    const auto & offsets_data = getOffsets();
     auto & hash_data = hash.getData();
     auto & internal_hash_data = internal_hash.getData();
 
@@ -589,8 +593,8 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
 
     auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
-    auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
-    auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
+    const auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
+    const auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
     auto res_null_map = ColumnUInt8::create();
 

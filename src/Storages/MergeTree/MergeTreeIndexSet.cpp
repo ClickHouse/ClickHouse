@@ -269,11 +269,11 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     actions->execute(result);
 
     auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
-    auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+    const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
 
     const NullMap * null_map = nullptr;
 
-    if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();
@@ -282,7 +282,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (!col_uint8)
         throw Exception("ColumnUInt8 expected as Set index condition result.", ErrorCodes::LOGICAL_ERROR);
 
-    auto & condition = col_uint8->getData();
+    const auto & condition = col_uint8->getData();
 
     for (size_t i = 0; i < column->size(); ++i)
         if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
@@ -458,7 +458,8 @@ bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context)
+    const Context & context,
+    bool /*attach*/)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);

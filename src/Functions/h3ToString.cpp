@@ -31,7 +31,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        auto arg = arguments[0].get();
+        const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
@@ -42,7 +42,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto col_hindex = block.getByPosition(arguments[0]).column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();

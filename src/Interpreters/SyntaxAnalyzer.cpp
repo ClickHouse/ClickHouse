@@ -209,10 +209,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -566,13 +566,14 @@ std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQu
 }
 
 /// Add columns from storage to source_columns list. Deduplicate resulted list.
-void SyntaxAnalyzerResult::collectSourceColumns(bool add_virtuals)
+/// Special columns are non physical columns, for example ALIAS
+void SyntaxAnalyzerResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
         const ColumnsDescription & columns = storage->getColumns();
 
-        auto columns_from_storage = add_virtuals ? columns.getAll() : columns.getAllPhysical();
+        auto columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else
@@ -609,7 +610,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
-            auto & name = joined_column.name;
+            const auto & name = joined_column.name;
             if (available_columns.count(name))
                 continue;
 
@@ -693,11 +694,13 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
+        const auto storage_virtuals = storage->getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (storage->hasColumn(*it))
+            auto column = storage_virtuals.tryGetByName(*it);
+            if (column)
             {
-                source_columns.push_back(storage->getColumn(*it));
+                source_columns.push_back(*column);
                 unknown_required_source_columns.erase(it++);
             }
             else
@@ -764,8 +767,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = table_join;
-    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+
+    if (table_join)
+    {
+        result.analyzed_join = table_join;
+        result.analyzed_join->resetCollected();
+    }
+    else /// TODO: remove. For now ExpressionAnalyzer expects some not empty object here
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
@@ -798,7 +806,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth, result.scalars);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
@@ -843,7 +851,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     normalize(query, result.aliases, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, context, 0, result.scalars);
+    executeScalarSubqueries(query, context, 0, result.scalars, false);
 
     optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 

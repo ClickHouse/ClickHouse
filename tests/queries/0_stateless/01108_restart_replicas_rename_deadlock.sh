@@ -67,6 +67,7 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^r
 
 
 for i in `seq 4`; do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_$i NO DELAY"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS replica_01108_${i}_tmp NO DELAY"
 done
+sleep 2

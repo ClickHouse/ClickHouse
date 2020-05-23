@@ -14,6 +14,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -110,7 +111,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
-                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
@@ -255,30 +256,15 @@ Pipes StorageSystemPartsBase::read(
     return pipes;
 }
 
-NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageSystemPartsBase::hasColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return true;
-
-    return IStorage::hasColumn(column_name);
-}
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : IStorage({"system", name_})
+    : IStorage(StorageID{"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        ColumnDescription column(alias_name, tmp_columns.get(column_name).type, false);
+        ColumnDescription column(alias_name, tmp_columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
         tmp_columns.add(column);
@@ -291,4 +277,10 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     setColumns(tmp_columns);
 }
 
+NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
+{
+    return NamesAndTypesList{
+        NameAndTypePair("_state", std::make_shared<DataTypeString>())
+    };
+}
 }

@@ -25,6 +25,7 @@ void registerDictionaries()
         registerDictionaryRangeHashed(factory);
         registerDictionaryComplexKeyHashed(factory);
         registerDictionaryComplexKeyCache(factory);
+        registerDictionaryComplexKeyDirect(factory);
 #if !defined(ARCADIA_BUILD)
         registerDictionaryTrie(factory);
 #endif
@@ -34,6 +35,7 @@ void registerDictionaries()
         registerDictionarySSDCache(factory);
         registerDictionarySSDComplexKeyCache(factory);
         registerDictionaryPolygon(factory);
+        registerDictionaryDirect(factory);
     }
 }
 

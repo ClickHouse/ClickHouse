@@ -16,7 +16,8 @@ int main(int argc, char ** argv)
         counter += data.resident;
     }
 
-    std::cerr << (counter / num_iterations) << '\n';
+    if (num_iterations)
+        std::cerr << (counter / num_iterations) << '\n';
     return 0;
 }
 

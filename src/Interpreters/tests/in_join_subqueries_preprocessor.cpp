@@ -1223,8 +1223,8 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 {
     DB::ParserSelectQuery parser;
     std::string message;
-    auto begin = query.data();
-    auto end = begin + query.size();
+    const auto * begin = query.data();
+    const auto * end = begin + query.size();
     ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0, 0);
     return ast != nullptr;
 }

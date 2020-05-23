@@ -44,9 +44,9 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
             if (db.second->getEngineName() == "Lazy")
                 continue;
 
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
-                auto & table = iterator->table();
+                const auto & table = iterator->table();
                 StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
                 if (!table_replicated)

@@ -113,7 +113,7 @@ static AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
             continue;
         }
 
-        if (auto simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+        if (const auto * simple = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
         {
             auto type = recursiveRemoveLowCardinality(column.type);
             if (type.get() == column.type.get())
@@ -141,9 +141,9 @@ static MutableColumns getMergedColumns(const Block & header, const AggregatingSo
     MutableColumns columns;
     columns.resize(header.columns());
 
-    for (auto & desc : def.columns_to_simple_aggregate)
+    for (const auto & desc : def.columns_to_simple_aggregate)
     {
-        auto & type = desc.nested_type ? desc.nested_type
+        const auto & type = desc.nested_type ? desc.nested_type
                                        : desc.real_type;
         columns[desc.column_number] = type->createColumn();
     }
@@ -164,7 +164,7 @@ static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Col
     for (auto & column : columns)
         column = column->convertToFullColumnIfConst();
 
-    for (auto & desc : def.columns_to_simple_aggregate)
+    for (const auto & desc : def.columns_to_simple_aggregate)
         if (desc.nested_type)
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
 
@@ -177,12 +177,12 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
-    for (auto & desc : def.columns_to_simple_aggregate)
+    for (const auto & desc : def.columns_to_simple_aggregate)
     {
         if (desc.nested_type)
         {
-            auto & from_type = desc.nested_type;
-            auto & to_type = desc.real_type;
+            const auto & from_type = desc.nested_type;
+            const auto & to_type = desc.real_type;
             columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
         }
     }
@@ -289,10 +289,10 @@ void AggregatingSortedAlgorithm::initialize(Chunks chunks)
     initializeQueue(std::move(chunks));
 }
 
-void AggregatingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
+void AggregatingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
 {
     preprocessChunk(chunk, columns_definition);
-    updateCursor(std::move(chunk), source_num);
+    updateCursor(chunk, source_num);
 }
 
 IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()

@@ -4,6 +4,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/addTypeConversionToAST.h>
 
 namespace DB
 {
@@ -31,22 +32,27 @@ TTLBlockInputStream::TTLBlockInputStream(
     children.push_back(input_);
     header = children.at(0)->getHeader();
 
-    const auto & column_defaults = storage.getColumns().getDefaults();
+    const auto & storage_columns = storage.getColumns();
+    const auto & column_defaults = storage_columns.getDefaults();
+
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    for (const auto & [name, _] : storage.column_ttl_entries_by_name)
+    {
+        auto it = column_defaults.find(name);
+        if (it != column_defaults.end())
+        {
+            auto column = storage_columns.get(name);
+            auto expression = it->second.expression->clone();
+            default_expr_list->children.emplace_back(setAlias(addTypeConversionToAST(std::move(expression), column.type->getName()), it->first));
+        }
+    }
+
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
         if (force || isTTLExpired(ttl_info.min))
         {
             new_ttl_infos.columns_ttl.emplace(name, IMergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
-
-            auto it = column_defaults.find(name);
-
-            if (it != column_defaults.end())
-            {
-                auto expression = it->second.expression->clone();
-                default_expr_list->children.emplace_back(setAlias(expression, it->first));
-            }
         }
         else
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
@@ -63,7 +69,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     }
 }
 
-bool TTLBlockInputStream::isTTLExpired(time_t ttl)
+bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 {
     return (ttl && (ttl <= current_time));
 }

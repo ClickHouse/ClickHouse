@@ -142,7 +142,7 @@ bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnA
             if (src == src_end)
                 continue;
 
-            auto dst = &res_vec[src_offsets[i] - 1];
+            auto * dst = &res_vec[src_offsets[i] - 1];
 
             while (src < src_end)
             {

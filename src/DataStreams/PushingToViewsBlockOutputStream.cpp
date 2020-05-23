@@ -5,6 +5,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
@@ -40,10 +41,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// We need special context for materialized views insertions
     if (!dependencies.empty())
     {
-        views_context = std::make_unique<Context>(context);
+        select_context = std::make_unique<Context>(context);
+        insert_context = std::make_unique<Context>(context);
+
+        const auto & insert_settings = insert_context->getSettingsRef();
+
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            views_context->setSetting("insert_deduplicate", false);
+            insert_context->setSetting("insert_deduplicate", false);
+
+        // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
+        if (insert_settings.min_insert_block_size_rows_for_materialized_views.changed)
+            insert_context->setSetting("min_insert_block_size_rows", insert_settings.min_insert_block_size_rows_for_materialized_views.value);
+        if (insert_settings.min_insert_block_size_bytes_for_materialized_views.changed)
+            insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
     for (const auto & database_table : dependencies)
@@ -67,32 +78,33 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())
+            auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze())
                     .getSampleBlock();
 
             /// Insert only columns returned by select.
             auto list = std::make_shared<ASTExpressionList>();
+            const auto & inner_table_columns = inner_table->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
-                if (inner_table->hasColumn(column.name))
+                if (inner_table_columns.hasPhysical(column.name))
                     list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
 
             ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, *views_context);
+            InterpreterInsertQuery interpreter(insert_query_ptr, *insert_context);
             BlockIO io = interpreter.execute();
             out = io.out;
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr(), true);
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr(), true);
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *views_context, ASTPtr());
+            out = std::make_shared<PushingToViewsBlockOutputStream>(dependent_table, *insert_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out)});
+        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr});
     }
 
-    /* Do not push to destination table if the flag is set */
+    /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
         output = storage->write(query_ptr, context);
@@ -161,7 +173,12 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     {
         // Process sequentially
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
+        {
             process(block, view_num);
+
+            if (views[view_num].exception)
+                std::rethrow_exception(views[view_num].exception);
+        }
     }
 }
 
@@ -189,8 +206,18 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (output)
         output->writeSuffix();
 
+    std::exception_ptr first_exception;
+
     for (auto & view : views)
     {
+        if (view.exception)
+        {
+            if (!first_exception)
+                first_exception = view.exception;
+
+            continue;
+        }
+
         try
         {
             view.out->writeSuffix();
@@ -201,6 +228,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             throw;
         }
     }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
 }
 
 void PushingToViewsBlockOutputStream::flush()
@@ -238,10 +268,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
-            Context local_context = *views_context;
+
+            Context local_context = *select_context;
             local_context.addViewSource(
-                    StorageValues::create(storage->getStorageID(), storage->getColumns(),
-                                          block));
+                StorageValues::create(
+                    storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
             select.emplace(view.query, local_context, SelectQueryOptions());
             in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
 
@@ -268,7 +299,11 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     catch (Exception & ex)
     {
         ex.addMessage("while pushing to view " + view.table_id.getNameForLogs());
-        throw;
+        view.exception = std::current_exception();
+    }
+    catch (...)
+    {
+        view.exception = std::current_exception();
     }
 }
 

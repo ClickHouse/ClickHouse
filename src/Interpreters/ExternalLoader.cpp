@@ -558,7 +558,7 @@ public:
     bool hasLoadedObjects() const
     {
         std::lock_guard lock{mutex};
-        for (auto & name_info : infos)
+        for (const auto & name_info : infos)
             if (name_info.second.loaded())
                 return true;
         return false;
@@ -568,7 +568,7 @@ public:
     {
         std::lock_guard lock{mutex};
         Strings names;
-        for (auto & [name, info] : infos)
+        for (const auto & [name, info] : infos)
             if (info.triedToLoad())
                 names.push_back(name);
         return names;
@@ -1249,7 +1249,7 @@ private:
 ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(
-          std::bind(&ExternalLoader::createObject, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3),
+          [this](auto && a, auto && b, auto && c) { return createObject(a, b, c); },
           type_name_,
           log_))
     , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
@@ -1260,7 +1260,7 @@ ExternalLoader::ExternalLoader(const String & type_name_, Logger * log_)
 
 ExternalLoader::~ExternalLoader() = default;
 
-ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository)
+ext::scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> repository) const
 {
     auto * ptr = repository.get();
     String name = ptr->getName();

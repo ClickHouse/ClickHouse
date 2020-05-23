@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/Context.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -508,6 +509,33 @@ std::string ExpressionAction::toString() const
 
     return ss.str();
 }
+
+ExpressionActions::ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
+    : input_columns(input_columns_), settings(context_.getSettingsRef())
+{
+    for (const auto & input_elem : input_columns)
+        sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
+
+#if USE_EMBEDDED_COMPILER
+compilation_cache = context_.getCompiledExpressionCache();
+#endif
+}
+
+/// For constant columns the columns themselves can be contained in `input_columns_`.
+ExpressionActions::ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
+    : settings(context_.getSettingsRef())
+{
+    for (const auto & input_elem : input_columns_)
+    {
+        input_columns.emplace_back(input_elem.name, input_elem.type);
+        sample_block.insert(input_elem);
+    }
+#if USE_EMBEDDED_COMPILER
+    compilation_cache = context_.getCompiledExpressionCache();
+#endif
+}
+
+ExpressionActions::~ExpressionActions() = default;
 
 void ExpressionActions::checkLimits(Block & block) const
 {
@@ -1055,7 +1083,7 @@ bool ExpressionActions::resultIsAlwaysEmpty() const
 {
     /// Check that has join which returns empty result.
 
-    for (auto & action : actions)
+    for (const auto & action : actions)
     {
         if (action.type == action.JOIN && action.join && action.join->alwaysReturnsEmptySet())
             return true;
@@ -1072,7 +1100,7 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     for (auto it = actions.rbegin(); it != actions.rend(); ++it)
     {
-        auto & action = *it;
+        const auto & action = *it;
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
             auto name = action.function_base->getName();
@@ -1088,12 +1116,12 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
 
     if (!set_to_check.empty())
     {
-        for (auto & action : actions)
+        for (const auto & action : actions)
         {
             if (action.type == action.ADD_COLUMN && action.result_name == set_to_check)
             {
                 // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
+                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.added_column.get()))
                 {
                     if (column_set->getData()->isCreated() && column_set->getData()->getTotalRowCount() == 0)
                         return true;

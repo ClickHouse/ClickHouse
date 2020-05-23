@@ -29,6 +29,8 @@ parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 
 parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
 args = parser.parse_args()
 
+test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
+
 tree = et.parse(args.file[0])
 root = tree.getroot()
 
@@ -47,6 +49,10 @@ if main_metric_element is not None and main_metric_element.tag != 'min_time':
 infinite_sign = root.find('.//average_speed_not_changing_for_ms')
 if infinite_sign is not None:
     raise Exception('Looks like the test is infinite (sign 1)')
+
+# Print report threshold for the test if it is set.
+if 'max_ignored_relative_change' in root.attrib:
+    print(f'report-threshold\t{root.attrib["max_ignored_relative_change"]}')
 
 # Open connections
 servers = [{'host': host, 'port': port} for (host, port) in zip(args.host, args.port)]
@@ -137,17 +143,31 @@ test_queries = substitute_parameters(test_query_templates)
 
 report_stage_end('substitute2')
 
-for q in test_queries:
+for query_index, q in enumerate(test_queries):
+    query_prefix = f'{test_name}.query{query_index}'
+
+    # We have some crazy long queries (about 100kB), so trim them to a sane
+    # length. This means we can't use query text as an identifier and have to
+    # use the test name + the test-wide query index.
+    query_display_name = q
+    if len(query_display_name) > 1000:
+        query_display_name = f'{query_display_name[:1000]}...({query_index})'
+
+    print(f'display-name\t{query_index}\t{tsv_escape(query_display_name)}')
+
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
     try:
         for conn_index, c in enumerate(connections):
-            res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
-            print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            prewarm_id = f'{query_prefix}.prewarm0'
+            res = c.execute(q, query_id = prewarm_id)
+            print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the
         # old server doesn't support. Still, report it as an error.
+        # FIXME the driver reconnects on error and we lose settings, so this might
+        # lead to further errors or unexpected behavior.
         print(traceback.format_exc(), file=sys.stderr)
         continue
 
@@ -158,13 +178,14 @@ for q in test_queries:
     start_seconds = time.perf_counter()
     server_seconds = 0
     for run in range(0, args.runs):
+        run_id = f'{query_prefix}.run{run}'
         for conn_index, c in enumerate(connections):
-            res = c.execute(q)
-            print('query\t' + tsv_escape(q) + '\t' + str(run) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+            res = c.execute(q, query_id = run_id)
+            print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             server_seconds += c.last_query.elapsed
 
     client_seconds = time.perf_counter() - start_seconds
-    print('client-time\t{}\t{}\t{}'.format(tsv_escape(q), client_seconds, server_seconds))
+    print(f'client-time\t{query_index}\t{client_seconds}\t{server_seconds}')
 
 report_stage_end('benchmark')
 

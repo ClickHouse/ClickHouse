@@ -1,5 +1,3 @@
-configure_file (config_common.h.in config_common.h)
-
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
@@ -13,7 +11,7 @@ set (SRCS
     LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
-    preciseExp10.c
+    preciseExp10.cpp
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
@@ -39,17 +37,17 @@ else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
 
+if (USE_INTERNAL_CCTZ)
+    set_source_files_properties(DateLUTImpl.cpp PROPERTIES COMPILE_DEFINITIONS USE_INTERNAL_CCTZ)
+endif()
+
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if(NOT USE_INTERNAL_POCO_LIBRARY)
-    target_include_directories (common SYSTEM BEFORE PUBLIC ${Poco_Foundation_INCLUDE_DIR})
-endif()
-
-# allow explicitly fallback to readline
+# Allow explicit fallback to readline
 if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
     message (STATUS "Attempt to fallback to readline explicitly")
     set (READLINE_PATHS "/usr/local/opt/readline/lib")
@@ -73,12 +71,13 @@ endif ()
 
 target_link_libraries (common
     PUBLIC
-        ${Poco_Net_LIBRARY}
-        ${Poco_Util_LIBRARY}
-        ${Poco_Foundation_LIBRARY}
         ${CITYHASH_LIBRARIES}
         ${Boost_SYSTEM_LIBRARY}
         FastMemcpy
+        Poco::Net
+        Poco::Net::SSL
+        Poco::Util
+        Poco::Foundation
         replxx
 
     PRIVATE

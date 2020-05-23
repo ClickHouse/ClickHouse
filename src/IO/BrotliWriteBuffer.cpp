@@ -28,7 +28,6 @@ public:
         BrotliEncoderDestroyInstance(state);
     }
 
-public:
     BrotliEncoderState * state;
 };
 

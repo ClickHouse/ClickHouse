@@ -166,12 +166,29 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.root().setChannel(logger.getChannel());
 
     // Explicitly specified log levels for specific loggers.
-    Poco::Util::AbstractConfiguration::Keys levels;
-    config.keys("logger.levels", levels);
+    {
+        Poco::Util::AbstractConfiguration::Keys loggers_level;
+        config.keys("logger.levels", loggers_level);
 
-    if (!levels.empty())
-        for (const auto & level : levels)
-            logger.root().get(level).setLevel(config.getString("logger.levels." + level, "trace"));
+        if (!loggers_level.empty())
+        {
+            for (const auto & key : loggers_level)
+            {
+                if (key == "logger" || key.starts_with("logger["))
+                {
+                    const std::string name(config.getString("logger.levels." + key + ".name"));
+                    const std::string level(config.getString("logger.levels." + key + ".level"));
+                    logger.root().get(name).setLevel(level);
+                }
+                else
+                {
+                    // Legacy syntax
+                    const std::string level(config.getString("logger.levels." + key, "trace"));
+                    logger.root().get(key).setLevel(level);
+                }
+            }
+        }
+    }
 }
 
 void Loggers::closeLogs(Poco::Logger & logger)

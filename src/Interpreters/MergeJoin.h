@@ -1,13 +1,12 @@
 #pragma once
 
-#include <memory>
 #include <shared_mutex>
 
 #include <Common/LRUCache.h>
-#include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/SortedBlocksWriter.h>
 #include <DataStreams/SizeLimits.h>
 
 namespace DB
@@ -16,34 +15,6 @@ namespace DB
 class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
-
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
-
-struct MiniLSM
-{
-    using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
-
-    VolumePtr volume;
-    const Block & sample_block;
-    const SortDescription & sort_description;
-    const size_t rows_in_block;
-    const size_t max_size;
-    std::vector<SortedFiles> sorted_files;
-
-    MiniLSM(VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
-            size_t rows_in_block_, size_t max_size_ = 16)
-        : volume(volume_)
-        , sample_block(sample_block_)
-        , sort_description(description)
-        , rows_in_block(rows_in_block_)
-        , max_size(max_size_)
-    {}
-
-    void insert(const BlocksList & blocks);
-    void merge(std::function<void(const Block &)> callback = [](const Block &){});
-};
-
 
 class MergeJoin : public IJoin
 {
@@ -55,8 +26,8 @@ public:
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
-    size_t getTotalRowCount() const override { return right_blocks_row_count; }
-    size_t getTotalByteCount() const override { return right_blocks_bytes; }
+    size_t getTotalRowCount() const override { return right_blocks.row_count; }
+    size_t getTotalByteCount() const override { return right_blocks.bytes; }
 
 private:
     struct NotProcessed : public ExtraBlock
@@ -85,16 +56,14 @@ private:
     Block right_sample_block;
     Block right_table_keys;
     Block right_columns_to_add;
-    BlocksList right_blocks;
+    SortedBlocksWriter::Blocks right_blocks;
     Blocks min_max_right_blocks;
     std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
-    std::unique_ptr<MiniLSM> lsm;
-    MiniLSM::SortedFiles flushed_right_blocks;
+    std::unique_ptr<SortedBlocksWriter> disk_writer;
+    SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
-    size_t right_blocks_row_count = 0;
-    size_t right_blocks_bytes = 0;
-    bool is_in_memory = true;
+    std::atomic<bool> is_in_memory{true};
     const bool nullable_right_side;
     const bool is_any_join;
     const bool is_all_join;
@@ -104,8 +73,9 @@ private:
     const bool skip_not_intersected;
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
+    const size_t max_files_to_merge;
 
-    void changeLeftColumns(Block & block, MutableColumns && columns);
+    void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);
 
     template <bool is_all>
@@ -130,23 +100,9 @@ private:
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
 
     bool saveRightBlock(Block && block);
-    void flushRightBlocks();
 
     void mergeInMemoryRightBlocks();
     void mergeFlushedRightBlocks();
-
-    void clearRightBlocksList()
-    {
-        right_blocks.clear();
-        right_blocks_row_count = 0;
-        right_blocks_bytes = 0;
-    }
-
-    void countBlockSize(const Block & block)
-    {
-        right_blocks_row_count += block.rows();
-        right_blocks_bytes += block.bytes();
-    }
 };
 
 }

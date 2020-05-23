@@ -1,4 +1,4 @@
-#if __APPLE__ || __FreeBSD__
+#if !defined(OS_LINUX)
 int main(int, char **) { return 0; }
 #else
 
@@ -13,6 +13,8 @@ int main(int, char **) { return 0; }
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+#include <Common/randomSeed.h>
+#include <pcg_random.hpp>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 #include <stdio.h>
@@ -52,10 +54,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
     for (size_t i = 0; i < buffers_count; ++i)
         buffers[i] = Memory<>(block_size, sysconf(_SC_PAGESIZE));
 
-    drand48_data rand_data;
-    timespec times;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
-    srand48_r(times.tv_nsec, &rand_data);
+    pcg64_fast rng(randomSeed());
 
     size_t in_progress = 0;
     size_t blocks_sent = 0;
@@ -82,12 +81,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
             char * buf = buffers[i].data();
 
-            long rand_result1 = 0;
-            long rand_result2 = 0;
-            long rand_result3 = 0;
-            lrand48_r(&rand_data, &rand_result1);
-            lrand48_r(&rand_data, &rand_result2);
-            lrand48_r(&rand_data, &rand_result3);
+            uint64_t rand_result1 = rng();
+            uint64_t rand_result2 = rng();
+            uint64_t rand_result3 = rng();
 
             size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
             size_t offset = min_offset + rand_result % ((max_offset - min_offset) / block_size) * block_size;
@@ -138,7 +134,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     int mode = MODE_READ;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;
@@ -172,7 +168,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads_count; ++i)
-        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count));
+        pool.scheduleOrThrowOnError([=]{ thread(fd, mode, min_offset, max_offset, block_size, buffers_count, count); });
     pool.wait();
 
     watch.stop();

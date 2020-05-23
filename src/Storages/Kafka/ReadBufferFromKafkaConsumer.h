@@ -28,7 +28,6 @@ public:
         const std::atomic<bool> & stopped_,
         const Names & _topics
     );
-    ~ReadBufferFromKafkaConsumer() override;
 
     void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
@@ -38,7 +37,7 @@ public:
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledMessages() const;
-    auto rebalanceHappened() const { return rebalance_happened; }
+    bool polledDataUnusable() const { return (was_stopped || rebalance_happened); }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -64,10 +63,15 @@ private:
 
     const std::atomic<bool> & stopped;
 
+    // order is important, need to be destructed before consumer
     Messages messages;
     Messages::const_iterator current;
 
     bool rebalance_happened = false;
+
+    bool was_stopped = false;
+
+    // order is important, need to be destructed before consumer
     cppkafka::TopicPartitionList assignment;
     const Names topics;
 

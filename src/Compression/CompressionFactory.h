@@ -40,13 +40,13 @@ public:
     /// Get codec by AST and possible column_type
     /// some codecs can use information about type to improve inner settings
     /// but every codec should be able to work without information about type
-    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type = nullptr) const;
+    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type, bool sanity_check) const;
 
     /// Get codec by method byte (no params available)
     CompressionCodecPtr get(const uint8_t byte_code) const;
 
     /// For backward compatibility with config settings
-    CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
+    CompressionCodecPtr get(const String & family_name, std::optional<int> level, bool sanity_check) const;
 
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);

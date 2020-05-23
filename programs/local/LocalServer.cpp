@@ -8,7 +8,6 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -279,7 +278,7 @@ void LocalServer::processQueries()
     context->makeSessionContext();
     context->makeQueryContext();
 
-    context->setUser("default", "", Poco::Net::SocketAddress{}, "");
+    context->setUser("default", "", Poco::Net::SocketAddress{});
     context->setCurrentQueryId("");
     applyCmdSettings();
 

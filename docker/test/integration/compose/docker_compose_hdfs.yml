@@ -1,4 +1,4 @@
-version: '2.2'
+version: '2.3'
 services:
     hdfs1:
         image: sequenceiq/hadoop-docker:2.7.0

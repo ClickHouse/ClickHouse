@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/MarkdownRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -9,37 +10,44 @@ MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block
 
 void MarkdownRowOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     size_t columns = header.columns();
 
-    writeChar('|', out);
+    writeCString("| ", out);
     for (size_t i = 0; i < columns; ++i)
     {
         writeEscapedString(header.safeGetByPosition(i).name, out);
-        writeChar('|', out);
+        writeCString(" | ", out);
     }
     writeCString("\n|", out);
-    String format = ":-:|";
+    String left_alignment = ":-|";
+    String central_alignment = ":-:|";
+    String right_alignment = "-:|";
     for (size_t i = 0; i < columns; ++i)
     {
-        writeString(format, out);
+        if (isInteger(types[i]))
+            writeString(right_alignment, out);
+        else if (isString(types[i]))
+            writeString(left_alignment, out);
+        else
+            writeString(central_alignment, out);
     }
     writeChar('\n', out);
 }
 
 void MarkdownRowOutputFormat::writeRowStartDelimiter()
 {
-    writeChar('|', out);
+    writeCString("| ", out);
 }
 
 void MarkdownRowOutputFormat::writeFieldDelimiter()
 {
-    writeChar('|', out);
+    writeCString(" | ", out);
 }
 
 void MarkdownRowOutputFormat::writeRowEndDelimiter()
 {
-    writeCString("|\n", out);
+    writeCString(" |\n", out);
 }
 
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)

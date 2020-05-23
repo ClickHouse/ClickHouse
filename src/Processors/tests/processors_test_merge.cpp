@@ -132,7 +132,7 @@ public:
             size_t ps = queue.top().second;
             queue.pop();
 
-            auto & cur_col = chunks[ps].getColumns()[0];
+            const auto & cur_col = chunks[ps].getColumns()[0];
             col->insertFrom(*cur_col, positions[ps]);
             ++positions[ps];
 

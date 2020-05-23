@@ -19,7 +19,7 @@ NamesAndTypesList StorageSystemContributors::getNamesAndTypes()
 void StorageSystemContributors::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     std::vector<const char *> contributors;
-    for (auto it = auto_contributors; *it; ++it)
+    for (auto * it = auto_contributors; *it; ++it)
         contributors.emplace_back(*it);
 
     std::shuffle(contributors.begin(), contributors.end(), thread_local_rng);

@@ -28,14 +28,14 @@ void MergeTreeIndexFactory::registerIndex(const std::string & name, Creator crea
 std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context) const
+    const Context & context,
+    bool attach) const
 {
     if (!node->type)
-        throw Exception(
-                "for index TYPE is required", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
+
     if (node->type->parameters && !node->type->parameters->children.empty())
-        throw Exception(
-                "Index type can not have parameters", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
 
     boost::algorithm::to_lower(node->type->name);
     auto it = indexes.find(node->type->name);
@@ -52,7 +52,7 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return it->second(columns, node, context);
+    return it->second(columns, node, context, attach);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()

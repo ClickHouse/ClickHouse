@@ -41,7 +41,7 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
 
 void ExecutionSpeedLimits::throttle(
     size_t read_rows, size_t read_bytes,
-    size_t total_rows_to_read, UInt64 total_elapsed_microseconds)
+    size_t total_rows_to_read, UInt64 total_elapsed_microseconds) const
 {
     if ((min_execution_rps != 0 || max_execution_rps != 0
          || min_execution_bps != 0 || max_execution_bps != 0
@@ -103,7 +103,7 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
     }
 }
 
-bool ExecutionSpeedLimits::checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode)
+bool ExecutionSpeedLimits::checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode) const
 {
     if (max_execution_time != 0
         && elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)

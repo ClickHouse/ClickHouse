@@ -86,7 +86,7 @@ struct SummingSortedAlgorithm::AggregateDescription
 
 static bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
 {
-    for (auto & desc : description)
+    for (const auto & desc : description)
         if (desc.column_name == name || (desc.column_name.empty() && desc.column_number == number))
             return true;
 
@@ -343,7 +343,7 @@ static MutableColumns getMergedDataColumns(
     size_t num_columns = def.column_numbers_not_to_aggregate.size() + def.columns_to_aggregate.size();
     columns.reserve(num_columns);
 
-    for (auto & desc : def.columns_to_aggregate)
+    for (const auto & desc : def.columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
         if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
@@ -359,7 +359,7 @@ static MutableColumns getMergedDataColumns(
             columns.emplace_back(header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty());
     }
 
-    for (auto & column_number : def.column_numbers_not_to_aggregate)
+    for (const auto & column_number : def.column_numbers_not_to_aggregate)
         columns.emplace_back(header.safeGetByPosition(column_number).type->createColumn());
 
     return columns;
@@ -386,7 +386,7 @@ static void postprocessChunk(
     Columns res_columns(num_result_columns);
     size_t next_column = 0;
 
-    for (auto & desc : def.columns_to_aggregate)
+    for (const auto & desc : def.columns_to_aggregate)
     {
         auto column = std::move(columns[next_column]);
         ++next_column;
@@ -632,10 +632,10 @@ void SummingSortedAlgorithm::initialize(Chunks chunks)
     initializeQueue(std::move(chunks));
 }
 
-void SummingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
+void SummingSortedAlgorithm::consume(Chunk & chunk, size_t source_num)
 {
     preprocessChunk(chunk);
-    updateCursor(std::move(chunk), source_num);
+    updateCursor(chunk, source_num);
 }
 
 IMergingAlgorithm::Status SummingSortedAlgorithm::merge()

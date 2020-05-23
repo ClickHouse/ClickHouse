@@ -56,7 +56,7 @@ BlockIO InterpreterAlterQuery::execute()
     LiveViewCommands live_view_commands;
     for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
-        if (auto alter_command = AlterCommand::parse(command_ast))
+        if (auto alter_command = AlterCommand::parse(command_ast, !context.getSettingsRef().allow_suspicious_codecs))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
         {

@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-static NamesAndTypesList chooseColumns(const String & source_database, const String & table_name_regexp_, const Context & context)
+static NamesAndTypesList chooseColumns(const String & source_database, const String & table_name_regexp_)
 {
     OptimizedRegularExpression table_name_regexp(table_name_regexp_);
     auto table_name_match = [&](const String & table_name) { return table_name_regexp.match(table_name); };
@@ -31,7 +31,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 
     {
         auto database = DatabaseCatalog::instance().getDatabase(source_database);
-        auto iterator = database->getTablesIterator(context, table_name_match);
+        auto iterator = database->getTablesIterator(table_name_match);
 
         if (iterator->isValid())
             any_table = iterator->table();
@@ -69,7 +69,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
 
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),
-        ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)},
+        ColumnsDescription{chooseColumns(source_database, table_name_regexp)},
         source_database,
         table_name_regexp,
         context);

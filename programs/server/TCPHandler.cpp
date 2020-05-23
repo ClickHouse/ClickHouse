@@ -28,7 +28,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
 
-#include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include "TCPHandler.h"
 
@@ -278,8 +278,11 @@ void TCPHandler::runImpl()
             sendLogs();
             sendEndOfStream();
 
-            query_scope.reset();
+            /// QueryState should be cleared before QueryScope, since otherwise
+            /// the MemoryTracker will be wrong for possible deallocations.
+            /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            query_scope.reset();
         }
         catch (const Exception & e)
         {
@@ -359,8 +362,11 @@ void TCPHandler::runImpl()
 
         try
         {
-            query_scope.reset();
+            /// QueryState should be cleared before QueryScope, since otherwise
+            /// the MemoryTracker will be wrong for possible deallocations.
+            /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            query_scope.reset();
         }
         catch (...)
         {
@@ -553,68 +559,23 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
-        auto & header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
 
         if (header)
             sendData(header);
     }
 
-    auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
-    pipeline.setOutput(lazy_format);
-
     {
-        auto thread_group = CurrentThread::getGroup();
-        ThreadPool pool(1);
-        auto executor = pipeline.execute();
-        std::atomic_bool exception = false;
+        PullingAsyncPipelineExecutor executor(pipeline);
+        CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
-        pool.scheduleOrThrowOnError([&]()
-        {
-            /// ThreadStatus thread_status;
-
-            if (thread_group)
-                CurrentThread::attachTo(thread_group);
-
-            SCOPE_EXIT(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-            );
-
-            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
-            setThreadName("QueryPipelineEx");
-
-            try
-            {
-                executor->execute(pipeline.getNumThreads());
-            }
-            catch (...)
-            {
-                exception = true;
-                throw;
-            }
-        });
-
-        /// Wait in case of exception happened outside of pool.
-        SCOPE_EXIT(
-                lazy_format->finish();
-
-                try
-                {
-                    pool.wait();
-                }
-                catch (...)
-                {
-                    /// If exception was thrown during pipeline execution, skip it while processing other exception.
-                    tryLogCurrentException(log);
-                }
-        );
-
-        while (!lazy_format->isFinished() && !exception)
+        Block block;
+        while (executor.pull(block, query_context->getSettingsRef().interactive_delay / 1000))
         {
             if (isQueryCancelled())
             {
                 /// A packet was received requesting to stop execution of the request.
-                executor->cancel();
+                executor.cancel();
                 break;
             }
 
@@ -627,16 +588,12 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
             sendLogs();
 
-            if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
+            if (block)
             {
                 if (!state.io.null_format)
                     sendData(block);
             }
         }
-
-        /// Finish lazy_format before waiting. Otherwise some thread may write into it, and waiting will lock.
-        lazy_format->finish();
-        pool.wait();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -647,9 +604,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
           */
         if (!isQueryCancelled())
         {
-            sendTotals(lazy_format->getTotals());
-            sendExtremes(lazy_format->getExtremes());
-            sendProfileInfo(lazy_format->getProfileInfo());
+            sendTotals(executor.getTotalsBlock());
+            sendExtremes(executor.getExtremesBlock());
+            sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
         }
@@ -784,7 +741,7 @@ void TCPHandler::receiveHello()
         << (!user.empty() ? ", user: " + user : "")
         << ".");
 
-    connection_context.setUser(user, password, socket().peerAddress(), "");
+    connection_context.setUser(user, password, socket().peerAddress());
 }
 
 
@@ -1066,14 +1023,16 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
+            const Settings & query_settings = query_context->getSettingsRef();
+
+            std::string method = Poco::toUpper(query_settings.network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
-                level = query_context->getSettingsRef().network_zstd_compression_level;
+                level = query_settings.network_zstd_compression_level;
 
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
+                    *out, CompressionCodecFactory::instance().get(method, level, !query_settings.allow_suspicious_codecs));
             else
                 state.maybe_compressed_out = out;
         }

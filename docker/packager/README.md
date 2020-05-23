@@ -18,11 +18,11 @@ $ ls -l deb/test_output
 
 ```
 
-Build ClickHouse binary with `clang-9.0` and `address` sanitizer in `relwithdebuginfo`
+Build ClickHouse binary with `clang-10` and `address` sanitizer in `relwithdebuginfo`
 mode:
 ```
 $ mkdir $HOME/some_clickhouse
-$ ./packager --output-dir=$HOME/some_clickhouse --package-type binary --compiler=clang-9.0 --sanitizer=address
+$ ./packager --output-dir=$HOME/some_clickhouse --package-type binary --compiler=clang-10 --sanitizer=address
 $ ls -l $HOME/some_clickhouse
 -rwxr-xr-x 1 root root 787061952  clickhouse
 lrwxrwxrwx 1 root root        10  clickhouse-benchmark -> clickhouse

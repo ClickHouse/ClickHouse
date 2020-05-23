@@ -1,7 +1,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 #include <Disks/DiskLocal.h>
 
 #include <Processors/IProcessor.h>
@@ -87,7 +87,7 @@ private:
         size_t rows = chunk.getNumRows();
 
         UInt64 prev = current_number;
-        auto & col = chunk.getColumns().at(0);
+        const auto & col = chunk.getColumns().at(0);
         for (size_t row_num = 0; row_num < rows; ++row_num)
         {
             UInt64 val = col->getUInt(row_num);
@@ -129,7 +129,7 @@ try
     Logger::root().setLevel("trace");
 
     auto disk = std::make_shared<DiskLocal>("tmp", ".", 0);
-    auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
+    auto tmp_volume = std::make_shared<VolumeJBOD>("tmp", std::vector<DiskPtr>{disk}, 0);
 
     auto execute_chain = [tmp_volume](
         String msg,

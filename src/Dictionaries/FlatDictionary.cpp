@@ -605,7 +605,7 @@ template <>
 void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & value)
 {
     resize<StringRef>(attribute, id);
-    const auto string_in_arena = attribute.string_arena->insert(value.data(), value.size());
+    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
     auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
     array[id] = StringRef{string_in_arena, value.size()};
     loaded_ids[id] = true;

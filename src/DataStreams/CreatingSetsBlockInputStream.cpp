@@ -1,4 +1,5 @@
 #include <Interpreters/Set.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>

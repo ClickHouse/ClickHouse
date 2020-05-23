@@ -48,5 +48,6 @@ SELECT sleep(1) Format Null;
 SELECT '*** Check SHOW CREATE TABLE after offline ALTER ***';
 SHOW CREATE TABLE test.summing_r2;
 
-DROP TABLE test.summing_r1;
-DROP TABLE test.summing_r2;
+DROP TABLE test.summing_r1 NO DELAY;
+DROP TABLE test.summing_r2 NO DELAY;
+SELECT sleep(1) Format Null;
