@@ -19,7 +19,7 @@
 <create_query>CREATE TABLE merge_table_streams_3 AS hits_100m_single</create_query>
 <create_query>CREATE TABLE merge_table_streams_4 AS hits_100m_single</create_query>
 
-<query>SELECT UserID FROM merge(default, '^(hits_100m_single|merge_table_streams_\\d)$') WHERE UserID = 12345678901234567890</query>
+<query>SELECT UserID FROM merge( '^(hits_100m_single|merge_table_streams_\\d)$') WHERE UserID = 12345678901234567890</query>
 
 <drop_query>DROP TABLE merge_table_streams_1</drop_query>
 <drop_query>DROP TABLE merge_table_streams_2</drop_query>
