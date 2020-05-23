@@ -83,7 +83,15 @@ void MySQLHandler::run()
         if (!connection_context.mysql.max_packet_size)
             connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
-        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags << ", max_packet_size: " << handshake_response.max_packet_size << ", character_set: " << static_cast<int>(handshake_response.character_set) << ", user: " << handshake_response.username << ", auth_response length: " << handshake_response.auth_response.length() << ", database: " << handshake_response.database << ", auth_plugin_name: " << handshake_response.auth_plugin_name);
+        LOG_TRACE_FORMATTED(log,
+            "Capabilities: {}, max_packet_size: {}, character_set: {}, user: {}, auth_response length: {}, database: {}, auth_plugin_name: {}",
+            handshake_response.capability_flags,
+            handshake_response.max_packet_size,
+            static_cast<int>(handshake_response.character_set),
+            handshake_response.username,
+            handshake_response.auth_response.length(),
+            handshake_response.database,
+            handshake_response.auth_plugin_name);
 
         client_capability_flags = handshake_response.capability_flags;
         if (!(client_capability_flags & CLIENT_PROTOCOL_41))
@@ -117,7 +125,9 @@ void MySQLHandler::run()
             // For commands which are executed without MemoryTracker.
             LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
 
-            LOG_DEBUG(log, "Received command: " << static_cast<int>(static_cast<unsigned char>(command)) << ". Connection id: " << connection_id << ".");
+            LOG_DEBUG_FORMATTED(log, "Received command: {}. Connection id: {}.",
+                static_cast<int>(static_cast<unsigned char>(command)), connection_id);
+
             try
             {
                 switch (command)

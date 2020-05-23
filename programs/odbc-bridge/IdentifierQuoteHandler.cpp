@@ -32,7 +32,7 @@ void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             response.send() << message << std::endl;
-        LOG_WARNING(log, message);
+        LOG_WARNING_FORMATTED(log, message);
     };
 
     if (!params.has("connection_string"))
