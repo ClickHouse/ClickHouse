@@ -200,7 +200,6 @@ public:
     {
         UInt16 sz;
         readBinary(sz, buf);
-        //Poco::Logger::get("test read key").information("sz " + std::to_string(sz));
         char * data = nullptr;
         if constexpr (std::is_same_v<A, SmallObjectPool>)
             data = arena.alloc();
@@ -209,7 +208,6 @@ public:
         memcpy(data, &sz, sizeof(sz));
         buf.read(data + sizeof(sz), sz);
         key = KeyRef(data);
-        //Poco::Logger::get("test read key").information("ksz = " + std::to_string(key.size()));
     }
 
     void ignoreKey(ReadBuffer & buf) const
@@ -478,9 +476,6 @@ public:
     double getLoadFactor() const;
 
 private:
-    SSDComplexKeyCachePartition::Attributes createAttributesFromBlock(
-            const Block & block, const size_t begin_column, const std::vector<AttributeUnderlyingType> & structure);
-
     void collectGarbage();
 
     const AttributeTypes attributes_structure;
@@ -504,9 +499,6 @@ private:
     mutable std::exception_ptr last_update_exception;
     mutable size_t update_error_count = 0;
     mutable std::chrono::system_clock::time_point backoff_end_time;
-
-    // stats
-    //mutable size_t bytes_allocated = 0;
 
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};
@@ -568,10 +560,6 @@ public:
     {
         return dict_struct.attributes[getAttributeIndex(attribute_name)].injective;
     }
-
-    /*bool hasHierarchy() const { return false; }
-
-    void toParent(const PaddedPODArray<Key> &, PaddedPODArray<Key> &) const { }*/
 
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 

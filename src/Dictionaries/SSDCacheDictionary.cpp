@@ -263,7 +263,6 @@ size_t SSDCachePartition::appendBlock(
         Index cache_index;
         cache_index.setInMemory(true);
         cache_index.setBlockId(current_memory_block_id);
-        // Poco::Logger::get("wr").information(" block mem: " + std::to_string(current_memory_block_id) + " wb: " + std::to_string(write_buffer_size));
         if (current_memory_block_id >= write_buffer_size)
             throw DB::Exception("lel " + std::to_string(current_memory_block_id) + " " +
                 std::to_string(write_buffer_size) + " " + std::to_string(index), ErrorCodes::LOGICAL_ERROR);
@@ -338,7 +337,6 @@ size_t SSDCachePartition::appendBlock(
 
         if (!flushed)
         {
-            // Poco::Logger::get("wr").information(" set: " + std::to_string(cache_index.getBlockId()) + " " + std::to_string(cache_index.getAddressInBlock()));
             key_to_index.set(ids[index], cache_index);
             ids_buffer.push_back(ids[index]);
             ++index;
@@ -349,7 +347,6 @@ size_t SSDCachePartition::appendBlock(
             init_write_buffer();
         }
     }
-    // Poco::Logger::get("wr").information("exit");
     return ids.size() - begin;
 }
 
@@ -362,7 +359,6 @@ void SSDCachePartition::flush()
     if (ids.empty())
         return;
     Poco::Logger::get("paritiiton").information("flushing to SSD.");
-    // Poco::Logger::get("paritiiton").information("@@@@@@@@@@@@@@@@@@@@ FLUSH!!! " + std::to_string(file_id) + " block: " + std::to_string(current_file_block_id));
 
     AIOContext aio_context{1};
 
@@ -426,7 +422,6 @@ void SSDCachePartition::flush()
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
             {
                 index.setInMemory(false);
-                // Poco::Logger::get("pt").information("block: " + std::to_string(index.getBlockId()) + " " + std::to_string(current_file_block_id) + " ");
                 index.setBlockId((current_file_block_id % max_size) + index.getBlockId());
             }
             key_to_index.set(id, index);
@@ -571,7 +566,6 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
 
     Memory read_buffer(block_size * read_buffer_size, BUFFER_ALIGNMENT);
 
-    // TODO: merge requests
     std::vector<iocb> requests;
     std::vector<iocb*> pointers;
     std::vector<std::vector<size_t>> blocks_to_indices;
@@ -601,10 +595,6 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
         request.aio_fildes = fd;
         request.aio_buf = reinterpret_cast<UInt64>(read_buffer.data()) + block_size * (requests.size() % read_buffer_size);
         request.aio_nbytes = block_size;
-        // Poco::Logger::get("RR").information("block found" + std::to_string(index_to_out[i].first.getBlockId()) + " max_size" + std::to_string(max_size));
-        // if (index_to_out[i].first.getBlockId() > max_size) {
-        //     throw DB::Exception("kek", ErrorCodes::LOGICAL_ERROR);
-        // }
         request.aio_offset = index_to_out[i].first.getBlockId() * block_size;
         request.aio_data = requests.size();
 #endif
@@ -619,16 +609,12 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
     std::vector<bool> processed(requests.size(), false);
     std::vector<io_event> events(requests.size());
     for (auto & event : events)
-        event.res = -1; // TODO: remove
+        event.res = -1;
 
     size_t to_push = 0;
     size_t to_pop = 0;
     while (to_pop < requests.size())
     {
-        // Poco::Logger::get("RR").information(
-        //     "push = " + std::to_string(to_push) + " pop=" + std::to_string(to_pop) +
-        //     "bi = " + std::to_string(blocks_to_indices.size()) + " req = " + std::to_string(requests.size()));
-        /// get io tasks from previous iteration
         int popped = 0;
         while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) <= 0)
         {
@@ -681,13 +667,11 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
                 throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
         }
         to_push += pushed;
-        // Poco::Logger::get("RR").information("fin iter");
     }
 }
 
 void SSDCachePartition::clearOldestBlocks()
 {
-    // Poco::Logger::get("GC").information("GC clear -----------------");
     // write_buffer_size, because we need to erase the whole buffer.
     Memory read_buffer_memory(block_size * write_buffer_size, BUFFER_ALIGNMENT);
 
@@ -707,8 +691,6 @@ void SSDCachePartition::clearOldestBlocks()
     request.aio_offset = (current_file_block_id % max_size) * block_size;
     request.aio_data = 0;
 #endif
-
-    // Poco::Logger::get("GC").information("GC offset=" + std::to_string(request.aio_offset));
 
     {
         iocb* request_ptr = &request;
@@ -738,7 +720,6 @@ void SSDCachePartition::clearOldestBlocks()
     std::vector<UInt64> keys;
     keys.reserve(write_buffer_size);
 
-    // TODO: писать кол-во значений
     for (size_t i = 0; i < write_buffer_size; ++i)
     {
         ReadBufferFromMemory read_buffer(read_buffer_memory.data() + i * block_size, block_size);
@@ -753,7 +734,6 @@ void SSDCachePartition::clearOldestBlocks()
 
         uint32_t keys_in_current_block = 0;
         readBinary(keys_in_current_block, read_buffer);
-        // Poco::Logger::get("GC").information("keys in block: " + std::to_string(keys_in_current_block) + " offset=" + std::to_string(read_buffer.offset()));
 
         for (uint32_t j = 0; j < keys_in_current_block; ++j)
         {
@@ -804,7 +784,6 @@ void SSDCachePartition::clearOldestBlocks()
 
     const size_t start_block = current_file_block_id % max_size;
     const size_t finish_block = start_block + write_buffer_size;
-    Poco::Logger::get("partition gc").information("erasing keys start = " + std::to_string(start_block) + " end = " + std::to_string(finish_block));
     for (const auto& key : keys)
     {
         Index index;
@@ -883,7 +862,7 @@ PaddedPODArray<SSDCachePartition::Key> SSDCachePartition::getCachedIds(const std
     std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
     PaddedPODArray<Key> array;
     for (const auto & key : key_to_index.keys())
-        array.push_back(key); // TODO: exclude default
+        array.push_back(key);
     return array;
 }
 
@@ -1185,7 +1164,7 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
                 std::rethrow_exception(last_update_exception);
             }
 
-            // Set key
+            /// Set key
             std::get<SSDCachePartition::Attribute::Container<UInt64>>(new_keys.values).push_back(id);
 
             std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
@@ -1193,7 +1172,7 @@ void SSDCacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector
             metadata.back().setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
             metadata.back().setDefault();
 
-            /// inform caller that the cell has not been found
+            /// Inform caller that the cell has not been found
             on_id_not_found(id);
         }
 
@@ -1306,11 +1285,7 @@ SSDCacheDictionary::SSDCacheDictionary(
         const auto index = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
-        getItemsNumberImpl<TYPE, TYPE>( /* NOLINT */ \
-                index, /* NOLINT */ \
-                ids, /* NOLINT */ \
-                out, /* NOLINT */ \
-                [&](const size_t) { return null_value; }); /* NOLINT */ \
+        getItemsNumberImpl<TYPE, TYPE>(index, ids, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
     }
 
     DECLARE(UInt8)
