@@ -3275,7 +3275,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
                 : toString(increment))
             + "/";
 
-        LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
+        LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " << backup_path);
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
         localBackup(part->volume->getDisk(), part->getFullRelativePath(), backup_part_path);

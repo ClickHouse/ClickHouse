@@ -2105,17 +2105,17 @@ BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, e.displayText());
+                LOG_INFO_FORMATTED(log, e.displayText());
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, e.message());
+                LOG_INFO_FORMATTED(log, e.message());
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, e.displayText());
+                LOG_INFO_FORMATTED(log, e.displayText());
                 cleanup_thread.wakeup();
             }
             else
@@ -3205,7 +3205,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
                 message << "Cannot select parts for optimization";
                 if (!disable_reason.empty())
                     message << ": " << disable_reason;
-                LOG_INFO(log, message.rdbuf());
+                LOG_INFO_FORMATTED(log, message.str());
                 return handle_noop(message.str());
             }
 
@@ -4380,7 +4380,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
                     && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                     throw;
 
-                LOG_INFO(log, e.displayText());
+                LOG_INFO_FORMATTED(log, e.displayText());
                 missing_parts.push_back(part);
             }
         }
@@ -4830,7 +4830,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
             zookeeper.removeRecursive(path);
         }
         else if (rc)
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
+            LOG_WARNING_FORMATTED(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, zkutil::ZooKeeper::error2string(rc));
     }
 
     LOG_TRACE_FORMATTED(log, "Deleted {} deduplication block IDs in partition ID {}", to_delete_futures.size(), partition_id);

@@ -762,7 +762,20 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
-    LOG_TRACE(log, "Written part in " << elapsed_seconds << " sec., " << rows << " rows, " << formatReadableSizeWithBinarySuffix(uncompressed_bytes) << " uncompressed, " << formatReadableSizeWithBinarySuffix(compressed_bytes) << " compressed, " << (uncompressed_bytes / rows) << " uncompressed bytes per row, " << (compressed_bytes / rows) << " compressed bytes per row, compression rate: " << (uncompressed_bytes / compressed_bytes) << " (" << (rows / elapsed_seconds) << " rows/sec., " << formatReadableSizeWithBinarySuffix(uncompressed_bytes / elapsed_seconds) << "/sec. uncompressed, " << formatReadableSizeWithBinarySuffix(compressed_bytes / elapsed_seconds) << "/sec. compressed)");
+    LOG_TRACE_FORMATTED(log,
+        "Written part in {} sec., {} rows, {} uncompressed, {} compressed,"
+        " {} uncompressed bytes per row, {} compressed bytes per row, compression rate: {}"
+        " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
+        elapsed_seconds,
+        rows,
+        formatReadableSizeWithBinarySuffix(uncompressed_bytes),
+        formatReadableSizeWithBinarySuffix(compressed_bytes),
+        uncompressed_bytes / rows,
+        compressed_bytes / rows,
+        uncompressed_bytes / compressed_bytes,
+        rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(uncompressed_bytes / elapsed_seconds),
+        formatReadableSizeWithBinarySuffix(compressed_bytes / elapsed_seconds));
 }
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
@@ -928,7 +941,11 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
-    LOG_TRACE(log, "Aggregated. " << src_rows << " to " << rows << " rows (from " << formatReadableSizeWithBinarySuffix(src_bytes) << ") in " << elapsed_seconds << " sec. (" << src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds) << "/sec.)");
+
+    LOG_TRACE_FORMATTED(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+        src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
+        elapsed_seconds, src_rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
 }
 
 

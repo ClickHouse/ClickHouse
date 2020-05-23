@@ -56,7 +56,12 @@ IProcessor::Status CreatingSetsTransform::prepare()
 
 void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
 {
-    LOG_TRACE(log, (subquery.set ? "Creating set. " : "") << (subquery.join ? "Creating join. " : "") << (subquery.table ? "Filling temporary table. " : ""));
+    if (subquery.set)
+        LOG_TRACE_FORMATTED(log, "Creating set.");
+    if (subquery.join)
+        LOG_TRACE_FORMATTED(log, "Creating join.");
+    if (subquery.table)
+        LOG_TRACE_FORMATTED(log, "Filling temporary table.");
 
     elapsed_nanoseconds = 0;
 
@@ -85,19 +90,14 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
 
     if (head_rows != 0)
     {
-        std::stringstream msg;
-        msg << std::fixed << std::setprecision(3);
-        msg << "Created. ";
+        auto seconds = elapsed_nanoseconds / 1e9;
 
         if (subquery.set)
-            msg << "Set with " << subquery.set->getTotalRowCount() << " entries from " << head_rows << " rows. ";
+            LOG_DEBUG_FORMATTED(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
         if (subquery.join)
-            msg << "Join with " << subquery.join->getTotalRowCount() << " entries from " << head_rows << " rows. ";
+            LOG_DEBUG_FORMATTED(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
         if (subquery.table)
-            msg << "Table with " << head_rows << " rows. ";
-
-        msg << "In " << (static_cast<double>(elapsed_nanoseconds) / 1000000000ULL) << " sec.";
-        LOG_DEBUG(log, msg.rdbuf());
+            LOG_DEBUG_FORMATTED(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
     }
     else
     {
