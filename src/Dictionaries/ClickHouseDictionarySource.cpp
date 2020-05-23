@@ -202,7 +202,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    LOG_TRACE(log, "Performing invalidate query");
+    LOG_TRACE_FORMATTED(log, "Performing invalidate query");
     if (is_local)
     {
         Context query_context = context;

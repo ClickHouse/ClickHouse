@@ -367,7 +367,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     if (quorum)
     {
         /// We are waiting for quorum to be satisfied.
-        LOG_TRACE(log, "Waiting for quorum");
+        LOG_TRACE_FORMATTED(log, "Waiting for quorum");
 
         String quorum_status_path = storage.zookeeper_path + "/quorum/status";
 
@@ -406,7 +406,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                 ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
         }
 
-        LOG_TRACE(log, "Quorum satisfied");
+        LOG_TRACE_FORMATTED(log, "Quorum satisfied");
     }
 }
 

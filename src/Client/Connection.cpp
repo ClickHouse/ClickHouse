@@ -287,14 +287,14 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     }
     else if (!ping())
     {
-        LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
+        LOG_TRACE_FORMATTED(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
     }
 }
 
 bool Connection::ping()
 {
-    // LOG_TRACE(log_wrapper.get(), "Ping");
+    // LOG_TRACE_FORMATTED(log_wrapper.get(), "Ping");
 
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
@@ -646,7 +646,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        // LOG_TRACE_FORMATTED(log_wrapper.get(), "Receiving packet type");
         UInt64 packet_type;
         readVarUInt(packet_type, *in);
 

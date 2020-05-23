@@ -221,7 +221,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     {
         skip_sanity_checks = true;
 
-        LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
+        LOG_WARNING_FORMATTED(log, "Skipping the limits on severity of changes to data parts and columns (flag force_restore_data).");
     }
 
     loadDataParts(skip_sanity_checks);
@@ -232,14 +232,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
         /// Do not activate the replica. It will be readonly.
-        LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
+        LOG_ERROR_FORMATTED(log, "No ZooKeeper: table will be in readonly mode.");
         is_readonly = true;
         return;
     }
 
     if (attach && !current_zookeeper->exists(zookeeper_path + "/metadata"))
     {
-        LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
+        LOG_WARNING_FORMATTED(log, "No metadata in ZooKeeper: table will be in readonly mode.");
         is_readonly = true;
         return;
     }
@@ -579,7 +579,7 @@ void StorageReplicatedMergeTree::createReplica()
         if (code == Coordination::Error::ZNODEEXISTS)
             throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
         else if (code == Coordination::Error::ZBADVERSION)
-            LOG_ERROR(log, "Retrying createReplica(), because some other replicas were created at the same time");
+            LOG_ERROR_FORMATTED(log, "Retrying createReplica(), because some other replicas were created at the same time");
         else
             zkutil::KeeperMultiException::check(code, ops, responses);
     } while (code == Coordination::Error::ZBADVERSION);
@@ -1576,14 +1576,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     if (parts_to_add.empty())
     {
-        LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
+        LOG_INFO_FORMATTED(log, "All parts from REPLACE PARTITION command have been already attached");
         tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
         return true;
     }
 
     if (parts_to_add.size() < all_parts.size())
     {
-        LOG_WARNING(log, "Some (but not all) parts from REPLACE PARTITION command already exist. REPLACE PARTITION will not be atomic.");
+        LOG_WARNING_FORMATTED(log, "Some (but not all) parts from REPLACE PARTITION command already exist. REPLACE PARTITION will not be atomic.");
     }
 
     StoragePtr source_table;
@@ -1839,7 +1839,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         zkutil::EventPtr event = std::make_shared<Poco::Event>();
         if (zookeeper->exists(source_path + "/columns", nullptr, event))
         {
-            LOG_WARNING(log, "Oops, a watch has leaked");
+            LOG_WARNING_FORMATTED(log, "Oops, a watch has leaked");
             break;
         }
 
@@ -2451,7 +2451,7 @@ void StorageReplicatedMergeTree::enterLeaderElection()
     auto callback = [this]()
     {
         CurrentMetrics::add(CurrentMetrics::LeaderReplica);
-        LOG_INFO(log, "Became leader");
+        LOG_INFO_FORMATTED(log, "Became leader");
 
         is_leader = true;
         merge_selecting_task->activateAndSchedule();
@@ -2486,7 +2486,7 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     if (is_leader)
     {
         CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-        LOG_INFO(log, "Stopped being leader");
+        LOG_INFO_FORMATTED(log, "Stopped being leader");
 
         is_leader = false;
         merge_selecting_task->deactivate();
@@ -3277,7 +3277,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         /// TODO (relax this lock)
         auto table_lock = lockExclusively(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-        LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
+        LOG_INFO_FORMATTED(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
         auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this).checkAndFindDiff(metadata_from_entry);
         setTableStructure(std::move(columns_from_entry), metadata_diff);
@@ -3463,12 +3463,12 @@ void StorageReplicatedMergeTree::alter(
     std::vector<String> unwaited;
     if (query_context.getSettingsRef().replication_alter_partitions_sync == 2)
     {
-        LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
+        LOG_DEBUG_FORMATTED(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
         unwaited = waitForAllReplicasToProcessLogEntry(*alter_entry, false);
     }
     else if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
     {
-        LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
+        LOG_DEBUG_FORMATTED(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
         waitForReplicaToProcessLogEntry(replica_name, *alter_entry);
     }
 
@@ -3477,9 +3477,9 @@ void StorageReplicatedMergeTree::alter(
 
     if (mutation_znode)
     {
-        LOG_DEBUG(log, "Metadata changes applied. Will wait for data changes.");
+        LOG_DEBUG_FORMATTED(log, "Metadata changes applied. Will wait for data changes.");
         waitMutation(*mutation_znode, query_context.getSettingsRef().replication_alter_partitions_sync);
-        LOG_DEBUG(log, "Data changes applied.");
+        LOG_DEBUG_FORMATTED(log, "Data changes applied.");
     }
 }
 
@@ -4519,7 +4519,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         }
         else if (rc == Coordination::ZBADVERSION)
         {
-            LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
+            LOG_TRACE_FORMATTED(log, "Version conflict when trying to create a mutation node, retrying...");
             continue;
         }
         else

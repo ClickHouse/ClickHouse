@@ -68,11 +68,11 @@ void ReplicatedMergeTreeRestartingThread::run()
 
             if (first_time)
             {
-                LOG_DEBUG(log, "Activating replica.");
+                LOG_DEBUG_FORMATTED(log, "Activating replica.");
             }
             else
             {
-                LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+                LOG_WARNING_FORMATTED(log, "ZooKeeper session has expired. Switching to a new session.");
 
                 bool old_val = false;
                 if (storage.is_readonly.compare_exchange_strong(old_val, true))
@@ -189,7 +189,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         if (storage_settings->replicated_can_become_leader)
             storage.enterLeaderElection();
         else
-            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
+            LOG_INFO_FORMATTED(log, "Will not enter leader election because replicated_can_become_leader=0");
 
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
@@ -337,7 +337,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.partial_shutdown_event.set();
     storage.replica_is_active_node = nullptr;
 
-    LOG_TRACE(log, "Waiting for threads to finish");
+    LOG_TRACE_FORMATTED(log, "Waiting for threads to finish");
 
     storage.exitLeaderElection();
 
@@ -348,7 +348,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.cleanup_thread.stop();
     storage.part_check_thread.stop();
 
-    LOG_TRACE(log, "Threads finished");
+    LOG_TRACE_FORMATTED(log, "Threads finished");
 }
 
 
@@ -357,7 +357,7 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
     need_stop = true;
     task->deactivate();
-    LOG_TRACE(log, "Restarting thread finished");
+    LOG_TRACE_FORMATTED(log, "Restarting thread finished");
 
     /// Stop other tasks.
     partialShutdown();

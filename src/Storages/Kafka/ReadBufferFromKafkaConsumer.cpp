@@ -163,7 +163,7 @@ void ReadBufferFromKafkaConsumer::commit()
     }
     else
     {
-        LOG_TRACE(log, "Nothing to commit.");
+        LOG_TRACE_FORMATTED(log, "Nothing to commit.");
     }
 
     offsets_stored = 0;
@@ -204,7 +204,7 @@ void ReadBufferFromKafkaConsumer::subscribe()
 
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
-    LOG_TRACE(log, "Re-joining claimed consumer after failure");
+    LOG_TRACE_FORMATTED(log, "Re-joining claimed consumer after failure");
 
     messages.clear();
     current = messages.begin();
@@ -239,7 +239,7 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (assignment.empty())
     {
-        LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
+        LOG_TRACE_FORMATTED(log, "Not assignned. Can't reset to last committed position.");
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
@@ -312,7 +312,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
                     }
                     else
                     {
-                        LOG_TRACE(log, "Can't get assignment");
+                        LOG_TRACE_FORMATTED(log, "Can't get assignment");
                         stalled = true;
                         return false;
                     }
@@ -320,7 +320,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
                 }
                 else
                 {
-                    LOG_TRACE(log, "Stalled");
+                    LOG_TRACE_FORMATTED(log, "Stalled");
                     stalled = true;
                     return false;
                 }

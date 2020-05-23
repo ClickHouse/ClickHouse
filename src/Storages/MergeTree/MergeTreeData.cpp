@@ -851,7 +851,7 @@ Int64 MergeTreeData::getMaxBlockNumber() const
 
 void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
-    LOG_DEBUG(log, "Loading data parts");
+    LOG_DEBUG_FORMATTED(log, "Loading data parts");
 
     const auto settings = getSettings();
     std::vector<std::pair<String, DiskPtr>> part_names_with_disks;
@@ -901,7 +901,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (part_names_with_disks.empty())
     {
-        LOG_DEBUG(log, "There is no data parts");
+        LOG_DEBUG_FORMATTED(log, "There is no data parts");
         return;
     }
 
@@ -1323,11 +1323,11 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 
 void MergeTreeData::dropAllData()
 {
-    LOG_TRACE(log, "dropAllData: waiting for locks.");
+    LOG_TRACE_FORMATTED(log, "dropAllData: waiting for locks.");
 
     auto lock = lockParts();
 
-    LOG_TRACE(log, "dropAllData: removing data from memory.");
+    LOG_TRACE_FORMATTED(log, "dropAllData: removing data from memory.");
 
     DataPartsVector all_parts(data_parts_by_info.begin(), data_parts_by_info.end());
 
@@ -1336,7 +1336,7 @@ void MergeTreeData::dropAllData()
 
     global_context.dropCaches();
 
-    LOG_TRACE(log, "dropAllData: removing data from filesystem.");
+    LOG_TRACE_FORMATTED(log, "dropAllData: removing data from filesystem.");
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     clearPartsFromFilesystem(all_parts);
@@ -1344,7 +1344,7 @@ void MergeTreeData::dropAllData()
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
         disk->removeRecursive(path);
 
-    LOG_TRACE(log, "dropAllData: done.");
+    LOG_TRACE_FORMATTED(log, "dropAllData: done.");
 }
 
 namespace
@@ -2844,7 +2844,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     renamed_parts.tryRenameAll();
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
-    LOG_DEBUG(log, "Checking parts");
+    LOG_DEBUG_FORMATTED(log, "Checking parts");
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
     for (const auto & part_names : renamed_parts.old_and_new_names)

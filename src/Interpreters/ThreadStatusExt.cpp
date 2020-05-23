@@ -218,7 +218,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 #if defined(__linux__)
     if (os_thread_priority)
     {
-        LOG_TRACE(log, "Resetting nice");
+        LOG_TRACE_FORMATTED(log, "Resetting nice");
 
         if (0 != setpriority(PRIO_PROCESS, thread_id, 0))
             LOG_ERROR(log, "Cannot 'setpriority' back to zero: " << errnoToString(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, errno));

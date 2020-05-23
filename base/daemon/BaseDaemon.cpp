@@ -184,14 +184,14 @@ public:
 
             if (sig == Signals::StopThread)
             {
-                LOG_INFO(log, "Stop SignalListener thread");
+                LOG_INFO_FORMATTED(log, "Stop SignalListener thread");
                 break;
             }
             else if (sig == SIGHUP || sig == SIGUSR1)
             {
-                LOG_DEBUG(log, "Received signal to close logs.");
+                LOG_DEBUG_FORMATTED(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
-                LOG_INFO(log, "Opened new log file after received signal.");
+                LOG_INFO_FORMATTED(log, "Opened new log file after received signal.");
             }
             else if (sig == Signals::StdTerminate)
             {
@@ -247,7 +247,7 @@ private:
         UInt32 thread_num,
         const std::string & query_id) const
     {
-        LOG_FATAL(log, "########################################");
+        LOG_FATAL_FORMATTED(log, "########################################");
 
         {
             std::stringstream message;
@@ -854,7 +854,7 @@ void BaseDaemon::onInterruptSignals(int signal_id)
 
     if (sigint_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "Received second signal Interrupt. Immediately terminate.");
+        LOG_INFO_FORMATTED(&logger(), "Received second signal Interrupt. Immediately terminate.");
         kill();
     }
 }

@@ -241,10 +241,10 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
         }
 
         if (0 == fetched_rows)
-            LOG_ERROR(log, "Cannot find table in SHOW TABLE STATUS result.");
+            LOG_ERROR_FORMATTED(log, "Cannot find table in SHOW TABLE STATUS result.");
 
         if (fetched_rows > 1)
-            LOG_ERROR(log, "Found more than one table in SHOW TABLE STATUS result.");
+            LOG_ERROR_FORMATTED(log, "Found more than one table in SHOW TABLE STATUS result.");
     }
     catch (...)
     {

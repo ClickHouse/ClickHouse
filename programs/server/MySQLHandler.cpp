@@ -73,7 +73,7 @@ void MySQLHandler::run()
         Handshake handshake(server_capability_flags, connection_id, VERSION_STRING + String("-") + VERSION_NAME, auth_plugin->getName(), auth_plugin->getAuthPluginData());
         packet_sender->sendPacket<Handshake>(handshake, true);
 
-        LOG_TRACE(log, "Sent handshake");
+        LOG_TRACE_FORMATTED(log, "Sent handshake");
 
         HandshakeResponse handshake_response;
         finishHandshake(handshake_response);

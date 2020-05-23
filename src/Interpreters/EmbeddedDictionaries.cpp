@@ -68,7 +68,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
       * An attempt is made to load each directory separately.
       */
 
-    LOG_INFO(log, "Loading dictionaries.");
+    LOG_INFO_FORMATTED(log, "Loading dictionaries.");
 
     bool was_exception = false;
 
@@ -89,7 +89,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
         was_exception = true;
 
     if (!was_exception)
-        LOG_INFO(log, "Loaded dictionaries.");
+        LOG_INFO_FORMATTED(log, "Loaded dictionaries.");
 
     return !was_exception;
 }

@@ -243,7 +243,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
                 if (need_stop)
                 {
-                    LOG_INFO(log, "Checking part was cancelled.");
+                    LOG_INFO_FORMATTED(log, "Checking part was cancelled.");
                     return {part_name, false, "Checking part was cancelled"};
                 }
 
@@ -325,7 +325,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 if (!parts_set.empty())
                 {
-                    LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
+                    LOG_ERROR_FORMATTED(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
                     parts_set.clear();
                 }
             }
@@ -359,7 +359,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             if (parts_queue.empty())
             {
-                LOG_ERROR(log, "Someone erased cheking part from parts_queue. This is a bug.");
+                LOG_ERROR_FORMATTED(log, "Someone erased cheking part from parts_queue. This is a bug.");
             }
             else
             {

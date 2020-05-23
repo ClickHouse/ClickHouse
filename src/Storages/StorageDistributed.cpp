@@ -573,7 +573,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
 void StorageDistributed::startup()
 {
     if (remote_database.empty() && !remote_table_function_ptr)
-        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+        LOG_WARNING_FORMATTED(log, "Name of remote database is empty. Default database will be used implicitly.");
 
     if (!volume)
         return;

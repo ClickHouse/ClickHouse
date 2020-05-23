@@ -165,7 +165,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     if (is_help)
         return Application::EXIT_OK;
 
-    LOG_INFO(log, "Starting up");
+    LOG_INFO_FORMATTED(log, "Starting up");
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, hostname, port, log);
     socket.setReceiveTimeout(http_timeout);
@@ -191,8 +191,8 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     LOG_INFO(log, "Listening http://" + address.toString());
 
     SCOPE_EXIT({
-        LOG_DEBUG(log, "Received termination signal.");
-        LOG_DEBUG(log, "Waiting for current connections to close.");
+        LOG_DEBUG_FORMATTED(log, "Received termination signal.");
+        LOG_DEBUG_FORMATTED(log, "Waiting for current connections to close.");
         server.stop();
         for (size_t count : ext::range(1, 6))
         {

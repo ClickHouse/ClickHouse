@@ -216,7 +216,7 @@ try
         attachSystemTables();
         loadMetadata(*context);
         DatabaseCatalog::instance().loadDatabases();
-        LOG_DEBUG(log, "Loaded metadata.");
+        LOG_DEBUG_FORMATTED(log, "Loaded metadata.");
     }
     else
     {

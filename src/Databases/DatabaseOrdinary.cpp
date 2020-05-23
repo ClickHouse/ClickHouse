@@ -194,7 +194,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
 void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
 {
-    LOG_INFO(log, "Starting up tables.");
+    LOG_INFO_FORMATTED(log, "Starting up tables.");
 
     const size_t total_tables = tables.size();
     if (!total_tables)

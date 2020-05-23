@@ -364,7 +364,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 
 void DDLWorker::processTasks()
 {
-    LOG_DEBUG(log, "Processing tasks");
+    LOG_DEBUG_FORMATTED(log, "Processing tasks");
     auto zookeeper = tryGetZooKeeper();
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
@@ -823,7 +823,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
 void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG(log, "Cleaning queue");
+    LOG_DEBUG_FORMATTED(log, "Cleaning queue");
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir);
     filterAndSortQueueNodes(queue_nodes);
@@ -958,7 +958,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 void DDLWorker::runMainThread()
 {
     setThreadName("DDLWorker");
-    LOG_DEBUG(log, "Started DDLWorker thread");
+    LOG_DEBUG_FORMATTED(log, "Started DDLWorker thread");
 
     bool initialized = false;
     do
@@ -996,7 +996,7 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             processTasks();
 
-            LOG_DEBUG(log, "Waiting a watch");
+            LOG_DEBUG_FORMATTED(log, "Waiting a watch");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
@@ -1043,7 +1043,7 @@ void DDLWorker::runMainThread()
 void DDLWorker::runCleanupThread()
 {
     setThreadName("DDLWorkerClnr");
-    LOG_DEBUG(log, "Started DDLWorker cleanup thread");
+    LOG_DEBUG_FORMATTED(log, "Started DDLWorker cleanup thread");
 
     Int64 last_cleanup_time_seconds = 0;
     while (!stop_flag)
@@ -1057,7 +1057,7 @@ void DDLWorker::runCleanupThread()
             Int64 current_time_seconds = Poco::Timestamp().epochTime();
             if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_delay_period)
             {
-                LOG_TRACE(log, "Too early to clean queue, will do it later.");
+                LOG_TRACE_FORMATTED(log, "Too early to clean queue, will do it later.");
                 continue;
             }
 

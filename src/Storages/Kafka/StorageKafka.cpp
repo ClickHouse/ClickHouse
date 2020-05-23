@@ -212,7 +212,7 @@ void StorageKafka::shutdown()
     // Interrupt streaming thread
     stream_cancelled = true;
 
-    LOG_TRACE(log, "Waiting for cleanup");
+    LOG_TRACE_FORMATTED(log, "Waiting for cleanup");
     task->deactivate();
 
     // Close all consumers
@@ -340,12 +340,12 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 
         status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(), "setThreadName", rdKafkaOnNew, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set new interceptor");
+            LOG_ERROR_FORMATTED(log, "Cannot set new interceptor");
 
         // cppkafka always copy the configuration
         status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(), "setThreadName", rdKafkaOnConfDup, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR(log, "Cannot set dup conf interceptor");
+            LOG_ERROR_FORMATTED(log, "Cannot set dup conf interceptor");
     }
 }
 

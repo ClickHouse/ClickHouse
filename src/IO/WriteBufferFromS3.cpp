@@ -115,7 +115,7 @@ void WriteBufferFromS3::writePart(const String & data)
     if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
         // Don't throw exception here by ourselves but leave the decision to take by S3 server.
-        LOG_WARNING(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
+        LOG_WARNING_FORMATTED(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
     }
 
     Aws::S3::Model::UploadPartRequest req;

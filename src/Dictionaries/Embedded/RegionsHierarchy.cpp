@@ -28,7 +28,7 @@ void RegionsHierarchy::reload()
     if (!data_source->isModified())
         return;
 
-    LOG_DEBUG(log, "Reloading regions hierarchy");
+    LOG_DEBUG_FORMATTED(log, "Reloading regions hierarchy");
 
     const size_t initial_size = 10000;
     const size_t max_size = 15000000;

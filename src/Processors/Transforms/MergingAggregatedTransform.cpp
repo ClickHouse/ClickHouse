@@ -20,7 +20,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     if (!consume_started)
     {
         consume_started = true;
-        LOG_TRACE(log, "Reading blocks of partially aggregated data.");
+        LOG_TRACE_FORMATTED(log, "Reading blocks of partially aggregated data.");
     }
 
     total_input_rows += chunk.getNumRows();

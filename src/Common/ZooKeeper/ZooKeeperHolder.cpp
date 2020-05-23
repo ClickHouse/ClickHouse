@@ -34,7 +34,7 @@ bool ZooKeeperHolder::replaceZooKeeperSessionToNewOne()
     }
     else
     {
-        LOG_ERROR(log, "replaceZooKeeperSessionToNewOne(): Fail to replace zookeeper session to new one because handlers for old zookeeper session still exists.");
+        LOG_ERROR_FORMATTED(log, "replaceZooKeeperSessionToNewOne(): Fail to replace zookeeper session to new one because handlers for old zookeeper session still exists.");
         return false;
     }
 }

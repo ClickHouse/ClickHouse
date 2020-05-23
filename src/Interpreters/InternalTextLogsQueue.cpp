@@ -43,7 +43,7 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
     if (blocksHaveEqualStructure(sample_block, log_block))
         emplace(log_block.mutateColumns());
     else
-        LOG_WARNING(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
+        LOG_WARNING_FORMATTED(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
 }
 
 const char * InternalTextLogsQueue::getPriorityName(int priority)

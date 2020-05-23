@@ -1074,7 +1074,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         LOG_INFO(log, "Attaching part " << loaded_parts[i]->name << " from " << renamed_parts.old_and_new_names[i].second);
         renameTempPartAndAdd(loaded_parts[i], &increment);
         renamed_parts.old_and_new_names[i].first.clear();
-        LOG_INFO(log, "Finished attaching part");
+        LOG_INFO_FORMATTED(log, "Finished attaching part");
     }
 
     /// New parts with other data may appear in place of deleted parts.
