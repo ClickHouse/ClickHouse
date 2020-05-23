@@ -79,7 +79,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
             }
             catch (const Poco::Net::DNSException & e)
             {
-                LOG_ERROR(log, "Cannot use ZooKeeper host " << host_string << ", reason: " << e.displayText());
+                LOG_ERROR_FORMATTED(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
             }
         }
 

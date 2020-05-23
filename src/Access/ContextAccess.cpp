@@ -200,7 +200,7 @@ bool ContextAccess::calculateResultAccessAndCheck(Poco::Logger * log_, const Acc
     bool is_granted = access->isGranted(flags, args...);
 
     if (trace_log)
-        LOG_TRACE(trace_log, "Access " << (is_granted ? "granted" : "denied") << ": " << (AccessRightsElement{flags, args...}.toString()));
+        LOG_TRACE_FORMATTED(trace_log, "Access {}: {}", (is_granted ? "granted" : "denied"), (AccessRightsElement{flags, args...}.toString()));
 
     if (is_granted)
         return true;

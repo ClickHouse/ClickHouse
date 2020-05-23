@@ -721,7 +721,7 @@ void IMergeTreeDataPart::remove() const
         }
         catch (...)
         {
-            LOG_ERROR(storage.log, "Cannot recursively remove directory " << fullPath(volume->getDisk(), to) << ". Exception: " << getCurrentExceptionMessage(false));
+            LOG_ERROR_FORMATTED(storage.log, "Cannot recursively remove directory {}. Exception: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
             throw;
         }
     }

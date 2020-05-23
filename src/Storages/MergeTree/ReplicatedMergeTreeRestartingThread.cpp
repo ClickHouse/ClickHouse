@@ -215,7 +215,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
+            LOG_ERROR_FORMATTED(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -223,7 +223,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
+            LOG_ERROR_FORMATTED(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
     }

@@ -400,7 +400,7 @@ void DDLWorker::processTasks()
             String reason;
             if (!initAndCheckTask(entry_name, reason, zookeeper))
             {
-                LOG_DEBUG(log, "Will not execute task " << entry_name << ": " << reason);
+                LOG_DEBUG_FORMATTED(log, "Will not execute task {}: {}", entry_name, reason);
                 last_processed_task_name = entry_name;
                 continue;
             }

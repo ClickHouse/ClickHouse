@@ -163,7 +163,7 @@ namespace
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
+    LOG_TRACE_FORMATTED(log, "loadIds {} size = {}", toString(), ids.size());
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);
@@ -175,7 +175,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
+    LOG_TRACE_FORMATTED(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto process = ShellCommand::execute(command);
 
     auto output_stream = context.getOutputFormat(format, process->in, sample_block);

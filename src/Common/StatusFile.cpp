@@ -43,7 +43,7 @@ StatusFile::StatusFile(const std::string & path_)
         }
 
         if (!contents.empty())
-            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
+            LOG_INFO_FORMATTED(&Logger::get("StatusFile"), "Status file {} already exists - unclean restart. Contents:\n{}", path, contents);
         else
             LOG_INFO_FORMATTED(&Logger::get("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
@@ -90,10 +90,10 @@ StatusFile::StatusFile(const std::string & path_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR_FORMATTED(&Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR_FORMATTED(&Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 }
 
 }

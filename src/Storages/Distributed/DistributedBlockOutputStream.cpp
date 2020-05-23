@@ -229,7 +229,7 @@ void DistributedBlockOutputStream::waitForJobs()
     size_t num_finished_jobs = finished_jobs_count;
 
     if (num_finished_jobs < jobs_count)
-        LOG_WARNING(log, "Expected " << jobs_count << " writing jobs, but finished only " << num_finished_jobs);
+        LOG_WARNING_FORMATTED(log, "Expected {} writing jobs, but finished only {}", jobs_count, num_finished_jobs);
 }
 
 

@@ -199,7 +199,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
     MergeTreeData::MutableDataPartPtr cloned_part =
         data->createPart(moving_part.part->name, single_disk_volume, "detached/" + moving_part.part->name);
-    LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
+    LOG_TRACE_FORMATTED(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
     return cloned_part;
@@ -228,7 +228,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);
 
-    LOG_TRACE(log, "Part " << cloned_part->name << " was moved to " << cloned_part->getFullPath());
+    LOG_TRACE_FORMATTED(log, "Part {} was moved to {}", cloned_part->name, cloned_part->getFullPath());
 }
 
 }

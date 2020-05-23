@@ -534,7 +534,7 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                LOG_DEBUG(log, "Loading mutation: " << it->name() << " entry, commands size: " << entry.commands.size());
+                LOG_DEBUG_FORMATTED(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
                 auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
@@ -1071,7 +1071,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        LOG_INFO(log, "Attaching part " << loaded_parts[i]->name << " from " << renamed_parts.old_and_new_names[i].second);
+        LOG_INFO_FORMATTED(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].second);
         renameTempPartAndAdd(loaded_parts[i], &increment);
         renamed_parts.old_and_new_names[i].first.clear();
         LOG_INFO_FORMATTED(log, "Finished attaching part");

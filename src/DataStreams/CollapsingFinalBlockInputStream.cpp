@@ -135,7 +135,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
         if (output_blocks.empty())
         {
             if (blocks_fetched != blocks_output)
-                LOG_ERROR(log, "Logical error: CollapsingFinalBlockInputStream has output " << blocks_output << " blocks instead of " << blocks_fetched);
+                LOG_ERROR_FORMATTED(log, "Logical error: CollapsingFinalBlockInputStream has output {} blocks instead of {}", blocks_output, blocks_fetched);
 
             return Block();
         }

@@ -734,7 +734,7 @@ void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
     task_failed = true;
     Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
     Logger *lg = &(logger());
-    LOG_ERROR(lg, "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText());
+    LOG_ERROR_FORMATTED(lg, "Task '{}' failed. Daemon is shutting down. Reason - {}", fn->task()->name(), fn->reason().displayText());
     ServerApplication::terminate();
 }
 
