@@ -95,10 +95,10 @@ Block MergeSortingBlockInputStream::readImpl()
                 const std::string & path = temporary_files.back()->path();
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
-                LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
+                LOG_INFO_FORMATTED(log, "Sorting and writing part of data into temporary file {}", path);
                 ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
                 TemporaryFileStream::write(path, header_without_constants, block_in, &is_cancelled, codec); /// NOTE. Possibly limit disk usage.
-                LOG_INFO(log, "Done writing part of data into temporary file " + path);
+                LOG_INFO_FORMATTED(log, "Done writing part of data into temporary file {}", path);
 
                 blocks.clear();
                 sum_bytes_in_blocks = 0;

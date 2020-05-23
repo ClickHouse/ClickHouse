@@ -105,7 +105,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
 
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
-    LOG_TRACE(log, "loadAll " + toString());
+    LOG_TRACE_FORMATTED(log, "loadAll {}", toString());
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
@@ -118,7 +118,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE(log, "loadUpdatedAll " + uri.toString());
+    LOG_TRACE_FORMATTED(log, "loadUpdatedAll {}", uri.toString());
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
         0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);

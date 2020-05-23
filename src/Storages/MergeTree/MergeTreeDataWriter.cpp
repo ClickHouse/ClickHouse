@@ -252,7 +252,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     if (new_data_part->volume->getDisk()->exists(full_path))
     {
-        LOG_WARNING(log, "Removing old temporary directory " + fullPath(new_data_part->volume->getDisk(), full_path));
+        LOG_WARNING_FORMATTED(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
         new_data_part->volume->getDisk()->removeRecursive(full_path);
     }
 

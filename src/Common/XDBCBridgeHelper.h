@@ -309,7 +309,7 @@ struct ODBCBridgeMixin
             cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
         }
 
-        LOG_TRACE(log, "Starting " + serviceAlias());
+        LOG_TRACE_FORMATTED(log, "Starting {}", serviceAlias());
 
         return ShellCommand::executeDirect(path.toString(), cmd_args, true);
     }

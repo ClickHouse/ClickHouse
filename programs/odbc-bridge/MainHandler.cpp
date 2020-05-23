@@ -84,7 +84,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     Poco::Net::HTMLForm params(request);
     if (mode == "read")
         params.read(request.stream());
-    LOG_TRACE(log, "Request URI: " + request.getURI());
+    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
 
     if (mode == "read" && !params.has("query"))
     {

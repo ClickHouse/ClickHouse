@@ -36,7 +36,7 @@ public:
         , path(std::move(path_)), file_buf_out(path), compressed_buf_out(file_buf_out)
         , out_stream(std::make_shared<NativeBlockOutputStream>(compressed_buf_out, 0, header))
     {
-        LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
+        LOG_INFO_FORMATTED(log, "Sorting and writing part of data into temporary file {}", path);
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
         out_stream->writePrefix();
     }
@@ -55,7 +55,7 @@ public:
             out_stream->writeSuffix();
             compressed_buf_out.next();
             file_buf_out.next();
-            LOG_INFO(log, "Done writing part of data into temporary file " + path);
+            LOG_INFO_FORMATTED(log, "Done writing part of data into temporary file {}", path);
 
             out_stream.reset();
 

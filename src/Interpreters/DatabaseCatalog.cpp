@@ -635,7 +635,7 @@ void DatabaseCatalog::dropTableDataTask()
         if (it != tables_marked_dropped.end())
         {
             table = std::move(*it);
-            LOG_INFO(log, "Will try drop " + table.table_id.getNameForLogs());
+            LOG_INFO_FORMATTED(log, "Will try drop {}", table.table_id.getNameForLogs());
             tables_marked_dropped.erase(it);
         }
         need_reschedule = !tables_marked_dropped.empty();
