@@ -251,7 +251,7 @@ void MergeSortingTransform::generate()
 
 void MergeSortingTransform::remerge()
 {
-    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << chunks.size() << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
+    LOG_DEBUG_FORMATTED(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", chunks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
     MergeSorter remerge_sorter(std::move(chunks), description, max_merged_block_size, limit);
@@ -267,7 +267,7 @@ void MergeSortingTransform::remerge()
         new_chunks.emplace_back(std::move(chunk));
     }
 
-    LOG_DEBUG(log, "Memory usage is lowered from " << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to " << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+    LOG_DEBUG_FORMATTED(log, "Memory usage is lowered from {} to {}", formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks), formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
     if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)

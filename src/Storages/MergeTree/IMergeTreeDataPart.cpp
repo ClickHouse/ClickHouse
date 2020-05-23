@@ -257,7 +257,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
                 if (!startsWith(file_name, "tmp"))
                 {
-                    LOG_ERROR(storage.log, "~DataPart() should remove part " << path << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
+                    LOG_ERROR_FORMATTED(storage.log, "~DataPart() should remove part {} but its name doesn't start with tmp. Too suspicious, keeping the part.", path);
                     return;
                 }
             }
@@ -765,7 +765,7 @@ void IMergeTreeDataPart::remove() const
         {
             /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
-            LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(volume->getDisk(), to) << " by removing files; fallback to recursive removal. Reason: " << getCurrentExceptionMessage(false));
+            LOG_ERROR_FORMATTED(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
             volume->getDisk()->removeRecursive(to + "/");
         }

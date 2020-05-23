@@ -857,7 +857,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE(log, "Max size of temporary block: " << max_temporary_block_size_rows << " rows, " << (max_temporary_block_size_bytes / 1048576.0) << " MiB.");
+    LOG_TRACE_FORMATTED(log, "Max size of temporary block: {} rows, {} MiB.", max_temporary_block_size_rows, (max_temporary_block_size_bytes / 1048576.0));
 }
 
 
@@ -1924,7 +1924,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
     }
 
-    LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows << " rows.");
+    LOG_TRACE_FORMATTED(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
 
     mergeBlocks(bucket_to_blocks, result, max_threads);
 }

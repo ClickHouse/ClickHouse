@@ -777,7 +777,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
                 !zookeeper->exists(current_part_path + "/columns", &columns_stat_after) ||
                 columns_stat_before.version != columns_stat_after.version)
             {
-                LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica << " because part changed while we were reading its checksums");
+                LOG_INFO_FORMATTED(log, "Not checking checksums of part {} with replica {} because part changed while we were reading its checksums", part_name, replica);
                 continue;
             }
 
@@ -787,7 +787,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 
         if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
         {
-            LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica << " because columns are different");
+            LOG_INFO_FORMATTED(log, "Not checking checksums of part {} with replica {} because columns are different", part_name, replica);
             continue;
         }
 
@@ -1363,7 +1363,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                         }
                         else if (code == Coordination::ZBADVERSION || code == Coordination::ZNONODE || code == Coordination::ZNODEEXISTS)
                         {
-                            LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part " << entry.new_part_name << " as failed. Code: " << zkutil::ZooKeeper::error2string(code));
+                            LOG_DEBUG_FORMATTED(log, "State was changed or isn't expected when trying to mark quorum for part {} as failed. Code: {}", entry.new_part_name, zkutil::ZooKeeper::error2string(code));
                         }
                         else
                             throw Coordination::Exception(code);
@@ -3692,7 +3692,7 @@ void StorageReplicatedMergeTree::drop()
         /// It may left some garbage if replica_path subtree are concurently modified
         zookeeper->tryRemoveRecursive(replica_path);
         if (zookeeper->exists(replica_path))
-            LOG_ERROR(log, "Replica was not completely removed from ZooKeeper, " << replica_path << " still exists and may contain some garbage.");
+            LOG_ERROR_FORMATTED(log, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", replica_path);
 
         /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
         Strings replicas;
@@ -3701,7 +3701,7 @@ void StorageReplicatedMergeTree::drop()
             LOG_INFO_FORMATTED(log, "Removing table {} (this might take several minutes)", zookeeper_path);
             zookeeper->tryRemoveRecursive(zookeeper_path);
             if (zookeeper->exists(zookeeper_path))
-                LOG_ERROR(log, "Table was not completely removed from ZooKeeper, " << zookeeper_path << " still exists and may contain some garbage.");
+                LOG_ERROR_FORMATTED(log, "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", zookeeper_path);
         }
     }
 
@@ -4740,7 +4740,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             }
             else
             {
-                LOG_DEBUG(log, "There is no part " << part_names[i] << " in ZooKeeper, it was only in filesystem");
+                LOG_DEBUG_FORMATTED(log, "There is no part {} in ZooKeeper, it was only in filesystem", part_names[i]);
                 // emplace invalid future so that the total number of futures is the same as part_names.size();
                 remove_futures.emplace_back();
             }
@@ -4765,7 +4765,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             continue;
         else if (response.error == Coordination::ZNONODE)
         {
-            LOG_DEBUG(log, "There is no part " << part_names[i] << " in ZooKeeper, it was only in filesystem");
+            LOG_DEBUG_FORMATTED(log, "There is no part {} in ZooKeeper, it was only in filesystem", part_names[i]);
             continue;
         }
         else if (Coordination::isHardwareError(response.error))

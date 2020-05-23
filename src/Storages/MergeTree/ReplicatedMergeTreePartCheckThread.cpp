@@ -158,7 +158,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         not_found_msg = "a smaller part with the same min block.";
     else
         not_found_msg = "smaller parts with either the same min block or the same max block.";
-    LOG_ERROR(log, "No replica has part covering " << part_name << " and a merge is impossible: we didn't find " << not_found_msg);
+    LOG_ERROR_FORMATTED(log, "No replica has part covering {} and a merge is impossible: we didn't find {}", part_name, not_found_msg);
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
@@ -285,7 +285,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             ///  but remained in the filesystem and in a number of active parts.
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
-            LOG_TRACE(log, "Young part " << part_name << " with age " << (time(nullptr) - part->modification_time) << " seconds hasn't been added to ZooKeeper yet. It's ok.");
+            LOG_TRACE_FORMATTED(log, "Young part {} with age {} seconds hasn't been added to ZooKeeper yet. It's ok.", part_name, (time(nullptr) - part->modification_time));
         }
     }
     else
