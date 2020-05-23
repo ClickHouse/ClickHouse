@@ -885,7 +885,7 @@ private:
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
 
-        LOG_TRACE(log, "Will load the object '" << info.name << "' " << (enable_async_loading ? std::string("in background") : "immediately") << ", force = " << forced_to_reload << ", loading_id = " << info.loading_id);
+        LOG_TRACE_FORMATTED(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
 
         if (enable_async_loading)
         {

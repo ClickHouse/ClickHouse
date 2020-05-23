@@ -542,7 +542,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     }
     else
     {
-        LOG_INFO(log, "Resolved host " << task.host_id.readableString() << " from task " << task.entry_name << " as host " << task.address_in_cluster.readableString() << " in definition of cluster " << task.cluster_name);
+        LOG_INFO_FORMATTED(log, "Resolved host {} from task {} as host {} in definition of cluster {}", task.host_id.readableString(), task.entry_name, task.address_in_cluster.readableString(), task.cluster_name);
     }
 }
 
