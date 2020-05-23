@@ -23,7 +23,7 @@ void CollapsingFinalBlockInputStream::reportBadCounts()
 
 void CollapsingFinalBlockInputStream::reportBadSign(Int8 sign)
 {
-    LOG_ERROR(log, "Invalid sign: " << static_cast<int>(sign));
+    LOG_ERROR_FORMATTED(log, "Invalid sign: {}", static_cast<int>(sign));
 }
 
 void CollapsingFinalBlockInputStream::fetchNextBlock(size_t input_index)

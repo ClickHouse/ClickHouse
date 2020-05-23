@@ -95,7 +95,10 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
-        LOG_TRACE(log, "initialized, hosts: " << hosts << (chroot.empty() ? "" : ", chroot: " + chroot));
+        if (chroot.empty())
+            LOG_TRACE_FORMATTED(log, "Initialized, hosts: {}", hosts);
+        else
+            LOG_TRACE_FORMATTED(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
     }
     else if (implementation == "testkeeper")
     {
