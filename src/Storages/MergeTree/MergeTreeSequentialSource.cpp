@@ -25,14 +25,13 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 {
     if (!quiet)
     {
-        std::stringstream message;
-        message << "Reading " << data_part->getMarksCount() << " marks from part " << data_part->name
-            << ", total " << data_part->rows_count
-            << " rows starting from the beginning of the part";
-        if (columns_to_read.size() == 1)    /// Print column name but don't pollute logs in case of many columns.
-            message << ", column " << columns_to_read.front();
-
-        LOG_TRACE(log, message.rdbuf());
+        /// Print column name but don't pollute logs in case of many columns.
+        if (columns_to_read.size() == 1)
+            LOG_TRACE_FORMATTED(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+                data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
+        else
+            LOG_TRACE_FORMATTED(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+                data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 
     addTotalRowsApprox(data_part->rows_count);
