@@ -459,7 +459,7 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
                 "Current_roles: " << boost::algorithm::join(roles_info->getCurrentRolesNames(), ", ")
                                   << ", enabled_roles: " << boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
-        LOG_TRACE(trace_log, "Settings: readonly=" << readonly_ << ", allow_ddl=" << allow_ddl_ << ", allow_introspection_functions=" << allow_introspection_);
+        LOG_TRACE_FORMATTED(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", readonly_, allow_ddl_, allow_introspection_);
     }
 
     res = std::move(merged_access);

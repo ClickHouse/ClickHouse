@@ -234,7 +234,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         }
     }
 
-    LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
+    LOG_DEBUG_FORMATTED(log, "Removed {} old log entries: {} - {}", entries.size(), entries.front(), entries.back());
 }
 
 
@@ -456,7 +456,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", replicas_stat.version));
             zookeeper->multi(ops);
-            LOG_DEBUG(log, "Removed " << (i + 1 - batch_start_i) << " old mutation entries: " << entries[batch_start_i] << " - " << entries[i]);
+            LOG_DEBUG_FORMATTED(log, "Removed {} old mutation entries: {} - {}", (i + 1 - batch_start_i), entries[batch_start_i], entries[i]);
             batch_start_i = i + 1;
             ops.clear();
         }
