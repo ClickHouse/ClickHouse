@@ -439,7 +439,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
         reason = "GROUP BY " + backQuote(serializeAST(*group_by, true));
     }
 
-    LOG_DEBUG_FORMATTED(log, "Force distributed_group_by_no_merge for {} (injective)", reason);
+    LOG_DEBUG(log, "Force distributed_group_by_no_merge for {} (injective)", reason);
     return true;
 }
 
@@ -477,12 +477,12 @@ Pipes StorageDistributed::read(
         ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
         if (optimized_cluster)
         {
-            LOG_DEBUG_FORMATTED(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
         }
         else
         {
-            LOG_DEBUG_FORMATTED(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
         }
     }
 
@@ -570,7 +570,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
 void StorageDistributed::startup()
 {
     if (remote_database.empty() && !remote_table_function_ptr)
-        LOG_WARNING_FORMATTED(log, "Name of remote database is empty. Default database will be used implicitly.");
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
     if (!volume)
         return;
@@ -584,7 +584,7 @@ void StorageDistributed::startup()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG_FORMATTED(log, "Auto-increment is {}", file_names_increment.value);
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -813,7 +813,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
         auto new_path = path + new_path_to_table_data;
         Poco::File(path + relative_data_path).renameTo(new_path);
 
-        LOG_DEBUG_FORMATTED(log, "Updating path to {}", new_path);
+        LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)

@@ -102,7 +102,7 @@ public:
     ~DebugASTLog()
     {
         if constexpr (_enable)
-            LOG_DEBUG_FORMATTED(log, ss.str());
+            LOG_DEBUG(log, ss.str());
     }
 
     std::ostream * stream() { return (_enable ? &ss : nullptr); }

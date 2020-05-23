@@ -38,7 +38,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     // called (synchroniously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
-        LOG_TRACE_FORMATTED(log, "Topics/partitions assigned: {}", topic_partitions);
+        LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
         assignment = topic_partitions;
     });
 
@@ -47,7 +47,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     {
         // Rebalance is happening now, and now we have a chance to finish the work
         // with topics/partitions we were working with before rebalance
-        LOG_TRACE_FORMATTED(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
+        LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
 
         // we can not flush data to target from that point (it is pulled, not pushed)
         // so the best we can now it to
@@ -70,13 +70,13 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
         // }
         // catch (cppkafka::HandleException & e)
         // {
-        //     LOG_WARNING_FORMATTED(log, "Commit error: {}", e.what());
+        //     LOG_WARNING(log, "Commit error: {}", e.what());
         // }
     });
 
     consumer->set_rebalance_error_callback([this](cppkafka::Error err)
     {
-        LOG_ERROR_FORMATTED(log, "Rebalance error: {}", err);
+        LOG_ERROR(log, "Rebalance error: {}", err);
     });
 }
 
@@ -104,11 +104,11 @@ void ReadBufferFromKafkaConsumer::commit()
 
             if (topic_part.get_offset() < 0)
             {
-                LOG_TRACE_FORMATTED(log, "{} {} (topic: {}, partition: {})", prefix, print_special_offset(), topic_part.get_topic(), topic_part.get_partition());
+                LOG_TRACE(log, "{} {} (topic: {}, partition: {})", prefix, print_special_offset(), topic_part.get_topic(), topic_part.get_partition());
             }
             else
             {
-                LOG_TRACE_FORMATTED(log, "{} {} (topic: {}, partition: {})", prefix, topic_part.get_offset(), topic_part.get_topic(), topic_part.get_partition());
+                LOG_TRACE(log, "{} {} (topic: {}, partition: {})", prefix, topic_part.get_offset(), topic_part.get_topic(), topic_part.get_partition());
             }
         }
     };
@@ -117,7 +117,7 @@ void ReadBufferFromKafkaConsumer::commit()
 
     if (hasMorePolledMessages())
     {
-        LOG_WARNING_FORMATTED(log, "Logical error. Non all polled messages were processed.");
+        LOG_WARNING(log, "Logical error. Non all polled messages were processed.");
     }
 
     if (offsets_stored > 0)
@@ -144,7 +144,7 @@ void ReadBufferFromKafkaConsumer::commit()
             }
             catch (const cppkafka::HandleException & e)
             {
-                LOG_ERROR_FORMATTED(log, "Exception during commit attempt: {}", e.what());
+                LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
             }
             --max_retries;
         }
@@ -157,7 +157,7 @@ void ReadBufferFromKafkaConsumer::commit()
     }
     else
     {
-        LOG_TRACE_FORMATTED(log, "Nothing to commit.");
+        LOG_TRACE(log, "Nothing to commit.");
     }
 
     offsets_stored = 0;
@@ -166,8 +166,8 @@ void ReadBufferFromKafkaConsumer::commit()
 
 void ReadBufferFromKafkaConsumer::subscribe()
 {
-    LOG_TRACE_FORMATTED(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
-    LOG_TRACE_FORMATTED(log, "Already assigned to: {}", assignment);
+    LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
+    LOG_TRACE(log, "Already assigned to: {}", assignment);
 
     size_t max_retries = 5;
 
@@ -195,7 +195,7 @@ void ReadBufferFromKafkaConsumer::subscribe()
 
 void ReadBufferFromKafkaConsumer::unsubscribe()
 {
-    LOG_TRACE_FORMATTED(log, "Re-joining claimed consumer after failure");
+    LOG_TRACE(log, "Re-joining claimed consumer after failure");
 
     messages.clear();
     current = messages.begin();
@@ -214,7 +214,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR_FORMATTED(log, "Exception from ReadBufferFromKafkaConsumer::unsubscribe: {}", e.what());
+        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer::unsubscribe: {}", e.what());
     }
 
 }
@@ -230,12 +230,12 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (assignment.empty())
     {
-        LOG_TRACE_FORMATTED(log, "Not assignned. Can't reset to last committed position.");
+        LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
     consumer->assign(committed_offset);
-    LOG_TRACE_FORMATTED(log, "{} Returned to committed position: {}", msg, committed_offset);
+    LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
 }
 
 /// Do commit messages implicitly after we processed the previous batch.
@@ -303,7 +303,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
                     }
                     else
                     {
-                        LOG_TRACE_FORMATTED(log, "Can't get assignment");
+                        LOG_TRACE(log, "Can't get assignment");
                         stalled = true;
                         return false;
                     }
@@ -311,7 +311,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
                 }
                 else
                 {
-                    LOG_TRACE_FORMATTED(log, "Stalled");
+                    LOG_TRACE(log, "Stalled");
                     stalled = true;
                     return false;
                 }
@@ -320,7 +320,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             {
                 messages = std::move(new_messages);
                 current = messages.begin();
-                LOG_TRACE_FORMATTED(log, "Polled batch of {} messages. Offset position: {}", messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+                LOG_TRACE(log, "Polled batch of {} messages. Offset position: {}", messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
                 break;
             }
         }
@@ -331,7 +331,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
         ++current;
 
         // TODO: should throw exception instead
-        LOG_ERROR_FORMATTED(log, "Consumer error: {}", err);
+        LOG_ERROR(log, "Consumer error: {}", err);
         return false;
     }
 

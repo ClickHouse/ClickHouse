@@ -250,7 +250,7 @@ private:
         {
             if (path.empty() || !repository.exists(path))
             {
-                LOG_WARNING_FORMATTED(log, "Config file '{}' does not exist", path);
+                LOG_WARNING(log, "Config file '{}' does not exist", path);
                 return false;
             }
 
@@ -271,7 +271,7 @@ private:
                 return false;
             }
 
-            LOG_TRACE_FORMATTED(log, "Loading config file '{}'.", path);
+            LOG_TRACE(log, "Loading config file '{}'.", path);
             file_info.file_contents = repository.load(path);
             auto & file_contents = *file_info.file_contents;
 
@@ -286,14 +286,14 @@ private:
                 if (!startsWith(key, settings.external_config))
                 {
                     if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
-                        LOG_WARNING_FORMATTED(log, "{}: file contains unknown node '{}', expected '{}'", path, key, settings.external_config);
+                        LOG_WARNING(log, "{}: file contains unknown node '{}', expected '{}'", path, key, settings.external_config);
                     continue;
                 }
 
                 String object_name = file_contents.getString(key + "." + settings.external_name);
                 if (object_name.empty())
                 {
-                    LOG_WARNING_FORMATTED(log, "{}: node '{}' defines {} with an empty name. It's not allowed", path, key, type_name);
+                    LOG_WARNING(log, "{}: node '{}' defines {} with an empty name. It's not allowed", path, key, type_name);
                     continue;
                 }
 
@@ -351,10 +351,10 @@ private:
                         if (!already_added->from_temp_repository && !repository->isTemporary())
                         {
                             if (path == already_added->path && repository->getName() == already_added->repository_name)
-                                LOG_WARNING_FORMATTED(log, "{} '{}' is found twice in the same file '{}'",
+                                LOG_WARNING(log, "{} '{}' is found twice in the same file '{}'",
                                     type_name, object_name, path);
                             else
-                                LOG_WARNING_FORMATTED(log, "{} '{}' is found both in file '{}' and '{}'",
+                                LOG_WARNING(log, "{} '{}' is found both in file '{}' and '{}'",
                                     type_name, object_name, already_added->path, path);
                         }
                     }
@@ -444,7 +444,7 @@ public:
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
-                        LOG_TRACE_FORMATTED(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
+                        LOG_TRACE(log, "Will reload '{}' because its configuration has been changed and there were attempts to load it before", name);
                         startLoading(info, true);
                     }
                 }
@@ -459,7 +459,7 @@ public:
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
                 {
-                    LOG_TRACE_FORMATTED(log, "Will load '{}' because always_load_everything flag is set.", name);
+                    LOG_TRACE(log, "Will load '{}' because always_load_everything flag is set.", name);
                     startLoading(info);
                 }
             }
@@ -472,7 +472,7 @@ public:
             {
                 const auto & info = it->second;
                 if (info.loaded() || info.isLoading())
-                    LOG_TRACE_FORMATTED(log, "Unloading '{}' because its configuration has been removed or detached", name);
+                    LOG_TRACE(log, "Unloading '{}' because its configuration has been removed or detached", name);
                 infos.erase(it);
             }
         }
@@ -669,7 +669,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE_FORMATTED(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, ext::to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, ext::to_string(info.next_update_time));
                             continue;
                         }
 
@@ -681,7 +681,7 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE_FORMATTED(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
+                    LOG_TRACE(log, "Object '{}' is neither loaded nor failed, so it will not be reloaded as outdated.", info.name);
                 }
             }
         }
@@ -874,7 +874,7 @@ private:
     {
         if (info.isLoading())
         {
-            LOG_TRACE_FORMATTED(log, "The object '{}' is already being loaded, force = {}.", info.name, forced_to_reload);
+            LOG_TRACE(log, "The object '{}' is already being loaded, force = {}.", info.name, forced_to_reload);
 
             if (!forced_to_reload)
             {
@@ -890,7 +890,7 @@ private:
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
 
-        LOG_TRACE_FORMATTED(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
+        LOG_TRACE(log, "Will load the object '{}' {}, force = {}, loading_id = {}", info.name, (enable_async_loading ? std::string("in background") : "immediately"), forced_to_reload, info.loading_id);
 
         if (enable_async_loading)
         {
@@ -919,7 +919,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
     {
-        LOG_TRACE_FORMATTED(log, "Start loading object '{}'", name);
+        LOG_TRACE(log, "Start loading object '{}'", name);
         try
         {
             /// Prepare for loading.
@@ -929,7 +929,7 @@ private:
                 info = prepareToLoadSingleObject(name, loading_id, min_id_to_finish_loading_dependencies_, lock);
                 if (!info)
                 {
-                    LOG_TRACE_FORMATTED(log, "Could not lock object '{}' for loading", name);
+                    LOG_TRACE(log, "Could not lock object '{}' for loading", name);
                     return;
                 }
             }
@@ -1032,17 +1032,17 @@ private:
         /// This is necessary because the object could be removed or load with another config while the `mutex` was unlocked.
         if (!info)
         {
-            LOG_TRACE_FORMATTED(log, "Next update time for '{}' will not be set because this object was not found.", name);
+            LOG_TRACE(log, "Next update time for '{}' will not be set because this object was not found.", name);
             return;
         }
         if (!info->isLoading())
         {
-            LOG_TRACE_FORMATTED(log, "Next update time for '{}' will not be set because this object is not currently loading.", name);
+            LOG_TRACE(log, "Next update time for '{}' will not be set because this object is not currently loading.", name);
             return;
         }
         if (info->loading_id != loading_id)
         {
-            LOG_TRACE_FORMATTED(log, "Next update time for '{}' will not be set because this object's current loading_id {} is different from the specified {}.", name, info->loading_id, loading_id);
+            LOG_TRACE(log, "Next update time for '{}' will not be set because this object's current loading_id {} is different from the specified {}.", name, info->loading_id, loading_id);
             return;
         }
 
@@ -1072,7 +1072,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE_FORMATTED(log, "Next update time for '{}' was set to {}", info->name, ext::to_string(next_update_time));
+        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, ext::to_string(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1104,7 +1104,7 @@ private:
         {
             if (!loaded_object->supportUpdates())
             {
-                LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is never (loaded, does not support updates)", loaded_object->getLoadableName());
+                LOG_TRACE(log, "Supposed update time for '{}' is never (loaded, does not support updates)", loaded_object->getLoadableName());
 
                 return never;
             }
@@ -1113,7 +1113,7 @@ private:
             const auto & lifetime = loaded_object->getLifetime();
             if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
             {
-                LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is never (loaded, lifetime 0)", loaded_object->getLoadableName());
+                LOG_TRACE(log, "Supposed update time for '{}' is never (loaded, lifetime 0)", loaded_object->getLoadableName());
                 return never;
             }
 
@@ -1121,19 +1121,19 @@ private:
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                 auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-                LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
+                LOG_TRACE(log, "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
                     loaded_object->getLoadableName(), ext::to_string(result), lifetime.min_sec, lifetime.max_sec);
                 return result;
             }
 
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), ext::to_string(result), error_count);
+            LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), ext::to_string(result), error_count);
             return result;
         }
         else
         {
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE_FORMATTED(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", ext::to_string(result), error_count);
+            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", ext::to_string(result), error_count);
             return result;
         }
     }

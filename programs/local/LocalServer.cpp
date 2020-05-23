@@ -211,12 +211,12 @@ try
         /// Lock path directory before read
         status.emplace(context->getPath() + "status");
 
-        LOG_DEBUG_FORMATTED(log, "Loading metadata from {}", context->getPath());
+        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);
         DatabaseCatalog::instance().loadDatabases();
-        LOG_DEBUG_FORMATTED(log, "Loaded metadata.");
+        LOG_DEBUG(log, "Loaded metadata.");
     }
     else
     {

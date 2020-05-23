@@ -84,7 +84,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
         {
             if (queue_max_wait_ms)
-                LOG_WARNING_FORMATTED(&Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+                LOG_WARNING(&Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
@@ -231,7 +231,7 @@ ProcessListEntry::~ProcessListEntry()
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
-        LOG_ERROR_FORMATTED(&Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
+        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find user in ProcessList");
         std::terminate();
     }
 
@@ -250,7 +250,7 @@ ProcessListEntry::~ProcessListEntry()
 
     if (!found)
     {
-        LOG_ERROR_FORMATTED(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
+        LOG_ERROR(&Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
     parent.have_space.notify_all();

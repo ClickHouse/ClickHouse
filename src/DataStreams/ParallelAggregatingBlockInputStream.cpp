@@ -82,7 +82,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
                 input_streams.emplace_back(temporary_inputs.back()->block_in);
             }
 
-            LOG_TRACE_FORMATTED(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), formatReadableSizeWithBinarySuffix(files.sum_size_compressed), formatReadableSizeWithBinarySuffix(files.sum_size_uncompressed));
+            LOG_TRACE(log, "Will merge {} temporary files of size {} compressed, {} uncompressed.", files.files.size(), formatReadableSizeWithBinarySuffix(files.sum_size_compressed), formatReadableSizeWithBinarySuffix(files.sum_size_uncompressed));
 
             impl = std::make_unique<MergingAggregatedMemoryEfficientBlockInputStream>(
                 input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads);
@@ -155,7 +155,7 @@ void ParallelAggregatingBlockInputStream::execute()
     for (size_t i = 0; i < max_threads; ++i)
         threads_data.emplace_back(keys_size, aggregates_size);
 
-    LOG_TRACE_FORMATTED(log, "Aggregating");
+    LOG_TRACE(log, "Aggregating");
 
     Stopwatch watch;
 
@@ -177,7 +177,7 @@ void ParallelAggregatingBlockInputStream::execute()
     for (size_t i = 0; i < max_threads; ++i)
     {
         size_t rows = many_data[i]->size();
-        LOG_TRACE_FORMATTED(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+        LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
             threads_data[i].src_rows, rows, formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes),
             elapsed_seconds, threads_data[i].src_rows / elapsed_seconds,
             formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds));
@@ -185,7 +185,7 @@ void ParallelAggregatingBlockInputStream::execute()
         total_src_rows += threads_data[i].src_rows;
         total_src_bytes += threads_data[i].src_bytes;
     }
-    LOG_TRACE_FORMATTED(log, "Total aggregated. {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_TRACE(log, "Total aggregated. {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
         total_src_rows, formatReadableSizeWithBinarySuffix(total_src_bytes), elapsed_seconds,
         total_src_rows / elapsed_seconds, formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds));
 

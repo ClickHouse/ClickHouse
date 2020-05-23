@@ -242,7 +242,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
             requested_flush_before = queue_end;
 
         flush_event.notify_all();
-        LOG_INFO_FORMATTED(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
+        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
     }
 
     if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)     {         // Ignore all further entries until the queue is flushed.
@@ -256,7 +256,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
             // TextLog sets its logger level to 0, so this log is a noop and
             // there is no recursive logging.
-            LOG_ERROR_FORMATTED(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
+            LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
         }
 
         return;
@@ -369,7 +369,7 @@ void SystemLog<LogElement>::savingThreadFunction()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    LOG_TRACE_FORMATTED(log, "Terminating");
+    LOG_TRACE(log, "Terminating");
 }
 
 
@@ -378,7 +378,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE_FORMATTED(log, "Flushing system log, {} entries to flush", to_flush.size());
+        LOG_TRACE(log, "Flushing system log, {} entries to flush", to_flush.size());
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
@@ -417,7 +417,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         flush_event.notify_all();
     }
 
-    LOG_TRACE_FORMATTED(log, "Flushed system log");
+    LOG_TRACE(log, "Flushed system log");
 }
 
 
@@ -456,7 +456,7 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG_FORMATTED(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
@@ -464,13 +464,13 @@ void SystemLog<LogElement>::prepareTable()
             table = nullptr;
         }
         else if (!is_prepared)
-            LOG_DEBUG_FORMATTED(log, "Will use existing table {} for {}", description, LogElement::name());
+            LOG_DEBUG(log, "Will use existing table {} for {}", description, LogElement::name());
     }
 
     if (!table)
     {
         /// Create the table.
-        LOG_DEBUG_FORMATTED(log, "Creating new table {} for {}", description, LogElement::name());
+        LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
         auto create = getCreateTableQuery();
 

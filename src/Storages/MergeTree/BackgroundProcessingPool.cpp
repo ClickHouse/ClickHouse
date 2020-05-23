@@ -52,7 +52,7 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_,
     , settings(pool_settings)
 {
     logger = &Logger::get(log_name);
-    LOG_INFO_FORMATTED(logger, "Create {} with {} threads", log_name, size);
+    LOG_INFO(logger, "Create {} with {} threads", log_name, size);
 
     threads.resize(size);
     for (auto & thread : threads)

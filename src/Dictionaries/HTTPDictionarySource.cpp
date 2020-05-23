@@ -105,7 +105,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
 
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
-    LOG_TRACE_FORMATTED(log, "loadAll {}", toString());
+    LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
@@ -118,7 +118,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(url);
     getUpdateFieldAndDate(uri);
-    LOG_TRACE_FORMATTED(log, "loadUpdatedAll {}", uri.toString());
+    LOG_TRACE(log, "loadUpdatedAll {}", uri.toString());
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri, Poco::Net::HTTPRequest::HTTP_GET, ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts,
         0, credentials, DBMS_DEFAULT_BUFFER_SIZE, header_entries);
@@ -128,7 +128,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 
 BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
-    LOG_TRACE_FORMATTED(log, "loadIds {} size = {}", toString(), ids.size());
+    LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
@@ -147,7 +147,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
 
 BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
-    LOG_TRACE_FORMATTED(log, "loadKeys {} size = {}", toString(), requested_rows.size());
+    LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {

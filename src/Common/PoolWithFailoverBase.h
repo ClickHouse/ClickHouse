@@ -239,7 +239,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             }
             else
             {
-                LOG_WARNING_FORMATTED(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
                 shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);

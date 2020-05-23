@@ -76,7 +76,7 @@ AggregatedDataVariants::~AggregatedDataVariants()
 void AggregatedDataVariants::convertToTwoLevel()
 {
     if (aggregator)
-        LOG_TRACE_FORMATTED(aggregator->log, "Converting aggregation data to two-level.");
+        LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
 
     switch (type)
     {
@@ -552,7 +552,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
-        LOG_TRACE_FORMATTED(log, "Aggregation method: {}", result.getMethodName());
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
     if (isCancelled())
@@ -723,7 +723,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
-    LOG_DEBUG_FORMATTED(log, "Writing part of aggregation data into temporary file {}.", path);
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     /// Flush only two-level data and possibly overflow data.
@@ -762,7 +762,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
-    LOG_TRACE_FORMATTED(log,
+    LOG_TRACE(log,
         "Written part in {} sec., {} rows, {} uncompressed, {} compressed,"
         " {} uncompressed bytes per row, {} compressed bytes per row, compression rate: {}"
         " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
@@ -871,7 +871,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE_FORMATTED(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, formatReadableSizeWithBinarySuffix(max_temporary_block_size_bytes));
+    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, formatReadableSizeWithBinarySuffix(max_temporary_block_size_bytes));
 }
 
 
@@ -914,7 +914,7 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
       */
     bool no_more_keys = false;
 
-    LOG_TRACE_FORMATTED(log, "Aggregating");
+    LOG_TRACE(log, "Aggregating");
 
     Stopwatch watch;
 
@@ -942,7 +942,7 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
 
-    LOG_TRACE_FORMATTED(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
         src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
         formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
@@ -1258,7 +1258,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     if (isCancelled())
         return BlocksList();
 
-    LOG_TRACE_FORMATTED(log, "Converting aggregated data to blocks");
+    LOG_TRACE(log, "Converting aggregated data to blocks");
 
     Stopwatch watch;
 
@@ -1311,7 +1311,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE_FORMATTED(log,
+    LOG_TRACE(log,
         "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
         rows, formatReadableSizeWithBinarySuffix(bytes),
         elapsed_seconds, rows / elapsed_seconds,
@@ -1565,7 +1565,7 @@ public:
 
     ~MergingAndConvertingBlockInputStream() override
     {
-        LOG_TRACE_FORMATTED(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+        LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
 
         /// We need to wait for threads to finish before destructor of 'parallel_merge_data',
         ///  because the threads access 'parallel_merge_data'.
@@ -1740,7 +1740,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     if (data_variants.empty())
         throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
 
-    LOG_TRACE_FORMATTED(log, "Merging aggregated data");
+    LOG_TRACE(log, "Merging aggregated data");
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());
@@ -1932,7 +1932,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     BucketToBlocks bucket_to_blocks;
 
     /// Read all the data.
-    LOG_TRACE_FORMATTED(log, "Reading blocks of partially aggregated data.");
+    LOG_TRACE(log, "Reading blocks of partially aggregated data.");
 
     size_t total_input_rows = 0;
     size_t total_input_blocks = 0;
@@ -1946,7 +1946,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
     }
 
-    LOG_TRACE_FORMATTED(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
+    LOG_TRACE(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
 
     mergeBlocks(bucket_to_blocks, result, max_threads);
 }
@@ -1999,7 +1999,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
           * That is, the keys in the end can be significantly larger than max_rows_to_group_by.
           */
 
-        LOG_TRACE_FORMATTED(log, "Merging partially aggregated two-level data.");
+        LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
@@ -2048,7 +2048,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
         if (thread_pool)
             thread_pool->wait();
 
-        LOG_TRACE_FORMATTED(log, "Merged partially aggregated two-level data.");
+        LOG_TRACE(log, "Merged partially aggregated two-level data.");
     }
 
     if (isCancelled())
@@ -2059,7 +2059,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
     if (has_blocks_with_unknown_bucket)
     {
-        LOG_TRACE_FORMATTED(log, "Merging partially aggregated single-level data.");
+        LOG_TRACE(log, "Merging partially aggregated single-level data.");
 
         bool no_more_keys = false;
 
@@ -2088,7 +2088,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
 
-        LOG_TRACE_FORMATTED(log, "Merged partially aggregated single-level data.");
+        LOG_TRACE(log, "Merged partially aggregated single-level data.");
     }
 }
 
@@ -2101,7 +2101,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto bucket_num = blocks.front().info.bucket_num;
     bool is_overflows = blocks.front().info.is_overflows;
 
-    LOG_TRACE_FORMATTED(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
+    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
     Stopwatch watch;
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
@@ -2177,7 +2177,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE_FORMATTED(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_TRACE(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
         rows, formatReadableSizeWithBinarySuffix(bytes),
         elapsed_seconds, rows / elapsed_seconds,
         formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
@@ -2348,7 +2348,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
     if (result.empty())
         return;
 
-    LOG_TRACE_FORMATTED(log, "Destroying aggregate states");
+    LOG_TRACE(log, "Destroying aggregate states");
 
     /// In what data structure is the data aggregated?
     if (result.type == AggregatedDataVariants::Type::without_key || params.overflow_row)

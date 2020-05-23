@@ -76,7 +76,7 @@ void ODBCHandler::processError(Poco::Net::HTTPServerResponse & response, const s
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
         response.send() << message << std::endl;
-    LOG_WARNING_FORMATTED(log, message);
+    LOG_WARNING(log, message);
 }
 
 void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
@@ -84,7 +84,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     Poco::Net::HTMLForm params(request);
     if (mode == "read")
         params.read(request.stream());
-    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read" && !params.has("query"))
     {
@@ -125,14 +125,14 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     catch (const Exception & ex)
     {
         processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
-        LOG_WARNING_FORMATTED(log, ex.getStackTraceString());
+        LOG_WARNING(log, ex.getStackTraceString());
         return;
     }
 
     std::string format = params.get("format", "RowBinary");
 
     std::string connection_string = params.get("connection_string");
-    LOG_TRACE_FORMATTED(log, "Connection string: '{}'", connection_string);
+    LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
 
@@ -152,7 +152,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             }
             std::string db_name = params.get("db_name");
             std::string table_name = params.get("table_name");
-            LOG_TRACE_FORMATTED(log, "DB name: '{}', table name: '{}'", db_name, table_name);
+            LOG_TRACE(log, "DB name: '{}', table name: '{}'", db_name, table_name);
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
@@ -171,7 +171,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         else
         {
             std::string query = params.get("query");
-            LOG_TRACE_FORMATTED(log, "Query: {}", query);
+            LOG_TRACE(log, "Query: {}", query);
 
             BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, context);
             auto pool = getPool(connection_string);

@@ -79,7 +79,7 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
             }
             catch (const Poco::Net::DNSException & e)
             {
-                LOG_ERROR_FORMATTED(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
             }
         }
 
@@ -96,9 +96,9 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
         if (chroot.empty())
-            LOG_TRACE_FORMATTED(log, "Initialized, hosts: {}", hosts);
+            LOG_TRACE(log, "Initialized, hosts: {}", hosts);
         else
-            LOG_TRACE_FORMATTED(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
+            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
     }
     else if (implementation == "testkeeper")
     {

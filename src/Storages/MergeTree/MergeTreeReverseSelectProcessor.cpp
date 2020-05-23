@@ -66,7 +66,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     size_t total_rows = data_part->index_granularity.getTotalRows();
 
     if (!quiet)
-        LOG_TRACE_FORMATTED(log, "Reading {} ranges in reverse order from part {}, approx. {}, up to {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {}, up to {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getRowsCountInRanges(all_mark_ranges),
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));

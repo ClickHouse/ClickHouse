@@ -167,7 +167,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     ++backoff_state.num_events;
 
     ProfileEvents::increment(ProfileEvents::SlowRead);
-    LOG_DEBUG_FORMATTED(log, "Slow read, event №{}: read {} bytes in {} sec., {}/s.",
+    LOG_DEBUG(log, "Slow read, event №{}: read {} bytes in {} sec., {}/s.",
         backoff_state.num_events, info.bytes_read, info.nanoseconds / 1e9,
         formatReadableSizeWithBinarySuffix(throughput));
 
@@ -178,7 +178,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     --backoff_state.current_threads;
 
     ProfileEvents::increment(ProfileEvents::ReadBackoff);
-    LOG_DEBUG_FORMATTED(log, "Will lower number of threads to {}", backoff_state.current_threads);
+    LOG_DEBUG(log, "Will lower number of threads to {}", backoff_state.current_threads);
 }
 
 

@@ -25,14 +25,14 @@ namespace DB
 void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
-    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             response.send() << message << std::endl;
-        LOG_WARNING_FORMATTED(log, message);
+        LOG_WARNING(log, message);
     };
 
     if (!params.has("connection_string"))

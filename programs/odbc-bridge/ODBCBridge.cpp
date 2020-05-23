@@ -48,7 +48,7 @@ namespace
 #endif
             )
             {
-                LOG_ERROR_FORMATTED(log, "Cannot resolve listen_host ({}), error {}: {}. If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>", host, e.code(), e.message());
+                LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. If it is an IPv6 address and your host has disabled IPv6, then consider to specify IPv4 address to listen in <listen_host> element of configuration file. Example: <listen_host>0.0.0.0</listen_host>", host, e.code(), e.message());
             }
 
             throw;
@@ -160,7 +160,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     if (is_help)
         return Application::EXIT_OK;
 
-    LOG_INFO_FORMATTED(log, "Starting up");
+    LOG_INFO(log, "Starting up");
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, hostname, port, log);
     socket.setReceiveTimeout(http_timeout);
@@ -183,17 +183,17 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
     server.start();
 
-    LOG_INFO_FORMATTED(log, "Listening http://{}", address.toString());
+    LOG_INFO(log, "Listening http://{}", address.toString());
 
     SCOPE_EXIT({
-        LOG_DEBUG_FORMATTED(log, "Received termination signal.");
-        LOG_DEBUG_FORMATTED(log, "Waiting for current connections to close.");
+        LOG_DEBUG(log, "Received termination signal.");
+        LOG_DEBUG(log, "Waiting for current connections to close.");
         server.stop();
         for (size_t count : ext::range(1, 6))
         {
             if (server.currentConnections() == 0)
                 break;
-            LOG_DEBUG_FORMATTED(log, "Waiting for {} connections, try {}", server.currentConnections(), count);
+            LOG_DEBUG(log, "Waiting for {} connections, try {}", server.currentConnections(), count);
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
     });

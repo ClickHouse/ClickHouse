@@ -174,7 +174,7 @@ Pipes StorageKafka::read(
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
     }
 
-    LOG_DEBUG_FORMATTED(log, "Starting reading {} streams", pipes.size());
+    LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     return pipes;
 }
 
@@ -212,7 +212,7 @@ void StorageKafka::shutdown()
     // Interrupt streaming thread
     stream_cancelled = true;
 
-    LOG_TRACE_FORMATTED(log, "Waiting for cleanup");
+    LOG_TRACE(log, "Waiting for cleanup");
     task->deactivate();
 
     // Close all consumers
@@ -325,7 +325,7 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & /* facility */, const std::string & message)
     {
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-        LOG_IMPL_FORMATTED(log, client_logs_level, poco_level, message);
+        LOG_IMPL(log, client_logs_level, poco_level, message);
     });
 
     // Configure interceptor to change thread name
@@ -340,12 +340,12 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 
         status = rd_kafka_conf_interceptor_add_on_new(conf.get_handle(), "setThreadName", rdKafkaOnNew, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR_FORMATTED(log, "Cannot set new interceptor");
+            LOG_ERROR(log, "Cannot set new interceptor");
 
         // cppkafka always copy the configuration
         status = rd_kafka_conf_interceptor_add_on_conf_dup(conf.get_handle(), "setThreadName", rdKafkaOnConfDup, self);
         if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
-            LOG_ERROR_FORMATTED(log, "Cannot set dup conf interceptor");
+            LOG_ERROR(log, "Cannot set dup conf interceptor");
     }
 }
 
@@ -391,7 +391,7 @@ void StorageKafka::threadFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG_FORMATTED(log, "Started streaming to {} attached views", dependencies_count);
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 // Reschedule if not limited
                 if (!streamToViews())

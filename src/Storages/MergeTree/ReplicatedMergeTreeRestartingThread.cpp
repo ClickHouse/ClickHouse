@@ -68,11 +68,11 @@ void ReplicatedMergeTreeRestartingThread::run()
 
             if (first_time)
             {
-                LOG_DEBUG_FORMATTED(log, "Activating replica.");
+                LOG_DEBUG(log, "Activating replica.");
             }
             else
             {
-                LOG_WARNING_FORMATTED(log, "ZooKeeper session has expired. Switching to a new session.");
+                LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
                 bool old_val = false;
                 if (storage.is_readonly.compare_exchange_strong(old_val, true))
@@ -133,7 +133,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             storage.getReplicaDelays(absolute_delay, relative_delay);
 
             if (absolute_delay)
-                LOG_TRACE_FORMATTED(log, "Absolute delay: {}. Relative delay: {}.", absolute_delay, relative_delay);
+                LOG_TRACE(log, "Absolute delay: {}. Relative delay: {}.", absolute_delay, relative_delay);
 
             prev_time_of_check_delay = current_time;
 
@@ -141,7 +141,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             if (storage.is_leader
                 && relative_delay > static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
             {
-                LOG_INFO_FORMATTED(log, "Relative replica delay ({} seconds) is bigger than threshold ({}). Will yield leadership.", relative_delay, storage_settings->min_relative_delay_to_yield_leadership);
+                LOG_INFO(log, "Relative replica delay ({} seconds) is bigger than threshold ({}). Will yield leadership.", relative_delay, storage_settings->min_relative_delay_to_yield_leadership);
 
                 ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
@@ -188,7 +188,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         if (storage_settings->replicated_can_become_leader)
             storage.enterLeaderElection();
         else
-            LOG_INFO_FORMATTED(log, "Will not enter leader election because replicated_can_become_leader=0");
+            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
 
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
@@ -214,7 +214,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR_FORMATTED(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -222,7 +222,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR_FORMATTED(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
+            LOG_ERROR(log, "Couldn't start replication: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
         }
     }
@@ -247,7 +247,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
 
         if (part)
         {
-            LOG_DEBUG_FORMATTED(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
+            LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
             storage.forgetPartAndMoveToDetached(part, "noquorum");
             storage.queue.removeFromVirtualParts(part->info);
         }
@@ -268,7 +268,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
         if (!quorum_entry.replicas.count(storage.replica_name)
             && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
-            LOG_WARNING_FORMATTED(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
+            LOG_WARNING(log, "We have part {} but we is not in quorum. Updating quorum. This shouldn't happen often.", quorum_entry.part_name);
             storage.updateQuorum(quorum_entry.part_name);
         }
     }
@@ -335,7 +335,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.partial_shutdown_event.set();
     storage.replica_is_active_node = nullptr;
 
-    LOG_TRACE_FORMATTED(log, "Waiting for threads to finish");
+    LOG_TRACE(log, "Waiting for threads to finish");
 
     storage.exitLeaderElection();
 
@@ -346,7 +346,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.cleanup_thread.stop();
     storage.part_check_thread.stop();
 
-    LOG_TRACE_FORMATTED(log, "Threads finished");
+    LOG_TRACE(log, "Threads finished");
 }
 
 
@@ -355,7 +355,7 @@ void ReplicatedMergeTreeRestartingThread::shutdown()
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
     need_stop = true;
     task->deactivate();
-    LOG_TRACE_FORMATTED(log, "Restarting thread finished");
+    LOG_TRACE(log, "Restarting thread finished");
 
     /// Stop other tasks.
     partialShutdown();

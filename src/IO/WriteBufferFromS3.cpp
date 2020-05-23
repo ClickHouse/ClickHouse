@@ -100,7 +100,7 @@ void WriteBufferFromS3::initiate()
     if (outcome.IsSuccess())
     {
         upload_id = outcome.GetResult().GetUploadId();
-        LOG_DEBUG_FORMATTED(log, "Multipart upload initiated. Upload id: {}", upload_id);
+        LOG_DEBUG(log, "Multipart upload initiated. Upload id: {}", upload_id);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -115,7 +115,7 @@ void WriteBufferFromS3::writePart(const String & data)
     if (part_tags.size() == S3_WARN_MAX_PARTS)
     {
         // Don't throw exception here by ourselves but leave the decision to take by S3 server.
-        LOG_WARNING_FORMATTED(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
+        LOG_WARNING(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
     }
 
     Aws::S3::Model::UploadPartRequest req;
@@ -129,13 +129,13 @@ void WriteBufferFromS3::writePart(const String & data)
 
     auto outcome = client_ptr->UploadPart(req);
 
-    LOG_TRACE_FORMATTED(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, data.size());
+    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, data.size());
 
     if (outcome.IsSuccess())
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG_FORMATTED(log, "Writing part finished. Total parts: {}, Upload_id: {}, Etag: {}", part_tags.size(), upload_id, etag);
+        LOG_DEBUG(log, "Writing part finished. Total parts: {}, Upload_id: {}, Etag: {}", part_tags.size(), upload_id, etag);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -144,7 +144,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
 void WriteBufferFromS3::complete()
 {
-    LOG_DEBUG_FORMATTED(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}", bucket, key, upload_id);
+    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}", bucket, key, upload_id);
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
@@ -166,7 +166,7 @@ void WriteBufferFromS3::complete()
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG_FORMATTED(log, "Multipart upload completed. Upload_id: {}", upload_id);
+        LOG_DEBUG(log, "Multipart upload completed. Upload_id: {}", upload_id);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }

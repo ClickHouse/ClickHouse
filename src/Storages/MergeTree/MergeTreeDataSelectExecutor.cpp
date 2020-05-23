@@ -107,7 +107,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     size_t rows_count = 0;
 
     /// We will find out how many rows we would have read without sampling.
-    LOG_DEBUG_FORMATTED(log, "Preliminary index scan with condition: {}", key_condition.toString());
+    LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
     for (const auto & part : parts)
     {
@@ -329,7 +329,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_size > 1)
         {
             relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
-            LOG_DEBUG_FORMATTED(log, "Selected relative sample size: {}", toString(relative_sample_size));
+            LOG_DEBUG(log, "Selected relative sample size: {}", toString(relative_sample_size));
         }
 
         /// SAMPLE 1 is the same as the absence of SAMPLE.
@@ -342,7 +342,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_offset > 1)
         {
             relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
-            LOG_DEBUG_FORMATTED(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
+            LOG_DEBUG(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
         }
     }
 
@@ -530,13 +530,13 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     if (no_data)
     {
-        LOG_DEBUG_FORMATTED(log, "Sampling yields no data.");
+        LOG_DEBUG(log, "Sampling yields no data.");
         return {};
     }
 
-    LOG_DEBUG_FORMATTED(log, "Key condition: {}", key_condition.toString());
+    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
     if (minmax_idx_condition)
-        LOG_DEBUG_FORMATTED(log, "MinMax index condition: {}", minmax_idx_condition->toString());
+        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
 
     /// PREWHERE
     String prewhere_column;
@@ -586,7 +586,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    LOG_DEBUG_FORMATTED(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
+    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
@@ -785,7 +785,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
-        LOG_TRACE_FORMATTED(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
+        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
         {
@@ -1382,7 +1382,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
     {
-        LOG_DEBUG_FORMATTED(log, "File for index {} does not exist. Skipping it.", backQuote(index->name));
+        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index->name));
         return ranges;
     }
 
@@ -1442,7 +1442,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG_FORMATTED(log, "Index {} has dropped {} granules.", backQuote(index->name), granules_dropped);
+    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index->name), granules_dropped);
 
     return res;
 }

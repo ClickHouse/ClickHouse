@@ -57,11 +57,11 @@ IProcessor::Status CreatingSetsTransform::prepare()
 void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
 {
     if (subquery.set)
-        LOG_TRACE_FORMATTED(log, "Creating set.");
+        LOG_TRACE(log, "Creating set.");
     if (subquery.join)
-        LOG_TRACE_FORMATTED(log, "Creating join.");
+        LOG_TRACE(log, "Creating join.");
     if (subquery.table)
-        LOG_TRACE_FORMATTED(log, "Filling temporary table.");
+        LOG_TRACE(log, "Filling temporary table.");
 
     elapsed_nanoseconds = 0;
 
@@ -93,15 +93,15 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
         auto seconds = elapsed_nanoseconds / 1e9;
 
         if (subquery.set)
-            LOG_DEBUG_FORMATTED(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", subquery.set->getTotalRowCount(), head_rows, seconds);
         if (subquery.join)
-            LOG_DEBUG_FORMATTED(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
+            LOG_DEBUG(log, "Created Join with {} entries from {} rows in {} sec.", subquery.join->getTotalRowCount(), head_rows, seconds);
         if (subquery.table)
-            LOG_DEBUG_FORMATTED(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", head_rows, seconds);
     }
     else
     {
-        LOG_DEBUG_FORMATTED(log, "Subquery has empty result.");
+        LOG_DEBUG(log, "Subquery has empty result.");
     }
 }
 

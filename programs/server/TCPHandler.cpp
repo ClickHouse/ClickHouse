@@ -76,7 +76,7 @@ void TCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING_FORMATTED(log, "Client has not sent any data.");
+        LOG_WARNING(log, "Client has not sent any data.");
         return;
     }
 
@@ -89,13 +89,13 @@ void TCPHandler::runImpl()
     {
         if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
         {
-            LOG_DEBUG_FORMATTED(log, "Client has connected to wrong port.");
+            LOG_DEBUG(log, "Client has connected to wrong port.");
             return;
         }
 
         if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         {
-            LOG_WARNING_FORMATTED(log, "Client has gone away.");
+            LOG_WARNING(log, "Client has gone away.");
             return;
         }
 
@@ -115,7 +115,7 @@ void TCPHandler::runImpl()
         if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            LOG_ERROR_FORMATTED(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+            LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -139,7 +139,7 @@ void TCPHandler::runImpl()
             {
                 if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
                 {
-                    LOG_TRACE_FORMATTED(log, "Closing idle connection");
+                    LOG_TRACE(log, "Closing idle connection");
                     return;
                 }
             }
@@ -344,7 +344,7 @@ void TCPHandler::runImpl()
         {
             /** Could not send exception information to the client. */
             network_error = true;
-            LOG_WARNING_FORMATTED(log, "Client has gone away.");
+            LOG_WARNING(log, "Client has gone away.");
         }
 
         try
@@ -355,7 +355,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             network_error = true;
-            LOG_WARNING_FORMATTED(log, "Can't read external tables after query failure.");
+            LOG_WARNING(log, "Can't read external tables after query failure.");
         }
 
 
@@ -378,7 +378,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_INFO_FORMATTED(log, "Processed in {} sec.", watch.elapsedSeconds());
+        LOG_INFO(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -730,7 +730,7 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
-    LOG_DEBUG_FORMATTED(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
+    LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
         client_name,
         client_version_major, client_version_minor, client_version_patch,
         client_revision,
@@ -1076,7 +1076,7 @@ bool TCPHandler::isQueryCancelled()
             case Protocol::Client::Cancel:
                 if (state.empty())
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
-                LOG_INFO_FORMATTED(log, "Query was cancelled.");
+                LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
                 return true;
 
@@ -1194,14 +1194,14 @@ void TCPHandler::run()
     {
         runImpl();
 
-        LOG_INFO_FORMATTED(log, "Done processing connection.");
+        LOG_INFO(log, "Done processing connection.");
     }
     catch (Poco::Exception & e)
     {
         /// Timeout - not an error.
         if (!strcmp(e.what(), "Timeout"))
         {
-            LOG_DEBUG_FORMATTED(log, "Poco::Exception. Code: {}, e.code() = {}, e.displayText() = {}, e.what() = {}", ErrorCodes::POCO_EXCEPTION, e.code(), e.displayText(), e.what());
+            LOG_DEBUG(log, "Poco::Exception. Code: {}, e.code() = {}, e.displayText() = {}, e.what() = {}", ErrorCodes::POCO_EXCEPTION, e.code(), e.displayText(), e.what());
         }
         else
             throw;

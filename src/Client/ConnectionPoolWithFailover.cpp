@@ -224,7 +224,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         {
             auto message_pattern = "There is no table {}.{} on server: {}";
             fail_message = fmt::format(message_pattern, backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-            LOG_WARNING_FORMATTED(log, fail_message);
+            LOG_WARNING(log, fail_message);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
 
             return result;
@@ -248,7 +248,7 @@ ConnectionPoolWithFailover::tryGetEntry(
             result.is_up_to_date = false;
             result.staleness = delay;
 
-            LOG_TRACE_FORMATTED(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
+            LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         }
     }

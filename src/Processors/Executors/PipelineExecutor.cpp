@@ -486,7 +486,7 @@ void PipelineExecutor::execute(size_t num_threads)
     catch (...)
     {
 #ifndef NDEBUG
-        LOG_TRACE_FORMATTED(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
+        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
 #endif
         throw;
     }
@@ -547,7 +547,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
 #ifndef NDEBUG
     auto & context = executor_contexts[thread_num];
-    LOG_TRACE_FORMATTED(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
+    LOG_TRACE(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
 #endif
 }
 

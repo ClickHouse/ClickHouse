@@ -100,10 +100,10 @@ void ColumnGathererStream::readSuffixImpl()
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
 
     if (!seconds)
-        LOG_DEBUG_FORMATTED(log, "Gathered column {} ({} bytes/elem.) in 0 sec.",
+        LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in 0 sec.",
             column_name, static_cast<double>(profile_info.bytes) / profile_info.rows);
     else
-        LOG_DEBUG_FORMATTED(log, "Gathered column {} ({} bytes/elem.) in {} sec., {} rows/sec., {}/sec.",
+        LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in {} sec., {} rows/sec., {}/sec.",
             column_name, static_cast<double>(profile_info.bytes) / profile_info.rows, seconds,
             profile_info.rows / seconds, formatReadableSizeWithBinarySuffix(profile_info.bytes / seconds));
 }
