@@ -3987,7 +3987,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
     /// While looking for the record, it has already been executed and deleted.
     if (queue_entry_to_wait_for.empty())
     {
-        LOG_DEBUG(log, "No corresponding node found. Assuming it has been already processed." " Found " << queue_entries.size() << " nodes.");
+        LOG_DEBUG_FORMATTED(log, "No corresponding node found. Assuming it has been already processed. Found {} nodes", queue_entries.size());
         return true;
     }
 
