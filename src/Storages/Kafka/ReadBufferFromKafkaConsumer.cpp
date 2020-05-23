@@ -104,11 +104,11 @@ void ReadBufferFromKafkaConsumer::commit()
 
             if (topic_part.get_offset() < 0)
             {
-                LOG_TRACE( log, prefix << " " << print_special_offset() << " (topic: " << topic_part.get_topic() << ", partition: " << topic_part.get_partition() << ")");
+                LOG_TRACE(log, prefix << " " << print_special_offset() << " (topic: " << topic_part.get_topic() << ", partition: " << topic_part.get_partition() << ")");
             }
             else
             {
-                LOG_TRACE( log, prefix << " " << topic_part.get_offset() << " (topic: " << topic_part.get_topic() << ", partition: " << topic_part.get_partition() << ")");
+                LOG_TRACE(log, prefix << " " << topic_part.get_offset() << " (topic: " << topic_part.get_topic() << ", partition: " << topic_part.get_partition() << ")");
             }
         }
     };
