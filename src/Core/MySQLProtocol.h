@@ -148,6 +148,7 @@ enum ResponsePacketType
     PACKET_OK = 0x00,
     PACKET_ERR = 0xff,
     PACKET_EOF = 0xfe,
+    PACKET_AUTH_SWITCH = 0xfe,
     PACKET_LOCALINFILE = 0xfb,
 };
 
@@ -903,6 +904,24 @@ protected:
     }
 };
 
+class AuthSwitch_Packet : public ReadPacket
+{
+public:
+    String plugin_name;
+
+    AuthSwitch_Packet() { }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        assert(header == 0xfe);
+        readStringUntilEOF(plugin_name, payload);
+    }
+
+private:
+    UInt8 header = 0x00;
+};
+
 class ERR_Packet : public WritePacket, public ReadPacket
 {
 public:
@@ -959,9 +978,14 @@ public:
     OK_Packet ok;
     ERR_Packet err;
     EOF_Packet eof;
+    AuthSwitch_Packet auth_switch;
     UInt64 column_length = 0;
 
     PacketResponse(UInt32 server_capability_flags_) : ok(OK_Packet(server_capability_flags_)) { }
+    PacketResponse(UInt32 server_capability_flags_, bool is_handshake_)
+        : ok(OK_Packet(server_capability_flags_)), is_handshake(is_handshake_)
+    {
+    }
 
     void readPayloadImpl(ReadBuffer & payload) override
     {
@@ -977,8 +1001,16 @@ public:
                 err.readPayloadImpl(payload);
                 break;
             case PACKET_EOF:
-                packetType = PACKET_EOF;
-                eof.readPayloadImpl(payload);
+                if (is_handshake)
+                {
+                    packetType = PACKET_AUTH_SWITCH;
+                    auth_switch.readPayloadImpl(payload);
+                }
+                else
+                {
+                    packetType = PACKET_EOF;
+                    eof.readPayloadImpl(payload);
+                }
                 break;
             case PACKET_LOCALINFILE:
                 packetType = PACKET_LOCALINFILE;
@@ -992,6 +1024,7 @@ public:
     ResponsePacketType getType() { return packetType; }
 
 private:
+    bool is_handshake = false;
     ResponsePacketType packetType = PACKET_OK;
 };
 
