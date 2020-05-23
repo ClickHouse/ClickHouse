@@ -100,10 +100,8 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(
-            &Logger::get("DiskLocal"),
-            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name) << ", having unreserved "
-                         << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
+        LOG_DEBUG_FORMATTED(&Logger::get("DiskLocal"), "Reserving {} on disk {}, having unreserved {}.",
+            formatReadableSizeWithBinarySuffix(bytes), backQuote(name), formatReadableSizeWithBinarySuffix(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return true;

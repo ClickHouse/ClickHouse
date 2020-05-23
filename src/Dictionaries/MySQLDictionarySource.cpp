@@ -213,7 +213,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
     {
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(table));
 
-        LOG_TRACE(log, query.str());
+        LOG_TRACE_FORMATTED(log, query.str());
 
         auto result = query.use();
 

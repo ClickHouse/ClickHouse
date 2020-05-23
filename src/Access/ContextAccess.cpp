@@ -219,7 +219,7 @@ bool ContextAccess::calculateResultAccessAndCheck(Poco::Logger * log_, const Acc
         if constexpr (mode == THROW_IF_ACCESS_DENIED)
             throw Exception(user_name + ": " + msg, error_code);
         else if constexpr (mode == LOG_WARNING_IF_ACCESS_DENIED)
-            LOG_WARNING(log_, user_name + ": " + msg + formatSkippedMessage(args...));
+            LOG_WARNING_FORMATTED(log_, "{}: {}{}", user_name, msg, formatSkippedMessage(args...));
     };
 
     if (!user)
@@ -451,13 +451,16 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
 
     if (trace_log && (params.readonly == readonly_) && (params.allow_ddl == allow_ddl_) && (params.allow_introspection == allow_introspection_))
     {
-        LOG_TRACE(trace_log, "List of all grants: " << merged_access->toString() << (grant_option ? " WITH GRANT OPTION" : ""));
+        if (grant_option)
+            LOG_TRACE_FORMATTED(trace_log, "List of all grants: {} WITH GRANT OPTION", merged_access->toString());
+        else
+            LOG_TRACE_FORMATTED(trace_log, "List of all grants: {}", merged_access->toString());
+
         if (roles_info && !roles_info->getCurrentRolesNames().empty())
         {
-            LOG_TRACE(
-                trace_log,
-                "Current_roles: " << boost::algorithm::join(roles_info->getCurrentRolesNames(), ", ")
-                                  << ", enabled_roles: " << boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
+            LOG_TRACE_FORMATTED(trace_log, "Current_roles: {}, enabled_roles: {}",
+                boost::algorithm::join(roles_info->getCurrentRolesNames(), ", "),
+                boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
         LOG_TRACE_FORMATTED(trace_log, "Settings: readonly={}, allow_ddl={}, allow_introspection_functions={}", readonly_, allow_ddl_, allow_introspection_);
     }

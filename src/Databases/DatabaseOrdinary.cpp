@@ -95,7 +95,7 @@ namespace
     {
         if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
+            LOG_INFO_FORMATTED(log, "{}%", processed * 100.0 / total);
             watch.restart();
         }
     }

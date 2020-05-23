@@ -949,8 +949,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG(log, std::fixed << std::setprecision(2)
-            << "Merge sorted " << merge_entry->rows_read << " rows"
+        LOG_DEBUG(log,
+            "Merge sorted " << merge_entry->rows_read << " rows"
             << ", containing " << all_column_names.size() << " columns"
             << " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
             << " in " << elapsed_seconds << " sec., "

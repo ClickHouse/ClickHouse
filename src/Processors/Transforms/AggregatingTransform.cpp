@@ -540,10 +540,10 @@ void AggregatingTransform::initGenerate()
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-                              << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
-                              << " in " << elapsed_seconds << " sec."
-                              << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+    LOG_TRACE(log,
+        "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
+        << " in " << elapsed_seconds << " sec."
+        << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
     if (params->aggregator.hasTemporaryFiles())
     {
