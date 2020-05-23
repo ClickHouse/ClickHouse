@@ -325,7 +325,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     for (const String & replica : replicas)
     {
 
-        LOG_DEBUG(log, "Waiting for " << replica << " to apply mutation " << mutation_id);
+        LOG_DEBUG_FORMATTED(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
 
         while (!partial_shutdown_called)
         {
@@ -342,7 +342,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be inactive.
             if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
             {
-                LOG_WARNING(log, "Replica " << replica << " is not active during mutation. Mutation will be done asynchronously when replica becomes active.");
+                LOG_WARNING_FORMATTED(log, "Replica {} is not active during mutation. Mutation will be done asynchronously when replica becomes active.", replica);
 
                 inactive_replicas.emplace(replica);
                 break;
@@ -730,7 +730,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Remove extra local parts.
     for (const DataPartPtr & part : unexpected_parts)
     {
-        LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" << part->name);
+        LOG_ERROR_FORMATTED(log, "Renaming unexpected part {} to ignored_{}", part->name, part->name);
         forgetPartAndMoveToDetached(part, "ignored", true);
     }
 }
@@ -923,7 +923,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         {
             if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
             {
-                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " because part " << existing_part->name << " already exists.");
+                LOG_DEBUG_FORMATTED(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
             }
             return true;
         }
@@ -1138,7 +1138,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     DataPartPtr source_part = getActiveContainingPart(source_part_name);
     if (!source_part)
     {
-        LOG_DEBUG(log, "Source part " << source_part_name << " for " << entry.new_part_name << " is not ready; will try to fetch it instead");
+        LOG_DEBUG_FORMATTED(log, "Source part {} for {} is not ready; will try to fetch it instead", source_part_name, entry.new_part_name);
         return false;
     }
 
@@ -1288,7 +1288,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                 if (entry.type != LogEntry::GET_PART)
                     throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
 
-                LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum. Will try to mark that quorum as failed.");
+                LOG_DEBUG_FORMATTED(log, "No active replica has part {} which needs to be written with quorum. Will try to mark that quorum as failed.", entry.new_part_name);
 
                 /** Atomically:
                   * - if replicas do not become active;
@@ -4899,9 +4899,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         String hash_hex = src_part->checksums.getTotalChecksumHex();
 
         if (replace)
-            LOG_INFO(log, "Trying to replace " << src_part->name << " with hash_hex " << hash_hex);
+            LOG_INFO_FORMATTED(log, "Trying to replace {} with hash_hex {}", src_part->name, hash_hex);
         else
-            LOG_INFO(log, "Trying to attach " << src_part->name << " with hash_hex " << hash_hex);
+            LOG_INFO_FORMATTED(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 
