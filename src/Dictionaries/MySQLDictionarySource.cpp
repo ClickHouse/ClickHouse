@@ -118,7 +118,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     auto connection = pool.get();
     last_modification = getLastModification(connection, false);
 
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE_FORMATTED(log, load_all_query);
     return std::make_shared<MySQLBlockInputStream>(connection, load_all_query, sample_block, max_block_size, close_connection);
 }
 
@@ -128,7 +128,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, load_update_query);
+    LOG_TRACE_FORMATTED(log, load_update_query);
     return std::make_shared<MySQLBlockInputStream>(connection, load_update_query, sample_block, max_block_size, close_connection);
 }
 
