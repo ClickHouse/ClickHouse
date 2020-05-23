@@ -5,8 +5,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <boost/program_options.hpp>
 
-int main(int, char **)
+int main(int argc, char ** argv)
 {
     using namespace DB;
     using namespace MySQLProtocol;
@@ -164,14 +165,37 @@ int main(int, char **)
     {
         try
         {
+            boost::program_options::options_description desc("Allowed options");
+            desc.add_options()("host", boost::program_options::value<std::string>()->required(), "master host")(
+                "port", boost::program_options::value<std::int32_t>()->required(), "master port")(
+                "user", boost::program_options::value<std::string>()->required(), "master user")(
+                "password", boost::program_options::value<std::string>()->required(), "master password")(
+                "db", boost::program_options::value<std::string>()->required(), "replicate do db");
+
+            boost::program_options::variables_map options;
+            boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+            if (argc == 0)
+            {
+                return 1;
+            }
+
+            auto host = options.at("host").as<DB::String>();
+            auto port = options.at("port").as<DB::Int32>();
+            auto master_user = options.at("user").as<DB::String>();
+            auto master_password = options.at("password").as<DB::String>();
+            auto replicate_db = options.at("db").as<DB::String>();
+
+            std::cerr << "Master Host: " << host << ", Port: " << port << ", User: " << master_user << ", Password: " << master_password
+                      << ", Replicate DB: " << replicate_db << std::endl;
+
             UInt32 slave_id = 9004;
-            MySQLClient slave("127.0.0.1", 9001, "default", "123");
+            MySQLClient slave(host, port, master_user, master_password);
 
             /// Connect to the master.
             slave.connect();
 
             ///  start to dump binlog.
-            slave.startBinlogDump(slave_id, "dbtest", "", 4);
+            slave.startBinlogDump(slave_id, replicate_db, "", 4);
 
             /// Read one binlog event on by one.
             while (true)
