@@ -350,7 +350,7 @@ private:
                         const auto & already_added = already_added_it->second;
                         if (!already_added->from_temp_repository && !repository->isTemporary())
                         {
-                            LOG_WARNING(log,                                 type_name << " '" << object_name << "' is found "                                           << (((path == already_added->path) && (repository->getName() == already_added->repository_name))                                                   ? ("twice in the same file '" + path + "'")                                                   : ("both in file '" + already_added->path + "' and '" + path + "'")));
+                            LOG_WARNING(log, type_name << " '" << object_name << "' is found " << (((path == already_added->path) && (repository->getName() == already_added->repository_name)) ? ("twice in the same file '" + path + "'") : ("both in file '" + already_added->path + "' and '" + path + "'")));
                         }
                     }
                 }

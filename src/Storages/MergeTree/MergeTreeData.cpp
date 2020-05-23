@@ -2914,9 +2914,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
         if (!destination_ptr)
         {
             if (ttl_entry->destination_type == PartDestinationType::VOLUME)
-                LOG_WARNING(log, "Would like to reserve space on volume '"                         << ttl_entry->destination_name << "' by TTL rule of table '"                         << log_name << "' but volume was not found");
+                LOG_WARNING(log, "Would like to reserve space on volume '" << ttl_entry->destination_name << "' by TTL rule of table '" << log_name << "' but volume was not found");
             else if (ttl_entry->destination_type == PartDestinationType::DISK)
-                LOG_WARNING(log, "Would like to reserve space on disk '"                         << ttl_entry->destination_name << "' by TTL rule of table '"                         << log_name << "' but disk was not found");
+                LOG_WARNING(log, "Would like to reserve space on disk '" << ttl_entry->destination_name << "' by TTL rule of table '" << log_name << "' but disk was not found");
         }
         else
         {
@@ -2925,9 +2925,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
                 return reservation;
             else
                 if (ttl_entry->destination_type == PartDestinationType::VOLUME)
-                    LOG_WARNING(log, "Would like to reserve space on volume '"                             << ttl_entry->destination_name << "' by TTL rule of table '"                             << log_name << "' but there is not enough space");
+                    LOG_WARNING(log, "Would like to reserve space on volume '" << ttl_entry->destination_name << "' by TTL rule of table '" << log_name << "' but there is not enough space");
                 else if (ttl_entry->destination_type == PartDestinationType::DISK)
-                    LOG_WARNING(log, "Would like to reserve space on disk '"                             << ttl_entry->destination_name << "' by TTL rule of table '"                             << log_name << "' but there is not enough space");
+                    LOG_WARNING(log, "Would like to reserve space on disk '" << ttl_entry->destination_name << "' by TTL rule of table '" << log_name << "' but there is not enough space");
         }
     }
 
@@ -3053,7 +3053,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
             if (covering_part)
             {
-                LOG_WARNING(data.log, "Tried to commit obsolete part " << part->name                     << " covered by " << covering_part->getNameWithState());
+                LOG_WARNING(data.log, "Tried to commit obsolete part " << part->name << " covered by " << covering_part->getNameWithState());
 
                 part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                 data.modifyPartState(part, DataPartState::Outdated);

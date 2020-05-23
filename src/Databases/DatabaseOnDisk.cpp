@@ -466,7 +466,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
         table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
-            LOG_WARNING(loger, "File " << metadata_file_path << " contains both UUID and table name. "                                                     "Will use name `" << table_name << "` instead of `" << create.table << "`");
+            LOG_WARNING(loger, "File " << metadata_file_path << " contains both UUID and table name. " "Will use name `" << table_name << "` instead of `" << create.table << "`");
         create.table = table_name;
     }
 

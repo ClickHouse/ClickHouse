@@ -597,7 +597,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
         else
         {
-            LOG_WARNING(log, "Cannot parse metadata of partially dropped table "                     << table_id.getNameForLogs() << " from " << dropped_metadata_path                     << ". Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.");
+            LOG_WARNING(log, "Cannot parse metadata of partially dropped table " << table_id.getNameForLogs() << " from " << dropped_metadata_path << ". Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.");
         }
 
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();

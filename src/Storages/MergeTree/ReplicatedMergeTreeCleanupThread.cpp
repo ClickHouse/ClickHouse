@@ -327,7 +327,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             cached_block_stats.erase(first_outdated_block->node);
         }
         else if (rc)
-            LOG_WARNING(log,                 "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
         else
         {
             /// Successfully removed blocks have to be removed from cache

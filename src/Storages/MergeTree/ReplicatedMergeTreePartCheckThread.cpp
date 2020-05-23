@@ -82,7 +82,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     /// If the part is in ZooKeeper, remove it from there and add the task to download it to the queue.
     if (zookeeper->exists(part_path))
     {
-        LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. "             "Removing from ZooKeeper and queueing a fetch.");
+        LOG_WARNING(log, "Part " << part_name << " exists in ZooKeeper but not locally. " "Removing from ZooKeeper and queueing a fetch.");
         ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
         storage.removePartAndEnqueueFetch(part_name);
@@ -143,7 +143,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
-                    LOG_WARNING(log,                         "Found parts with the same min block and with the same max block as the missing part "                         << part_name << ". Hoping that it will eventually appear as a result of a merge.");
+                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part " << part_name << ". Hoping that it will eventually appear as a result of a merge.");
                     return;
                 }
             }
