@@ -135,6 +135,7 @@ void ReadBufferFromKafkaConsumer::drain()
         auto ts = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
         {
+            LOG_WARNING(log, "Timeout during ReadBufferFromKafkaConsumer draining.");
             break;
         }
     }

@@ -267,11 +267,20 @@ def test_kafka_consumer_hang2(kafka_cluster):
                      kafka_format = 'JSONEachRow';
         ''')
 
+    # first consumer subscribe the topic, try to poll some data, and go to rest
     instance.query('SELECT * FROM test.kafka')
+
+    # second consumer do the same leading to rebalance in the first
+    # consumer, try to poll some data
     instance.query('SELECT * FROM test.kafka2')
+
 #echo 'SELECT * FROM test.kafka; SELECT * FROM test.kafka2; DROP TABLE test.kafka;' | clickhouse client -mn &
 #    kafka_cluster.open_bash_shell('instance')
 
+    # first consumer has pending rebalance callback unprocessed (no poll after select)
+    # one of those queries was failing because of
+    # https://github.com/edenhill/librdkafka/issues/2077
+    # https://github.com/edenhill/librdkafka/issues/2898
     instance.query('DROP TABLE test.kafka')
     instance.query('DROP TABLE test.kafka2')
 
