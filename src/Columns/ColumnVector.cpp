@@ -119,6 +119,8 @@ namespace
     {
         using Element = ValueWithIndex<T>;
         using Result = size_t;
+        static constexpr bool DIRECT_WRITE_TO_DESTINATION = true;
+
         static T & extractKey(Element & elem) { return elem.value; }
         static size_t extractResult(Element & elem) { return elem.index; }
     };
