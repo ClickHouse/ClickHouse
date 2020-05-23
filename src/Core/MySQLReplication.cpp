@@ -161,7 +161,7 @@ namespace MySQLReplication
         readLengthEncodedString(meta, payload);
         parseMeta(meta);
 
-        size_t null_bitmap_size = (column_count + 8) / 7;
+        size_t null_bitmap_size = (column_count + 7) / 8;
         readBitmap(payload, null_bitmap, null_bitmap_size);
 
         /// Ignore MySQL 8.0 optional metadata fields.
