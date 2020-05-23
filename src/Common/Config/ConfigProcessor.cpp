@@ -303,7 +303,7 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
-                LOG_WARNING(log, error_msg << name);
+                LOG_WARNING_FORMATTED(log, "{}{}", error_msg, name);
         }
         else
         {

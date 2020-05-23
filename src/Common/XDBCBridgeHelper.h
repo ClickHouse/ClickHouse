@@ -148,7 +148,7 @@ public:
     {
         if (!checkBridgeIsRunning())
         {
-            LOG_TRACE(log, BridgeHelperMixin::serviceAlias() + " is not running, will try to start it");
+            LOG_TRACE_FORMATTED(log, "{} is not running, will try to start it", BridgeHelperMixin::serviceAlias());
             startBridge();
             bool started = false;
 
@@ -157,7 +157,7 @@ public:
             while (milliseconds_to_wait < 10000)
             {
                 ++counter;
-                LOG_TRACE(log, "Checking " + BridgeHelperMixin::serviceAlias() + " is running, try " << counter);
+                LOG_TRACE_FORMATTED(log, "Checking {} is running, try {}", BridgeHelperMixin::serviceAlias(), counter);
                 if (checkBridgeIsRunning())
                 {
                     started = true;

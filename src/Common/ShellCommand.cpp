@@ -61,19 +61,16 @@ ShellCommand::~ShellCommand()
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
 {
-    std::stringstream log_message;
-    log_message << "Will start shell command '" << filename << "' with arguments ";
+    std::stringstream args;
     for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
     {
         if (i > 0)
-        {
-            log_message << ", ";
-        }
+            args << ", ";
 
         /// NOTE: No escaping is performed.
-        log_message << "'" << argv[i] << "'";
+        args << "'" << argv[i] << "'";
     }
-    LOG_TRACE(ShellCommand::getLogger(), log_message.str());
+    LOG_TRACE_FORMATTED(ShellCommand::getLogger(), "Will start shell command '{}' with arguments {}", filename, args.str());
 }
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor)

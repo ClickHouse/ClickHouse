@@ -125,7 +125,10 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
 {
     try
     {
-        LOG_ERROR(logger, start_of_message << (start_of_message.empty() ? "" : ": ") << getCurrentExceptionMessage(true));
+        if (start_of_message.empty())
+            LOG_ERROR_FORMATTED(logger, "{}", getCurrentExceptionMessage(true));
+        else
+            LOG_ERROR_FORMATTED(logger, "{}: {}", start_of_message, getCurrentExceptionMessage(true));
     }
     catch (...)
     {

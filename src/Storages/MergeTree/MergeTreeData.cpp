@@ -2439,7 +2439,8 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
             if (value > from)
-                LOG_ERROR(log, "Possibly incorrect column size subtraction: " << from << " - " << value << " = " << from - value << ", column: " << column.name << ", field: " << field);
+                LOG_ERROR_FORMATTED(log, "Possibly incorrect column size subtraction: {} - {} = {}, column: {}, field: {}",
+                    from, value, from - value, column.name, field);
 
             from -= value;
         };
