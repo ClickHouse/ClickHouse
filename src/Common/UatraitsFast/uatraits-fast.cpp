@@ -417,7 +417,18 @@ void UATraits::loadBrowsers(std::istream & istr)
     if (!branch)
         throw Poco::Exception("No branch element in " + std::string(browser_path));
 
+    LOG_INFO(log, "MISHA: Loading branch");
     addBranch(*branch, root_node);
+    LOG_INFO(log, "MISHA: Loaded branch");
+
+    LOG_INFO(log, "MISHA: regex patterns");
+    int i = 0;
+    for (auto pattern : regexp_patterns)
+    {
+        LOG_INFO(log, pattern.toString() << " " << i);
+        ++i;
+    }
+    LOG_INFO(log, "MISHA: regex patterns finsh ");
 
     regexps_engine = DB::MultiRegexps::get<true, false>(regexp_patterns, 0);
 
@@ -651,8 +662,9 @@ void UATraits::processPattern(Poco::XML::Node & pattern, Node & node, std::strin
         if (substrings_to_indices.end() == substrings_to_indices.find(text))
         {
             const std::string & str = substrings_to_indices.insert(std::make_pair(text, substrings_count)).first->first;
+            LOG_INFO(log, "MISHA: process_pattern: " + str);
 
-            regexp_patterns.push_back(std::string{str});
+            regexp_patterns.push_back(str);
             node.patterns.push_back(Pattern(substrings_count, false, false));
             node.patterns.back().substring = str;
             ++substrings_count;
@@ -688,7 +700,7 @@ void UATraits::processPattern(Poco::XML::Node & pattern, Node & node, std::strin
             {
                 const std::string & str = substrings_to_indices.insert(std::make_pair(required_substring, substrings_count)).first->first;
 
-                regexp_patterns.push_back(std::string{str});
+                regexp_patterns.push_back(str);
                 node.patterns.push_back(Pattern(substrings_count, !is_trivial, required_substring_is_prefix));
                 node.patterns.back().substring = str;
                 if (!is_trivial)
@@ -860,13 +872,15 @@ void UATraits::detectByUserAgent(const StringRef & user_agent_lower, Result & re
     if (err != HS_SUCCESS && err != HS_SCAN_TERMINATED)
         throw Poco::Exception("Failed to scan with hyperscan", 2);
 
+    LOG_INFO(log, "MISHA GOT RESULTS");
     for (const auto & [position, index] : search_result)
     {
-        auto & match = matched_substrings[index];
+        LOG_INFO(log, "MISHA pos: " << position << " ind: " << index);
+        auto & match = matched_substrings[index - 1];
         if (match.positions_len != Match::max_positions)
         {
             ++match.positions_len;
-            match.positions[match.positions_len - 1] = position;
+            match.positions[match.positions_len - 1] = position - 1;
         }
     }
 
@@ -924,7 +938,7 @@ void UATraits::detectByUserAgentCaseSafe(const StringRef & user_agent, const Str
         if (match.positions_len != Match::max_positions)
         {
             ++match.positions_len;
-            match.positions[match.positions_len - 1] = position;
+            match.positions[match.positions_len - 1] = position - 1;
         }
     }
 
@@ -972,12 +986,12 @@ bool UATraits::traverse(const Node & node, StringRef user_agent, Result & result
 
     for (size_t i = 0, size = node.patterns.size(); i < size; ++i)
     {
-/*        std::cerr << "substring_index: " << node.patterns[i].substring_index << std::endl;
+        std::cerr << "substring_index: " << node.patterns[i].substring_index << std::endl;
         std::cerr << "is_regexp: " << node.patterns[i].is_regexp << std::endl;
         std::cerr << "substring: " << node.patterns[i].substring << std::endl;
         std::cerr << "regexp: " << node.patterns[i].regexp << std::endl;
         std::cerr << std::endl;
-*/
+
         size_t substring_index = node.patterns[i].substring_index;
 
         if (substring_index == Pattern::no_substring && node.patterns[i].is_regexp)

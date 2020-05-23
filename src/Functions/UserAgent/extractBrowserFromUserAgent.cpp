@@ -42,10 +42,10 @@ struct extractBrowserFromUserAgentImpl
             const auto browser = context.getUserAgent()->detect(user_agent_string).getBrowser();
             const auto browser_name_optional = browser.getName();
 
-            if (!browser_name_optional.has_value())
-            {
-                throw Exception("Could not find browser name", 12);
-            }
+            // if (!browser_name_optional.has_value())
+            // {
+            //     throw Exception("Could not find browser name", 12);
+            // }
 
             std::string browser_name = uatraits::types::toString(browser_name_optional);
 

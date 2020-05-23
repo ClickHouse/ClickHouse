@@ -1,4 +1,6 @@
 #include "UserAgent.h"
+#include <iostream>
+#include <sstream>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include "Common/UatraitsFast/types/OperatingSystem.h"
@@ -50,6 +52,9 @@ UserAgent::Agent UserAgent::detect(
         engine_result,
         matched_substrings);
 
+    std::cerr << "MISHA: os family: " << ((engine_result.string_ref_fields[UATraits::Result::OSFamily]).toString()) << std::endl;
+    std::cerr << "MISHA: browser name: " << engine_result.string_ref_fields[UATraits::Result::BrowserName].toString() << std::endl;
+    std::cerr << "MISHA: browser base name: " << (engine_result.string_ref_fields[UATraits::Result::BrowserBase]).toString() << std::endl;
     return Agent{
         engine_result.bool_fields[UATraits::Result::SameSiteSupport],
         engine_result.bool_fields[UATraits::Result::isMobile],
