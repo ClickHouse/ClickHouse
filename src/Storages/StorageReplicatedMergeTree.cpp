@@ -830,7 +830,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
     }
     else
     {
-        LOG_WARNING(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part_name << " already exists." << " Will not commit any nodes.");
+        LOG_WARNING(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part_name << " already exists. Will not commit any nodes.");
     }
 }
 
@@ -1370,7 +1370,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                     }
                     else
                     {
-                        LOG_WARNING(log, "No active replica has part " << entry.new_part_name << ", but that part needs quorum and /quorum/status contains entry about another part " << quorum_entry.part_name << ". It means that part was successfully written to " << entry.quorum << " replicas, but then all of them goes offline." << " Or it is a bug.");
+                        LOG_WARNING(log, "No active replica has part " << entry.new_part_name << ", but that part needs quorum and /quorum/status contains entry about another part " << quorum_entry.part_name << ". It means that part was successfully written to " << entry.quorum << " replicas, but then all of them goes offline. Or it is a bug.");
                     }
                 }
             }
@@ -1580,7 +1580,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         }
         catch (Exception &)
         {
-            LOG_INFO(log, "Can't use " << source_table_id.getNameForLogs() << " as source table for REPLACE PARTITION command. Will fetch all parts." << " Reason: " << getCurrentExceptionMessage(false));
+            LOG_INFO_FORMATTED(log, "Can't use {} as source table for REPLACE PARTITION command. Will fetch all parts. Reason: {}", source_table_id.getNameForLogs(), getCurrentExceptionMessage(false));
             return 0;
         }
 
@@ -2297,7 +2297,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
             const auto & part = parts[i];
             if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
-                LOG_WARNING(log, "Part " << part->name << " (that was selected for merge)" << " with age " << (time(nullptr) - part->modification_time) << " seconds exists locally but not in ZooKeeper." << " Won't do merge with that part and will check it.");
+                LOG_WARNING(log, "Part " << part->name << " (that was selected for merge) with age " << (time(nullptr) - part->modification_time) << " seconds exists locally but not in ZooKeeper. Won't do merge with that part and will check it.");
                 enqueuePartForCheck(part->name);
             }
         }
@@ -2339,7 +2339,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const IMergeTreeData
     {
         if (part.modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
         {
-            LOG_WARNING(log, "Part " << part.name << " (that was selected for mutation)" << " with age " << (time(nullptr) - part.modification_time) << " seconds exists locally but not in ZooKeeper." << " Won't mutate that part and will check it.");
+            LOG_WARNING(log, "Part " << part.name << " (that was selected for mutation) with age " << (time(nullptr) - part.modification_time) << " seconds exists locally but not in ZooKeeper. Won't mutate that part and will check it.");
             enqueuePartForCheck(part.name);
         }
 
@@ -4305,7 +4305,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
     if (best_replica.empty())
         throw Exception("Logical error: cannot choose best replica.", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active." << " Selected " << best_replica << " to fetch from.");
+    LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active. Selected " << best_replica << " to fetch from.");
 
     String best_replica_path = from + "/replicas/" + best_replica;
 

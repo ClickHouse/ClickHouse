@@ -215,7 +215,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part->name)
     {
-        LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist." << " Possible it was merged or mutated. Will remove copy on path '" << cloned_part->getFullPath() << "'.");
+        LOG_INFO_FORMATTED(log, "Failed to swap {}. Active part doesn't exist. Possible it was merged or mutated. Will remove copy on path '{}'.", cloned_part->name, cloned_part->getFullPath());
         return;
     }
 

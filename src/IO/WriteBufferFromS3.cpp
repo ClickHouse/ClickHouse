@@ -135,7 +135,7 @@ void WriteBufferFromS3::writePart(const String & data)
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG(log, "Writing part finished. " << "Total parts: " << part_tags.size() << ", Upload_id: " << upload_id << ", Etag: " << etag);
+        LOG_DEBUG_FORMATTED(log, "Writing part finished. Total parts: {}, Upload_id: {}, Etag: {}", part_tags.size(), upload_id, etag);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

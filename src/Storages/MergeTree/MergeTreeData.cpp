@@ -2088,7 +2088,7 @@ restore_covered)
 
         if (error)
         {
-            LOG_ERROR(log, "The set of parts restored in place of " << part->name << " looks incomplete." << " There might or might not be a data loss." << (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
+            LOG_ERROR_FORMATTED(log, "The set of parts restored in place of {} looks incomplete. There might or might not be a data loss.{}", part->name, (error_parts.empty() ? "" : " Suspicious parts: " + error_parts));
         }
     }
 }

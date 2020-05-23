@@ -256,7 +256,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
             // TextLog sets its logger level to 0, so this log is a noop and
             // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '" << demangle(typeid(*this).name()) << "'" << " at " << queue_front_index);
+            LOG_ERROR_FORMATTED(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
         }
 
         return;

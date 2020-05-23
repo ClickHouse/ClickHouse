@@ -320,7 +320,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
         auto code = zookeeper->tryMulti(ops, responses);
 
         if (code)
-            LOG_ERROR(log, "Couldn't set value of nodes for insert times (" << replica_path << "/min_unprocessed_insert_time, max_processed_insert_time)" << ": " << zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
+            LOG_ERROR_FORMATTED(log, "Couldn't set value of nodes for insert times ({}/min_unprocessed_insert_time, max_processed_insert_time): {}", replica_path, zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
     }
 }
 
@@ -1885,7 +1885,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
                 partition_it->second.begin(), partition_it->second.lower_bound(block_num));
             if (blocks_count)
             {
-                LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because " << "in partition ID " << partition_id << " there are still " << blocks_count << " uncommitted blocks.");
+                LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because in partition ID " << partition_id << " there are still " << blocks_count << " uncommitted blocks.");
                 return false;
             }
         }
