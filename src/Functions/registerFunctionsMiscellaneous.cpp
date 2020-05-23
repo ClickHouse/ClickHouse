@@ -29,7 +29,6 @@ void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
-void registerFunctionIgnoreExceptNull(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
 void registerFunctionReplicate(FunctionFactory &);
@@ -88,7 +87,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
-    registerFunctionIgnoreExceptNull(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
     registerFunctionReplicate(factory);

@@ -44,6 +44,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
@@ -1194,7 +1195,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
                 if (is_alias)
-                    column_expr = setAlias(column_default->expression->clone(), column);
+                {
+                    auto column_decl = storage_columns.get(column);
+                    /// TODO: can make CAST only if the type is different (but requires SyntaxAnalyzer).
+                    auto cast_column_default = addTypeConversionToAST(column_default->expression->clone(), column_decl.type->getName());
+                    column_expr = setAlias(cast_column_default->clone(), column);
+                }
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
 
@@ -2037,10 +2043,9 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
     const Settings & settings = context->getSettingsRef();
 
-    /// TODO: Limits on sorting
-//    IBlockInputStream::LocalLimits limits;
-//    limits.mode = IBlockInputStream::LIMITS_TOTAL;
-//    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+    IBlockInputStream::LocalLimits limits;
+    limits.mode = IBlockInputStream::LIMITS_CURRENT;
+    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
     if (input_sorting_info)
     {
@@ -2077,6 +2082,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
                 return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
             });
 
+            /// NOTE limits are not applied to the size of temporary sets in FinishSortingTransform
+
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
             {
                 return std::make_shared<FinishSortingTransform>(
@@ -2094,6 +2101,15 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
             return nullptr;
 
         return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
+    });
+
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
+        auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
+        return transform;
     });
 
     /// Merge the sorted blocks.
