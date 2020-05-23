@@ -837,7 +837,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
-            LOG_INFO(log, e.message());
+            LOG_INFO_FORMATTED(log, e.message());
             return BackgroundProcessingPoolTaskResult::ERROR;
         }
 

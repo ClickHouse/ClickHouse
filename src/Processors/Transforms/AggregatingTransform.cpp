@@ -540,7 +540,11 @@ void AggregatingTransform::initGenerate()
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
-    LOG_TRACE(log, "Aggregated. " << src_rows << " to " << rows << " rows (from " << formatReadableSizeWithBinarySuffix(src_bytes) << ") in " << elapsed_seconds << " sec. (" << src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds) << "/sec.)");
+
+    LOG_TRACE_FORMATTED(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+        src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
+        elapsed_seconds, src_rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
 
     if (params->aggregator.hasTemporaryFiles())
     {
