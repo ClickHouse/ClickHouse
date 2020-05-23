@@ -67,6 +67,46 @@ namespace
             conf.set(key_name, config.getString(key_path));
         }
     }
+
+    rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
+    {
+        StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+
+        const auto & storage_id = self->getStorageID();
+        const auto & table = storage_id.getTableName();
+
+        switch (thread_type)
+        {
+            case RD_KAFKA_THREAD_MAIN:
+                setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BACKGROUND:
+                setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+                break;
+            case RD_KAFKA_THREAD_BROKER:
+                setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+                break;
+        }
+        return RD_KAFKA_RESP_ERR_NO_ERROR;
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnNew(rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
+    {
+        return rd_kafka_interceptor_add_on_thread_start(rk, "setThreadName", rdKafkaOnThreadStart, ctx);
+    }
+
+    rd_kafka_resp_err_t rdKafkaOnConfDup(rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
+    {
+        rd_kafka_resp_err_t status;
+
+        // cppkafka copies configuration multiple times
+        status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "setThreadName", rdKafkaOnConfDup, ctx);
+        if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
+            return status;
+
+        status = rd_kafka_conf_interceptor_add_on_new(new_conf, "setThreadName", rdKafkaOnNew, ctx);
+        return status;
+    }
 }
 
 StorageKafka::StorageKafka(
@@ -83,12 +123,7 @@ StorageKafka::StorageKafka(
     UInt64 max_block_size_,
     size_t skip_broken_,
     bool intermediate_commit_)
-    : IStorage(table_id_,
-        ColumnsDescription({{"_topic", std::make_shared<DataTypeString>()},
-                            {"_key", std::make_shared<DataTypeString>()},
-                            {"_offset", std::make_shared<DataTypeUInt64>()},
-                            {"_partition", std::make_shared<DataTypeUInt64>()},
-                            {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}}, true))
+    : IStorage(table_id_)
     , global_context(context_.getGlobalContext())
     , kafka_context(Context(global_context))
     , topics(global_context.getMacros()->expand(topics_))
@@ -177,15 +212,9 @@ void StorageKafka::shutdown()
 
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
-    {
         auto buffer = popReadBuffer();
-        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
-    }
 
-    LOG_TRACE(log, "Waiting for cleanup");
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
-
-    task->deactivate();
 }
 
 
@@ -243,14 +272,19 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 ConsumerBufferPtr StorageKafka::createReadBuffer()
 {
     cppkafka::Configuration conf;
+
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
     conf.set("client.id", VERSION_FULL);
+
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+
+    updateConfiguration(conf);
+
+    // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false");     // Ignore EOF messages
-    updateConfiguration(conf);
 
     // Create a consumer and subscribe to topics
     auto consumer = std::make_shared<cppkafka::Consumer>(conf);
@@ -388,6 +422,8 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
+    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
+    // It will be cancelled on underlying layer (kafka buffer)
     std::atomic<bool> stub = {false};
     copyData(*in, *block_io.out, &stub);
     for (auto & stream : streams)

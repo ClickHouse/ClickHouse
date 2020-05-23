@@ -1405,6 +1405,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (candidates.empty())
         return false;
+    else
+        LOG_DEBUG(log, "Trying to finalize " << candidates.size() << " mutations");
 
     auto merge_pred = getMergePredicate(zookeeper);
 
