@@ -18,6 +18,7 @@ SRCS(
     MergeTree/EphemeralLockInZooKeeper.cpp
     MergeTree/IMergedBlockOutputStream.cpp
     MergeTree/IMergeTreeDataPart.cpp
+    MergeTree/IMergeTreeDataPartIndexWriter.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
     MergeTree/IMergeTreeReader.cpp
     MergeTree/KeyCondition.cpp
@@ -33,11 +34,13 @@ SRCS(
     MergeTree/MergeTreeDataMergerMutator.cpp
     MergeTree/MergeTreeDataPartChecksum.cpp
     MergeTree/MergeTreeDataPartCompact.cpp
+    MergeTree/MergeTreeDataPartIndexWriterSingleDisk.cpp
     MergeTree/MergeTreeDataPartTTLInfo.cpp
     MergeTree/MergeTreeDataPartType.cpp
     MergeTree/MergeTreeDataPartWide.cpp
     MergeTree/MergeTreeDataPartWriterCompact.cpp
     MergeTree/MergeTreeDataPartWriterWide.cpp
+    MergeTree/MergeTreeDataPartWriterWideSingleDisk.cpp
     MergeTree/MergeTreeDataSelectExecutor.cpp
     MergeTree/MergeTreeDataWriter.cpp
     MergeTree/MergeTreeIndexAggregatorBloomFilter.cpp

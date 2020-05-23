@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeDataPartIndexWriterSingleDisk::MergeTreeDataPartIndexWriterSingleDisk(IMergeTreeDataPartWriter & part_writer_)
     : IMergeTreeDataPartIndexWriter(part_writer_)
 {
