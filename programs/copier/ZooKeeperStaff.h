@@ -187,7 +187,7 @@ public:
                                 stale->store(true);
                                 break;
                             case Coordination::CHANGED:
-                                LOG_DEBUG(logger, "CleanStateClock change: CHANGED, at{}", rsp.path);
+                                LOG_DEBUG(logger, "CleanStateClock change: CHANGED, at {}", rsp.path);
                                 stale->store(true);
                         }
                     }
