@@ -278,6 +278,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , global_context(std::make_unique<Context>(context_))
+    , log(&Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , storage_policy(storage_policy_)
@@ -474,18 +475,15 @@ Pipes StorageDistributed::read(
     if (settings.optimize_skip_unused_shards)
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
-        auto table_id = getStorageID();
         if (optimized_cluster)
         {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
-                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
-                           " " << makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): " <<
+                           makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
         }
         else
         {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                           (has_sharding_key ? "" : " (no sharding key)") << ": "
+            LOG_DEBUG(log, (has_sharding_key ? "" : " (no sharding key)") << ": "
                            "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
                            "the query will be sent to all shards of the cluster");
         }
