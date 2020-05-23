@@ -141,7 +141,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             if (storage.is_leader
                 && relative_delay > static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
             {
-                LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold (" << storage_settings->min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+                LOG_INFO_FORMATTED(log, "Relative replica delay ({} seconds) is bigger than threshold ({}). Will yield leadership.", relative_delay, storage_settings->min_relative_delay_to_yield_leadership);
 
                 ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 

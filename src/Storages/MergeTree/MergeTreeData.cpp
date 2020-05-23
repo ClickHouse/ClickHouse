@@ -204,7 +204,7 @@ MergeTreeData::MergeTreeData(
         {
             if (!version_file.first.empty())
             {
-                LOG_ERROR(log, "Duplication of version file " << fullPath(version_file.second, version_file.first) << " and " << current_version_file_path);
+                LOG_ERROR_FORMATTED(log, "Duplication of version file {} and {}", fullPath(version_file.second, version_file.first), current_version_file_path);
                 throw Exception("Multiple format_version.txt file", ErrorCodes::CORRUPTED_DATA);
             }
             version_file = {current_version_file_path, disk};

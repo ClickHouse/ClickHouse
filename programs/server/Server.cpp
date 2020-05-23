@@ -530,7 +530,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size) << " because the system has low amount of memory");
+        LOG_INFO_FORMATTED(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
@@ -545,7 +545,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size) << " because the system has low amount of memory");
+        LOG_INFO_FORMATTED(log, "Mark cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setMarkCache(mark_cache_size);
 
@@ -574,7 +574,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage) << " because the system has low amount of memory");
+        LOG_INFO_FORMATTED(log, "Setting max_server_memory_usage was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
     }
 
     total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
@@ -959,7 +959,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 current_connections += server->currentConnections();
             }
 
-            LOG_INFO(log, "Closed all listening sockets." << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
+            LOG_INFO_FORMATTED(log, "Closed all listening sockets.{}", (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
 
             /// Killing remaining queries.
             global_context->getProcessList().killAllQueries();

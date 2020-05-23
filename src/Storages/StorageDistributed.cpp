@@ -477,7 +477,7 @@ Pipes StorageDistributed::read(
         ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
         if (optimized_cluster)
         {
-            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): " << makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG_FORMATTED(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
         }
         else

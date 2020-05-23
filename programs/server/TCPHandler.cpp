@@ -115,7 +115,7 @@ void TCPHandler::runImpl()
         if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", Stack trace:\n\n" << e.getStackTraceString());
+            LOG_ERROR_FORMATTED(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }

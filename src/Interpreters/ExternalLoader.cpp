@@ -869,7 +869,7 @@ private:
     {
         if (info.isLoading())
         {
-            LOG_TRACE(log, "The object '" << info.name << "' is already being loaded, force = " << forced_to_reload << ".");
+            LOG_TRACE_FORMATTED(log, "The object '{}' is already being loaded, force = {}.", info.name, forced_to_reload);
 
             if (!forced_to_reload)
             {
@@ -924,7 +924,7 @@ private:
                 info = prepareToLoadSingleObject(name, loading_id, min_id_to_finish_loading_dependencies_, lock);
                 if (!info)
                 {
-                    LOG_TRACE(log, "Could not lock object '" << name << "' for loading");
+                    LOG_TRACE_FORMATTED(log, "Could not lock object '{}' for loading", name);
                     return;
                 }
             }
@@ -1067,7 +1067,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '" << info->name << "' was set to " << ext::to_string(next_update_time));
+        LOG_TRACE_FORMATTED(log, "Next update time for '{}' was set to {}", info->name, ext::to_string(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.

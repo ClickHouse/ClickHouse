@@ -378,7 +378,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, " << to_flush.size() << " entries to flush");
+        LOG_TRACE_FORMATTED(log, "Flushing system log, {} entries to flush", to_flush.size());
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
