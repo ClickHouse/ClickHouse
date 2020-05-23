@@ -197,8 +197,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage,
     bool has_query_tail,
-    ReadBuffer * istr,
-    bool allow_processors)
+    ReadBuffer * istr)
 {
     time_t current_time = time(nullptr);
 
@@ -318,7 +317,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = allow_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = interpreter->canExecuteWithProcessors();
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -581,13 +580,12 @@ BlockIO executeQuery(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data,
-    bool allow_processors)
+    bool may_have_embedded_data)
 {
     ASTPtr ast;
     BlockIO streams;
     std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
-        internal, stage, !may_have_embedded_data, nullptr, allow_processors);
+        internal, stage, !may_have_embedded_data, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -600,6 +598,22 @@ BlockIO executeQuery(
     }
 
     return streams;
+}
+
+BlockIO executeQuery(
+        const String & query,
+        Context & context,
+        bool internal,
+        QueryProcessingStage::Enum stage,
+        bool may_have_embedded_data,
+        bool allow_processors)
+{
+    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data);
+
+    if (!allow_processors && res.pipeline.initialized())
+        res.in = res.getInputStream();
+
+    return res;
 }
 
 
@@ -648,7 +662,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr, true);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
 
     auto & pipeline = streams.pipeline;
 

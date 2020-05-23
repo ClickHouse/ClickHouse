@@ -411,7 +411,7 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=10):
+    def wait_minio_to_start(self, timeout=30):
         minio_client = Minio('localhost:9001',
                              access_key='minio',
                              secret_key='minio123',
@@ -419,13 +419,24 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                buckets = minio_client.list_buckets()
+                minio_client.list_buckets()
+
+                logging.info("Connected to Minio.")
+
+                if minio_client.bucket_exists(self.minio_bucket):
+                    minio_client.remove_bucket(self.minio_bucket)
+
+                minio_client.make_bucket(self.minio_bucket)
+
+                logging.info("S3 bucket '%s' created", self.minio_bucket)
+
                 self.minio_client = minio_client
-                logging.info("Connected to Minio %s", buckets)
                 return
             except Exception as ex:
                 logging.warning("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
+
+        raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
         sr_client = CachedSchemaRegistryClient('http://localhost:8081')
