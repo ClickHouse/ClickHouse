@@ -93,14 +93,14 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
             }
             catch (const cppkafka::HandleException & e)
             {
-                LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor (unsubscribe): " << e.what());
+                LOG_ERROR(log, "Error during unsubscribe: " << e.what());
             }
             drain();
         }
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor: " << e.what());
+        LOG_ERROR(log, "Error while destructing consumer: " << e.what());
     }
 
 }
@@ -120,22 +120,28 @@ void ReadBufferFromKafkaConsumer::drain()
         if (!msg)
             break;
 
-        if (auto err = msg.get_error())
+        auto error = msg.get_error();
+
+        if (error)
         {
-            if (msg.is_eof() || err == last_error)
+            if (msg.is_eof() || error == last_error)
             {
                 break;
             }
             else
             {
-                LOG_WARNING(log, "Error during ReadBufferFromKafkaConsumer draining: " << err);
+                LOG_WARNING(log, "Error during draining: " << error);
             }
         }
+
+        // i don't stop draining on first error,
+        // only if it repeats once again sequentially
+        last_error = error;
 
         auto ts = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
         {
-            LOG_WARNING(log, "Timeout during ReadBufferFromKafkaConsumer draining.");
+            LOG_WARNING(log, "Timeout during draining.");
             break;
         }
     }
