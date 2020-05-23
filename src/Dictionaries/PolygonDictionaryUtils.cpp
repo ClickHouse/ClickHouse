@@ -277,7 +277,12 @@ bool BucketsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
         return a.r.y() < b.r.y();
     }
 
-    return a.polygon_id < b.polygon_id;
+    if (a.polygon_id != b.polygon_id)
+    {
+        return a.polygon_id < b.polygon_id;
+    }
+
+    return a.edge_id < b.edge_id;
 }
 
 bool BucketsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
@@ -302,7 +307,12 @@ bool BucketsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
         return a.l.y() < b.l.y();
     }
 
-    return a.polygon_id < b.polygon_id;
+    if (a.polygon_id != b.polygon_id)
+    {
+        return a.polygon_id < b.polygon_id;
+    }
+
+    return a.edge_id < b.edge_id;
 }
 
 namespace
