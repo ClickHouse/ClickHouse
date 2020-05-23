@@ -76,7 +76,7 @@ void ODBCHandler::processError(Poco::Net::HTTPServerResponse & response, const s
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
         response.send() << message << std::endl;
-    LOG_WARNING(log, message);
+    LOG_WARNING_FORMATTED(log, message);
 }
 
 void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
@@ -125,7 +125,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     catch (const Exception & ex)
     {
         processError(response, "Invalid 'columns' parameter in request body '" + ex.message() + "'");
-        LOG_WARNING(log, ex.getStackTraceString());
+        LOG_WARNING_FORMATTED(log, ex.getStackTraceString());
         return;
     }
 

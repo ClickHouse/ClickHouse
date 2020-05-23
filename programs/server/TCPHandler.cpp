@@ -378,7 +378,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_INFO(log, std::fixed << std::setprecision(3) << "Processed in " << watch.elapsedSeconds() << " sec.");
+        LOG_INFO_FORMATTED(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -730,7 +730,12 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
-    LOG_DEBUG(log, "Connected " << client_name << " version " << client_version_major << "." << client_version_minor << "." << client_version_patch << ", revision: " << client_revision << (!default_database.empty() ? ", database: " + default_database : "") << (!user.empty() ? ", user: " + user : "") << ".");
+    LOG_DEBUG_FORMATTED(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
+        client_name,
+        client_version_major, client_version_minor, client_version_patch,
+        client_revision,
+        (!default_database.empty() ? ", database: " + default_database : ""),
+        (!user.empty() ? ", user: " + user : ""));
 
     connection_context.setUser(user, password, socket().peerAddress());
 }

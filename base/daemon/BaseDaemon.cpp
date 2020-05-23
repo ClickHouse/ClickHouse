@@ -236,7 +236,7 @@ private:
 
     void onTerminate(const std::string & message, UInt32 thread_num) const
     {
-        LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
+        LOG_FATAL_FORMATTED(log, "(version {}{}) (from thread {}) {}", VERSION_STRING, VERSION_OFFICIAL, thread_num, message);
     }
 
     void onFault(
@@ -259,10 +259,10 @@ private:
                 message << " (query_id: " << query_id << ")";
             message << " Received signal " << strsignal(sig) << " (" << sig << ").";
 
-            LOG_FATAL(log, message.rdbuf());
+            LOG_FATAL_FORMATTED(log, message.str());
         }
 
-        LOG_FATAL(log, signalToErrorMessage(sig, info, context));
+        LOG_FATAL_FORMATTED(log, signalToErrorMessage(sig, info, context));
 
         if (stack_trace.getSize())
         {
@@ -274,7 +274,7 @@ private:
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
                 bare_stacktrace << ' ' << stack_trace.getFrames()[i];
 
-            LOG_FATAL(log, bare_stacktrace.rdbuf());
+            LOG_FATAL_FORMATTED(log, bare_stacktrace.str());
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
@@ -379,7 +379,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
     }
     catch (...)
     {
-        LOG_WARNING(logger, __PRETTY_FUNCTION__ << ": when creating " << path << ", " << DB::getCurrentExceptionMessage(true));
+        LOG_WARNING_FORMATTED(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, DB::getCurrentExceptionMessage(true));
     }
     return false;
 }
