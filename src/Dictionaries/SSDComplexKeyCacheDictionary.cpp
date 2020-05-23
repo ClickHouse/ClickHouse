@@ -664,7 +664,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
                 throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". " +
                     "request_id= " + std::to_string(request.aio_data) + ", aio_nbytes=" + std::to_string(request.aio_nbytes) + ", aio_offset=" + std::to_string(request.aio_offset) +
                     "returned: " + std::to_string(events[i].res), ErrorCodes::AIO_READ_ERROR);
-
+            __msan_unpoison(reinterpret_cast<char *>(request.aio_buf), request.aio_nbytes);
             uint64_t checksum = 0;
             ReadBufferFromMemory buf_special(reinterpret_cast<char *>(request.aio_buf), block_size);
             readBinary(checksum, buf_special);
