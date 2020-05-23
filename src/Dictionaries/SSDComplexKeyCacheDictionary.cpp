@@ -1350,8 +1350,8 @@ SSDComplexKeyCacheDictionary::SSDComplexKeyCacheDictionary(
         const auto index = getAttributeIndex(attribute_name); \
         checkAttributeType(name, attribute_name, dict_struct.attributes[index].underlying_type, AttributeUnderlyingType::ut##TYPE); \
         const auto null_value = std::get<TYPE>(null_values[index]); /* NOLINT */ \
-        getItemsNumberImpl<TYPE, TYPE>( index, key_columns, key_types, out, [&](const size_t) { return null_value; }); \
-    } /* NOLINT */
+        getItemsNumberImpl<TYPE, TYPE>(index, key_columns, key_types, out, [&](const size_t) { return null_value; }); /* NOLINT */ \
+    }
 
     DECLARE(UInt8)
     DECLARE(UInt16)
