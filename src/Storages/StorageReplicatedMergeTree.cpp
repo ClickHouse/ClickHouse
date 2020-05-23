@@ -974,13 +974,11 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 {
     // Log source part names just in case
     {
-        std::stringstream log_message;
-        log_message << "Executing log entry to merge parts ";
+        std::stringstream source_parts_msg;
         for (auto i : ext::range(0, entry.source_parts.size()))
-            log_message << (i != 0 ? ", " : "") << entry.source_parts[i];
-        log_message << " to " << entry.new_part_name;
+            source_parts_msg << (i != 0 ? ", " : "") << entry.source_parts[i];
 
-        LOG_TRACE(log, log_message.rdbuf());
+        LOG_TRACE_FORMATTED(log, "Executing log entry to merge parts {} to {}", source_parts_msg.str(), entry.new_part_name);
     }
 
     const auto storage_settings_ptr = getSettings();

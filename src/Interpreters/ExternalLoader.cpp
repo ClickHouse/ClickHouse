@@ -286,14 +286,14 @@ private:
                 if (!startsWith(key, settings.external_config))
                 {
                     if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
-                        LOG_WARNING(log, path << ": file contains unknown node '" << key << "', expected '" << settings.external_config << "'");
+                        LOG_WARNING_FORMATTED(log, "{}: file contains unknown node '{}', expected '{}'", path, key, settings.external_config);
                     continue;
                 }
 
                 String object_name = file_contents.getString(key + "." + settings.external_name);
                 if (object_name.empty())
                 {
-                    LOG_WARNING(log, path << ": node '" << key << "' defines " << type_name << " with an empty name. It's not allowed");
+                    LOG_WARNING_FORMATTED(log, "{}: node '{}' defines {} with an empty name. It's not allowed", path, key, type_name);
                     continue;
                 }
 
@@ -350,7 +350,12 @@ private:
                         const auto & already_added = already_added_it->second;
                         if (!already_added->from_temp_repository && !repository->isTemporary())
                         {
-                            LOG_WARNING(log, type_name << " '" << object_name << "' is found " << (((path == already_added->path) && (repository->getName() == already_added->repository_name)) ? ("twice in the same file '" + path + "'") : ("both in file '" + already_added->path + "' and '" + path + "'")));
+                            if (path == already_added->path && repository->getName() == already_added->repository_name)
+                                LOG_WARNING_FORMATTED(log, "{} '{}' is found twice in the same file '{}'",
+                                    type_name, object_name, path);
+                            else
+                                LOG_WARNING_FORMATTED(log, "{} '{}' is found both in file '{}' and '{}'",
+                                    type_name, object_name, already_added->path, path);
                         }
                     }
                 }
@@ -1116,7 +1121,8 @@ private:
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                 auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-                LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "' is " << ext::to_string(result) << " (loaded, lifetime [" << lifetime.min_sec << ", " << lifetime.max_sec << "], no errors)");
+                LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is {} (loaded, lifetime [{}, {}], no errors)",
+                    loaded_object->getLoadableName(), ext::to_string(result), lifetime.min_sec, lifetime.max_sec);
                 return result;
             }
 
