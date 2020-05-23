@@ -83,7 +83,7 @@ void MySQLHandler::run()
         if (!connection_context.mysql.max_packet_size)
             connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
-        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags                                         << ", max_packet_size: "                                         << handshake_response.max_packet_size                                         << ", character_set: "                                         << static_cast<int>(handshake_response.character_set)                                         << ", user: "                                         << handshake_response.username                                         << ", auth_response length: "                                         << handshake_response.auth_response.length()                                         << ", database: "                                         << handshake_response.database                                         << ", auth_plugin_name: "                                         << handshake_response.auth_plugin_name);
+        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags << ", max_packet_size: " << handshake_response.max_packet_size << ", character_set: " << static_cast<int>(handshake_response.character_set) << ", user: " << handshake_response.username << ", auth_response length: " << handshake_response.auth_response.length() << ", database: " << handshake_response.database << ", auth_plugin_name: " << handshake_response.auth_plugin_name);
 
         client_capability_flags = handshake_response.capability_flags;
         if (!(client_capability_flags & CLIENT_PROTOCOL_41))

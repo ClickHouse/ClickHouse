@@ -547,7 +547,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
 #ifndef NDEBUG
     auto & context = executor_contexts[thread_num];
-    LOG_TRACE(log,         "Thread finished."         << " Total time: " << (context->total_time_ns / 1e9) << " sec."         << " Execution time: " << (context->execution_time_ns / 1e9) << " sec."         << " Processing time: " << (context->processing_time_ns / 1e9) << " sec."         << " Wait time: " << (context->wait_time_ns / 1e9) << " sec.");
+    LOG_TRACE(log, "Thread finished." << " Total time: " << (context->total_time_ns / 1e9) << " sec." << " Execution time: " << (context->execution_time_ns / 1e9) << " sec." << " Processing time: " << (context->processing_time_ns / 1e9) << " sec." << " Wait time: " << (context->wait_time_ns / 1e9) << " sec.");
 #endif
 }
 

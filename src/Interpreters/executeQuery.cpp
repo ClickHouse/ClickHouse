@@ -113,7 +113,7 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = context.getClientInfo().initial_query_id;
         const auto & current_user = context.getClientInfo().current_user;
 
-        LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()             << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")             << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())             << ") "             << joinLines(query));
+        LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString() << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "") << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()) << ") " << joinLines(query));
     }
 }
 
@@ -140,7 +140,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 /// Log exception (with query info) into text log (not into system table).
 static void logException(Context & context, QueryLogElement & elem)
 {
-    LOG_ERROR(&Logger::get("executeQuery"), elem.exception         << " (from " << context.getClientInfo().current_address.toString() << ")"         << " (in query: " << joinLines(elem.query) << ")"         << (!elem.stack_trace.empty() ? ", Stack trace (when copying this message, always include the lines below):\n\n" + elem.stack_trace : ""));
+    LOG_ERROR(&Logger::get("executeQuery"), elem.exception << " (from " << context.getClientInfo().current_address.toString() << ")" << " (in query: " << joinLines(elem.query) << ")" << (!elem.stack_trace.empty() ? ", Stack trace (when copying this message, always include the lines below):\n\n" + elem.stack_trace : ""));
 }
 
 
@@ -495,7 +495,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (elem.read_rows != 0)
                 {
-                    LOG_INFO(&Logger::get("executeQuery"), std::fixed << std::setprecision(3)                         << "Read " << elem.read_rows << " rows, "                         << formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elapsed_seconds << " sec., "                         << static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "                         << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
+                    LOG_INFO(&Logger::get("executeQuery"), std::fixed << std::setprecision(3) << "Read " << elem.read_rows << " rows, " << formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elapsed_seconds << " sec., " << static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., " << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
                 }
 
                 elem.thread_ids = std::move(info.thread_ids);

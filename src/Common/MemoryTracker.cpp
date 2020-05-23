@@ -49,12 +49,12 @@ MemoryTracker::~MemoryTracker()
 
 void MemoryTracker::logPeakMemoryUsage() const
 {
-    LOG_DEBUG(&Logger::get("MemoryTracker"),         "Peak memory usage" << (description ? " " + std::string(description) : "")         << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
+    LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage" << (description ? " " + std::string(description) : "") << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
-    LOG_DEBUG(&Logger::get("MemoryTracker"),         "Current memory usage" << (description ? " " + std::string(description) : "")         << ": " << formatReadableSizeWithBinarySuffix(current) << ".");
+    LOG_DEBUG(&Logger::get("MemoryTracker"), "Current memory usage" << (description ? " " + std::string(description) : "") << ": " << formatReadableSizeWithBinarySuffix(current) << ".");
 }
 
 

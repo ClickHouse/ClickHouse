@@ -90,7 +90,7 @@ void CreatingSetsBlockInputStream::createAll()
 
 void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 {
-    LOG_TRACE(log, (subquery.set ? "Creating set. " : "")         << (subquery.join ? "Creating join. " : "")         << (subquery.table ? "Filling temporary table. " : ""));
+    LOG_TRACE(log, (subquery.set ? "Creating set. " : "") << (subquery.join ? "Creating join. " : "") << (subquery.table ? "Filling temporary table. " : ""));
     Stopwatch watch;
 
     BlockOutputStreamPtr table_out;

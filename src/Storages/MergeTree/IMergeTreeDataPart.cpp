@@ -257,7 +257,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
                 if (!startsWith(file_name, "tmp"))
                 {
-                    LOG_ERROR(storage.log, "~DataPart() should remove part " << path                         << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
+                    LOG_ERROR(storage.log, "~DataPart() should remove part " << path << " but its name doesn't start with tmp. Too suspicious, keeping the part.");
                     return;
                 }
             }
@@ -729,7 +729,7 @@ void IMergeTreeDataPart::remove() const
     }
     catch (const Poco::FileNotFoundException &)
     {
-        LOG_ERROR(storage.log, "Directory " << fullPath(volume->getDisk(), to) << " (part to remove) doesn't exist or one of nested files has gone."             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
+        LOG_ERROR(storage.log, "Directory " << fullPath(volume->getDisk(), to) << " (part to remove) doesn't exist or one of nested files has gone." " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
         return;
     }
@@ -765,7 +765,7 @@ void IMergeTreeDataPart::remove() const
         {
             /// Recursive directory removal does many excessive "stat" syscalls under the hood.
 
-            LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(volume->getDisk(), to) << " by removing files; fallback to recursive removal. Reason: "                 << getCurrentExceptionMessage(false));
+            LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(volume->getDisk(), to) << " by removing files; fallback to recursive removal. Reason: " << getCurrentExceptionMessage(false));
 
             volume->getDisk()->removeRecursive(to + "/");
         }

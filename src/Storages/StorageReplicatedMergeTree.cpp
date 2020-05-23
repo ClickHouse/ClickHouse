@@ -777,7 +777,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
                 !zookeeper->exists(current_part_path + "/columns", &columns_stat_after) ||
                 columns_stat_before.version != columns_stat_after.version)
             {
-                LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica                     << " because part changed while we were reading its checksums");
+                LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica << " because part changed while we were reading its checksums");
                 continue;
             }
 
@@ -787,7 +787,7 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
 
         if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
         {
-            LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica                 << " because columns are different");
+            LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica << " because columns are different");
             continue;
         }
 
@@ -1095,7 +1095,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
-                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "                     "Data after merge is not byte-identical to data on another replicas. "                     "There could be several reasons: "                     "1. Using newer version of compression library after server update. "                     "2. Using another compression method. "                     "3. Non-deterministic compression algorithm (highly unlikely). "                     "4. Non-deterministic merge algorithm due to logical error in code. "                     "5. Data corruption in memory due to bug in code. "                     "6. Data corruption in memory due to hardware issue. "                     "7. Manual modification of source data after server startup. "                     "8. Manual modification of checksums stored in ZooKeeper. "                     "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. "                     "We will download merged part from replica to force byte-identical result.");
+                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". " "Data after merge is not byte-identical to data on another replicas. " "There could be several reasons: " "1. Using newer version of compression library after server update. " "2. Using another compression method. " "3. Non-deterministic compression algorithm (highly unlikely). " "4. Non-deterministic merge algorithm due to logical error in code. " "5. Data corruption in memory due to bug in code. " "6. Data corruption in memory due to hardware issue. " "7. Manual modification of source data after server startup. " "8. Manual modification of checksums stored in ZooKeeper. " "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. " "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
@@ -1217,7 +1217,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
 
-                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "                     "Data after mutation is not byte-identical to data on another replicas. "                     "We will download merged part from replica to force byte-identical result.");
+                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". " "Data after mutation is not byte-identical to data on another replicas. " "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
@@ -1288,7 +1288,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                 if (entry.type != LogEntry::GET_PART)
                     throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
 
-                LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum."                     " Will try to mark that quorum as failed.");
+                LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum." " Will try to mark that quorum as failed.");
 
                 /** Atomically:
                   * - if replicas do not become active;
@@ -1363,7 +1363,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                         }
                         else if (code == Coordination::ZBADVERSION || code == Coordination::ZNONODE || code == Coordination::ZNODEEXISTS)
                         {
-                            LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part "                                 << entry.new_part_name << " as failed. Code: " << zkutil::ZooKeeper::error2string(code));
+                            LOG_DEBUG(log, "State was changed or isn't expected when trying to mark quorum for part " << entry.new_part_name << " as failed. Code: " << zkutil::ZooKeeper::error2string(code));
                         }
                         else
                             throw Coordination::Exception(code);
@@ -1580,7 +1580,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         }
         catch (Exception &)
         {
-            LOG_INFO(log, "Can't use " << source_table_id.getNameForLogs() << " as source table for REPLACE PARTITION command. Will fetch all parts."                            << " Reason: " << getCurrentExceptionMessage(false));
+            LOG_INFO(log, "Can't use " << source_table_id.getNameForLogs() << " as source table for REPLACE PARTITION command. Will fetch all parts." << " Reason: " << getCurrentExceptionMessage(false));
             return 0;
         }
 
@@ -2187,7 +2187,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         size_t merges_and_mutations_sum = merges_and_mutations_queued.first + merges_and_mutations_queued.second;
         if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
         {
-            LOG_TRACE(log, "Number of queued merges (" << merges_and_mutations_queued.first << ") and part mutations ("                 << merges_and_mutations_queued.second << ") is greater than max_replicated_merges_in_queue ("                 << storage_settings_ptr->max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
+            LOG_TRACE(log, "Number of queued merges (" << merges_and_mutations_queued.first << ") and part mutations (" << merges_and_mutations_queued.second << ") is greater than max_replicated_merges_in_queue (" << storage_settings_ptr->max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
         }
         else
         {
@@ -3692,7 +3692,7 @@ void StorageReplicatedMergeTree::drop()
         /// It may left some garbage if replica_path subtree are concurently modified
         zookeeper->tryRemoveRecursive(replica_path);
         if (zookeeper->exists(replica_path))
-            LOG_ERROR(log, "Replica was not completely removed from ZooKeeper, "                       << replica_path << " still exists and may contain some garbage.");
+            LOG_ERROR(log, "Replica was not completely removed from ZooKeeper, " << replica_path << " still exists and may contain some garbage.");
 
         /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
         Strings replicas;
@@ -3701,7 +3701,7 @@ void StorageReplicatedMergeTree::drop()
             LOG_INFO_FORMATTED(log, "Removing table {} (this might take several minutes)", zookeeper_path);
             zookeeper->tryRemoveRecursive(zookeeper_path);
             if (zookeeper->exists(zookeeper_path))
-                LOG_ERROR(log, "Table was not completely removed from ZooKeeper, "                           << zookeeper_path << " still exists and may contain some garbage.");
+                LOG_ERROR(log, "Table was not completely removed from ZooKeeper, " << zookeeper_path << " still exists and may contain some garbage.");
         }
     }
 
@@ -4305,7 +4305,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
     if (best_replica.empty())
         throw Exception("Logical error: cannot choose best replica.", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active."         << " Selected " << best_replica << " to fetch from.");
+    LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active." << " Selected " << best_replica << " to fetch from.");
 
     String best_replica_path = from + "/replicas/" + best_replica;
 
@@ -4740,7 +4740,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             }
             else
             {
-                LOG_DEBUG(log,                     "There is no part " << part_names[i] << " in ZooKeeper, it was only in filesystem");
+                LOG_DEBUG(log, "There is no part " << part_names[i] << " in ZooKeeper, it was only in filesystem");
                 // emplace invalid future so that the total number of futures is the same as part_names.size();
                 remove_futures.emplace_back();
             }
@@ -4765,7 +4765,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(
             continue;
         else if (response.error == Coordination::ZNONODE)
         {
-            LOG_DEBUG(log,                 "There is no part " << part_names[i] << " in ZooKeeper, it was only in filesystem");
+            LOG_DEBUG(log, "There is no part " << part_names[i] << " in ZooKeeper, it was only in filesystem");
             continue;
         }
         else if (Coordination::isHardwareError(response.error))

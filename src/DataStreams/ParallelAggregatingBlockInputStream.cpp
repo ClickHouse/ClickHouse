@@ -82,7 +82,7 @@ Block ParallelAggregatingBlockInputStream::readImpl()
                 input_streams.emplace_back(temporary_inputs.back()->block_in);
             }
 
-            LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size "                 << (files.sum_size_compressed / 1048576.0) << " MiB compressed, "                 << (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
+            LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size " << (files.sum_size_compressed / 1048576.0) << " MiB compressed, " << (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
             impl = std::make_unique<MergingAggregatedMemoryEfficientBlockInputStream>(
                 input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads);
@@ -177,12 +177,12 @@ void ParallelAggregatingBlockInputStream::execute()
     for (size_t i = 0; i < max_threads; ++i)
     {
         size_t rows = many_data[i]->size();
-        LOG_TRACE(log,             "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"                 << " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"             << " in " << elapsed_seconds << " sec."             << " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "                 << formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds) << "/sec.)");
+        LOG_TRACE(log, "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows" << " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)" << " in " << elapsed_seconds << " sec." << " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(threads_data[i].src_bytes / elapsed_seconds) << "/sec.)");
 
         total_src_rows += threads_data[i].src_rows;
         total_src_bytes += threads_data[i].src_bytes;
     }
-    LOG_TRACE(log,         "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"         << " in " << elapsed_seconds << " sec."         << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds) << "/sec.)");
+    LOG_TRACE(log, "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)" << " in " << elapsed_seconds << " sec." << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(total_src_bytes / elapsed_seconds) << "/sec.)");
 
     /// If there was no data, and we aggregate without keys, we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
