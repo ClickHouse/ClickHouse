@@ -761,8 +761,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Written part in " << elapsed_seconds << " sec., "
+    LOG_TRACE(log,
+        "Written part in " << elapsed_seconds << " sec., "
         << rows << " rows, "
         << (uncompressed_bytes / 1048576.0) << " MiB uncompressed, "
         << (compressed_bytes / 1048576.0) << " MiB compressed, "
@@ -867,8 +867,8 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Max size of temporary block: " << max_temporary_block_size_rows << " rows, "
+    LOG_TRACE(log,
+        "Max size of temporary block: " << max_temporary_block_size_rows << " rows, "
         << (max_temporary_block_size_bytes / 1048576.0) << " MiB.");
 }
 
@@ -939,8 +939,8 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
+    LOG_TRACE(log,
+        "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
         << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 }
@@ -1308,8 +1308,8 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Converted aggregated data to blocks. "
+    LOG_TRACE(log,
+        "Converted aggregated data to blocks. "
         << rows << " rows, " << bytes / 1048576.0 << " MiB"
         << " in " << elapsed_seconds << " sec."
         << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
@@ -2175,8 +2175,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Merged partially aggregated blocks. "
+    LOG_TRACE(log,
+        "Merged partially aggregated blocks. "
         << rows << " rows, " << bytes / 1048576.0 << " MiB."
         << " in " << elapsed_seconds << " sec."
         << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");

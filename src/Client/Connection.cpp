@@ -61,11 +61,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (connected)
             disconnect();
 
-        LOG_TRACE(log_wrapper.get(), "Connecting. Database: "
-            << (default_database.empty() ? "(not specified)" : default_database)
-            << ". User: " << user
-            << (static_cast<bool>(secure) ? ". Secure" : "")
-            << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
+        LOG_TRACE_FORMATTED(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
+            default_database.empty() ? "(not specified)" : default_database,
+            user,
+            static_cast<bool>(secure) ? ". Secure" : "",
+            static_cast<bool>(compression) ? "" : ". Uncompressed");
 
         if (static_cast<bool>(secure))
         {
@@ -107,11 +107,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         sendHello();
         receiveHello();
 
-        LOG_TRACE(log_wrapper.get(), "Connected to " << server_name
-            << " server version " << server_version_major
-            << "." << server_version_minor
-            << "." << server_version_patch
-            << ".");
+        LOG_TRACE_FORMATTED(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
+            server_name, server_version_major, server_version_minor, server_version_patch);
     }
     catch (Poco::Net::NetException & e)
     {
@@ -324,7 +321,7 @@ bool Connection::ping()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_TRACE(log_wrapper.get(), e.displayText());
+        LOG_TRACE_FORMATTED(log_wrapper.get(), e.displayText());
         return false;
     }
 

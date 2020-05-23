@@ -308,10 +308,10 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             if (e.code() != ErrorCodes::DNS_ERROR)
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
-            LOG_WARNING(
+            LOG_WARNING_FORMATTED(
                 &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
-                                                                               << ", code = " << e.code());
+                "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
+                client_address.toString(), e.displayText(), e.code());
             return false;
         }
     };
@@ -341,10 +341,10 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             if (e.code() != ErrorCodes::DNS_ERROR)
                 throw;
             /// Try to ignore DNS errors: if host cannot be resolved, skip it and try next.
-            LOG_WARNING(
+            LOG_WARNING_FORMATTED(
                 &Logger::get("AddressPatterns"),
-                "Failed to check if the allowed client hosts contain address " << client_address.toString() << ". " << e.displayText()
-                                                                             << ", code = " << e.code());
+                "Failed to check if the allowed client hosts contain address {}. {}, code = {}",
+                client_address.toString(), e.displayText(), e.code());
             return false;
         }
     };

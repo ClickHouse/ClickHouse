@@ -179,8 +179,8 @@ void ParallelAggregatingBlockInputStream::execute()
     for (size_t i = 0; i < max_threads; ++i)
     {
         size_t rows = many_data[i]->size();
-        LOG_TRACE(log, std::fixed << std::setprecision(3)
-            << "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"
+        LOG_TRACE(log,
+            "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"
                 << " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"
             << " in " << elapsed_seconds << " sec."
             << " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "
@@ -189,8 +189,8 @@ void ParallelAggregatingBlockInputStream::execute()
         total_src_rows += threads_data[i].src_rows;
         total_src_bytes += threads_data[i].src_bytes;
     }
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
+    LOG_TRACE(log,
+        "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
         << " in " << elapsed_seconds << " sec."
         << " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 

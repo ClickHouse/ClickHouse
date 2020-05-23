@@ -166,8 +166,8 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     ++backoff_state.num_events;
 
     ProfileEvents::increment(ProfileEvents::SlowRead);
-    LOG_DEBUG(log, std::fixed << std::setprecision(3)
-        << "Slow read, event №" << backoff_state.num_events
+    LOG_DEBUG(log,
+        "Slow read, event №" << backoff_state.num_events
         << ": read " << info.bytes_read << " bytes in " << info.nanoseconds / 1000000000.0 << " sec., "
         << info.bytes_read * 1000.0 / info.nanoseconds << " MB/s.");
 
