@@ -118,9 +118,9 @@ namespace
     struct RadixSortTraits : RadixSortNumTraits<T>
     {
         using Element = ValueWithIndex<T>;
-        using Index = size_t;
+        using Result = size_t;
         static T & extractKey(Element & elem) { return elem.value; }
-        static size_t extractIndex(Element & elem) { return elem.index; }
+        static size_t extractResult(Element & elem) { return elem.index; }
     };
 }
 
