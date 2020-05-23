@@ -246,7 +246,7 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(TSortingHeap & queue)
 
 void MergeSortingBlockInputStream::remerge()
 {
-    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << blocks.size() << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
+    LOG_DEBUG_FORMATTED(log, "Re-merging intermediate ORDER BY data ({} blocks with {} rows) to save memory consumption", blocks.size(), sum_rows_in_blocks);
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
     MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);

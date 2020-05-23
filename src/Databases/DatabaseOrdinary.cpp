@@ -150,7 +150,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
-    LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
+    LOG_INFO_FORMATTED(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};

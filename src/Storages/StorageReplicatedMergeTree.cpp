@@ -1631,7 +1631,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             if (checksum_hex != part_desc->checksum_hex)
             {
-                LOG_DEBUG(log, "Part " << part_desc->src_part_name << " of " << source_table_id.getNameForLogs() << " has inappropriate checksum");
+                LOG_DEBUG_FORMATTED(log, "Part {} of {} has inappropriate checksum", part_desc->src_part_name, source_table_id.getNameForLogs());
                 /// TODO: check version
                 continue;
             }
@@ -1647,7 +1647,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     };
 
     size_t num_clonable_parts = clone_data_parts_from_source_table();
-    LOG_DEBUG(log, "Found " << num_clonable_parts << " parts that could be cloned (of " << parts_to_add.size() << " required parts)");
+    LOG_DEBUG_FORMATTED(log, "Found {} parts that could be cloned (of {} required parts)", num_clonable_parts, parts_to_add.size());
 
     ActiveDataPartSet adding_parts_active_set(format_version);
     std::unordered_map<String, PartDescriptionPtr> part_name_to_desc;
@@ -3891,7 +3891,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
         UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
         log_node_name = entry.znode_name;
 
-        LOG_DEBUG(log, "Waiting for " << replica << " to pull " << log_node_name << " to queue");
+        LOG_DEBUG_FORMATTED(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
         /// Let's wait until entry gets into the replica queue.
         while (wait_for_non_active || !check_replica_become_inactive())
@@ -3939,7 +3939,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 
         if (found)
         {
-            LOG_DEBUG(log, "Waiting for " << replica << " to pull " << log_node_name << " to queue");
+            LOG_DEBUG_FORMATTED(log, "Waiting for {} to pull {} to queue", replica, log_node_name);
 
             /// Let's wait until the entry gets into the replica queue.
             while (wait_for_non_active || !check_replica_become_inactive())
@@ -3961,7 +3961,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
         throw Exception("Logical error: unexpected name of log node: " + entry.znode_name, ErrorCodes::LOGICAL_ERROR);
 
     if (!log_node_name.empty())
-        LOG_DEBUG(log, "Looking for node corresponding to " << log_node_name << " in " << replica << " queue");
+        LOG_DEBUG_FORMATTED(log, "Looking for node corresponding to {} in {} queue", log_node_name, replica);
     else
         LOG_DEBUG_FORMATTED(log, "Looking for corresponding node in {} queue", replica);
 
@@ -3991,7 +3991,7 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
         return true;
     }
 
-    LOG_DEBUG(log, "Waiting for " << queue_entry_to_wait_for << " to disappear from " << replica << " queue");
+    LOG_DEBUG_FORMATTED(log, "Waiting for {} to disappear from {} queue", queue_entry_to_wait_for, replica);
 
     /// Third - wait until the entry disappears from the replica queue or replica become inactive.
     String path_to_wait_on = zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for;
@@ -4393,7 +4393,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
                 if (!containing_part.empty())
                     parts_to_fetch.push_back(containing_part);
                 else
-                    LOG_WARNING(log, "Part " << missing_part << " on replica " << best_replica_path << " has been vanished.");
+                    LOG_WARNING_FORMATTED(log, "Part {} on replica {} has been vanished.", missing_part, best_replica_path);
             }
         }
 
@@ -4941,7 +4941,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
         if (!lock)
         {
-            LOG_INFO(log, "Part " << src_part->name << " (hash " << hash_hex << ") has been already attached");
+            LOG_INFO_FORMATTED(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
             continue;
         }
 
@@ -5116,7 +5116,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
         if (!lock)
         {
-            LOG_INFO(log, "Part " << src_part->name << " (hash " << hash_hex << ") has been already attached");
+            LOG_INFO_FORMATTED(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
             continue;
         }
 
