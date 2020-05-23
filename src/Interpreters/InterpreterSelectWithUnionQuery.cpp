@@ -275,7 +275,7 @@ QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
         // nested queries can force 1 thread (due to simplicity)
         // but in case of union this cannot be done.
         UInt64 max_threads = context->getSettingsRef().max_threads;
-        main_pipeline.setMaxThreads(std::min(nested_interpreters.size(), max_threads));
+        main_pipeline.setMaxThreads(std::min<UInt64>(nested_interpreters.size(), max_threads));
     }
 
     main_pipeline.addInterpreterContext(context);
