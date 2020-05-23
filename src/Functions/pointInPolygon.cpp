@@ -319,6 +319,10 @@ private:
           * - simplicity and performance;
           * - can be additionally speed up with loop unrolling and/or binary search for possible intersecting edges.
           *
+          * Drawbacks:
+          * - it's unspecified whether a point of the edge is inside or outside of a polygon
+          *   (looks like it's inside for "left" edges and outside for "right" edges)
+          *
           * Why not to apply the same algorithm available in boost::geometry?
           * It will require to move data from columns to temporary containers.
           * Despite the fact that the boost library is template based and allows arbitrary containers and points,
