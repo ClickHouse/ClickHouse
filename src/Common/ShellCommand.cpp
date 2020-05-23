@@ -53,7 +53,7 @@ ShellCommand::~ShellCommand()
         LOG_TRACE_FORMATTED(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid " << pid << " errno '" << errnoToString(retcode) << "'");
+            LOG_WARNING_FORMATTED(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
     }
     else if (!wait_called)
         tryWait();

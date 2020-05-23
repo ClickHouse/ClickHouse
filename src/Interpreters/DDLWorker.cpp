@@ -443,7 +443,7 @@ void DDLWorker::processTasks()
         }
         else
         {
-            LOG_DEBUG(log, "Task " << task.entry_name << " (" << task.entry.query << ") has been already processed");
+            LOG_DEBUG_FORMATTED(log, "Task {} ({}) has been already processed", task.entry_name, task.entry.query);
         }
 
         last_processed_task_name = task.entry_name;
@@ -601,7 +601,7 @@ void DDLWorker::attachToThreadGroup()
 
 void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG(log, "Processing task " << task.entry_name << " (" << task.entry.query << ")");
+    LOG_DEBUG_FORMATTED(log, "Processing task {} ({})", task.entry_name, task.entry.query);
 
     String dummy;
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;

@@ -147,7 +147,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             /// That is, do not insert the same data to the same partition twice.
             block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-            LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << current_block.block.rows() << " rows");
+            LOG_DEBUG_FORMATTED(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else
         {
@@ -329,7 +329,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         if (multi_code == Coordination::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
             /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
-            LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+            LOG_INFO_FORMATTED(log, "Block with ID {} already exists; ignoring it (removing part {})", block_id, part->name);
 
             part->is_duplicate = true;
             transaction.rollback();

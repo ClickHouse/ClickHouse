@@ -152,7 +152,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             }
             std::string db_name = params.get("db_name");
             std::string table_name = params.get("table_name");
-            LOG_TRACE(log, "DB name: '" << db_name << "', table name: '" << table_name << "'");
+            LOG_TRACE_FORMATTED(log, "DB name: '{}', table name: '{}'", db_name, table_name);
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC

@@ -1820,7 +1820,7 @@ void MergeTreeData::renameTempPartAndReplace(
     else
         part_name = part->name;
 
-    LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << part_name << ".");
+    LOG_TRACE_FORMATTED(log, "Renaming temporary part {} to {}.", part->relative_path, part_name);
 
     auto it_duplicate = data_parts_by_info.find(part_info);
     if (it_duplicate != data_parts_by_info.end())

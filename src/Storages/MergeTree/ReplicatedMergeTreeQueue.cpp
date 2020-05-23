@@ -706,7 +706,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 /// otherwise it's already done
                 if (entry->isAlterMutation() && entry->znode_name > mutation_pointer)
                 {
-                    LOG_TRACE(log, "Adding mutation " << entry->znode_name << " with alter version " << entry->alter_version << " to the queue");
+                    LOG_TRACE_FORMATTED(log, "Adding mutation {} with alter version {} to the queue", entry->znode_name, entry->alter_version);
                     alter_sequence.addMutationForAlter(entry->alter_version, state_lock);
                 }
             }
@@ -1385,7 +1385,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
             if (znode <= mutation_pointer)
             {
-                LOG_TRACE(log, "Marking mutation " << znode << " done because it is <= mutation_pointer (" << mutation_pointer << ")");
+                LOG_TRACE_FORMATTED(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
                 if (mutation.parts_to_do.size() != 0)

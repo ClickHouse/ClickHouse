@@ -786,7 +786,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
-        LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
+        LOG_TRACE_FORMATTED(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
         {
@@ -1443,7 +1443,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index " << backQuote(index->name) << " has dropped " << granules_dropped << " granules.");
+    LOG_DEBUG_FORMATTED(log, "Index {} has dropped {} granules.", backQuote(index->name), granules_dropped);
 
     return res;
 }

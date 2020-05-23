@@ -516,7 +516,7 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
         }
     }
 
-    LOG_INFO(log, "Partition " << partition_name << " piece number " << toString(piece_number) << " is copied successfully");
+    LOG_INFO_FORMATTED(log, "Partition {} piece number {} is copied successfully", partition_name, toString(piece_number));
     return true;
 }
 

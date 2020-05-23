@@ -362,7 +362,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         << ". Try to specify max_open_files according to your system limits. error: "
                         << strerror(errno));
             else
-                LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
+                LOG_DEBUG_FORMATTED(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
     }
 
