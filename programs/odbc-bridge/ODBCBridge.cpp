@@ -48,12 +48,7 @@ namespace
 #endif
             )
             {
-                LOG_ERROR(log,
-                    "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message()
-                                                   << ". "
-                                                      "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                                                      "specify IPv4 address to listen in <listen_host> element of configuration "
-                                                      "file. Example: <listen_host>0.0.0.0</listen_host>");
+                LOG_ERROR(log,                     "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message()                                                    << ". "                                                       "If it is an IPv6 address and your host has disabled IPv6, then consider to "                                                       "specify IPv4 address to listen in <listen_host> element of configuration "                                                       "file. Example: <listen_host>0.0.0.0</listen_host>");
             }
 
             throw;

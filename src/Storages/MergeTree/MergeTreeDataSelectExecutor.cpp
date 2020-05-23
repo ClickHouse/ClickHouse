@@ -586,8 +586,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
-        << sum_marks << " marks to read from " << sum_ranges << " ranges");
+    LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "         << sum_marks << " marks to read from " << sum_ranges << " ranges");
 
     if (parts_with_ranges.empty())
         return {};

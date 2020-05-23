@@ -141,8 +141,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             if (storage.is_leader
                 && relative_delay > static_cast<time_t>(storage_settings->min_relative_delay_to_yield_leadership))
             {
-                LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
-                    << storage_settings->min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+                LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("                     << storage_settings->min_relative_delay_to_yield_leadership << "). Will yield leadership.");
 
                 ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
@@ -269,8 +268,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
         if (!quorum_entry.replicas.count(storage.replica_name)
             && zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
         {
-            LOG_WARNING(log, "We have part " << quorum_entry.part_name
-                << " but we is not in quorum. Updating quorum. This shouldn't happen often.");
+            LOG_WARNING(log, "We have part " << quorum_entry.part_name                 << " but we is not in quorum. Updating quorum. This shouldn't happen often.");
             storage.updateQuorum(quorum_entry.part_name);
         }
     }

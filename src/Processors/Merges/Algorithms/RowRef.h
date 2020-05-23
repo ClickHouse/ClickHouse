@@ -83,9 +83,7 @@ public:
     {
         if (free_chunks.size() != chunks.size())
         {
-            LOG_ERROR(&Logger::get("SharedChunkAllocator"),
-                      "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "
-                              << StackTrace().toString());
+            LOG_ERROR(&Logger::get("SharedChunkAllocator"),                       "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "                               << StackTrace().toString());
 
             return;
         }
@@ -102,9 +100,7 @@ private:
             /// This may happen if allocator was removed before chunks.
             /// Log message and exit, because we don't want to throw exception in destructor.
 
-            LOG_ERROR(&Logger::get("SharedChunkAllocator"),
-                    "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "
-                    << StackTrace().toString());
+            LOG_ERROR(&Logger::get("SharedChunkAllocator"),                     "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "                     << StackTrace().toString());
 
             return;
         }

@@ -238,8 +238,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
 
     if (context.getSettingsRef().readonly)
     {
-        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"
-            << " Set appropriate system_profile or distributed_ddl.profile to fix this.");
+        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries"             << " Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -335,8 +334,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason,
         if (host_in_hostlist)
         {
             /// This check could be slow a little bit
-            LOG_WARNING(log, "There are two the same ClickHouse instances in task " << entry_name
-                << ": " << task->host_id.readableString() << " and " << host.readableString() << ". Will use the first one only.");
+            LOG_WARNING(log, "There are two the same ClickHouse instances in task " << entry_name                 << ": " << task->host_id.readableString() << " and " << host.readableString() << ". Will use the first one only.");
         }
         else
         {
@@ -426,8 +424,7 @@ void DDLWorker::processTasks()
             {
                 if (server_startup && e.code == Coordination::ZNONODE)
                 {
-                    LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry " <<
-                                task.entry_name << " (" << task.entry.query << ") : " << getCurrentExceptionMessage(true));
+                    LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry " <<                                 task.entry_name << " (" << task.entry.query << ") : " << getCurrentExceptionMessage(true));
                 }
                 else
                 {
@@ -436,8 +433,7 @@ void DDLWorker::processTasks()
             }
             catch (...)
             {
-                LOG_WARNING(log, "An error occurred while processing task " << task.entry_name << " (" << task.entry.query << ") : "
-                    << getCurrentExceptionMessage(true));
+                LOG_WARNING(log, "An error occurred while processing task " << task.entry_name << " (" << task.entry.query << ") : "                     << getCurrentExceptionMessage(true));
                 throw;
             }
         }
@@ -510,8 +506,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     if (found_exact_match)
         return;
 
-    LOG_WARNING(log, "Not found the exact match of host " << task.host_id.readableString() << " from task " << task.entry_name
-        << " in cluster " << task.cluster_name << " definition. Will try to find it using host name resolving.");
+    LOG_WARNING(log, "Not found the exact match of host " << task.host_id.readableString() << " from task " << task.entry_name         << " in cluster " << task.cluster_name << " definition. Will try to find it using host name resolving.");
 
     bool found_via_resolving = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
@@ -547,8 +542,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     }
     else
     {
-        LOG_INFO(log, "Resolved host " << task.host_id.readableString() << " from task " << task.entry_name
-            << " as host " << task.address_in_cluster.readableString() << " in definition of cluster " << task.cluster_name);
+        LOG_INFO(log, "Resolved host " << task.host_id.readableString() << " from task " << task.entry_name             << " as host " << task.address_in_cluster.readableString() << " in definition of cluster " << task.cluster_name);
     }
 }
 
@@ -761,8 +755,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         String executed_by;
         if (zookeeper->tryGet(is_executed_path, executed_by))
         {
-            LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by leader replica ("
-                << executed_by << ") of the same shard.");
+            LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by leader replica ("                 << executed_by << ") of the same shard.");
             return true;
         }
 
@@ -947,8 +940,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     }
     catch (...)
     {
-        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in " << node_path << " . They will be created later"
-            << ". Error : " << getCurrentExceptionMessage(true));
+        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in " << node_path << " . They will be created later"             << ". Error : " << getCurrentExceptionMessage(true));
     }
 
     return node_path;

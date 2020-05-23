@@ -282,10 +282,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             else
             {
-                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                    " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."
-                    " Note that it will not work on 'nosuid' mounted filesystems.");
+                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."                     " It could happen due to incorrect ClickHouse package installation."                     " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."                     " Note that it will not work on 'nosuid' mounted filesystems.");
             }
         }
     }
@@ -357,10 +354,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
-                LOG_WARNING(log,
-                    "Cannot set max number of file descriptors to " << rlim.rlim_cur
-                        << ". Try to specify max_open_files according to your system limits. error: "
-                        << strerror(errno));
+                LOG_WARNING(log,                     "Cannot set max number of file descriptors to " << rlim.rlim_cur                         << ". Try to specify max_open_files according to your system limits. error: "                         << strerror(errno));
             else
                 LOG_DEBUG_FORMATTED(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
@@ -431,9 +425,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (this_host.empty())
             {
                 this_host = getFQDNOrHostName();
-                LOG_DEBUG(log,
-                    "Configuration parameter '" + String(host_tag) + "' doesn't exist or exists and empty. Will use '" + this_host
-                        + "' as replica host.");
+                LOG_DEBUG(log,                     "Configuration parameter '" + String(host_tag) + "' doesn't exist or exists and empty. Will use '" + this_host                         + "' as replica host.");
             }
 
             String port_str = config().getString(port_tag);
@@ -538,8 +530,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)
-            << " because the system has low amount of memory");
+        LOG_INFO(log, "Uncompressed cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)             << " because the system has low amount of memory");
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
@@ -554,8 +545,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)
-            << " because the system has low amount of memory");
+        LOG_INFO(log, "Mark cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)             << " because the system has low amount of memory");
     }
     global_context->setMarkCache(mark_cache_size);
 
@@ -584,8 +574,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage)
-            << " because the system has low amount of memory");
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage)             << " because the system has low amount of memory");
     }
 
     total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
@@ -658,13 +647,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
 #if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
-        " when two different stack unwinding methods will interfere with each other.");
+    LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"         " when two different stack unwinding methods will interfere with each other.");
 #endif
 
     if (!hasPHDRCache())
-        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
-            " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+        LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 
     global_context->setCurrentDatabase(default_database);
 
@@ -690,21 +677,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(OS_LINUX)
     if (!TasksStatsCounters::checkIfAvailable())
     {
-        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
-            " neither clickhouse-server process has CAP_NET_ADMIN capability."
-            " 'taskstats' performance statistics will be disabled."
-            " It could happen due to incorrect ClickHouse package installation."
-            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
-            " Note that it will not work on 'nosuid' mounted filesystems."
-            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+        LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"             " neither clickhouse-server process has CAP_NET_ADMIN capability."             " 'taskstats' performance statistics will be disabled."             " It could happen due to incorrect ClickHouse package installation."             " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."             " Note that it will not work on 'nosuid' mounted filesystems."             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
     {
-        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
-            " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."
-            " Note that it will not work on 'nosuid' mounted filesystems.");
+        LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."             " It could happen due to incorrect ClickHouse package installation."             " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."             " Note that it will not work on 'nosuid' mounted filesystems.");
     }
 #else
     LOG_INFO_FORMATTED(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
@@ -746,11 +724,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
                     )
                 {
-                    LOG_ERROR(log,
-                        "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message() << ". "
-                        "If it is an IPv6 address and your host has disabled IPv6, then consider to "
-                        "specify IPv4 address to listen in <listen_host> element of configuration "
-                        "file. Example: <listen_host>0.0.0.0</listen_host>");
+                    LOG_ERROR(log,                         "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message() << ". "                         "If it is an IPv6 address and your host has disabled IPv6, then consider to "                         "specify IPv4 address to listen in <listen_host> element of configuration "                         "file. Example: <listen_host>0.0.0.0</listen_host>");
                 }
 
                 throw;
@@ -802,11 +776,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     if (listen_try)
                     {
-                        LOG_ERROR(log, message
-                            << ". If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
-                            "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
-                            "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
-                            " Example for disabled IPv4: <listen_host>::</listen_host>");
+                        LOG_ERROR(log, message                             << ". If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "                             "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "                             "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."                             " Example for disabled IPv4: <listen_host>::</listen_host>");
                     }
                     else
                     {
@@ -989,9 +959,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 current_connections += server->currentConnections();
             }
 
-            LOG_INFO(log,
-                "Closed all listening sockets."
-                    << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
+            LOG_INFO(log,                 "Closed all listening sockets."                     << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
 
             /// Killing remaining queries.
             global_context->getProcessList().killAllQueries();
@@ -1013,9 +981,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 }
             }
 
-            LOG_INFO(
-                log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
+            LOG_INFO(                 log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             dns_cache_updater.reset();
             main_config_reloader.reset();

@@ -75,9 +75,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
                 return already_loaded_paths.count(path);
             });
 
-        LOG_DEBUG(log,
-            "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
-                    << (children.end() - to_remove_it) << " entries already loaded.");
+        LOG_DEBUG(log,             "Having " << (to_remove_it - children.begin()) << " queue entries to load, "                     << (children.end() - to_remove_it) << " entries already loaded.");
         children.erase(to_remove_it, children.end());
 
         std::sort(children.begin(), children.end());
@@ -322,9 +320,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
         auto code = zookeeper->tryMulti(ops, responses);
 
         if (code)
-            LOG_ERROR(log, "Couldn't set value of nodes for insert times ("
-                << replica_path << "/min_unprocessed_insert_time, max_processed_insert_time)" << ": "
-                << zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
+            LOG_ERROR(log, "Couldn't set value of nodes for insert times ("                 << replica_path << "/min_unprocessed_insert_time, max_processed_insert_time)" << ": "                 << zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
     }
 }
 
@@ -369,8 +365,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
 
     auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
     if (code)
-        LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "
-            << zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
+        LOG_ERROR(log, "Couldn't remove " << replica_path << "/queue/" << entry->znode_name << ": "             << zkutil::ZooKeeper::error2string(code) << ". This shouldn't happen often.");
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 }
@@ -650,8 +645,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
     if (!entries_to_load.empty())
     {
-        LOG_INFO(log, "Loading " + toString(entries_to_load.size()) + " mutation entries: "
-            + entries_to_load.front() + " - " + entries_to_load.back());
+        LOG_INFO(log, "Loading " + toString(entries_to_load.size()) + " mutation entries: "             + entries_to_load.front() + " - " + entries_to_load.back());
 
         std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
@@ -851,8 +845,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
                 to_wait.push_back(*it);
             auto code = zookeeper->tryRemove(replica_path + "/queue/" + (*it)->znode_name);
             if (code)
-                LOG_INFO(log, "Couldn't remove " << replica_path + "/queue/" + (*it)->znode_name << ": "
-                    << zkutil::ZooKeeper::error2string(code));
+                LOG_INFO(log, "Couldn't remove " << replica_path + "/queue/" + (*it)->znode_name << ": "                     << zkutil::ZooKeeper::error2string(code));
 
             updateStateOnQueueEntryRemoval(
                 *it, /* is_successful = */ false,
@@ -866,8 +859,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
 
     updateTimesInZooKeeper(zookeeper, min_unprocessed_insert_time_changed, max_processed_insert_time_changed);
 
-    LOG_DEBUG(log, "Removed " << removed_entries << " entries from queue. "
-        "Waiting for " << to_wait.size() << " entries that are currently executing.");
+    LOG_DEBUG(log, "Removed " << removed_entries << " entries from queue. "         "Waiting for " << to_wait.size() << " entries that are currently executing.");
 
     /// Let's wait for the operations with the parts contained in the range to be deleted.
     for (LogEntryPtr & entry : to_wait)
@@ -1336,8 +1328,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     if (part->info.getDataVersion() > desired_mutation_version)
     {
-        LOG_WARNING(log, "Data version of part " << part->name << " is already greater than "
-            "desired mutation version " << desired_mutation_version);
+        LOG_WARNING(log, "Data version of part " << part->name << " is already greater than "             "desired mutation version " << desired_mutation_version);
         return MutationCommands{};
     }
 
@@ -1346,8 +1337,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_WARNING(log, "There are no mutations for partition ID " << part->info.partition_id
-            << " (trying to mutate part " << part->name << " to " << toString(desired_mutation_version) << ")");
+        LOG_WARNING(log, "There are no mutations for partition ID " << part->info.partition_id             << " (trying to mutate part " << part->name << " to " << toString(desired_mutation_version) << ")");
         return MutationCommands{};
     }
 
@@ -1355,9 +1345,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     auto end = in_partition->second.lower_bound(desired_mutation_version);
     if (end == in_partition->second.end() || end->first != desired_mutation_version)
-        LOG_WARNING(log, "Mutation with version " << desired_mutation_version
-            << " not found in partition ID " << part->info.partition_id
-            << " (trying to mutate part " << part->name + ")");
+        LOG_WARNING(log, "Mutation with version " << desired_mutation_version             << " not found in partition ID " << part->info.partition_id             << " (trying to mutate part " << part->name + ")");
     else
         ++end;
 
@@ -1390,8 +1378,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
                 if (mutation.parts_to_do.size() != 0)
                 {
-                    LOG_INFO(log, "Seems like we jumped over mutation " << znode << " when downloaded part with bigger mutation number."
-                        << " It's OK, tasks for rest parts will be skipped, but probably a lot of mutations were executed concurrently on different replicas.");
+                    LOG_INFO(log, "Seems like we jumped over mutation " << znode << " when downloaded part with bigger mutation number."                         << " It's OK, tasks for rest parts will be skipped, but probably a lot of mutations were executed concurrently on different replicas.");
                     mutation.parts_to_do.clear();
                 }
             }
@@ -1898,9 +1885,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
                 partition_it->second.begin(), partition_it->second.lower_bound(block_num));
             if (blocks_count)
             {
-                LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "
-                    << "in partition ID " << partition_id << " there are still "
-                    << blocks_count << " uncommitted blocks.");
+                LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "                     << "in partition ID " << partition_id << " there are still "                     << blocks_count << " uncommitted blocks.");
                 return false;
             }
         }
@@ -1912,8 +1897,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
         size_t suddenly_appeared_parts = getPartNamesToMutate(mutation, queue.virtual_parts).size();
         if (suddenly_appeared_parts)
         {
-            LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "
-                << suddenly_appeared_parts << " parts to mutate suddenly appeared.");
+            LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "                 << suddenly_appeared_parts << " parts to mutate suddenly appeared.");
             return false;
         }
     }

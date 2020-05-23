@@ -629,8 +629,7 @@ private:
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
                 auto schema = json_body->getValue<std::string>("schema");
-                LOG_TRACE((&Logger::get("AvroConfluentRowInputFormat")),
-                    "Succesfully fetched schema  id = " << id << "\n" << schema);
+                LOG_TRACE((&Logger::get("AvroConfluentRowInputFormat")),                     "Succesfully fetched schema  id = " << id << "\n" << schema);
                 return avro::compileJsonSchemaFromString(schema);
             }
             catch (const Exception &)
