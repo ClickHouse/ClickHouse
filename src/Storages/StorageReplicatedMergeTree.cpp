@@ -325,7 +325,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     for (const String & replica : replicas)
     {
 
-        LOG_DEBUG(log, "Waiting for " << replica << " to apply mutation " + mutation_id);
+        LOG_DEBUG(log, "Waiting for " << replica << " to apply mutation " << mutation_id);
 
         while (!partial_shutdown_called)
         {
@@ -342,7 +342,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be inactive.
             if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
             {
-                LOG_WARNING(log, "Replica " << replica << " is not active during mutation. " "Mutation will be done asynchronously when replica becomes active.");
+                LOG_WARNING(log, "Replica " << replica << " is not active during mutation. Mutation will be done asynchronously when replica becomes active.");
 
                 inactive_replicas.emplace(replica);
                 break;
@@ -354,7 +354,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
             /// Replica could be removed
             if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, &get_stat, wait_event))
             {
-                LOG_WARNING(log, replica << " was removed");
+                LOG_WARNING_FORMATTED(log, "Replica {} was removed", replica);
                 break;
             }
             else if (mutation_pointer_value >= mutation_id) /// Maybe we already processed more fresh mutation
@@ -683,7 +683,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     }
 
     if (unexpected_parts_nonnew_rows > 0)
-        LOG_WARNING(log, sanity_report.str());
+        LOG_WARNING_FORMATTED(log, sanity_report.str());
 
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
@@ -730,7 +730,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Remove extra local parts.
     for (const DataPartPtr & part : unexpected_parts)
     {
-        LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
+        LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" << part->name);
         forgetPartAndMoveToDetached(part, "ignored", true);
     }
 }
@@ -923,7 +923,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         {
             if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
             {
-                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " because part " + existing_part->name + " already exists.");
+                LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " because part " << existing_part->name << " already exists.");
             }
             return true;
         }
@@ -1095,7 +1095,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
-                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". " "Data after merge is not byte-identical to data on another replicas. " "There could be several reasons: " "1. Using newer version of compression library after server update. " "2. Using another compression method. " "3. Non-deterministic compression algorithm (highly unlikely). " "4. Non-deterministic merge algorithm due to logical error in code. " "5. Data corruption in memory due to bug in code. " "6. Data corruption in memory due to hardware issue. " "7. Manual modification of source data after server startup. " "8. Manual modification of checksums stored in ZooKeeper. " "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. " "We will download merged part from replica to force byte-identical result.");
+                LOG_ERROR_FORMATTED(log, "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons: 1. Using newer version of compression library after server update. 2. Using another compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4. Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
@@ -1138,7 +1138,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     DataPartPtr source_part = getActiveContainingPart(source_part_name);
     if (!source_part)
     {
-        LOG_DEBUG(log, "Source part " + source_part_name + " for " << entry.new_part_name << " is not ready; will try to fetch it instead");
+        LOG_DEBUG(log, "Source part " << source_part_name << " for " << entry.new_part_name << " is not ready; will try to fetch it instead");
         return false;
     }
 
@@ -1217,7 +1217,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
 
-                LOG_ERROR(log, getCurrentExceptionMessage(false) << ". " "Data after mutation is not byte-identical to data on another replicas. " "We will download merged part from replica to force byte-identical result.");
+                LOG_ERROR_FORMATTED(log, "{}. Data after mutation is not byte-identical to data on another replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
@@ -1288,7 +1288,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                 if (entry.type != LogEntry::GET_PART)
                     throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
 
-                LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum." " Will try to mark that quorum as failed.");
+                LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum. Will try to mark that quorum as failed.");
 
                 /** Atomically:
                   * - if replicas do not become active;
@@ -1438,7 +1438,10 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
-    LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
+    if (entry.detach)
+        LOG_DEBUG_FORMATTED(log, "Detaching parts.");
+    else
+        LOG_DEBUG_FORMATTED(log, "Removing parts.");
 
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
@@ -1465,7 +1468,10 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// Forcibly remove parts from ZooKeeper
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
 
-    LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside " << entry.new_part_name << ".");
+    if (entry.detach)
+        LOG_DEBUG_FORMATTED(log, "Detached {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
+    else
+        LOG_DEBUG_FORMATTED(log, "Removed {} parts inside {}.", parts_to_remove.size(), entry.new_part_name);
 
     /// We want to remove dropped parts from disk as soon as possible
     /// To be removed a partition should have zero refcount, therefore call the cleanup thread at exit
@@ -2890,9 +2896,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
     if (part_to_clone)
-        LOG_DEBUG(log, "Cloned part " << part_name << " from " << part_to_clone->name << (to_detached ? " (to 'detached' directory)" : ""));
+        LOG_DEBUG_FORMATTED(log, "Cloned part {} from {}{}", part_name, part_to_clone->name, to_detached ? " (to 'detached' directory)" : "");
     else
-        LOG_DEBUG(log, "Fetched part " << part_name << " from " << source_replica_path << (to_detached ? " (to 'detached' directory)" : ""));
+        LOG_DEBUG_FORMATTED(log, "Fetched part {} from {}{}", part_name, part_to_clone->name, to_detached ? " (to 'detached' directory)" : "");
 
     return true;
 }
@@ -4892,7 +4898,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();
 
-        LOG_INFO(log, "Trying to " << (replace ? "replace " : "attach ") << src_part->name << " with hash_hex " << hash_hex);
+        if (replace)
+            LOG_INFO(log, "Trying to replace " << src_part->name << " with hash_hex " << hash_hex);
+        else
+            LOG_INFO(log, "Trying to attach " << src_part->name << " with hash_hex " << hash_hex);
 
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 

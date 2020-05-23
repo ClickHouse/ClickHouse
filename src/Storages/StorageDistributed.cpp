@@ -482,7 +482,7 @@ Pipes StorageDistributed::read(
         }
         else
         {
-            LOG_DEBUG(log, (has_sharding_key ? "" : " (no sharding key)") << ": " "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - " "the query will be sent to all shards of the cluster");
+            LOG_DEBUG_FORMATTED(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
         }
     }
 

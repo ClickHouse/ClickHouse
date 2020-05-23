@@ -1055,7 +1055,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
             }
         }
 
-        LOG_INFO(log, (detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
+        if (detach)
+            LOG_INFO(log, "Detached " << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
+        else
+            LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
     }
 
     clearOldPartsFromFilesystem();

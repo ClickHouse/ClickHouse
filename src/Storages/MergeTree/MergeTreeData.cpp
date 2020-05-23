@@ -244,7 +244,7 @@ MergeTreeData::MergeTreeData(
 
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
-        LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
+        LOG_WARNING_FORMATTED(log, "{} Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.", reason);
 }
 
 
@@ -937,7 +937,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             String marker_path = part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH;
             if (part_disk_ptr->exists(marker_path))
             {
-                LOG_WARNING(log, "Detaching stale part " << getFullPathOnDisk(part_disk_ptr) << part_name << ", which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.");
+                LOG_WARNING_FORMATTED(log, "Detaching stale part {}{}, which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.", getFullPathOnDisk(part_disk_ptr), part_name);
                 std::lock_guard loading_lock(mutex);
                 broken_parts_to_detach.push_back(part);
                 ++suspicious_broken_parts;
@@ -971,7 +971,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 if (part->info.level == 0)
                 {
                     /// It is impossible to restore level 0 parts.
-                    LOG_ERROR(log, "Considering to remove broken part " << getFullPathOnDisk(part_disk_ptr) << part_name << " because it's impossible to repair.");
+                    LOG_ERROR_FORMATTED(log, "Considering to remove broken part {}{} because it's impossible to repair.", getFullPathOnDisk(part_disk_ptr), part_name);
                     std::lock_guard loading_lock(mutex);
                     broken_parts_to_remove.push_back(part);
                 }
@@ -982,7 +982,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     /// delete it.
                     size_t contained_parts = 0;
 
-                    LOG_ERROR(log, "Part " << getFullPathOnDisk(part_disk_ptr) << part_name << " is broken. Looking for parts to replace it.");
+                    LOG_ERROR_FORMATTED(log, "Part {}{} is broken. Looking for parts to replace it.", getFullPathOnDisk(part_disk_ptr), part_name);
 
                     for (const auto & [contained_name, contained_disk_ptr] : part_names_with_disks)
                     {
@@ -995,20 +995,20 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
                         if (part->info.contains(contained_part_info))
                         {
-                            LOG_ERROR(log, "Found part " << getFullPathOnDisk(contained_disk_ptr) << contained_name);
+                            LOG_ERROR_FORMATTED(log, "Found part {}{}", getFullPathOnDisk(contained_disk_ptr), contained_name);
                             ++contained_parts;
                         }
                     }
 
                     if (contained_parts >= 2)
                     {
-                        LOG_ERROR(log, "Considering to remove broken part " << getFullPathOnDisk(part_disk_ptr) << part_name << " because it covers at least 2 other parts");
+                        LOG_ERROR_FORMATTED(log, "Considering to remove broken part {}{} because it covers at least 2 other parts", getFullPathOnDisk(part_disk_ptr), part_name);
                         std::lock_guard loading_lock(mutex);
                         broken_parts_to_remove.push_back(part);
                     }
                     else
                     {
-                        LOG_ERROR(log, "Detaching broken part " << getFullPathOnDisk(part_disk_ptr) << part_name << " because it covers less than 2 parts. You need to resolve this manually");
+                        LOG_ERROR_FORMATTED(log, "Detaching broken part {}{} because it covers less than 2 parts. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
                         std::lock_guard loading_lock(mutex);
                         broken_parts_to_detach.push_back(part);
                         ++suspicious_broken_parts;
@@ -1948,7 +1948,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
                 if (!skip_intersecting_parts)
                     throw Exception(error, ErrorCodes::LOGICAL_ERROR);
 
-                LOG_WARNING(log, error);
+                LOG_WARNING_FORMATTED(log, error);
             }
 
             continue;
@@ -1965,7 +1965,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             if (!skip_intersecting_parts)
                 throw Exception(error, ErrorCodes::LOGICAL_ERROR);
 
-            LOG_WARNING(log, error);
+            LOG_WARNING_FORMATTED(log, error);
             continue;
         }
 
@@ -1981,7 +1981,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
 void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
 restore_covered)
 {
-    LOG_INFO(log, "Renaming " << part_to_detach->relative_path << " to " << prefix << part_to_detach->name << " and forgiving it.");
+    LOG_INFO_FORMATTED(log, "Renaming {} to {}{} and forgiving it.", part_to_detach->relative_path, prefix, part_to_detach->name);
 
     auto lock = lockParts();
 
@@ -2241,7 +2241,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
-    LOG_INFO(log, "Delaying inserting block by " << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count_in_partition << " parts");
+    LOG_INFO_FORMATTED(log, "Delaying inserting block by {} ms. because there are {} parts", delay_milliseconds, parts_count_in_partition);
 
     if (until)
         until->tryWait(delay_milliseconds);
@@ -2319,7 +2319,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             }
             catch (Poco::Exception & e)
             {
-                LOG_ERROR(log, e.what() << " (while creating DeleteOnDestroy marker: " + backQuote(fullPath(disk, marker_path)) + ")");
+                LOG_ERROR_FORMATTED(log, "{} (while creating DeleteOnDestroy marker: {})", e.what(), backQuote(fullPath(disk, marker_path)));
             }
             return;
         }
@@ -2818,7 +2818,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 name_to_disk[name] = disk;
             }
         }
-        LOG_DEBUG(log, active_parts.size() << " of them are active");
+        LOG_DEBUG_FORMATTED(log, "{} of them are active", active_parts.size());
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & [name, disk] : name_to_disk)
         {
