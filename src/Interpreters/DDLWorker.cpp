@@ -579,7 +579,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     }
 
     status = ExecutionStatus(0);
-    LOG_DEBUG(log, "Executed query: " << query);
+    LOG_DEBUG_FORMATTED(log, "Executed query: {}", query);
 
     return true;
 }
@@ -631,7 +631,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 
             ASTPtr rewritten_ast = task.query_on_cluster->getRewrittenASTWithoutOnCluster(task.address_in_cluster.default_database);
             String rewritten_query = queryToString(rewritten_ast);
-            LOG_DEBUG(log, "Executing query: " << rewritten_query);
+            LOG_DEBUG_FORMATTED(log, "Executing query: {}", rewritten_query);
 
             if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
             {
@@ -1003,7 +1003,7 @@ void DDLWorker::runMainThread()
         {
             if (Coordination::isHardwareError(e.code))
             {
-                LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
+                LOG_DEBUG_FORMATTED(log, "Recovering ZooKeeper session after: {}", getCurrentExceptionMessage(false));
 
                 while (!stop_flag)
                 {
@@ -1023,7 +1023,7 @@ void DDLWorker::runMainThread()
             }
             else if (e.code == Coordination::ZNONODE)
             {
-                LOG_ERROR(log, "ZooKeeper error: " << getCurrentExceptionMessage(true));
+                LOG_ERROR_FORMATTED(log, "ZooKeeper error: {}", getCurrentExceptionMessage(true));
             }
             else
             {

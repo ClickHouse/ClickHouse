@@ -49,7 +49,7 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
 bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 {
     auto queue_path = replica_path + "/queue";
-    LOG_DEBUG(log, "Loading queue from " << queue_path);
+    LOG_DEBUG_FORMATTED(log, "Loading queue from {}", queue_path);
 
     bool updated = false;
     std::optional<time_t> min_unprocessed_insert_time_changed;
@@ -234,7 +234,7 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         if (entry->type == LogEntry::ALTER_METADATA)
         {
-            LOG_TRACE(log, "Finishing metadata alter with version " << entry->alter_version);
+            LOG_TRACE_FORMATTED(log, "Finishing metadata alter with version {}", entry->alter_version);
             alter_sequence.finishMetadataAlter(entry->alter_version, state_lock);
         }
     }

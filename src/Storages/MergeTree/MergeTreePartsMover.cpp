@@ -193,7 +193,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     if (moves_blocker.isCancelled())
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
-    LOG_TRACE(log, "Cloning part " << moving_part.part->name);
+    LOG_TRACE_FORMATTED(log, "Cloning part {}", moving_part.part->name);
     moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());

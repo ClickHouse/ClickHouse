@@ -91,7 +91,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk " << backQuote(name));
+        LOG_DEBUG_FORMATTED(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }

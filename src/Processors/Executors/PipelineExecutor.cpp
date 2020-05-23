@@ -486,7 +486,7 @@ void PipelineExecutor::execute(size_t num_threads)
     catch (...)
     {
 #ifndef NDEBUG
-        LOG_TRACE(log, "Exception while executing query. Current state:\n" << dumpPipeline());
+        LOG_TRACE_FORMATTED(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
 #endif
         throw;
     }

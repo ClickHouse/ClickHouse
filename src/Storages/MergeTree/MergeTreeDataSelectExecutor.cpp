@@ -107,7 +107,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     size_t rows_count = 0;
 
     /// We will find out how many rows we would have read without sampling.
-    LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
+    LOG_DEBUG_FORMATTED(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
     for (const auto & part : parts)
     {
@@ -329,7 +329,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_size > 1)
         {
             relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
-            LOG_DEBUG(log, "Selected relative sample size: " << toString(relative_sample_size));
+            LOG_DEBUG_FORMATTED(log, "Selected relative sample size: {}", toString(relative_sample_size));
         }
 
         /// SAMPLE 1 is the same as the absence of SAMPLE.
@@ -342,7 +342,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_offset > 1)
         {
             relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
-            LOG_DEBUG(log, "Selected relative sample offset: " << toString(relative_sample_offset));
+            LOG_DEBUG_FORMATTED(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
         }
     }
 
@@ -534,9 +534,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         return {};
     }
 
-    LOG_DEBUG(log, "Key condition: " << key_condition.toString());
+    LOG_DEBUG_FORMATTED(log, "Key condition: {}", key_condition.toString());
     if (minmax_idx_condition)
-        LOG_DEBUG(log, "MinMax index condition: " << minmax_idx_condition->toString());
+        LOG_DEBUG_FORMATTED(log, "MinMax index condition: {}", minmax_idx_condition->toString());
 
     /// PREWHERE
     String prewhere_column;

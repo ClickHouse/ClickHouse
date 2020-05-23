@@ -32,7 +32,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE_FORMATTED(log, "Failed to create SSL context. SSL will be disabled. Error: {}", getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
 
@@ -43,7 +43,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE_FORMATTED(log, "Failed to read RSA key pair from server certificate. Error: {}", getCurrentExceptionMessage(false));
         generateRSAKeys();
     }
 #endif

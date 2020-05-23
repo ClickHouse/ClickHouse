@@ -105,7 +105,7 @@ static void logQuery(const String & query, const Context & context, bool interna
 {
     if (internal)
     {
-        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) " << joinLines(query));
+        LOG_DEBUG_FORMATTED(&Logger::get("executeQuery"), "(internal) {}", joinLines(query));
     }
     else
     {

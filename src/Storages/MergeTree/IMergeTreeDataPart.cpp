@@ -267,7 +267,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
             if (state == State::DeleteOnDestroy)
             {
-                LOG_TRACE(storage.log, "Removed part from old location " << path);
+                LOG_TRACE_FORMATTED(storage.log, "Removed part from old location {}", path);
             }
         }
         catch (...)
@@ -812,7 +812,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 {
     assertOnDisk();
-    LOG_INFO(storage.log, "Detaching " << relative_path);
+    LOG_INFO_FORMATTED(storage.log, "Detaching {}", relative_path);
 
     String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
 

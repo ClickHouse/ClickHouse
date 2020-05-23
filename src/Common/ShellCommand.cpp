@@ -188,7 +188,7 @@ int ShellCommand::tryWait()
 {
     wait_called = true;
 
-    LOG_TRACE(getLogger(), "Will wait for shell command pid " << pid);
+    LOG_TRACE_FORMATTED(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;
     if (-1 == waitpid(pid, &status, 0))

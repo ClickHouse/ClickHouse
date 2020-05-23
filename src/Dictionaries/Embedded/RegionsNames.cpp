@@ -55,7 +55,7 @@ void RegionsNames::reload()
         if (!names_source || !names_source->isModified())
             continue;
 
-        LOG_DEBUG(log, "Reloading regions names for language: " << language);
+        LOG_DEBUG_FORMATTED(log, "Reloading regions names for language: {}", language);
 
         auto names_reader = names_source->createReader();
 

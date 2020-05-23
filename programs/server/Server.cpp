@@ -101,11 +101,11 @@ void setupTmpPath(Logger * log, const std::string & path)
     {
         if (it->isFile() && startsWith(it.name(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file " << it->path());
+            LOG_DEBUG_FORMATTED(log, "Removing old temporary file {}", it->path());
             it->remove();
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
+            LOG_DEBUG_FORMATTED(log, "Skipped file in temporary path {}", it->path());
     }
 }
 
@@ -349,7 +349,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         if (rlim.rlim_cur == rlim.rlim_max)
         {
-            LOG_DEBUG(log, "rlimit on number of file descriptors is " << rlim.rlim_cur);
+            LOG_DEBUG_FORMATTED(log, "rlimit on number of file descriptors is {}", rlim.rlim_cur);
         }
         else
         {
@@ -579,7 +579,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO_FORMATTED(log, "Setting max_server_memory_usage was set to {}", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
     }
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {

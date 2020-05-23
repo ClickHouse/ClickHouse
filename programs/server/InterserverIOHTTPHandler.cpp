@@ -53,7 +53,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 {
     HTMLForm params(request);
 
-    LOG_TRACE(log, "Request URI: " << request.getURI());
+    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";

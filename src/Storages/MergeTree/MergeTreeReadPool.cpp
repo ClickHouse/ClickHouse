@@ -178,7 +178,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     --backoff_state.current_threads;
 
     ProfileEvents::increment(ProfileEvents::ReadBackoff);
-    LOG_DEBUG(log, "Will lower number of threads to " << backoff_state.current_threads);
+    LOG_DEBUG_FORMATTED(log, "Will lower number of threads to {}", backoff_state.current_threads);
 }
 
 

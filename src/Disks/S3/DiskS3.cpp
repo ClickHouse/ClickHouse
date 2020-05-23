@@ -556,7 +556,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
 
 void DiskS3::remove(const String & path)
 {
-    LOG_DEBUG(&Logger::get("DiskS3"), "Remove file by path: " << backQuote(metadata_path + path));
+    LOG_DEBUG_FORMATTED(&Logger::get("DiskS3"), "Remove file by path: {}", backQuote(metadata_path + path));
 
     Poco::File file(metadata_path + path);
     if (file.isFile())
@@ -610,7 +610,7 @@ bool DiskS3::tryReserve(UInt64 bytes)
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk " << backQuote(name));
+        LOG_DEBUG_FORMATTED(&Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }

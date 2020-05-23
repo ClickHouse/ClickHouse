@@ -241,7 +241,7 @@ void HTTPHandler::processQuery(
 
     CurrentThread::QueryScope query_scope(context);
 
-    LOG_TRACE(log, "Request URI: " << request.getURI());
+    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
 
     std::istream & istr = request.stream();
 
