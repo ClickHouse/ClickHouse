@@ -261,7 +261,7 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    LOG_TRACE(log, "Started processing `" << file_path << "`");
+    LOG_TRACE_FORMATTED(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
     auto connection = pool->get(timeouts);
 
@@ -290,7 +290,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
     Poco::File{file_path}.remove();
 
-    LOG_TRACE(log, "Finished processing `" << file_path << "`");
+    LOG_TRACE_FORMATTED(log, "Finished processing `{}`", file_path);
 }
 
 void StorageDistributedDirectoryMonitor::readHeader(
@@ -692,7 +692,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     Poco::File{broken_path}.createDirectory();
     Poco::File{file_path}.renameTo(broken_file_path);
 
-    LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << "`");
+    LOG_ERROR_FORMATTED(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
