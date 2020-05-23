@@ -10,6 +10,9 @@ hostname
 80
 80
 80
+default-port
+80
+80
 ipv6
 0
 0

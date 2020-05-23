@@ -117,9 +117,9 @@ Returns the part of the domain that includes top-level subdomains up to the “f
 
 For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'yandex.com.tr'`.
 
-### port(URL) {#port}
+### port(URL[, default_port = 0]) {#port}
 
-Returns the port or zero if there is no port in the URL (or in case of validation error).
+Returns the port or `default_port` if there is no port in the URL (or in case of validation error).
 
 ### path {#path}
 
