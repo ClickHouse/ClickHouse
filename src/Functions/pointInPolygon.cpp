@@ -332,7 +332,7 @@ private:
 
         while (vertex1_idx < ring_end)
         {
-            /// First condition checks that the point is inside horizontal row.
+            /// First condition checks that the point is inside horizontal row between edge top and bottom y-coordinate.
             /// Second condition checks for intersection with the edge.
 
             if (((ring_y_data[vertex1_idx] > point_y) != (ring_y_data[vertex2_idx] > point_y))
