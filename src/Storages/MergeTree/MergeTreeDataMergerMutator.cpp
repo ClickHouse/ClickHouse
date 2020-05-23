@@ -949,13 +949,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG(log,
-            "Merge sorted " << merge_entry->rows_read << " rows"
-            << ", containing " << all_column_names.size() << " columns"
-            << " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
-            << " in " << elapsed_seconds << " sec., "
-            << merge_entry->rows_read / elapsed_seconds << " rows/sec., "
-            << merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MB/sec.");
+        LOG_DEBUG_FORMATTED(log, "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
+            merge_entry->rows_read, all_column_names.size(), merging_column_names.size(), gathering_column_names.size(),
+            elapsed_seconds, merge_entry->rows_read / elapsed_seconds,
+            formatReadableSizeWithBinarySuffix(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 
     if (merge_alg != MergeAlgorithm::Vertical)
