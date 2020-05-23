@@ -28,7 +28,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
 
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include "TCPHandler.h"
 
@@ -566,7 +566,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
     }
 
     {
-        PullingPipelineExecutor executor(pipeline);
+        PullingAsyncPipelineExecutor executor(pipeline);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
         Block block;

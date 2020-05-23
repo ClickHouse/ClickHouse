@@ -9,9 +9,11 @@
 
 namespace DB
 {
+
 class Context;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
+using DisksMap = std::map<String, DiskPtr>;
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
@@ -28,14 +30,14 @@ public:
     DiskPtr get(const String & name) const;
 
     /// Get all disks with names
-    const auto & getDisksMap() const { return disks; }
+    const DisksMap & getDisksMap() const { return disks; }
     void addToDiskMap(String name, DiskPtr disk)
     {
         disks.emplace(name, disk);
     }
 
 private:
-    std::map<String, DiskPtr> disks;
+    DisksMap disks;
 };
 
 }

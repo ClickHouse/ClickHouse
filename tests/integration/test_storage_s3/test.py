@@ -15,13 +15,6 @@ logging.getLogger().addHandler(logging.StreamHandler())
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(cluster):
-    minio_client = cluster.minio_client
-
-    if minio_client.bucket_exists(cluster.minio_bucket):
-        minio_client.remove_bucket(cluster.minio_bucket)
-
-    minio_client.make_bucket(cluster.minio_bucket)
-
     # Allows read-write access for bucket without authorization.
     bucket_read_write_policy = {"Version": "2012-10-17",
                                 "Statement": [
@@ -55,6 +48,7 @@ def prepare_s3_bucket(cluster):
                                     }
                                 ]}
 
+    minio_client = cluster.minio_client
     minio_client.set_bucket_policy(cluster.minio_bucket, json.dumps(bucket_read_write_policy))
 
     cluster.minio_restricted_bucket = "{}-with-auth".format(cluster.minio_bucket)

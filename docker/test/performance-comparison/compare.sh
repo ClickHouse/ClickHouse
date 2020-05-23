@@ -381,7 +381,8 @@ create table queries_old_format engine File(TSVWithNamesAndTypes, 'queries.rep')
 
 -- save all test runs as JSON for the new comparison page
 create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json') as
-    select test, query_display_name query,
+    select test, query_index, query_display_name query,
+        left, right, diff, stat_threshold, report_threshold,
         versions_runs[1] runs_left, versions_runs[2] runs_right
     from (
         select
@@ -397,7 +398,17 @@ create table all_query_runs_json engine File(JSON, 'report/all-query-runs.json')
         )
         group by test, query_index
     ) runs
-    left join query_display_names using (test, query_index)
+    left join query_display_names
+        on runs.test = query_display_names.test
+            and runs.query_index = query_display_names.query_index
+    left join file('analyze/report-thresholds.tsv',
+            TSV, 'test text, report_threshold float') thresholds
+        on runs.test = thresholds.test
+    left join query_metric_stats
+        on runs.test = query_metric_stats.test
+            and runs.query_index = query_metric_stats.query_index
+    where
+        query_metric_stats.metric_name = 'server_time'
     ;
 
 create table changed_perf_tsv engine File(TSV, 'report/changed-perf.tsv') as
