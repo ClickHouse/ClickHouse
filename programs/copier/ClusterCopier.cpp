@@ -132,7 +132,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
         {
             if (!task_table.enabled_partitions_set.count(partition_name))
             {
-                LOG_DEBUG(log, "Partition " << partition_name << " will not be processed, since it is not in enabled_partitions of " << task_table.table_id);
+                LOG_DEBUG_FORMATTED(log, "Partition {} will not be processed, since it is not in enabled_partitions of {}", partition_name, task_table.table_id);
             }
         }
     }
@@ -353,7 +353,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
 
         if (static_cast<UInt64>(stat.numChildren) >= task_cluster->max_workers)
         {
-            LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << "). Postpone processing " << description);
+            LOG_DEBUG_FORMATTED(log, "Too many workers ({}, maximum {}). Postpone processing {}", stat.numChildren, task_cluster->max_workers, description);
 
             if (unprioritized)
                 current_sleep_time = std::min(max_sleep_time, current_sleep_time + default_sleep_time);
@@ -1297,7 +1297,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             /// NOTE: partition is still fresh if dirt discovery happens before cleaning
             if (stat_shards.numChildren == 0)
             {
-                LOG_WARNING(log, "There are no workers for partition " << task_partition.name << " piece " << toString(current_piece_number) << ", but destination table contains " << count << " rows. Partition will be dropped and refilled.");
+                LOG_WARNING_FORMATTED(log, "There are no workers for partition {} piece {}, but destination table contains {} rows. Partition will be dropped and refilled.", task_partition.name, toString(current_piece_number), count);
 
                 create_is_dirty_node(clean_state_clock);
                 return TaskStatus::Error;
@@ -1757,7 +1757,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     query += " LIMIT 1";
 
-    LOG_DEBUG(log, "Checking shard " << task_shard.getDescription() << " for partition " << partition_quoted_name << " piece " << std::to_string(current_piece_number) << "existence, executing query: " << query);
+    LOG_DEBUG_FORMATTED(log, "Checking shard {} for partition {} piece {} existence, executing query: {}", task_shard.getDescription(), partition_quoted_name, std::to_string(current_piece_number), query);
 
     ParserQuery parser_query(query.data() + query.size());
     const auto & settings = context.getSettingsRef();
