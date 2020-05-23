@@ -249,7 +249,7 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
 {
     for (TaskTable & task_table : task_cluster->table_tasks)
     {
-        LOG_INFO(log, "Process table task " << task_table.table_id << " with " << task_table.all_shards.size() << " shards, " << task_table.local_shards.size() << " of them are local ones");
+        LOG_INFO_FORMATTED(log, "Process table task {} with {} shards, {} of them are local ones", task_table.table_id, task_table.all_shards.size(), task_table.local_shards.size());
 
         if (task_table.all_shards.empty())
             continue;
@@ -1290,7 +1290,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         if (count != 0)
         {
-            LOG_INFO(log, "Partition " << task_partition.name << " piece " << current_piece_number << "is not empty. In contains " << count << " rows.");
+            LOG_INFO_FORMATTED(log, "Partition {} piece {}is not empty. In contains {} rows.", task_partition.name, current_piece_number, count);
             Coordination::Stat stat_shards{};
             zookeeper->get(partition_piece.getPartitionPieceShardsPath(), &stat_shards);
 

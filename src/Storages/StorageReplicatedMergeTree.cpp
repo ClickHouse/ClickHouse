@@ -1003,7 +1003,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         }
         if (part->name != name)
         {
-            LOG_WARNING(log, "Part " << name << " is covered by " << part->name << " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
+            LOG_WARNING_FORMATTED(log, "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.", name, part->name, entry.new_part_name);
             have_all_parts = false;
             break;
         }
@@ -1370,7 +1370,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
                     }
                     else
                     {
-                        LOG_WARNING(log, "No active replica has part " << entry.new_part_name << ", but that part needs quorum and /quorum/status contains entry about another part " << quorum_entry.part_name << ". It means that part was successfully written to " << entry.quorum << " replicas, but then all of them goes offline. Or it is a bug.");
+                        LOG_WARNING_FORMATTED(log, "No active replica has part {}, but that part needs quorum and /quorum/status contains entry about another part {}. It means that part was successfully written to {} replicas, but then all of them goes offline. Or it is a bug.", entry.new_part_name, quorum_entry.part_name, entry.quorum);
                     }
                 }
             }
@@ -2187,7 +2187,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         size_t merges_and_mutations_sum = merges_and_mutations_queued.first + merges_and_mutations_queued.second;
         if (merges_and_mutations_sum >= storage_settings_ptr->max_replicated_merges_in_queue)
         {
-            LOG_TRACE(log, "Number of queued merges (" << merges_and_mutations_queued.first << ") and part mutations (" << merges_and_mutations_queued.second << ") is greater than max_replicated_merges_in_queue (" << storage_settings_ptr->max_replicated_merges_in_queue << "), so won't select new parts to merge or mutate.");
+            LOG_TRACE_FORMATTED(log, "Number of queued merges ({}) and part mutations ({}) is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.", merges_and_mutations_queued.first, merges_and_mutations_queued.second, storage_settings_ptr->max_replicated_merges_in_queue);
         }
         else
         {
@@ -4305,7 +4305,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
     if (best_replica.empty())
         throw Exception("Logical error: cannot choose best replica.", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active. Selected " << best_replica << " to fetch from.");
+    LOG_INFO_FORMATTED(log, "Found {} replicas, {} of them are active. Selected {} to fetch from.", replicas.size(), active_replicas.size(), best_replica);
 
     String best_replica_path = from + "/replicas/" + best_replica;
 

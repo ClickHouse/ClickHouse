@@ -52,7 +52,7 @@ VolumeJBOD::VolumeJBOD(
     }
     static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
-        LOG_WARNING(logger, "Volume " << backQuote(name) << " max_data_part_size is too low (" << formatReadableSizeWithBinarySuffix(max_data_part_size) << " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
+        LOG_WARNING_FORMATTED(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), formatReadableSizeWithBinarySuffix(max_data_part_size), formatReadableSizeWithBinarySuffix(MIN_PART_SIZE));
 }
 
 DiskPtr VolumeJBOD::getNextDisk()
