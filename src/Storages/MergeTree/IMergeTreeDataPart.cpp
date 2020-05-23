@@ -710,7 +710,7 @@ void IMergeTreeDataPart::remove() const
 
     if (volume->getDisk()->exists(to))
     {
-        LOG_WARNING(storage.log, "Directory " << fullPath(volume->getDisk(), to) << " (to which part must be renamed before removing) already exists." " Most likely this is due to unclean restart. Removing it.");
+        LOG_WARNING(storage.log, "Directory " << fullPath(volume->getDisk(), to) << " (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.");
 
         try
         {
@@ -729,7 +729,7 @@ void IMergeTreeDataPart::remove() const
     }
     catch (const Poco::FileNotFoundException &)
     {
-        LOG_ERROR(storage.log, "Directory " << fullPath(volume->getDisk(), to) << " (part to remove) doesn't exist or one of nested files has gone." " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
+        LOG_ERROR(storage.log, "Directory " << fullPath(volume->getDisk(), to) << " (part to remove) doesn't exist or one of nested files has gone. Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
         return;
     }
@@ -791,7 +791,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
         if (!volume->getDisk()->exists(getFullRelativePath() + res))
             return res;
 
-        LOG_WARNING(storage.log, "Directory " << res << " (to detach to) already exists." " Will detach to directory with '_tryN' suffix.");
+        LOG_WARNING(storage.log, "Directory " << res << " (to detach to) already exists. Will detach to directory with '_tryN' suffix.");
     }
 
     return res;

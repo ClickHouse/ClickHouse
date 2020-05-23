@@ -104,11 +104,11 @@ void ReadBufferFromKafkaConsumer::commit()
 
             if (topic_part.get_offset() < 0)
             {
-                LOG_TRACE(log, prefix << " " << print_special_offset() << " (topic: " << topic_part.get_topic() << ", partition: " << topic_part.get_partition() << ")");
+                LOG_TRACE_FORMATTED(log, "{} {} (topic: {}, partition: {})", prefix, print_special_offset(), topic_part.get_topic(), topic_part.get_partition());
             }
             else
             {
-                LOG_TRACE(log, prefix << " " << topic_part.get_offset() << " (topic: " << topic_part.get_topic() << ", partition: " << topic_part.get_partition() << ")");
+                LOG_TRACE_FORMATTED(log, "{} {} (topic: {}, partition: {})", prefix, topic_part.get_offset(), topic_part.get_topic(), topic_part.get_partition());
             }
         }
     };
@@ -117,7 +117,7 @@ void ReadBufferFromKafkaConsumer::commit()
 
     if (hasMorePolledMessages())
     {
-        LOG_WARNING(log,"Logical error. Non all polled messages were processed.");
+        LOG_WARNING_FORMATTED(log, "Logical error. Non all polled messages were processed.");
     }
 
     if (offsets_stored > 0)
@@ -166,9 +166,8 @@ void ReadBufferFromKafkaConsumer::commit()
 
 void ReadBufferFromKafkaConsumer::subscribe()
 {
-    LOG_TRACE(log,"Already subscribed to topics: [ " << boost::algorithm::join(consumer->get_subscription(), ", ") << " ]");
-
-    LOG_TRACE_FORMATTED(log, "Already assigned to : {}", assignment);
+    LOG_TRACE_FORMATTED(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
+    LOG_TRACE_FORMATTED(log, "Already assigned to: {}", assignment);
 
     size_t max_retries = 5;
 
