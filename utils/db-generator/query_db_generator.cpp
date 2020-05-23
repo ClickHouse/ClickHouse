@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include <Core/Field.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.cpp>
 #include <Parsers/ASTIdentifier.h>
@@ -101,6 +102,8 @@ enum type : column_type
     all = 63,
     a = 64,
     // array
+    t = 128,
+    // turple
 };
 
 
@@ -164,6 +167,9 @@ column_type type_cast(int t)
 
         case 17:
             return type::a | type::all;
+
+        case 18:
+            return type::t | type::all;
     }
     return type::all;
 }
@@ -215,8 +221,8 @@ std::set<std::string> func_args_same_types = {
 std::map<std::string, column_type> func_to_param_type = {
         {"tostartofminute", type::dt}, {"plus", type::i | type::f | type::d | type::dt}, {"multiply", type::i | type::f},
         {"minus", type::i | type::f | type::d | type::dt}, {"negate", type::i | type::f}, {"divide", type::i | type::f},
-        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | {"bitNot", type::i}, {"bitShiftLeft", type::i},
-         {"bitShiftRight", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
+        {"abs", type::i | type::f}, {"gcd", type::i | type::f}, {"lcm", type::i | type::f}, {"bitNot", type::i}, {"bitShiftLeft", type::i},
+        {"bitShiftRight", type::i}, {"bitTest", type::i}, {"exp", type::i | type::f}, {"log", type::i | type::f},
         {"exp2", type::i | type::f}, {"log2", type::i | type::f}, {"exp10", type::i | type::f}, {"log10", type::i | type::f},
         {"sqrt", type::i | type::f}, {"cbrt", type::i | type::f}, {"erf", type::i | type::f}, {"erfc", type::i | type::f},
         {"lgamma", type::i | type::f}, {"tgamma", type::i | type::f}, {"sin", type::i | type::f}, {"cos", type::i | type::f},
@@ -310,13 +316,13 @@ public:
 
         return "";
     }
-    bool generate_values()
+    bool generate_values(int amount = 0)
     {
-        if (values.size() > 1)
+        if (values.size() > 3 && amount == 0)
             return false;
-
-        while (values.size() < 3)
+        while (values.size() < 3 or amount > 0)
         {
+            amount -= 1;
             if (is_array)
             {
                 std::string v = "[";
@@ -596,6 +602,72 @@ FuncRet array_join_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     }
     return FuncRet();
 }
+
+FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+{
+    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (X)
+    {
+        std::set<std::string> indents = {};
+        std::set<std::string> values;
+        column_type type_value = type::all;
+        for (auto arg : X->arguments->children)
+        {
+            auto ident = std::dynamic_pointer_cast<DB::ASTIdentifier>(arg);
+            if (ident)
+            {
+                indents.insert(ident->name);
+            }
+            auto literal = std::dynamic_pointer_cast<DB::ASTLiteral>(arg);
+            if (literal)
+            {
+                column_type type = type_cast(literal->value.getType());
+                if (type & type::a || type & type::t)
+                {
+                    auto arr_values = literal->value.get<const std::vector<DB::Field>&>();
+                    for (auto val : arr_values)
+                    {
+                        type = type_cast(val.getType());
+                        if (type == type::s || type == type::d || type == type::dt)
+                            type = time_type(applyVisitor(DB::FieldVisitorToString(), val));
+                        type_value &= type;
+                        values.insert(applyVisitor(DB::FieldVisitorToString(), val));
+                    }
+                }
+            }
+            auto subfunc = std::dynamic_pointer_cast<DB::ASTFunction>(arg);
+            if (subfunc)
+            {
+                funchandler f;
+                auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
+                if (handlers.count(arg_func_name))
+                    f = handlers[arg_func_name];
+                else
+                    f = handlers[""];
+                FuncRet ret = (*f)(arg, columns);
+                if (ret.value != "") {
+                    values.insert(ret.value);
+                }
+                type_value &=  ret.type;
+            }
+        }
+        for (auto indent : indents)
+        {
+            auto c = Column(indent);
+            c.type = type_value;
+            c.values.insert(values.begin(), values.end());
+            c.generate_values(1);
+            if (columns.count(indent))
+                columns[indent].merge(c);
+            else
+                columns[indent] = c;
+        }
+        FuncRet r(type::b | type::i, "");
+        return r;
+    }
+    return FuncRet();
+}
+
 FuncRet array_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
 {
     auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
@@ -890,12 +962,27 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                     "");
         }
     }
+    return FuncRet();
+}
+
+void process_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
+{
+    auto X = std::dynamic_pointer_cast<DB::ASTFunction>(ch);
+    if (X)
+    {
+        funchandler f;
+        auto arg_func_name = X->name;
+        if (handlers.count(arg_func_name))
+            f = handlers[arg_func_name];
+        else
+            f = handlers[""];
+        (*f)(ch, columns);
+    }
     else
     {
         for (const auto & child : (*ch).children)
-            simple_func(child, columns);
+            process_func(child, columns);
     }
-    return FuncRet();
 }
 
 
@@ -1064,7 +1151,7 @@ void parse_select_query(DB::ASTPtr ast, TableList & all_tables)
     columns.insert(having_columns.begin(), having_columns.end());
 
     std::map<std::string, Column> columns_descriptions;
-    simple_func(ast, columns_descriptions);
+    process_func(ast, columns_descriptions);
 
     for (auto column : columns)
         if (!column_aliases.count(column))
@@ -1118,6 +1205,7 @@ int main(int, char **)
     handlers["minus"] = arithmetic_func;
     handlers["like"] = like_func;
     handlers["array"] = array_func;
+    handlers["in"] = in_func;
     handlers[""] = simple_func;
 
     std::string query = "";
