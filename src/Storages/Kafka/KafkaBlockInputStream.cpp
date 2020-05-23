@@ -33,7 +33,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
 {
-    if (!claimed)
+    if (!buffer)
         return;
 
     if (broken)
@@ -51,7 +51,6 @@ void KafkaBlockInputStream::readPrefixImpl()
 {
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
     buffer = storage.popReadBuffer(timeout);
-    claimed = !!buffer;
 
     if (!buffer)
         return;
@@ -173,7 +172,7 @@ Block KafkaBlockInputStream::readImpl()
         }
     }
 
-    if (buffer->rebalanceHappened() || total_rows == 0)
+    if (buffer->polledDataUnusable() || total_rows == 0)
         return Block();
 
     /// MATERIALIZED columns can be added here, but I think

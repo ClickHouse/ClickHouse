@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int SYNTAX_ERROR;
 }
 
 
@@ -161,6 +162,19 @@ void setIdentifierSpecial(ASTPtr & ast)
     if (ast)
         if (auto * id = ast->as<ASTIdentifier>())
             id->semantic->special = true;
+}
+
+StorageID getTableIdentifier(const ASTPtr & ast)
+{
+    if (!ast)
+        throw Exception("AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    const auto & identifier = dynamic_cast<const ASTIdentifier &>(*ast);
+    if (identifier.name_parts.size() > 2)
+        throw Exception("Logical error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
+
+    if (identifier.name_parts.size() == 2)
+        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
+    return { "", identifier.name, identifier.uuid };
 }
 
 }

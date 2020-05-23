@@ -34,9 +34,11 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
-static inline String generateInnerTableName(const String & table_name)
+static inline String generateInnerTableName(const StorageID & view_id)
 {
-    return ".inner." + table_name;
+    if (view_id.hasUUID())
+        return ".inner_id." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
 }
 
 static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, const Context & context, bool add_default_db = true)
@@ -106,7 +108,7 @@ StorageMaterializedView::StorageMaterializedView(
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
     /// If the destination table is not set, use inner table
-    has_inner_table = query.to_table.empty();
+    has_inner_table = query.to_table_id.empty();
     if (has_inner_table && !query.storage)
         throw Exception(
             "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
@@ -124,18 +126,18 @@ StorageMaterializedView::StorageMaterializedView(
     select_table_id = extractDependentTableFromSelectQuery(select_query, local_context);
 
     if (!has_inner_table)
-        target_table_id = StorageID(query.to_database, query.to_table);
+        target_table_id = query.to_table_id;
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
-        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID().table_name));
+        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     }
     else
     {
         /// We will create a query to create an internal table.
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = getStorageID().database_name;
-        manual_create_query->table = generateInnerTableName(getStorageID().table_name);
+        manual_create_query->table = generateInnerTableName(getStorageID());
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
@@ -154,16 +156,6 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 }
 
-NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
-{
-    return getTargetTable()->getColumn(column_name);
-}
-
-bool StorageMaterializedView::hasColumn(const String & column_name) const
-{
-    return getTargetTable()->hasColumn(column_name);
-}
-
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
@@ -171,7 +163,7 @@ StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
     return result;
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr &query_ptr) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     return getTargetTable()->getQueryProcessingStage(context, to_stage, query_ptr);
 }
@@ -219,6 +211,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->database = target_table_id.database_name;
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
+        drop_query->no_delay = true;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
@@ -226,7 +219,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 }
 
 
-void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
+void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
     if (!select_table_id.empty())
@@ -287,7 +280,7 @@ void StorageMaterializedView::alter(
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -328,12 +321,14 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
     getTargetTable()->mutate(commands, context);
 }
 
-void StorageMaterializedView::rename(
-    const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 {
-    if (has_inner_table && tryGetTargetTable())
+    auto old_table_id = getStorageID();
+    bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
+
+    if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
     {
-        auto new_target_table_name = generateInnerTableName(new_table_name);
+        auto new_target_table_name = generateInnerTableName(new_table_id);
         auto rename = std::make_shared<ASTRenameQuery>();
 
         ASTRenameQuery::Table from;
@@ -353,8 +348,8 @@ void StorageMaterializedView::rename(
         target_table_id.table_name = new_target_table_name;
     }
 
-    auto old_table_id = getStorageID();
-    IStorage::renameInMemory(new_database_name, new_table_name);
+    IStorage::renameInMemory(new_table_id);
+    // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());
 }
 

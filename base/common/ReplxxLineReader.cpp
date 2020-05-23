@@ -37,13 +37,13 @@ ReplxxLineReader::ReplxxLineReader(const Suggest & suggest, const String & histo
 
     /// By default C-p/C-n binded to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
-    rx.bind_key(Replxx::KEY::control('N'), std::bind(&Replxx::invoke, &rx, Replxx::ACTION::HISTORY_NEXT,      _1));
-    rx.bind_key(Replxx::KEY::control('P'), std::bind(&Replxx::invoke, &rx, Replxx::ACTION::HISTORY_PREVIOUS,  _1));
+    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
     /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
     /// it also binded to M-p/M-n).
-    rx.bind_key(Replxx::KEY::meta('N'), std::bind(&Replxx::invoke, &rx, Replxx::ACTION::COMPLETE_NEXT,     _1));
-    rx.bind_key(Replxx::KEY::meta('P'), std::bind(&Replxx::invoke, &rx, Replxx::ACTION::COMPLETE_PREVIOUS, _1));
+    rx.bind_key(Replxx::KEY::meta('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_NEXT, code); });
+    rx.bind_key(Replxx::KEY::meta('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMPLETE_PREVIOUS, code); });
 }
 
 ReplxxLineReader::~ReplxxLineReader()

@@ -32,6 +32,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DictionaryReader.h>
+#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -88,7 +89,7 @@ bool allowEarlyConstantFolding(const ExpressionActions & actions, const Settings
     if (!settings.enable_early_constant_folding)
         return false;
 
-    for (auto & action : actions.getActions())
+    for (const auto & action : actions.getActions())
     {
         if (action.type == action.APPLY_FUNCTION && action.function_base)
         {
@@ -409,7 +410,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            getRootActions(arguments[i], true, actions);
+            getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
             types[i] = actions->getSampleBlock().getByName(name).type;
             aggregate.argument_names[i] = name;
@@ -522,7 +523,7 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
 
 static bool allowDictJoin(StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
 {
-    auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
+    const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
     if (!dict)
         return false;
 
@@ -899,7 +900,7 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
              * names and identifiers for columns. This code is a workaround for
              * a particular subclass of problems, and not a proper solution.
              */
-            if (auto as_literal = ast->as<ASTLiteral>())
+            if (const auto * as_literal = ast->as<ASTLiteral>())
             {
                 source_name = as_literal->unique_column_name;
                 assert(!source_name.empty());
@@ -1024,6 +1025,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.clear();
     };
+
+    if (storage)
+    {
+        query_analyzer.makeSetsForIndex(query.where());
+        query_analyzer.makeSetsForIndex(query.prewhere());
+    }
 
     {
         ExpressionActionsChain chain(context);
@@ -1186,7 +1193,7 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, co
         remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
 }
 
-void ExpressionAnalysisResult::removeExtraColumns()
+void ExpressionAnalysisResult::removeExtraColumns() const
 {
     if (hasFilter())
         filter_info->actions->prependProjectInput();
@@ -1196,7 +1203,7 @@ void ExpressionAnalysisResult::removeExtraColumns()
         before_having->prependProjectInput();
 }
 
-void ExpressionAnalysisResult::checkActions()
+void ExpressionAnalysisResult::checkActions() const
 {
     /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
     if (hasPrewhere())

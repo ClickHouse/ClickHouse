@@ -39,11 +39,11 @@ namespace
 
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
-        auto & info = chunk.getChunkInfo();
+        const auto & info = chunk.getChunkInfo();
         if (!info)
             throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
 
@@ -294,7 +294,6 @@ private:
         return Status::PortFull;
     }
 
-private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     ConvertingAggregatedToChunksSource::SharedDataPtr shared_data;
@@ -398,7 +397,7 @@ AggregatingTransform::AggregatingTransform(Block header, AggregatingTransformPar
 
 AggregatingTransform::AggregatingTransform(
     Block header, AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
-    size_t current_variant, size_t temporary_data_merge_threads_, size_t max_threads_)
+    size_t current_variant, size_t max_threads_, size_t temporary_data_merge_threads_)
     : IProcessor({std::move(header)}, {params_->getHeader()}), params(std::move(params_))
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)

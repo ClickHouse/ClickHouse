@@ -20,17 +20,17 @@ namespace ActionLocks
 
 
 template <typename F>
-inline void forEachTable(Context & context, F && f)
+inline void forEachTable(F && f)
 {
     for (auto & elem : DatabaseCatalog::instance().getDatabases())
-        for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
             f(iterator->table());
 
 }
 
 void ActionLocksManager::add(StorageActionBlockType action_type)
 {
-    forEachTable(global_context, [&](const StoragePtr & table) { add(table, action_type); });
+    forEachTable([&](const StoragePtr & table) { add(table, action_type); });
 }
 
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)

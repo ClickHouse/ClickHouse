@@ -32,10 +32,9 @@ struct ColumnDescription
     String comment;
     CompressionCodecPtr codec;
     ASTPtr ttl;
-    bool is_virtual = false;
 
     ColumnDescription() = default;
-    ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_);
+    ColumnDescription(String name_, DataTypePtr type_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
@@ -50,7 +49,7 @@ class ColumnsDescription
 {
 public:
     ColumnsDescription() = default;
-    explicit ColumnsDescription(NamesAndTypesList ordinary_, bool all_virtuals = false);
+    explicit ColumnsDescription(NamesAndTypesList ordinary_);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String());
@@ -73,9 +72,8 @@ public:
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
     NamesAndTypesList getAliases() const;
-    NamesAndTypesList getVirtuals() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
-    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + virtuals.
+    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;

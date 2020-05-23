@@ -94,7 +94,7 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 
     EXPECT_EQ(stream->read(), Block());
 
-    for (auto & block : {block1, block2, block3})
+    for (const auto & block : {block1, block2, block3})
         total_rows += block.rows();
     /**
       * First block consists of 1 row from block3 with 21 rows + 2 rows from block2 with 10 rows

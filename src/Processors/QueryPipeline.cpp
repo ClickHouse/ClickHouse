@@ -75,7 +75,7 @@ static OutputPort * uniteExtremes(const std::vector<OutputPort *> & ports, const
     auto * extremes_port = &extremes->getExtremesPort();
 
     auto in = resize->getInputs().begin();
-    for (auto & port : ports)
+    for (const auto & port : ports)
         connect(*port, *(in++));
 
     connect(resize->getOutputs().front(), extremes->getInputPort());
@@ -101,7 +101,7 @@ static OutputPort * uniteTotals(const std::vector<OutputPort *> & ports, const B
     auto * totals_port = &limit->getOutputPort();
 
     auto in = concat->getInputs().begin();
-    for (auto & port : ports)
+    for (const auto & port : ports)
         connect(*port, *(in++));
 
     connect(concat->getOutputs().front(), limit->getInputPort());
@@ -123,13 +123,13 @@ void QueryPipeline::init(Pipes pipes)
     /// Move locks from pipes to pipeline class.
     for (auto & pipe : pipes)
     {
-        for (auto & lock : pipe.getTableLocks())
+        for (const auto & lock : pipe.getTableLocks())
             table_locks.emplace_back(lock);
 
-        for (auto & context : pipe.getContexts())
+        for (const auto & context : pipe.getContexts())
             interpreter_context.emplace_back(context);
 
-        for (auto & storage : pipe.getStorageHolders())
+        for (const auto & storage : pipe.getStorageHolders())
             storage_holders.emplace_back(storage);
     }
 
@@ -138,7 +138,7 @@ void QueryPipeline::init(Pipes pipes)
 
     for (auto & pipe : pipes)
     {
-        auto & header = pipe.getHeader();
+        const auto & header = pipe.getHeader();
 
         if (current_header)
             assertBlocksHaveEqualStructure(current_header, header, "QueryPipeline");
@@ -636,7 +636,7 @@ void QueryPipeline::initRowsBeforeLimit()
 
     while (!queue.empty())
     {
-        auto processor = queue.front().processor;
+        auto * processor = queue.front().processor;
         auto visited_limit = queue.front().visited_limit;
         queue.pop();
 

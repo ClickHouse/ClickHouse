@@ -36,7 +36,7 @@ struct DatabaseAndTableWithAlias
     String getQualifiedNamePrefix(bool with_dot = true) const;
 
     /// Check if it satisfies another db_table name. @note opterion is not symmetric.
-    bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
+    bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias) const;
 
     /// Exactly the same table name
     bool same(const DatabaseAndTableWithAlias & db_table) const

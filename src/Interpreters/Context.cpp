@@ -28,7 +28,9 @@
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
@@ -68,9 +70,17 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
-    extern const Metric MemoryTrackingForMerges;
     extern const Metric BackgroundMovePoolTask;
     extern const Metric MemoryTrackingInBackgroundMoveProcessingPool;
+
+    extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundSchedulePool;
+
+    extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundBufferFlushSchedulePool;
+
+    extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric MemoryTrackingInBackgroundDistributedSchedulePool;
 }
 
 
@@ -285,6 +295,10 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
+    /// Separate mutex for storage policies. During server startup we may
+    /// initialize some important storages (system logs with MergeTree engine)
+    /// under context lock.
+    mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
@@ -303,7 +317,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
-    mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+    mutable VolumeJBODPtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -406,7 +420,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        DatabaseCatalog::instance().shutdown();
+        DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
@@ -530,7 +544,7 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-VolumePtr Context::getTemporaryVolume() const
+VolumeJBODPtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
     return shared->tmp_volume;
@@ -555,9 +569,9 @@ void Context::setPath(const String & path)
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (policy_name.empty())
     {
@@ -566,17 +580,17 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
             shared->tmp_path += '/';
 
         auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
-        shared->tmp_volume = std::make_shared<Volume>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
+        shared->tmp_volume = std::make_shared<VolumeJBOD>("_tmp_default", std::vector<DiskPtr>{disk}, 0);
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
-    if (shared->tmp_volume->disks.empty())
+    if (shared->tmp_volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
@@ -638,15 +652,13 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
     client_info.current_user = name;
     client_info.current_password = password;
     client_info.current_address = address;
-    if (!quota_key.empty())
-        client_info.quota_key = quota_key;
 
     auto new_user_id = getAccessControlManager().find<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
@@ -673,14 +685,18 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 std::shared_ptr<const User> Context::getUser() const
 {
+    return getAccess()->getUser();
+}
+
+void Context::setQuotaKey(String quota_key_)
+{
     auto lock = getLock();
-    return access->getUser();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const
 {
-    auto lock = getLock();
-    return access->getUserName();
+    return getAccess()->getUserName();
 }
 
 std::optional<UUID> Context::getUserID() const
@@ -690,7 +706,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -710,24 +726,19 @@ void Context::setCurrentRolesDefault()
     calculateAccessRights();
 }
 
-std::vector<UUID> Context::getCurrentRoles() const
+boost::container::flat_set<UUID> Context::getCurrentRoles() const
 {
-    return getAccess()->getCurrentRoles();
+    return getRolesInfo()->current_roles;
 }
 
-Strings Context::getCurrentRolesNames() const
+boost::container::flat_set<UUID> Context::getEnabledRoles() const
 {
-    return getAccess()->getCurrentRolesNames();
+    return getRolesInfo()->enabled_roles;
 }
 
-std::vector<UUID> Context::getEnabledRoles() const
+std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 {
-    return getAccess()->getEnabledRoles();
-}
-
-Strings Context::getEnabledRolesNames() const
-{
-    return getAccess()->getEnabledRolesNames();
+    return getAccess()->getRolesInfo();
 }
 
 
@@ -772,11 +783,6 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
     return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
 }
 
-std::shared_ptr<const EnabledRowPolicies> Context::getRowPolicies() const
-{
-    return getAccess()->getRowPolicies();
-}
-
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
@@ -790,6 +796,12 @@ void Context::setInitialRowPolicy()
 std::shared_ptr<const EnabledQuota> Context::getQuota() const
 {
     return getAccess()->getQuota();
+}
+
+
+std::optional<QuotaUsage> Context::getQuotaUsage() const
+{
+    return getAccess()->getQuotaUsage();
 }
 
 
@@ -820,7 +832,7 @@ Tables Context::getExternalTables() const
     auto lock = getLock();
 
     Tables res;
-    for (auto & table : external_tables_mapping)
+    for (const auto & table : external_tables_mapping)
         res[table.first] = table.second->getTable();
 
     if (query_context && query_context != this)
@@ -1003,8 +1015,7 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
-    auto lock = getLock();
-    return access->getSettingsConstraints();
+    return getAccess()->getSettingsConstraints();
 }
 
 
@@ -1314,7 +1325,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     if (!shared->background_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
         pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
@@ -1333,7 +1344,7 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
     if (!shared->background_move_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
         pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
@@ -1352,7 +1363,11 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
 {
     auto lock = getLock();
     if (!shared->buffer_flush_schedule_pool)
-        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+        shared->buffer_flush_schedule_pool.emplace(
+            settings.background_buffer_flush_schedule_pool_size,
+            CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundBufferFlushSchedulePool,
+            "BgBufSchPool");
     return *shared->buffer_flush_schedule_pool;
 }
 
@@ -1360,7 +1375,11 @@ BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
-        shared->schedule_pool.emplace(settings.background_schedule_pool_size);
+        shared->schedule_pool.emplace(
+            settings.background_schedule_pool_size,
+            CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundSchedulePool,
+            "BgSchPool");
     return *shared->schedule_pool;
 }
 
@@ -1368,7 +1387,11 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool()
 {
     auto lock = getLock();
     if (!shared->distributed_schedule_pool)
-        shared->distributed_schedule_pool.emplace(settings.background_distributed_schedule_pool_size);
+        shared->distributed_schedule_pool.emplace(
+            settings.background_distributed_schedule_pool_size,
+            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::MemoryTrackingInBackgroundDistributedSchedulePool,
+            "BgDistSchPool");
     return *shared->distributed_schedule_pool;
 }
 
@@ -1462,7 +1485,7 @@ UInt16 Context::getTCPPort() const
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
 }
 
@@ -1470,7 +1493,7 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     if (config.has("tcp_port_secure"))
         return config.getInt("tcp_port_secure");
     return {};
@@ -1503,7 +1526,7 @@ void Context::reloadClusterConfig()
             cluster_config = shared->clusters_config;
         }
 
-        auto & config = cluster_config ? *cluster_config : getConfigRef();
+        const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_unique<Clusters>(config, settings);
 
         {
@@ -1525,7 +1548,7 @@ Clusters & Context::getClusters() const
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
     {
-        auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
         shared->clusters = std::make_unique<Clusters>(config, settings);
     }
 
@@ -1655,7 +1678,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         if (config.has(config_name))
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
@@ -1669,49 +1692,55 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 
 DiskPtr Context::getDisk(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
-    auto disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector(lock);
 
     return disk_selector->get(name);
 }
 
-
-DiskSelectorPtr Context::getDiskSelector() const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->get(name);
+}
+
+
+DisksMap Context::getDisksMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getDiskSelector(lock)->getDisksMap();
+}
+
+StoragePoliciesMap Context::getPoliciesMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getStoragePolicySelector(lock)->getPoliciesMap();
+}
+
+DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
     return shared->merge_tree_disk_selector;
 }
 
-
-StoragePolicyPtr Context::getStoragePolicy(const String & name) const
+StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const
 {
-    auto lock = getLock();
-
-    auto policy_selector = getStoragePolicySelector();
-
-    return policy_selector->get(name);
-}
-
-
-StoragePolicySelectorPtr Context::getStoragePolicySelector() const
-{
-    auto lock = getLock();
-
     if (!shared->merge_tree_storage_policy_selector)
     {
         constexpr auto config_name = "storage_configuration.policies";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector(lock));
     }
     return shared->merge_tree_storage_policy_selector;
 }
@@ -1719,7 +1748,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (shared->merge_tree_disk_selector)
         shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
@@ -1744,7 +1773,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
     if (!shared->merge_tree_settings)
     {
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         MergeTreeSettings mt_settings;
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
@@ -1988,7 +2017,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
 
     return shared->action_locks_manager;
 }
@@ -2063,11 +2092,16 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
+    StorageID resolved = StorageID::createEmpty();
     std::optional<Exception> exc;
-    auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    }
     if (exc)
         throw Exception(*exc);
+    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
 }
 
@@ -2076,8 +2110,18 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
-    return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    StorageID resolved = StorageID::createEmpty();
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    }
+    if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
+        if (db)
+            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
+    }
+    return resolved;
 }
 
 StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const

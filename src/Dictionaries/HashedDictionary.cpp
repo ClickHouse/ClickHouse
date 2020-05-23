@@ -667,7 +667,7 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
         case AttributeUnderlyingType::utString:
         {
             const auto & string = value.get<String>();
-            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             if (!sparse)
             {
                 auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
@@ -772,7 +772,7 @@ BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_n
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & full_name,
+    auto create_layout = [](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -795,8 +795,10 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         return std::make_unique<HashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
     using namespace std::placeholders;
-    factory.registerLayout("hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ false), false);
-    factory.registerLayout("sparse_hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ true), false);
+    factory.registerLayout("hashed",
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ false); }, false);
+    factory.registerLayout("sparse_hashed",
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ true); }, false);
 }
 
 }

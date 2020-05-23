@@ -57,4 +57,4 @@ def test_query(bin_prefix, sql_query, standalone_server):
     run_client(bin_prefix, tcp_port, 'DROP DATABASE {random};'.format(random=random_name), '')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, query, 'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(bin_prefix, tcp_port, query, 'SHOW ORPHANED DATABASES\n_temporary_and_external_tables\ndefault\nsystem\n')

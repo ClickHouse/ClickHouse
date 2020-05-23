@@ -1,6 +1,8 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
+toc_priority: 1
+toc_title: Nuage
 ---
 
 # Fournisseurs De Services Cloud ClickHouse {#clickhouse-cloud-service-providers}
@@ -12,7 +14,7 @@ machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
 
 [Service géré Yandex pour ClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) offre les fonctionnalités suivantes:
 
--   Service ZooKeeper entièrement géré pour [Réplication de ClickHouse](../engines/table_engines/mergetree_family/replication.md)
+-   Service ZooKeeper entièrement géré pour [Réplication de ClickHouse](../engines/table-engines/mergetree-family/replication.md)
 -   Choix multiples de type de stockage
 -   Répliques dans différentes zones de disponibilité
 -   Le chiffrement et l'isolement

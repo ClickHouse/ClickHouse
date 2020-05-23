@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
-#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/StoragePolicy.h>
 
 
 namespace ProfileEvents
@@ -26,10 +26,11 @@ namespace ErrorCodes
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
     size_t max_merged_block_size_, UInt64 limit_, size_t max_bytes_before_remerge_,
-    size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_, size_t min_free_disk_space_)
+    size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_, const String & codec_, size_t min_free_disk_space_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
     max_bytes_before_remerge(max_bytes_before_remerge_),
     max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_),
+    codec(codec_),
     min_free_disk_space(min_free_disk_space_)
 {
     children.push_back(input);
@@ -96,7 +97,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
                 LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
                 ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
-                TemporaryFileStream::write(path, header_without_constants, block_in, &is_cancelled); /// NOTE. Possibly limit disk usage.
+                TemporaryFileStream::write(path, header_without_constants, block_in, &is_cancelled, codec); /// NOTE. Possibly limit disk usage.
                 LOG_INFO(log, "Done writing part of data into temporary file " + path);
 
                 blocks.clear();

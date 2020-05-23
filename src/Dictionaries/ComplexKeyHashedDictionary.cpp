@@ -358,7 +358,7 @@ void ComplexKeyHashedDictionary::updateData()
             for (size_t i = 0; i < saved_block->rows(); ++i)
             {
                 const auto s_key = placeKeysInPool(i, saved_key_column_ptrs, keys, temp_key_pool);
-                auto it = update_key_hash.find(s_key);
+                auto * it = update_key_hash.find(s_key);
                 if (it)
                     filter[i] = 0;
                 else
@@ -619,7 +619,7 @@ bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const 
         {
             auto & map = std::get<ContainerType<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
-            const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             const auto pair = map.insert({key, StringRef{string_in_arena, string.size()}});
             return pair.second;
         }
@@ -649,7 +649,7 @@ StringRef ComplexKeyHashedDictionary::placeKeysInPool(const size_t row, const Co
         sum_keys_size += keys[j].size;
     }
 
-    auto key_start = block_start;
+    const auto * key_start = block_start;
     for (size_t j = 0; j < keys_size; ++j)
     {
         keys[j].data = key_start;

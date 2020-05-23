@@ -40,11 +40,11 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(const std::string & nam
             + toString(max_events) + " event arguments.",
             ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION};
 
-    const auto time_arg = argument_types.front().get();
+    const auto * time_arg = argument_types.front().get();
 
     for (const auto i : ext::range(1, arg_count))
     {
-        const auto cond_arg = argument_types[i].get();
+        const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
             throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1)
                 + " of aggregate function " + name + ", must be UInt8",

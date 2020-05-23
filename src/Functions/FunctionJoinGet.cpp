@@ -22,7 +22,7 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
         throw Exception{"Function joinGet takes 3 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     String join_name;
-    if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+    if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
     {
         join_name = name_col->getValue<String>();
     }
@@ -49,7 +49,7 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
         throw Exception{"Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
     String attr_name;
-    if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+    if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
     {
         attr_name = name_col->getValue<String>();
     }

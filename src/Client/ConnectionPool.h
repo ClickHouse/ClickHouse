@@ -15,8 +15,8 @@ namespace DB
   *
   *    void thread()
   *    {
-  *          auto connection = pool.get();
-  *        connection->sendQuery("SELECT 'Hello, world!' AS world");
+  *        auto connection = pool.get();
+  *        connection->sendQuery(...);
   *    }
   */
 

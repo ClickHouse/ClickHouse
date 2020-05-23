@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -66,14 +67,14 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 Chunk MergeTreeSequentialSource::generate()
 try
 {
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
 
-        auto & sample = reader->getColumns();
+        const auto & sample = reader->getColumns();
         Columns columns(sample.size());
         size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
 

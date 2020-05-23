@@ -119,7 +119,8 @@ private:
 void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
-    size_t num_arguments = arguments.size();
+    const size_t num_arguments = arguments.size();
+    assert(num_arguments > 0);
     ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;
@@ -146,7 +147,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
             throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-        auto * array_data = &array->getData();
+        const auto * array_data = &array->getData();
         data_columns[i] = array_data;
     }
 
@@ -154,7 +155,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();

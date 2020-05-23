@@ -19,8 +19,6 @@ class Context;
 class ActionLocksManager
 {
 public:
-    explicit ActionLocksManager(Context & global_context_) : global_context(global_context_) {}
-
     /// Adds new locks for each table
     void add(StorageActionBlockType action_type);
     /// Add new lock for a table if it has not been already added
@@ -37,8 +35,6 @@ public:
     void cleanExpired();
 
 private:
-    Context & global_context;
-
     using StorageRawPtr = const IStorage *;
     using Locks = std::unordered_map<size_t, ActionLock>;
     using StorageLocks = std::unordered_map<StorageRawPtr, Locks>;

@@ -18,6 +18,15 @@
 #include <ext/bit_cast.h>
 #include <pdqsort.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    if USE_OPENCL
+#        include "Common/BitonicSort.h" // Y_IGNORE
+#    endif
+#else
+#undef USE_OPENCL
+#endif
+
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
@@ -29,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int OPENCL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -36,7 +46,7 @@ namespace ErrorCodes
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    auto pos = arena.allocContinue(sizeof(T), begin);
+    auto * pos = arena.allocContinue(sizeof(T), begin);
     unalignedStore<T>(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
@@ -109,6 +119,30 @@ namespace
         using Element = ValueWithIndex<T>;
         static T & extractKey(Element & elem) { return elem.value; }
     };
+}
+
+template <typename T>
+void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                                            IColumn::SpecialSort special_sort) const
+{
+    if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
+    {
+#if !defined(ARCADIA_BUILD)
+#if USE_OPENCL
+        if (!limit || limit >= data.size())
+        {
+            res.resize(data.size());
+
+            if (data.empty() || BitonicSort::getInstance().sort(data, res, !reverse))
+                return;
+        }
+#else
+        throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
+#endif
+#endif
+    }
+
+    getPermutation(reverse, limit, nan_direction_hint, res);
 }
 
 template <typename T>
@@ -372,10 +406,10 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 
     auto res = this->create(offsets.back());
 
-    auto it = res->getData().begin();
+    auto * it = res->getData().begin();
     for (size_t i = 0; i < size; ++i)
     {
-        const auto span_end = res->getData().begin() + offsets[i];
+        const auto * span_end = res->getData().begin() + offsets[i];
         for (; it != span_end; ++it)
             *it = data[i];
     }

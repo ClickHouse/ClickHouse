@@ -78,17 +78,16 @@ namespace
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_)
-    /// It's important to initialize members before `thread` to avoid race.
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
-    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.global_context->getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context->getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+    , default_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
+    , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
     , bg_pool(bg_pool_)
@@ -103,7 +102,6 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     if (!quit)
     {
         quit = true;
-        cond.notify_one();
         task_handle->deactivate();
     }
 }
@@ -122,7 +120,6 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
     if (!quit)
     {
         quit = true;
-        cond.notify_one();
         task_handle->deactivate();
     }
 
@@ -134,9 +131,10 @@ void StorageDistributedDirectoryMonitor::run()
 {
     std::unique_lock lock{mutex};
 
+    bool do_sleep = false;
     while (!quit)
     {
-        bool do_sleep = true;
+        do_sleep = true;
         if (!monitor_blocker.isCancelled())
         {
             try
@@ -169,15 +167,8 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    if (!quit)
-    {
-        /// If there is no error, then it will be scheduled by the DistributedBlockOutputStream,
-        /// so this is just in case, hence it is distributed_directory_monitor_max_sleep_time_ms
-        if (error_count)
-            task_handle->scheduleAfter(sleep_time.count());
-        else
-            task_handle->scheduleAfter(max_sleep_time.count());
-    }
+    if (!quit && do_sleep)
+        task_handle->scheduleAfter(sleep_time.count());
 }
 
 
@@ -223,9 +214,11 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
-    const auto settings = storage.global_context.getSettings();
-    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM,
-        settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
+    const auto settings = storage.global_context->getSettings();
+    return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
+        settings.load_balancing,
+        settings.distributed_replica_error_half_life.totalSeconds(),
+        settings.distributed_replica_error_cap);
 }
 
 
@@ -269,7 +262,7 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
     LOG_TRACE(log, "Started processing `" << file_path << '`');
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
     auto connection = pool->get(timeouts);
 
     try
@@ -283,7 +276,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ClientInfo client_info;
         readHeader(in, insert_settings, insert_query, client_info, log);
 
-        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings, &client_info};
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, insert_settings, client_info};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -444,7 +437,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
@@ -472,7 +465,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings, &client_info);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, insert_settings, client_info);
                     remote->writePrefix();
                 }
 
@@ -591,7 +584,7 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
 {
     if (quit)
         return false;
-    return task_handle->scheduleAfter(ms);
+    return task_handle->scheduleAfter(ms, false);
 }
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
@@ -675,7 +668,10 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.send();
     }
 
-    Poco::File{current_batch_file_path}.remove();
+    /// current_batch.txt will not exist if there was no send
+    /// (this is the case when all batches that was pending has been marked as pending)
+    if (Poco::File{current_batch_file_path}.exists())
+        Poco::File{current_batch_file_path}.remove();
 }
 
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)

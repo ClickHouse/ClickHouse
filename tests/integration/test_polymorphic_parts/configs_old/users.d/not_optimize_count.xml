@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <optimize_trivial_count_query>0</optimize_trivial_count_query>
+        </default>
+    </profiles>
+</yandex>

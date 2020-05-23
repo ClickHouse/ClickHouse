@@ -29,7 +29,6 @@ public:
         BrotliDecoderDestroyInstance(state);
     }
 
-public:
     BrotliDecoderState * state;
     BrotliDecoderResult result;
 };

@@ -5,6 +5,7 @@ PEERDIR(
 )
 
 SRCS(
+    DatabaseAtomic.cpp
     DatabaseDictionary.cpp
     DatabaseFactory.cpp
     DatabaseLazy.cpp

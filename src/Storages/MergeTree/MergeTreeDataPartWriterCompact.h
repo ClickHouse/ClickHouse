@@ -8,9 +8,7 @@ class MergeTreeDataPartWriterCompact : public IMergeTreeDataPartWriter
 {
 public:
     MergeTreeDataPartWriterCompact(
-        DiskPtr disk,
-        const String & part_path,
-        const MergeTreeData & storage,
+        const MergeTreeData::DataPartPtr & data_part,
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
@@ -22,6 +20,9 @@ public:
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
+
+protected:
+    void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
 private:
     /// Write single granule of one column (rows between 2 marks)

@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <array>
+#include <list>
 
 
 namespace DB
@@ -91,6 +92,7 @@ struct TemporaryTableHolder : boost::noncopyable
 ///TODO maybe remove shared_ptr from here?
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
 
+class BackgroundSchedulePoolTaskHolder;
 
 class DatabaseCatalog : boost::noncopyable
 {
@@ -98,11 +100,11 @@ public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
-    static DatabaseCatalog & init(const Context * global_context_);
+    static DatabaseCatalog & init(Context * global_context_);
     static DatabaseCatalog & instance();
+    static void shutdown();
 
     void loadDatabases();
-    void shutdown();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
@@ -133,9 +135,9 @@ public:
 
     StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const StorageID & table_id) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const { return getTableImpl(table_id, *global_context); }
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id, std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
@@ -149,12 +151,23 @@ public:
     /// Such tables can be accessed by persistent UUID instead of database and table name.
     void addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
     void removeUUIDMapping(const UUID & uuid);
+    /// For moving table between databases
+    void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+
+    static String getPathForUUID(const UUID & uuid);
+
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
+    String getPathForDroppedMetadata(const StorageID & table_id) const;
+    void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
+
 private:
-    DatabaseCatalog(const Context * global_context_);
+    DatabaseCatalog(Context * global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
+
+    void shutdownImpl();
+
 
     struct UUIDToStorageMapPart
     {
@@ -170,9 +183,24 @@ private:
         return uuid.toUnderType().low >> (64 - bits_for_first_level);
     }
 
+    struct TableMarkedAsDropped
+    {
+        StorageID table_id = StorageID::createEmpty();
+        StoragePtr table;
+        String metadata_path;
+        time_t drop_time;
+    };
+    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
+
+    void loadMarkedAsDroppedTables();
+    void dropTableDataTask();
+    void dropTableFinally(const TableMarkedAsDropped & table) const;
+
+    static constexpr size_t reschedule_time_ms = 100;
+
 private:
     /// For some reason Context is required to get Storage from Database object
-    const Context * global_context;
+    Context * global_context;
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;
@@ -191,6 +219,13 @@ private:
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;
+
+    TablesMarkedAsDropped tables_marked_dropped;
+    mutable std::mutex tables_marked_dropped_mutex;
+
+    std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
+    static constexpr time_t default_drop_delay_sec = 8 * 60;
+    time_t drop_delay_sec = default_drop_delay_sec;
 };
 
 }

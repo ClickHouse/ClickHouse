@@ -45,40 +45,66 @@ public:
     bool equals(const IDataType & rhs) const override;
 };
 
-
-/** Basic wrapper for Tansform-types for DateTime64.
+/** Tansform-type wrapper for DateTime64, applies given Transform to DateTime64 value or only to a whole part of it.
  *
- * Allows reusing existing Transform (that takes DateTime-values as UInt32) with DateTime64-values,
- * by discarding fractional part and producing SAME return type as original Transform.
+ * Depending on what overloads of Transform::execute() are available, when called with DateTime64 value,
+ * invokes Transform::execute() with:
+ * * whole part of DateTime64 value, discarding fractional part.
+ * * DateTime64 value and scale factor.
  *
- * Such Transfotm-types are commonly used in Date/DateTime manipulation functions,
- * and implement static execute fucntion with following signature:
- *      R execute(UInt32, T, const DateLUTImpl &)
+ * Suitable Transfotm-types are commonly used in Date/DateTime manipulation functions,
+ * and should implement static (or const) fucntion with following signatures:
+ *      R execute(UInt32 whole_value, ... , const TimeZoneImpl &)
+ * OR
+ *      R execute(DateTime64 value, Int64 scale_factor, ... , const TimeZoneImpl &)
  *
  * Wehere R and T could be arbitrary types.
 */
 template <typename Transform>
-class DateTime64BasicTransformWrapper : public Transform
+class TransformDateTime64 : public Transform
 {
+private:
+    // Detect if Transform::execute is const or static method
+    // with signature defined by template args (ignoring result type).
+    template<typename = void, typename... Args>
+    struct TransformHasExecuteOverload : std::false_type {};
+
+    template<typename... Args>
+    struct TransformHasExecuteOverload<std::void_t<decltype(std::declval<Transform>().execute(std::declval<Args>()...))>, Args...>
+        : std::true_type {};
+
+    template<typename... Args>
+    static constexpr bool TransformHasExecuteOverload_v = TransformHasExecuteOverload<void, Args...>::value;
+
 public:
+    static constexpr auto name = Transform::name;
+
     using Transform::execute;
 
-    explicit DateTime64BasicTransformWrapper(UInt32 scale_)
+    // non-explicit constructor to allow creating from scale value (or with no scale at all), indispensable in some contexts.
+    TransformDateTime64(UInt32 scale_ = 0)
         : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale_))
     {}
 
-    template <typename T>
-    auto execute(DateTime64 t, T v, const DateLUTImpl & time_zone) const
+    template <typename ... Args>
+    inline auto execute(const DateTime64 & t, Args && ... args) const
     {
-        const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-        return static_cast<const Transform *>(this)->execute(
-            static_cast<UInt32>(components.whole), v, time_zone);
+        const auto transform = static_cast<const Transform *>(this);
+
+        if constexpr (TransformHasExecuteOverload_v<DateTime64, decltype(scale_multiplier), Args...>)
+        {
+            return transform->execute(t, scale_multiplier, std::forward<Args>(args)...);
+        }
+        else
+        {
+            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            return transform->execute(static_cast<UInt32>(components.whole), std::forward<Args>(args)...);
+        }
     }
 
 private:
-    UInt32 scale_multiplier = 1;
+    DateTime64::NativeType scale_multiplier = 1;
 };
-
 
 }
 

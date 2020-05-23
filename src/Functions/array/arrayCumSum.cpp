@@ -82,7 +82,7 @@ struct ArrayCumSumImpl
                 // skip empty arrays
                 if (pos < offset)
                 {
-                    res_values[pos++] = x;
+                    res_values[pos++] = x; // NOLINT
                     for (; pos < offset; ++pos)
                         res_values[pos] = res_values[pos - 1] + x;
                 }
@@ -110,7 +110,7 @@ struct ArrayCumSumImpl
             // skip empty arrays
             if (pos < offset)
             {
-                res_values[pos] = data[pos];
+                res_values[pos] = data[pos]; // NOLINT
                 for (++pos; pos < offset; ++pos)
                     res_values[pos] = res_values[pos - 1] + data[pos];
             }

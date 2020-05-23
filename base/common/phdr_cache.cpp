@@ -20,6 +20,14 @@
     #define USE_PHDR_CACHE 1
 #endif
 
+/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
+#ifdef USE_PHDR_CACHE
+
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#endif
+
 #define __msan_unpoison(X, Y)
 #if defined(__has_feature)
 #   if __has_feature(memory_sanitizer)
@@ -27,9 +35,6 @@
 #       include <sanitizer/msan_interface.h>
 #   endif
 #endif
-
-/// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
-#ifdef USE_PHDR_CACHE
 
 #include <link.h>
 #include <dlfcn.h>
@@ -70,7 +75,7 @@ extern "C"
 #endif
 int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
 {
-    auto current_phdr_cache = phdr_cache.load();
+    auto * current_phdr_cache = phdr_cache.load();
     if (!current_phdr_cache)
     {
         // Cache is not yet populated, pass through to the original function.

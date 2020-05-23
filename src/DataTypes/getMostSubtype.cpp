@@ -104,7 +104,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (const auto type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
             {
                 have_array = true;
                 nested_types.emplace_back(type_array->getNestedType());
@@ -132,7 +132,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+            if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
             {
                 if (!have_tuple)
                 {
@@ -177,7 +177,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (const auto type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
             {
                 have_nullable = true;
                 nested_types.emplace_back(type_nullable->getNestedType());
