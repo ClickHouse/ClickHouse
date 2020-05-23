@@ -17,6 +17,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
 #include <pdqsort.h>
+#include <numeric>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -117,7 +118,9 @@ namespace
     struct RadixSortTraits : RadixSortNumTraits<T>
     {
         using Element = ValueWithIndex<T>;
+        using Index = size_t;
         static T & extractKey(Element & elem) { return elem.value; }
+        static size_t extractIndex(Element & elem) { return elem.index; }
     };
 }
 
@@ -179,53 +182,27 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                 for (UInt32 i = 0; i < UInt32(s); ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s);
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
-                size_t nans_to_move = 0;
                 if (std::is_floating_point_v<T> && nan_direction_hint < 0)
                 {
-                    for (ssize_t i = s - 1; i >= 0; --i)
+                    size_t nans_to_move = 0;
+
+                    for (size_t i = 0; i < s; ++i)
                     {
-                        if (isNaN(pairs[i].value))
+                        if (isNaN(data[res[reverse ? i : s - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
                     }
-                }
 
-                if (reverse)
-                {
                     if (nans_to_move)
                     {
-                        for (size_t i = 0; i < s - nans_to_move; ++i)
-                            res[i] = pairs[s - nans_to_move - 1 - i].index;
-                        for (size_t i = s - nans_to_move; i < s; ++i)
-                            res[i] = pairs[s - 1 - (i - (s - nans_to_move))].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[s - 1 - i] = pairs[i].index;
+                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
                     }
                 }
-                else
-                {
-                    if (nans_to_move)
-                    {
-                        for (size_t i = 0; i < nans_to_move; ++i)
-                            res[i] = pairs[i + s - nans_to_move].index;
-                        for (size_t i = nans_to_move; i < s; ++i)
-                            res[i] = pairs[i - nans_to_move].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[i] = pairs[i].index;
-                    }
-                }
-
                 return;
             }
         }
