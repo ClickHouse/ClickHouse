@@ -1311,7 +1311,11 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, "Converted aggregated data to blocks. " << rows << " rows, " << formatReadableSizeWithBinarySuffix(bytes) << " in " << elapsed_seconds << " sec. (" << rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds) << "/sec.)");
+    LOG_TRACE_FORMATTED(log,
+        "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
+        rows, formatReadableSizeWithBinarySuffix(bytes),
+        elapsed_seconds, rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
 
     return blocks;
 }
@@ -2173,7 +2177,10 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, "Merged partially aggregated blocks. " << rows << " rows, " << formatReadableSizeWithBinarySuffix(bytes) << ". in " << elapsed_seconds << " sec. (" << rows / elapsed_seconds << " rows/sec., " << formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds) << "/sec.)");
+    LOG_TRACE_FORMATTED(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
+        rows, formatReadableSizeWithBinarySuffix(bytes),
+        elapsed_seconds, rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
 
     if (isCancelled())
         return {};

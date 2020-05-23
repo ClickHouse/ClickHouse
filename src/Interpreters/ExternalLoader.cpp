@@ -439,7 +439,7 @@ public:
                     {
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
-                        LOG_TRACE(log, "Will reload '" << name << "'" " because its configuration has been changed and" " there were attempts to load it before");
+                        LOG_TRACE(log, "Will reload '" << name << "' because its configuration has been changed and there were attempts to load it before");
                         startLoading(info, true);
                     }
                 }
@@ -454,7 +454,7 @@ public:
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
                 {
-                    LOG_TRACE(log, "Will load '" << name << "'" " because always_load_everything flag is set.");
+                    LOG_TRACE(log, "Will load '" << name << "' because always_load_everything flag is set.");
                     startLoading(info);
                 }
             }
@@ -664,7 +664,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '" << info.name << "'" " not modified, will not reload. " "Next update at " << ext::to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '" << info.name << "' not modified, will not reload. Next update at " << ext::to_string(info.next_update_time));
                             continue;
                         }
 
@@ -676,7 +676,7 @@ public:
                         /// Object was never loaded successfully and should be reloaded.
                         startLoading(info);
                     }
-                    LOG_TRACE(log, "Object '" << info.name << "' is neither" " loaded nor failed, so it will not be reloaded as outdated.");
+                    LOG_TRACE(log, "Object '" << info.name << "' is neither loaded nor failed, so it will not be reloaded as outdated.");
                 }
             }
         }
@@ -1099,7 +1099,7 @@ private:
         {
             if (!loaded_object->supportUpdates())
             {
-                LOG_TRACE(log, "Supposed update time for " "'" + loaded_object->getLoadableName() + "'" " is never (loaded, does not support updates)");
+                LOG_TRACE(log, "Supposed update time for '" + loaded_object->getLoadableName() + "' is never (loaded, does not support updates)");
 
                 return never;
             }
@@ -1108,7 +1108,7 @@ private:
             const auto & lifetime = loaded_object->getLifetime();
             if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
             {
-                LOG_TRACE(log, "Supposed update time for " "'" + loaded_object->getLoadableName() + "'" " is never (loaded, lifetime 0)");
+                LOG_TRACE(log, "Supposed update time for '" + loaded_object->getLoadableName() + "' is never (loaded, lifetime 0)");
                 return never;
             }
 
@@ -1116,18 +1116,18 @@ private:
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
                 auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-                LOG_TRACE(log, "Supposed update time for " "'" << loaded_object->getLoadableName() << "'" " is " << ext::to_string(result) << " (loaded, lifetime [" << lifetime.min_sec << ", " << lifetime.max_sec << "], no errors)");
+                LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "' is " << ext::to_string(result) << " (loaded, lifetime [" << lifetime.min_sec << ", " << lifetime.max_sec << "], no errors)");
                 return result;
             }
 
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "'" " is " << ext::to_string(result) << " (backoff, " << error_count << " errors)");
+            LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "' is " << ext::to_string(result) << " (backoff, " << error_count << " errors)");
             return result;
         }
         else
         {
             auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object " " is " << ext::to_string(result) << " (backoff, " << error_count << " errors.");
+            LOG_TRACE(log, "Supposed update time for unspecified object is " << ext::to_string(result) << " (backoff, " << error_count << " errors.");
             return result;
         }
     }
