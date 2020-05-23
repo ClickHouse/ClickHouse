@@ -633,6 +633,7 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
                     ", aio_nbytes=" + std::to_string(request.aio_nbytes) + ", aio_offset=" + std::to_string(request.aio_offset) +
                     ", returned=" + std::to_string(events[i].res) + ", errno=" + std::to_string(errno), ErrorCodes::AIO_READ_ERROR);
             }
+            __msan_unpoison(reinterpret_cast<char *>(request.aio_buf), request.aio_nbytes);
             uint64_t checksum = 0;
             ReadBufferFromMemory buf_special(reinterpret_cast<char *>(request.aio_buf), block_size);
             readBinary(checksum, buf_special);
