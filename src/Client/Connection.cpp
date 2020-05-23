@@ -132,8 +132,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
-    //LOG_TRACE(log_wrapper.get(), "Disconnecting");
-
     in = nullptr;
     last_input_packet_type.reset();
     out = nullptr; // can write to socket
@@ -186,8 +184,6 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving hello");
-
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -391,8 +387,6 @@ void Connection::sendQuery(
 
     query_id = query_id_;
 
-    //LOG_TRACE(log_wrapper.get(), "Sending query");
-
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
 
@@ -441,8 +435,6 @@ void Connection::sendCancel()
     if (!out)
         return;
 
-    //LOG_TRACE(log_wrapper.get(), "Sending cancel");
-
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->next();
 }
@@ -450,8 +442,6 @@ void Connection::sendCancel()
 
 void Connection::sendData(const Block & block, const String & name, bool scalar)
 {
-    //LOG_TRACE(log_wrapper.get(), "Sending data");
-
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
@@ -682,12 +672,9 @@ Packet Connection::receivePacket()
         }
         else
         {
-            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
             readVarUInt(res.type, *in);
         }
 
-        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
-        //std::cerr << "Client got packet: " << Protocol::Server::toString(res.type) << "\n";
         switch (res.type)
         {
             case Protocol::Server::Data: [[fallthrough]];
@@ -740,8 +727,6 @@ Packet Connection::receivePacket()
 
 Block Connection::receiveData()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving data");
-
     initBlockInput();
     return receiveDataImpl(block_in);
 }
@@ -820,8 +805,6 @@ void Connection::setDescription()
 
 std::unique_ptr<Exception> Connection::receiveException()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving exception");
-
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription()));
 }
 
@@ -838,8 +821,6 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 
 Progress Connection::receiveProgress()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving progress");
-
     Progress progress;
     progress.read(*in, server_revision);
     return progress;
