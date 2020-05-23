@@ -40,6 +40,7 @@ private:
         ASTPtr query;
         StorageID table_id;
         BlockOutputStreamPtr out;
+        std::exception_ptr exception;
     };
 
     std::vector<ViewInfo> views;

@@ -164,29 +164,6 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     return res;
 }
 
-/// the same as DistributedBlockOutputStream::createSelector, should it be static?
-IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
-{
-    const auto & slot_to_shard = cluster->getSlotToShard();
-
-#define CREATE_FOR_TYPE(TYPE)                                   \
-    if (typeid_cast<const DataType##TYPE *>(result.type.get())) \
-        return createBlockSelector<TYPE>(*result.column, slot_to_shard);
-
-    CREATE_FOR_TYPE(UInt8)
-    CREATE_FOR_TYPE(UInt16)
-    CREATE_FOR_TYPE(UInt32)
-    CREATE_FOR_TYPE(UInt64)
-    CREATE_FOR_TYPE(Int8)
-    CREATE_FOR_TYPE(Int16)
-    CREATE_FOR_TYPE(Int32)
-    CREATE_FOR_TYPE(Int64)
-
-#undef CREATE_FOR_TYPE
-
-    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
-}
-
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 {
     std::ostringstream os;
@@ -389,6 +366,9 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
     if (settings.distributed_group_by_no_merge)
         return true;
+    if (!settings.optimize_distributed_group_by_sharding_key)
+        return false;
+
     /// Distributed-over-Distributed (see getQueryProcessingStageImpl())
     if (to_stage == QueryProcessingStage::WithMergeableState)
         return false;
@@ -399,7 +379,16 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
     const auto & select = query_ptr->as<ASTSelectQuery &>();
 
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return false;
+
+    // TODO: The following can be optimized too (but with some caveats, will be addressed later):
+    // - ORDER BY
+    // - LIMIT BY
+    // - LIMIT
     if (select.orderBy())
+        return false;
+    if (select.limitBy() || select.limitLength())
         return false;
 
     if (select.distinct)
@@ -415,11 +404,6 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
         reason = "DISTINCT " + backQuote(serializeAST(*select.select(), true));
     }
-
-    // This can use distributed_group_by_no_merge but in this case limit stage
-    // should be done later (which is not the case right now).
-    if (select.limitBy() || select.limitLength())
-        return false;
 
     const ASTPtr group_by = select.groupBy();
     if (!group_by)
@@ -737,6 +721,32 @@ void StorageDistributed::ClusterNodeData::flushAllData() const
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
 {
     directory_monitor->shutdownAndDropAllData();
+}
+
+IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+{
+    const auto & slot_to_shard = cluster->getSlotToShard();
+
+// If result.type is DataTypeLowCardinality, do shard according to its dictionaryType
+#define CREATE_FOR_TYPE(TYPE)                                                                                       \
+    if (typeid_cast<const DataType##TYPE *>(result.type.get()))                                                     \
+        return createBlockSelector<TYPE>(*result.column, slot_to_shard);                                            \
+    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result.type.get()))          \
+        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get()))                 \
+            return createBlockSelector<TYPE>(*result.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
+
+    CREATE_FOR_TYPE(UInt8)
+    CREATE_FOR_TYPE(UInt16)
+    CREATE_FOR_TYPE(UInt32)
+    CREATE_FOR_TYPE(UInt64)
+    CREATE_FOR_TYPE(Int8)
+    CREATE_FOR_TYPE(Int16)
+    CREATE_FOR_TYPE(Int32)
+    CREATE_FOR_TYPE(Int64)
+
+#undef CREATE_FOR_TYPE
+
+    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible

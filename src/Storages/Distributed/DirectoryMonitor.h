@@ -66,7 +66,6 @@ private:
     std::chrono::time_point<std::chrono::system_clock> last_decrease_time {std::chrono::system_clock::now()};
     std::atomic<bool> quit {false};
     std::mutex mutex;
-    std::condition_variable cond;
     Logger * log;
     ActionBlocker & monitor_blocker;
 

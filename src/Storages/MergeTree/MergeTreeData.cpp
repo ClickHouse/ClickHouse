@@ -146,7 +146,7 @@ MergeTreeData::MergeTreeData(
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     const auto settings = getSettings();
-    setProperties(metadata);
+    setProperties(metadata, /*only_check*/ false, attach);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -305,7 +305,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check)
+void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool only_check, bool attach)
 {
     if (!metadata.order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -432,8 +432,9 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             new_indices.push_back(
                  MergeTreeIndexFactory::instance().get(
                         all_columns,
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                        global_context));
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl),
+                        global_context,
+                        attach));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
                 throw Exception(
