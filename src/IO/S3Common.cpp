@@ -9,9 +9,10 @@
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
+#    include <boost/algorithm/string.hpp>
+#    include <Poco/URI.h>
 #    include <re2/re2.h>
 #    include <common/logger_useful.h>
-
 
 namespace
 {
@@ -86,28 +87,48 @@ namespace S3
     /// This method is not static because it requires ClientFactory to be initialized.
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
+        bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key)
     {
         Aws::Client::ClientConfiguration cfg;
+
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        return create(cfg, access_key_id, secret_access_key);
+        return create(cfg, is_virtual_hosted_style, access_key_id, secret_access_key);
     }
 
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         Aws::Client::ClientConfiguration & cfg,
+        bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
+        Aws::Client::ClientConfiguration client_configuration = cfg;
+
+        if (!client_configuration.endpointOverride.empty())
+        {
+            static const RE2 region_pattern(R"(s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+            Poco::URI uri(client_configuration.endpointOverride);
+            if (uri.getScheme() == "http")
+                client_configuration.scheme = Aws::Http::Scheme::HTTP;
+
+            String region;
+            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &region))
+            {
+                boost::algorithm::to_lower(region);
+                client_configuration.region = region;
+            }
+        }
+
         return std::make_shared<Aws::S3::S3Client>(
             credentials, // Aws credentials.
-            std::move(cfg), // Client configuration.
+            std::move(client_configuration), // Client configuration.
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-            cfg.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
+            is_virtual_hosted_style || cfg.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
         );
     }
 
@@ -116,45 +137,48 @@ namespace S3
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern(R"((.+\.)?s3[.\-][a-z0-9\-.]+)");
+        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3[.\-][a-z0-9\-.:]+))");
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
-        static const RE2 path_style_pattern("([^/]+)/(.*)");
+        static const RE2 path_style_pattern("^/([^/]*)/(.*)");
 
         uri = uri_;
 
         if (uri.getHost().empty())
             throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-        endpoint = uri.getScheme() + "://" + uri.getAuthority();
+        String endpoint_authority_from_uri;
 
-        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket))
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &endpoint_authority_from_uri))
         {
-            if (!bucket.empty())
-                bucket.pop_back(); /// Remove '.' character from the end of the bucket name.
+            is_virtual_hosted_style = true;
+            endpoint = uri.getScheme() + "://" + endpoint_authority_from_uri;
 
             /// S3 specification requires at least 3 and at most 63 characters in bucket name.
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
-                    "Bucket name length out of bounds in S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
             /// Remove leading '/' from path to extract key.
             key = uri.getPath().substr(1);
             if (key.empty() || key == "/")
-                throw Exception("Key name is empty in S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Key name is empty in virtual hosted style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
+            is_virtual_hosted_style = false;
+            endpoint = uri.getScheme() + "://" + uri.getAuthority();
+
             /// S3 specification requires at least 3 and at most 63 characters in bucket name.
             /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
                 throw Exception(
-                    "Bucket name length out of bounds in S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                    "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
             if (key.empty() || key == "/")
-                throw Exception("Key name is empty in S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Key name is empty in path style S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
