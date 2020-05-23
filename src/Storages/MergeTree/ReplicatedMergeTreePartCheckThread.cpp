@@ -260,7 +260,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
                 String message = "Part " + part_name + " looks broken. Removing it and queueing a fetch.";
-                LOG_ERROR(log, message);
+                LOG_ERROR_FORMATTED(log, message);
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
                 storage.removePartAndEnqueueFetch(part_name);
@@ -278,7 +278,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
-            LOG_ERROR(log, message);
+            LOG_ERROR_FORMATTED(log, message);
             storage.forgetPartAndMoveToDetached(part, "unexpected");
             return {part_name, false, message};
         }

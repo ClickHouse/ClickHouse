@@ -134,7 +134,7 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 
 BlockInputStreamPtr XDBCDictionarySource::loadAll()
 {
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE_FORMATTED(log, load_all_query);
     return loadBase(load_all_query);
 }
 
@@ -142,7 +142,7 @@ BlockInputStreamPtr XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
-    LOG_TRACE(log, load_query_update);
+    LOG_TRACE_FORMATTED(log, load_query_update);
     return loadBase(load_query_update);
 }
 

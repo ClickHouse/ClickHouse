@@ -278,7 +278,7 @@ private:
         }
 
         /// Write symbolized stack trace line by line for better grep-ability.
-        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+        stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL_FORMATTED(log, s); });
     }
 };
 
@@ -318,7 +318,7 @@ static void sanitizerDeathCallback()
     }
 
     /// Write symbolized stack trace line by line for better grep-ability.
-    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL_FORMATTED(log, s); });
 }
 #endif
 

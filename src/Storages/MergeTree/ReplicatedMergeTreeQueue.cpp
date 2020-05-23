@@ -987,7 +987,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, state_lock))
             {
                 if (!out_postpone_reason.empty())
-                    LOG_DEBUG(log, out_postpone_reason);
+                    LOG_DEBUG_FORMATTED(log, out_postpone_reason);
                 return false;
             }
         }
@@ -1007,7 +1007,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 String reason = "Not merging into part " + entry.new_part_name
                     + " because part " + name + " is not ready yet (log entry for that part is being processed).";
-                LOG_TRACE(log, reason);
+                LOG_TRACE_FORMATTED(log, reason);
                 out_postpone_reason = reason;
                 return false;
             }
@@ -1020,7 +1020,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (merger_mutator.merges_blocker.isCancelled())
         {
             String reason = "Not executing log entry for part " + entry.new_part_name + " because merges and mutations are cancelled now.";
-            LOG_DEBUG(log, reason);
+            LOG_DEBUG_FORMATTED(log, reason);
             out_postpone_reason = reason;
             return false;
         }
@@ -1041,7 +1041,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             String reason = "Not executing log entry " + entry.typeToString() + " for part " + entry.new_part_name
                 + " because source parts size (" + formatReadableSizeWithBinarySuffix(sum_parts_size_in_bytes)
                 + ") is greater than the current maximum (" + formatReadableSizeWithBinarySuffix(max_source_parts_size) + ").";
-            LOG_DEBUG(log, reason);
+            LOG_DEBUG_FORMATTED(log, reason);
             out_postpone_reason = reason;
             return false;
         }
@@ -1056,7 +1056,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
         if (0 != getConflictsCountForRange(range, entry, &conflicts_description, state_lock))
         {
-            LOG_DEBUG(log, conflicts_description);
+            LOG_DEBUG_FORMATTED(log, conflicts_description);
             return false;
         }
     }
