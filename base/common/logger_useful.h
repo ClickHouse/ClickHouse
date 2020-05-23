@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <fmt/format.h>
+#include <fmt/ostream.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Poco/Version.h>
