@@ -496,7 +496,7 @@ void DiskAccessStorage::listsWritingThreadFunc()
 /// and then saves the files "users.list", "roles.list", etc. to the same directory.
 bool DiskAccessStorage::rebuildLists()
 {
-    LOG_WARNING(getLogger(), "Recovering lists in directory " + directory_path);
+    LOG_WARNING_FORMATTED(getLogger(), "Recovering lists in directory {}", directory_path);
     clear();
 
     for (const auto & directory_entry : std::filesystem::directory_iterator(directory_path))

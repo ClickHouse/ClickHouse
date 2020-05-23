@@ -77,7 +77,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
-    LOG_TRACE(log, "loadAll " + toString());
+    LOG_TRACE_FORMATTED(log, "loadAll {}", toString());
     auto process = ShellCommand::execute(command);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
@@ -92,7 +92,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
     if (update_time)
         command_with_update_field += " " + update_field + " " + DB::toString(LocalDateTime(update_time - 1));
 
-    LOG_TRACE(log, "loadUpdatedAll " + command_with_update_field);
+    LOG_TRACE_FORMATTED(log, "loadUpdatedAll {}", command_with_update_field);
     auto process = ShellCommand::execute(command_with_update_field);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));

@@ -62,7 +62,7 @@ namespace
 void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
-    LOG_TRACE(log, "Request URI: " + request.getURI());
+    LOG_TRACE_FORMATTED(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {

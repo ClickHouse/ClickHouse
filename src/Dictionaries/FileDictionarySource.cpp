@@ -49,7 +49,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 
 BlockInputStreamPtr FileDictionarySource::loadAll()
 {
-    LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll " + toString());
+    LOG_TRACE_FORMATTED(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();

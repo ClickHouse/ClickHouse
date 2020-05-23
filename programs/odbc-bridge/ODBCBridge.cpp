@@ -188,7 +188,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
     server.start();
 
-    LOG_INFO(log, "Listening http://" + address.toString());
+    LOG_INFO_FORMATTED(log, "Listening http://{}", address.toString());
 
     SCOPE_EXIT({
         LOG_DEBUG_FORMATTED(log, "Received termination signal.");

@@ -502,7 +502,7 @@ void debugIncreaseOOMScore()
                     e.displayText() + "'.");
         return;
     }
-    LOG_INFO(&Logger::root(), "Set OOM score adjustment to " + new_score);
+    LOG_INFO_FORMATTED(&Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
 void debugIncreaseOOMScore() {}

@@ -276,7 +276,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_TRACE_FORMATTED(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
                 if (0 != mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
+                    LOG_WARNING_FORMATTED(log, "Failed mlockall: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
                 else
                     LOG_TRACE_FORMATTED(log, "The memory map of clickhouse executable has been mlock'ed");
             }
@@ -592,7 +592,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-    LOG_INFO(log, "Loading metadata from " + path);
+    LOG_INFO_FORMATTED(log, "Loading metadata from {}", path);
 
     try
     {
@@ -826,7 +826,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for http://" + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for http://{}", address.toString());
             });
 
             /// HTTPS
@@ -840,7 +840,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for https://" + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for https://{}", address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -861,7 +861,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections with native protocol (tcp): " + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for connections with native protocol (tcp): {}", address.toString());
             });
 
             /// TCP with SSL
@@ -877,7 +877,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
-                LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for connections with secure native protocol (tcp_secure): {}", address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -895,7 +895,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
@@ -908,7 +908,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -928,7 +928,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for MySQL compatibility protocol: {}", address.toString());
             });
 
             /// Prometheus (if defined and not setup yet with http_port)
@@ -941,7 +941,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
+                LOG_INFO_FORMATTED(log, "Listening for Prometheus: http://{}", address.toString());
             });
         }
 

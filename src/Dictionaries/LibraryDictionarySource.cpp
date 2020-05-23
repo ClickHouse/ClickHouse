@@ -182,7 +182,7 @@ LibraryDictionarySource::~LibraryDictionarySource()
 
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
-    LOG_TRACE(log, "loadAll " + toString());
+    LOG_TRACE_FORMATTED(log, "loadAll {}", toString());
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
