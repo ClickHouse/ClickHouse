@@ -120,8 +120,6 @@ protected:
     /// Thread group used for profiling purposes
     ThreadGroupStatusPtr thread_group;
 
-    const sched_param param;
-
     void threadFunction();
 
 private:

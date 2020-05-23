@@ -55,9 +55,16 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_,
         const struct sched_param & sched_param_)
     : size(size_)
     , thread_name(thread_name_)
-    , param(sched_param_)
     , settings(pool_settings)
 {
+    if (settings.low_cpu_priority)
+    {
+        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &sched_param_))
+        {
+            throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+        }
+    }
+
     logger = &Logger::get(log_name);
     LOG_INFO(logger, "Create " << log_name << " with " << size << " threads");
 
@@ -147,13 +154,6 @@ void BackgroundProcessingPool::threadFunction()
     if (auto memory_tracker = CurrentThread::getMemoryTracker())
         memory_tracker->setMetric(settings.memory_metric);
 
-    if (settings.low_cpu_priority)
-    {
-        if (pthread_setschedparam(pthread_self(), SCHED_IDLE, &param))
-        {
-            throw Exception("Failed to set schedule parameters.", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-        }
-    }
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, settings.thread_sleep_seconds_random_part)(rng)));

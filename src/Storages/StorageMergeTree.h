@@ -91,7 +91,6 @@ private:
 
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
-    AtomicStopwatch time_after_previous_recompress;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
@@ -110,7 +109,6 @@ private:
     /// Task handler for merges, mutations and moves.
     BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
-    BackgroundProcessingPool::TaskHandle recompressing_task_handle;
 
     void loadMutations();
 
@@ -132,7 +130,6 @@ private:
     bool tryMutatePart();
 
     BackgroundProcessingPoolTaskResult mergeMutateTask();
-    BackgroundProcessingPoolTaskResult recompressMutateTask();
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,

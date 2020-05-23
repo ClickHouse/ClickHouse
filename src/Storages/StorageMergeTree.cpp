@@ -98,11 +98,6 @@ void StorageMergeTree::startup()
     /// Ensure that thread started only after assignment to 'merging_mutating_task_handle' is done.
     merge_pool.startTask(merging_mutating_task_handle);
 
-    time_after_previous_recompress.restart();
-    auto & recompress_pool = global_context.getBackgroundLowPriorityPool();
-    recompressing_task_handle = recompress_pool.addTask([this] { return recompressMutateTask(); });
-    recompress_pool.startTask(recompressing_task_handle);
-
     if (areBackgroundMovesNeeded())
     {
         auto & move_pool = global_context.getBackgroundMovePool();
@@ -140,8 +135,6 @@ void StorageMergeTree::shutdown()
     if (merging_mutating_task_handle)
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
-    if (recompressing_task_handle)
-        global_context.getBackgroundLowPriorityPool().removeTask(recompressing_task_handle);
 
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
@@ -802,41 +795,6 @@ bool StorageMergeTree::tryMutatePart()
     }
 
     return true;
-}
-
-BackgroundProcessingPoolTaskResult StorageMergeTree::recompressMutateTask()
-{
-    if (shutdown_called)
-    {
-        return BackgroundProcessingPoolTaskResult::ERROR;
-    }
-
-    try
-    {
-        if (auto lock = time_after_previous_recompress.compareAndRestartDeferred(1))
-        {
-            {
-                auto lock_structure = lockStructureForShare(false, RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
-                if (recompressOldParts())
-                {
-                    return BackgroundProcessingPoolTaskResult::SUCCESS;
-                }
-            }
-            return BackgroundProcessingPoolTaskResult::ERROR;
-        }
-        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::ABORTED)
-        {
-            LOG_INFO(log, e.message());
-            return BackgroundProcessingPoolTaskResult::ERROR;
-        }
-
-        throw;
-    }
-
 }
 
 BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
