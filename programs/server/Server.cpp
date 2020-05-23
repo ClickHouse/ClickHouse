@@ -981,7 +981,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 }
             }
 
-            LOG_INFO( log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains." " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
+            LOG_INFO(log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains." " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
 
             dns_cache_updater.reset();
             main_config_reloader.reset();
