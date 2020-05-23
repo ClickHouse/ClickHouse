@@ -50,7 +50,7 @@ ShellCommand::~ShellCommand()
 {
     if (terminate_in_destructor)
     {
-        LOG_TRACE(getLogger(), "Will kill shell command pid " << pid << " with SIGTERM");
+        LOG_TRACE_FORMATTED(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
         int retcode = kill(pid, SIGTERM);
         if (retcode != 0)
             LOG_WARNING(getLogger(), "Cannot kill shell command pid " << pid << " errno '" << errnoToString(retcode) << "'");

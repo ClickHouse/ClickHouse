@@ -152,7 +152,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     }
     if (entry->type == LogEntry::ALTER_METADATA)
     {
-        LOG_TRACE(log, "Adding alter metadata version " << entry->alter_version << " to the queue");
+        LOG_TRACE_FORMATTED(log, "Adding alter metadata version {} to the queue", entry->alter_version);
         alter_sequence.addMetadataAlter(entry->alter_version, entry->have_mutation, state_lock);
     }
 }
@@ -560,7 +560,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
             }
 
             if (!copied_entries.empty())
-                LOG_DEBUG(log, "Pulled " << copied_entries.size() << " entries to queue.");
+                LOG_DEBUG_FORMATTED(log, "Pulled {} entries to queue.", copied_entries.size());
         }
 
         if (storage.queue_task_handle)
@@ -1397,7 +1397,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             }
             else if (mutation.parts_to_do.size() == 0)
             {
-                LOG_TRACE(log, "Will check if mutation " << mutation.entry->znode_name << " is done");
+                LOG_TRACE_FORMATTED(log, "Will check if mutation {} is done", mutation.entry->znode_name);
                 candidates.push_back(mutation.entry);
             }
         }
@@ -1406,7 +1406,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     if (candidates.empty())
         return false;
     else
-        LOG_DEBUG(log, "Trying to finalize " << candidates.size() << " mutations");
+        LOG_DEBUG_FORMATTED(log, "Trying to finalize {} mutations", candidates.size());
 
     auto merge_pred = getMergePredicate(zookeeper);
 
@@ -1430,7 +1430,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             auto it = mutations_by_znode.find(entry->znode_name);
             if (it != mutations_by_znode.end())
             {
-                LOG_TRACE(log, "Mutation " << entry->znode_name << " is done");
+                LOG_TRACE_FORMATTED(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
                 if (entry->isAlterMutation())
                 {

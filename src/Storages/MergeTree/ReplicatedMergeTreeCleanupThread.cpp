@@ -339,7 +339,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
     if (num_nodes_to_delete)
-        LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
+        LOG_TRACE_FORMATTED(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
 }
 
 

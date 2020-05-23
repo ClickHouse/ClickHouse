@@ -90,7 +90,7 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
     {
         if (errno == EINVAL)
         {
-            LOG_INFO(log, "Cannot get pipe capacity, " << errnoToString(ErrorCodes::CANNOT_FCNTL) << ". Very old Linux kernels have no support for this fcntl.");
+            LOG_INFO_FORMATTED(log, "Cannot get pipe capacity, {}. Very old Linux kernels have no support for this fcntl.", errnoToString(ErrorCodes::CANNOT_FCNTL));
             /// It will work nevertheless.
         }
         else

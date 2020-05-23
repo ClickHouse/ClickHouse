@@ -116,7 +116,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         *   and don't delete the queue entry when in doubt.
         */
 
-    LOG_WARNING(log, "Checking if anyone has a part covering " << part_name << ".");
+    LOG_WARNING_FORMATTED(log, "Checking if anyone has a part covering {}.", part_name);
 
     bool found_part_with_the_same_min_block = false;
     bool found_part_with_the_same_max_block = false;
@@ -170,14 +170,14 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     if (!storage.queue.remove(zookeeper, part_name))
     {
         /// The part was not in our queue. Why did it happen?
-        LOG_ERROR(log, "Missing part " << part_name << " is not in our queue.");
+        LOG_ERROR_FORMATTED(log, "Missing part {} is not in our queue.", part_name);
         return;
     }
 
     /** This situation is possible if on all the replicas where the part was, it deteriorated.
         * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
         */
-    LOG_ERROR(log, "Part " << part_name << " is lost forever.");
+    LOG_ERROR_FORMATTED(log, "Part {} is lost forever.", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
 }
 
@@ -216,7 +216,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->tryGet(part_path, part_znode))
         {
-            LOG_WARNING(log, "Checking data of part " << part_name << ".");
+            LOG_WARNING_FORMATTED(log, "Checking data of part {}.", part_name);
 
             try
             {
@@ -247,7 +247,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                     return {part_name, false, "Checking part was cancelled"};
                 }
 
-                LOG_INFO(log, "Part " << part_name << " looks good.");
+                LOG_INFO_FORMATTED(log, "Part {} looks good.", part_name);
             }
             catch (const Exception & e)
             {

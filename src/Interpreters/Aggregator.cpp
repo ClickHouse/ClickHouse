@@ -722,7 +722,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
+    LOG_DEBUG_FORMATTED(log, "Writing part of aggregation data into temporary file {}.", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     /// Flush only two-level data and possibly overflow data.
@@ -2099,7 +2099,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto bucket_num = blocks.front().info.bucket_num;
     bool is_overflows = blocks.front().info.is_overflows;
 
-    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
+    LOG_TRACE_FORMATTED(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
     Stopwatch watch;
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.

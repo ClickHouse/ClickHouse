@@ -118,7 +118,7 @@ Block MergeSortingBlockInputStream::readImpl()
             /// If there was temporary files.
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
 
-            LOG_INFO(log, "There are " << temporary_files.size() << " temporary sorted parts to merge.");
+            LOG_INFO_FORMATTED(log, "There are {} temporary sorted parts to merge.", temporary_files.size());
 
             /// Create sorted streams to merge.
             for (const auto & file : temporary_files)

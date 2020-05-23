@@ -439,7 +439,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
         reason = "GROUP BY " + backQuote(serializeAST(*group_by, true));
     }
 
-    LOG_DEBUG(log, "Force distributed_group_by_no_merge for " << reason << " (injective)");
+    LOG_DEBUG_FORMATTED(log, "Force distributed_group_by_no_merge for {} (injective)", reason);
     return true;
 }
 

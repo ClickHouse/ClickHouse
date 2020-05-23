@@ -91,7 +91,7 @@ namespace
 
 void setupTmpPath(Logger * log, const std::string & path)
 {
-    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
+    LOG_DEBUG_FORMATTED(log, "Setting up {} to store temporary data in it", path);
 
     Poco::File(path).createDirectories();
 
@@ -372,7 +372,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG_FORMATTED(log, "Initializing DateLUT.");
     DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
+    LOG_TRACE_FORMATTED(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
 
     /// Storage with temporary data for processing of heavy queries.

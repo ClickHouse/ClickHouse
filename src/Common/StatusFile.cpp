@@ -45,7 +45,7 @@ StatusFile::StatusFile(const std::string & path_)
         if (!contents.empty())
             LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
         else
-            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
+            LOG_INFO_FORMATTED(&Logger::get("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);

@@ -1383,7 +1383,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
     {
-        LOG_DEBUG(log, "File for index " << backQuote(index->name) << " does not exist. Skipping it.");
+        LOG_DEBUG_FORMATTED(log, "File for index {} does not exist. Skipping it.", backQuote(index->name));
         return ranges;
     }
 

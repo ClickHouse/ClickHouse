@@ -619,7 +619,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
                 Poco::File(preprocessed_path_parent).createDirectories();
         }
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
-        LOG_DEBUG(log, "Saved preprocessed configuration to '" << preprocessed_path << "'.");
+        LOG_DEBUG_FORMATTED(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
     }
     catch (Poco::Exception & e)
     {

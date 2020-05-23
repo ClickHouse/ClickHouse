@@ -132,7 +132,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     std::string format = params.get("format", "RowBinary");
 
     std::string connection_string = params.get("connection_string");
-    LOG_TRACE(log, "Connection string: '" << connection_string << "'");
+    LOG_TRACE_FORMATTED(log, "Connection string: '{}'", connection_string);
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
 

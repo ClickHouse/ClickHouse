@@ -234,11 +234,11 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     }
     catch (const Exception & exc)
     {
-        LOG_ERROR(log, "Authentication for user " << user_name << " failed.");
+        LOG_ERROR_FORMATTED(log, "Authentication for user {} failed.", user_name);
         packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_INFO(log, "Authentication for user " << user_name << " succeeded.");
+    LOG_INFO_FORMATTED(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)

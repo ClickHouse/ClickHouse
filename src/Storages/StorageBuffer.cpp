@@ -636,7 +636,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (!table)
     {
-        LOG_ERROR(log, "Destination table " << destination_id.getNameForLogs() << " doesn't exist. Block of data is discarded.");
+        LOG_ERROR_FORMATTED(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
 

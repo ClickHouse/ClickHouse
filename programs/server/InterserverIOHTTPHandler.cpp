@@ -103,7 +103,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
             response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString(message, *used_output.out);
-            LOG_WARNING(log, "Query processing failed request: '" << request.getURI() << "' authentication failed");
+            LOG_WARNING_FORMATTED(log, "Query processing failed request: '{}' authentication failed", request.getURI());
         }
     }
     catch (Exception & e)
