@@ -1099,7 +1099,7 @@ private:
         {
             if (!loaded_object->supportUpdates())
             {
-                LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "' is never (loaded, does not support updates)");
+                LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is never (loaded, does not support updates)", loaded_object->getLoadableName());
 
                 return never;
             }
@@ -1108,7 +1108,7 @@ private:
             const auto & lifetime = loaded_object->getLifetime();
             if (lifetime.min_sec == 0 && lifetime.max_sec == 0)
             {
-                LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "' is never (loaded, lifetime 0)");
+                LOG_TRACE_FORMATTED(log, "Supposed update time for '{}' is never (loaded, lifetime 0)", loaded_object->getLoadableName());
                 return never;
             }
 
