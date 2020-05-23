@@ -270,8 +270,8 @@ void MergingSortedBlockInputStream::readSuffixImpl()
 
     if (seconds)
         message << ", "
-        << profile_info.rows / seconds << " rows/sec., "
-        << profile_info.bytes / 1000000.0 / seconds << " MB/sec.";
+            << profile_info.rows / seconds << " rows/sec., "
+            << profile_info.bytes / 1000000.0 / seconds << " MB/sec.";
 
     LOG_DEBUG(log, message.str());
 }
