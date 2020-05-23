@@ -384,7 +384,7 @@ namespace MySQLReplication
         UInt32 column_count;
         std::vector<UInt8> column_type;
         std::vector<UInt16> column_meta;
-        String null_bitmap;
+        Bitmap null_bitmap;
 
         void dump() const override;
 
