@@ -287,25 +287,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
-        if (col_decl.isNULL && col_decl.isNotNULL)
-            throw Exception{"Cant use NOT NULL and NULL together", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+        if (!col_decl.isNULL && col_decl.isNot)
+            throw Exception{"Cant use NOT without NULL", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
 
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (col_decl.isNULL) {
+            if (col_decl.isNot && col_decl.isNULL) {
+                if (column_type->isNullable())
+                    throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+            } else if (col_decl.isNULL && !col_decl.isNot) {
                 if (column_type->isNullable())
                     throw Exception{"Cant use NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
                 else {
                     column_type = makeNullable(column_type);
                 }
-            } else if (col_decl.isNotNULL) {
-                if (column_type->isNullable())
-                    throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
             }
 
-            if (context.getSettingsRef().data_type_default_nullable && !column_type->isNullable() && !col_decl.isNotNULL)
+            if (context.getSettingsRef().data_type_default_nullable && !column_type->isNullable() && !col_decl.isNot && !col_decl.isNULL)
                 column_type = makeNullable(column_type);
 
             column_names_and_types.emplace_back(col_decl.name, column_type);

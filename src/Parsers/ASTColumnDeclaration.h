@@ -14,7 +14,7 @@ public:
     String name;
     ASTPtr type;
     ASTPtr isNULL;
-    ASTPtr isNotNULL;
+    ASTPtr isNot;
     String default_specifier;
     ASTPtr default_expression;
     ASTPtr comment;

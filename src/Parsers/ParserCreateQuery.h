@@ -118,7 +118,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserIdentifierWithOptionalParameters type_parser;
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_null{"NULL"};
-    ParserKeyword s_not_null{"NOT NULL"};
+    ParserKeyword s_not{"NOT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
@@ -129,7 +129,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserCodec codec_parser;
     ParserExpression expression_parser;
     ParserIdentifier null_parser;
-    ParserIdentifier not_null_parser;
+    ParserCompoundIdentifier not_null_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -142,7 +142,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr type;
     String default_specifier;
     ASTPtr isNull;
-    ASTPtr isNotNull;
+    ASTPtr isNot;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -171,14 +171,19 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    Pos pos_before_null = pos;
+    // Pos pos_before_null = pos;
 
-    if (s_null.check(pos, expected)) {
-        if (!null_parser.parse(pos_before_null, isNull, expected))
+    if (s_not.check(pos, expected)) {
+        if (s_null.check(pos, expected)) {
+            isNot = std::make_shared<ASTIdentifier>("NOT");
+            isNull = std::make_shared<ASTIdentifier>("NULL");
+        } else {
             return false;
-    } else if (s_not_null.check(pos, expected)) {
-        if (!not_null_parser.parse(pos_before_null, isNotNull, expected))
-            return false;
+        }
+    } else {
+        if (s_null.check(pos, expected)) {
+            isNull = std::make_shared<ASTIdentifier>("NULL");
+        }
     }
 
     if (s_comment.ignore(pos, expected))
@@ -215,9 +220,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(isNull));
     }
 
-    if (isNotNull) {
-        column_declaration->isNotNULL = isNotNull;
-        column_declaration->children.push_back(std::move(isNotNull));
+    if (isNot) {
+        column_declaration->isNot = isNot;
+        column_declaration->children.push_back(std::move(isNot));
     }
 
     if (default_expression)
