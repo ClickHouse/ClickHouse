@@ -1144,7 +1144,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                 {
                     if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                     {
-                        LOG_WARNING(log, "Removing temporary directory " << fullPath(disk, it->path()));
+                        LOG_WARNING_FORMATTED(log, "Removing temporary directory {}", fullPath(disk, it->path()));
                         disk->removeRecursive(it->path());
                     }
                 }
@@ -1281,7 +1281,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         {
             pool.scheduleOrThrowOnError([&]
             {
-                LOG_DEBUG(log, "Removing part from filesystem " << part->name);
+                LOG_DEBUG_FORMATTED(log, "Removing part from filesystem {}", part->name);
                 part->remove();
             });
         }
@@ -1292,7 +1292,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     {
         for (const DataPartPtr & part : parts_to_remove)
         {
-            LOG_DEBUG(log, "Removing part from filesystem " << part->name);
+            LOG_DEBUG_FORMATTED(log, "Removing part from filesystem {}", part->name);
             part->remove();
         }
     }
@@ -1684,7 +1684,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
         catch (...)
         {
             old_and_new_names.resize(i);
-            LOG_WARNING(storage.log, "Cannot rename parts to perform operation on them: " << getCurrentExceptionMessage(false));
+            LOG_WARNING_FORMATTED(storage.log, "Cannot rename parts to perform operation on them: {}", getCurrentExceptionMessage(false));
             throw;
         }
     }
@@ -2004,7 +2004,7 @@ restore_covered)
 
     if (restore_covered && part->info.level == 0)
     {
-        LOG_WARNING(log, "Will not recover parts covered by zero-level part " << part->name);
+        LOG_WARNING_FORMATTED(log, "Will not recover parts covered by zero-level part {}", part->name);
         return;
     }
 
@@ -2085,7 +2085,7 @@ restore_covered)
 
         for (const String & name : restored)
         {
-            LOG_INFO(log, "Activated part " << name);
+            LOG_INFO_FORMATTED(log, "Activated part {}", name);
         }
 
         if (error)
@@ -2104,7 +2104,7 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
     {
         auto lock = lockParts();
 
-        LOG_TRACE(log, "Trying to immediately remove part " << part->getNameWithState());
+        LOG_TRACE_FORMATTED(log, "Trying to immediately remove part {}", part->getNameWithState());
 
         auto it = data_parts_by_info.find(part->info);
         if (it == data_parts_by_info.end() || (*it).get() != part.get())
@@ -2130,7 +2130,7 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
     }
 
     removePartsFinally({part_to_delete});
-    LOG_TRACE(log, "Removed part " << part_to_delete->name);
+    LOG_TRACE_FORMATTED(log, "Removed part {}", part_to_delete->name);
 }
 
 
@@ -2779,7 +2779,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
     {
         const auto & [path, disk] = renamed_parts.old_part_name_to_path_and_disk[old_name];
         disk->removeRecursive(path + "detached/" + new_name + "/");
-        LOG_DEBUG(log, "Dropped detached part " << old_name);
+        LOG_DEBUG_FORMATTED(log, "Dropped detached part {}", old_name);
         old_name.clear();
     }
 }
@@ -2819,7 +2819,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 {
                     continue;
                 }
-                LOG_DEBUG(log, "Found part " << name);
+                LOG_DEBUG_FORMATTED(log, "Found part {}", name);
                 active_parts.add(name);
                 name_to_disk[name] = disk;
             }
@@ -2849,7 +2849,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
     for (const auto & part_names : renamed_parts.old_and_new_names)
     {
-        LOG_DEBUG(log, "Checking part " << part_names.second);
+        LOG_DEBUG_FORMATTED(log, "Checking part {}", part_names.second);
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first]);
         MutableDataPartPtr part = createPart(part_names.first, single_disk_volume, source_dir + part_names.second);
         loadPartAndFixMetadataImpl(part);
@@ -3042,7 +3042,7 @@ void MergeTreeData::Transaction::rollback()
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
         ss << ".";
-        LOG_DEBUG(data.log, "Undoing transaction." << ss.str());
+        LOG_DEBUG_FORMATTED(data.log, "Undoing transaction.{}", ss.str());
 
         data.removePartsFromWorkingSet(
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),

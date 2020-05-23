@@ -82,7 +82,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
-    LOG_TRACE(log, "Sending part " << part_name);
+    LOG_TRACE_FORMATTED(log, "Sending part {}", part_name);
 
     try
     {

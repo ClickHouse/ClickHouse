@@ -381,7 +381,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         }
         else
         {
-            LOG_INFO(log, "Removing file " << getMetadataPath() + file_name);
+            LOG_INFO_FORMATTED(log, "Removing file {}", getMetadataPath() + file_name);
             Poco::File(getMetadataPath() + file_name).remove();
         }
     };
@@ -406,7 +406,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         else if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
-            LOG_INFO(log, "Removing file " << dir_it->path());
+            LOG_INFO_FORMATTED(log, "Removing file {}", dir_it->path());
             Poco::File(dir_it->path()).remove();
         }
         else if (endsWith(dir_it.name(), ".sql"))

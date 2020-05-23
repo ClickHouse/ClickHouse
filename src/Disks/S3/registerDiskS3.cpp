@@ -71,7 +71,7 @@ namespace
 
                 proxies.push_back(proxy_uri);
 
-                LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: " << proxy_uri.toString());
+                LOG_DEBUG_FORMATTED(&Logger::get("DiskS3"), "Configured proxy: {}", proxy_uri.toString());
             }
 
         if (!proxies.empty())

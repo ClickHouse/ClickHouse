@@ -180,7 +180,7 @@ public:
             // levels and more info, but for completeness we log all signals
             // here at trace level.
             // Don't use strsignal here, because it's not thread-safe.
-            LOG_TRACE(log, "Received signal " << sig);
+            LOG_TRACE_FORMATTED(log, "Received signal {}", sig);
 
             if (sig == Signals::StopThread)
             {

@@ -197,7 +197,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::HandshakeResponse & packet)
     read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
     size_t payload_size = unalignedLoad<uint32_t>(buf) & 0xFFFFFFu;
-    LOG_TRACE(log, "payload size: " << payload_size);
+    LOG_TRACE_FORMATTED(log, "payload size: {}", payload_size);
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
@@ -245,7 +245,7 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
 {
     String database;
     readStringUntilEOF(database, payload);
-    LOG_DEBUG(log, "Setting current database to " << database);
+    LOG_DEBUG_FORMATTED(log, "Setting current database to {}", database);
     connection_context.setCurrentDatabase(database);
     packet_sender->sendPacket(OK_Packet(0, client_capability_flags, 0, 0, 1), true);
 }

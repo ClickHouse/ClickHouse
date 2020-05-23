@@ -21,7 +21,7 @@ ProxyResolverConfiguration::ProxyResolverConfiguration(const Poco::URI & endpoin
 
 Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
 {
-    LOG_DEBUG(&Logger::get("AWSClient"), "Obtain proxy using resolver: " << endpoint.toString());
+    LOG_DEBUG_FORMATTED(&Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
     /// 1 second is enough for now.
     /// TODO: Make timeouts configurable.

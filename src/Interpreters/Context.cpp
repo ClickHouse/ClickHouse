@@ -1761,7 +1761,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+            LOG_ERROR_FORMATTED(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 }

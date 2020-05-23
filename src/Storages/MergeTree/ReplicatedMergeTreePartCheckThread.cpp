@@ -184,7 +184,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
 CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 {
-    LOG_WARNING(log, "Checking part " << part_name);
+    LOG_WARNING_FORMATTED(log, "Checking part {}", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
     /// If the part is still in the PreCommitted -> Committed transition, it is not lost

@@ -587,7 +587,7 @@ void StorageDistributed::startup()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG(log, "Auto-increment is " << file_names_increment.value);
+    LOG_DEBUG_FORMATTED(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -816,7 +816,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
         auto new_path = path + new_path_to_table_data;
         Poco::File(path + relative_data_path).renameTo(new_path);
 
-        LOG_DEBUG(log, "Updating path to " << new_path);
+        LOG_DEBUG_FORMATTED(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)

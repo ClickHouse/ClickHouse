@@ -384,14 +384,14 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
     current_mutations_by_version.emplace(version, insertion.first->second);
 
-    LOG_INFO(log, "Added mutation: " << mutation_file_name);
+    LOG_INFO_FORMATTED(log, "Added mutation: {}", mutation_file_name);
     merging_mutating_task_handle->wake();
     return version;
 }
 
 void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
 {
-    LOG_INFO(log, "Waiting mutation: " << file_name);
+    LOG_INFO_FORMATTED(log, "Waiting mutation: {}", file_name);
     auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
     std::unique_lock lock(mutation_wait_mutex);
     mutation_wait_event.wait(lock, check);
@@ -492,7 +492,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
-    LOG_TRACE(log, "Killing mutation " << mutation_id);
+    LOG_TRACE_FORMATTED(log, "Killing mutation {}", mutation_id);
 
     std::optional<MergeTreeMutationEntry> to_kill;
     {
@@ -511,7 +511,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
-    LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+    LOG_TRACE_FORMATTED(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
         std::lock_guard<std::mutex> lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
@@ -896,7 +896,7 @@ void StorageMergeTree::clearOldMutations(bool truncate)
 
     for (auto & mutation : mutations_to_delete)
     {
-        LOG_TRACE(log, "Removing mutation: " << mutation.file_name);
+        LOG_TRACE_FORMATTED(log, "Removing mutation: {}", mutation.file_name);
         mutation.removeFile();
     }
 }
@@ -1050,7 +1050,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
             /// If DETACH clone parts to detached/ directory
             for (const auto & part : parts_to_remove)
             {
-                LOG_INFO(log, "Detaching " << part->relative_path);
+                LOG_INFO_FORMATTED(log, "Detaching {}", part->relative_path);
                 part->makeCloneInDetached("");
             }
         }

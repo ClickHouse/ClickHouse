@@ -551,7 +551,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+        LOG_TRACE_FORMATTED(log, "Aggregation method: {}", result.getMethodName());
     }
 
     if (isCancelled())

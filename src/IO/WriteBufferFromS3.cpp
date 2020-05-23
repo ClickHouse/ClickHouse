@@ -100,7 +100,7 @@ void WriteBufferFromS3::initiate()
     if (outcome.IsSuccess())
     {
         upload_id = outcome.GetResult().GetUploadId();
-        LOG_DEBUG(log, "Multipart upload initiated. Upload id: " << upload_id);
+        LOG_DEBUG_FORMATTED(log, "Multipart upload initiated. Upload id: {}", upload_id);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -170,7 +170,7 @@ void WriteBufferFromS3::complete()
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Multipart upload completed. Upload_id: " << upload_id);
+        LOG_DEBUG_FORMATTED(log, "Multipart upload completed. Upload_id: {}", upload_id);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }
