@@ -76,6 +76,14 @@ directory.
 More complex setup is possible, but inconvenient and requires some scripting.
 See `manual-run.sh` for inspiration.
 
+#### Compare two published releases
+Use `compare-releases.sh`. It will download and extract static + dbg + test
+packages for both releases, and then call the main comparison script
+`compare.sh`, starting from `configure` stage.
+```
+compare-releaseses.sh 19.16.19.85 20.4.2.9
+```
+
 
 #### Statistical considerations
 Generating randomization distribution for medians is tricky. Suppose we have N
