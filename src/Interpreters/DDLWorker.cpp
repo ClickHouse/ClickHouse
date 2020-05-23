@@ -701,7 +701,7 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
 
     if (dynamic_cast<const StorageDistributed *>(storage.get()))
     {
-        LOG_TRACE(log, "Table " + backQuote(table) + " is distributed, skip checking config.");
+        LOG_TRACE_FORMATTED(log, "Table {} is distributed, skip checking config.", backQuote(table));
         return;
     }
 

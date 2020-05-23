@@ -312,7 +312,7 @@ DiskLocalReservation::~DiskLocalReservation()
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '" + disk->getName() + "'.");
+            LOG_ERROR_FORMATTED(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
         }
         else
         {
@@ -320,7 +320,7 @@ DiskLocalReservation::~DiskLocalReservation()
         }
 
         if (disk->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '" + disk->getName() + "'.");
+            LOG_ERROR_FORMATTED(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
         else
             --disk->reservation_count;
     }

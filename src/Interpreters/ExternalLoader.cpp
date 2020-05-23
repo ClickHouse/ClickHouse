@@ -250,7 +250,7 @@ private:
         {
             if (path.empty() || !repository.exists(path))
             {
-                LOG_WARNING(log, "Config file '" + path + "' does not exist");
+                LOG_WARNING_FORMATTED(log, "Config file '{}' does not exist", path);
                 return false;
             }
 

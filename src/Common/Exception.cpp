@@ -36,7 +36,7 @@ Exception::Exception(const std::string & msg, int code)
 #ifndef NDEBUG
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_ERROR(&Poco::Logger::root(), "Logical error: '" + msg + "'.");
+        LOG_ERROR_FORMATTED(&Poco::Logger::root(), "Logical error: '{}'.", msg);
         assert(false);
     }
 #endif

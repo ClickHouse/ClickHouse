@@ -367,7 +367,7 @@ bool DiskAccessStorage::readLists()
         auto file_path = getListFilePath(directory_path, type);
         if (!std::filesystem::exists(file_path))
         {
-            LOG_WARNING(getLogger(), "File " + file_path.string() + " doesn't exist");
+            LOG_WARNING_FORMATTED(getLogger(), "File {} doesn't exist", file_path.string());
             ok = false;
             break;
         }
