@@ -184,10 +184,12 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     {
         size_t l = edge_left[i];
         size_t r = edge_right[i];
-        if (l == n)
+        if (l == n || sorted_x[l] != all_edges[i].l.x() || sorted_x[r] != all_edges[i].r.x())
         {
-            LOG_TRACE(log, "Edge " << i << " is very sad");
-            continue;
+            LOG_ERROR(log, "Error occured while building polygon index. Edge " << i << " is ["
+                << all_edges[i].l.x() << ";" << all_edges[i].r.x() << "] but found ["
+                << sorted_x[l] << ";" << sorted_x[r] << "]. l=" << l << ", r=" << r);
+            throw Poco::Exception("polygon index build error");
         }
 
         /** adding [l, r) to the segment tree */
