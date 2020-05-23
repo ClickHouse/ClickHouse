@@ -130,7 +130,7 @@ void ReadBufferFromKafkaConsumer::drain()
             }
             else
             {
-                LOG_WARNING(log, "Error during draining: " << error);
+                LOG_ERROR(log, "Error during draining: " << error);
             }
         }
 
@@ -141,7 +141,7 @@ void ReadBufferFromKafkaConsumer::drain()
         auto ts = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time) > DRAIN_TIMEOUT_MS)
         {
-            LOG_WARNING(log, "Timeout during draining.");
+            LOG_ERROR(log, "Timeout during draining.");
             break;
         }
     }
