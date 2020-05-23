@@ -114,7 +114,8 @@ void DistributedBlockOutputStream::write(const Block & block)
         if (ordinary_block.has(col.name))
         {
             ordinary_block.erase(col.name);
-            LOG_DEBUG(log, storage.getStorageID().getNameForLogs() << ": column " + col.name + " will be removed, because it is MATERIALIZED");
+            LOG_DEBUG_FORMATTED(log, "{}: column {} will be removed, because it is MATERIALIZED",
+                storage.getStorageID().getNameForLogs(), col.name);
         }
     }
 
@@ -408,10 +409,10 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
 void DistributedBlockOutputStream::writeSuffix()
 {
-    auto log_performance = [this] ()
+    auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG_FORMATTED(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, LOG_DEBUG0);
+        LOG_DEBUG_FORMATTED(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
     if (insert_sync && pool)

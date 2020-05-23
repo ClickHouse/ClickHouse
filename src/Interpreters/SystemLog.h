@@ -60,7 +60,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576  
+#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 class Context;
 class QueryLog;
 class QueryThreadLog;
@@ -456,7 +456,7 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure." " Renaming it to " << backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure. Renaming it to " << backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
@@ -464,13 +464,13 @@ void SystemLog<LogElement>::prepareTable()
             table = nullptr;
         }
         else if (!is_prepared)
-            LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
+            LOG_DEBUG(log, "Will use existing table " << description << " for " << LogElement::name());
     }
 
     if (!table)
     {
         /// Create the table.
-        LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
+        LOG_DEBUG(log, "Creating new table " << description << " for " << LogElement::name());
 
         auto create = getCreateTableQuery();
 
