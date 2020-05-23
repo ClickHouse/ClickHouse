@@ -668,7 +668,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
             Names files;
             volume->getDisk()->listFiles(to, files);
 
-            LOG_WARNING(storage.log, "Part directory " << fullPath(volume->getDisk(), to) << " already exists" << " and contains " << files.size() << " files. Removing it.");
+            LOG_WARNING(storage.log, "Part directory " << fullPath(volume->getDisk(), to) << " already exists and contains " << files.size() << " files. Removing it.");
 
             volume->getDisk()->removeRecursive(to);
         }

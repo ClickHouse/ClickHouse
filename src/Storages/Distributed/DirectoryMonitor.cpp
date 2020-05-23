@@ -317,7 +317,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
         readVarUInt(initiator_revision, header_buf);
         if (ClickHouseRevision::get() < initiator_revision)
         {
-            LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. " << "It may lack support for new features.");
+            LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
         }
 
         readStringBinary(insert_query, header_buf);

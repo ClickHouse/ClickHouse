@@ -238,7 +238,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
 
     if (context.getSettingsRef().readonly)
     {
-        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries" << " Set appropriate system_profile or distributed_ddl.profile to fix this.");
+        LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -940,7 +940,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     }
     catch (...)
     {
-        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in " << node_path << " . They will be created later" << ". Error : " << getCurrentExceptionMessage(true));
+        LOG_INFO_FORMATTED(log, "An error occurred while creating auxiliary ZooKeeper directories in {} . They will be created later. Error : {}", node_path, getCurrentExceptionMessage(true));
     }
 
     return node_path;
@@ -1217,7 +1217,7 @@ private:
                 if (!ignoring_hosts.count(host))
                 {
                     ignoring_hosts.emplace(host);
-                    LOG_INFO(log, "Unexpected host " << host << " appeared " << " in task " << node_path);
+                    LOG_INFO_FORMATTED(log, "Unexpected host {} appeared  in task {}", host, node_path);
                 }
                 continue;
             }
