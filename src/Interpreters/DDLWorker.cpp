@@ -386,11 +386,11 @@ void DDLWorker::processTasks()
         {
             if (current_task->entry_name == entry_name)
             {
-                LOG_INFO(log, "Trying to process task " << entry_name << " again");
+                LOG_INFO_FORMATTED(log, "Trying to process task {} again", entry_name);
             }
             else
             {
-                LOG_INFO(log, "Task " << current_task->entry_name << " was deleted from ZooKeeper before current host committed it");
+                LOG_INFO_FORMATTED(log, "Task {} was deleted from ZooKeeper before current host committed it", current_task->entry_name);
                 current_task = nullptr;
             }
         }
@@ -863,7 +863,7 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             /// Skip if there are active nodes (it is weak guard)
             if (zookeeper->exists(node_path + "/active", &stat) && stat.numChildren > 0)
             {
-                LOG_INFO(log, "Task " << node_name << " should be deleted, but there are active workers. Skipping it.");
+                LOG_INFO_FORMATTED(log, "Task {} should be deleted, but there are active workers. Skipping it.", node_name);
                 continue;
             }
 
@@ -872,14 +872,14 @@ void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zo
             auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
             if (!lock->tryLock())
             {
-                LOG_INFO(log, "Task " << node_name << " should be deleted, but it is locked. Skipping it.");
+                LOG_INFO_FORMATTED(log, "Task {} should be deleted, but it is locked. Skipping it.", node_name);
                 continue;
             }
 
             if (node_lifetime_is_expired)
-                LOG_INFO(log, "Lifetime of task " << node_name << " is expired, deleting it");
+                LOG_INFO_FORMATTED(log, "Lifetime of task {} is expired, deleting it", node_name);
             else if (node_is_outside_max_window)
-                LOG_INFO(log, "Task " << node_name << " is outdated, deleting it");
+                LOG_INFO_FORMATTED(log, "Task {} is outdated, deleting it", node_name);
 
             /// Deleting
             {
@@ -1027,7 +1027,7 @@ void DDLWorker::runMainThread()
             }
             else
             {
-                LOG_ERROR(log, "Unexpected ZooKeeper error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+                LOG_ERROR_FORMATTED(log, "Unexpected ZooKeeper error: {}. Terminating.", getCurrentExceptionMessage(true));
                 return;
             }
         }

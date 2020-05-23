@@ -47,7 +47,7 @@ void ClusterCopier::init()
         task_table.initShards(task_cluster->random_engine);
     }
 
-    LOG_DEBUG(log, "Will process " << task_cluster->table_tasks.size() << " table tasks");
+    LOG_DEBUG_FORMATTED(log, "Will process {} table tasks", task_cluster->table_tasks.size());
 
     /// Do not initialize tables, will make deferred initialization in process()
 
@@ -181,7 +181,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]() { discoverShardPartitions(timeouts, task_shard); });
 
-        LOG_DEBUG(log, "Waiting for " << thread_pool.active() << " setup jobs");
+        LOG_DEBUG_FORMATTED(log, "Waiting for {} setup jobs", thread_pool.active());
         thread_pool.wait();
     }
 }
@@ -484,7 +484,7 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
 
         if (!is_clean)
         {
-            LOG_INFO(log, "Partition " << partition_name << " become dirty");
+            LOG_INFO_FORMATTED(log, "Partition {} become dirty", partition_name);
             return false;
         }
 
@@ -511,7 +511,7 @@ bool ClusterCopier::checkPartitionPieceIsDone(const TaskTable & task_table, cons
     {
         if (zxid1[shard_num] != zxid2[shard_num])
         {
-            LOG_INFO(log, "The task " << piece_status_paths[shard_num] << " is being modified now. Partition piece will be rechecked");
+            LOG_INFO_FORMATTED(log, "The task {} is being modified now. Partition piece will be rechecked", piece_status_paths[shard_num]);
             return false;
         }
     }
@@ -530,7 +530,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         inject_fault = value < move_fault_probability;
     }
 
-    LOG_DEBUG(log, "Try to move  " << partition_name << " to destionation table");
+    LOG_DEBUG_FORMATTED(log, "Try to move  {} to destionation table", partition_name);
 
     auto zookeeper = context.getZooKeeper();
 
@@ -794,7 +794,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         {
             if (e.code == Coordination::ZNODEEXISTS)
             {
-                LOG_DEBUG(log, "Partition " << task_partition.name << " is being filled now by somebody, sleep");
+                LOG_DEBUG_FORMATTED(log, "Partition {} is being filled now by somebody, sleep", task_partition.name);
                 return false;
             }
 
@@ -841,7 +841,7 @@ bool ClusterCopier::tryDropPartitionPiece(
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
 
-        LOG_INFO(log, "DROP PARTITION was successfully executed on " << num_shards << " nodes of a cluster.");
+        LOG_INFO_FORMATTED(log, "DROP PARTITION was successfully executed on {} nodes of a cluster.", num_shards);
 
         /// Update the locking node
         if (!my_clock.is_stale())
@@ -889,7 +889,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
         ++cluster_partition.total_tries;
 
-        LOG_DEBUG(log, "Processing partition " << partition_name << " for the whole cluster");
+        LOG_DEBUG_FORMATTED(log, "Processing partition {} for the whole cluster", partition_name);
 
         /// Process each source shard having current partition and copy current partition
         /// NOTE: shards are sorted by "distance" to current host
@@ -1591,7 +1591,7 @@ void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
 
-        LOG_DEBUG(log, "DROP TABLE query was successfully executed on " << toString(num_nodes) << " nodes.");
+        LOG_DEBUG_FORMATTED(log, "DROP TABLE query was successfully executed on {} nodes.", toString(num_nodes));
     }
 }
 
@@ -1618,7 +1618,7 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
 
-        LOG_DEBUG(log, "DROP PARTITION query was successfully executed on " << toString(num_nodes) << " nodes.");
+        LOG_DEBUG_FORMATTED(log, "DROP PARTITION query was successfully executed on {} nodes.", toString(num_nodes));
     }
     LOG_DEBUG_FORMATTED(log, "All helping tables dropped partition {}", partition_name);
 }

@@ -1100,7 +1100,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     calculateColumnSizesImpl();
 
-    LOG_DEBUG(log, "Loaded data parts (" << data_parts_indexes.size() << " items)");
+    LOG_DEBUG_FORMATTED(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
 
 
@@ -1197,7 +1197,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     }
 
     if (!res.empty())
-        LOG_TRACE(log, "Found " << res.size() << " old parts to remove.");
+        LOG_TRACE_FORMATTED(log, "Found {} old parts to remove.", res.size());
 
     return res;
 }
@@ -2771,7 +2771,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
                 renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name);
     }
 
-    LOG_DEBUG(log, "Will drop " << renamed_parts.old_and_new_names.size() << " detached parts.");
+    LOG_DEBUG_FORMATTED(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
 
     renamed_parts.tryRenameAll();
 
@@ -3300,7 +3300,7 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         ++parts_processed;
     }
 
-    LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+    LOG_DEBUG_FORMATTED(log, "Freezed {} parts", parts_processed);
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
@@ -3486,7 +3486,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
 
 bool MergeTreeData::moveParts(CurrentlyMovingPartsTagger && moving_tagger)
 {
-    LOG_INFO(log, "Got " << moving_tagger.parts_to_move.size() << " parts to move.");
+    LOG_INFO_FORMATTED(log, "Got {} parts to move.", moving_tagger.parts_to_move.size());
 
     for (const auto & moving_part : moving_tagger.parts_to_move)
     {

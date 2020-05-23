@@ -174,7 +174,7 @@ Pipes StorageKafka::read(
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, context, column_names, 1)));
     }
 
-    LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
+    LOG_DEBUG_FORMATTED(log, "Starting reading {} streams", pipes.size());
     return pipes;
 }
 
@@ -391,7 +391,7 @@ void StorageKafka::threadFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
+                LOG_DEBUG_FORMATTED(log, "Started streaming to {} attached views", dependencies_count);
 
                 // Reschedule if not limited
                 if (!streamToViews())

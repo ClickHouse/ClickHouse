@@ -850,7 +850,7 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal (" << strsignal(signal_id) << ")");
+    LOG_INFO_FORMATTED(&logger(), "Received termination signal ({})", strsignal(signal_id));
 
     if (sigint_signals_counter >= 2)
     {

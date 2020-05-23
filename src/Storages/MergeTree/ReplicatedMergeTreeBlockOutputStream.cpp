@@ -151,7 +151,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with " << current_block.block.rows() << " rows");
+            LOG_DEBUG_FORMATTED(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
         try
@@ -214,7 +214,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     if (!block_number_lock)
     {
-        LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it.");
+        LOG_INFO_FORMATTED(log, "Block with ID {} already exists; ignoring it.", block_id);
         part->is_duplicate = true;
         last_block_is_duplicate = true;
         ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);

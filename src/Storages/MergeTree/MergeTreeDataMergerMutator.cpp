@@ -633,7 +633,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
     {
-        LOG_INFO(log, "Part " << new_data_part->name << " has values with expired TTL, but merges with TTL are cancelled.");
+        LOG_INFO_FORMATTED(log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", new_data_part->name);
         need_remove_expired_values = false;
     }
 

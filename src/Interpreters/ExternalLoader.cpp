@@ -271,7 +271,7 @@ private:
                 return false;
             }
 
-            LOG_TRACE(log, "Loading config file '" << path << "'.");
+            LOG_TRACE_FORMATTED(log, "Loading config file '{}'.", path);
             file_info.file_contents = repository.load(path);
             auto & file_contents = *file_info.file_contents;
 
@@ -475,7 +475,7 @@ public:
             {
                 const auto & info = it->second;
                 if (info.loaded() || info.isLoading())
-                    LOG_TRACE(log, "Unloading '" << name << "' because its configuration has been removed or detached");
+                    LOG_TRACE_FORMATTED(log, "Unloading '{}' because its configuration has been removed or detached", name);
                 infos.erase(it);
             }
         }
@@ -931,7 +931,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async)
     {
-        LOG_TRACE(log, "Start loading object '" << name << "'");
+        LOG_TRACE_FORMATTED(log, "Start loading object '{}'", name);
         try
         {
             /// Prepare for loading.
@@ -1045,12 +1045,12 @@ private:
         /// This is necessary because the object could be removed or load with another config while the `mutex` was unlocked.
         if (!info)
         {
-            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object was not found.");
+            LOG_TRACE_FORMATTED(log, "Next update time for '{}' will not be set because this object was not found.", name);
             return;
         }
         if (!info->isLoading())
         {
-            LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object is not currently loading.");
+            LOG_TRACE_FORMATTED(log, "Next update time for '{}' will not be set because this object is not currently loading.", name);
             return;
         }
         if (info->loading_id != loading_id)

@@ -214,7 +214,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureW
         auto parts_to_remove = getDataPartsVector();
         removePartsFromWorkingSet(parts_to_remove, true);
 
-        LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
+        LOG_INFO_FORMATTED(log, "Removed {} parts.", parts_to_remove.size());
     }
 
     clearOldMutations(true);
@@ -395,7 +395,7 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
     auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
     std::unique_lock lock(mutation_wait_mutex);
     mutation_wait_event.wait(lock, check);
-    LOG_INFO(log, "Mutation " << file_name << " done");
+    LOG_INFO_FORMATTED(log, "Mutation {} done", file_name);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context & query_context)

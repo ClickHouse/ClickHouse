@@ -376,7 +376,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
         {
             Poco::File(getMetadataPath() + file_name).renameTo(getMetadataPath() + object_name + ".sql");
-            LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
+            LOG_WARNING_FORMATTED(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
             process_metadata_file(object_name + ".sql");
         }
         else
@@ -442,7 +442,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
       */
     if (remove_empty && query.empty())
     {
-        LOG_ERROR(loger, "File " << metadata_file_path << " is empty. Removing.");
+        LOG_ERROR_FORMATTED(loger, "File {} is empty. Removing.", metadata_file_path);
         Poco::File(metadata_file_path).remove();
         return nullptr;
     }
