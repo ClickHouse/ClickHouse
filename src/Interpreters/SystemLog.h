@@ -61,6 +61,7 @@ namespace ErrorCodes
 }
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
+
 class Context;
 class QueryLog;
 class QueryThreadLog;
@@ -232,7 +233,9 @@ void SystemLog<LogElement>::add(const LogElement & element)
     if (is_shutdown)
         return;
 
-    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)     {         // The queue more than half full, time to flush.
+    if (queue.size() == DBMS_SYSTEM_LOG_QUEUE_SIZE / 2)
+    {
+        // The queue more than half full, time to flush.
         // We only check for strict equality, because messages are added one
         // by one, under exclusive lock, so we will see each message count.
         // It is enough to only wake the flushing thread once, after the message
@@ -245,7 +248,9 @@ void SystemLog<LogElement>::add(const LogElement & element)
         LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
     }
 
-    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)     {         // Ignore all further entries until the queue is flushed.
+    if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
+    {
+        // Ignore all further entries until the queue is flushed.
         // Log a message about that. Don't spam it -- this might be especially
         // problematic in case of trace log. Remember what the front index of the
         // queue was when we last logged the message. If it changed, it means the
