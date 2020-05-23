@@ -716,6 +716,8 @@ void SSDCachePartition::clearOldestBlocks()
                 "aio_nbytes=" + std::to_string(request.aio_nbytes) +
                 ", returned=" + std::to_string(event.res) + ".", ErrorCodes::AIO_READ_ERROR);
         }
+
+        __msan_unpoison(read_buffer_memory.data(), read_buffer_memory.size());
     }
 
     std::vector<UInt64> keys;

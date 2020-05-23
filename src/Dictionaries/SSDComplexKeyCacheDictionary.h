@@ -360,8 +360,6 @@ public:
 
     size_t getId() const;
 
-    PaddedPODArray<KeyRef> getCachedIds(const std::chrono::system_clock::time_point now) const;
-
     double getLoadFactor() const;
 
     size_t getElementCount() const;
@@ -460,8 +458,6 @@ public:
             TemporalComplexKeysPool & tmp_keys_pool,
             PresentIdHandler && on_updated, AbsentIdHandler && on_key_not_found,
             const DictionaryLifetime lifetime);
-
-    PaddedPODArray<KeyRef> getCachedIds() const;
 
     std::exception_ptr getLastException() const { return last_update_exception; }
 

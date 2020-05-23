@@ -747,6 +747,8 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
                 "aio_nbytes=" + std::to_string(request.aio_nbytes) +
                 ", returned=" + std::to_string(event.res) + ".", ErrorCodes::AIO_READ_ERROR);
         }
+
+        __msan_unpoison(read_buffer_memory.data(), read_buffer_memory.size());
     }
 
     TemporalComplexKeysPool tmp_keys_pool;
@@ -889,11 +891,6 @@ size_t SSDComplexKeyCachePartition::getBytesAllocated() const
     std::shared_lock lock(rw_lock);
     return 16.5 * key_to_index.capacity() + keys_pool.size() +
         (keys_buffer_pool ? keys_buffer_pool->size() : 0) + (memory ? memory->size() : 0);
-}
-
-PaddedPODArray<KeyRef> SSDComplexKeyCachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
-{
-    throw DB::Exception("Method not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void SSDComplexKeyCachePartition::remove()
@@ -1265,11 +1262,6 @@ void SSDComplexKeyCacheStorage::update(
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
-}
-
-PaddedPODArray<KeyRef> SSDComplexKeyCacheStorage::getCachedIds() const
-{
-    throw DB::Exception("Method not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 double SSDComplexKeyCacheStorage::getLoadFactor() const
