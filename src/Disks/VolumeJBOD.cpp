@@ -48,7 +48,7 @@ VolumeJBOD::VolumeJBOD(
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
         for (size_t i = 0; i < disks.size(); ++i)
             if (sizes[i] < max_data_part_size)
-                LOG_WARNING(logger, "Disk " << backQuote(disks[i]->getName()) << " on volume " << backQuote(config_prefix) << " have not enough space (" << formatReadableSizeWithBinarySuffix(sizes[i]) << ") for containing part the size of max_data_part_size (" << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
+                LOG_WARNING_FORMATTED(logger, "Disk {} on volume {} have not enough space ({}) for containing part the size of max_data_part_size ({})", backQuote(disks[i]->getName()), backQuote(config_prefix), formatReadableSizeWithBinarySuffix(sizes[i]), formatReadableSizeWithBinarySuffix(max_data_part_size));
     }
     static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
