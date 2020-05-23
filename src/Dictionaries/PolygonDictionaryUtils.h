@@ -202,7 +202,7 @@ public:
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kMultiProcessingDepth = 2;
-    static constexpr Coord kEps = 1e-6;
+    static constexpr Coord kEps = 1e-4;
 
 private:
     std::unique_ptr<ICell<ReturnCell>> root = nullptr;
