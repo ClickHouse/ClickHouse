@@ -354,6 +354,8 @@ private:
     template <size_t PASS>
     static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
+        // std::cerr << PASS << ", " << size << ", " << limit << "\n";
+
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
         Element * prev_buckets[HISTOGRAM_SIZE + 1];
@@ -479,7 +481,7 @@ private:
 
                 Element * start = buckets[i - 1];
                 ssize_t subsize = count[i];
-                ssize_t sublimit = limit - (buckets[i] - arr);
+                ssize_t sublimit = limit - (start - arr);
 
                 radixSortMSDInternalHelper<PASS - 1>(start, subsize, sublimit);
             }

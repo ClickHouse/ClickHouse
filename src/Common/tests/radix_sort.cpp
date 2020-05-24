@@ -2,10 +2,10 @@
 #include <pcg_random.hpp>
 #include <ext/bit_cast.h>
 
-#if defined(NDEBUG)
-#undef NDEBUG
+//#if defined(NDEBUG)
+//#undef NDEBUG
 #include <Common/RadixSort.h>
-#endif
+//#endif
 
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
@@ -13,7 +13,7 @@
 #include <Core/Defines.h>
 
 
-using Key = UInt32;
+using Key = double;
 
 static void NO_INLINE sort1(Key * data, size_t size)
 {
