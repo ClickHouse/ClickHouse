@@ -268,7 +268,7 @@ dbms_target_link_libraries (
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
-        clickhouse_jaegertracing
+#        clickhouse_jaegertracing
         Poco::JSON
         string_utils
     PUBLIC

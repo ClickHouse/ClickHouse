@@ -136,6 +136,8 @@ void Span::addLog(LogEntity log_entity, std::optional<UInt64> timestamp)
 
 void Span::attachSpanInfoToQueryLog()
 {
+    std::ignore = start_timestamp;
+
 //    if (!CurrentThread::getGroup())
 //        return;
 //
@@ -342,17 +344,17 @@ void DistributedTracer::InjectSpanContext(const std::shared_ptr<Span>& span, Wri
     }
 }
 
-std::shared_ptr<SpanContext> DistributedTracer::ExtractSpanContext(ReadBuffer & in) const
+std::shared_ptr<SpanContext> DistributedTracer::ExtractSpanContext(ReadBuffer & /*in*/) const
 {
     abort();
     // TODO: OR we need string??
-    SpanContext spanContext;
-    readVarUInt(spanContext.trace_id, in);
-    readVarUInt(spanContext.span_id, in);
-    spanContext.isInitialized = true;
-    if (!spanContext.trace_id)
-        abort(); // change to nullptr
-    return std::make_shared<SpanContext>(spanContext);
+//    SpanContext spanContext;
+//    readVarUInt(spanContext.trace_id, in);
+//    readVarUInt(spanContext.span_id, in);
+//    spanContext.isInitialized = true;
+//    if (!spanContext.trace_id)
+//        abort(); // change to nullptr
+//    return std::make_shared<SpanContext>(spanContext);
 }
 
 bool DistributedTracer::IsActiveTracer() const

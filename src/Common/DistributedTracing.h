@@ -86,7 +86,7 @@ private:
     std::vector<std::pair<String, TagValue>> tags;
     std::vector<std::pair<LogEntity, UInt64>> logs;
 
-    bool is_finished = false;
+//    bool is_finished = false;
 
     static TracingId generateTracingId();
 
