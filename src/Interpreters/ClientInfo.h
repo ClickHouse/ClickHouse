@@ -3,7 +3,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Core/Types.h>
 
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 
 namespace DB
 {

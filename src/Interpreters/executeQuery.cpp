@@ -34,7 +34,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 #include <Common/thread_local_rng.h>
 
 #include <Interpreters/DNSCacheUpdater.h>

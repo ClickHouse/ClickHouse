@@ -6,7 +6,7 @@
 #include <Common/EventCounter.h>
 #include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 
 #include <Common/Stopwatch.h>
 #include <Processors/ISource.h>

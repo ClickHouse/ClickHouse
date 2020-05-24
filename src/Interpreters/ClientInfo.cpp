@@ -7,7 +7,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 #include <unistd.h>
 
 #if !defined(ARCADIA_BUILD)

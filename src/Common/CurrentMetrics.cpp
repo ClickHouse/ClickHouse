@@ -98,10 +98,10 @@ namespace CurrentMetrics
 
     Metric end() { return END; }
 
-    void Increment::InitializeDistributedTracing(Metric metric, TracingMode tracing_mode)
+    void Increment::InitializeDistributedTracing(Metric /*metric*/, TracingMode /*tracing_mode*/)
     {
-        if (tracing_mode != TracingMode::NONE)
-            span_guard = std::make_shared<DB::opentracing::SpanGuard>(getName(metric));
+//        if (tracing_mode != TracingMode::NONE)
+//            span_guard = std::make_shared<DB::opentracing::SpanGuard>(getName(metric));
     }
 }
 

@@ -556,7 +556,7 @@ void HTTPHandler::processQuery(
                     && std::uniform_real_distribution<>()(thread_local_rng) <= settings.distributed_tracing_probability))
             {
                 // TODO full_query
-                context.setSpan(tracer->CreateSpan(full_query, std::move(references), std::nullopt));
+                context.setSpan(tracer->CreateSpan("HTTPHandler", std::move(references), std::nullopt));
 
                 if (const auto& span = context.getSpan())
                 {

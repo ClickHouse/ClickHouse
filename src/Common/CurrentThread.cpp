@@ -135,16 +135,16 @@ void CurrentThread::setSpan(std::shared_ptr<opentracing::Span>&& span_)
     current_thread->span = std::move(span_);
 }
 
-void CurrentThread::finishQuerySpan()
-{
-    if (unlikely(!current_thread))
-        return;
-
-    if (!current_thread->query_context)
-        abort();
-
-    if (const auto& span = current_thread->query_context->getSpan())
-        span->finishSpan();
-}
+//void CurrentThread::finishQuerySpan()
+//{
+//    if (unlikely(!current_thread))
+//        return;
+//
+//    if (!current_thread->query_context)
+//        abort();
+//
+//    if (const auto& span = current_thread->query_context->getSpan())
+//        span->finishSpan();
+//}
 
 }

@@ -10,7 +10,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Access/RowPolicy.h>
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>

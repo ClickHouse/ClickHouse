@@ -98,7 +98,7 @@ public:
     static std::shared_ptr<opentracing::Span> getSpan();
     static void setSpan(const std::shared_ptr<opentracing::Span>& span);
     static void setSpan(std::shared_ptr<opentracing::Span>&& span);
-    static void finishQuerySpan();
+//    static void finishQuerySpan();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope

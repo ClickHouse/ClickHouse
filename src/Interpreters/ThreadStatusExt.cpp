@@ -374,7 +374,9 @@ CurrentThread::QueryScope::~QueryScope()
         if (log_peak_memory_usage_in_destructor)
             logPeakMemoryUsage();
 
-        CurrentThread::finishQuerySpan();
+        if (auto span = CurrentThread::getGroup()->query_context->getSpan())
+            span->finishSpan();
+//        CurrentThread::finishQuerySpan();
         CurrentThread::detachQueryIfNotDetached();
     }
     catch (...)

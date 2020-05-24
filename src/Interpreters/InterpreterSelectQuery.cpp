@@ -65,7 +65,7 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Columns/Collator.h>
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>

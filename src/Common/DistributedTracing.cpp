@@ -1,11 +1,12 @@
 #include "DistributedTracing.h"
 
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/Context.h>
+//#include <Interpreters/QueryLog.h>
+//#include <Interpreters/Context.h>
 
 #include <Common/CurrentThread.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -21,11 +22,11 @@
 #    pragma GCC diagnostic ignored "-Wold-style-cast"
 #endif
 
-#include <thrift/protocol/TBinaryProtocol.h>
-#include <thrift/transport/TSocket.h>
-#include <thrift/transport/TTransportUtils.h>
-#include <thrift/transport/THttpClient.h>
-#include "./gen-cpp/Collector.h"
+//#include <thrift/protocol/TBinaryProtocol.h>
+//#include <thrift/transport/TSocket.h>
+//#include <thrift/transport/TTransportUtils.h>
+//#include <thrift/transport/THttpClient.h>
+//#include "./gen-cpp/Collector.h"
 
 
 namespace DB::ErrorCodes
@@ -133,236 +134,117 @@ void Span::addLog(LogEntity log_entity, std::optional<UInt64> timestamp)
 
 void Span::attachSpanInfoToQueryLog()
 {
-    if (!CurrentThread::getGroup())
-        return;
-
-    auto context = CurrentThread::getGroup()->query_context;
-
-    const Settings &settings = context->getSettingsRef();
-    if (!settings.log_queries)
-        return;
-
-    QueryLogElement elem;
-    elem.type = QueryLogElementType::QUERY_FINISH;
-
-    elem.query_start_time = start_timestamp;
-    elem.event_time = finish_timestamp;
-    elem.query = operation_name + " " + context->getDistributedTracer()->SerializeSpanContext(span_context);
-    elem.stack_trace = references.empty()
-       ? String()
-       : context->getDistributedTracer()->SerializeSpanContext(*references[0].second);
-    elem.client_info = context->getClientInfo();
-
-
-    String all_tags_string = "tags: {";
-    for (const auto& tag : tags)
-    {
-        // This is only for purposes of the draft.
-        all_tags_string += tag.first + "; ";
-    }
-    all_tags_string += "};";
-    elem.query += all_tags_string;
-
-    if (auto query_log = context->getQueryLog())
-        query_log->add(elem);
-
-
-    // Simplified way of sending spans to jaeger-collector
-    // (avoiding jaeger-agent) with jaeger-all-in-one in-memory instance.
-
-    using namespace jaegertracing::thrift;
-
-    jaegertracing::thrift::Span span;
-
-    span.traceIdLow = span_context.trace_id;
-    span.traceIdHigh = 1;
-    span.spanId = span_context.span_id;
-
-    span.parentSpanId = references.empty()
-                        ? 0
-                        : references[0].second->span_id;
-
-    span.flags = 2;
-    span.operationName = operation_name;
-    span.startTime = start_timestamp;
-    span.duration = finish_timestamp - start_timestamp;
-
-
-    jaegertracing::thrift::Process proc;
-    proc.serviceName = "ClickHouse";
-
-    jaegertracing::thrift::Batch batch;
-    batch.process = proc;
-    batch.spans.push_back(span);
-
-    std::shared_ptr<apache::thrift::transport::TMemoryBuffer> _buffer (new apache::thrift::transport::TMemoryBuffer(10000 /*maxPacketSize*/));
-    std::shared_ptr<apache::thrift::protocol::TProtocol> _protocol;
-    std::shared_ptr<apache::thrift::protocol::TProtocolFactory> protocolFactory(
-            new apache::thrift::protocol::TBinaryProtocolFactory());
-    _protocol = protocolFactory->getProtocol(_buffer);
-
-
-    _buffer->resetBuffer();
-
-    // Does the serialisation to Thrift
-    auto oprot = _protocol.get();
-    batch.write(oprot);
-    oprot->writeMessageEnd();
-    oprot->getTransport()->writeEnd();
-    oprot->getTransport()->flush();
-
-    uint8_t* data = nullptr;
-    uint32_t size = 0;
-    _buffer->getBuffer(&data, &size);
-
-    Poco::URI uri("http://localhost:14268/api/traces");
-    std::string path(uri.getPathAndQuery());
-
-    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, path, Poco::Net::HTTPMessage::HTTP_1_1);
-    Poco::Net::HTTPResponse response;
-
-    request.setContentType("application/vnd.apache.thrift.binary");
-
-
-    request.setContentLength(size);
-
-    std::ostream& os = session.sendRequest(request);
-    os.write(reinterpret_cast<char*>(data), size);
-
-    // request.write(std::cout);
-
-    std::istream &is = session.receiveResponse(response);
-
-    std::string s;
-    std::ostringstream os2;
-    os2 << is.rdbuf();
-    s = os2.str();
-
-    //std::cout << s << std::endl;
+//    if (!CurrentThread::getGroup())
+//        return;
+//
+//    auto context = CurrentThread::getGroup()->query_context;
+//
+//    const Settings &settings = context->getSettingsRef();
+//    if (!settings.log_queries)
+//        return;
+//
+//    QueryLogElement elem;
+//    elem.type = QueryLogElementType::QUERY_FINISH;
+//
+//    elem.query_start_time = start_timestamp;
+//    elem.event_time = finish_timestamp;
+//    elem.query = operation_name + " " + context->getDistributedTracer()->SerializeSpanContext(span_context);
+//    elem.stack_trace = references.empty()
+//       ? String()
+//       : context->getDistributedTracer()->SerializeSpanContext(*references[0].second);
+//    elem.client_info = context->getClientInfo();
+//
+//
+//    String all_tags_string = "tags: {";
+//    for (const auto& tag : tags)
+//    {
+//        // This is only for purposes of the draft.
+//        all_tags_string += tag.first + "; ";
+//    }
+//    all_tags_string += "};";
+//    elem.query += all_tags_string;
+//
+//    if (auto query_log = context->getQueryLog())
+//        query_log->add(elem);
+//
+//
+//    // Simplified way of sending spans to jaeger-collector
+//    // (avoiding jaeger-agent) with jaeger-all-in-one in-memory instance.
+//
+//    using namespace jaegertracing::thrift;
+//
+//    jaegertracing::thrift::Span span;
+//
+//    span.traceIdLow = span_context.trace_id;
+//    span.traceIdHigh = 1;
+//    span.spanId = span_context.span_id;
+//
+//    span.parentSpanId = references.empty()
+//                        ? 0
+//                        : references[0].second->span_id;
+//
+//    span.flags = 2;
+//    span.operationName = operation_name;
+//    span.startTime = start_timestamp;
+//    span.duration = finish_timestamp - start_timestamp;
+//
+//
+//    jaegertracing::thrift::Process proc;
+//    proc.serviceName = "ClickHouse";
+//
+//    jaegertracing::thrift::Batch batch;
+//    batch.process = proc;
+//    batch.spans.push_back(span);
+//
+//    std::shared_ptr<apache::thrift::transport::TMemoryBuffer> _buffer (new apache::thrift::transport::TMemoryBuffer(10000 /*maxPacketSize*/));
+//    std::shared_ptr<apache::thrift::protocol::TProtocol> _protocol;
+//    std::shared_ptr<apache::thrift::protocol::TProtocolFactory> protocolFactory(
+//            new apache::thrift::protocol::TBinaryProtocolFactory());
+//    _protocol = protocolFactory->getProtocol(_buffer);
+//
+//
+//    _buffer->resetBuffer();
+//
+//    // Does the serialisation to Thrift
+//    auto oprot = _protocol.get();
+//    batch.write(oprot);
+//    oprot->writeMessageEnd();
+//    oprot->getTransport()->writeEnd();
+//    oprot->getTransport()->flush();
+//
+//    uint8_t* data = nullptr;
+//    uint32_t size = 0;
+//    _buffer->getBuffer(&data, &size);
+//
+//    Poco::URI uri("http://localhost:14268/api/traces");
+//    std::string path(uri.getPathAndQuery());
+//
+//    Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
+//    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, path, Poco::Net::HTTPMessage::HTTP_1_1);
+//    Poco::Net::HTTPResponse response;
+//
+//    request.setContentType("application/vnd.apache.thrift.binary");
+//
+//
+//    request.setContentLength(size);
+//
+//    std::ostream& os = session.sendRequest(request);
+//    os.write(reinterpret_cast<char*>(data), size);
+//
+//    // request.write(std::cout);
+//
+//    std::istream &is = session.receiveResponse(response);
+//
+//    std::string s;
+//    std::ostringstream os2;
+//    os2 << is.rdbuf();
+//    s = os2.str();
+//
+//    //std::cout << s << std::endl;
 }
 
-std::shared_ptr<Span> getCurrentSpan()
-{
-    if (CurrentThread::getGroup())
-    {
-        if (auto context = CurrentThread::getGroup()->query_context)
-        {
-            if (context->getSettings().enable_distributed_tracing)
-            {
-                if (auto span = CurrentThread::getSpan())
-                {
-                    return span;
-                }
 
-                if (auto span = context->getSpan())
-                {
-                    return span;
-                }
-            }
-        }
-    }
 
-    return nullptr;
-}
-
-std::shared_ptr<IDistributedTracer> getCurrentTracer()
-{
-    if (CurrentThread::getGroup())
-    {
-        if (auto context = CurrentThread::getGroup()->query_context)
-        {
-            if (context->getSettings().enable_distributed_tracing)
-            {
-                return context->getDistributedTracer();
-            }
-        }
-    }
-    return std::make_shared<NoopTracer>();
-}
-
-std::shared_ptr<Span> switchToChildSpan(const String& operation_name)
-{
-    if (!CurrentThread::getGroup())
-    {
-        if (!!CurrentThread::getSpan())
-            abort();
-
-        return nullptr;
-    }
-
-    std::shared_ptr<Span> parent_span_ret = nullptr;
-    if (auto context = CurrentThread::getGroup()->query_context)
-    {
-        if (context->getSettings().enable_distributed_tracing)
-        {
-            auto parent_thread_span = CurrentThread::getSpan();
-
-            SpanReferenceList parent_reference;
-
-            if (!!parent_thread_span)
-            {
-                parent_reference.emplace_back(
-                    DB::opentracing::SpanReferenceType::ChildOfRef,
-                    std::make_shared<DB::opentracing::SpanContext>(parent_thread_span->getSpanContext()));
-                parent_span_ret = parent_thread_span;
-            } else if (const auto& parent_span = context->getSpan())
-            {
-                parent_reference.emplace_back(
-                        DB::opentracing::SpanReferenceType::ChildOfRef,
-                        std::make_shared<DB::opentracing::SpanContext>(parent_span->getSpanContext()));
-            }
-
-            if (!parent_reference.empty())
-            {
-                CurrentThread::setSpan(context->getDistributedTracer()->CreateSpan(
-                        operation_name,
-                        parent_reference,
-                        std::nullopt));
-
-                // CHECKME
-                if (!CurrentThread::getSpan())
-                    abort();
-            }
-        } else
-        {
-            if (!!CurrentThread::getSpan())
-                abort();
-        }
-    } else
-    {
-        if (!!CurrentThread::getSpan())
-            abort();
-    }
-
-    return parent_span_ret;
-}
-
-bool operator != (const SpanContext& lhs, const SpanContext& rhs)
-{
-    return !(lhs.trace_id == rhs.trace_id && lhs.span_id == rhs.span_id && lhs.isInitialized == rhs.isInitialized);
-}
-
-void switchToParentSpan(const std::shared_ptr<Span>& parent_span)
-{
-    // Here parent_span may be nullptr.
-
-    auto span = CurrentThread::getSpan();
-
-    if (!span)
-    {
-        // FIXME
-//        if (!!parent_span)
-//            abort();
-        return;
-    }
-
-    if (!!parent_span && *(span->getReferences()[0].second) != parent_span->getSpanContext())
-        abort();
-
-    span->finishSpan();
-    CurrentThread::setSpan(parent_span);
-}
 
 std::shared_ptr<Span> parkSpan(const std::shared_ptr<Span>& new_span)
 {
@@ -387,20 +269,6 @@ ParkingSpanGuard::~ParkingSpanGuard()
 //private:
 //    std::shared_ptr<DB::opentracing::Span> parked_span;
 //};
-
-
-SpanGuard::SpanGuard()
-    : parent_span(nullptr)
-{ }
-
-SpanGuard::SpanGuard(const String& operation_name)
-    : parent_span(switchToChildSpan(operation_name))
-{ }
-
-SpanGuard::~SpanGuard()
-{
-    switchToParentSpan(std::move(parent_span));
-}
 
 
 //! Tracer implementation.

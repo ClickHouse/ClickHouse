@@ -4,7 +4,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPipeline.h>
 
-#include <Common/DistributedTracing.h>
+#include <Interpreters/DistributedTracing.h>
 #include <Common/setThreadName.h>
 
 #include <ext/scope_guard.h>

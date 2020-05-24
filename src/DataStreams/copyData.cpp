@@ -24,7 +24,7 @@ bool isAtomicSet(std::atomic<bool> * val)
 template <typename TCancelCallback, typename TProgressCallback>
 void copyDataImpl(IBlockInputStream & from, IBlockOutputStream & to, TCancelCallback && is_cancelled, TProgressCallback && progress)
 {
-    opentracing::SpanGuard span_guard("copyDataImpl (not parallel)");
+//    opentracing::SpanGuard span_guard("copyDataImpl (not parallel)");
 
     from.readPrefix();
     to.writePrefix();
@@ -109,7 +109,7 @@ struct ParallelInsertsHandler
 
 static void copyDataImpl(BlockInputStreams & inputs, BlockOutputStreams & outputs)
 {
-    opentracing::SpanGuard span_guard("copyDataImpl (parallel)");
+//    opentracing::SpanGuard span_guard("copyDataImpl (parallel)");
 
     for (auto & output : outputs)
         output->writePrefix();
