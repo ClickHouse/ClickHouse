@@ -493,8 +493,11 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
     extern const int INCORRECT_DISK_INDEX = 525;
     extern const int UNKNOWN_VOLUME_TYPE = 526;
-    extern const int CASSANDRA_INTERNAL_ERROR = 527;
-    extern const int NOT_A_LEADER = 528;
+    extern const int INCONSISTENT_RESERVATIONS = 527;
+    extern const int NO_RESERVATIONS_PROVIDED = 528;
+    extern const int UNKNOWN_RAID_TYPE = 529;
+    extern const int CASSANDRA_INTERNAL_ERROR = 530;
+    extern const int NOT_A_LEADER = 531;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
