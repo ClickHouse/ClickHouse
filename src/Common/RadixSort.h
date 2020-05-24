@@ -386,6 +386,7 @@ private:
 
         /// How many buckets we will recurse into.
         ssize_t buckets_for_recursion = HISTOGRAM_SIZE;
+        bool finish_early = false;
 
         for (size_t i = 1; i < HISTOGRAM_SIZE; ++i)
         {
@@ -393,10 +394,11 @@ private:
             buckets[i] = buckets[i - 1] + count[i - 1];
 
             /// If this bucket starts after limit, we don't need it.
-            if (buckets[i] >= arr + limit)
+            if (!finish_early && buckets[i] >= arr + limit)
             {
                 buckets_for_recursion = i;
                 finish = buckets[i];
+                finish_early = true;
                 /// We cannot break here, because we need correct pointers to all buckets, see the next loop.
             }
         }
@@ -420,11 +422,6 @@ private:
             /// So, the beginning of i-th bucket is at buckets[i - 1].
 
             Element * bucket_end = buckets[i - 1] + count[i];
-            if (bucket_end == finish)
-            {
-                buckets[i] = bucket_end;
-                break;
-            }
 
             /// Fill this bucket.
             while (buckets[i] != bucket_end)
@@ -460,6 +457,9 @@ private:
                 /// Now we have the right element at this place.
                 ++buckets[i];
             }
+
+            if (bucket_end == finish)
+                break;
         }
 
         /// Recursion for the relevant buckets.
@@ -475,7 +475,7 @@ private:
                 radixSortMSDInternalHelper<PASS - 1>(start, subsize, subsize);
             }
 
-            /// Sort last necessary bucket with limit
+            /// Sort the last necessary bucket with limit
             {
                 ssize_t i = buckets_for_recursion - 1;
 
@@ -519,7 +519,8 @@ public:
     }
 
     /* Most significant digit radix sort
-     * Usually slower than LSD and is not stable, but allows partial sorting
+     * Is not stable, but allows partial sorting.
+     * And it's more cache-friendly than LSD variant.
      *
      * Based on https://github.com/voutcn/kxsort, license:
      * The MIT License
