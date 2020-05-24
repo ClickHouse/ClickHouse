@@ -17,7 +17,7 @@ TEST(S3UriTest, validPatterns)
 {
     {
         S3::URI uri(Poco::URI("https://jokserfn.s3.yandexcloud.net/data"));
-        ASSERT_EQ("https://jokserfn.s3.yandexcloud.net", uri.endpoint);
+        ASSERT_EQ("https://s3.yandexcloud.net", uri.endpoint);
         ASSERT_EQ("jokserfn", uri.bucket);
         ASSERT_EQ("data", uri.key);
     }
