@@ -1,17 +1,10 @@
 #include "VolumeRAID1.h"
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-}
 
 ReservationPtr VolumeRAID1::reserve(UInt64 bytes)
 {
