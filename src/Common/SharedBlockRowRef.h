@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <Columns/IColumn.h>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
@@ -83,6 +84,35 @@ struct SharedBlockRowRef
         shared_block = shared_block_;
         columns = columns_;
         row_num = row_num_;
+    }
+};
+
+struct SharedBlockRowWithSortDescriptionRef : SharedBlockRowRef
+{
+    SortDescription * description = nullptr;
+
+    void set(SharedBlockPtr & shared_block_, ColumnRawPtrs * columns_, size_t row_num_) = delete;
+
+    bool operator< (const SharedBlockRowRef & other) const
+    {
+        size_t size = columns->size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            int res = (*description)[i].direction * (*columns)[i]->compareAt(row_num, other.row_num, *(*other.columns)[i], 1);
+            if (res < 0)
+                return true;
+            else if (res > 0)
+                return false;
+        }
+        return false;
+    }
+
+    void set(SharedBlockPtr & shared_block_, ColumnRawPtrs * columns_, size_t row_num_, SortDescription * description_)
+    {
+        shared_block = shared_block_;
+        columns = columns_;
+        row_num = row_num_;
+        description = description_;
     }
 };
 

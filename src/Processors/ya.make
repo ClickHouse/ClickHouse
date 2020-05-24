@@ -129,6 +129,7 @@ SRCS(
     Transforms/MergeSortingTransform.cpp
     Transforms/MergingAggregatedMemoryEfficientTransform.cpp
     Transforms/MergingAggregatedTransform.cpp
+    Transforms/OptimizedPartialSortingTransform.cpp
     Transforms/PartialSortingTransform.cpp
     Transforms/ReverseTransform.cpp
     Transforms/RollupTransform.cpp
