@@ -354,7 +354,7 @@ private:
     template <size_t PASS>
     static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
-        //std::cerr << PASS << ", " << size << ", " << limit << "\n";
+//        std::cerr << PASS << ", " << size << ", " << limit << "\n";
 
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
@@ -527,9 +527,13 @@ public:
 
     /* Most significant digit radix sort
      * Is not stable, but allows partial sorting.
-     * And it's more cache-friendly than LSD variant.
+     * And it's more cache-friendly and usually faster than LSD variant.
      *
-     * NOTE: It's beneficial over std::partial_sort only if limit is above ~2% of size.
+     * NOTE: It's beneficial over std::partial_sort only if limit is above ~2% of size for 8 bit radix.
+     * NOTE: When lowering down limit to 1%, the radix of 4..6 or 10..12 bit started to become beneficial.
+     * For less than 1% limit, it's not recommended to use.
+     * NOTE: For huge arrays without limit, the radix 11 suddenly becomes better... but not for smaller arrays.
+     * Maybe it because histogram will fit in half of L1d cache (2048 * 4 = 16384).
      *
      * Based on https://github.com/voutcn/kxsort, license:
      * The MIT License
