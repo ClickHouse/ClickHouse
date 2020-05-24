@@ -24,35 +24,28 @@ using Polygon = IPolygonDictionary::Polygon;
 using Ring = IPolygonDictionary::Ring;
 using Box = bg::model::box<IPolygonDictionary::Point>;
 
-/** Generate edge indexes during its construction in
- *  the following way: sort all polygon's vertexes by x coordinate, and then store all interesting
- *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and
- *  iterates over them, finding required polygon. If there is more than one any such polygon may be returned.
- */
-class BucketsPolygonIndex
+/** SlabsPolygonIndex builds index based on shooting ray down from point.
+  * When this ray crosses odd number of edges in single polygon, point is considered inside. 
+  * 
+  * SlabsPolygonIndex divides plane into verical slabs, separated by verical lines going through all points.
+  * For each slab, all edges falling in that slab are effectively stored.
+  * For each find query, required slab is found with binary search, and result is computed
+  *  by iterating over all edges in that slab.
+  */
+class SlabsPolygonIndex
 {
 public:
-    /** A two-dimensional point in Euclidean coordinates. */
-    using Point = IPolygonDictionary::Point;
-    /** A polygon in boost is a an outer ring of points with zero or more cut out inner rings. */
-    using Polygon = IPolygonDictionary::Polygon;
-    /** A ring in boost used for describing the polygons. */
-    using Ring = IPolygonDictionary::Ring;
-
-    BucketsPolygonIndex() = default;
-
-    /** Builds an index by splitting all edges with provided sorted x coordinates. */
-    BucketsPolygonIndex(const std::vector<Polygon> & polygons, const std::vector<Coord> & splits);
+    SlabsPolygonIndex() = default;
 
     /** Builds an index by splitting all edges with all points x coordinates. */
-    BucketsPolygonIndex(const std::vector<Polygon> & polygons);
+    SlabsPolygonIndex(const std::vector<Polygon> & polygons);
 
     /** Finds polygon id the same way as IPolygonIndex. */
     bool find(const Point & point, size_t & id) const;
 
     /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
-     *  Invariant here is first point has x not greater than second point.
-     */
+      * Invariant here is first point has x not greater than second point.
+      */
     struct Edge
     {
         Point l;
@@ -69,6 +62,7 @@ public:
         static bool compare2(const Edge & a, const Edge & b);
     };
 
+    /** EdgeLine is optimized version of Edge. */
     struct EdgeLine
     {
         explicit EdgeLine(const Edge & e): k(e.k), b(e.b), polygon_id(e.polygon_id) {}
@@ -78,36 +72,26 @@ public:
     };
 
 private:
-    /** Returns unique x coordinates among all points. */
+    /** Returns unique x coordinates among all points */
     std::vector<Coord> uniqueX(const std::vector<Polygon> & polygons);
 
-    /** Builds indexes described above. */
+    /** Builds index described above */
     void indexBuild(const std::vector<Polygon> & polygons);
 
-    /** Auxiliary function for adding ring to index */
+    /** Auxiliary function for adding ring to the index */
     void indexAddRing(const Ring & ring, size_t polygon_id);
 
     Poco::Logger * log;
 
-    /** Sorted distinct coordinates of all vertexes. */
+    /** Sorted distinct coordinates of all vertexes */
     std::vector<Coord> sorted_x;
     std::vector<Edge> all_edges;
 
-    /** Edges from all polygons, classified by sorted_x borders.
-     *  edges_index[i] stores all interesting edges in range ( sorted_x[i]; sorted_x[i + 1] ]
-     *  That means edges_index.size() + 1 == sorted_x.size()
-     * 
-     *  std::vector<std::vector<Edge>> edges_index;
-     */
-
-    /** TODO: fix this and previous comments.
-     *  This edges_index_tree stores the same info as edges_index, but more efficiently.
-     *  To do that, edges_index_tree is actually a segment tree of segments between x coordinates.
-     *  edges_index_tree.size() == edges_index.size() * 2 == n * 2, and as in usual segment tree,
-     *  edges_index_tree[i] combines segments edges_index_tree[i*2] and edges_index_tree[i*2+1].
-     *  Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
-     *  placing it into O(log n) vertexes of this tree.
-     */
+    /** This edges_index_tree stores all slabs with edges efficiently, using segment tree algorithm.
+      * edges_index_tree[i] node combines segments from edges_index_tree[i*2] and edges_index_tree[i*2+1].
+      * Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
+      *  placing it into O(log n) nodes of this tree.
+      */
     std::vector<std::vector<EdgeLine>> edges_index_tree;
 };
 
@@ -137,7 +121,7 @@ class FinalCellWithSlabs : public ICell<FinalCellWithSlabs>
 public:
     explicit FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_);
 
-    BucketsPolygonIndex index;
+    SlabsPolygonIndex index;
     std::vector<size_t> corresponding_ids;
     size_t first_covered = kNone;
 
@@ -169,12 +153,12 @@ private:
 };
 
 /** A recursively built grid containing information about polygons intersecting each cell.
-*  The starting cell is the bounding box of the given polygons which are stored by reference.
-*  For every cell a vector of indices of intersecting polygons is stored, in the order originally provided upon
-*  construction. A cell is recursively split into kSplit * kSplit equal cells up to the point where the cell
-*  intersects a small enough number of polygons or the maximum allowed depth is exceeded.
-*  Both of these parameters are set in the constructor.
-*/
+  * The starting cell is the bounding box of the given polygons which are stored by reference.
+  * For every cell a vector of indices of intersecting polygons is stored, in the order originally provided upon
+  * construction. A cell is recursively split into kSplit * kSplit equal cells up to the point where the cell
+  * intersects a small enough number of polygons or the maximum allowed depth is exceeded.
+  * Both of these parameters are set in the constructor.
+  */
 template <class ReturnCell>
 class GridRoot : public ICell<ReturnCell>
 {
@@ -189,8 +173,8 @@ public:
     }
 
     /** Retrieves the cell containing a given point.
-     *  A null pointer is returned when the point falls outside the grid.
-     */
+      * A null pointer is returned when the point falls outside the grid.
+      */
     [[nodiscard]] const ReturnCell * find(Coord x, Coord y) const override
     {
         if (x < min_x || x >= max_x)

@@ -19,10 +19,10 @@ namespace DB
 namespace bg = boost::geometry;
 
 /** An interface for polygon dictionaries.
- *  Polygons are read and stored as multi_polygons from boost::geometry in Euclidean coordinates.
- *  An implementation should inherit from this base class and preprocess the data upon construction if needed.
- *  It must override the find method of this class which retrieves the polygon containing a single point.
- */
+  * Polygons are read and stored as multi_polygons from boost::geometry in Euclidean coordinates.
+  * An implementation should inherit from this base class and preprocess the data upon construction if needed.
+  * It must override the find method of this class which retrieves the polygon containing a single point.
+  */
 class IPolygonDictionary : public IDictionaryBase
 {
 public:
@@ -41,8 +41,8 @@ public:
         SimplePolygon
     };
     /** Controls the different types allowed for providing the coordinates of points.
-     *  Right now a point can be represented by either an array or a tuple of two Float64 values.
-     */
+      * Right now a point can be represented by either an array or a tuple of two Float64 values.
+      */
     enum class PointType
     {
         Array,
