@@ -283,6 +283,46 @@ private:
 };
 
 
+#if defined(SANITIZER)
+extern "C" void __sanitizer_set_death_callback(void (*)());
+
+static void sanitizerDeathCallback()
+{
+    Logger * log = &Logger::get("BaseDaemon");
+
+    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+
+    {
+        std::stringstream message;
+        message << "(version " << VERSION_STRING << VERSION_OFFICIAL << ")";
+        message << " (from thread " << getThreadId() << ")";
+        if (query_id.size == 0)
+            message << " (no query)";
+        else
+            message << " (query_id: " << query_id << ")";
+        message << " Sanitizer trap.";
+
+        LOG_FATAL(log, message.rdbuf());
+    }
+
+    /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
+    StackTrace stack_trace;
+    if (stack_trace.getSize())
+    {
+        std::stringstream bare_stacktrace;
+        bare_stacktrace << "Stack trace:";
+        for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
+            bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+
+        LOG_FATAL(log, bare_stacktrace.rdbuf());
+    }
+
+    /// Write symbolized stack trace line by line for better grep-ability.
+    stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+}
+#endif
+
+
 /** To use with std::set_terminate.
   * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
   *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
@@ -658,6 +698,10 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP}, signalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
+
+#if defined(SANITIZER)
+    __sanitizer_set_death_callback(sanitizerDeathCallback);
+#endif
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;

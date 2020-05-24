@@ -444,13 +444,10 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /** Customize this DataType
-      */
+    /// Customize this DataType
     void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
-private:
-    /** This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
-     */
+    /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
 

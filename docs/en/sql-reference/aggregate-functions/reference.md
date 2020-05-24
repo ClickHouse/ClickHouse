@@ -3,7 +3,7 @@ toc_priority: 36
 toc_title: Reference
 ---
 
-# Function Reference {#aggregate-functions-reference}
+# Aggregate Function Reference {#aggregate-functions-reference}
 
 ## count {#agg_function-count}
 
@@ -1259,7 +1259,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 Type: `Float32`.
 
 !!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select.md#select-order-by) for notes on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
 
 **Example**
 
@@ -1344,7 +1344,7 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 Type: `Float32`.
 
 !!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select.md#select-order-by) for notes on sorting `NaN` values.
+    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
 
 **Example**
 
@@ -1543,19 +1543,31 @@ It represents an unbiased estimate of the variance of a random variable if passe
 
 Returns `Float64`. When `n <= 1`, returns `+∞`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varSampStable` function. It works slower but provides a lower computational error.
+
 ## varPop(x) {#varpopx}
 
 Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `varPopStable` function. It works slower but provides a lower computational error.
+
 ## stddevSamp(x) {#stddevsampx}
 
 The result is equal to the square root of `varSamp(x)`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevSampStable` function. It works slower but provides a lower computational error.
+
 ## stddevPop(x) {#stddevpopx}
 
 The result is equal to the square root of `varPop(x)`.
+
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `stddevPopStable` function. It works slower but provides a lower computational error.
 
 ## topK(N)(x) {#topknx}
 
@@ -1641,13 +1653,22 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
 Returns Float64. When `n <= 1`, returns +∞.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarSampStable` function. It works slower but provides a lower computational error.
+
 ## covarPop(x, y) {#covarpopx-y}
 
 Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `covarPopStable` function. It works slower but provides a lower computational error.
+
 ## corr(x, y) {#corrx-y}
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "Note"
+    This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the `corrStable` function. It works slower but provides a lower computational error.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 

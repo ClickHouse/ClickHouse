@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: "Da\u011F\u0131l\u0131"
 ---
@@ -39,7 +39,7 @@ Veriler yalnızca okunmakla kalmaz, aynı zamanda uzak sunucularda kısmen işle
 
 Veritabanı adı yerine, bir dize döndüren sabit bir ifade kullanabilirsiniz. Örneğin: currentDatabase ().
 
-logs – The cluster name in the server’s config file.
+logs – The cluster name in the server's config file.
 
 Kümeler şöyle ayarlanır:
 
@@ -84,7 +84,7 @@ Yinelemeler sunucuları çoğaltılıyor (tüm verileri okumak için, yinelemele
 Küme adları nokta içermemelidir.
 
 Parametre `host`, `port` ve isteğe bağlı olarak `user`, `password`, `secure`, `compression` her sunucu için belirtilir:
-- `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn’t start. If you change the DNS record, restart the server.
+- `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
 - `port` – The TCP port for messenger activity (‘tcp\_port’ yapılandırmada, genellikle 9000 olarak ayarlanır). Http\_port ile karıştırmayın.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [Erişim hakları](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
@@ -103,7 +103,7 @@ Kümelerinizi görüntülemek için ‘system.clusters’ Tablo.
 
 Dağıtılmış motor, yerel bir sunucu gibi bir küme ile çalışmaya izin verir. Ancak, küme uzatılamaz: yapılandırmasını sunucu yapılandırma dosyasına yazmanız gerekir (tüm kümenin sunucuları için daha da iyisi).
 
-The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don’t need to create a Distributed table – use the ‘remote’ bunun yerine tablo işlevi. Bölümüne bakınız [Tablo fonksiyonları](../../../sql-reference/table-functions/index.md).
+The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don't need to create a Distributed table – use the ‘remote’ bunun yerine tablo işlevi. Bölümüne bakınız [Tablo fonksiyonları](../../../sql-reference/table-functions/index.md).
 
 Bir kümeye veri yazmak için iki yöntem vardır:
 
@@ -111,7 +111,7 @@ Bir kümeye veri yazmak için iki yöntem vardır:
 
 İkinci olarak, dağıtılmış bir tabloda ekleme gerçekleştirebilirsiniz. Bu durumda, tablo eklenen verileri sunucuların kendisine dağıtacaktır. Dağıtılmış bir tabloya yazmak için, bir sharding anahtar kümesi (son parametre) olmalıdır. Ek olarak, yalnızca bir parça varsa, yazma işlemi sharding anahtarını belirtmeden çalışır, çünkü bu durumda hiçbir şey ifade etmez.
 
-Her parça yapılandırma dosyasında tanımlanan bir ağırlığa sahip olabilir. Varsayılan olarak, ağırlık bir eşittir. Veriler, parça ağırlığı ile orantılı miktarda parçalara dağıtılır. Örneğin, iki parça varsa ve birincisi 9’luk bir ağırlığa sahipse, ikincisi 10’luk bir ağırlığa sahipse, ilk satırların 9 / 19 parçası gönderilir ve ikincisi 10 / 19 gönderilir.
+Her parça yapılandırma dosyasında tanımlanan bir ağırlığa sahip olabilir. Varsayılan olarak, ağırlık bir eşittir. Veriler, parça ağırlığı ile orantılı miktarda parçalara dağıtılır. Örneğin, iki parça varsa ve birincisi 9'luk bir ağırlığa sahipse, ikincisi 10'luk bir ağırlığa sahipse, ilk satırların 9 / 19 parçası gönderilir ve ikincisi 10 / 19 gönderilir.
 
 Her shard olabilir ‘internal\_replication’ yapılandırma dosyasında tanımlanan parametre.
 
@@ -119,18 +119,18 @@ Bu parametre şu şekilde ayarlanırsa ‘true’, yazma işlemi ilk sağlıklı
 
 Olarak ayarlan ifmışsa ‘false’ (varsayılan), veriler tüm kopyalara yazılır. Özünde, bu, dağıtılmış tablonun verilerin kendisini çoğalttığı anlamına gelir. Bu, çoğaltılmış tabloları kullanmaktan daha kötüdür, çünkü kopyaların tutarlılığı denetlenmez ve zamanla biraz farklı veriler içerirler.
 
-Bir veri satırının gönderildiği parçayı seçmek için, parçalama ifadesi analiz edilir ve kalan kısmı, parçaların toplam ağırlığına bölünmesinden alınır. Satır, kalanların yarı aralığına karşılık gelen parçaya gönderilir. ‘prev\_weight’ -e doğru ‘prev\_weights + weight’, nere ‘prev\_weights’ en küçük sayıya sahip parçaların toplam ağırlığı ve ‘weight’ bu parçanın ağırlığı. Örneğin, iki parça varsa ve birincisi 9’luk bir ağırlığa sahipse, ikincisi 10’luk bir ağırlığa sahipse, satır \[0, 9) aralığından kalanlar için ilk parçaya ve ikincisine \[9, 19) aralığından kalanlar için gönderilecektir.
+Bir veri satırının gönderildiği parçayı seçmek için, parçalama ifadesi analiz edilir ve kalan kısmı, parçaların toplam ağırlığına bölünmesinden alınır. Satır, kalanların yarı aralığına karşılık gelen parçaya gönderilir. ‘prev\_weight’ -e doğru ‘prev\_weights + weight’, nere ‘prev\_weights’ en küçük sayıya sahip parçaların toplam ağırlığı ve ‘weight’ bu parçanın ağırlığı. Örneğin, iki parça varsa ve birincisi 9'luk bir ağırlığa sahipse, ikincisi 10'luk bir ağırlığa sahipse, satır \[0, 9) aralığından kalanlar için ilk parçaya ve ikincisine \[9, 19) aralığından kalanlar için gönderilecektir.
 
 Sharding ifadesi, bir tamsayı döndüren sabitler ve tablo sütunlarından herhangi bir ifade olabilir. Örneğin, ifadeyi kullanabilirsiniz ‘rand()’ verilerin rastgele dağılımı için veya ‘UserID’ kullanıcının kimliğinin bölünmesinden kalanın dağıtımı için (daha sonra tek bir kullanıcının verileri, kullanıcılar tarafından çalışmayı ve katılmayı basitleştiren tek bir parçada bulunur). Sütunlardan biri yeterince eşit olarak dağıtılmazsa, onu bir karma işleve sarabilirsiniz: ınthash64(Userıd).
 
-Bölüm’den basit bir hatırlatma, sharding için sınırlı bir çözümdür ve her zaman uygun değildir. Orta ve büyük hacimlerde veri (düzinelerce sunucu) için çalışır, ancak çok büyük hacimlerde veri (yüzlerce sunucu veya daha fazla) için değildir. İkinci durumda, dağıtılmış tablolarda girdileri kullanmak yerine konu alanı tarafından gerekli olan sharding şemasını kullanın.
+Bölüm'den basit bir hatırlatma, sharding için sınırlı bir çözümdür ve her zaman uygun değildir. Orta ve büyük hacimlerde veri (düzinelerce sunucu) için çalışır, ancak çok büyük hacimlerde veri (yüzlerce sunucu veya daha fazla) için değildir. İkinci durumda, dağıtılmış tablolarda girdileri kullanmak yerine konu alanı tarafından gerekli olan sharding şemasını kullanın.
 
-SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don’t have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
+SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don't have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
 Aşağıdaki durumlarda sharding şeması hakkında endişelenmelisiniz:
 
 -   Belirli bir anahtar tarafından veri (veya birleştirme) birleştirme gerektiren sorgular kullanılır. Veriler bu anahtar tarafından parçalanırsa, GLOBAL IN veya GLOBAL JOİN yerine local IN veya JOİN kullanabilirsiniz, bu da çok daha etkilidir.
--   Çok sayıda küçük Sorgu ile çok sayıda sunucu (yüzlerce veya daha fazla) kullanılır (bireysel müşterilerin sorguları - web siteleri, reklamverenler veya ortaklar). Küçük sorguların tüm kümeyi etkilememesi için, tek bir istemci için tek bir parça üzerinde veri bulmak mantıklıdır. Alternatif olarak, Yandex’te yaptığımız gibi.Metrica, iki seviyeli sharding kurabilirsiniz: tüm kümeyi bölün “layers”, bir katmanın birden fazla parçadan oluşabileceği yer. Tek bir istemci için veriler tek bir katmanda bulunur, ancak kırıklar gerektiğinde bir katmana eklenebilir ve veriler rastgele dağıtılır. Her katman için dağıtılmış tablolar oluşturulur ve genel sorgular için tek bir paylaşılan dağıtılmış tablo oluşturulur.
+-   Çok sayıda küçük Sorgu ile çok sayıda sunucu (yüzlerce veya daha fazla) kullanılır (bireysel müşterilerin sorguları - web siteleri, reklamverenler veya ortaklar). Küçük sorguların tüm kümeyi etkilememesi için, tek bir istemci için tek bir parça üzerinde veri bulmak mantıklıdır. Alternatif olarak, Yandex'te yaptığımız gibi.Metrica, iki seviyeli sharding kurabilirsiniz: tüm kümeyi bölün “layers”, bir katmanın birden fazla parçadan oluşabileceği yer. Tek bir istemci için veriler tek bir katmanda bulunur, ancak kırıklar gerektiğinde bir katmana eklenebilir ve veriler rastgele dağıtılır. Her katman için dağıtılmış tablolar oluşturulur ve genel sorgular için tek bir paylaşılan dağıtılmış tablo oluşturulur.
 
 Veriler zaman uyumsuz olarak yazılır. Tabloya eklendiğinde, veri bloğu sadece yerel dosya sistemine yazılır. Veriler en kısa sürede arka planda uzak sunuculara gönderilir. Veri gönderme süresi tarafından yönetilir [distributed\_directory\_monitor\_sleep\_time\_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) ve [distributed\_directory\_monitor\_max\_sleep\_time\_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) ayarlar. Bu `Distributed` motor ayrı ayrı eklenen verilerle her dosyayı gönderir, ancak toplu dosya gönderme etkinleştirebilirsiniz [distributed\_directory\_monitor\_batch\_ınserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) ayar. Bu ayar, yerel sunucu ve ağ kaynaklarını daha iyi kullanarak küme performansını artırır. Tablo dizinindeki dosyaların listesini (gönderilmeyi bekleyen veriler) kontrol ederek verilerin başarıyla gönderilip gönderilmediğini kontrol etmelisiniz: `/var/lib/clickhouse/data/database/table/`.
 

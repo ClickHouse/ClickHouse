@@ -73,6 +73,7 @@ private:
 
     Pipes spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
+        size_t num_streams,
         const Names & column_names,
         UInt64 max_block_size,
         bool use_uncompressed_cache,

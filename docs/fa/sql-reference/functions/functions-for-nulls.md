@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: "\u06A9\u0627\u0631 \u0628\u0627 Nullable \u0627\u0633\u062A\u062F\u0644\
   \u0627\u0644"
 ---
 
-# توابع برای کار با nullable مصالح {#functions-for-working-with-nullable-aggregates}
+# توابع برای کار با Nullable مصالح {#functions-for-working-with-nullable-aggregates}
 
 ## isNull {#isnull}
 

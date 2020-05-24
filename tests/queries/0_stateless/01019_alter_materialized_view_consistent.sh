@@ -31,12 +31,18 @@ function insert_thread() {
     INSERT[1]="INSERT INTO TABLE src_b VALUES (2);"
 
     while true; do
-        # trigger 100 concurrent inserts at a time
-        for i in {0..100}; do
+        # trigger 50 concurrent inserts at a time
+        for i in {0..50}; do
             # ignore `Possible deadlock avoided. Client should retry`
             $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
         done
         wait
+
+        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
+
+        if [ "$is_done" -eq "1" ]; then
+            break
+        fi
     done
 }
 
@@ -50,28 +56,23 @@ function alter_thread() {
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 \
         -q "${ALTER[$RANDOM % 2]}"
         sleep "0.0$RANDOM"
+
+        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
+
+        if [ "$is_done" -eq "1" ]; then
+            break
+        fi
     done
 }
 
 export -f insert_thread;
 export -f alter_thread;
 
-timeout 30 bash -c insert_thread &
-timeout 30 bash -c alter_thread &
-
-function check_thread() {
-    while true; do
-    is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
-
-    if [ "$is_done" -eq "1" ]; then
-        break
-    fi
-    done
-}
-
-export -f check_thread
-timeout 30 bash -c check_thread
+# finishes much faster with all builds, except debug with coverage
+timeout 120 bash -c insert_thread &
+timeout 120 bash -c alter_thread &
 
 wait
 
+$CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv LIMIT 1;"
 $CLICKHOUSE_CLIENT -q "SELECT 'inconsistencies', count() FROM mv WHERE test == 0;"

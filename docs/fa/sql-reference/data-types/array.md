@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 51
 toc_title: "& \u062A\u0648\u0631\u06CC)"
 ---
@@ -63,7 +63,7 @@ SELECT array(1, 2, NULL) AS x, toTypeName(x)
 └────────────┴───────────────────────────────┘
 ```
 
-اگر شما سعی می کنید برای ایجاد یک آرایه از ناسازگار انواع داده ها clickhouse پرتاب یک استثنا:
+اگر شما سعی می کنید برای ایجاد مجموعه ای از انواع داده های ناسازگار, تاتر می اندازد یک استثنا:
 
 ``` sql
 SELECT array(1, 'a')

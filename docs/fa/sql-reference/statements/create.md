@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 35
 toc_title: CREATE
 ---
@@ -18,23 +18,19 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 ### بند {#clauses}
 
 -   `IF NOT EXISTS`
+    اگر `db_name` پایگاه داده از قبل وجود دارد, سپس کلیک هاوس می کند یک پایگاه داده جدید ایجاد کنید و:
 
-        If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
-
-        - Doesn't throw an exception if clause is specified.
-        - Throws an exception if clause isn't specified.
+    -   اگر بند مشخص شده است یک استثنا پرتاب نمی کند.
+    -   می اندازد یک استثنا اگر بند مشخص نشده است.
 
 -   `ON CLUSTER`
-
-        ClickHouse creates the `db_name` database on all the servers of a specified cluster.
+    کلیک ایجاد می کند `db_name` پایگاه داده در تمام سرورهای یک خوشه مشخص.
 
 -   `ENGINE`
 
-        - [MySQL](../engines/database_engines/mysql.md)
-
-            Allows you to retrieve data from the remote MySQL server.
-
-        By default, ClickHouse uses its own [database engine](../engines/database_engines/index.md).
+    -   [MySQL](../../engines/database-engines/mysql.md)
+        به شما اجازه می دهد برای بازیابی اطلاعات از سرور خروجی زیر از راه دور.
+        به طور پیش فرض, تاتر با استفاده از خود [موتور دادگان](../../engines/database-engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 
@@ -49,7 +45,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = engine
 ```
 
-ایجاد یک جدول به نام ‘name’ در ‘db’ پایگاه داده یا پایگاه داده فعلی اگر ‘db’ تنظیم نشده است, با ساختار مشخص شده در براکت و ‘engine’ موتور.
+ایجاد یک جدول به نام ‘name’ در ‘db’ پایگاه داده یا پایگاه داده فعلی اگر ‘db’ تنظیم نشده است, با ساختار مشخص شده در براکت و ‘engine’ موتور
 ساختار جدول یک لیست از توصیف ستون است. اگر شاخص ها توسط موتور پشتیبانی می شوند به عنوان پارامتر برای موتور جدول نشان داده می شوند.
 
 شرح ستون است `name type` در ساده ترین حالت. مثال: `RegionID UInt32`.
@@ -75,7 +71,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 در همه موارد اگر `IF NOT EXISTS` مشخص شده است, پرس و جو یک خطا بازگشت نیست اگر جدول در حال حاضر وجود دارد. در این مورد پرس و جو هیچ کاری انجام نخواهد داد.
 
-می تواند بند دیگر پس از وجود دارد `ENGINE` بند در پرس و جو. دیدن مستندات دقیق در مورد چگونگی ایجاد جدول در شرح [موتورهای جدول](../../engines/table-engines/index.md#table_engines).
+می تواند بند دیگر پس از وجود دارد `ENGINE` بند در پرس و جو. مشاهده مستندات دقیق در مورد چگونگی ایجاد جداول در شرح [موتورهای جدول](../../engines/table-engines/index.md#table_engines).
 
 ### مقادیر پیشفرض {#create-default-values}
 
@@ -86,9 +82,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 اگر عبارت پیش فرض تعریف شده است, نوع ستون اختیاری است. در صورتی که یک نوع به صراحت تعریف شده وجود ندارد, نوع بیان پیش فرض استفاده شده است. مثال: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ نوع خواهد شد برای استفاده ‘EventDate’ ستون.
 
-اگر نوع داده ها و پیش فرض بیان تعریف شده به صراحت این را بیان خواهد شد بازیگران به نوع مشخص شده با استفاده از نوع مصاحبه توابع. مثال: `Hits UInt32 DEFAULT 0` معنی همان چیزی که به عنوان `Hits UInt32 DEFAULT toUInt32(0)`.
+اگر نوع داده ها و بیان پیش فرض به صراحت تعریف, این عبارت خواهد شد به نوع مشخص با استفاده از توابع نوع ریخته گری بازیگران. مثال: `Hits UInt32 DEFAULT 0` معنی همان چیزی که به عنوان `Hits UInt32 DEFAULT toUInt32(0)`.
 
-Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don’t contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
+Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions don't contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
 `DEFAULT expr`
 
@@ -187,7 +183,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-#### کدک های هدف مشترک {#create-query-common-purpose-codecs}
+#### کدکهای هدف عمومی {#create-query-general-purpose-codecs}
 
 کدکها:
 
@@ -202,7 +198,7 @@ ENGINE = MergeTree()
 
 تاتر از جداول موقت که دارای ویژگی های زیر:
 
--   جداول موقت ناپدید می شوند هنگامی که جلسه به پایان می رسد از جمله اگر اتصال از دست داده است.
+-   جداول موقت ناپدید می شوند زمانی که جلسه به پایان می رسد, از جمله اگر اتصال از دست داده است.
 -   جدول موقت با استفاده از موتور حافظه تنها.
 -   دسی بل را نمی توان برای یک جدول موقت مشخص شده است. این است که در خارج از پایگاه داده ایجاد شده است.
 -   غیر ممکن است برای ایجاد یک جدول موقت با پرس و جو توزیع دی ال در تمام سرورهای خوشه (با استفاده از `ON CLUSTER`): این جدول تنها در جلسه فعلی وجود دارد.
@@ -304,6 +300,203 @@ LIFETIME([MIN val1] MAX val2)
 
 بسته به فرهنگ لغت [طرحبندی](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) یک یا چند ویژگی را می توان به عنوان کلید فرهنگ لغت مشخص شده است.
 
-برای کسب اطلاعات بیشتر, دیدن [واژهنامهها خارجی](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) بخش.
+برای کسب اطلاعات بیشتر, دیدن [واژهنامهها خارجی](../dictionaries/external-dictionaries/external-dicts.md) بخش.
+
+## CREATE USER {#create-user-statement}
+
+ایجاد یک [حساب کاربری](../../operations/access-rights.md#user-account-management).
+
+### نحو {#create-user-syntax}
+
+``` sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+#### شناسایی {#identification}
+
+چندین راه برای شناسایی کاربر وجود دارد:
+
+-   `IDENTIFIED WITH no_password`
+-   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+-   `IDENTIFIED WITH sha256_password BY 'qwerty'` یا `IDENTIFIED BY 'password'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'`
+-   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+-   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+
+#### میزبان کاربر {#user-host}
+
+میزبان کاربر یک میزبان است که می تواند اتصال به سرور کلیک ایجاد شود. میزبان را می توان در `HOST` بخش پرس و جو به روش های زیر:
+
+-   `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). مثالها: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. برای استفاده در تولید فقط مشخص کنید `HOST IP` عناصر (نشانی اینترنتی و ماسک خود را), از زمان استفاده از `host` و `host_regexp` ممکن است تاخیر اضافی شود.
+-   `HOST ANY` — User can connect from any location. This is default option.
+-   `HOST LOCAL` — User can connect only locally.
+-   `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+-   `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) عبارات منظم در هنگام مشخص میزبان کاربر. به عنوان مثال, `HOST NAME REGEXP '.*\.mysite\.com'`.
+-   `HOST LIKE 'template'` — Allows you use the [LIKE](../functions/string-search-functions.md#function-like) اپراتور برای فیلتر کردن میزبان کاربر. به عنوان مثال, `HOST LIKE '%'` معادل است `HOST ANY`, `HOST LIKE '%.mysite.com'` فیلتر تمام میزبان در `mysite.com` دامنه.
+
+یکی دیگر از راه تعیین میزبان استفاده است `@` نحو با نام کاربر. مثالها:
+
+-   `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` نحو.
+-   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` نحو.
+-   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` نحو.
+
+!!! info "اخطار"
+    درمان کلیک `user_name@'address'` به عنوان یک نام کاربری به عنوان یک کل. بدین ترتیب, از لحاظ فنی شما می توانید چند کاربر با ایجاد `user_name` و سازه های مختلف پس از `@`. ما توصیه به انجام این کار.
+
+### مثالها {#create-user-examples}
+
+ایجاد حساب کاربری `mira` حفاظت شده توسط رمز عبور `qwerty`:
+
+``` sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
+```
+
+`mira` باید برنامه مشتری در میزبان که سرور کلیک اجرا می شود شروع می شود.
+
+ایجاد حساب کاربری `john` نقش ها را به طور پیش فرض اختصاص دهید و این نقش ها را پیش فرض کنید:
+
+``` sql
+CREATE USER john DEFAULT ROLE role1, role2
+```
+
+ایجاد حساب کاربری `john` و همه نقش های بعدی خود را به طور پیش فرض:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+هنگامی که برخی از نقش اختصاص داده خواهد شد به `john` در اینده این تبدیل خواهد شد به طور پیش فرض به طور خودکار.
+
+ایجاد حساب کاربری `john` و همه نقش های بعدی خود را به استثنای پیش فرض `role1` و `role2`:
+
+``` sql
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+## CREATE ROLE {#create-role-statement}
+
+ایجاد یک [نقش](../../operations/access-rights.md#role-management).
+
+### نحو {#create-role-syntax}
+
+``` sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### توصیف {#create-role-description}
+
+نقش مجموعه ای از [امتیازات](grant.md#grant-privileges). کاربر اعطا شده با نقش می شود تمام امتیازات این نقش.
+
+کاربر را می توان با نقش های متعدد اختصاص داده است. کاربران می توانند نقش اعطا خود را در ترکیب دلخواه توسط اعمال [SET ROLE](misc.md#set-role-statement) بیانیه. دامنه نهایی امتیازات مجموعه ای ترکیبی از تمام امتیازات تمام نقش های کاربردی است. اگر یک کاربر امتیازات اعطا شده به طور مستقیم به حساب کاربری نیز با امتیازات اعطا شده توسط نقش ترکیب شده است.
+
+کاربر می تواند نقش پیش فرض که در ورود کاربر اعمال می شود. برای تنظیم نقش های پیش فرض از [SET DEFAULT ROLE](misc.md#set-default-role-statement) بیانیه یا [ALTER USER](alter.md#alter-user-statement) بیانیه.
+
+برای لغو نقش از [REVOKE](revoke.md) بیانیه.
+
+برای حذف نقش از [DROP ROLE](misc.md#drop-role-statement) بیانیه. نقش حذف شده به طور خودکار از تمام کاربران و نقش هایی که اعطا شد لغو می شود.
+
+### مثالها {#create-role-examples}
+
+``` sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+این دنباله ای از نمایش داده شد نقش ایجاد می کند `accountant` که دارای امتیاز از خواندن داده ها از `accounting` بانک اطلاعات.
+
+اعطای نقش به کاربر `mira`:
+
+``` sql
+GRANT accountant TO mira;
+```
+
+کاربر پس از این نقش اعطا می تواند استفاده و انجام نمایش داده شد مجاز است. به عنوان مثال:
+
+``` sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```
+
+## CREATE ROW POLICY {#create-row-policy-statement}
+
+ایجاد یک [پالایه برای سطرها](../../operations/access-rights.md#row-policy-management), که یک کاربر می تواند از یک جدول به عنوان خوانده شده.
+
+### نحو {#create-row-policy-syntax}
+
+``` sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING condition]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+#### بخش به عنوان {#create-row-policy-as}
+
+با استفاده از این بخش شما می توانید سیاست های مجاز و یا محدود ایجاد کنید.
+
+سیاست مجاز دسترسی به ردیف کمک های مالی. سیاست های مجاز که به همان جدول اعمال می شود با هم با استفاده از بولی ترکیب `OR` اپراتور سیاست های مجاز به طور پیش فرض.
+
+سیاست محدود کننده دسترسی به ردیف محدود می کند. سیاست های محدود که به همان جدول اعمال می شود با هم با استفاده از بولی ترکیب شده است `AND` اپراتور
+
+سیاست های محدود به ردیف که فیلترهای مجاز گذشت اعمال می شود. اگر شما در تنظیم سیاست های محدود اما هیچ سیاست مجاز کاربر هر سطر از جدول می توانید.
+
+#### بخش به {#create-row-policy-to}
+
+در بخش `TO` شما می توانید یک لیست ترکیبی از نقش ها و کاربران را, مثلا, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+کلیدواژه `ALL` به معنی تمام کاربران کلیک از جمله کاربر فعلی. کلیدواژهها `ALL EXCEPT` اجازه می دهد به حذف برخی از کاربران از لیست تمام کاربران به عنوان مثال `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+### مثالها {#examples}
+
+-   `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
+-   `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
+
+## CREATE QUOTA {#create-quota-statement}
+
+ایجاد یک [سهمیه](../../operations/access-rights.md#quotas-management) این را می توان به یک کاربر یا نقش اختصاص داد.
+
+### نحو {#create-quota-syntax}
+
+``` sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+### مثال {#create-quota-example}
+
+محدود کردن حداکثر تعداد نمایش داده شد برای کاربر فعلی با 123 نمایش داده شد در 15 ماه محدودیت:
+
+``` sql
+CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
+```
+
+## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
+
+ایجاد یک [تنظیمات](../../operations/access-rights.md#settings-profiles-management) این را می توان به یک کاربر یا نقش اختصاص داد.
+
+### نحو {#create-settings-profile-syntax}
+
+``` sql
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
+
+# مثال {#create-settings-profile-syntax}
+
+ایجاد `max_memory_usage_profile` مشخصات تنظیمات با ارزش و محدودیت برای `max_memory_usage` تنظیمات. انتساب به `robin`:
+
+``` sql
+CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
+```
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->

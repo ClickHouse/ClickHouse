@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: Distribuido
 ---
@@ -39,7 +39,7 @@ Por ejemplo, para una consulta con GROUP BY, los datos se agregarán en servidor
 
 En lugar del nombre de la base de datos, puede usar una expresión constante que devuelva una cadena. Por ejemplo: currentDatabase().
 
-logs – The cluster name in the server’s config file.
+logs – The cluster name in the server's config file.
 
 Los clústeres se establecen así:
 
@@ -84,7 +84,7 @@ Las réplicas están duplicando servidores (para leer todos los datos, puede acc
 Los nombres de clúster no deben contener puntos.
 
 Los parámetros `host`, `port`, y opcionalmente `user`, `password`, `secure`, `compression` se especifican para cada servidor:
-- `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn’t start. If you change the DNS record, restart the server.
+- `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.
 - `port` – The TCP port for messenger activity (‘tcp\_port’ en la configuración, generalmente establecido en 9000). No lo confundas con http\_port.
 - `user` – Name of the user for connecting to a remote server. Default value: default. This user must have access to connect to the specified server. Access is configured in the users.xml file. For more information, see the section [Derechos de acceso](../../../operations/access-rights.md).
 - `password` – The password for connecting to a remote server (not masked). Default value: empty string.
@@ -103,7 +103,7 @@ Para ver los clústeres, utilice el ‘system.clusters’ tabla.
 
 El motor distribuido permite trabajar con un clúster como un servidor local. Sin embargo, el clúster es inextensible: debe escribir su configuración en el archivo de configuración del servidor (mejor aún, para todos los servidores del clúster).
 
-The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don’t need to create a Distributed table – use the ‘remote’ función de tabla en su lugar. Vea la sección [Funciones de tabla](../../../sql-reference/table-functions/index.md).
+The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don't need to create a Distributed table – use the ‘remote’ función de tabla en su lugar. Vea la sección [Funciones de tabla](../../../sql-reference/table-functions/index.md).
 
 Hay dos métodos para escribir datos en un clúster:
 
@@ -125,7 +125,7 @@ La expresión de fragmentación puede ser cualquier expresión de constantes y c
 
 Un simple recordatorio de la división es una solución limitada para sharding y no siempre es apropiado. Funciona para volúmenes medianos y grandes de datos (docenas de servidores), pero no para volúmenes muy grandes de datos (cientos de servidores o más). En este último caso, use el esquema de fragmentación requerido por el área asunto, en lugar de usar entradas en Tablas distribuidas.
 
-SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don’t have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
+SELECT queries are sent to all the shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don't have to transfer the old data to it. You can write new data with a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
 Debería preocuparse por el esquema de fragmentación en los siguientes casos:
 

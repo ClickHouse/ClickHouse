@@ -15,6 +15,7 @@
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -31,6 +32,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
 
 #include <Interpreters/DNSCacheUpdater.h>
@@ -45,6 +47,9 @@
 namespace ProfileEvents
 {
     extern const Event QueryMaskingRulesMatch;
+    extern const Event FailedQuery;
+    extern const Event FailedInsertQuery;
+    extern const Event FailedSelectQuery;
 }
 
 namespace DB
@@ -146,7 +151,7 @@ static void logException(Context & context, QueryLogElement & elem)
 }
 
 
-static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, ASTPtr ast)
 {
     /// Exception before the query execution.
     if (auto quota = context.getQuota())
@@ -178,6 +183,20 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
+
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+
+    if (ast)
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+        }
+        else if (ast->as<ASTInsertQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+        }
+    }
 }
 
 static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
@@ -196,8 +215,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage,
     bool has_query_tail,
-    ReadBuffer * istr,
-    bool allow_processors)
+    ReadBuffer * istr)
 {
     time_t current_time = time(nullptr);
 
@@ -249,7 +267,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
 
         throw;
     }
@@ -317,7 +335,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
+        bool use_processors = interpreter->canExecuteWithProcessors();
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -501,7 +519,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
@@ -544,6 +562,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
+
+                ProfileEvents::increment(ProfileEvents::FailedQuery);
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+                }
+
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -565,7 +594,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
         }
 
         throw;
@@ -580,13 +609,12 @@ BlockIO executeQuery(
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data,
-    bool allow_processors)
+    bool may_have_embedded_data)
 {
     ASTPtr ast;
     BlockIO streams;
     std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
-        internal, stage, !may_have_embedded_data, nullptr, allow_processors);
+        internal, stage, !may_have_embedded_data, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -599,6 +627,22 @@ BlockIO executeQuery(
     }
 
     return streams;
+}
+
+BlockIO executeQuery(
+        const String & query,
+        Context & context,
+        bool internal,
+        QueryProcessingStage::Enum stage,
+        bool may_have_embedded_data,
+        bool allow_processors)
+{
+    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data);
+
+    if (!allow_processors && res.pipeline.initialized())
+        res.in = res.getInputStream();
+
+    return res;
 }
 
 
@@ -647,7 +691,7 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr, true);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
 
     auto & pipeline = streams.pipeline;
 

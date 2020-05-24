@@ -17,11 +17,15 @@ def run_perf_test(cmd, xmls_path, output_folder):
 def run_func_test(cmd, output_prefix, num_processes, skip_tests_option):
     output_paths = [os.path.join(output_prefix, "stress_test_run_{}.txt".format(i)) for i in range(num_processes)]
     f = open(output_paths[0], 'w')
-    pipes = [Popen("{}".format(cmd), shell=True, stdout=f, stderr=f)]
+    main_command = "{} {}".format(cmd, skip_tests_option)
+    logging.info("Run func tests main cmd '%s'", main_command)
+    pipes = [Popen(main_command, shell=True, stdout=f, stderr=f)]
     for output_path in output_paths[1:]:
         time.sleep(0.5)
         f = open(output_path, 'w')
-        p = Popen("{} --order=random {}".format(cmd, skip_tests_option), shell=True, stdout=f, stderr=f)
+        full_command = "{} --order=random {}".format(cmd, skip_tests_option)
+        logging.info("Run func tests '%s'", full_command)
+        p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
     return pipes
 

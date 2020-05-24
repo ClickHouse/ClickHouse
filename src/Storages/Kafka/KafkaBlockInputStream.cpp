@@ -172,7 +172,7 @@ Block KafkaBlockInputStream::readImpl()
         }
     }
 
-    if (buffer->rebalanceHappened() || total_rows == 0)
+    if (buffer->polledDataUnusable() || total_rows == 0)
         return Block();
 
     /// MATERIALIZED columns can be added here, but I think
