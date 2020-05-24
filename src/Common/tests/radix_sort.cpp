@@ -1,14 +1,19 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <malloc.h>
-#endif
+#include <iomanip>
 #include <pcg_random.hpp>
 #include <ext/bit_cast.h>
+
+#if defined(NDEBUG)
+#undef NDEBUG
 #include <Common/RadixSort.h>
+#endif
+
 #include <Common/Stopwatch.h>
+#include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
 
-using Key = double;
+
+using Key = UInt32;
 
 static void NO_INLINE sort1(Key * data, size_t size)
 {
@@ -29,10 +34,15 @@ static void NO_INLINE sort3(Key * data, size_t size)
     });
 }
 
+static void NO_INLINE sort4(Key * data, size_t size)
+{
+    radixSortMSD(data, size, size);
+}
+
 
 int main(int argc, char ** argv)
 {
-    pcg64 rng;
+    pcg64 rng(randomSeed());
 
     if (argc < 3)
     {
@@ -43,9 +53,9 @@ int main(int argc, char ** argv)
     size_t n = DB::parse<size_t>(argv[1]);
     size_t method = DB::parse<size_t>(argv[2]);
 
-    std::vector<Key> data(n);
+    std::cerr << std::fixed << std::setprecision(3);
 
-//    srand(time(nullptr));
+    std::vector<Key> data(n);
 
     {
         Stopwatch watch;
@@ -70,13 +80,13 @@ int main(int argc, char ** argv)
         std::cerr << std::endl;
     }
 
-
     {
         Stopwatch watch;
 
-        if (method == 1)    sort1(data.data(), n);
-        if (method == 2)    sort2(data.data(), n);
-        if (method == 3)    sort3(data.data(), n);
+        if (method == 1) sort1(data.data(), n);
+        if (method == 2) sort2(data.data(), n);
+        if (method == 3) sort3(data.data(), n);
+        if (method == 4) sort4(data.data(), n);
 
         watch.stop();
         double elapsed = watch.elapsedSeconds();
@@ -87,6 +97,8 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
+    bool ok = true;
+
     {
         Stopwatch watch;
 
@@ -94,7 +106,10 @@ int main(int argc, char ** argv)
         while (i < n)
         {
             if (!(data[i - 1] <= data[i]))
+            {
+                ok = false;
                 break;
+            }
             ++i;
         }
 
@@ -105,10 +120,10 @@ int main(int argc, char ** argv)
             << " (" << n / elapsed << " elem/sec., "
             << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
             << std::endl
-            << "Result: " << (i == n ? "Ok." : "Fail!") << std::endl;
+            << "Result: " << (ok ? "Ok." : "Fail!") << std::endl;
     }
 
-    if (n <= 1000)
+    if (!ok && n <= 100000)
     {
         std::cerr << std::endl;
 
