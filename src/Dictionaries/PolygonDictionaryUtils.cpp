@@ -58,7 +58,7 @@ FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_,
         while (corresponding_ids.size() < intersections.size())
             corresponding_ids.push_back(id);
     }
-    index = BucketsPolygonIndex{intersections};
+    index = SlabsPolygonIndex{intersections};
 }
 
 const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
@@ -66,83 +66,65 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
     return this;
 }
 
-BucketsPolygonIndex::BucketsPolygonIndex(
-    const std::vector<Polygon> & polygons,
-    const std::vector<Coord> & splits)
-    : log(&Logger::get("BucketsPolygonIndex")),
-      sorted_x(splits)
-{
-    indexBuild(polygons);
-}
-
-BucketsPolygonIndex::BucketsPolygonIndex(
+SlabsPolygonIndex::SlabsPolygonIndex(
     const std::vector<Polygon> & polygons)
-    : log(&Logger::get("BucketsPolygonIndex")),
+    : log(&Logger::get("SlabsPolygonIndex")),
       sorted_x(uniqueX(polygons))
 {
     indexBuild(polygons);
 }
 
-std::vector<Coord> BucketsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
+std::vector<Coord> SlabsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
 {
     std::vector<Coord> all_x;
-    for (size_t i = 0; i < polygons.size(); ++i)
+    for (const auto & poly : polygons)
     {
-        for (auto & point : polygons[i].outer())
-        {
+        for (const auto & point : poly.outer())
             all_x.push_back(point.x());
-        }
 
-        for (auto & inner : polygons[i].inners())
-        {
-            for (auto & point : inner)
-            {
+        for (const auto & inner : poly.inners())
+            for (const auto & point : inner)
                 all_x.push_back(point.x());
-            }
-        }
     }
 
-    /** making all_x sorted and distinct */
+    /** Making all_x sorted and distinct */
     std::sort(all_x.begin(), all_x.end());
     all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
 
     LOG_TRACE(log, "Found " << all_x.size() << " unique x coordinates");
-
     return all_x;
 }
 
-void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
+void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
 {
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         indexAddRing(polygons[i].outer(), i);
 
         for (auto & inner : polygons[i].inners())
-        {
             indexAddRing(inner, i);
-        }
     }
 
-    /** sorting edges consisting of (left_point, right_point, polygon_id) in that order */
+    /** Sorting edges of (left_point, right_point, polygon_id) in that order */
     std::sort(this->all_edges.begin(), this->all_edges.end(), Edge::compare1);
     for (size_t i = 0; i != this->all_edges.size(); ++i)
     {
         this->all_edges[i].edge_id = i;
     }
     
-    /** total number of edges */
+    /** Total number of edges */
     size_t m = this->all_edges.size();
 
     LOG_TRACE(log, "Just sorted " << all_edges.size() << " edges from all " << polygons.size() << " polygons");
 
-    /** using custom comparator for fetching edges in right_point order, like in scanline */
+    /** Using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
     {
         return Edge::compare2(a, b);
     };
     std::set<Edge, decltype(cmp)> interesting_edges(cmp);
 
-    /** size of index (number of different x coordinates) */
+    /** Size of index (number of different x coordinates) */
     size_t n = 0;
     if (!this->sorted_x.empty())
     {
@@ -160,24 +142,22 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         const Coord lx = this->sorted_x[l];
         const Coord rx = this->sorted_x[r];
 
-        /** removing edges where right_point.x <= lx */
+        /** Removing edges where right_point.x <= lx */
         while (!interesting_edges.empty() && interesting_edges.begin()->r.x() <= lx)
         {
             edge_right[interesting_edges.begin()->edge_id] = l;
             interesting_edges.erase(interesting_edges.begin());
         }
 
-        /** adding edges where left_point.x < rx */
+        /** Adding edges where left_point.x < rx */
         for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() < rx; ++edges_it)
         {
             interesting_edges.insert(this->all_edges[edges_it]);
             edge_left[this->all_edges[edges_it].edge_id] = l;
         }
 
-        if (l % 1000 == 0 || r + 1 == this->sorted_x.size())
-        {
+        if (l % 10000 == 0 || r + 1 == this->sorted_x.size())
             LOG_TRACE(log, "Iteration " << r << "/" << this->sorted_x.size());
-        }
     }
 
     for (size_t i = 0; i != this->all_edges.size(); i++)
@@ -192,7 +172,7 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
             throw Poco::Exception("polygon index build error");
         }
 
-        /** adding [l, r) to the segment tree */
+        /** Adding [l, r) to the segment tree */
         for (l += n, r += n; l < r; l >>= 1, r >>= 1)
         {
             if (l & 1)
@@ -208,30 +188,26 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
     }
 
-    LOG_TRACE(log, "Index is built, total_index_edges=" << total_index_edges);
+    LOG_TRACE(log, "Polygon index is built, total_index_edges=" << total_index_edges);
 }
 
-void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
+void SlabsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
 {
     for (size_t i = 0, prev = ring.size() - 1; i < ring.size(); prev = i, ++i)
     {
         Point a = ring[prev];
         Point b = ring[i];
 
-        /** making a.x <= b.x */
+        /** Making a.x <= b.x */
         if (a.x() > b.x())
-        {
             std::swap(a, b);
-        }
 
         if (a.x() == b.x() && a.y() > b.y())
-        {
             std::swap(a, b);
-        }
 
         if (a.x() == b.x())
         {
-            /** vertical edge found, skipping for now */
+            /** Vertical edge found, skipping for now */
             continue;
         }
 
@@ -239,7 +215,7 @@ void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
     }
 }
 
-BucketsPolygonIndex::Edge::Edge(
+SlabsPolygonIndex::Edge::Edge(
     const Point & l_,
     const Point & r_,
     size_t polygon_id_,
@@ -250,69 +226,46 @@ BucketsPolygonIndex::Edge::Edge(
       edge_id(edge_id_)
 {
     /** Calculating arguments of line equation.
-     * Original equation is:
-     * f(x) = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x())
-     */
+      * Original equation of this edge is:
+      * f(x) = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x())
+      */
     k = (r.y() - l.y()) / (r.x() - l.x());
     b = l.y() - k * l.x();
 }
 
-bool BucketsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
+bool SlabsPolygonIndex::Edge::compare1(const Edge & a, const Edge & b)
 {
-    /** comparing left point */
+    /** Comparing left point */
     if (a.l.x() != b.l.x())
-    {
         return a.l.x() < b.l.x();
-    }
     if (a.l.y() != b.l.y())
-    {
         return a.l.y() < b.l.y();
-    }
 
-    /** comparing right point */
+    /** Comparing right point */
     if (a.r.x() != b.r.x())
-    {
         return a.r.x() < b.r.x();
-    }
     if (a.r.y() != b.r.y())
-    {
         return a.r.y() < b.r.y();
-    }
 
-    if (a.polygon_id != b.polygon_id)
-    {
-        return a.polygon_id < b.polygon_id;
-    }
-
-    return a.edge_id < b.edge_id;
+    return a.polygon_id < b.polygon_id;
 }
 
-bool BucketsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
+bool SlabsPolygonIndex::Edge::compare2(const Edge & a, const Edge & b)
 {
-    /** comparing right point */
+    /** Comparing right point */
     if (a.r.x() != b.r.x())
-    {
         return a.r.x() < b.r.x();
-    }
     if (a.r.y() != b.r.y())
-    {
         return a.r.y() < b.r.y();
-    }
 
-    /** comparing left point */
+    /** Comparing left point */
     if (a.l.x() != b.l.x())
-    {
         return a.l.x() < b.l.x();
-    }
     if (a.l.y() != b.l.y())
-    {
         return a.l.y() < b.l.y();
-    }
 
     if (a.polygon_id != b.polygon_id)
-    {
         return a.polygon_id < b.polygon_id;
-    }
 
     return a.edge_id < b.edge_id;
 }
@@ -329,45 +282,46 @@ namespace
     }
 }
 
-bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
+bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
 {
-    /** TODO: maybe we should check for vertical line? */
+    /** Vertical line or nothing at all, no match here */
     if (this->sorted_x.size() < 2)
-    {
         return false;
-    }
 
     Coord x = point.x();
     Coord y = point.y();
 
+    /** Not in bounding box */
     if (x < this->sorted_x[0] || x > this->sorted_x.back())
-    {
         return false;
-    }
 
     bool found = false;
 
-    /** point is considired inside when ray down from point crosses odd number of edges */
+    /** Point is considired inside when ray down from point crosses odd number of edges.
+      * This vector will contain polygon ids of all crosses. Smallest id with odd number of
+      * occurrences is the answer.
+      */
     std::vector<size_t> intersections;
     intersections.reserve(10);
 
+    /** Find position of the slab with binary search by sorted_x */
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
-    /** Here we doing: pos += n */
+    /** Jump to the leaf in segment tree */
     pos += this->edges_index_tree.size() / 2;
     do
     {
-        /** iterating over interesting edges */
+        /** Iterating over interesting edges */
         for (const auto & edge : this->edges_index_tree[pos])
         {
+            /** Check if point lies above the edge */
             if (x * edge.k + edge.b <= y)
-            {
                 intersections.emplace_back(edge.polygon_id);
-            }
         }
         pos >>= 1;
     } while (pos != 0);
 
+    /** Sort all ids and find smallest with odd occurrences */
     std::sort(intersections.begin(), intersections.end());
     for (size_t i = 0; i < intersections.size(); i += 2)
     {
