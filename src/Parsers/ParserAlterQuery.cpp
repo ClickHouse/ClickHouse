@@ -43,8 +43,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
 
-    ParserKeyword s_drop_replica("DROP REPLICA");
-
     ParserKeyword s_add("ADD");
     ParserKeyword s_drop("DROP");
     ParserKeyword s_suspend("SUSPEND");
@@ -423,14 +421,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
             }
         }
-        else if (s_drop_replica.ignore(pos, expected))
-        {
-            if (!parser_string_literal.parse(pos, command->replica, expected))
-                return false;
-
-            command->type = ASTAlterCommand::DROP_REPLICA;
-            command->replica_name = command->replica->as<ASTLiteral &>().value.get<const String &>();
-        }
         else if (s_modify_column.ignore(pos, expected))
         {
             if (s_if_exists.ignore(pos, expected))
@@ -520,8 +510,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->column);
     if (command->partition)
         command->children.push_back(command->partition);
-    if (command->replica)
-        command->children.push_back(command->replica);
     if (command->order_by)
         command->children.push_back(command->order_by);
     if (command->predicate)

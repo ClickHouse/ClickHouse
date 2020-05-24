@@ -421,8 +421,26 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else
     {
         context.checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        auto zookeeper = context.getZooKeeper();
         auto to_drop_path = query.replica_zk_path + "/replicas/" + query.replica;
+        auto & catalog = DatabaseCatalog::instance();
+        StorageReplicatedMergeTree::Status status;
+
+        for (auto & elem : catalog.getDatabases())
+        {
+            DatabasePtr & database = elem.second;
+            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+            {
+                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
+                {
+                    storage_replicated->getStatus(status);
+                    if (to_drop_path.compare(status.replica_path) == 0)
+                        throw Exception("We can't drop local replica, please use `DROP TABLE` if you want to clean the data and drop this replica",
+                            ErrorCodes::LOGICAL_ERROR);
+                }
+            }
+        }
+
+        auto zookeeper = context.getZooKeeper();
 
         // TODO check if local table have this this replica_path
         //check if is active replica if we drop other replicas

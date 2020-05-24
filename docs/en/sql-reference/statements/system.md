@@ -12,6 +12,7 @@ toc_title: SYSTEM
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
 -   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
 -   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
+-   [DROP REPLICA TABLE](#query_language-system-drop-replica-table)
 -   [FLUSH LOGS](#query_language-system-flush_logs)
 -   [RELOAD CONFIG](#query_language-system-reload-config)
 -   [SHUTDOWN](#query_language-system-shutdown)
@@ -76,6 +77,17 @@ For manage uncompressed data cache parameters use following server level setting
 
 Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
 Complied expression cache used when query/user/profile enable option [compile](../../operations/settings/settings.md#compile)
+
+## DROP REPLICA TABLE {query_language-system-drop-replica-table}
+
+Replicas can be dropped using following syntax:
+
+```sql
+SYSTEM DROP REPLICA replica_name FROM [db].name;
+SYSTEM DROP REPLICA replica_name '/path/to/table/in/zk';
+```
+
+Queries will remove the replica path in zookeeper, it's useful when you want to decrease your replica factor. It will only drop the inactive/stale replica, and it can't drop local replica, please use `SYSTEM DROP REPLICA` for that.
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
