@@ -51,7 +51,7 @@ VolumePtr createVolumeFromConfig(
     {
         return std::make_shared<VolumeJBOD>(name, config, config_prefix, disk_selector);
     }
-    return nullptr;
+    throw Exception("Unknown raid type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
 }
