@@ -322,19 +322,24 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             node.last_processor_status != IProcessor::Status::PortFull)
         {
 
-            auto tracer = CurrentThread::getGroup()->query_context->getDistributedTracer();
-            if (tracer->IsActiveTracer())
-            {
-                // opentracing::getSpan.
-                if (auto span = CurrentThread::getSpan())
-                {
-                    // fixme. (note that we are under mutex)
-                    if (!node.processor->getSpan())
+            if (auto group = CurrentThread::getGroup()) {
+                if (auto context = group->query_context) {
+                    auto tracer = context->getDistributedTracer();
+
+                    if (tracer->IsActiveTracer())
                     {
-                        node.processor->setSpan(tracer->CreateSpan(
-                                node.processor->getName(),
-                                {{opentracing::SpanReferenceType::ChildOfRef, span->getReferences()[0].second}},
-                                std::nullopt));
+                        // opentracing::getSpan.
+                        if (auto span = CurrentThread::getSpan())
+                        {
+                            // fixme. (note that we are under mutex)
+                            if (!node.processor->getSpan())
+                            {
+                                node.processor->setSpan(tracer->CreateSpan(
+                                        node.processor->getName(),
+                                        {{opentracing::SpanReferenceType::ChildOfRef, span->getReferences()[0].second}},
+                                        std::nullopt));
+                            }
+                        }
                     }
                 }
             }
