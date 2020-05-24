@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_TYPE_OF_FIELD;
 }
 
 /// PaddedPODArray extended by Decimal scale
@@ -140,9 +139,6 @@ public:
     {
         if constexpr (IsPODValue)
             data.protect();
-        else
-            throw Exception("No protect() implmented", ErrorCodes::BAD_TYPE_OF_FIELD);
-
     }
     void reserve(size_t n) override { data.reserve(n); }
 

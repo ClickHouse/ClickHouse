@@ -27,6 +27,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace {
+StringRef serializeBigIntIntoArena(const bInt256 & x, Arena & arena, char const *& begin)
+{
+    static constexpr size_t bytesize = 32;
+    char * pos = arena.allocContinue(bytesize + 1, begin);
+    if (x < 0)
+        *pos = 1;
+    export_bits(x, pos + 1, 8, false);
+    return StringRef(pos, bytesize + 1);
+}
+
+bInt256 deserializeBigInt(const char * pos)
+{
+    static constexpr size_t bytesize = 32;
+
+    bInt256 x{};
+    char is_negative = *pos;
+    import_bits(x, pos + 1, pos + 1 + bytesize, false);
+    return is_negative ? -x : x;
+}
+}
+
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
@@ -42,28 +64,31 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
 template <typename T>
 StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    auto * pos = arena.allocContinue(sizeof(T), begin);
-    memcpy(pos, &data[n], sizeof(T));
-    return StringRef(pos, sizeof(T));
-}
-
-template <>
-StringRef ColumnDecimal<Decimal256>::serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const
-{
-    throw Exception("Method serializeValueIntoArena is not supported for Decimal256", ErrorCodes::NOT_IMPLEMENTED);
+    if constexpr (IsPODValue)
+    {
+        auto * pos = arena.allocContinue(sizeof(T), begin);
+        memcpy(pos, &data[n], sizeof(T));
+        return StringRef(pos, sizeof(T));
+    }
+    else
+    {
+        return serializeBigIntIntoArena(data[n], arena, begin);
+    }
 }
 
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
-}
-
-template <>
-const char * ColumnDecimal<Decimal256>::deserializeAndInsertFromArena(const char * /*pos*/)
-{
-    throw Exception("Method deserializeAndInsertFromArena is not supported for Decimal256", ErrorCodes::NOT_IMPLEMENTED);
+    if constexpr (IsPODValue)
+    {
+        data.push_back(unalignedLoad<T>(pos));
+        return pos + sizeof(T);
+    }
+    else
+    {
+        data.push_back(deserializeBigInt(pos));
+        return pos + 32 + 1;
+    }
 }
 
 template <typename T>
@@ -148,7 +173,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (!std::is_same_v<T, Decimal256>)
+        if constexpr (IsPODValue)
         {
             memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
@@ -175,15 +200,16 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 template <typename T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    T tmp;
-    memcpy(&tmp, src, sizeof(T));
-    data.emplace_back(tmp);
-}
-
-template <>
-void ColumnDecimal<Decimal256>::insertData(const char * /*src*/, size_t /*length*/)
-{
-    throw Exception(String("Method insertData is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+    if constexpr (IsPODValue)
+    {
+        T tmp;
+        memcpy(&tmp, src, sizeof(T));
+        data.emplace_back(tmp);
+    }
+    else
+    {
+        data.push_back(deserializeBigInt(src));
+    }
 }
 
 template <typename T>
@@ -198,7 +224,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (!std::is_same_v<T, Decimal256>)
+    if constexpr (IsPODValue)
         memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
     else
     {

@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_TYPE_OF_FIELD;
 }
 
 namespace
@@ -187,8 +186,6 @@ void ColumnVector<T>::protect()
 {
     if constexpr (!is_big_int_v<T>)
         data.protect();
-    else
-        throw Exception("", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <typename T>
