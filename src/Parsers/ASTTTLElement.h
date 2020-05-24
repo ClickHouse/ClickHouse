@@ -17,7 +17,7 @@ public:
     PartDestinationType destination_type;
     String destination_name;
 
-    Strings group_by_key_columns;
+    ASTs group_by_key;
     std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     ASTTTLElement(TTLMode mode_, PartDestinationType destination_type_, const String & destination_name_)
