@@ -354,7 +354,7 @@ private:
     template <size_t PASS>
     static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
-        // std::cerr << PASS << ", " << size << ", " << limit << "\n";
+        //std::cerr << PASS << ", " << size << ", " << limit << "\n";
 
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
@@ -370,7 +370,11 @@ private:
 
         /// Count histogram of current element parts.
 
-        static constexpr size_t UNROLL_COUNT = 4;
+        /// We use loop unrolling to minimize data dependencies and increase instruction level parallelism.
+        /// Unroll 8 times looks better on experiments;
+        ///  also it corresponds with the results from https://github.com/powturbo/TurboHist
+
+        static constexpr size_t UNROLL_COUNT = 8;
         CountType count[HISTOGRAM_SIZE * UNROLL_COUNT]{};
         size_t unrolled_size = size / UNROLL_COUNT * UNROLL_COUNT;
 
