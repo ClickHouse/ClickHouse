@@ -90,6 +90,8 @@ if (ENABLE_JEMALLOC)
         endif ()
 
         target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
+        # for RTLD_NEXT
+        target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
     else ()
         find_library(LIBRARY_JEMALLOC jemalloc)
         find_path(INCLUDE_JEMALLOC jemalloc/jemalloc.h)
