@@ -370,17 +370,20 @@ private:
 
         /// Count histogram of current element parts.
 
-        CountType count[HISTOGRAM_SIZE]{};
-        for (Element * elem = arr; elem < arr + size; ++elem)
-        {
-            /// Array is already sorted by the more significant digit.
-            assert(PASS == NUM_PASSES - 1
-                || elem == arr
-                || extractPart(PASS + 1, elem[0])
-                == extractPart(PASS + 1, elem[-1]));
+        static constexpr size_t UNROLL_COUNT = 4;
+        CountType count[HISTOGRAM_SIZE * UNROLL_COUNT]{};
+        size_t unrolled_size = size / UNROLL_COUNT * UNROLL_COUNT;
 
+        for (Element * elem = arr; elem < arr + unrolled_size; elem += UNROLL_COUNT)
+            for (size_t i = 0; i < UNROLL_COUNT; ++i)
+                ++count[i * HISTOGRAM_SIZE + extractPart(PASS, elem[i])];
+
+        for (Element * elem = arr + unrolled_size; elem < arr + size; ++elem)
             ++count[extractPart(PASS, *elem)];
-        }
+
+        for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+            for (size_t j = 1; j < UNROLL_COUNT; ++j)
+                count[i] += count[j * HISTOGRAM_SIZE + i];
 
         /// Fill pointers to buckets according to the histogram.
 
