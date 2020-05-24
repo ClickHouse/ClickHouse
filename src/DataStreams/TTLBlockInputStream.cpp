@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Storages/MergeTree/TTLMode.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -87,11 +88,9 @@ TTLBlockInputStream::TTLBlockInputStream(
 
         const Settings & settings = storage.global_context.getSettingsRef();
 
-        bool allow_to_use_two_level_group_by = false;  // settings.max_bytes_before_external_group_by != 0;
         Aggregator::Params params(header, keys, aggregates,
             false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-            allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
-            allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
+            SettingUInt64(0), SettingUInt64(0),
             settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
             storage.global_context.getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
         aggregator = std::make_unique<Aggregator>(params);
