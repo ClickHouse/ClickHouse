@@ -360,6 +360,7 @@ private:
      * @see IGrabberAllocator::getImpl
      */
     std::unordered_map<const Value*, RegionMetadata*> value_to_region;
+    std::mutex vtr_mutex;
 
     struct MemoryChunk;
     std::list<MemoryChunk> chunks;
@@ -489,7 +490,11 @@ public:
 
         try
         {
-            onSharedValueCreate<true>(cache_lock, *region);
+            onSharedValueCreate(cache_lock, *region);
+
+            if (region->TUnusedRegionHook::is_linked())
+                    /// May be not present if the region was created by calling allocateFromFreeRegion.
+                    unused_regions.erase(unused_regions.iterator_to(*region));
 
             // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
@@ -526,20 +531,13 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
-    template <bool MayBeInUnused>
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
         if (++metadata.refcount != 1)
             return;
 
         // One reference.
-
-        if constexpr (MayBeInUnused)
-            if (metadata.TUnusedRegionHook::is_linked())
-                /// May be not present if the region was created by calling allocateFromFreeRegion.
-                unused_regions.erase(unused_regions.iterator_to(metadata));
-
-        // already present in used_regions (in getOrSet), see line 506
+        std::lock_guard vtr_lock(vtr_mutex);
 
         value_to_region.emplace(metadata.value(), &metadata);
 
@@ -550,30 +548,35 @@ private:
 
     void onValueDelete(Value * value)
     {
+        RegionMetadata * metadata;
+
+        {
+            std::lock_guard vtr_lock(vtr_mutex);
+
+            auto it = value_to_region.find(value);
+
+            /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
+            /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
+            if (value_to_region.end() == it)
+                throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
+
+            metadata = it->second;
+
+            if (--metadata->refcount != 0)
+                return;
+
+            /// Deleting last reference.
+            value_to_region.erase(it);
+        }
+
         std::lock_guard cache_lock(mutex);
 
-        auto it = value_to_region.find(value);
+        unused_regions.push_back(*metadata);
+        used_regions.erase(used_regions.iterator_to(*metadata));
 
-        /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
-        /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
-        if (value_to_region.end() == it)
-            throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
+        --metadata->chunk->used_refcount;
 
-        RegionMetadata& metadata = *(it->second);
-
-        if (--metadata.refcount != 0)
-            return;
-
-        /// Deleting last reference.
-
-        value_to_region.erase(it);
-
-        unused_regions.push_back(metadata);
-        used_regions.erase(used_regions.iterator_to(metadata));
-
-        --metadata.chunk->used_refcount;
-
-        total_size_in_use -= metadata.size;
+        total_size_in_use -= metadata->size;
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
     }
@@ -596,7 +599,7 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                onSharedValueCreate<false>(cache_lock, metadata);
+                onSharedValueCreate(cache_lock, metadata);
 
                 // can't use std::make_shared due to custom deleter.
                 return std::shared_ptr<Value>( //not a nullptr
