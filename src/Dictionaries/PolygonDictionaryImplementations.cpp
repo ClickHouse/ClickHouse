@@ -208,7 +208,7 @@ bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string & name,
+DictionaryPtr createLayout(const std::string & ,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
@@ -268,10 +268,12 @@ DictionaryPtr createLayout(const std::string & name,
 
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-    const auto & dict_prefix = config_prefix + ".layout." + name;
-
     if constexpr (std::is_same_v<PolygonDictionary, SmartPolygonDictionary> || std::is_same_v<PolygonDictionary, OneBucketPolygonDictionary>)
     {
+        const auto & layout_prefix = config_prefix + ".layout";
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(layout_prefix, keys);
+        const auto & dict_prefix = layout_prefix + keys.front();
         size_t max_depth = config.getUInt(dict_prefix + ".max_depth", PolygonDictionary::kMaxDepthDefault);
         size_t min_intersections = config.getUInt(dict_prefix + ".min_intersections", PolygonDictionary::kMinIntersectionsDefault);
         return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type, max_depth, min_intersections);

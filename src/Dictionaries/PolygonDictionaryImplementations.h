@@ -75,13 +75,14 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
+    static constexpr size_t kMinIntersectionsDefault = 1;
+    static constexpr size_t kMaxDepthDefault = 5;
+
 private:
     bool find(const Point & point, size_t & id) const override;
 
     std::vector<SlabsPolygonIndex> buckets;
     GridRoot<FinalCell> grid;
-    static constexpr size_t kMinIntersectionsDefault = 1;
-    static constexpr size_t kMaxDepthDefault = 5;
 
     const size_t min_intersections;
     const size_t max_depth;
@@ -104,13 +105,13 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
+    static constexpr size_t kMinIntersectionsDefault = 1;
+    static constexpr size_t kMaxDepthDefault = 5;
+
 private:
     bool find(const Point & point, size_t & id) const override;
 
     GridRoot<FinalCellWithSlabs> index;
-
-    static constexpr size_t kMinIntersectionsDefault = 1;
-    static constexpr size_t kMaxDepthDefault = 5;
 
     const size_t min_intersections;
     const size_t max_depth;
