@@ -522,6 +522,8 @@ public:
      * Is not stable, but allows partial sorting.
      * And it's more cache-friendly than LSD variant.
      *
+     * NOTE: It's beneficial over std::partial_sort only if limit is above ~2% of size.
+     *
      * Based on https://github.com/voutcn/kxsort, license:
      * The MIT License
      * Copyright (c) 2016 Dinghua Li <voutcn@gmail.com>
