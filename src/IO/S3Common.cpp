@@ -111,7 +111,7 @@ namespace S3
 
         if (!client_configuration.endpointOverride.empty())
         {
-            static const RE2 region_pattern(R"(s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+            static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
             Poco::URI uri(client_configuration.endpointOverride);
             if (uri.getScheme() == "http")
                 client_configuration.scheme = Aws::Http::Scheme::HTTP;
@@ -138,6 +138,7 @@ namespace S3
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
         static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3[.\-][a-z0-9\-.:]+))");
+
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
