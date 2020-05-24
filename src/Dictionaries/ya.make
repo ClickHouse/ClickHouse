@@ -58,6 +58,8 @@ SRCS(
     RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
+    SSDCacheDictionary.cpp
+    SSDComplexKeyCacheDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
 
