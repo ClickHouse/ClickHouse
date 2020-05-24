@@ -44,15 +44,6 @@ struct RandImpl
     static String getImplementationTag() { return ToString(BuildArch); }
 };
 
-/// Implementation is in .cpp file.
-/// Every specialization should be explicitly written in .cpp file.
-template <int VecSize>
-struct RandVecImpl
-{
-    static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_vec_" + toString(VecSize); }
-};
-
 ) // DECLARE_MULTITARGET_CODE
 
 template <typename RandImpl, typename ToType, typename Name>
@@ -113,10 +104,7 @@ public:
         if constexpr (UseMultitargetCode)
         {
             selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandVecImpl<4>, ToType, Name>>();
-
-            selector.registerImplementation<TargetArch::AVX512F,
-                FunctionRandomImpl<TargetSpecific::AVX512F::RandVecImpl<8>, ToType, Name>>();
+                FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
         }
     }
 

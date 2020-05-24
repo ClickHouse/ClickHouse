@@ -119,7 +119,6 @@ struct BinaryOperationImplBase
         {
             TargetSpecific::Default::BinaryOperationImplBase<A, B, Op, ResultType>::vectorVector(a, b, c, size);
         }
-        
     }
 
     static void vectorConstant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
