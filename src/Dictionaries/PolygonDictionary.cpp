@@ -190,7 +190,7 @@ void IPolygonDictionary::createAttributes()
     }
 }
 
-void IPolygonDictionary::blockToAttributes(const DB::Block &block)
+void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 {
     const auto rows = block.rows();
     element_count += rows;
@@ -255,7 +255,7 @@ void IPolygonDictionary::calculateBytesAllocated()
         bytes_allocated += column->allocatedBytes();
 }
 
-std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns &key_columns)
+std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
 {
     if (key_columns.size() != 2)
         throw Exception{"Expected two columns of coordinates", ErrorCodes::BAD_ARGUMENTS};
@@ -271,7 +271,7 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
     return result;
 }
 
-void IPolygonDictionary::has(const Columns &key_columns, const DataTypes &, PaddedPODArray<UInt8> &out) const
+void IPolygonDictionary::has(const Columns & key_columns, const DataTypes &, PaddedPODArray<UInt8> & out) const
 {
     size_t row = 0;
     for (const auto & pt : extractPoints(key_columns))
@@ -622,7 +622,7 @@ void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offs
 
 }
 
-void IPolygonDictionary::extractPolygons(const ColumnPtr &column)
+void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
 {
     Data data = {polygons, ids};
     Offset offset;

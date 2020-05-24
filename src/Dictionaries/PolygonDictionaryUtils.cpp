@@ -106,14 +106,14 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     }
 
     /** Sorting edges of (left_point, right_point, polygon_id) in that order */
-    std::sort(this->all_edges.begin(), this->all_edges.end(), Edge::compare1);
-    for (size_t i = 0; i != this->all_edges.size(); ++i)
+    std::sort(all_edges.begin(), all_edges.end(), Edge::compare1);
+    for (size_t i = 0; i != all_edges.size(); ++i)
     {
-        this->all_edges[i].edge_id = i;
+        all_edges[i].edge_id = i;
     }
     
     /** Total number of edges */
-    size_t m = this->all_edges.size();
+    size_t m = all_edges.size();
 
     LOG_TRACE(log, "Just sorted " << all_edges.size() << " edges from all " << polygons.size() << " polygons");
 
@@ -126,21 +126,21 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
 
     /** Size of index (number of different x coordinates) */
     size_t n = 0;
-    if (!this->sorted_x.empty())
+    if (!sorted_x.empty())
     {
-        n = this->sorted_x.size() - 1;
+        n = sorted_x.size() - 1;
     }
-    this->edges_index_tree.resize(2 * n);
+    edges_index_tree.resize(2 * n);
 
     /** Map of interesting edge ids to the index of left x, the index of right x */
     std::vector<size_t> edge_left(m, n), edge_right(m, n);
 
     size_t total_index_edges = 0;
     size_t edges_it = 0;
-    for (size_t l = 0, r = 1; r < this->sorted_x.size(); ++l, ++r)
+    for (size_t l = 0, r = 1; r < sorted_x.size(); ++l, ++r)
     {
-        const Coord lx = this->sorted_x[l];
-        const Coord rx = this->sorted_x[r];
+        const Coord lx = sorted_x[l];
+        const Coord rx = sorted_x[r];
 
         /** Removing edges where right_point.x <= lx */
         while (!interesting_edges.empty() && interesting_edges.begin()->r.x() <= lx)
@@ -150,17 +150,17 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
 
         /** Adding edges where left_point.x < rx */
-        for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() < rx; ++edges_it)
+        for (; edges_it < all_edges.size() && all_edges[edges_it].l.x() < rx; ++edges_it)
         {
-            interesting_edges.insert(this->all_edges[edges_it]);
-            edge_left[this->all_edges[edges_it].edge_id] = l;
+            interesting_edges.insert(all_edges[edges_it]);
+            edge_left[all_edges[edges_it].edge_id] = l;
         }
 
-        if (l % 10000 == 0 || r + 1 == this->sorted_x.size())
-            LOG_TRACE(log, "Iteration " << r << "/" << this->sorted_x.size());
+        if (l % 10000 == 0 || r + 1 == sorted_x.size())
+            LOG_TRACE(log, "Iteration " << r << "/" << sorted_x.size());
     }
 
-    for (size_t i = 0; i != this->all_edges.size(); i++)
+    for (size_t i = 0; i != all_edges.size(); i++)
     {
         size_t l = edge_left[i];
         size_t r = edge_right[i];
@@ -177,12 +177,12 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         {
             if (l & 1)
             {
-                this->edges_index_tree[l++].emplace_back(all_edges[i]);
+                edges_index_tree[l++].emplace_back(all_edges[i]);
                 ++total_index_edges;
             }
             if (r & 1)
             {
-                this->edges_index_tree[--r].emplace_back(all_edges[i]);
+                edges_index_tree[--r].emplace_back(all_edges[i]);
                 ++total_index_edges;
             }
         }
@@ -211,7 +211,7 @@ void SlabsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
             continue;
         }
 
-        this->all_edges.emplace_back(a, b, polygon_id, 0);
+        all_edges.emplace_back(a, b, polygon_id, 0);
     }
 }
 
@@ -285,14 +285,14 @@ namespace
 bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
 {
     /** Vertical line or nothing at all, no match here */
-    if (this->sorted_x.size() < 2)
+    if (sorted_x.size() < 2)
         return false;
 
     Coord x = point.x();
     Coord y = point.y();
 
     /** Not in bounding box */
-    if (x < this->sorted_x[0] || x > this->sorted_x.back())
+    if (x < sorted_x[0] || x > sorted_x.back())
         return false;
 
     bool found = false;
@@ -305,14 +305,14 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
     intersections.reserve(10);
 
     /** Find position of the slab with binary search by sorted_x */
-    size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
+    size_t pos = std::upper_bound(sorted_x.begin() + 1, sorted_x.end() - 1, x) - sorted_x.begin() - 1;
 
     /** Jump to the leaf in segment tree */
-    pos += this->edges_index_tree.size() / 2;
+    pos += edges_index_tree.size() / 2;
     do
     {
         /** Iterating over interesting edges */
-        for (const auto & edge : this->edges_index_tree[pos])
+        for (const auto & edge : edges_index_tree[pos])
         {
             /** Check if point lies above the edge */
             if (x * edge.k + edge.b <= y)

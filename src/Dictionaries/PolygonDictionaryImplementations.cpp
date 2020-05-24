@@ -36,7 +36,7 @@ std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
             this->point_type);
 }
 
-bool SimplePolygonDictionary::find(const Point &point, size_t & id) const
+bool SimplePolygonDictionary::find(const Point & point, size_t & id) const
 {
     bool found = false;
     for (size_t i = 0; i < polygons.size(); ++i)
