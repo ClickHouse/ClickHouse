@@ -360,7 +360,6 @@ private:
      * @see IGrabberAllocator::getImpl
      */
     std::unordered_map<const Value*, RegionMetadata*> value_to_region;
-    std::mutex vtr_mutex;
 
     struct MemoryChunk;
     std::list<MemoryChunk> chunks;
@@ -490,11 +489,7 @@ public:
 
         try
         {
-            onSharedValueCreate(cache_lock, *region);
-
-            if (region->TUnusedRegionHook::is_linked())
-                    /// May be not present if the region was created by calling allocateFromFreeRegion.
-                    unused_regions.erase(unused_regions.iterator_to(*region));
+            onSharedValueCreate<true>(cache_lock, *region);
 
             // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
@@ -531,13 +526,20 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
+    template <bool MayBeInUnused>
     void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
     {
         if (++metadata.refcount != 1)
             return;
 
         // One reference.
-        std::lock_guard vtr_lock(vtr_mutex);
+
+        if constexpr (MayBeInUnused)
+            if (metadata.TUnusedRegionHook::is_linked())
+                /// May be not present if the region was created by calling allocateFromFreeRegion.
+                unused_regions.erase(unused_regions.iterator_to(metadata));
+
+        // already present in used_regions (in getOrSet), see line 506
 
         value_to_region.emplace(metadata.value(), &metadata);
 
@@ -550,9 +552,9 @@ private:
     {
         RegionMetadata * metadata;
 
-        {
-            std::lock_guard vtr_lock(vtr_mutex);
+        std::lock_guard cache_lock(mutex);
 
+        {
             auto it = value_to_region.find(value);
 
             /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
@@ -569,7 +571,6 @@ private:
             value_to_region.erase(it);
         }
 
-        std::lock_guard cache_lock(mutex);
 
         unused_regions.push_back(*metadata);
         used_regions.erase(used_regions.iterator_to(*metadata));
@@ -599,7 +600,7 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                onSharedValueCreate(cache_lock, metadata);
+                onSharedValueCreate<false>(cache_lock, metadata);
 
                 // can't use std::make_shared due to custom deleter.
                 return std::shared_ptr<Value>( //not a nullptr
