@@ -25,8 +25,10 @@ void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryHashed(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory);
+#if defined(__linux__) || defined(__FreeBSD__)
 void registerDictionarySSDCache(DictionaryFactory & factory);
 void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory);
+#endif
 void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
 

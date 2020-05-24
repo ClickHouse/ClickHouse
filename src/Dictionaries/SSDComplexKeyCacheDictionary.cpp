@@ -1,3 +1,5 @@
+#if defined(__linux__) || defined(__FreeBSD__)
+
 #include "SSDComplexKeyCacheDictionary.h"
 
 #include <algorithm>
@@ -1770,3 +1772,5 @@ void registerDictionarySSDComplexKeyCache(DictionaryFactory & factory)
 }
 
 }
+
+#endif
