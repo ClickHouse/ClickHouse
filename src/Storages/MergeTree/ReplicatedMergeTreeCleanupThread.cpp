@@ -234,7 +234,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         }
     }
 
-    LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
+    LOG_DEBUG(log, "Removed {} old log entries: {} - {}", entries.size(), entries.front(), entries.back());
 }
 
 
@@ -327,8 +327,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             cached_block_stats.erase(first_outdated_block->node);
         }
         else if (rc)
-            LOG_WARNING(log,
-                "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, zkutil::ZooKeeper::error2string(rc));
         else
         {
             /// Successfully removed blocks have to be removed from cache
@@ -339,7 +338,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
     if (num_nodes_to_delete)
-        LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
+        LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
 }
 
 
@@ -369,8 +368,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"
-                                   << " to clear old ones from ZooKeeper.");
+        LOG_TRACE(log, "Checking {} blocks ({} are not cached){}", stat.numChildren, not_cached_blocks, " to clear old ones from ZooKeeper.");
     }
 
     zkutil::AsyncResponses<Coordination::ExistsResponse> exists_futures;
@@ -456,7 +454,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", replicas_stat.version));
             zookeeper->multi(ops);
-            LOG_DEBUG(log, "Removed " << (i + 1 - batch_start_i) << " old mutation entries: " << entries[batch_start_i] << " - " << entries[i]);
+            LOG_DEBUG(log, "Removed {} old mutation entries: {} - {}", (i + 1 - batch_start_i), entries[batch_start_i], entries[i]);
             batch_start_i = i + 1;
             ops.clear();
         }
