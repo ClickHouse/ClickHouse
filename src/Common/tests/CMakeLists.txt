@@ -34,6 +34,7 @@ target_link_libraries (compact_array PRIVATE clickhouse_common_io)
 
 add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
+target_include_directories(radix_sort SYSTEM PRIVATE ${PDQSORT_INCLUDE_DIR})
 
 if (USE_OPENCL)
     add_executable (bitonic_sort bitonic_sort.cpp)
