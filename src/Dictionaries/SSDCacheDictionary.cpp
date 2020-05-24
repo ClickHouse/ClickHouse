@@ -654,7 +654,7 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
                 #endif
             }
             #if defined(__FreeBSD__)
-            const volatile auto* buf_ptr = reinterpret_cast<volatile char *>(request.aio.aio_buf);
+            const char* buf_ptr = reinterpret_cast<UInt64>(request.aio.aio_buf);
             #else
             const auto* buf_ptr = reinterpret_cast<char *>(request.aio_buf);
             #endif
