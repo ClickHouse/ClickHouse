@@ -69,7 +69,9 @@ public:
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
             InputType input_type_,
-            PointType point_type_);
+            PointType point_type_,
+            int min_intersections_,
+            int max_depth_);
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
@@ -78,8 +80,11 @@ private:
 
     std::vector<SlabsPolygonIndex> buckets;
     GridRoot<FinalCell> grid;
-    static constexpr size_t kMinIntersections = 1;
-    static constexpr size_t kMaxDepth = 5;
+    static constexpr size_t kMinIntersectionsDefault = 1;
+    static constexpr size_t kMaxDepthDefault = 5;
+
+    const size_t min_intersections;
+    const size_t max_depth;
 };
 
 /** Uses single SlabsPolygonIndex for all queries. */
@@ -93,7 +98,9 @@ public:
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
             InputType input_type_,
-            PointType point_type_);
+            PointType point_type_,
+            size_t min_intersections_,
+            size_t max_depth_);
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
@@ -102,8 +109,11 @@ private:
 
     GridRoot<FinalCellWithSlabs> index;
 
-    static constexpr size_t kMinIntersections = 1;
-    static constexpr size_t kMaxDepth = 5;
+    static constexpr size_t kMinIntersectionsDefault = 1;
+    static constexpr size_t kMaxDepthDefault = 5;
+
+    const size_t min_intersections;
+    const size_t max_depth;
 };
 
 }

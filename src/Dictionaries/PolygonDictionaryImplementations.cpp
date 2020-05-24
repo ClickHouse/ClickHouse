@@ -104,9 +104,13 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
-        PointType point_type_)
+        PointType point_type_,
+        int min_intersections_,
+        int max_depth_)
         : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-          grid(kMinIntersections, kMaxDepth, polygons)
+          grid(min_intersections_, max_depth_, polygons),
+          min_intersections(min_intersections_),
+          max_depth(max_depth_)
 {
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < polygons.size(); ++i)
@@ -126,7 +130,9 @@ std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
             this->source_ptr->clone(),
             this->dict_lifetime,
             this->input_type,
-            this->point_type);
+            this->point_type,
+            this->min_intersections,
+            this->max_depth);
 }
 
 bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
@@ -160,9 +166,13 @@ OneBucketPolygonDictionary::OneBucketPolygonDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     InputType input_type_,
-    PointType point_type_)
+    PointType point_type_,
+    size_t min_intersections_,
+    size_t max_depth_)
     : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-      index(kMinIntersections, kMaxDepth, polygons)
+      index(min_intersections_, max_depth_, polygons),
+      min_intersections(min_intersections_),
+      max_depth(max_depth_)
 {
 }
 
@@ -175,7 +185,9 @@ std::shared_ptr<const IExternalLoadable> OneBucketPolygonDictionary::clone() con
             this->source_ptr->clone(),
             this->dict_lifetime,
             this->input_type,
-            this->point_type);
+            this->point_type,
+            this->min_intersections,
+            this->max_depth);
 }
 
 bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
@@ -196,7 +208,7 @@ bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string &,
+DictionaryPtr createLayout(const std::string & name,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
@@ -210,6 +222,7 @@ DictionaryPtr createLayout(const std::string &,
     if (dict_struct.key->size() != 1)
         throw Exception{"The 'key' should consist of a single attribute for a polygon dictionary",
                         ErrorCodes::BAD_ARGUMENTS};
+
     IPolygonDictionary::InputType input_type;
     IPolygonDictionary::PointType point_type;
     const auto key_type = (*dict_struct.key)[0].type;
@@ -254,8 +267,18 @@ DictionaryPtr createLayout(const std::string &,
                         ErrorCodes::BAD_ARGUMENTS};
 
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
-    return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
-};
+
+    const auto & dict_prefix = config_prefix + ".layout." + name;
+
+    if constexpr (std::is_same_v<PolygonDictionary, SmartPolygonDictionary> || std::is_same_v<PolygonDictionary, OneBucketPolygonDictionary>)
+    {
+        size_t max_depth = config.getUInt(dict_prefix + ".max_depth", PolygonDictionary::kMaxDepthDefault);
+        size_t min_intersections = config.getUInt(dict_prefix + ".min_intersections", PolygonDictionary::kMinIntersectionsDefault);
+        return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type, max_depth, min_intersections);
+    }
+    else
+        return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type);
+}
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
