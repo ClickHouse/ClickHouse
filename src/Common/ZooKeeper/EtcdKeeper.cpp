@@ -605,6 +605,7 @@ namespace Coordination
         int32_t seq_num;
         bool parent_exists = false;
         bool force_parent_exists = false;
+        bool seq_path_exists = false;
         int32_t seq_delta = 1;
         std::vector<String> seq_paths;
         EtcdKeeperCreateRequest() {}
@@ -641,6 +642,7 @@ namespace Coordination
         }
         void parsePreResponses() override
         {
+            LOG_DEBUG(log, "_CREATE" << path);
             process_path = path;
             if (!composite)
             {
@@ -659,6 +661,7 @@ namespace Coordination
                     {
                         if (is_sequential && kv.key() == etcd_key.getParentSequentialCounterKey())
                         {
+                            seq_path_exists = true;
                             setSequentialNumber(std::stoi(kv.value()));
                         }
                         else if (kv.key() == etcd_key.getParentEphimeralFlagKey())
@@ -677,6 +680,11 @@ namespace Coordination
                         }
                     }
                 }
+            }
+            LOG_DEBUG(log, "__CREATE" << process_path);
+            if (path.back() == "-" && !seq_path_exists)
+            {
+                std::cout << "SEQPATHEXISTS " << path << "\t" << process_path << std::endl;
             }
         }
         void addPutsForEtcdkey(const EtcdKey & etcd_key_)
@@ -978,7 +986,8 @@ namespace Coordination
                     }
                     else if (sequential_keys_map[cur_path] > 1)
                     {
-                        continue;
+                        faked_responses[i] = true;
+                        // continue;
                     }
                     if (created_keys.count(parentPath(cur_path)) > 0)
                     {
@@ -1116,12 +1125,12 @@ namespace Coordination
             {
                 indx++;
             }
-            if (indx < responses.size() && !faked_responses[indx] && responses[indx]->error != Error::ZOK)
+            if (indx < responses.size() && responses[indx]->error != Error::ZOK)
             {
                 EtcdKeeperMultiResponse multi_response;
                 multi_response.error = responses[indx]->error;
                 multi_response.responses = responses;
-                response = std::make_shared<EtcdKeeperResponse>(multi_response);
+                response = std::make_shared<EtcdKeeperMultiResponse>(multi_response);
             }
         }
         void preparePostCall() override
@@ -1228,7 +1237,8 @@ namespace Coordination
             {
                 create_response.finished = false;
             }
-            create_response.path_created = process_path;
+            // create_response.path_created = process_path;
+            create_response.path_created = "error";
             if (!create_response.finished)
             {
                 LOG_DEBUG(log, "Create request for path: " << process_path << " does not finished.");
@@ -1253,6 +1263,7 @@ namespace Coordination
                 }
             }
         }
+
         return std::make_shared<EtcdKeeperCreateResponse>(create_response);
     }
 
@@ -1517,17 +1528,21 @@ namespace Coordination
                     int seq_paths_index = 0;
                     for (int i = 0; i != etcd_requests.size() && seq_paths_index < etcd_request->seq_paths.size(); i++)
                     {
-                        if (faked_responses[i] || processed_responses[i])
+                        if (processed_responses[i])
                         {
                             continue;
                         }
                         if (auto * concrete_response = dynamic_cast<CreateResponse *>(responses[i].get()))
                         {
+                            std::cout << "CONCPATH" << concrete_response->path_created << std::endl;
                             if (startsWith(etcd_request->seq_paths[seq_paths_index], concrete_response->path_created))
                             {
+                                auto r = etcd_request->makeResponseFromResponses(compare_result, responses_);
+                                multi_response.finished &= r->finished;
                                 multi_response.finished &= etcd_request->response->finished;
                                 CreateResponse cur_create_resp = *concrete_response;
                                 cur_create_resp.path_created = etcd_request->seq_paths[seq_paths_index];
+                                std::cout << "PATH CREATED " << etcd_request->seq_paths[seq_paths_index] << std::endl;
                                 cur_create_resp.error = etcd_request->response->error;
                                 responses[i] = std::make_shared<CreateResponse>(cur_create_resp);
                                 seq_paths_index++;
@@ -1538,7 +1553,8 @@ namespace Coordination
                 }
             }
         }
-        for (int i; i != etcd_requests.size(); i++)
+        int i = 0;
+        for (i; i != etcd_requests.size(); i++)
         {
             if (!faked_responses[i] && !processed_responses[i])
             {
@@ -1554,13 +1570,21 @@ namespace Coordination
                 }
                 multi_response.finished &= etcd_requests[i]->response->finished;
             }
+            if (auto * concrete_response = dynamic_cast<CreateResponse *>(responses[i].get()))
+            {
+                std::cout << "CHILD" << concrete_response->path_created << std::endl;
+            }
             multi_response.error = responses[i]->error;
-            if (responses[i]->error != Error::ZOK)
+            if (multi_response.error != Error::ZOK)
             {
                 break;
             }
         }
         multi_response.responses = responses;
+        // for (int j = 0; j < i + 1 && j < responses.size(); j++)
+        // {
+        //     multi_response.responses.emplace_back(responses[j]);
+        // }
         return std::make_shared<EtcdKeeperMultiResponse>(multi_response);
     }
 
@@ -1760,7 +1784,9 @@ namespace Coordination
                                 response->removeRootPath(root_path);
                                 if (request_info.callback)
                                 {
-                                    request_info.callback(*response);
+                                    ResponsePtr r = request_info.request->makeResponseFromTag(got_tag);
+                                    r->removeRootPath(root_path);
+                                    request_info.callback(*r);
                                 }
                             }
                         }
@@ -1922,6 +1948,7 @@ namespace Coordination
                 if (info.callback)
                 {
                     ResponsePtr response = info.request->makeResponse();
+
                     response->error = ZSESSIONEXPIRED;
                     try
                     {
