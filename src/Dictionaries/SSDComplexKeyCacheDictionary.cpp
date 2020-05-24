@@ -689,7 +689,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
                 #endif
             }
             #if defined(__FreeBSD__)
-            const char* buf_ptr = reinterpret_cast<UInt64>(request.aio.aio_buf);
+            const char* buf_ptr = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
             #else
             const auto* buf_ptr = reinterpret_cast<char *>(request.aio_buf);
             #endif
@@ -772,7 +772,7 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
         }
 
 #if defined(__FreeBSD__)
-        if (event.aio.res != static_cast<ssize_t>(request.aio.aio_nbytes))
+        if (event.aio.udata != static_cast<ssize_t>(request.aio.aio_nbytes))
             throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
 #else
         if (event.res != static_cast<ssize_t>(request.aio_nbytes))
