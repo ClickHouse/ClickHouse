@@ -9,8 +9,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/ReplicaCommands.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/LiveView/LiveViewCommands.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Access/AccessRightsElement.h>
@@ -54,7 +52,6 @@ BlockIO InterpreterAlterQuery::execute()
 
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
-    ReplicaCommands replica_commands;
     MutationCommands mutation_commands;
     LiveViewCommands live_view_commands;
     for (ASTAlterCommand * command_ast : alter.command_list->commands)
@@ -68,10 +65,6 @@ BlockIO InterpreterAlterQuery::execute()
                 throw DB::Exception("Cannot execute query: DROP DETACHED PART is disabled "
                                     "(see allow_drop_detached setting)", ErrorCodes::SUPPORT_IS_DISABLED);
             partition_commands.emplace_back(std::move(*partition_command));
-        }
-        else if (auto replica_command = ReplicaCommand::parse(command_ast))
-        {
-            replica_commands.emplace_back(std::move(*replica_command));
         }
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
@@ -99,18 +92,6 @@ BlockIO InterpreterAlterQuery::execute()
     if (!partition_commands.empty())
     {
         table->alterPartition(query_ptr, partition_commands, context);
-    }
-
-    if (!replica_commands.empty())
-    {
-        replica_commands.validate(*table);
-        auto replicate_table = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(table);
-
-        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        for (auto & command : replica_commands)
-        {
-            replicate_table->dropReplica(command.replica_name);
-        }
     }
 
     if (!live_view_commands.empty())
@@ -290,11 +271,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::FREEZE_ALL:
         {
             required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);
-            break;
-        }
-        case ASTAlterCommand::DROP_REPLICA:
-        {
-            required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_QUERY:
