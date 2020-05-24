@@ -4,12 +4,12 @@
     </tags>
 
     <preconditions>
-        <table_exists>hits_100m_single</table_exists>
+        <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <query><![CDATA[select sum(UserID + 1 in (select UserID from hits_100m_single)) from hits_100m_single]]></query>
-    <query><![CDATA[select sum((UserID + 1, RegionID) in (select UserID, RegionID from hits_100m_single)) from hits_100m_single]]></query>
-    <query><![CDATA[select sum(URL in (select URL from hits_100m_single where URL != '')) from hits_100m_single]]></query>
-    <query><![CDATA[select sum(MobilePhoneModel in (select MobilePhoneModel from hits_100m_single where MobilePhoneModel != '')) from hits_100m_single]]></query>
-    <query><![CDATA[select sum((MobilePhoneModel, UserID + 1) in (select MobilePhoneModel, UserID from hits_100m_single where MobilePhoneModel != '')) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(UserID + 1 in (select UserID from test.hits)) from test.hits]]></query>
+    <query><![CDATA[select sum((UserID + 1, RegionID) in (select UserID, RegionID from test.hits)) from test.hits]]></query>
+    <query><![CDATA[select sum(URL in (select URL from test.hits where URL != '')) from test.hits]]></query>
+    <query><![CDATA[select sum(MobilePhoneModel in (select MobilePhoneModel from test.hits where MobilePhoneModel != '')) from test.hits]]></query>
+    <query><![CDATA[select sum((MobilePhoneModel, UserID + 1) in (select MobilePhoneModel, UserID from test.hits where MobilePhoneModel != '')) from test.hits]]></query>
 </test>
