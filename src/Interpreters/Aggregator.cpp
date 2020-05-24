@@ -1506,6 +1506,11 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     }
 }
 
+#define M(NAME) \
+    template void NO_INLINE Aggregator::mergeSingleLevelDataImpl<decltype(AggregatedDataVariants::NAME)::element_type>( \
+        ManyAggregatedDataVariants & non_empty_data) const;
+    APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
 
 template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(

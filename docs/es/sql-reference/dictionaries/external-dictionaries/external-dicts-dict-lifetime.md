@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 42
 toc_title: Actualizaciones del diccionario
 ---
 
-# Actualizaciones Del Diccionario {#dictionary-updates}
+# Actualizaciones del diccionario {#dictionary-updates}
 
 ClickHouse actualiza periódicamente los diccionarios. El intervalo de actualización para los diccionarios completamente descargados y el intervalo de invalidación para los diccionarios almacenados en caché se `<lifetime>` etiqueta en segundos.
 
@@ -50,6 +50,11 @@ o
 ``` sql
 LIFETIME(MIN 300 MAX 360)
 ```
+
+Si `<min>0</min>` y `<max>0</max>`, ClickHouse no vuelve a cargar el diccionario por tiempo de espera.
+En este caso, ClickHouse puede volver a cargar el diccionario anteriormente si el archivo de configuración del diccionario `SYSTEM RELOAD DICTIONARY` se ejecutó el comando.
+
+Al actualizar los diccionarios, el servidor ClickHouse aplica una lógica diferente según el tipo de [fuente](external-dicts-dict-sources.md):
 
 Al actualizar los diccionarios, el servidor ClickHouse aplica una lógica diferente según el tipo de [fuente](external-dicts-dict-sources.md):
 

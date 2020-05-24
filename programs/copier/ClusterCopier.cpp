@@ -1837,6 +1837,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         ClusterExecutionMode execution_mode,
         UInt64 max_successful_executions_per_shard) const
 {
+    Settings current_settings = settings ? *settings : task_cluster->settings_common;
+
     auto num_shards = cluster->getShardsInfo().size();
     std::vector<UInt64> per_shard_num_successful_replicas(num_shards, 0);
 
@@ -1844,8 +1846,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     if (query_ast_ == nullptr)
     {
         ParserQuery p_query(query.data() + query.size());
-        const auto & settings = context.getSettingsRef();
-        query_ast = parseQuery(p_query, query, settings.max_query_size, settings.max_parser_depth);
+        query_ast = parseQuery(p_query, query, current_settings.max_query_size, current_settings.max_parser_depth);
     }
     else
         query_ast = query_ast_;
@@ -1888,7 +1889,6 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         /// Will try to make as many as possible queries
         if (shard.hasRemoteConnections())
         {
-            Settings current_settings = settings ? *settings : task_cluster->settings_common;
             current_settings.max_parallel_replicas = num_remote_replicas ? num_remote_replicas : 1;
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings).getSaturated(current_settings.max_execution_time);

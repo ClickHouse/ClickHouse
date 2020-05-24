@@ -3,7 +3,7 @@ LIBRARY()
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
-    contrib/libs/protobuf_std
+    contrib/libs/protobuf
 )
 
 SRCS(

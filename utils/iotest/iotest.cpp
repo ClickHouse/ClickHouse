@@ -88,7 +88,7 @@ int mainImpl(int argc, char ** argv)
 {
     using namespace DB;
 
-    const char * file_name = 0;
+    const char * file_name = nullptr;
     int mode = MODE_NONE;
     UInt64 min_offset = 0;
     UInt64 max_offset = 0;

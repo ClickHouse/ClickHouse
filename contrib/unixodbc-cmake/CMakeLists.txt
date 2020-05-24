@@ -295,9 +295,8 @@ if (ENABLE_ODBC)
                 -Wno-parentheses
                 -Wno-misleading-indentation
                 -Wno-unknown-warning-option
-                -O2
-            PUBLIC
                 -Wno-reserved-id-macro
+                -O2
         )
     else ()
         add_library (unixodbc UNKNOWN IMPORTED)

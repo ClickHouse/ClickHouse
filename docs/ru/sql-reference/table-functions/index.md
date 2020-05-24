@@ -11,7 +11,7 @@ toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 
 Табличные функции можно использовать в:
 
--   Секции [FROM](../statements/select.md#select-from) запроса `SELECT`.
+-   Секции [FROM](../statements/select/from.md#select-from) запроса `SELECT`.
 
         Это способ создания временной таблицы, которая доступна только в текущем запросе.
 

@@ -24,7 +24,7 @@ private:
     std::vector<Poco::Net::HTTPRequestHandlerFactory *> child_factories;
 public:
 
-    ~HTTPRequestHandlerFactoryMain();
+    ~HTTPRequestHandlerFactoryMain() override;
 
     HTTPRequestHandlerFactoryMain(const std::string & name_);
 

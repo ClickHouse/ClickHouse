@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 57
 toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\u0632\
   \u0627\u0631"
@@ -228,7 +228,7 @@ toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u06AF\
 </http_server_default_response>
 ```
 
-## include\_from {#server_configuration_parameters-include_from}
+## شامل \_فروم {#server_configuration_parameters-include_from}
 
 مسیر به فایل با تعویض.
 
@@ -454,7 +454,7 @@ SSL client/server configuration.
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 -   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` شامل گواهی.
 -   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [متن](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) کلاس. مقادیر ممکن: `none`, `relaxed`, `strict`, `once`.
+-   verificationMode – The method for checking the node's certificates. Details are in the description of the [متن](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) کلاس. مقادیر ممکن: `none`, `relaxed`, `strict`, `once`.
 -   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 -   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
 -   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
@@ -466,7 +466,7 @@ SSL client/server configuration.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
 -   disableProtocols – Protocols that are not allowed to use.
@@ -537,6 +537,30 @@ SSL client/server configuration.
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
+```
+
+## پرومتیوس {#server_configuration_parameters-prometheus}
+
+افشای معیارهای داده ها برای خراش دادن از [پرومتیوس](https://prometheus.io).
+
+تنظیمات:
+
+-   `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
+-   `port` – Port for `endpoint`.
+-   `metrics` – Flag that sets to expose metrics from the [سیستم.متریک](../system-tables.md#system_tables-metrics) جدول
+-   `events` – Flag that sets to expose metrics from the [سیستم.رویدادها](../system-tables.md#system_tables-events) جدول
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [سیستم.\_نامهنویسی ناهمزمان](../system-tables.md#system_tables-asynchronous_metrics) جدول
+
+**مثال**
+
+``` xml
+ <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
 ```
 
 ## \_خروج {#server_configuration_parameters-query-log}
@@ -656,7 +680,7 @@ SSL client/server configuration.
 
 برای ارزش `incl` ویژگی, بخش را ببینید “[پروندههای پیکربندی](../configuration-files.md#configuration_files)”.
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [در حال بارگذاری](../settings/settings.md#settings-skip_unavailable_shards)
 
@@ -823,7 +847,7 @@ SSL client/server configuration.
 </zookeeper>
 ```
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [تکرار](../../engines/table-engines/mergetree-family/replication.md)
 -   [راهنمای برنامه نویس باغ وحش](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
@@ -869,5 +893,15 @@ SSL client/server configuration.
 به روز رسانی همزمان انجام, در یک موضوع سیستم جداگانه.
 
 **مقدار پیشفرض**: 15.
+
+## \_پوشه دستیابی {#access_control_path}
+
+مسیر را به یک پوشه که یک سرور کلیک ذخیره کاربر و نقش تنظیمات ایجاد شده توسط دستورات گذاشتن.
+
+مقدار پیشفرض: `/var/lib/clickhouse/access/`.
+
+**همچنین نگاه کنید به**
+
+-   [کنترل دسترسی و مدیریت حساب](../access-rights.md#access-control)
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

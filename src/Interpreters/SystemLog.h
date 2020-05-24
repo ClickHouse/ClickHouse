@@ -208,6 +208,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 template <typename LogElement>
 void SystemLog<LogElement>::startup()
 {
+    std::unique_lock lock(mutex);
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
@@ -287,6 +288,11 @@ void SystemLog<LogElement>::stopFlushThread()
 {
     {
         std::unique_lock lock(mutex);
+
+        if (!saving_thread.joinable())
+        {
+            return;
+        }
 
         if (is_shutdown)
         {

@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: "Yandex ile \xE7al\u0131\u015Fmak.Metrica S\xF6zl\xFCkleri"
 ---
 
-# Yandex Ile çalışmak için Fonksiyonlar.Metrica sözlükleri {#functions-for-working-with-yandex-metrica-dictionaries}
+# Yandex ile çalışmak için fonksiyonlar.Metrica Sözlükleri {#functions-for-working-with-yandex-metrica-dictionaries}
 
-Aşağıdaki işlevlerin çalışması için, sunucu yapılandırmasının tüm Yandex’i almak için yolları ve adresleri belirtmesi gerekir.Metrica sözlükler. Sözlükler, bu işlevlerden herhangi birinin ilk çağrısında yüklenir. Başvuru listeleri yüklenemiyorsa, bir özel durum atılır.
+Aşağıdaki işlevlerin çalışması için, sunucu yapılandırmasının tüm Yandex'i almak için yolları ve adresleri belirtmesi gerekir.Metrica sözlükler. Sözlükler, bu işlevlerden herhangi birinin ilk çağrısında yüklenir. Başvuru listeleri yüklenemiyorsa, bir özel durum atılır.
 
 Başvuru listeleri oluşturma hakkında daha fazla bilgi için bölüme bakın “Dictionaries”.
 
@@ -100,12 +100,12 @@ LIMIT 15
 ### regionToCountry (ıd \[, geobase\]) {#regiontocountryid-geobase}
 
 Bir bölgeyi bir ülkeye dönüştürür. Diğer her şekilde, bu işlev aynıdır ‘regionToCity’.
-Örnek: `regionToCountry(toUInt32(213)) = 225` Moskova’yı (213) Rusya’ya (225) dönüştürür.
+Örnek: `regionToCountry(toUInt32(213)) = 225` Moskova'yı (213) Rusya'ya (225) dönüştürür.
 
 ### regionToContinent (id \[, geobase\]) {#regiontocontinentid-geobase}
 
 Bir bölgeyi bir kıtaya dönüştürür. Diğer her şekilde, bu işlev aynıdır ‘regionToCity’.
-Örnek: `regionToContinent(toUInt32(213)) = 10001` Moskova’yı (213) Avrasya’ya (10001) dönüştürür.
+Örnek: `regionToContinent(toUInt32(213)) = 10001` Moskova'yı (213) Avrasya'ya (10001) dönüştürür.
 
 ### regionToTopContinent (\#regiontotopcontinent) {#regiontotopcontinent-regiontotopcontinent}
 
@@ -134,11 +134,11 @@ Tür: `UInt32`.
 Bir bölge için nüfusu alır.
 Nüfus geobase ile dosyalarda kaydedilebilir. Bölümüne bakınız “External dictionaries”.
 Bölge için nüfus kaydedilmezse, 0 döndürür.
-Yandex geobase’de, nüfus alt bölgeler için kaydedilebilir, ancak üst bölgeler için kaydedilemez.
+Yandex geobase'de, nüfus alt bölgeler için kaydedilebilir, ancak üst bölgeler için kaydedilemez.
 
 ### regionİn (lhs, rhs \[, geobase\]) {#regioninlhs-rhs-geobase}
 
-Olup olmadığını denetler bir ‘lhs’ bölge bir ‘rhs’ bölge. Aitse 1’e eşit bir Uİnt8 numarası veya ait değilse 0 döndürür.
+Olup olmadığını denetler bir ‘lhs’ bölge bir ‘rhs’ bölge. Aitse 1'e eşit bir Uİnt8 numarası veya ait değilse 0 döndürür.
 The relationship is reflexive – any region also belongs to itself.
 
 ### regionHierarchy (id \[, geobase\]) {#regionhierarchyid-geobase}
@@ -148,7 +148,7 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. Returns an ar
 
 ### regionToName (id \[, lang\]) {#regiontonameid-lang}
 
-Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn’t exist, an empty string is returned.
+Accepts a UInt32 number – the region ID from the Yandex geobase. A string with the name of the language can be passed as a second argument. Supported languages are: ru, en, ua, uk, by, kz, tr. If the second argument is omitted, the language ‘ru’ is used. If the language is not supported, an exception is thrown. Returns a string – the name of the region in the corresponding language. If the region with the specified ID doesn't exist, an empty string is returned.
 
 `ua` ve `uk` hem Ukrayna demek.
 

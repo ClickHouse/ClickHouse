@@ -241,6 +241,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-amp', action='store_true')
     arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
+    arg_parser.add_argument('--skip-git-log', action='store_true')
     arg_parser.add_argument('--test-only', action='store_true')
     arg_parser.add_argument('--minify', action='store_true')
     arg_parser.add_argument('--htmlproofer', action='store_true')
@@ -272,6 +273,9 @@ if __name__ == '__main__':
         args.skip_website = True
         args.skip_pdf = True
         args.skip_amp = True
+
+    if args.skip_git_log or args.skip_amp:
+        mdx_clickhouse.PatchedMacrosPlugin.skip_git_log = True
 
     from build import build
     build(args)

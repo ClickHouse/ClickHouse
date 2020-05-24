@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 58
 toc_title: "\u06A9\u0627\u0631 \u0628\u0627 \u0648\u0627\u0698\u0647\u0646\u0627\u0645\
   \u0647\u0647\u0627 \u062E\u0627\u0631\u062C\u06CC"
@@ -24,7 +24,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [رشته تحت اللفظی](../syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [رشته تحت اللفظی](../syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [عبارت](../syntax.md#syntax-expressions) بازگشت یک [UInt64](../../sql-reference/data-types/int-uint.md) یا [تاپل](../../sql-reference/data-types/tuple.md)- نوع ارزش بسته به پیکربندی فرهنگ لغت .
--   `default_value_expr` — Value returned if the dictionary doesn’t contain a row with the `id_expr` کلید [عبارت](../syntax.md#syntax-expressions) بازگشت ارزش در نوع داده پیکربندی شده برای `attr_name` صفت کردن.
+-   `default_value_expr` — Value returned if the dictionary doesn't contain a row with the `id_expr` کلید [عبارت](../syntax.md#syntax-expressions) بازگشت ارزش در نوع داده پیکربندی شده برای `attr_name` صفت کردن.
 
 **مقدار بازگشتی**
 
@@ -96,7 +96,7 @@ LIMIT 3
 └─────┴────────┘
 ```
 
-**همچنین نگاه کنید**
+**همچنین نگاه کنید به**
 
 -   [واژهنامهها خارجی](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
 
@@ -190,7 +190,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Name of the dictionary. [رشته تحت اللفظی](../syntax.md#syntax-string-literal).
 -   `attr_name` — Name of the column of the dictionary. [رشته تحت اللفظی](../syntax.md#syntax-string-literal).
 -   `id_expr` — Key value. [عبارت](../syntax.md#syntax-expressions) بازگشت یک [UInt64](../../sql-reference/data-types/int-uint.md)- نوع ارزش.
--   `default_value_expr` — Value which is returned if the dictionary doesn’t contain a row with the `id_expr` کلید [عبارت](../syntax.md#syntax-expressions) بازگشت یک مقدار در نوع داده پیکربندی شده برای `attr_name` صفت کردن.
+-   `default_value_expr` — Value which is returned if the dictionary doesn't contain a row with the `id_expr` کلید [عبارت](../syntax.md#syntax-expressions) بازگشت یک مقدار در نوع داده پیکربندی شده برای `attr_name` صفت کردن.
 
 **مقدار بازگشتی**
 

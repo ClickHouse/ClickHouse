@@ -347,7 +347,7 @@ create table test_time engine Memory as
         count(*) queries,
         sum(short) short_queries
     from query_time full join queries
-    on query_time.query = queries.query
+    using test, query
     group by test;
 
 create table test_times_tsv engine File(TSV, 'report/test-times.tsv') as

@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: "\u53C2\u8003\u8D44\u6599"
 ---
 
-# 函数参考 {#function-reference}
+# 聚合函数引用 {#aggregate-functions-reference}
 
 ## 计数 {#agg_function-count}
 
@@ -332,9 +332,10 @@ SELECT argMin(user, salary) FROM salary
 
 只适用于数字。
 
-## sumMap(key,value) {#agg_functions-summap}
+## sumMap(key,value),sumMap(Tuple(key,value)) {#agg_functions-summap}
 
 总计 ‘value’ 数组根据在指定的键 ‘key’ 阵列。
+传递键和值数组的元组与传递两个键和值数组是同义的。
 元素的数量 ‘key’ 和 ‘value’ 总计的每一行必须相同。
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -347,25 +348,28 @@ CREATE TABLE sum_map(
     statusMap Nested(
         status UInt16,
         requests UInt64
-    )
+    ),
+    statusMapTuple Tuple(Array(Int32), Array(Int32))
 ) ENGINE = Log;
 INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10], ([1, 2, 3], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10], ([3, 4, 5], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10], ([4, 5, 6], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10], ([6, 7, 8], [10, 10, 10]));
+
 SELECT
     timeslot,
-    sumMap(statusMap.status, statusMap.requests)
+    sumMap(statusMap.status, statusMap.requests),
+    sumMap(statusMapTuple)
 FROM sum_map
 GROUP BY timeslot
 ```
 
 ``` text
-┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
-└─────────────────────┴──────────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┬─sumMap(statusMapTuple)─────────┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │ ([1,2,3,4,5],[10,10,20,10,10]) │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │ ([4,5,6,7,8],[10,10,20,10,10]) │
+└─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
 ## skewPop {#skewpop}
@@ -514,10 +518,10 @@ FROM (
 
 ## timeSeriesGroupRateSum(uid,ts,val) {#agg-function-timeseriesgroupratesum}
 
-同样，timeSeriesGroupRateSum，timeSeriesGroupRateSum将计算时间序列的速率，然后将速率总和在一起。
+同样 `timeSeriesGroupSum`, `timeSeriesGroupRateSum` 计算时间序列的速率，然后将速率总和在一起。
 此外，使用此函数之前，时间戳应该是上升顺序。
 
-使用此函数，上述情况下的结果将是:
+应用此功能从数据 `timeSeriesGroupSum` 例如，您将得到以下结果:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
@@ -727,19 +731,93 @@ uniqExact(x[, ...])
 
 在某些情况下，您仍然可以依靠执行的顺序。 这适用于以下情况 `SELECT` 来自使用 `ORDER BY`.
 
-## groupArrayInsertAt(值，位置) {#grouparrayinsertatvalue-position}
+## groupArrayInsertAt {#grouparrayinsertat}
 
-将值插入到数组中的指定位置中。
+在指定位置向数组中插入一个值。
 
-!!! note "注"
-    此函数使用从零开始的位置，与传统SQL数组的从一开始的位置相反。
+**语法**
 
-Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
+``` sql
+groupArrayInsertAt(default_x, size)(x, pos);
+```
 
-可选参数:
+如果在一个查询中将多个值插入到同一位置，则该函数的行为方式如下:
 
--   在空位置替换的默认值。
--   生成数组的长度。 这允许您接收所有聚合键的相同大小的数组。 使用此参数时，必须指定默认值。
+-   如果在单个线程中执行查询，则使用第一个插入的值。
+-   如果在多个线程中执行查询，则结果值是未确定的插入值之一。
+
+**参数**
+
+-   `x` — Value to be inserted. [表达式](../syntax.md#syntax-expressions) 导致的一个 [支持的数据类型](../../sql-reference/data-types/index.md).
+-   `pos` — Position at which the specified element `x` 将被插入。 数组中的索引编号从零开始。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   `default_x`— Default value for substituting in empty positions. Optional parameter. [表达式](../syntax.md#syntax-expressions) 导致为配置的数据类型 `x` 参数。 如果 `default_x` 未定义，则 [默认值](../../sql-reference/statements/create.md#create-default-values) 被使用。
+-   `size`— Length of the resulting array. Optional parameter. When using this parameter, the default value `default_x` 必须指定。 [UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges).
+
+**返回值**
+
+-   具有插入值的数组。
+
+类型: [阵列](../../sql-reference/data-types/array.md#data-type-array).
+
+**示例**
+
+查询:
+
+``` sql
+SELECT groupArrayInsertAt(toString(number), number * 2) FROM numbers(5);
+```
+
+结果:
+
+``` text
+┌─groupArrayInsertAt(toString(number), multiply(number, 2))─┐
+│ ['0','','1','','2','','3','','4']                         │
+└───────────────────────────────────────────────────────────┘
+```
+
+查询:
+
+``` sql
+SELECT groupArrayInsertAt('-')(toString(number), number * 2) FROM numbers(5);
+```
+
+结果:
+
+``` text
+┌─groupArrayInsertAt('-')(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2','-','3','-','4']                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+查询:
+
+``` sql
+SELECT groupArrayInsertAt('-', 5)(toString(number), number * 2) FROM numbers(5);
+```
+
+结果:
+
+``` text
+┌─groupArrayInsertAt('-', 5)(toString(number), multiply(number, 2))─┐
+│ ['0','-','1','-','2']                                             │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+元件的多线程插入到一个位置。
+
+查询:
+
+``` sql
+SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size = 1;
+```
+
+作为这个查询的结果，你会得到随机整数 `[0,9]` 范围。 例如:
+
+``` text
+┌─groupArrayInsertAt(number, 0)─┐
+│ [7]                           │
+└───────────────────────────────┘
+```
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
@@ -1183,7 +1261,7 @@ quantileTiming(level)(expr)
 类型: `Float32`.
 
 !!! note "注"
-    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select.md#select-order-by) 对于排序注意事项 `NaN` 值。
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select/order-by.md#select-order-by) 对于排序注意事项 `NaN` 值。
 
 **示例**
 
@@ -1268,7 +1346,7 @@ quantileTimingWeighted(level)(expr, weight)
 类型: `Float32`.
 
 !!! note "注"
-    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select.md#select-order-by) 对于排序注意事项 `NaN` 值。
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql-reference/data-types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select/order-by.md#select-order-by) 对于排序注意事项 `NaN` 值。
 
 **示例**
 
@@ -1327,7 +1405,7 @@ quantileTDigest(level)(expr)
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
 -   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql-reference/data-types/index.md#data_types), [日期](../../sql-reference/data-types/date.md) 或 [日期时间](../../sql-reference/data-types/datetime.md).
 
-**返回值**
+**回值**
 
 -   指定电平的近似分位数。
 
@@ -1467,19 +1545,31 @@ SELECT medianDeterministic(val, 1) FROM t
 
 返回 `Float64`. 当 `n <= 1`，返回 `+∞`.
 
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
+
 ## varPop(x) {#varpopx}
 
 计算金额 `Σ((x - x̅)^2) / n`，哪里 `n` 是样本大小和 `x̅`是平均值 `x`.
 
 换句话说，分散为一组值。 返回 `Float64`.
 
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `varPopStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
+
 ## stddevSamp(x) {#stddevsampx}
 
 结果等于平方根 `varSamp(x)`.
 
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
+
 ## stddevPop(x) {#stddevpopx}
 
 结果等于平方根 `varPop(x)`.
+
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `stddevPopStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## topK(N)(x) {#topknx}
 
@@ -1503,7 +1593,7 @@ topK(N)(column)
 
 **参数**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
 **示例**
 
@@ -1522,7 +1612,7 @@ FROM ontime
 
 ## topKWeighted {#topkweighted}
 
-类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每一价值是占 `weight` 次频率计算。
+类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每个价值都被记入 `weight` 次频率计算。
 
 **语法**
 
@@ -1565,13 +1655,22 @@ SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 
 返回Float64。 当 `n <= 1`, returns +∞.
 
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `covarSampStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
+
 ## covarPop(x,y) {#covarpopx-y}
 
 计算的值 `Σ((x - x̅)(y - y̅)) / n`.
 
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `covarPopStable` 功能。 它的工作速度较慢，但提供了较低的计算错误。
+
 ## corr(x,y) {#corrx-y}
 
 计算Pearson相关系数: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+!!! note "注"
+    该函数使用数值不稳定的算法。 如果你需要 [数值稳定性](https://en.wikipedia.org/wiki/Numerical_stability) 在计算中，使用 `corrStable` 功能。 它的工作速度较慢，但提供较低的计算错误。
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 

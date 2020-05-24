@@ -340,7 +340,7 @@ namespace MySQLReplication
     {
         DDL = 0,
         BEGIN = 1,
-        SAVEPOINT = 2
+        XA = 2
     };
 
     class QueryEvent : public EventBase
@@ -384,7 +384,7 @@ namespace MySQLReplication
         UInt32 column_count;
         std::vector<UInt8> column_type;
         std::vector<UInt16> column_meta;
-        String null_bitmap;
+        Bitmap null_bitmap;
 
         void dump() const override;
 
@@ -495,6 +495,7 @@ namespace MySQLReplication
         virtual String getName() const = 0;
         virtual Position getPosition() const = 0;
         virtual BinlogEventPtr readOneEvent() = 0;
+        virtual void setReplicateDatabase(String db) = 0;
         virtual ~IFlavor() = default;
     };
 
@@ -505,11 +506,15 @@ namespace MySQLReplication
         Position getPosition() const override { return position; }
         void readPayloadImpl(ReadBuffer & payload) override;
         BinlogEventPtr readOneEvent() override { return event; }
+        void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
 
     private:
         Position position;
         BinlogEventPtr event;
+        String replicate_do_db;
         std::shared_ptr<TableMapEvent> table_map;
+
+        inline bool do_replicate() { return (replicate_do_db.empty() || table_map->schema == replicate_do_db); }
     };
 }
 

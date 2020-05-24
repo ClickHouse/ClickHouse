@@ -29,7 +29,7 @@ pull requests (0 for master) manually.
 
 ```
 docker run --network=host --volume=$(pwd)/workspace:/workspace --volume=$(pwd)/output:/output
-    [-e REF_PR={} -e REF_SHA={} -e ]
+    [-e REF_PR={} -e REF_SHA={}]
     -e PR_TO_TEST={} -e SHA_TO_TEST={}
     yandex/clickhouse-performance-comparison
 ```
@@ -40,6 +40,7 @@ There are some environment variables that influence what the test does:
  * `-e CHCP_RUNS` -- the number of runs;
  * `-e CHPC_TEST_GREP` -- the names of the tests (xml files) to run, interpreted
  as a grep pattern.
+ * `-e CHPC_LOCAL_SCRIPT` -- use the comparison scripts from the docker container and not from the tested commit.
 
 #### Re-genarate report with your tweaks
 From the workspace directory (extracted test output archive):

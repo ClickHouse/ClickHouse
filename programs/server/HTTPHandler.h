@@ -106,8 +106,8 @@ private:
     CompiledRegexPtr url_regex;
     std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
 public:
-    explicit PredefinedQueryHandler(
-        IServer & server, const NameSet & receive_params_, const std::string & predefined_query_
+    PredefinedQueryHandler(
+        IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
         , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_);
 
     virtual void customizeContext(Poco::Net::HTTPServerRequest & request, Context & context) override;

@@ -71,11 +71,14 @@ void MySQLClient::handshake()
         client_capability_flags, max_packet_size, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    PacketResponse packet_response(client_capability_flags);
+    PacketResponse packet_response(client_capability_flags, true);
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
+
     if (packet_response.getType() == PACKET_ERR)
         throw MySQLClientError(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+    else if (packet_response.getType() == PACKET_AUTH_SWITCH)
+        throw MySQLClientError("Access denied for user " + user, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::writeCommand(char command, String query)
@@ -124,12 +127,11 @@ void MySQLClient::startBinlogDump(UInt32 slave_id, String replicate_db, String b
     UInt64 period_ns = (30 * 1e9);
     writeCommand(Command::COM_QUERY, "SET @master_heartbeat_period = " + std::to_string(period_ns));
 
-    /// Set replication filter to master
-    /// This requires MySQL version >=5.6, so results are not checked here.
-    writeCommand(Command::COM_QUERY, "CHANGE REPLICATION FILTER REPLICATE_DO_DB = (" + replicate_db + ")");
-
     // Register slave.
     registerSlaveOnMaster(slave_id);
+
+    /// Set Filter rule to replication.
+    replication.setReplicateDatabase(replicate_db);
 
     binlog_pos = binlog_pos < 4 ? 4 : binlog_pos;
     BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);

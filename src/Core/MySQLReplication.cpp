@@ -99,14 +99,19 @@ namespace MySQLReplication
             = header.event_size - EVENT_HEADER_LENGTH - 4 - 4 - 1 - 2 - 2 - status_len - schema_len - 1 - CHECKSUM_CRC32_SIGNATURE_LENGTH;
         query.resize(len);
         payload.readStrict(reinterpret_cast<char *>(query.data()), len);
-
-        if (query == "BEGIN")
+        if (query.rfind("BEGIN", 0) == 0)
         {
             typ = BEGIN;
         }
-        else if (query == "SAVEPOINT")
+        else if (query.rfind("XA", 0) == 0)
         {
-            typ = SAVEPOINT;
+            if (query.rfind("XA ROLLBACK", 0) == 0)
+                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
+            typ = XA;
+        }
+        else if (query.rfind("SAVEPOINT", 0) == 0)
+        {
+            throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -158,8 +163,12 @@ namespace MySQLReplication
         readLengthEncodedString(meta, payload);
         parseMeta(meta);
 
-        size_t len = (column_count + 8) / 7;
-        payload.readStrict(reinterpret_cast<char *>(null_bitmap.data()), len);
+        size_t null_bitmap_size = (column_count + 7) / 8;
+        readBitmap(payload, null_bitmap, null_bitmap_size);
+
+        /// Ignore MySQL 8.0 optional metadata fields.
+        /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
+        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
     }
 
     void TableMapEvent::parseMeta(String meta)
@@ -701,12 +710,7 @@ namespace MySQLReplication
         }
     }
 
-    void DryRunEvent::parseImpl(ReadBuffer & payload)
-    {
-        while (payload.next())
-        {
-        }
-    }
+    void DryRunEvent::parseImpl(ReadBuffer & payload) { payload.ignore(header.event_size - EVENT_HEADER_LENGTH); }
 
     void DryRunEvent::dump() const
     {
@@ -817,15 +821,23 @@ namespace MySQLReplication
                 event->parseEvent(payload);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
-                switch (query->typ)
+                if (query->schema == replicate_do_db)
                 {
-                    case BEGIN:
-                    case SAVEPOINT: {
-                        event = std::make_shared<DryRunEvent>();
-                        break;
+                    switch (query->typ)
+                    {
+                        case BEGIN:
+                        case XA: {
+                            event = std::make_shared<DryRunEvent>();
+                            break;
+                        }
+                        default:
+                            position.updateLogPos(event->header.log_pos);
                     }
-                    default:
-                        position.updateLogPos(event->header.log_pos);
+                }
+                else
+                {
+                    event = std::make_shared<DryRunEvent>();
+                    position.updateLogPos(event->header.log_pos);
                 }
                 break;
             }
@@ -840,28 +852,39 @@ namespace MySQLReplication
                 event = std::make_shared<TableMapEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-
-                table_map = std::static_pointer_cast<TableMapEvent>(event);
                 position.updateLogPos(event->header.log_pos);
+                table_map = std::static_pointer_cast<TableMapEvent>(event);
                 break;
             }
             case WRITE_ROWS_EVENT_V1:
             case WRITE_ROWS_EVENT_V2: {
-                event = std::make_shared<WriteRowsEvent>(table_map);
+                if (do_replicate())
+                    event = std::make_shared<WriteRowsEvent>(table_map);
+                else
+                    event = std::make_shared<DryRunEvent>();
+
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
             case DELETE_ROWS_EVENT_V1:
             case DELETE_ROWS_EVENT_V2: {
-                event = std::make_shared<DeleteRowsEvent>(table_map);
+                if (do_replicate())
+                    event = std::make_shared<DeleteRowsEvent>(table_map);
+                else
+                    event = std::make_shared<DryRunEvent>();
+
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;
             }
             case UPDATE_ROWS_EVENT_V1:
             case UPDATE_ROWS_EVENT_V2: {
-                event = std::make_shared<UpdateRowsEvent>(table_map);
+                if (do_replicate())
+                    event = std::make_shared<UpdateRowsEvent>(table_map);
+                else
+                    event = std::make_shared<DryRunEvent>();
+
                 event->parseHeader(payload);
                 event->parseEvent(payload);
                 break;

@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 55
 toc_title: "IP adresleriyle \xE7al\u0131\u015Fma"
 ---
 
-# IP Adresleriyle çalışmak için işlevler {#functions-for-working-with-ip-addresses}
+# IP adresleriyle çalışmak için işlevler {#functions-for-working-with-ip-addresses}
 
 ## Ipv4numtostring (num) {#ipv4numtostringnum}
 
-Bir Uınt32 numarası alır. Big endian’da bir IPv4 adresi olarak yorumlar. Karşılık gelen IPv4 adresini a. B. C. d biçiminde içeren bir dize döndürür (ondalık formda nokta ile ayrılmış sayılar).
+Bir Uınt32 numarası alır. Big endian'da bir IPv4 adresi olarak yorumlar. Karşılık gelen IPv4 adresini a. B. C. d biçiminde içeren bir dize döndürür (ondalık formda nokta ile ayrılmış sayılar).
 
 ## Ipv4stringtonum (s) {#ipv4stringtonums}
 
@@ -17,7 +17,7 @@ IPv4NumToString ters işlevi. IPv4 adresi geçersiz bir biçime sahipse, 0 dönd
 
 ## Ipv4numtostringclassc (num) {#ipv4numtostringclasscnum}
 
-Ipv4numtostring’e benzer, ancak son sekizli yerine xxx kullanıyor.
+Ipv4numtostring'e benzer, ancak son sekizli yerine xxx kullanıyor.
 
 Örnek:
 
@@ -153,7 +153,7 @@ SELECT
 └─────────────────────────────────────┴─────────────────────┘
 ```
 
-## Ipv4cidrtorange(ıpv4, cıdr), {#ipv4cidrtorangeipv4-cidr}
+## Ipv4cidrtorange(ıpv4, Cıdr), {#ipv4cidrtorangeipv4-cidr}
 
 İçeren bir IPv4 ve bir Uint8 değerini kabul eder [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). Alt ağın alt aralığını ve daha yüksek aralığını içeren iki IPv4 içeren bir tuple döndürür.
 
@@ -167,9 +167,9 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 └────────────────────────────────────────────┘
 ```
 
-## Ipv6cidrtorange(ıpv6, cıdr), {#ipv6cidrtorangeipv6-cidr}
+## Ipv6cidrtorange(ıpv6, Cıdr), {#ipv6cidrtorangeipv6-cidr}
 
-CIDR’Yİ içeren bir IPv6 ve bir Uİnt8 değerini kabul eder. Alt ağın alt aralığını ve daha yüksek aralığını içeren iki IPv6 içeren bir tuple döndürür.
+CIDR'Yİ içeren bir IPv6 ve bir Uİnt8 değerini kabul eder. Alt ağın alt aralığını ve daha yüksek aralığını içeren iki IPv6 içeren bir tuple döndürür.
 
 ``` sql
 SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);

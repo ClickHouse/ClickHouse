@@ -33,7 +33,7 @@ if (ENABLE_SSL)
         add_library (_poco_net_ssl ${SRCS})
         add_library (Poco::Net::SSL ALIAS _poco_net_ssl)
 
-        target_include_directories (_poco_net_ssl PUBLIC ${LIBRARY_DIR}/NetSSL_OpenSSL/include)
+        target_include_directories (_poco_net_ssl SYSTEM PUBLIC ${LIBRARY_DIR}/NetSSL_OpenSSL/include)
         target_link_libraries (_poco_net_ssl PUBLIC Poco::Crypto Poco::Net Poco::Util)
     else ()
         add_library (Poco::Net::SSL UNKNOWN IMPORTED GLOBAL)

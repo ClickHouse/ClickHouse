@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: "M\xE9todo de codificaci\xF3n de datos:"
 ---
 
-# Método De codificación De Datos: {#clickhouse-copier}
+# Método de codificación de datos: {#clickhouse-copier}
 
 Copia datos de las tablas de un clúster en tablas de otro (o del mismo) clúster.
 
@@ -26,7 +26,7 @@ Después de comenzar, `clickhouse-copier`:
 
 Para reducir el tráfico de red, recomendamos ejecutar `clickhouse-copier` en el mismo servidor donde se encuentran los datos de origen.
 
-## Ejecución De Clickhouse-copiadora {#running-clickhouse-copier}
+## Ejecución de Clickhouse-copiadora {#running-clickhouse-copier}
 
 La utilidad debe ejecutarse manualmente:
 
@@ -43,7 +43,7 @@ Parámetros:
 -   `task-upload-force` — Force upload `task-file` incluso si el nodo ya existe.
 -   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` crear `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectorios en `$base-dir`. Si se omite este parámetro, los directorios se crean en el directorio donde `clickhouse-copier` se puso en marcha.
 
-## Formato De Zookeeper.XML {#format-of-zookeeper-xml}
+## Formato de Zookeeper.XML {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>
@@ -62,7 +62,7 @@ Parámetros:
 </yandex>
 ```
 
-## Configuración De Tareas De Copia {#configuration-of-copying-tasks}
+## Configuración de tareas de copia {#configuration-of-copying-tasks}
 
 ``` xml
 <yandex>

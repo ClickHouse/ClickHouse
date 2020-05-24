@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: ALTER
 ---
@@ -26,7 +26,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
--   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
+-   [MODIFY COLUMN](#alter_modify-column) — Changes column's type, default expression and TTL.
 
 این اقدامات در زیر توضیح داده شده است.
 
@@ -42,7 +42,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 
 اضافه کردن یک ستون فقط تغییر ساختار جدول, بدون انجام هر گونه اقدامات با داده. داده ها بر روی دیسک پس از ظاهر نمی شود `ALTER`. اگر داده ها برای یک ستون از دست رفته در هنگام خواندن از جدول, این است که در با مقادیر پیش فرض پر (با انجام عبارت پیش فرض اگر یکی وجود دارد, و یا با استفاده از صفر یا رشته های خالی). ستون بر روی دیسک به نظر می رسد پس از ادغام قطعات داده (دیدن [ادغام](../../engines/table-engines/mergetree-family/mergetree.md)).
 
-این رویکرد به ما اجازه می دهد برای تکمیل `ALTER` پرس و جو فورا, بدون افزایش حجم داده های قدیمی.
+این رویکرد اجازه می دهد تا ما را به تکمیل `ALTER` پرس و جو فورا, بدون افزایش حجم داده های قدیمی.
 
 مثال:
 
@@ -206,10 +206,9 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` دایرکتوری و فراموش کرده ام.
 -   [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` دایرکتوری به جدول.
--   [REPLACE PARTITION](#alter_replace-partition) - پارتیشن داده ها را از یک جدول به دیگری کپی می کند.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - پارتیشن داده ها را از یک جدول به دیگری کپی می کند و جایگزین می شود.
--   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#تغییر\_موف\_ قابل تنظیم-پارتیشن) - پارتیشن داده را از یک جدول به دیگری حرکت دهید.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition)(\#تغییر\_موف\_ قابل تنظیم-پارتیشن) - پارتیشن داده را از یک جدول به دیگری حرکت دهید.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - بازنشانی ارزش یک ستون مشخص شده در یک پارتیشن.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) - بازنشانی شاخص ثانویه مشخص شده در یک پارتیشن.
 -   [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -484,7 +483,7 @@ ALTER TABLE [db.]table DELETE WHERE filter_expr
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
-این `filter_expr` باید از نوع باشد `UInt8`. این پرس و جو به روز رسانی مقادیر ستون مشخص شده به ارزش عبارات مربوطه در ردیف که `filter_expr` طول می کشد یک مقدار غیر صفر. ارزش ها به نوع ستون با استفاده از قالبی `CAST` اپراتور. به روز رسانی ستون هایی که در محاسبه اولیه استفاده می شود و یا کلید پارتیشن پشتیبانی نمی شود.
+این `filter_expr` باید از نوع باشد `UInt8`. این پرس و جو به روز رسانی مقادیر ستون مشخص شده به ارزش عبارات مربوطه در ردیف که `filter_expr` طول می کشد یک مقدار غیر صفر. ارزش ها به نوع ستون با استفاده از قالبی `CAST` اپراتور به روز رسانی ستون هایی که در محاسبه اولیه استفاده می شود و یا کلید پارتیشن پشتیبانی نمی شود.
 
 ``` sql
 ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
@@ -501,5 +500,103 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 یک جهش پرس و جو می گرداند بلافاصله پس از جهش مطلب اضافه شده است (در صورت تکرار جداول به باغ وحش برای nonreplicated جداول - به فایل سیستم). جهش خود را اجرا ناهمگام با استفاده از تنظیمات مشخصات سیستم. برای پیگیری پیشرفت جهش شما می توانید با استفاده از [`system.mutations`](../../operations/system-tables.md#system_tables-mutations) جدول یک جهش است که با موفقیت ارسال شد ادامه خواهد داد برای اجرای حتی اگر سرور کلیک دوباره راه اندازی. هیچ راهی برای عقب انداختن جهش هنگامی که ارسال شده است وجود دارد, اما اگر جهش برای برخی از دلیل گیر می تواند با لغو [`KILL MUTATION`](misc.md#kill-mutation) پرس و جو.
 
 مطالب برای جهش به پایان رسید حذف نمی حق دور (تعداد نوشته های حفظ شده توسط تعیین `finished_mutations_to_keep` پارامتر موتور ذخیره سازی). نوشته جهش قدیمی تر حذف می شوند.
+
+## ALTER USER {#alter-user-statement}
+
+تغییرات حساب کاربر کلیک.
+
+### نحو {#alter-user-syntax}
+
+``` sql
+ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+### توصیف {#alter-user-dscr}
+
+برای استفاده `ALTER USER` شما باید [ALTER USER](grant.md#grant-access-management) امتیاز.
+
+### مثالها {#alter-user-examples}
+
+تنظیم نقش های اعطا شده به عنوان پیش فرض:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+اگر نقش قبلا به یک کاربر اعطا نمی, تاتر می اندازد یک استثنا.
+
+تنظیم تمام نقش های اعطا شده به طور پیش فرض:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+اگر یک نقش به یک کاربر در اینده اعطا خواهد شد به طور پیش فرض به طور خودکار تبدیل خواهد شد.
+
+تنظیم تمام نقش های اعطا شده به استثنای پیش فرض `role1` و `role2`:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+## ALTER ROLE {#alter-role-statement}
+
+نقش ها را تغییر می دهد.
+
+### نحو {#alter-role-syntax}
+
+``` sql
+ALTER ROLE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+سیاست تغییرات ردیف.
+
+### نحو {#alter-row-policy-syntax}
+
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER QUOTA {#alter-quota-statement}
+
+سهمیه تغییرات.
+
+### نحو {#alter-quota-syntax}
+
+``` sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+
+سهمیه تغییرات.
+
+### نحو {#alter-settings-profile-syntax}
+
+``` sql
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
 
 [مقاله اصلی](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

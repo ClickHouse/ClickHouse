@@ -767,9 +767,9 @@ std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request
 }
 
 PredefinedQueryHandler::PredefinedQueryHandler(
-    IServer & server, const NameSet & receive_params_, const std::string & predefined_query_
+    IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
     , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
-    : HTTPHandler(server, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
+    : HTTPHandler(server_, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
     , url_regex(url_regex_), header_name_with_capture_regex(header_name_with_regex_)
 {
 }

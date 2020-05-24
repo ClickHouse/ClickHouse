@@ -106,7 +106,10 @@ void StorageMergeTree::shutdown()
     shutdown_called = true;
 
     /// Unlock all waiting mutations
-    mutation_wait_event.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
 
     try
     {
@@ -499,7 +502,10 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
-    mutation_wait_event.notify_all();
+    {
+        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
+    }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
     merging_mutating_task_handle->wake();
@@ -768,7 +774,10 @@ bool StorageMergeTree::tryMutatePart()
         write_part_log({});
 
         /// Notify all, who wait for this or previous mutations
-        mutation_wait_event.notify_all();
+        {
+            std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+            mutation_wait_event.notify_all();
+        }
     }
     catch (...)
     {

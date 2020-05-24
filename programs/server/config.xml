@@ -236,6 +236,8 @@
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <shard>
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+                <!-- <internal_replication>false</internal_replication> -->
                 <replica>
                     <host>localhost</host>
                     <port>9000</port>

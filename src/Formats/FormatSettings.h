@@ -90,6 +90,11 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    struct Arrow
+    {
+        UInt64 row_group_size = 1000000;
+    } arrow;
+
     struct Parquet
     {
         UInt64 row_group_size = 1000000;

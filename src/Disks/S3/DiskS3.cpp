@@ -391,7 +391,7 @@ private:
 DiskS3::DiskS3(
     String name_,
     std::shared_ptr<Aws::S3::S3Client> client_,
-    std::shared_ptr<S3::DynamicProxyConfiguration> proxy_configuration_,
+    std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,

@@ -6,7 +6,9 @@
 #include <Interpreters/Context.h>
 #include "DiskS3.h"
 #include "Disks/DiskFactory.h"
-#include "DynamicProxyConfiguration.h"
+#include "ProxyConfiguration.h"
+#include "ProxyListConfiguration.h"
+#include "ProxyResolverConfiguration.h"
 
 namespace DB
 {
@@ -35,35 +37,67 @@ namespace
 
     void checkRemoveAccess(IDisk & disk) { disk.remove("test_acl"); }
 
-    std::shared_ptr<S3::DynamicProxyConfiguration> getProxyConfiguration(const Poco::Util::AbstractConfiguration * config)
+    std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(const Poco::Util::AbstractConfiguration * proxy_resolver_config)
     {
-        if (config->has("proxy"))
-        {
-            std::vector<String> keys;
-            config->keys("proxy", keys);
+        auto endpoint = Poco::URI(proxy_resolver_config->getString("endpoint"));
+        auto proxy_scheme = proxy_resolver_config->getString("proxy_scheme");
+        if (proxy_scheme != "http" && proxy_scheme != "https")
+            throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
+        auto proxy_port = proxy_resolver_config->getUInt("proxy_port");
 
-            std::vector<Poco::URI> proxies;
-            for (const auto & key : keys)
-                if (startsWith(key, "uri"))
-                {
-                    Poco::URI proxy_uri(config->getString("proxy." + key));
+        LOG_DEBUG(
+            &Logger::get("DiskS3"), "Configured proxy resolver: " << endpoint.toString() << ", Scheme: " << proxy_scheme << ", Port: " << proxy_port);
 
-                    if (proxy_uri.getScheme() != "http")
-                        throw Exception("Only HTTP scheme is allowed in proxy configuration at the moment, proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
-                    if (proxy_uri.getHost().empty())
-                        throw Exception("Empty host in proxy configuration, proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+        return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
+    }
 
-                    proxies.push_back(proxy_uri);
+    std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(const Poco::Util::AbstractConfiguration * proxy_config)
+    {
+        std::vector<String> keys;
+        proxy_config->keys(keys);
 
-                    LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: " << proxy_uri.toString());
-                }
+        std::vector<Poco::URI> proxies;
+        for (const auto & key : keys)
+            if (startsWith(key, "uri"))
+            {
+                Poco::URI proxy_uri(proxy_config->getString(key));
 
-            if (!proxies.empty())
-                return std::make_shared<S3::DynamicProxyConfiguration>(proxies);
-        }
+                if (proxy_uri.getScheme() != "http" && proxy_uri.getScheme() != "https")
+                    throw Exception("Only HTTP/HTTPS schemas allowed in proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                if (proxy_uri.getHost().empty())
+                    throw Exception("Empty host in proxy uri: " + proxy_uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+
+                proxies.push_back(proxy_uri);
+
+                LOG_DEBUG(&Logger::get("DiskS3"), "Configured proxy: " << proxy_uri.toString());
+            }
+
+        if (!proxies.empty())
+            return std::make_shared<S3::ProxyListConfiguration>(proxies);
+
         return nullptr;
     }
 
+    std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const Poco::Util::AbstractConfiguration * config)
+    {
+        if (!config->has("proxy"))
+            return nullptr;
+
+        const auto * proxy_config = config->createView("proxy");
+
+        std::vector<String> config_keys;
+        proxy_config->keys(config_keys);
+
+        if (auto resolver_configs = std::count(config_keys.begin(), config_keys.end(), "resolver"))
+        {
+            if (resolver_configs > 1)
+                throw Exception("Multiple proxy resolver configurations aren't allowed", ErrorCodes::BAD_ARGUMENTS);
+
+            return getProxyResolverConfiguration(proxy_config->createView("resolver"));
+        }
+
+        return getProxyListConfiguration(proxy_config);
+    }
 }
 
 
@@ -100,7 +134,7 @@ void registerDiskS3(DiskFactory & factory)
         auto s3disk = std::make_shared<DiskS3>(
             name,
             client,
-            std::move(proxy_config),
+            proxy_config,
             uri.bucket,
             uri.key,
             metadata_path,

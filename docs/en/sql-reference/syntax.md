@@ -101,7 +101,7 @@ Depending on the data format (input or output), `NULL` may have a different repr
 
 There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
-In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md) operators and the related functions `isNull` and `isNotNull`.
+In queries, you can check `NULL` using the [IS NULL](operators/index.md#operator-is-null) and [IS NOT NULL](operators/index.md) operators and the related functions `isNull` and `isNotNull`.
 
 ## Functions {#functions}
 

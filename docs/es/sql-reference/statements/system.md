@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 37
 toc_title: SYSTEM
 ---
 
-# Consultas Del Sistema {#query-language-system}
+# Consultas del sistema {#query-language-system}
 
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
@@ -63,7 +63,7 @@ Normalmente se apaga ClickHouse (como `service clickhouse-server stop` / `kill {
 
 Anula el proceso de ClickHouse (como `kill -9 {$ pid_clickhouse-server}`)
 
-## Administración De Tablas Distribuidas {#query-language-system-distributed}
+## Administración de tablas distribuidas {#query-language-system-distributed}
 
 ClickHouse puede administrar [distribuido](../../engines/table-engines/special/distributed.md) tabla. Cuando un usuario inserta datos en estas tablas, ClickHouse primero crea una cola de los datos que se deben enviar a los nodos del clúster y, a continuación, los envía de forma asincrónica. Puede administrar el procesamiento de colas con el [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), y [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) consulta. También puede insertar sincrónicamente datos distribuidos con el `insert_distributed_sync` configuración.
 

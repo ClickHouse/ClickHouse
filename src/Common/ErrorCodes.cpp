@@ -493,6 +493,7 @@ namespace ErrorCodes
     extern const int NO_REMOTE_SHARD_AVAILABLE = 519;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE = 520;
     extern const int ATOMIC_RENAME_FAIL = 521;
+    extern const int OPENCL_ERROR = 522;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
