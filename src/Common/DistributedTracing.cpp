@@ -244,8 +244,6 @@ void Span::attachSpanInfoToQueryLog()
 }
 
 
-
-
 std::shared_ptr<Span> parkSpan(const std::shared_ptr<Span>& new_span)
 {
     auto parked_span = CurrentThread::getSpan();
