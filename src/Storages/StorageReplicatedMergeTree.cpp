@@ -2896,7 +2896,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     if (part_to_clone)
         LOG_DEBUG(log, "Cloned part {} from {}{}", part_name, part_to_clone->name, to_detached ? " (to 'detached' directory)" : "");
     else
-        LOG_DEBUG(log, "Fetched part {} from {}{}", part_name, part_to_clone->name, to_detached ? " (to 'detached' directory)" : "");
+        LOG_DEBUG(log, "Fetched part {} from {}{}", part_name, source_replica_path, to_detached ? " (to 'detached' directory)" : "");
 
     return true;
 }
