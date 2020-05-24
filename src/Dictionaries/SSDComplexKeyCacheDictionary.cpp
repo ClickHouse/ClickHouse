@@ -430,7 +430,7 @@ void SSDComplexKeyCachePartition::flush()
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
 
-    if (bytes_written != static_cast<decltype(bytes_written)>(write_request.aio_nbytes))
+    if (bytes_written != static_cast<decltype(bytes_written)>(block_size * write_buffer_size))
         throw Exception("Not all data was written for asynchronous IO on file " + path + BIN_FILE_EXT + ". returned: " + std::to_string(bytes_written), ErrorCodes::AIO_WRITE_ERROR);
 
     if (::fsync(fd) < 0)
@@ -772,7 +772,7 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
         }
 
 #if defined(__FreeBSD__)
-        if (event.aio.udata != static_cast<ssize_t>(request.aio.aio_nbytes))
+        if (aio_return(reinterpret_cast<struct aiocb *>(event.udata)) != static_cast<ssize_t>(request.aio.aio_nbytes))
             throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
 #else
         if (event.res != static_cast<ssize_t>(request.aio_nbytes))
