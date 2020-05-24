@@ -11,6 +11,7 @@ namespace DB
 enum class VolumeType
 {
     JBOD,
+    RAID1,
     SINGLE_DISK,
     UNKNOWN
 };
@@ -59,6 +60,23 @@ public:
 protected:
     Disks disks;
     const String name;
+};
+
+class MultiDiskReservation : public IReservation
+{
+public:
+    MultiDiskReservation(Reservations &reservations, UInt64 size);
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk(size_t i) const override { return reservations[i]->getDisk(); }
+
+    Disks getDisks() const override;
+
+    void update(UInt64 new_size) override;
+private:
+    Reservations reservations;
+    UInt64 size;
 };
 
 }
