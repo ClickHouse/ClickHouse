@@ -661,6 +661,7 @@ public:
     /// Secondary (data skipping) indices for MergeTree
     MergeTreeIndices skip_indices;
 
+    ExpressionActionsPtr skip_indices_expr;
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
