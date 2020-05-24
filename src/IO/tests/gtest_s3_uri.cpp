@@ -27,6 +27,12 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("jokserfn", uri.bucket);
         ASSERT_EQ("data", uri.key);
     }
+    {
+        S3::URI uri(Poco::URI("https://s3.us-east-2.amazonaws.com/bucketname/data"));
+        ASSERT_EQ("https://s3.us-east-2.amazonaws.com", uri.endpoint);
+        ASSERT_EQ("bucketname", uri.bucket);
+        ASSERT_EQ("data", uri.key);
+    }
 }
 
 TEST_P(S3UriTest, invalidPatterns)
