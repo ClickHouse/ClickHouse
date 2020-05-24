@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 
-#include <Common/thread_local_rng.h>
+//#include <Common/thread_local_rng.h>
 
 #include <Common/Stopwatch.h>
 
@@ -38,8 +38,8 @@ using TracingId = UInt64;
 struct SpanContext
 {
     // FIXME which underlying type to use?
-    TracingId trace_id;
-    TracingId span_id;
+    TracingId trace_id = 0;
+    TracingId span_id = 0;
 
     bool isInitialized = false;
     // bool PropagateTracing may be useful
@@ -88,10 +88,7 @@ private:
 
     bool is_finished = false;
 
-    static TracingId generateTracingId()
-    {
-        return std::uniform_int_distribution<TracingId>(0)(thread_local_rng);
-    }
+    static TracingId generateTracingId();
 
     // This is a workaround for logging traces without something like jaeger-client.
     void attachSpanInfoToQueryLog();

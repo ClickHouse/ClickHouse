@@ -20,7 +20,7 @@ namespace DB
 
 namespace opentracing
 {
-    class SpanContext;
+    struct SpanContext;
 }
 
 class Context;

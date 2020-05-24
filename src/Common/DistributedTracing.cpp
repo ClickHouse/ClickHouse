@@ -4,6 +4,8 @@
 //#include <Interpreters/Context.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/thread_local_rng.h>
+
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -241,6 +243,12 @@ void Span::attachSpanInfoToQueryLog()
 //    s = os2.str();
 //
 //    //std::cout << s << std::endl;
+}
+
+
+TracingId Span::generateTracingId()
+{
+    return std::uniform_int_distribution<TracingId>(0)(thread_local_rng);
 }
 
 
