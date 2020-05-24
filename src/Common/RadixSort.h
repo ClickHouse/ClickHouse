@@ -17,13 +17,17 @@
 
 
 /** Radix sort, has the following functionality:
+  *
   * Can sort unsigned, signed numbers, and floats.
   * Can sort an array of fixed length elements that contain something else besides the key.
+  * Can sort an array and form sorted result containing some transformation of elements.
+  * Can do partial sort.
   * Customizable radix size.
   *
-  * LSB, stable.
-  * NOTE For some applications it makes sense to add MSB-radix-sort,
-  *  as well as radix-select, radix-partial-sort, radix-get-permutation algorithms based on it.
+  * Two flavours of radix sort are implemented:
+  *
+  * 1. LSB, stable.
+  * 2. MSB, unstable, with support for partial sort.
   */
 
 
