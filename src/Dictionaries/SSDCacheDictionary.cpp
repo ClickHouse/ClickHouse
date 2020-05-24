@@ -577,13 +577,12 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
     for (size_t i = 0; i < index_to_out.size(); ++i)
     {
         #if defined(__FreeBSD__)
-        const auto back_offset = requests.back().aio.aio_offset;
+        const size_t back_offset = requests.empty() ? -1 : static_cast<size_t>(requests.back().aio.aio_offset);
         #else
-        const auto back_offset = requests.back().aio_offset;
+        const size_t back_offset = requests.empty() ? -1 : static_cast<size_t>(requests.back().aio_offset);
         #endif
 
-        if (!requests.empty() &&
-            static_cast<size_t>(back_offset) == index_to_out[i].first.getBlockId() * block_size)
+        if (!requests.empty() && back_offset == index_to_out[i].first.getBlockId() * block_size)
         {
             blocks_to_indices.back().push_back(i);
             continue;
@@ -616,10 +615,7 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
 
     std::vector<bool> processed(requests.size(), false);
     std::vector<io_event> events(requests.size());
-    #if defined(__FreeBSD__)
-    for (auto & event : events)
-        event.udata = -1;
-    #else
+    #if defined(__linux__)
     for (auto & event : events)
         event.res = -1;
     #endif
@@ -649,7 +645,7 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
             if (bytes_written != static_cast<ssize_t>(block_size))
             {
                 #if defined(__FreeBSD__)
-                    throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ".");
+                    throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
                 #else
                     throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". " +
                         "request_id= " + std::to_string(request.aio_data) + "/ " + std::to_string(requests.size()) +
@@ -658,7 +654,7 @@ void SSDCachePartition::getValueFromStorage(const PaddedPODArray<Index> & indice
                 #endif
             }
             #if defined(__FreeBSD__)
-            const auto* buf_ptr = reinterpret_cast<char *>(request.aio.aio_buf);
+            const volatile auto* buf_ptr = reinterpret_cast<volatile char *>(request.aio.aio_buf);
             #else
             const auto* buf_ptr = reinterpret_cast<char *>(request.aio_buf);
             #endif
@@ -739,13 +735,15 @@ void SSDCachePartition::clearOldestBlocks()
                 throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
         }
 
+#if defined(__FreeBSD__)
+        if (event.aio.res != static_cast<ssize_t>(request.aio.aio_nbytes))
+            throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
+#else
         if (event.res != static_cast<ssize_t>(request.aio_nbytes))
-        {
             throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ". " +
                 "aio_nbytes=" + std::to_string(request.aio_nbytes) +
                 ", returned=" + std::to_string(event.res) + ".", ErrorCodes::AIO_READ_ERROR);
-        }
-
+#endif
         __msan_unpoison(read_buffer_memory.data(), read_buffer_memory.size());
     }
 
