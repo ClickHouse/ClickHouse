@@ -392,8 +392,8 @@ void SSDComplexKeyCachePartition::flush()
     write_request.aio.aio_lio_opcode = LIO_WRITE;
     write_request.aio.aio_fildes = fd;
     write_request.aio.aio_buf = reinterpret_cast<volatile void *>(memory->data());
-    write_request.aio.aio_nbytes = block_size;
-    write_request.aio.aio_offset = block_size * current_file_block_id;
+    write_request.aio.aio_nbytes = block_size * write_buffer_size;
+    write_request.aio.aio_offset = (current_file_block_id % max_size) * block_size;
 #else
     write_request.aio_lio_opcode = IOCB_CMD_PWRITE;
     write_request.aio_fildes = fd;
@@ -609,8 +609,13 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
     blocks_to_indices.reserve(index_to_out.size());
     for (size_t i = 0; i < index_to_out.size(); ++i)
     {
-        if (!requests.empty() &&
-                static_cast<size_t>(requests.back().aio_offset) == index_to_out[i].first.getBlockId() * block_size)
+        #if defined(__FreeBSD__)
+        const size_t back_offset = requests.empty() ? -1 : static_cast<size_t>(requests.back().aio.aio_offset);
+        #else
+        const size_t back_offset = requests.empty() ? -1 : static_cast<size_t>(requests.back().aio_offset);
+        #endif
+
+        if (!requests.empty() && back_offset == index_to_out[i].first.getBlockId() * block_size)
         {
             blocks_to_indices.back().push_back(i);
             continue;
@@ -621,9 +626,9 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(
-                reinterpret_cast<UInt64>(read_buffer.data()) + SSD_BLOCK_SIZE * (requests.size() % READ_BUFFER_SIZE_BLOCKS));
-        request.aio.aio_nbytes = SSD_BLOCK_SIZE;
-        request.aio.aio_offset = index_to_out[i].first;
+            reinterpret_cast<UInt64>(read_buffer.data()) + block_size * (requests.size() % read_buffer_size));
+        request.aio.aio_nbytes = block_size;
+        request.aio.aio_offset = index_to_out[i].first.getBlockId() * block_size;
         request.aio_data = requests.size();
 #else
         request.aio_lio_opcode = IOCB_CMD_PREAD;
@@ -643,8 +648,11 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
 
     std::vector<bool> processed(requests.size(), false);
     std::vector<io_event> events(requests.size());
+    #if defined(__linux__)
     for (auto & event : events)
         event.res = -1;
+    #endif
+
 
     size_t to_push = 0;
     size_t to_pop = 0;
@@ -662,15 +670,35 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
         {
             const auto request_id = events[i].data;
             const auto & request = requests[request_id];
-            if (events[i].res != static_cast<ssize_t>(request.aio_nbytes))
-                throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". " +
-                    "request_id= " + std::to_string(request.aio_data) + ", aio_nbytes=" + std::to_string(request.aio_nbytes) + ", aio_offset=" + std::to_string(request.aio_offset) +
-                    "returned: " + std::to_string(events[i].res), ErrorCodes::AIO_READ_ERROR);
-            __msan_unpoison(reinterpret_cast<char *>(request.aio_buf), request.aio_nbytes);
+
+            #if defined(__FreeBSD__)
+            const auto bytes_written = aio_return(reinterpret_cast<struct aiocb *>(events[i].udata));
+            #else
+            const auto bytes_written = events[i].res;
+            #endif
+
+            if (bytes_written != static_cast<ssize_t>(block_size))
+            {
+                #if defined(__FreeBSD__)
+                    throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
+                #else
+                    throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". " +
+                        "request_id= " + std::to_string(request.aio_data) + "/ " + std::to_string(requests.size()) +
+                        ", aio_nbytes=" + std::to_string(request.aio_nbytes) + ", aio_offset=" + std::to_string(request.aio_offset) +
+                        ", returned=" + std::to_string(events[i].res) + ", errno=" + std::to_string(errno), ErrorCodes::AIO_READ_ERROR);
+                #endif
+            }
+            #if defined(__FreeBSD__)
+            const char* buf_ptr = reinterpret_cast<UInt64>(request.aio.aio_buf);
+            #else
+            const auto* buf_ptr = reinterpret_cast<char *>(request.aio_buf);
+            #endif
+
+            __msan_unpoison(buf_ptr, block_size);
             uint64_t checksum = 0;
-            ReadBufferFromMemory buf_special(reinterpret_cast<char *>(request.aio_buf), block_size);
+            ReadBufferFromMemory buf_special(buf_ptr, block_size);
             readBinary(checksum, buf_special);
-            uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(reinterpret_cast<char *>(request.aio_buf) + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE);
+            uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(buf_ptr + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE);
             if (checksum != calculated_checksum)
             {
                 throw Exception("Cache data corrupted. From block = " + std::to_string(checksum) + " calculated = " + std::to_string(calculated_checksum) + ".", ErrorCodes::CORRUPTED_DATA);
@@ -680,7 +708,7 @@ void SSDComplexKeyCachePartition::getValueFromStorage(const PaddedPODArray<Index
             {
                 const auto & [file_index, out_index] = index_to_out[idx];
                 ReadBufferFromMemory buf(
-                        reinterpret_cast<char *>(request.aio_buf) + file_index.getAddressInBlock(),
+                        buf_ptr + file_index.getAddressInBlock(),
                         block_size - file_index.getAddressInBlock());
                 set(out_index, buf);
             }
@@ -743,13 +771,15 @@ void SSDComplexKeyCachePartition::clearOldestBlocks()
                 throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
         }
 
+#if defined(__FreeBSD__)
+        if (event.aio.res != static_cast<ssize_t>(request.aio.aio_nbytes))
+            throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
+#else
         if (event.res != static_cast<ssize_t>(request.aio_nbytes))
-        {
             throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ". " +
                 "aio_nbytes=" + std::to_string(request.aio_nbytes) +
                 ", returned=" + std::to_string(event.res) + ".", ErrorCodes::AIO_READ_ERROR);
-        }
-
+#endif
         __msan_unpoison(read_buffer_memory.data(), read_buffer_memory.size());
     }
 
