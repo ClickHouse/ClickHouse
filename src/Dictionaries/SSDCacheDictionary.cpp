@@ -736,7 +736,7 @@ void SSDCachePartition::clearOldestBlocks()
         }
 
 #if defined(__FreeBSD__)
-        if (event.aio.udata != static_cast<ssize_t>(request.aio.aio_nbytes))
+        if (aio_return(reinterpret_cast<struct aiocb *>(event.udata)) != static_cast<ssize_t>(request.aio.aio_nbytes))
             throw Exception("GC: AIO failed to read file " + path + BIN_FILE_EXT + ".", ErrorCodes::AIO_READ_ERROR);
 #else
         if (event.res != static_cast<ssize_t>(request.aio_nbytes))
