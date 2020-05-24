@@ -273,7 +273,7 @@ DictionaryPtr createLayout(const std::string & ,
         const auto & layout_prefix = config_prefix + ".layout";
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(layout_prefix, keys);
-        const auto & dict_prefix = layout_prefix + keys.front();
+        const auto & dict_prefix = layout_prefix + "." + keys.front();
         size_t max_depth = config.getUInt(dict_prefix + ".max_depth", PolygonDictionary::kMaxDepthDefault);
         size_t min_intersections = config.getUInt(dict_prefix + ".min_intersections", PolygonDictionary::kMinIntersectionsDefault);
         return std::make_unique<PolygonDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, input_type, point_type, min_intersections, max_depth);
