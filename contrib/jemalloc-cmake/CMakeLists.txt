@@ -55,6 +55,7 @@ if (ENABLE_JEMALLOC)
             ${LIBRARY_DIR}/src/ticker.c
             ${LIBRARY_DIR}/src/tsd.c
             ${LIBRARY_DIR}/src/witness.c
+            ${LIBRARY_DIR}/src/safety_check.c
         )
         if (OS_DARWIN)
             list(APPEND SRCS ${LIBRARY_DIR}/src/zone.c)
