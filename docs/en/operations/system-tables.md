@@ -14,17 +14,18 @@ System tables provide information about:
 
 System tables:
 
-- Don't store data and metadata in the storage filesystem. ClickHouse server creates system tables at start.
 - Located in the `system` database.
 - Available only for reading data.
-- Can't be deleted, but can be detached.
+- Can't be dropped or altered, but can be detached.
+
+The `metric_log`, `query_log`, `query_thread_log`, `trace_log` system tables store data in a storage filesystem. Other system tables store their data in RAM. ClickHouse server creates such system tables at the start.
 
 ### Sources of System Metrics
 
 For collecting system metrics ClickHouse server uses:
 
-- `CAP_*_ADMIN` capabilities.
-- procfs (only in Linux).
+- `CAP_NET_ADMIN` capability.
+- [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
 
 **procfs**
 
