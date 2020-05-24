@@ -73,7 +73,7 @@
 /*
  * Defined if secure_getenv(3) is available.
  */
-#define JEMALLOC_HAVE_SECURE_GETENV
+// #define JEMALLOC_HAVE_SECURE_GETENV
 
 /*
  * Defined if issetugid(2) is available.
