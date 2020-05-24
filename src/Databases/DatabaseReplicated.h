@@ -20,8 +20,6 @@ class DatabaseReplicated : public DatabaseAtomic
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, const String & zookeeper_path_, const String & replica_name_, Context & context);
 
-    ~DatabaseReplicated();
-
     String getEngineName() const override { return "Replicated"; }
 
     void propose(const ASTPtr & query) override;
@@ -30,21 +28,21 @@ public:
     String replica_name;
 
 private:
+    void createDatabaseZKNodes();
 
-    void runMainThread();
+    void runBackgroundLogExecutor();
 
-    void executeLog(size_t n);
+    void executeFromZK(String & path);
 
     void saveState();
-
-    void createSnapshot();
+    void updateSnapshot();
+    void loadMetadataFromSnapshot();
 
     std::unique_ptr<Context> current_context; // to run executeQuery
 
     std::atomic<size_t> current_log_entry_n = 0;
-    std::atomic<bool> stop_flag{false};
 
-    BackgroundSchedulePool::TaskHolder backgroundLogExecutor;
+    BackgroundSchedulePool::TaskHolder background_log_executor;
 
     String replica_path;
 
