@@ -1160,7 +1160,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldModifiedParts()
 {
     DataPartsVector parts;
 
-    if (grab_old_modified_parts_called) {
+    if (grab_old_modified_parts_called)
+    {
         return parts;
     }
     grab_old_modified_parts_called = true;

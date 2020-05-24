@@ -135,7 +135,6 @@ void StorageMergeTree::shutdown()
     if (merging_mutating_task_handle)
         global_context.getBackgroundPool().removeTask(merging_mutating_task_handle);
 
-
     if (moving_task_handle)
         global_context.getBackgroundMovePool().removeTask(moving_task_handle);
 }
