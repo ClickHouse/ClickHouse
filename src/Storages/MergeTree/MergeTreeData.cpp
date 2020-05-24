@@ -646,22 +646,70 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         }
         else if (ttl_element->mode == TTLMode::GROUP_BY)
         {
-            if (ttl_element->group_by_key_columns.size() > this->primary_key_columns.size())
+            if (ttl_element->group_by_key.size() > this->primary_key_columns.size())
                 throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
-            for (size_t i = 0; i < ttl_element->group_by_key_columns.size(); ++i)
+
+            NameSet primary_key_columns_set(this->primary_key_columns.begin(), this->primary_key_columns.end());
+            NameSet aggregation_columns_set;
+
+            for (const auto & column : this->primary_key_expr->getRequiredColumns())
+                primary_key_columns_set.insert(column);
+
+            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
-                if (ttl_element->group_by_key_columns[i] != this->primary_key_columns[i])
+                if (ttl_element->group_by_key[i]->getColumnName() != this->primary_key_columns[i])
                     throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
             }
+            for (const auto & [name, value] : ttl_element->group_by_aggregations)
+            {
+                if (primary_key_columns_set.contains(name))
+                    throw Exception("Can not set custom aggregation for column in primary key in TTL Expression", ErrorCodes::BAD_TTL_EXPRESSION);
+                aggregation_columns_set.insert(name);
+            }
+            if (aggregation_columns_set.size() != ttl_element->group_by_aggregations.size())
+                throw Exception("Multiple aggregations set for one column in TTL Expression", ErrorCodes::BAD_TTL_EXPRESSION);
 
-            result.group_by_keys = ttl_element->group_by_key_columns;
+            result.group_by_keys = Names(this->primary_key_columns.begin(), this->primary_key_columns.begin() + ttl_element->group_by_key.size());
 
             auto aggregations = ttl_element->group_by_aggregations;
-            for (size_t i = ttl_element->group_by_key_columns.size(); i < this->primary_key_columns.size(); ++i)
+            for (size_t i = 0; i < this->primary_key_columns.size(); ++i)
             {
-                ASTPtr expr = makeASTFunction("max", std::make_shared<ASTIdentifier>(this->primary_key_columns[i]));
-                aggregations.emplace_back(this->primary_key_columns[i], std::move(expr));
+                ASTPtr value = this->primary_key_expr_ast->children[i]->clone();
+
+                if (i >= ttl_element->group_by_key.size())
+                {
+                    ASTPtr value_max = makeASTFunction("max", value->clone());
+                    aggregations.emplace_back(value->getColumnName(), std::move(value_max));
+                }
+
+                if (value->as<ASTFunction>())
+                {
+                    auto syntax_result = SyntaxAnalyzer(global_context).analyze(value, new_columns.getAllPhysical(), {}, true);
+                    auto expr_actions = ExpressionAnalyzer(value, syntax_result, global_context).getActions(false);
+                    for (const auto & column : expr_actions->getRequiredColumns())
+                    {
+                        if (i < ttl_element->group_by_key.size())
+                        {
+                            ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column));
+                            aggregations.emplace_back(column, std::move(expr));
+                        }
+                        else
+                        {
+                            ASTPtr expr = makeASTFunction("argMax", std::make_shared<ASTIdentifier>(column), value->clone());
+                            aggregations.emplace_back(column, std::move(expr));
+                        }
+                    }
+                }
             }
+            for (const auto & column : new_columns.getAllPhysical())
+            {
+                if (!primary_key_columns_set.contains(column.name) && !aggregation_columns_set.contains(column.name))
+                {
+                    ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
+                    aggregations.emplace_back(column.name, std::move(expr));
+                }
+            }
+
             for (auto [name, value] : aggregations)
             {
                 auto syntax_result = SyntaxAnalyzer(global_context).analyze(value, new_columns.getAllPhysical(), {}, true);

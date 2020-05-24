@@ -421,13 +421,4 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-
-/** A comma-separated list of identifiers, probably empty. */
-class ParserIdentifierList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "list of identifiers"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 }

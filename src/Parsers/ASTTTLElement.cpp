@@ -17,6 +17,8 @@ ASTPtr ASTTTLElement::clone() const
     clone->setExpression(clone->ttl_expr_pos, getExpression(ttl_expr_pos, true));
     clone->setExpression(clone->where_expr_pos, getExpression(where_expr_pos, true));
 
+    for (auto & expr : clone->group_by_key)
+        expr = expr->clone();
     for (auto & [name, expr] : clone->group_by_aggregations)
         expr = expr->clone();
 
@@ -37,19 +39,22 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
     else if (mode == TTLMode::GROUP_BY)
     {
         settings.ostr << " GROUP BY ";
-        for (auto it = group_by_key_columns.begin(); it != group_by_key_columns.end(); ++it)
+        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
-            if (it != group_by_key_columns.begin())
+            if (it != group_by_key.begin())
                 settings.ostr << ", ";
-            settings.ostr << *it;
+            (*it)->formatImpl(settings, state, frame);
         }
-        settings.ostr << " SET ";
-        for (auto it = group_by_aggregations.begin(); it != group_by_aggregations.end(); ++it)
+        if (!group_by_aggregations.empty())
         {
-            if (it != group_by_aggregations.begin())
-                settings.ostr << ", ";
-            settings.ostr << it->first << " = ";
-            it->second->formatImpl(settings, state, frame);
+            settings.ostr << " SET ";
+            for (auto it = group_by_aggregations.begin(); it != group_by_aggregations.end(); ++it)
+            {
+                if (it != group_by_aggregations.begin())
+                    settings.ostr << ", ";
+                settings.ostr << it->first << " = ";
+                it->second->formatImpl(settings, state, frame);
+            }
         }
     }
     else if (mode == TTLMode::DELETE)

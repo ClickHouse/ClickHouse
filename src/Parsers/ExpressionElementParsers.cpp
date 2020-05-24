@@ -1464,7 +1464,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_exp;
-    ParserIdentifierList parser_identifier_list;
+    ParserExpressionList parser_expression_list(false);
 
     ASTPtr ttl_expr;
     if (!parser_exp.parse(pos, ttl_expr, expected))
@@ -1495,7 +1495,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     ASTPtr where_expr;
-    std::vector<String> group_by_key_columns;
+    ASTPtr ast_group_by_key;
     std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     if (mode == TTLMode::MOVE)
@@ -1508,37 +1508,30 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (mode == TTLMode::GROUP_BY)
     {
-        ASTPtr ast_group_by_key_columns;
-        if (!parser_identifier_list.parse(pos, ast_group_by_key_columns, expected))
+        if (!parser_expression_list.parse(pos, ast_group_by_key, expected))
             return false;
-        for (const auto & identifier : ast_group_by_key_columns->children)
+
+        if (s_set.ignore(pos))
         {
-            String identifier_str;
-            if (!tryGetIdentifierNameInto(identifier, identifier_str))
-                return false;
-            group_by_key_columns.emplace_back(std::move(identifier_str));
-        }
+            while (true)
+            {
+                if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
+                    break;
 
-        if (!s_set.ignore(pos))
-            return false;
-        while (true)
-        {
-            if (!group_by_aggregations.empty() && !s_comma.ignore(pos))
-                break;
+                ASTPtr name;
+                ASTPtr value;
+                if (!parser_identifier.parse(pos, name, expected))
+                    return false;
+                if (!s_eq.ignore(pos))
+                    return false;
+                if (!parser_exp.parse(pos, value, expected))
+                    return false;
 
-            ASTPtr name;
-            ASTPtr value;
-            if (!parser_identifier.parse(pos, name, expected))
-                return false;
-            if (!s_eq.ignore(pos))
-                return false;
-            if (!parser_exp.parse(pos, value, expected))
-                return false;
-
-            String name_str;
-            if (!tryGetIdentifierNameInto(name, name_str))
-                return false;
-            group_by_aggregations.emplace_back(name_str, std::move(value));
+                String name_str;
+                if (!tryGetIdentifierNameInto(name, name_str))
+                    return false;
+                group_by_aggregations.emplace_back(name_str, std::move(value));
+            }
         }
     }
     else if (mode == TTLMode::DELETE && s_where.ignore(pos))
@@ -1552,8 +1545,11 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (where_expr)
         ttl_element->setWhere(std::move(where_expr));
 
-    ttl_element->group_by_key_columns = std::move(group_by_key_columns);
-    ttl_element->group_by_aggregations = std::move(group_by_aggregations);
+    if (mode == TTLMode::GROUP_BY)
+    {
+        ttl_element->group_by_key = std::move(ast_group_by_key->children);
+        ttl_element->group_by_aggregations = std::move(group_by_aggregations);
+    }
 
     node = ttl_element;
     return true;

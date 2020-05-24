@@ -43,3 +43,45 @@ insert into ttl_01280_3 values (3, 5, 5, 8, now());
 select sleep(2.1) format Null;
 optimize table ttl_01280_3 final;
 select a, b, x, y from ttl_01280_3;
+
+drop table if exists ttl_01280_4;
+
+create table ttl_01280_4 (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (toDate(d), -(a + b)) ttl d + interval 1 second group by toDate(d) set x = sum(x), y = max(y);
+insert into ttl_01280_4 values (1, 1, 0, 4, now() + 10);
+insert into ttl_01280_4 values (10, 2, 3, 3, now());
+insert into ttl_01280_4 values (2, 10, 1, 7, now());
+insert into ttl_01280_4 values (3, 3, 5, 2, now());
+insert into ttl_01280_4 values (1, 5, 4, 9, now());
+select sleep(1.1) format Null;
+optimize table ttl_01280_4 final;
+select a, b, x, y from ttl_01280_4;
+
+drop table if exists ttl_01280_5;
+
+create table ttl_01280_5 (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (toDate(d), a, -b) ttl d + interval 1 second group by toDate(d), a set x = sum(x);
+insert into ttl_01280_5 values (1, 2, 3, 5, now());
+insert into ttl_01280_5 values (2, 10, 1, 5, now());
+insert into ttl_01280_5 values (2, 3, 5, 5, now());
+insert into ttl_01280_5 values (1, 5, 4, 5, now());
+select sleep(1.1) format Null;
+optimize table ttl_01280_5 final;
+select a, b, x, y from ttl_01280_5;
+
+drop table if exists ttl_01280_6;
+
+create table ttl_01280_6 (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (toDate(d), a, -b) ttl d + interval 1 second group by toDate(d), a;
+insert into ttl_01280_6 values (1, 2, 3, 5, now());
+insert into ttl_01280_6 values (2, 10, 3, 5, now());
+insert into ttl_01280_6 values (2, 3, 3, 5, now());
+insert into ttl_01280_6 values (1, 5, 3, 5, now());
+select sleep(1.1) format Null;
+optimize table ttl_01280_6 final;
+select a, b, x, y from ttl_01280_6;
+
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by x set y = max(y); -- { serverError 450}
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by b set y = max(y); -- { serverError 450}
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by a, b, x set y = max(y); -- { serverError 450}
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by a set b = min(b), y = max(y); -- { serverError 450}
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (a, b) ttl d + interval 1 second group by a, b set y = max(y), y = max(y); -- { serverError 450}
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (toDate(d), a) ttl d + interval 1 second group by toDate(d), a set d = min(d), b = max(b); -- { serverError 450}
+create table ttl_01280_error (a Int, b Int, x Int64, y Int64, d DateTime) engine = MergeTree order by (d, -(a + b)) ttl d + interval 1 second group by d, -(a + b) set a = sum(a), b = min(b); -- { serverError 450}
