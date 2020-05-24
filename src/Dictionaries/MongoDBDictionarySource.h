@@ -27,9 +27,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-#    if POCO_VERSION < 0x01070800
 void authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password);
-#    endif
 
 std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select);
 

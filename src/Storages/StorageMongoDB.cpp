@@ -1,21 +1,16 @@
 #include "StorageMongoDB.h"
 
-#include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
-#include <Poco/MongoDB/ObjectId.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Formats/FormatFactory.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
