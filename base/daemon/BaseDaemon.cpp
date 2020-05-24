@@ -302,7 +302,7 @@ static void sanitizerDeathCallback()
             message << " (query_id: " << query_id << ")";
         message << " Sanitizer trap.";
 
-        LOG_FATAL(log, message.rdbuf());
+        LOG_FATAL(log, message.str());
     }
 
     /// Just in case print our own stack trace. In case when llvm-symbolizer does not work.
@@ -314,7 +314,7 @@ static void sanitizerDeathCallback()
         for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
             bare_stacktrace << ' ' << stack_trace.getFrames()[i];
 
-        LOG_FATAL(log, bare_stacktrace.rdbuf());
+        LOG_FATAL(log, bare_stacktrace.str());
     }
 
     /// Write symbolized stack trace line by line for better grep-ability.
