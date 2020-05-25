@@ -12,7 +12,7 @@
 namespace DB
 {
 
-SimplePolygonDictionary::SimplePolygonDictionary(
+PolygonDictionarySimple::PolygonDictionarySimple(
         const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
@@ -24,9 +24,9 @@ SimplePolygonDictionary::SimplePolygonDictionary(
 {
 }
 
-std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
+std::shared_ptr<const IExternalLoadable> PolygonDictionarySimple::clone() const
 {
-    return std::make_shared<SimplePolygonDictionary>(
+    return std::make_shared<PolygonDictionarySimple>(
             this->database,
             this->name,
             this->dict_struct,
@@ -36,7 +36,7 @@ std::shared_ptr<const IExternalLoadable> SimplePolygonDictionary::clone() const
             this->point_type);
 }
 
-bool SimplePolygonDictionary::find(const Point & point, size_t & id) const
+bool PolygonDictionarySimple::find(const Point & point, size_t & id) const
 {
     bool found = false;
     for (size_t i = 0; i < polygons.size(); ++i)
@@ -51,53 +51,7 @@ bool SimplePolygonDictionary::find(const Point & point, size_t & id) const
     return found;
 }
 
-GridPolygonDictionary::GridPolygonDictionary(
-        const std::string & database_,
-        const std::string & name_,
-        const DictionaryStructure & dict_struct_,
-        DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
-        InputType input_type_,
-        PointType point_type_):
-        IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-        grid(kMinIntersections, kMaxDepth, polygons) {}
-
-std::shared_ptr<const IExternalLoadable> GridPolygonDictionary::clone() const
-{
-    return std::make_shared<GridPolygonDictionary>(
-            this->database,
-            this->name,
-            this->dict_struct,
-            this->source_ptr->clone(),
-            this->dict_lifetime,
-            this->input_type,
-            this->point_type);
-}
-
-bool GridPolygonDictionary::find(const Point &point, size_t & id) const
-{
-    auto cell = grid.find(point.x(), point.y());
-    if (cell)
-    {
-        for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
-        {
-            const auto & candidate = (cell->polygon_ids)[i];
-            if (bg::covered_by(point, polygons[candidate]))
-            {
-                id = candidate;
-                return true;
-            }
-        }
-        if (cell->first_covered != FinalCell::kNone)
-        {
-            id = cell->first_covered;
-            return true;
-        }
-    }
-    return false;
-}
-
-SmartPolygonDictionary::SmartPolygonDictionary(
+PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
         const std::string & database_,
         const std::string & name_,
         const DictionaryStructure & dict_struct_,
@@ -121,9 +75,9 @@ SmartPolygonDictionary::SmartPolygonDictionary(
     }
 }
 
-std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
+std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() const
 {
-    return std::make_shared<SmartPolygonDictionary>(
+    return std::make_shared<PolygonDictionaryIndexEach>(
             this->database,
             this->name,
             this->dict_struct,
@@ -135,7 +89,7 @@ std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
             this->max_depth);
 }
 
-bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
+bool PolygonDictionaryIndexEach::find(const Point & point, size_t & id) const
 {
     auto cell = grid.find(point.x(), point.y());
     if (cell)
@@ -159,7 +113,7 @@ bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
     return false;
 }
 
-OneBucketPolygonDictionary::OneBucketPolygonDictionary(
+PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
     const std::string & database_,
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
@@ -176,9 +130,9 @@ OneBucketPolygonDictionary::OneBucketPolygonDictionary(
 {
 }
 
-std::shared_ptr<const IExternalLoadable> OneBucketPolygonDictionary::clone() const
+std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() const
 {
-    return std::make_shared<OneBucketPolygonDictionary>(
+    return std::make_shared<PolygonDictionaryIndexCell>(
             this->database,
             this->name,
             this->dict_struct,
@@ -190,7 +144,7 @@ std::shared_ptr<const IExternalLoadable> OneBucketPolygonDictionary::clone() con
             this->max_depth);
 }
 
-bool OneBucketPolygonDictionary::find(const Point & point, size_t & id) const
+bool PolygonDictionaryIndexCell::find(const Point & point, size_t & id) const
 {
     auto cell = index.find(point.x(), point.y());
     if (cell) {
@@ -268,7 +222,7 @@ DictionaryPtr createLayout(const std::string & ,
 
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
-    if constexpr (std::is_same_v<PolygonDictionary, SmartPolygonDictionary> || std::is_same_v<PolygonDictionary, OneBucketPolygonDictionary>)
+    if constexpr (std::is_same_v<PolygonDictionary, PolygonDictionaryIndexEach> || std::is_same_v<PolygonDictionary, PolygonDictionaryIndexCell>)
     {
         const auto & layout_prefix = config_prefix + ".layout";
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -284,11 +238,9 @@ DictionaryPtr createLayout(const std::string & ,
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-
-    factory.registerLayout("polygon", createLayout<SimplePolygonDictionary>, true);
-    factory.registerLayout("grid_polygon", createLayout<GridPolygonDictionary>, true);
-    factory.registerLayout("bucket_polygon", createLayout<SmartPolygonDictionary>, true);
-    factory.registerLayout("one_bucket_polygon", createLayout<OneBucketPolygonDictionary>, true);
+    factory.registerLayout("polygon", createLayout<PolygonDictionarySimple>, true);
+    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true);
+    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true);
 }
 
 }

@@ -27,10 +27,10 @@ using Box = bg::model::box<IPolygonDictionary::Point>;
 /** SlabsPolygonIndex builds index based on shooting ray down from point.
   * When this ray crosses odd number of edges in single polygon, point is considered inside. 
   * 
-  * SlabsPolygonIndex divides plane into verical slabs, separated by verical lines going through all points.
+  * SlabsPolygonIndex divides plane into vertical slabs, separated by vertical lines going through all points.
   * For each slab, all edges falling in that slab are effectively stored.
   * For each find query, required slab is found with binary search, and result is computed
-  *  by iterating over all edges in that slab.
+  * by iterating over all edges in that slab.
   */
 class SlabsPolygonIndex
 {
@@ -103,6 +103,11 @@ public:
     [[nodiscard]] virtual const ReturnCell * find(Coord x, Coord y) const = 0;
 };
 
+/** This leaf cell implementation simply stores the indexes of the intersections.
+  * As an additional optimization, if a polygon covers the cell completely its index is stored in
+  * the first_covered field and all following polygon indexes are discarded,
+  * since they won't ever be useful.
+  */
 class FinalCell : public ICell<FinalCell>
 {
 public:
@@ -116,6 +121,13 @@ private:
     [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
 };
 
+/** This leaf cell implementation intersects the given polygons with the cell's box and builds a
+  * slab index for the result.
+  * Since the intersections can produce multiple polygons a vector of corresponding ids is stored.
+  * If the slab index returned the id x for a query the correct polygon id is corresponding_ids[x].
+  * As an additional optimization, if a polygon covers the cell completely its index stored in the
+  * first_covered field and all following polygons are not used for building the slab index.
+  */
 class FinalCellWithSlabs : public ICell<FinalCellWithSlabs>
 {
 public:
@@ -146,6 +158,7 @@ public:
         return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
     }
 
+    /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kSplit = 4;
 
 private:
@@ -153,11 +166,13 @@ private:
 };
 
 /** A recursively built grid containing information about polygons intersecting each cell.
-  * The starting cell is the bounding box of the given polygons which are stored by reference.
-  * For every cell a vector of indices of intersecting polygons is stored, in the order originally provided upon
+  * The starting cell is the bounding box of the given polygons which are passed by reference.
+  * For every cell a vector of indices of intersecting polygons is calculated, in the order originally provided upon
   * construction. A cell is recursively split into kSplit * kSplit equal cells up to the point where the cell
   * intersects a small enough number of polygons or the maximum allowed depth is exceeded.
   * Both of these parameters are set in the constructor.
+  * Once these conditions are fulfilled some index is built and stored in the leaf cells.
+  * The ReturnCell class passed in the template parameter is responsible for this.
   */
 template <class ReturnCell>
 class GridRoot : public ICell<ReturnCell>
@@ -184,8 +199,10 @@ public:
         return root->find((x - min_x) / (max_x - min_x), (y - min_y) / (max_y - min_y));
     }
 
-    /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
+    /** Until this depth is reached each row of cells is calculated concurrently in a new thread. */
     static constexpr size_t kMultiProcessingDepth = 2;
+
+    /** A constant used to avoid errors with points falling on the boundaries of cells. */
     static constexpr Coord kEps = 1e-4;
 
 private:
