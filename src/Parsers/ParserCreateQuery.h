@@ -10,8 +10,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Poco/String.h>
 
-#include <iostream>
-
 
 namespace DB
 {
@@ -141,8 +139,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       */
     ASTPtr type;
     String default_specifier;
-    ASTPtr isNull;
-    ASTPtr isNot;
+    ASTPtr is_null;
+    ASTPtr is_not;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
@@ -175,14 +173,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (s_not.check(pos, expected)) {
         if (s_null.check(pos, expected)) {
-            isNot = std::make_shared<ASTIdentifier>("NOT");
-            isNull = std::make_shared<ASTIdentifier>("NULL");
+            is_not = std::make_shared<ASTIdentifier>("NOT");
+            is_null = std::make_shared<ASTIdentifier>("NULL");
         } else {
             return false;
         }
     } else {
         if (s_null.check(pos, expected)) {
-            isNull = std::make_shared<ASTIdentifier>("NULL");
+            is_null = std::make_shared<ASTIdentifier>("NULL");
         }
     }
 
@@ -215,14 +213,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(type));
     }
 
-    if (isNull) {
-        column_declaration->isNULL = isNull;
-        column_declaration->children.push_back(std::move(isNull));
+    if (is_null) {
+        column_declaration->is_null = is_null;
+        column_declaration->children.push_back(std::move(is_null));
     }
 
-    if (isNot) {
-        column_declaration->isNot = isNot;
-        column_declaration->children.push_back(std::move(isNot));
+    if (is_not) {
+        column_declaration->is_not = is_not;
+        column_declaration->children.push_back(std::move(is_not));
     }
 
     if (default_expression)
