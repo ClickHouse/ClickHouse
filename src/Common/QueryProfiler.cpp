@@ -165,10 +165,10 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
     if (timer_id != nullptr && timer_delete(timer_id))
-        LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+        LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
     if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
-        LOG_ERROR(log, "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+        LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
 #endif
 }
 

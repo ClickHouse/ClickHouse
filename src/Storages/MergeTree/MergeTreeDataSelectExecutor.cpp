@@ -18,6 +18,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/Context.h>
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
 // https://stackoverflow.com/questions/41198673/uint128-t-not-working-with-clang-and-libstdc
@@ -106,7 +107,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     size_t rows_count = 0;
 
     /// We will find out how many rows we would have read without sampling.
-    LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
+    LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
     for (const auto & part : parts)
     {
@@ -329,7 +330,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_size > 1)
         {
             relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
-            LOG_DEBUG(log, "Selected relative sample size: " << toString(relative_sample_size));
+            LOG_DEBUG(log, "Selected relative sample size: {}", toString(relative_sample_size));
         }
 
         /// SAMPLE 1 is the same as the absence of SAMPLE.
@@ -342,7 +343,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_offset > 1)
         {
             relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
-            LOG_DEBUG(log, "Selected relative sample offset: " << toString(relative_sample_offset));
+            LOG_DEBUG(log, "Selected relative sample offset: {}", toString(relative_sample_offset));
         }
     }
 
@@ -535,9 +536,9 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         return {};
     }
 
-    LOG_DEBUG(log, "Key condition: " << key_condition.toString());
+    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
     if (minmax_idx_condition)
-        LOG_DEBUG(log, "MinMax index condition: " << minmax_idx_condition->toString());
+        LOG_DEBUG(log, "MinMax index condition: {}", minmax_idx_condition->toString());
 
     /// PREWHERE
     String prewhere_column;
@@ -587,8 +588,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
-        << sum_marks << " marks to read from " << sum_ranges << " ranges");
+    LOG_DEBUG(log, "Selected {} parts by date, {} parts by key, {} marks to read from {} ranges", parts.size(), parts_with_ranges.size(), sum_marks, sum_ranges);
 
     if (parts_with_ranges.empty())
         return {};
@@ -787,7 +787,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
-        LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
+        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
         {
@@ -1385,7 +1385,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 {
     if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
     {
-        LOG_DEBUG(log, "File for index " << backQuote(index->name) << " does not exist. Skipping it.");
+        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index->name));
         return ranges;
     }
 
@@ -1445,7 +1445,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index " << backQuote(index->name) << " has dropped " << granules_dropped << " granules.");
+    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index->name), granules_dropped);
 
     return res;
 }

@@ -179,9 +179,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     if (!parts_to_move.empty())
     {
-        LOG_TRACE(log, "Selected " << parts_to_move_by_policy_rules << " parts to move according to storage policy rules and "
-            << parts_to_move_by_ttl_rules << " parts according to TTL rules, "
-            << formatReadableSizeWithBinarySuffix(parts_to_move_total_size_bytes) << " total");
+        LOG_TRACE(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, formatReadableSizeWithBinarySuffix(parts_to_move_total_size_bytes));
         return true;
     }
     else
@@ -193,13 +191,13 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     if (moves_blocker.isCancelled())
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
-    LOG_TRACE(log, "Cloning part " << moving_part.part->name);
+    LOG_TRACE(log, "Cloning part {}", moving_part.part->name);
     moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + moving_part.part->name, moving_part.reserved_space->getDisk());
     MergeTreeData::MutableDataPartPtr cloned_part =
         data->createPart(moving_part.part->name, single_disk_volume, "detached/" + moving_part.part->name);
-    LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
+    LOG_TRACE(log, "Part {} was cloned to {}", moving_part.part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
     return cloned_part;
@@ -217,8 +215,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part->name)
     {
-        LOG_INFO(log, "Failed to swap " << cloned_part->name << ". Active part doesn't exist."
-            << " Possible it was merged or mutated. Will remove copy on path '" << cloned_part->getFullPath() << "'.");
+        LOG_INFO(log, "Failed to swap {}. Active part doesn't exist. Possible it was merged or mutated. Will remove copy on path '{}'.", cloned_part->name, cloned_part->getFullPath());
         return;
     }
 
@@ -228,7 +225,7 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);
 
-    LOG_TRACE(log, "Part " << cloned_part->name << " was moved to " << cloned_part->getFullPath());
+    LOG_TRACE(log, "Part {} was moved to {}", cloned_part->name, cloned_part->getFullPath());
 }
 
 }

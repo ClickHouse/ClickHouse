@@ -5,11 +5,41 @@ toc_title: System Tables
 
 # System Tables {#system-tables}
 
-System tables are used for implementing part of the system’s functionality, and for providing access to information about how the system is working.
-You can’t delete a system table (but you can perform DETACH).
-System tables don’t have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
-System tables are read-only.
-They are located in the ‘system’ database.
+## Introduction
+
+System tables provide information about:
+
+- Server states, processes, and environment.
+- Server's internal processes.
+
+System tables:
+
+- Located in the `system` database.
+- Available only for reading data.
+- Can't be dropped or altered, but can be detached.
+
+The `metric_log`, `query_log`, `query_thread_log`, `trace_log` system tables store data in a storage filesystem. Other system tables store their data in RAM. ClickHouse server creates such system tables at the start.
+
+### Sources of System Metrics
+
+For collecting system metrics ClickHouse server uses:
+
+- `CAP_NET_ADMIN` capability.
+- [procfs](https://en.wikipedia.org/wiki/Procfs) (only in Linux).
+
+**procfs**
+
+If ClickHouse server doesn't have `CAP_NET_ADMIN` capability, it tries to fall back to `ProcfsMetricsProvider`. `ProcfsMetricsProvider` allows collecting per-query system metrics (for CPU and I/O).
+
+If procfs is supported and enabled on the system, ClickHouse server collects these metrics:
+
+- `OSCPUVirtualTimeMicroseconds`
+- `OSCPUWaitMicroseconds`
+- `OSIOWaitMicroseconds`
+- `OSReadChars`
+- `OSWriteChars`
+- `OSReadBytes`
+- `OSWriteBytes`
 
 ## system.asynchronous\_metrics {#system_tables-asynchronous_metrics}
 

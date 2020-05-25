@@ -66,7 +66,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 {
-    out << "metadata format version: 1" << "\n"
+    out << "metadata format version: 1\n"
         << "date column: " << date_column << "\n"
         << "sampling expression: " << sampling_expression << "\n"
         << "index granularity: " << index_granularity << "\n"
