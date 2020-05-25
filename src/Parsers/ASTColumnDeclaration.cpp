@@ -16,16 +16,16 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->type);
     }
 
-    if (isNULL)
+    if (is_null)
     {
-        res->isNULL = isNULL;
-        res->children.push_back(res->isNULL);
+        res->is_null = is_null;
+        res->children.push_back(res->is_null);
     }
 
-    if (isNot)
+    if (is_not)
     {
-        res->isNot = isNot;
-        res->children.push_back(res->isNot);
+        res->is_not = is_not;
+        res->children.push_back(res->is_not);
     }
 
     if (default_expression)
@@ -71,16 +71,16 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
         type->formatImpl(settings, state, frame);
     }
 
-    if (isNot)
+    if (is_not)
     {
         settings.ostr << ' ';
-        isNot->formatImpl(settings, state, frame);
+        is_not->formatImpl(settings, state, frame);
     }
 
-    if (isNULL)
+    if (is_null)
     {
         settings.ostr << ' ';
-        isNULL->formatImpl(settings, state, frame);
+        is_null->formatImpl(settings, state, frame);
     }
 
 
