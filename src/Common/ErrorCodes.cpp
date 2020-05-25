@@ -501,6 +501,8 @@ namespace ErrorCodes
     extern const int NO_RESERVATIONS_PROVIDED = 534;
     extern const int UNKNOWN_RAID_TYPE = 535;
 
+    extern const int INVALID_RAID_TYPE = 535;
+
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;

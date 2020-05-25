@@ -36,6 +36,8 @@ public:
 
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
 
+    StoragePolicyPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
+
     bool isDefaultPolicy() const;
 
     /// Returns disks ordered by volumes priority
