@@ -53,7 +53,7 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = std::move(*y).mutate();
+        MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(2);
 
         std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";
@@ -72,7 +72,7 @@ int main(int, char **)
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
     {
-        MutableColumnPtr mut = std::move(*y).mutate();
+        MutableColumnPtr mut = IColumn::mutate(std::move(y));
         mut->set(3);
 
         std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << ", " << mut->use_count() << "\n";

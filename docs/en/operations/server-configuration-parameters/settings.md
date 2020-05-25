@@ -207,7 +207,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 **Example**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
