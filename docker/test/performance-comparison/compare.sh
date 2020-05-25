@@ -231,8 +231,8 @@ done
 function analyze_queries
 {
 rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
-rm -rfv analyze ||:
-mkdir analyze ||:
+rm -rf analyze ||:
+mkdir analyze analyze/tmp ||:
 
 build_log_column_definitions
 
@@ -250,7 +250,7 @@ done
 unset IFS
 
 # for each query run, prepare array of metrics from query log
-clickhouse-local --verbose --query "
+clickhouse-local --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
@@ -294,7 +294,7 @@ query_index=1
 IFS=$'\n'
 for prefix in $(cut -f1,2 "analyze/query-run-metrics.tsv" | sort | uniq)
 do
-    file="analyze/$(echo "$prefix" | sed 's/\t/_/g').tmp"
+    file="analyze/tmp/$(echo "$prefix" | sed 's/\t/_/g').tsv"
     grep "^$prefix	" "analyze/query-run-metrics.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
@@ -315,7 +315,7 @@ parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> ana
 function report
 {
 rm -r report ||:
-mkdir report ||:
+mkdir report report/tmp ||:
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
@@ -482,7 +482,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
 for version in {right,left}
 do
     rm -rf data
-    clickhouse-local --verbose --query "
+    clickhouse-local --query "
 create view queries_for_flamegraph as
     select * from file('report/queries-for-flamegraph.tsv', TSVWithNamesAndTypes,
         'test text, query_index int');
@@ -585,7 +585,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
         group by test, query_index, metric
         having d > 0.5
     ) metrics
-    left join unstable_query_runs using (test, query_index)
+    left join query_display_names using (test, query_index)
     order by test, query_index, d desc
     ;
 
@@ -611,7 +611,7 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
 done
 wait
 
-# Create per-query flamegraphs and files with metrics
+# Create per-query flamegraphs
 IFS=$'\n'
 for version in {right,left}
 do
@@ -626,13 +626,8 @@ do
         grep -F "$query	" "report/stacks.$version.tsv" \
             | cut -f 5- \
             | sed 's/\t/ /g' \
-            | tee "report/$query_file.stacks.$version.tsv" \
+            | tee "report/tmp/$query_file.stacks.$version.tsv" \
             | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
-
-        # Copy metric stats into separate files as well.
-        # Ditto the above comment about -F.
-        grep -F "$query	" "report/metric-deviation.$version.tsv" \
-            | cut -f4- > "$query_file.$version.metrics.rep" &
     done
 done
 wait
@@ -642,12 +637,29 @@ unset IFS
 IFS=$'\n'
 for query_file in $(cat report/query-files.txt)
 do
-    ~/fg/difffolded.pl "report/$query_file.stacks.left.tsv" "report/$query_file.stacks.right.tsv" \
-        | tee "report/$query_file.stacks.diff.tsv" \
+    ~/fg/difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
+            "report/tmp/$query_file.stacks.right.tsv" \
+        | tee "report/tmp/$query_file.stacks.diff.tsv" \
         | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
 done
 unset IFS
 wait
+
+# Create per-query files with metrics. Note that the key is different from flamegraphs.
+IFS=$'\n'
+for version in {right,left}
+do
+    for query in $(cut -d'	' -f1-3 "report/metric-deviation.$version.tsv" | sort | uniq)
+    do
+        query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
+
+        # Ditto the above comment about -F.
+        grep -F "$query	" "report/metric-deviation.$version.tsv" \
+            | cut -f4- > "$query_file.$version.metrics.rep" &
+    done
+done
+wait
+unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
