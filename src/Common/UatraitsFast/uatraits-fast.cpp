@@ -330,7 +330,7 @@ void UATraits::loadProfiles(std::istream & istr)
 
         if (profiles_elems->item(i)->nodeName() != "profile")
         {
-            LOG_WARNING(log, "Unknown element in document root: " << profiles_elems->item(i)->nodeName() << ", the only supported is <profile>");
+            LOG_WARNING(log, "Unknown element in document root: " + profiles_elems->item(i)->nodeName() + ", the only supported is <profile>");
             continue;
         }
 
@@ -354,7 +354,7 @@ void UATraits::loadProfiles(std::istream & istr)
 
             if (properties->item(j)->nodeName() != "define")
             {
-                LOG_WARNING(log, "Unknown element in <profile>: " << properties->item(j)->nodeName() << ", the only supported is <define>");
+                LOG_WARNING(log, "Unknown element in <profile>: " + properties->item(j)->nodeName() + ", the only supported is <define>");
                 continue;
             }
 
@@ -496,7 +496,7 @@ void UATraits::addBranch(Poco::XML::Node & branch, Node & node)
 
                     if (pattern_node->nodeName() != "pattern")
                     {
-                        LOG_WARNING(log, "Unknown element in <define>: " << pattern_node->nodeName() << ", the only supported is <pattern>");
+                        LOG_WARNING(log, "Unknown element in <define>: " + pattern_node->nodeName() + ", the only supported is <pattern>");
                         continue;
                     }
 
@@ -569,7 +569,7 @@ void UATraits::addBranch(Poco::XML::Node & branch, Node & node)
                 throw Poco::Exception("Unsupported type '" + branch_type->getNodeValue() + "' of branch, the only supported are 'common', 'default' and no type.");
         }
         else
-            LOG_WARNING(log, "Unknown element in <branch> or root node: " << branch_child->nodeName() << ", supported: <match>, <define>, <branch>");
+            LOG_WARNING(log, "Unknown element in <branch> or root node: " + branch_child->nodeName() + ", supported: <match>, <define>, <branch>");
     }
 }
 
@@ -600,7 +600,7 @@ void UATraits::processMatch(Poco::XML::Node & match, Node & node)
 
         if (pattern_node->nodeName() != "pattern")
         {
-            LOG_WARNING(log, "Unknown element in <match>: " << pattern_node->nodeName() << ", the only supported is <pattern>");
+            LOG_WARNING(log, "Unknown element in <match>: " + pattern_node->nodeName() + ", the only supported is <pattern>");
             continue;
         }
 
