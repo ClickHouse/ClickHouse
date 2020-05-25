@@ -767,8 +767,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = table_join;
-    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+
+    if (table_join)
+    {
+        result.analyzed_join = table_join;
+        result.analyzed_join->resetCollected();
+    }
+    else /// TODO: remove. For now ExpressionAnalyzer expects some not empty object here
         result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)

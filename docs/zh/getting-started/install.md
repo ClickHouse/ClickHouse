@@ -46,7 +46,7 @@ sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-您也可以从此处手动下载和安装软件包：https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64。
+您也可以从此处手动下载和安装软件包：https://repo.yandex.ru/clickhouse/rpm/stable/x86_64。
 
 ### 来自Docker {#from-docker-image}
 

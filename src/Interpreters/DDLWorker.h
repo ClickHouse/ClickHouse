@@ -1,5 +1,5 @@
 #pragma once
-#include <Interpreters/Context.h>
+
 #include <Interpreters/Cluster.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
@@ -13,9 +13,15 @@
 #include <mutex>
 #include <thread>
 
+namespace zkutil
+{
+    class ZooKeeper;
+}
+
 namespace DB
 {
 
+class Context;
 class ASTAlterQuery;
 class AccessRightsElements;
 struct DDLLogEntry;
