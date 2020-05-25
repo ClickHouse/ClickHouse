@@ -398,6 +398,10 @@ private:
             ignore_error = config().getBool("ignore-error", false);
         }
 
+        ClientInfo & client_info = context.getClientInfo();
+        client_info.setInitialQuery();
+        client_info.quota_key = config().getString("quota_key", "");
+
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -481,7 +485,7 @@ private:
                 history_file = config().getString("history_file");
             else
             {
-                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
                 if (history_file_from_env)
                     history_file = history_file_from_env;
                 else if (!home_path.empty())
@@ -606,9 +610,7 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (
-            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
-            server_display_name.length() == 0)
+        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -914,7 +916,7 @@ private:
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    nullptr,
+                    &context.getClientInfo(),
                     true);
 
                 sendExternalTables();
@@ -946,7 +948,15 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query_without_data,
+            query_id,
+            QueryProcessingStage::Complete,
+            &context.getSettingsRef(),
+            &context.getClientInfo(),
+            true);
+
         sendExternalTables();
 
         /// Receive description of table structure.
@@ -1470,7 +1480,7 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        auto indicator = indicators[increment % 8];
+        const char * indicator = indicators[increment % 8];
 
         if (!send_logs && written_progress_chars)
             message << '\r';
@@ -1719,6 +1729,7 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
+            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -1854,6 +1865,8 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
+        if (options.count("quota_key"))
+            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))

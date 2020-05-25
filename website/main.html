@@ -11,15 +11,20 @@
     {% set url = 'https://clickhouse.tech' + page.abs_url %}
 {% endif %}
 
+{% if page and page.canonical_url %}
+    {% set canonical_url = page.canonical_url %}
+{% endif %}
+
 {% if page and page.meta and page.meta.title %}
     {% set title = page.meta.title %}
 {% elif page and page.title and not page.is_homepage and page.title != 'hidden' %}
-    {% set title = page.title + ' - ' + config.site_name %}
+    {% set title = page.title + ' | ' + config.site_name %}
 {% elif page and page.title and not page.is_homepage and page.title == 'hidden' and page.ancestors %}
-    {% set title = (page.ancestors | first).title + ' - ' + config.site_name %}
+    {% set title = (page.ancestors | first).title + ' | ' + config.site_name %}
 {% else %}
     {% set title = config.site_name %}
 {% endif %}
+{% set title = title.strip() %}
 {% if page and page.content and not single_page %}
     {% set description = page.content|striptags %}
     {% set description = description.replace('¶','')[0:120] %}

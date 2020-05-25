@@ -207,7 +207,7 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly
 **示例**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}

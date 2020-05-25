@@ -245,6 +245,17 @@ public:
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
 
+    enum class SpecialSort
+    {
+        NONE = 0,
+        OPENCL_BITONIC,
+    };
+
+    virtual void getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, SpecialSort) const
+    {
+        getPermutation(reverse, limit, nan_direction_hint, res);
+    }
+
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
       * It is necessary in ARRAY JOIN operation.
@@ -304,10 +315,11 @@ public:
     }
 
 
-    MutablePtr mutate() const &&
+    static MutablePtr mutate(Ptr ptr)
     {
-        MutablePtr res = shallowMutate();
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        ptr.reset(); /// Reset use_count to 1.
+        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 

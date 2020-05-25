@@ -959,7 +959,7 @@ public:
 
         if (auth_response->empty())
         {
-            context.setUser(user_name, "", address, "");
+            context.setUser(user_name, "", address);
             return;
         }
 
@@ -982,7 +982,7 @@ public:
         {
             password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
         }
-        context.setUser(user_name, password_sha1, address, "");
+        context.setUser(user_name, password_sha1, address);
     }
 private:
     String scramble;
@@ -1068,7 +1068,7 @@ public:
 #    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
-            LOG_TRACE(log, "Key: " << pem);
+            LOG_TRACE(log, "Key: {}", pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);
@@ -1124,7 +1124,7 @@ public:
             password.pop_back();
         }
 
-        context.setUser(user_name, password, address, "");
+        context.setUser(user_name, password, address);
     }
 
 private:

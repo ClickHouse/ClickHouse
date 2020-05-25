@@ -227,7 +227,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
             if (!update_time_value.isNull())
             {
                 modification_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got modification time: " << modification_time);
+                LOG_TRACE(log, "Got modification time: {}", modification_time);
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error
