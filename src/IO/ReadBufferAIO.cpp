@@ -204,7 +204,7 @@ void ReadBufferAIO::synchronousRead()
 {
     CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read, 1, CurrentMetrics::TracingMode::COMPLETE};
 //    opentracing::SpanGuard span_guard("synchronousRead");
-    opentracing::Span span("synchronousRead", {}, 0);
+//    opentracing::Span span("synchronousRead", {}, 0);
 
     prepare();
     bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
@@ -242,7 +242,7 @@ bool ReadBufferAIO::waitForAIOCompletion()
 
     CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read, 1, CurrentMetrics::TracingMode::COMPLETE};
 //    opentracing::SpanGuard span_guard("waitForAIOCompletion");
-    opentracing::Span span("waitForAIOCompletion", {}, 1);
+//    opentracing::Span span("waitForAIOCompletion", {}, 1);
 
     bytes_read = future_bytes_read.get();
     is_pending_read = false;

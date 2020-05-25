@@ -54,7 +54,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read, 1, CurrentMetrics::TracingMode::COMPLETE};
-            opentracing::Span span("ReadBufferFromFileDescriptor", {}, 2);
+//            opentracing::Span span("ReadBufferFromFileDescriptor", {}, 2);
 //            opentracing::SpanGuard span_guard("ReadBufferFromFileDescriptor::nextImpl");
 
             res = ::read(fd, internal_buffer.begin(), internal_buffer.size());

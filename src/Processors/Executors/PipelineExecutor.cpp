@@ -322,8 +322,10 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             node.last_processor_status != IProcessor::Status::PortFull)
         {
 
-            if (auto group = CurrentThread::getGroup()) {
-                if (auto context = group->query_context) {
+            if (auto group = CurrentThread::getGroup())
+            {
+                if (auto context = group->query_context)
+                {
                     auto tracer = context->getDistributedTracer();
 
                     if (tracer->IsActiveTracer())
