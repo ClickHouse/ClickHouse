@@ -1,6 +1,7 @@
 import json
 import logging
 import random
+import threading
 
 import pytest
 
@@ -278,3 +279,30 @@ def test_wrong_s3_syntax(cluster, s3_storage_args):
 
     query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3({})".format(s3_storage_args)
     assert expected_err_msg in instance.query_and_get_error(query)
+
+
+def test_s3_glob_scheherazade(cluster):
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    max_path = ""
+    values = "(1, 1, 1)"
+    nights_per_job = 1001 // 30
+    jobs = []
+    for night in range(0, 1001, nights_per_job):
+        def add_tales(start, end):
+            for i in range(start, end):
+                path = "night_{}/tale.csv".format(i)
+                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+                    cluster.minio_host, cluster.minio_port, bucket, path, table_format, values)
+                run_query(instance, query)
+
+        jobs.append(threading.Thread(target=add_tales, args=(night, min(night+nights_per_job, 1001))))
+        jobs[-1].start()
+
+    for job in jobs:
+        job.join()
+
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/night_*/tale.csv', 'CSV', '{}')".format(
+        cluster.minio_redirect_host, cluster.minio_redirect_port, bucket, table_format)
+    assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
