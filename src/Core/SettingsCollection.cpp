@@ -599,7 +599,7 @@ namespace details
     void SettingsCollectionUtils::warningNameNotFound(const StringRef & name)
     {
         static auto * log = &Logger::get("Settings");
-        LOG_WARNING(log, "Unknown setting " << name << ", skipping");
+        LOG_WARNING(log, "Unknown setting {}, skipping", name);
     }
 
     void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)

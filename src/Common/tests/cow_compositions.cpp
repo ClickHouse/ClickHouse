@@ -95,7 +95,7 @@ int main(int, char **)
         mut->set(3);
 
         std::cerr << "refcounts: " << x->use_count() << ", " << mut->use_count() << "\n";
-        std::cerr << "addresses: " << x.get() << ", " << ", " << mut.get() << "\n";
+        std::cerr << "addresses: " << x.get() << ", " << mut.get() << "\n";
         y = std::move(mut);
     }
 

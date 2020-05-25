@@ -1068,7 +1068,7 @@ public:
 #    pragma GCC diagnostic pop
             String pem(pem_buf, pem_size);
 
-            LOG_TRACE(log, "Key: " << pem);
+            LOG_TRACE(log, "Key: {}", pem);
 
             AuthMoreData data(pem);
             packet_sender->sendPacket(data, true);

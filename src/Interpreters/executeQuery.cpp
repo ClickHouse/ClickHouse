@@ -15,6 +15,7 @@
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -46,6 +47,9 @@
 namespace ProfileEvents
 {
     extern const Event QueryMaskingRulesMatch;
+    extern const Event FailedQuery;
+    extern const Event FailedInsertQuery;
+    extern const Event FailedSelectQuery;
 }
 
 namespace DB
@@ -101,7 +105,7 @@ static void logQuery(const String & query, const Context & context, bool interna
 {
     if (internal)
     {
-        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) " << joinLines(query));
+        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) {}", joinLines(query));
     }
     else
     {
@@ -109,11 +113,11 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = context.getClientInfo().initial_query_id;
         const auto & current_user = context.getClientInfo().current_user;
 
-        LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
-            << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
-            << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
-            << ") "
-            << joinLines(query));
+        LOG_DEBUG(&Logger::get("executeQuery"), "(from {}{}{}) {}",
+            context.getClientInfo().current_address.toString(),
+            (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
+            (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
+            joinLines(query));
     }
 }
 
@@ -140,14 +144,17 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 /// Log exception (with query info) into text log (not into system table).
 static void logException(Context & context, QueryLogElement & elem)
 {
-    LOG_ERROR(&Logger::get("executeQuery"), elem.exception
-        << " (from " << context.getClientInfo().current_address.toString() << ")"
-        << " (in query: " << joinLines(elem.query) << ")"
-        << (!elem.stack_trace.empty() ? ", Stack trace (when copying this message, always include the lines below):\n\n" + elem.stack_trace : ""));
+    if (elem.stack_trace.empty())
+        LOG_ERROR(&Logger::get("executeQuery"), "{} (from {}) (in query: {})",
+            elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query));
+    else
+        LOG_ERROR(&Logger::get("executeQuery"), "{} (from {}) (in query: {})"
+            ", Stack trace (when copying this message, always include the lines below):\n\n{}",
+            elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query), elem.stack_trace);
 }
 
 
-static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
+static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time, ASTPtr ast)
 {
     /// Exception before the query execution.
     if (auto quota = context.getQuota())
@@ -179,6 +186,20 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
+
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+
+    if (ast)
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+        }
+        else if (ast->as<ASTInsertQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+        }
+    }
 }
 
 static void setQuerySpecificSettings(ASTPtr & ast, Context & context)
@@ -249,7 +270,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
-            onExceptionBeforeStart(query_for_logging, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
 
         throw;
     }
@@ -484,11 +505,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (elem.read_rows != 0)
                 {
-                    LOG_INFO(&Logger::get("executeQuery"), std::fixed << std::setprecision(3)
-                        << "Read " << elem.read_rows << " rows, "
-                        << formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elapsed_seconds << " sec., "
-                        << static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "
-                        << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
+                    LOG_INFO(&Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                        elem.read_rows, formatReadableSizeWithBinarySuffix(elem.read_bytes), elapsed_seconds,
+                        static_cast<size_t>(elem.read_rows / elapsed_seconds),
+                        formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds));
                 }
 
                 elem.thread_ids = std::move(info.thread_ids);
@@ -501,7 +521,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, ast, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
@@ -544,6 +564,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
+
+                ProfileEvents::increment(ProfileEvents::FailedQuery);
+                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+                }
+                else if (ast->as<ASTInsertQuery>())
+                {
+                    ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+                }
+
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -565,7 +596,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (query_for_logging.empty())
                 query_for_logging = prepareQueryForLogging(query, context);
 
-            onExceptionBeforeStart(query_for_logging, context, current_time);
+            onExceptionBeforeStart(query_for_logging, context, current_time, ast);
         }
 
         throw;

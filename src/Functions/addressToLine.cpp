@@ -118,9 +118,7 @@ private:
                 writeChar(':', out);
                 writeIntText(location.line, out);
 
-                StringRef out_str = out.finish();
-                out_str.data = arena.insert(out_str.data, out_str.size);
-                return out_str;
+                return out.finish();
             }
             else
             {
