@@ -108,7 +108,7 @@ void TTLBlockInputStream::readSuffixImpl()
     data_part->expired_columns = std::move(empty_columns);
 
     if (rows_removed)
-        LOG_INFO(log, "Removed " << rows_removed << " rows with expired TTL from part " << data_part->name);
+        LOG_INFO(log, "Removed {} rows with expired TTL from part {}", rows_removed, data_part->name);
 }
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
