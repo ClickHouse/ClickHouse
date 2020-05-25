@@ -2109,7 +2109,7 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         if (stream_type != QueryPipeline::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
+        return std::make_shared<OptimizedPartialSortingTransform>(header, output_order_descr, limit);
     });
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
