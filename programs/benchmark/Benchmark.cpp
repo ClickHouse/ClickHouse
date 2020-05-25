@@ -289,7 +289,7 @@ private:
                     connection_entries.emplace_back(std::make_shared<Entry>(
                             connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
-                pool.scheduleOrThrowOnError(std::bind(&Benchmark::thread, this, connection_entries));
+                pool.scheduleOrThrowOnError([this, connection_entries]() mutable { thread(connection_entries); });
             }
         }
         catch (...)
@@ -424,7 +424,7 @@ private:
             std::cerr << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec." << "\t";
+                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
             }
             std::cerr << "\n";
         };
@@ -459,7 +459,7 @@ private:
 
         auto print_percentile = [&json_out](Stats & info, auto percent, bool with_comma = true)
         {
-            json_out << "\"" << percent << "\"" << ": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
+            json_out << "\"" << percent << "\": " << info.sampler.quantileNearest(percent / 100.0) << (with_comma ? ",\n" : "\n");
         };
 
         json_out << "{\n";
@@ -469,7 +469,7 @@ private:
             const auto & info = infos[i];
 
             json_out << double_quote << connections[i]->getDescription() << ": {\n";
-            json_out << double_quote << "statistics" << ": {\n";
+            json_out << double_quote << "statistics: {\n";
 
             print_key_value("QPS", info->queries / info->work_time);
             print_key_value("RPS", info->read_rows / info->work_time);
@@ -479,7 +479,7 @@ private:
             print_key_value("num_queries", info->queries.load(), false);
 
             json_out << "},\n";
-            json_out << double_quote << "query_time_percentiles" << ": {\n";
+            json_out << double_quote << "query_time_percentiles: {\n";
 
             for (int percent = 0; percent <= 90; percent += 10)
                 print_percentile(*info, percent);

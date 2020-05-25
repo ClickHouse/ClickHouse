@@ -18,10 +18,10 @@ Markdown==3.2.1
 MarkupSafe==1.1.1
 mkdocs==1.1.2
 mkdocs-htmlproofer-plugin==0.0.3
-mkdocs-macros-plugin==0.4.7
+mkdocs-macros-plugin==0.4.9
 nltk==3.5
 nose==1.3.7
-protobuf==3.12.0
+protobuf==3.12.1
 numpy==1.18.4
 Pygments==2.5.2
 pymdown-extensions==7.1
@@ -30,7 +30,7 @@ PyYAML==5.3.1
 repackage==0.7.3
 requests==2.23.0
 singledispatch==3.4.0.3
-six==1.14.0
+six==1.15.0
 soupsieve==2.0.1
 termcolor==1.1.0
 tornado==5.1.1

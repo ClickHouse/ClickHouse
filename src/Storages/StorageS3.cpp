@@ -201,7 +201,7 @@ StorageS3::StorageS3(
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , compression_method(compression_method_)
-    , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
+    , client(S3::ClientFactory::instance().create(uri_.endpoint, uri_.is_virtual_hosted_style, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
     setColumns(columns_);
@@ -244,7 +244,9 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         {
             throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
                     + " with prefix " + quoteString(request.GetPrefix())
-                    + ", page " + std::to_string(page), ErrorCodes::S3_ERROR);
+                    + ", page " + std::to_string(page)
+                    + ", S3 exception " + outcome.GetError().GetExceptionName() + " " + outcome.GetError().GetMessage()
+                , ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())

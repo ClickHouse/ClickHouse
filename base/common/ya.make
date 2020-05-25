@@ -24,6 +24,7 @@ PEERDIR(
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
+    contrib/libs/fmt
     contrib/restricted/boost
     contrib/restricted/cityhash-1.0.2
 )

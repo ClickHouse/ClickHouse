@@ -112,6 +112,7 @@ public:
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
 
+    void resetCollected();
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
