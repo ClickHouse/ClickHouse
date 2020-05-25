@@ -281,6 +281,7 @@ def test_wrong_s3_syntax(cluster, s3_storage_args):
     assert expected_err_msg in instance.query_and_get_error(query)
 
 
+# https://en.wikipedia.org/wiki/One_Thousand_and_One_Nights
 def test_s3_glob_scheherazade(cluster):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
