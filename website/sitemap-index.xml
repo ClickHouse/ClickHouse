@@ -22,6 +22,6 @@
       <loc>https://clickhouse.tech/docs/fa/sitemap.xml</loc>
    </sitemap>
    <sitemap>
-      <loc>https://clickhouse.tech/sitemap_static.xml</loc>
+      <loc>https://clickhouse.tech/sitemap-static.xml</loc>
    </sitemap>
 </sitemapindex>

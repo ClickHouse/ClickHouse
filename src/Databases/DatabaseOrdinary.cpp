@@ -95,7 +95,7 @@ namespace
     {
         if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            LOG_INFO(log, std::fixed << std::setprecision(2) << processed * 100.0 / total << "%");
+            LOG_INFO(log, "{}%", processed * 100.0 / total);
             watch.restart();
         }
     }
@@ -150,7 +150,7 @@ void DatabaseOrdinary::loadStoredObjects(
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
-    LOG_INFO(log, "Total " << total_tables << " tables and " << total_dictionaries << " dictionaries.");
+    LOG_INFO(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};

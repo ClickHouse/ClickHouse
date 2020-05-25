@@ -1,6 +1,7 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>

@@ -95,7 +95,7 @@ echo 7
 # and finally querylog
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where event_time>now() - 10 and query like '%TOPSECRET%';"
+  --query="select * from system.query_log where query like '%TOPSECRET%';"
 
 
 rm -f $tmp_file >/dev/null 2>&1
@@ -117,8 +117,8 @@ sleep 0.1;
 echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
-   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_time>now() - 60 and message like '%find_me%';
-   select * from system.text_log where event_time>now() - 60 and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
+   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE message like '%find_me%';
+   select * from system.text_log where message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
 
 echo 'finish'
 rm -f $tmp_file >/dev/null 2>&1
