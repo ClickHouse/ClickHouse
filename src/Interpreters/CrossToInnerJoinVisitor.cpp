@@ -281,18 +281,9 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
 
     if (num_using && (num_tables - num_array_join) > 2)
     {
-        std::stringstream ss;
-        ss << "Multiple CROSS/COMMA JOIN do not support USING (while processing '";
-        for (size_t i = 0; i < tables_with_using.size(); ++i)
-        {
-            if (i)
-            {
-                ss << ", ";
-            }
-            tables_with_using[i]->format(IAST::FormatSettings(ss, true /* one line */));
-        }
-        ss << "')";
-        throw Exception(ss.str(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Multiple CROSS/COMMA JOIN do not support USING (while "
+            "processing '" + IAST::formatForErrorMessage(tables_with_using) + "')",
+            ErrorCodes::NOT_IMPLEMENTED);
     }
 
     return !(num_array_join || num_using);
