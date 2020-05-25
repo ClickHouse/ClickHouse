@@ -20,4 +20,5 @@
 
     <query>SELECT count() FROM (SELECT rand() FROM {table}) </query>
     <query>SELECT count() FROM (SELECT rand64() FROM {table}) </query>
+    <query>SELECT count() FROM (SELECT generateUUIDv4() FROM {table}) </query>
 </test>
