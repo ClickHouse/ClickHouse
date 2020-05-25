@@ -209,7 +209,7 @@ public:
     template <typename ... TAllocatorParams>
     void resize(size_t n, TAllocatorParams &&... allocator_params)
     {
-        reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
+        reserve(roundUpToPowerOfTwoOrZero(n), std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
@@ -348,7 +348,7 @@ public:
         size_t old_size = this->size();
         if (n > old_size)
         {
-            this->reserve(n);
+            this->reserve(roundUpToPowerOfTwoOrZero(n));
             memset(this->c_end, 0, this->byte_size(n - old_size));
         }
         this->c_end = this->c_start + this->byte_size(n);
@@ -359,7 +359,7 @@ public:
         size_t old_size = this->size();
         if (n > old_size)
         {
-            this->reserve(n);
+            this->reserve(roundUpToPowerOfTwoOrZero(n));
             std::fill(t_end(), t_end() + n - old_size, value);
         }
         this->c_end = this->c_start + this->byte_size(n);
