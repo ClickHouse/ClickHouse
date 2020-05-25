@@ -119,7 +119,7 @@ struct AggregateFunctionSumKahanData
     template <typename Value>
     void ALWAYS_INLINE addImpl(Value value, T & out_sum, T & out_compensation)
     {
-        auto compensated_value = value - out_compensation;
+        auto compensated_value = static_cast<T>(value) - out_compensation;
         auto new_sum = out_sum + compensated_value;
         out_compensation = (new_sum - out_sum) - compensated_value;
         out_sum = new_sum;
