@@ -24,12 +24,12 @@ namespace ErrorCodes
 namespace
 {
 
-template <bool has_nulls>
+template <bool has_left_nulls, bool has_right_nulls>
 int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
 
-    if constexpr (has_nulls)
+    if constexpr (has_left_nulls && has_right_nulls)
     {
         const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
         const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
@@ -44,15 +44,19 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
             if (left_column.isNullAt(lhs_pos))
                 return null_direction_hint;
         }
-
-        if (left_nullable && !right_nullable)
+    }
+    else if constexpr (has_left_nulls)
+    {
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
         {
             if (left_column.isNullAt(lhs_pos))
                 return null_direction_hint;
             return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
         }
-
-        if (!left_nullable && right_nullable)
+    }
+    else if constexpr (has_right_nulls)
+    {
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
         {
             if (right_column.isNullAt(rhs_pos))
                 return -null_direction_hint;
@@ -60,7 +64,6 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
         }
     }
 
-    /// !left_nullable && !right_nullable
     return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
@@ -113,26 +116,25 @@ public:
 
     void setCompareNullability(const MergeJoinCursor & rhs)
     {
-        has_nullable_columns = false;
+        has_left_nullable = false;
+        has_right_nullable = false;
 
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
-            bool is_left_nullable = isColumnNullable(*impl.sort_columns[i]);
-            bool is_right_nullable = isColumnNullable(*rhs.impl.sort_columns[i]);
-
-            if (is_left_nullable || is_right_nullable)
-            {
-                has_nullable_columns = true;
-                break;
-            }
+            has_left_nullable = has_left_nullable || isColumnNullable(*impl.sort_columns[i]);
+            has_right_nullable = has_right_nullable || isColumnNullable(*rhs.impl.sort_columns[i]);
         }
     }
 
     Range getNextEqualRange(MergeJoinCursor & rhs)
     {
-        if (has_nullable_columns)
-            return getNextEqualRangeImpl<true>(rhs);
-        return getNextEqualRangeImpl<false>(rhs);
+        if (has_left_nullable && has_right_nullable)
+            return getNextEqualRangeImpl<true, true>(rhs);
+        else if (has_left_nullable)
+            return getNextEqualRangeImpl<true, false>(rhs);
+        else if (has_right_nullable)
+            return getNextEqualRangeImpl<false, true>(rhs);
+        return getNextEqualRangeImpl<false, false>(rhs);
     }
 
     int intersect(const Block & min_max, const Names & key_names)
@@ -150,10 +152,10 @@ public:
             const auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
 
             if (!first_vs_max)
-                first_vs_max = nullableCompareAt<true>(left_column, right_column, position(), 1);
+                first_vs_max = nullableCompareAt<true, true>(left_column, right_column, position(), 1);
 
             if (!last_vs_min)
-                last_vs_min = nullableCompareAt<true>(left_column, right_column, last_position, 0);
+                last_vs_min = nullableCompareAt<true, true>(left_column, right_column, last_position, 0);
         }
 
         if (first_vs_max > 0)
@@ -165,64 +167,56 @@ public:
 
 private:
     SortCursorImpl impl;
-    bool has_nullable_columns = false;
+    bool has_left_nullable = false;
+    bool has_right_nullable = false;
 
-    template <bool has_nulls>
+    template <bool left_nulls, bool right_nulls>
     Range getNextEqualRangeImpl(MergeJoinCursor & rhs)
     {
         while (!atEnd() && !rhs.atEnd())
         {
-            int cmp = compareAt<has_nulls>(rhs, impl.pos, rhs.impl.pos);
+            int cmp = compareAtCursor<left_nulls, right_nulls>(rhs);
             if (cmp < 0)
                 impl.next();
-            if (cmp > 0)
+            else if (cmp > 0)
                 rhs.impl.next();
-            if (!cmp)
-            {
-                Range range{impl.pos, rhs.impl.pos, 0, 0};
-                range.left_length = getEqualLength();
-                range.right_length = rhs.getEqualLength();
-                return range;
-            }
+            else if (!cmp)
+                return Range{impl.pos, rhs.impl.pos, getEqualLength(), rhs.getEqualLength()};
         }
 
         return Range{impl.pos, rhs.impl.pos, 0, 0};
     }
 
-    template <bool has_nulls>
-    int compareAt(const MergeJoinCursor & rhs, size_t lhs_pos, size_t rhs_pos) const
+    template <bool left_nulls, bool right_nulls>
+    int compareAtCursor(const MergeJoinCursor & rhs) const
     {
-        int res = 0;
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
             const auto * left_column = impl.sort_columns[i];
             const auto * right_column = rhs.impl.sort_columns[i];
 
-            res = nullableCompareAt<has_nulls>(*left_column, *right_column, lhs_pos, rhs_pos);
+            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.pos, rhs.impl.pos);
             if (res)
-                break;
+                return res;
         }
-        return res;
+        return 0;
     }
 
+    /// Expects !atEnd()
     size_t getEqualLength()
     {
-        if (atEnd())
-            return 0;
-
-        size_t pos = impl.pos;
-        while (sameNext(pos))
-            ++pos;
-        return pos - impl.pos + 1;
+        size_t pos = impl.pos + 1;
+        for (; pos < impl.rows; ++pos)
+            if (!samePrev(pos))
+                break;
+        return pos - impl.pos;
     }
 
-    bool sameNext(size_t lhs_pos) const
+    /// Expects lhs_pos > 0
+    bool samePrev(size_t lhs_pos) const
     {
-        if (lhs_pos + 1 >= impl.rows)
-            return false;
-
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
-            if (impl.sort_columns[i]->compareAt(lhs_pos, lhs_pos + 1, *(impl.sort_columns[i]), 1) != 0)
+            if (impl.sort_columns[i]->compareAt(lhs_pos - 1, lhs_pos, *(impl.sort_columns[i]), 1) != 0)
                 return false;
         return true;
     }
