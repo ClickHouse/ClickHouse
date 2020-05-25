@@ -130,10 +130,7 @@ public:
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
-    virtual bool hasAnyTTL() const { return false; }
-
-    /// Returns true if there is set TTL for rows.
-    virtual bool hasRowsTTL() const { return false; }
+    virtual bool hasAnyTTL() const { return hasRowsTTL() || hasAnyTableTTL(); }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -204,6 +201,9 @@ private:
     StorageMetadataKeyField primary_key;
     StorageMetadataKeyField sorting_key;
     StorageMetadataKeyField sampling_key;
+
+    StorageMetadataTTLColumnEntries column_ttls_by_name;
+    StorageMetadataTableTTL table_ttl;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -513,6 +513,22 @@ public:
 
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /// Returns true if there is set TTL for rows.
+    const StorageMetadataTTLField & getRowsTTL() const;
+    bool hasRowsTTL() const;
+
+    const StorageMetadataTTLFields & getMoveTTLs() const;
+    bool hasAnyMoveTTL() const;
+
+    const StorageMetadataTableTTL & getTableTTLs() const;
+    void setTableTTLs(const StorageMetadataTableTTL & table_ttl_);
+    bool hasAnyTableTTL() const;
+
+    const StorageMetadataTTLColumnEntries & getColumnTTLs() const;
+    void setColumnTTLs(const StorageMetadataTTLColumnEntries & column_ttls_by_name_);
+    bool hasAnyColumnTTL() const { return !column_ttls_by_name.empty(); }
+
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
