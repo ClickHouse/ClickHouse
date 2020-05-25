@@ -33,6 +33,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 
+#include <sstream>
+
 
 namespace DB
 {
@@ -242,11 +244,17 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         outcome = client.ListObjects(request);
         if (!outcome.IsSuccess())
         {
-            throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
-                    + " with prefix " + quoteString(request.GetPrefix())
-                    + ", page " + std::to_string(page)
-                    + ", S3 exception " + outcome.GetError().GetExceptionName() + " " + outcome.GetError().GetMessage()
-                , ErrorCodes::S3_ERROR);
+            std::ostringstream message;
+            message << "Could not list objects in bucket " << quoteString(request.GetBucket())
+                << " with prefix " << quoteString(request.GetPrefix());
+
+            if (page > 1)
+                message << ", page " << std::to_string(page);
+
+            message << ", S3 exception: " + backQuote(outcome.GetError().GetExceptionName())
+                << ", message: " + quoteString(outcome.GetError().GetMessage());
+
+            throw Exception(message.str(), ErrorCodes::S3_ERROR);
         }
 
         for (const auto & row : outcome.GetResult().GetContents())
