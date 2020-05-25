@@ -3,33 +3,23 @@
 #include <Core/Types.h>
 // Contains types declarations and wrappers for GCC vector extension.
 
-// TODO(dakovalkov): remove this workaround.
-#if !defined(__clang__)
-#  pragma GCC diagnostic ignored "-Wvector-operation-performance"
-#endif
-
 namespace DB::VectorExtension
 {
 
 typedef UInt64 UInt64x2  __attribute__ ((vector_size (sizeof(UInt64) * 2)));
 typedef UInt64 UInt64x4  __attribute__ ((vector_size (sizeof(UInt64) * 4)));
 typedef UInt64 UInt64x8  __attribute__ ((vector_size (sizeof(UInt64) * 8)));
-typedef UInt64 UInt64x16 __attribute__ ((vector_size (sizeof(UInt64) * 16)));
-typedef UInt64 UInt64x32 __attribute__ ((vector_size (sizeof(UInt64) * 32)));
 
 typedef UInt32 UInt32x2  __attribute__ ((vector_size (sizeof(UInt32) * 2)));
 typedef UInt32 UInt32x4  __attribute__ ((vector_size (sizeof(UInt32) * 4)));
 typedef UInt32 UInt32x8  __attribute__ ((vector_size (sizeof(UInt32) * 8)));
 typedef UInt32 UInt32x16 __attribute__ ((vector_size (sizeof(UInt32) * 16)));
-typedef UInt32 UInt32x32 __attribute__ ((vector_size (sizeof(UInt32) * 32)));
-typedef UInt32 UInt32x64 __attribute__ ((vector_size (sizeof(UInt32) * 64)));
 
 typedef UInt16 UInt16x2  __attribute__ ((vector_size (sizeof(UInt16) * 2)));
 typedef UInt16 UInt16x4  __attribute__ ((vector_size (sizeof(UInt16) * 4)));
 typedef UInt16 UInt16x8  __attribute__ ((vector_size (sizeof(UInt16) * 8)));
 typedef UInt16 UInt16x16 __attribute__ ((vector_size (sizeof(UInt16) * 16)));
 typedef UInt16 UInt16x32 __attribute__ ((vector_size (sizeof(UInt16) * 32)));
-typedef UInt16 UInt16x64 __attribute__ ((vector_size (sizeof(UInt16) * 64)));
 
 typedef UInt8 UInt8x2   __attribute__ ((vector_size (sizeof(UInt8) * 2)));
 typedef UInt8 UInt8x4   __attribute__ ((vector_size (sizeof(UInt8) * 4)));
@@ -65,15 +55,12 @@ namespace detail
         using UInt8Type = UInt8x16;
         using UInt16Type = UInt16x16;
         using UInt32Type = UInt32x16;
-        using UInt64Type = UInt64x16;
     };
     template <>
     struct DummyStruct<32>
     {
         using UInt8Type = UInt8x32;
         using UInt16Type = UInt16x32;
-        using UInt32Type = UInt32x32;
-        using UInt64Type = UInt64x32;
     };
 
 }
@@ -87,15 +74,5 @@ template <int Size>
 using UInt32x = typename detail::DummyStruct<Size>::UInt32Type;
 template <int Size>
 using UInt64x = typename detail::DummyStruct<Size>::UInt64Type;
-
-/* Casts vectors of the same size.
- * UInt32x4 x{};
- * UInt64x4 y = ConvertVector<UInt64x4>(x);
- */
-// template <typename To, typename From>
-// inline To ConvertVector(From a)
-// {
-//    return __builtin_convertvector(a, To);
-// }
 
 }
