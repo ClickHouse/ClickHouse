@@ -16,6 +16,7 @@ SRCS(
     SingleDiskVolume.cpp
     StoragePolicy.cpp
     VolumeJBOD.cpp
+    VolumeRAID1.cpp
 )
 
 END()
