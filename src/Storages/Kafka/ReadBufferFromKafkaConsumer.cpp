@@ -93,14 +93,14 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
             }
             catch (const cppkafka::HandleException & e)
             {
-                LOG_ERROR(log, "Error during unsubscribe: " << e.what());
+                LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
             }
             drain();
         }
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Error while destructing consumer: " << e.what());
+        LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
     }
 
 }
@@ -130,7 +130,7 @@ void ReadBufferFromKafkaConsumer::drain()
             }
             else
             {
-                LOG_ERROR(log, "Error during draining: " << error);
+                LOG_ERROR(log, "Error during draining: {}", error);
             }
         }
 
