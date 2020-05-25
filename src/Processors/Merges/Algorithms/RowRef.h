@@ -63,7 +63,7 @@ public:
             free_chunks.push_back(i);
     }
 
-    SharedChunkPtr alloc(Chunk && chunk)
+    SharedChunkPtr alloc(Chunk & chunk)
     {
         if (free_chunks.empty())
             throw Exception("Not enough space in SharedChunkAllocator. "
@@ -72,7 +72,7 @@ public:
         auto pos = free_chunks.back();
         free_chunks.pop_back();
 
-        chunks[pos] = std::move(chunk);
+        chunks[pos].swap(chunk);
         chunks[pos].position = pos;
         chunks[pos].allocator = this;
 
@@ -108,11 +108,6 @@ private:
 
             return;
         }
-
-        /// Release memory. It is not obligatory.
-        ptr->clear();
-        ptr->all_columns.clear();
-        ptr->sort_columns.clear();
 
         free_chunks.push_back(ptr->position);
     }

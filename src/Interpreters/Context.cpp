@@ -648,15 +648,13 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
     client_info.current_user = name;
     client_info.current_password = password;
     client_info.current_address = address;
-    if (!quota_key.empty())
-        client_info.quota_key = quota_key;
 
     auto new_user_id = getAccessControlManager().find<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
@@ -684,6 +682,12 @@ void Context::setUser(const String & name, const String & password, const Poco::
 std::shared_ptr<const User> Context::getUser() const
 {
     return getAccess()->getUser();
+}
+
+void Context::setQuotaKey(String quota_key_)
+{
+    auto lock = getLock();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const

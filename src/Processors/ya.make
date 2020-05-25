@@ -10,9 +10,8 @@ SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
     DelayedPortsProcessor.cpp
-    Executors/ParallelPipelineExecutor.cpp
     Executors/PipelineExecutor.cpp
-    Executors/SequentialPipelineExecutor.cpp
+    Executors/PullingPipelineExecutor.cpp
     Executors/TreeExecutorBlockInputStream.cpp
     ForkProcessor.cpp
     Formats/IInputFormat.cpp
@@ -107,8 +106,10 @@ SRCS(
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
     Transforms/AddingMissedTransform.cpp
+    Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ConvertingTransform.cpp
+    Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
     Transforms/DistinctTransform.cpp
