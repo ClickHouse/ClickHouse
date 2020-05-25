@@ -347,6 +347,7 @@ private:
      * Represented by a keymap (boost multiset).
      */
     TUsedRegionsMap used_regions;
+    std::mutex used_regions_mutex;
 
     /**
      * Represented by a LRU List (boost linked list).
@@ -366,6 +367,24 @@ private:
 
     struct InsertionAttempt;
     std::unordered_map<Key, std::shared_ptr<InsertionAttempt>, KeyHash> insertion_attempts;
+    std::mutex attempts_mutex;
+
+    struct mutex_unlocker
+    {
+        mutex_unlocker(const std::mutex& m_, bool need_ = true)
+            : m(m_), need_to_unlock(need)
+        {
+
+        }
+
+        ~mutex_unlocker()
+        {
+            if (need_to_unlock)
+                m.unlock();
+        }
+        std::mutex& m;
+        bool need_to_unlock;
+    }
 
 /**
  * Getting and setting utilities
@@ -376,7 +395,12 @@ public:
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        return getImpl(key, disposer, attempt);
+        auto&& [ptr, mutexes_locked] = getImpl(key, disposer, attempt)
+
+        mutex_unlocker used_unlock(used_regions_mutex, mutexes_locked);
+        mutex_unlocker global_unlock(mutex, mutexes_locked);
+
+        return ptr;
     }
 
     using GetOrSetRet = std::pair<ValuePtr, bool>;
@@ -443,8 +467,18 @@ public:
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        if (ValuePtr out = getImpl(key, disposer, attempt); out)
+        if (auto&& [out, mutexes_locked_] = getImpl(key, disposer, attempt); out)
+        {
+            /// mutexes_locked_
+            /// 1. false if value was not found in cache
+            /// 2. true if it is the first reference
+            /// 3. false otherwise
+
+            mutex_unlocker used_unlock(used_regions_mutex, mutexes_locked_);
+            mutex_unlocker global_unlock(mutex, mutexes_locked_);
+
             return {out, false}; // value was found in the cache.
+        }
 
         /// No try-catch here because it is not needed.
         size_t size = get_size();
@@ -452,7 +486,7 @@ public:
         RegionMetadata * region = nullptr;
 
         {
-            std::lock_guard cache_lock(mutex);
+            std::lock_guard cache_lock(mutex); /// Allocate does not need used_regions
             region = allocate(size);
         }
 
@@ -476,7 +510,7 @@ public:
             {
                 {
                     std::lock_guard cache_lock(mutex);
-                    freeAndCoalesce(*region);
+                    freeAndCoalesce(*region); /// Does not need used_regions.
                 }
 
                 total_size_currently_initialized.fetch_sub(size, std::memory_order_release);
@@ -485,26 +519,26 @@ public:
             }
         }
 
-        std::lock_guard cache_lock(mutex);
-
         try
         {
-            onSharedValueCreate<true>(cache_lock, *region);
+            ///inserting the value, the result should be true
+            assert(onSharedValueCreate<true>(cache_lock, *region));
+            mutex_unlocker global (mutex);
 
             // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
-                    region->value(),
-                    /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
-                    /// see also line 619.
-                    /// std::bind_front(&IGrabberAllocator::onValueDelete, this));
-                    std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
+                    region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
 
-            /// Insert the new value only if the attempt is still present in #insertion_attempts.
-            /// (may be absent because of a concurrent reset() call).
-            auto attempt_it = insertion_attempts.find(key);
+            {
+                std::lock_guard att_lock(attempts_mutex);
 
-            if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
-                used_regions.insert(*region);
+                /// Insert the new value only if the attempt is still present in #insertion_attempts.
+                /// (may be absent because of a concurrent reset() call).
+                auto attempt_it = insertion_attempts.find(key);
+
+                if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
+                    used_regions.insert(*region);
+            }
 
             if (!attempt->is_disposed)
                 disposer.dispose();
@@ -513,6 +547,8 @@ public:
         }
         catch (...)
         {
+            std::lock_guard used_lock(used_regions_mutex);
+
             if (region->TUsedRegionHook::is_linked())
                 used_regions.erase(used_regions.iterator_to(*region));
 
@@ -526,13 +562,17 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
+    /// @return true if the global mutex is locked (== the first reference to metadata).
     template <bool MayBeInUnused>
-    void onSharedValueCreate(const std::lock_guard<std::mutex>&, RegionMetadata& metadata) noexcept
+    bool onSharedValueCreate(RegionMetadata& metadata) noexcept
     {
-        if (++metadata.refcount != 1)
-            return;
+        std::lock_guard meta_lock(metadata->mutex);
+
+        if (++metadata.refcount != 1) // possible deadlock on further lock TODO make atomic
+            return false;
 
         // One reference.
+        mutex.lock();
 
         if constexpr (MayBeInUnused)
             if (metadata.TUnusedRegionHook::is_linked())
@@ -546,34 +586,37 @@ private:
         ++metadata.chunk->used_refcount;
 
         total_size_in_use += metadata.size;
+
+        return true;
     }
 
     void onValueDelete(Value * value)
     {
-        RegionMetadata * metadata;
+        std::lock_guard global(mutex);
 
-        std::lock_guard cache_lock(mutex);
+        auto it = value_to_region.find(value);
 
-        {
-            auto it = value_to_region.find(value);
+        /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
+        /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
+        if (value_to_region.end() == it)
+            throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
 
-            /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
-            /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
-            if (value_to_region.end() == it)
-                throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
+        RegionMetadata * metadata = it->second;
 
-            metadata = it->second;
+        std::lock_guard meta_lock(metadata->mutex);
 
-            if (--metadata->refcount != 0)
-                return;
+        if (--metadata->refcount != 0)
+            return;
 
-            /// Deleting last reference.
-            value_to_region.erase(it);
-        }
-
+        /// Deleting last reference.
+        value_to_region.erase(it);
 
         unused_regions.push_back(*metadata);
-        used_regions.erase(used_regions.iterator_to(*metadata));
+
+        {
+            std::lock_guard used(used_regions_mutex);
+            used_regions.erase(used_regions.iterator_to(*metadata));
+        }
 
         --metadata->chunk->used_refcount;
 
@@ -584,13 +627,16 @@ private:
 
     struct InsertionAttemptDisposer;
 
-    /**
-     * @brief Returns a ValuePtr for a given key or nullptr if not found.
-     */
-    inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
+    struct GetImplRes
+    {
+        ValuePtr value;
+        bool mutexes_locked; // mutex and used_mutex;
+    }
+
+    inline GetImplRes getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {
         {
-            std::lock_guard cache_lock(mutex);
+            used_regions_mutex.lock();
 
             if (auto it = used_regions.find(key, RegionCompareByKey()); used_regions.end() != it)
             {
@@ -600,16 +646,19 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                onSharedValueCreate<false>(cache_lock, metadata);
+                bool mutex_locked = onSharedValueCreate<false>(cache_lock, metadata);
 
-                // can't use std::make_shared due to custom deleter.
-                return std::shared_ptr<Value>( //not a nullptr
-                        metadata.value(),
-                        /// Not implemented in llvm's libcpp as for 10.5.2020. https://reviews.llvm.org/D60368,
-                        /// see also line 530.
-                        /// std::bind_front(&IGrabberAllocator::onValueDelete, this));
-                        std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
+                mutex_unlocker unlock(used_regions_mutex, !mutex_locked); //if global is not locked, unlock used_regions
+
+                return {
+                    std::shared_ptr<Value>( // NOLINT: not a nullptr
+                        metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1)),
+                    mutex_locked
+                };
             }
+        }
+        {
+            std::lock_guard att_lock(attempts_mutex);
 
             auto & insertion_attempt = insertion_attempts[key];
 
@@ -631,12 +680,12 @@ private:
             hits.fetch_add(1, std::memory_order_relaxed);
             concurrent_hits.fetch_add(1, std::memory_order_relaxed);
 
-            return attempt->value;
+            return {attempt->value, false};
         }
 
         misses.fetch_add(1, std::memory_order_relaxed);
 
-        return nullptr;
+        return {nullptr, false};
     }
 
 /**
@@ -823,6 +872,8 @@ private:
 
         std::aligned_storage_t<sizeof(Key), alignof(Key)> key_storage;
         std::aligned_storage_t<sizeof(Value), alignof(Value)> value_storage;
+
+        std::mutex mutex; //protects refcount, see onValueDelete and onSharedValueCreate
 
         /// No need for std::optional
         bool key_initialized{false};
