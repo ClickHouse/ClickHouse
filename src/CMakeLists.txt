@@ -58,6 +58,7 @@ add_subdirectory (TableFunctions)
 add_subdirectory (Processors)
 add_subdirectory (Formats)
 add_subdirectory (Compression)
+add_subdirectory (Server)
 
 
 set(dbms_headers)

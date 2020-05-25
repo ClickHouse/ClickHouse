@@ -1,21 +1,6 @@
 set(CLICKHOUSE_SERVER_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/HTTPHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/HTTPHandlerFactory.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/InterserverIOHTTPHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MetricsTransmitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/NotFoundHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PrometheusMetricsWriter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/PrometheusRequestHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ReplicasStatusHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/StaticRequestHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/Server.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
-)
-
-set(CLICKHOUSE_SERVER_SOURCES
-    ${CLICKHOUSE_SERVER_SOURCES}
-    ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandlerFactory.cpp
+    MetricsTransmitter.cpp
+    Server.cpp
 )
 
 set (CLICKHOUSE_SERVER_LINK
@@ -27,6 +12,7 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_dictionaries
         clickhouse_functions
         clickhouse_parsers
+        clickhouse_server
         clickhouse_storages_system
         clickhouse_table_functions
         string_utils
