@@ -13,8 +13,8 @@ class ASTColumnDeclaration : public IAST
 public:
     String name;
     ASTPtr type;
-    ASTPtr isNULL;
-    ASTPtr isNot;
+    ASTPtr is_null;
+    ASTPtr is_not;
     String default_specifier;
     ASTPtr default_expression;
     ASTPtr comment;
