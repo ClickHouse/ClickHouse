@@ -2930,7 +2930,7 @@ std::optional<StorageMetadataTTLField>
 MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const
 {
     time_t max_max_ttl = 0;
-    std::vector<StorageMetadataTTLField>::const_iterator best_entry_it;
+    StorageMetadataTTLFields::const_iterator best_entry_it;
 
     auto lock = std::lock_guard(move_ttl_entries_mutex);
     const auto & move_ttl_entries = getMoveTTLs();
