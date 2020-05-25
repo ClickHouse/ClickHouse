@@ -689,11 +689,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
+    std::string uatraits_browser_path = config().getString("uatraits_browser_path", config_path);
+    std::string uatraits_extra_path = config().getString("uatraits_extra_path", config_path);
+    std::string uatraits_profiles_path = config().getString("uatraits_profiles_path", config_path);
+
     Poco::AutoPtr<Poco::Util::MapConfiguration> ua_config = new Poco::Util::MapConfiguration;
     ua_config->setInt("reload_frequency_sec", 600);
-    ua_config->setString("browsers_path", "data/browser.xml");
-    ua_config->setString("profiles_path", "data/profiles.xml");
-    ua_config->setString("extra_path", "data/extra.xml");
+    ua_config->setString("browsers_path", uatraits_browser_path);
+    ua_config->setString("profiles_path", uatraits_profiles_path);
+    ua_config->setString("extra_path", uatraits_extra_path);
 
     components::UserAgent::get_mutable_instance().create(*ua_config);
     components::UserAgent::get_mutable_instance().reload();

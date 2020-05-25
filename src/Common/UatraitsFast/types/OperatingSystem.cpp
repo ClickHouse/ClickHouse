@@ -1,5 +1,6 @@
 #include "OperatingSystem.h"
 #include <stdexcept>
+#include <boost/algorithm/string.hpp>
 namespace uatraits::types
 {
 namespace
@@ -55,15 +56,17 @@ std::string toLogsApiString(const OperatingSystem os)
 }
 OperatingSystem operatingSystemFromString(const std::string & os)
 {
-    if (os == os_android)
+    std::string os_lower = os;
+    boost::algorithm::to_lower(os_lower);
+    if (os_lower == os_android)
         return OperatingSystem::ANDROID;
-    if (os == os_ios)
+    if (os_lower == os_ios)
         return OperatingSystem::IOS;
-    if (os == os_windows)
+    if (os_lower == os_windows)
         return OperatingSystem::WINDOWS;
-    if (os == os_macos)
+    if (os_lower == os_macos)
         return OperatingSystem::MACOS;
-    if (os == os_linux)
+    if (os_lower == os_linux)
         return OperatingSystem::LINUX;
     return OperatingSystem::UNKNOWN;
 }

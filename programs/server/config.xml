@@ -198,6 +198,15 @@
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
+    <!-- Path to configuration file with browsers regexps for uatraits. -->
+    <uatraits_browser_path>uatraits_data/browser.xml</uatraits_browser_path>
+
+    <!-- Path to configuration file with profiles regexps for uatraits. -->
+    <uatraits_profiles_path>uatraits_data/profiles.xml</uatraits_profiles_path>
+
+    <!-- Path to configuration file with extra regexps for uatraits. -->
+    <uatraits_extra_path>uatraits_data/extra.xml</uatraits_extra_path>
+
     <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distibuted DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
 

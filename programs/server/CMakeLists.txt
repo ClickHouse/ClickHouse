@@ -46,3 +46,5 @@ if (GLIBC_COMPATIBILITY)
 endif ()
 
 install(FILES config.xml users.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server COMPONENT clickhouse)
+install(FILES uatraits_data/browser.xml uatraits_data/profiles.xml
+  uatraits_data/extra.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-server COMPONENT clickhouse)
