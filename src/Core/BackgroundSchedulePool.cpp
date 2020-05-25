@@ -111,7 +111,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     static const int32_t slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
-        LOG_TRACE(&Logger::get(log_name), "Execution took " << milliseconds << " ms.");
+        LOG_TRACE(&Logger::get(log_name), "Execution took {} ms.", milliseconds);
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
@@ -156,7 +156,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Met
     , memory_metric(memory_metric_)
     , thread_name(thread_name_)
 {
-    LOG_INFO(&Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with " << size << " threads");
+    LOG_INFO(&Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size);
 
     threads.resize(size);
     for (auto & thread : threads)

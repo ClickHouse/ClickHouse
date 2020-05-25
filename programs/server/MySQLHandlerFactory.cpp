@@ -32,7 +32,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: {}", getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
 
@@ -43,7 +43,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: {}", getCurrentExceptionMessage(false));
         generateRSAKeys();
     }
 #endif
@@ -122,7 +122,7 @@ void MySQLHandlerFactory::generateRSAKeys()
 Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket)
 {
     size_t connection_id = last_connection_id++;
-    LOG_TRACE(log, "MySQL connection. Id: " << connection_id << ". Address: " << socket.peerAddress().toString());
+    LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 #if USE_SSL
     return new MySQLHandlerSSL(server, socket, ssl_enabled, connection_id, *public_key, *private_key);
 #else

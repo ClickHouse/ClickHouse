@@ -12,6 +12,7 @@
 
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
