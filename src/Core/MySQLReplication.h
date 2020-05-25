@@ -90,6 +90,40 @@ namespace MySQLReplication
         }
     }
 
+    class GTID
+    {
+    public:
+        UInt8 uuid[16];
+        Int64 seq_no;
+    };
+
+    class GTIDSet
+    {
+    public:
+        struct Interval
+        {
+            Int64 start;
+            Int64 end;
+        };
+
+        UInt8 uuid[16];
+        std::vector<Interval> intervals;
+
+        void tryMerge(size_t i);
+    };
+
+    class GTIDSets
+    {
+    public:
+        std::vector<GTIDSet> sets;
+
+        void parse(const String gtid_format_);
+        void update(const GTID & gtid);
+
+        String toString() const;
+        String toPayload() const;
+    };
+
     class EventBase;
     using BinlogEventPtr = std::shared_ptr<EventBase>;
 
@@ -372,6 +406,17 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
     };
 
+    class GTIDEvent : public EventBase
+    {
+    public:
+        UInt8 commit_flag;
+        GTID gtid;
+        void dump() const override;
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+    };
+
     class TableMapEvent : public EventBase
     {
     public:
@@ -458,35 +503,11 @@ namespace MySQLReplication
     public:
         UInt64 binlog_pos;
         String binlog_name;
+        GTIDSets gtid_sets;
 
         Position() : binlog_pos(0), binlog_name("") { }
-        void updateLogPos(UInt64 pos) { binlog_pos = pos; }
-        void updateLogName(String binlog) { binlog_name = std::move(binlog); }
-    };
-
-    struct GTIDSet
-    {
-        struct Interval
-        {
-            Int64 start;
-            Int64 end;
-        };
-
-        String UUID;
-        std::vector<Interval> intervals;
-    };
-
-    class GTID
-    {
-    public:
-        std::vector<GTIDSet> sets;
-
-        GTID(const String gtid_format_) : gtid_format(std::move(gtid_format_)) {}
-        void parse();
-        String encode() ;
-
-    private:
-        String gtid_format;
+        void update(BinlogEventPtr event);
+        void dump() const;
     };
 
     class IFlavor : public MySQLProtocol::ReadPacket
@@ -496,6 +517,7 @@ namespace MySQLReplication
         virtual Position getPosition() const = 0;
         virtual BinlogEventPtr readOneEvent() = 0;
         virtual void setReplicateDatabase(String db) = 0;
+        virtual void setGTIDSets(GTIDSets sets) = 0;
         virtual ~IFlavor() = default;
     };
 
@@ -507,6 +529,7 @@ namespace MySQLReplication
         void readPayloadImpl(ReadBuffer & payload) override;
         BinlogEventPtr readOneEvent() override { return event; }
         void setReplicateDatabase(String db) override { replicate_do_db = std::move(db); }
+        void setGTIDSets(GTIDSets sets) override { position.gtid_sets = std::move(sets); }
 
     private:
         Position position;

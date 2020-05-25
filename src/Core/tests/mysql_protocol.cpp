@@ -17,7 +17,6 @@ int main(int argc, char ** argv)
 
     String user = "default";
     String password = "123";
-    String database = "";
 
     UInt8 charset_utf8 = 33;
     UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
@@ -59,7 +58,7 @@ int main(int argc, char ** argv)
         Native41 native41(password, client_handshake.auth_plugin_data);
         String auth_plugin_data = native41.getAuthPluginData();
         HandshakeResponse client_handshake_response(
-            client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
+            client_capability_flags, max_packet_size, charset_utf8, user, "", auth_plugin_data, mysql_native_password);
         client_handshake_response.writePayloadImpl(out1);
 
         /// 2.2 Server reads the response
@@ -173,8 +172,75 @@ int main(int argc, char ** argv)
               "134313286-134313415:134313417-134313648:134313650-136492728:136492730-136492784:136492786-136492904:136492906-145582402:"
               "145582404-145582439:145582441-145582463:145582465-147455222:147455224-147455262:147455264-147455277:147455279-149319049:"
               "149319051-149319261:149319263-150635915,a6d83ff6-bfcf-11e7-8c93-246e96158550:1-126618302";
-        GTID gtid(str);
-        gtid.parse();
+        GTIDSets gtid_sets;
+        gtid_sets.parse(str);
+        ASSERT(str == gtid_sets.toString())
+    }
+
+    {
+        struct Testcase
+        {
+            String name;
+            String gtid_sets;
+            String gtid_str;
+            String want;
+        };
+
+        Testcase cases[] = {
+            {"merge",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-2:4-7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:3",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-7"},
+
+            {"merge-front",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-2:5-7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:3",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:5-7"},
+
+            {"extend-interval",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-2:6-7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:4",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-2:4:6-7"},
+
+            {"extend-interval",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-2:4:7-9",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:5",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:1-2:4-5:7-9"},
+
+            {"extend-interval",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6-7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:4",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:4:6-7"},
+
+            {"extend-interval",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6-7",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:9",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6-7:9"},
+
+            {"extend-interval",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6-7",
+             "20662d71-9d91-11ea-bbc2-0242ac110003:9",
+             "10662d71-9d91-11ea-bbc2-0242ac110003:6-7,20662d71-9d91-11ea-bbc2-0242ac110003:9"},
+        };
+
+        for (auto & tc : cases)
+        {
+            GTIDSets gtid_sets;
+            gtid_sets.parse(tc.gtid_sets);
+            ASSERT(tc.gtid_sets == gtid_sets.toString())
+
+            GTIDSets gtid_sets1;
+            gtid_sets1.parse(tc.gtid_str);
+
+            GTID gtid;
+            memcpy(gtid.uuid, gtid_sets1.sets[0].uuid, 16);
+            gtid.seq_no = gtid_sets1.sets[0].intervals[0].start;
+            gtid_sets.update(gtid);
+
+            String want = tc.want;
+            String got = gtid_sets.toString();
+            ASSERT(want == got)
+        }
     }
 
     {
@@ -182,9 +248,10 @@ int main(int argc, char ** argv)
         {
             boost::program_options::options_description desc("Allowed options");
             desc.add_options()("host", boost::program_options::value<std::string>()->required(), "master host")(
-                "port", boost::program_options::value<std::int32_t>()->required(), "master port")(
-                "user", boost::program_options::value<std::string>()->required(), "master user")(
+                "port", boost::program_options::value<std::int32_t>()->default_value(3306), "master port")(
+                "user", boost::program_options::value<std::string>()->default_value("root"), "master user")(
                 "password", boost::program_options::value<std::string>()->required(), "master password")(
+                "gtid", boost::program_options::value<std::string>()->default_value(""), "master executed GTID sets")(
                 "db", boost::program_options::value<std::string>()->required(), "replicate do db");
 
             boost::program_options::variables_map options;
@@ -199,9 +266,10 @@ int main(int argc, char ** argv)
             auto master_user = options.at("user").as<DB::String>();
             auto master_password = options.at("password").as<DB::String>();
             auto replicate_db = options.at("db").as<DB::String>();
+            auto gtid_sets = options.at("gtid").as<DB::String>();
 
             std::cerr << "Master Host: " << host << ", Port: " << port << ", User: " << master_user << ", Password: " << master_password
-                      << ", Replicate DB: " << replicate_db << std::endl;
+                      << ", Replicate DB: " << replicate_db << ", GTID: " << gtid_sets << std::endl;
 
             UInt32 slave_id = 9004;
             MySQLClient slave(host, port, master_user, master_password);
@@ -210,7 +278,14 @@ int main(int argc, char ** argv)
             slave.connect();
 
             ///  start to dump binlog.
-            slave.startBinlogDump(slave_id, replicate_db, "", 4);
+            if (gtid_sets.empty())
+            {
+                slave.startBinlogDump(slave_id, replicate_db, "", 4);
+            }
+            else
+            {
+                slave.startBinlogDumpGTID(slave_id, replicate_db, gtid_sets);
+            }
 
             /// Read one binlog event on by one.
             while (true)
@@ -219,39 +294,38 @@ int main(int argc, char ** argv)
                 switch (event->type())
                 {
                     case MYSQL_QUERY_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<QueryEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<QueryEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
-                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        pos.dump();
                         break;
                     }
                     case MYSQL_WRITE_ROWS_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<WriteRowsEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<WriteRowsEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
-                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        pos.dump();
                         break;
                     }
                     case MYSQL_UPDATE_ROWS_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<UpdateRowsEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<UpdateRowsEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
-                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        pos.dump();
                         break;
                     }
                     case MYSQL_DELETE_ROWS_EVENT: {
-                        auto binlogEvent = std::static_pointer_cast<DeleteRowsEvent>(event);
-                        binlogEvent->dump();
+                        auto binlog_event = std::static_pointer_cast<DeleteRowsEvent>(event);
+                        binlog_event->dump();
 
                         Position pos = slave.getPosition();
-                        std::cerr << "Binlog Name: " << pos.binlog_name << ", Pos: " << pos.binlog_pos << std::endl;
+                        pos.dump();
                         break;
                     }
                     default:
-                        event->dump();
                         break;
                 }
             }

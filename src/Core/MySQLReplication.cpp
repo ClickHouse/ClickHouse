@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/FieldVisitors.h>
 
 #include <boost/algorithm/string.hpp>
@@ -129,11 +130,32 @@ namespace MySQLReplication
 
     void XIDEvent::parseImpl(ReadBuffer & payload) { payload.readStrict(reinterpret_cast<char *>(&xid), 8); }
 
-
     void XIDEvent::dump() const
     {
         header.dump();
         std::cerr << "XID: " << this->xid << std::endl;
+    }
+
+    void GTIDEvent::parseImpl(ReadBuffer & payload)
+    {
+        /// We only care uuid:seq_no parts assigned to GTID_NEXT.
+        payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
+        payload.readStrict(reinterpret_cast<char *>(gtid.uuid), 16);
+        payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
+
+        /// Skip others.
+        payload.ignore(payload.available() - CHECKSUM_CRC32_SIGNATURE_LENGTH);
+    }
+
+    void GTIDEvent::dump() const
+    {
+        String dst36;
+        dst36.resize(36);
+        formatUUID(gtid.uuid, reinterpret_cast<UInt8 *>(dst36.data()));
+        auto gtid_next = dst36 + ":" + std::to_string(gtid.seq_no);
+
+        header.dump();
+        std::cerr << "GTID Next: " << gtid_next << std::endl;
     }
 
     void TableMapEvent::parseImpl(ReadBuffer & payload)
@@ -718,25 +740,36 @@ namespace MySQLReplication
         std::cerr << "[DryRun Event]" << std::endl;
     }
 
-    void GTID::parse()
+    void GTIDSet::tryMerge(size_t i)
     {
-        std::vector<String> ssets;
-        boost::split(ssets, gtid_format, boost::is_any_of(","));
+        if ((i + 1) >= intervals.size())
+            return;
 
-        for (size_t i = 0; i < ssets.size(); i++)
+        if (intervals[i].end != intervals[i + 1].start)
+            return;
+        intervals[i].end = intervals[i + 1].end;
+        intervals.erase(intervals.begin() + i + 1, intervals.begin() + i + 1 + 1);
+    }
+
+    void GTIDSets::parse(const String gtid_format)
+    {
+        std::vector<String> gtid_sets;
+        boost::split(gtid_sets, gtid_format, boost::is_any_of(","));
+
+        for (size_t i = 0; i < gtid_sets.size(); i++)
         {
-            std::vector<String> gtids;
-            boost::split(gtids, ssets[i], [](char c) { return c == ':'; });
+            std::vector<String> server_ids;
+            boost::split(server_ids, gtid_sets[i], [](char c) { return c == ':'; });
 
             GTIDSet set;
-            set.UUID.resize(16);
-            parseUUID(reinterpret_cast<const UInt8 *>(gtids[0].data()), reinterpret_cast<UInt8 *>(set.UUID.data()));
-            for (size_t k = 1; k < gtids.size(); k++)
+            parseUUID(reinterpret_cast<const UInt8 *>(server_ids[0].data()), set.uuid);
+
+            for (size_t k = 1; k < server_ids.size(); k++)
             {
                 std::vector<String> inters;
-                boost::split(inters, gtids[k], [](char c) { return c == '-'; });
+                boost::split(inters, server_ids[k], [](char c) { return c == '-'; });
 
-                GTIDSet::Interval val{std::stol(inters[0]), std::stol(inters[1])};
+                GTIDSet::Interval val;
                 switch (inters.size())
                 {
                     case 1: {
@@ -750,7 +783,7 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        throw ReplicationError("GTIDParse: Invalid GTID interval: " + gtids[k], ErrorCodes::UNKNOWN_EXCEPTION);
+                        throw ReplicationError("GTIDParse: Invalid GTID interval: " + server_ids[k], ErrorCodes::UNKNOWN_EXCEPTION);
                 }
                 set.intervals.emplace_back(val);
             }
@@ -758,7 +791,96 @@ namespace MySQLReplication
         }
     }
 
-    String GTID::encode()
+    void GTIDSets::update(const GTID & other)
+    {
+        for (GTIDSet & set : sets)
+        {
+            if (std::equal(std::begin(set.uuid), std::end(set.uuid), std::begin(other.uuid)))
+            {
+                for (auto i = 0U; i < set.intervals.size(); i++)
+                {
+                    auto current = set.intervals[i];
+
+                    /// Already Contained.
+                    if (other.seq_no >= current.start && other.seq_no < current.end)
+                    {
+                        throw ReplicationError(
+                            "GTIDSets updates other: " + std::to_string(other.seq_no) + " invalid successor to "
+                                + std::to_string(current.end),
+                            ErrorCodes::UNKNOWN_EXCEPTION);
+                    }
+
+                    /// Sequence, extend the interval.
+                    if (other.seq_no == current.end)
+                    {
+                        set.intervals[i].end = other.seq_no + 1;
+                        set.tryMerge(i);
+                        return;
+                    }
+                }
+
+                /// Add new interval.
+                GTIDSet::Interval new_interval{other.seq_no, other.seq_no + 1};
+                for (auto it = set.intervals.begin(); it != set.intervals.end(); ++it)
+                {
+                    if (other.seq_no < (*it).start)
+                    {
+                        set.intervals.insert(it, new_interval);
+                        return;
+                    }
+                }
+                set.intervals.emplace_back(new_interval);
+                return;
+            }
+        }
+
+        GTIDSet set;
+        memcpy(set.uuid, other.uuid, 16);
+        GTIDSet::Interval interval{other.seq_no, other.seq_no + 1};
+        set.intervals.emplace_back(interval);
+        sets.emplace_back(set);
+    }
+
+    String GTIDSets::toString() const
+    {
+        WriteBufferFromOwnString buffer;
+
+        for (size_t i = 0; i < sets.size(); i++)
+        {
+            GTIDSet set = sets[i];
+
+            String dst36;
+            dst36.resize(36);
+            formatUUID(set.uuid, reinterpret_cast<UInt8 *>(dst36.data()));
+            writeString(dst36, buffer);
+
+            for (size_t k = 0; k < set.intervals.size(); k++)
+            {
+                buffer.write(':');
+                auto start = set.intervals[k].start;
+                auto end = set.intervals[k].end;
+
+                if (end == (start + 1))
+                {
+                    writeString(std::to_string(start), buffer);
+                }
+                else
+                {
+                    writeString(std::to_string(start), buffer);
+                    buffer.write('-');
+                    writeString(std::to_string(end - 1), buffer);
+                }
+            }
+
+            if (i < (sets.size() - 1))
+            {
+                buffer.write(',');
+            }
+        }
+        return buffer.str();
+    }
+
+    String GTIDSets::toPayload() const
     {
         WriteBufferFromOwnString buffer;
 
@@ -767,7 +889,8 @@ namespace MySQLReplication
         for (size_t i = 0; i < sets.size(); i++)
         {
             GTIDSet set = sets[i];
-            buffer.write(reinterpret_cast<const char *>(&set.UUID), 16);
+
+            buffer.write(reinterpret_cast<const char *>(set.uuid), sizeof(set.uuid));
 
             UInt64 intervals_size = set.intervals.size();
             buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);
@@ -778,6 +901,54 @@ namespace MySQLReplication
             }
         }
         return buffer.str();
+    }
+
+    void Position::update(BinlogEventPtr event)
+    {
+        switch (event->header.type)
+        {
+            case FORMAT_DESCRIPTION_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case ROTATE_EVENT: {
+                auto rotate = std::static_pointer_cast<RotateEvent>(event);
+                binlog_name = rotate->next_binlog;
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case QUERY_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case XID_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case GTID_EVENT: {
+                auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
+                binlog_pos = event->header.log_pos;
+                gtid_sets.update(gtid_event->gtid);
+                break;
+            }
+            case TABLE_MAP_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            default: {
+                /// DryRun event.
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+        }
+    }
+
+    void Position::dump() const
+    {
+        std::cerr << "\n=== Binlog Position ===" << std::endl;
+        std::cerr << "Binlog: " << this->binlog_name << std::endl;
+        std::cerr << "Position: " << this->binlog_pos << std::endl;
+        std::cerr << "GTIDSets: " << this->gtid_sets.toString() << std::endl;
     }
 
     void MySQLFlavor::readPayloadImpl(ReadBuffer & payload)
@@ -802,57 +973,46 @@ namespace MySQLReplication
                 event = std::make_shared<FormatDescriptionEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
             case ROTATE_EVENT: {
                 event = std::make_shared<RotateEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-
-                auto rotate = std::static_pointer_cast<RotateEvent>(event);
-                position.updateLogPos(event->header.log_pos);
-                position.updateLogName(rotate->next_binlog);
+                position.update(event);
                 break;
             }
             case QUERY_EVENT: {
                 event = std::make_shared<QueryEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
+                position.update(event);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
-                if (query->schema == replicate_do_db)
-                {
-                    switch (query->typ)
-                    {
-                        case BEGIN:
-                        case XA: {
-                            event = std::make_shared<DryRunEvent>();
-                            break;
-                        }
-                        default:
-                            position.updateLogPos(event->header.log_pos);
-                    }
-                }
-                else
-                {
+                if (query->schema != replicate_do_db || query->typ == BEGIN || query->typ == XA)
                     event = std::make_shared<DryRunEvent>();
-                    position.updateLogPos(event->header.log_pos);
-                }
                 break;
             }
             case XID_EVENT: {
                 event = std::make_shared<XIDEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
+                break;
+            }
+            case GTID_EVENT: {
+                event = std::make_shared<GTIDEvent>();
+                event->parseHeader(payload);
+                event->parseEvent(payload);
+                position.update(event);
                 break;
             }
             case TABLE_MAP_EVENT: {
                 event = std::make_shared<TableMapEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 table_map = std::static_pointer_cast<TableMapEvent>(event);
                 break;
             }
@@ -893,7 +1053,7 @@ namespace MySQLReplication
                 event = std::make_shared<DryRunEvent>();
                 event->parseHeader(payload);
                 event->parseEvent(payload);
-                position.updateLogPos(event->header.log_pos);
+                position.update(event);
                 break;
             }
         }
