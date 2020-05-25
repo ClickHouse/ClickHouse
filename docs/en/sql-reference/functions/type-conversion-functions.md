@@ -533,6 +533,8 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 
 Converts input parameter to the [LowCardianlity](../data-types/lowcardinality.md) version of same data type.
 
+To convert data from the `LowCardinality` data type use the [CAST](#type_conversion_function-cast) function. For example, `CAST(x as String)`.
+
 **Syntax**
 
 ```sql

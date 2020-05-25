@@ -15,11 +15,13 @@ LowCardinality(data_type)
 
 **Parameters**
 
-- `data_type` — Supported ClickHouse [data type](index.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
+- `data_type` — [String](string.md), [FixedString](fixedstring.md), [Date](date.md), [DateTime](datetime.md), and numbers excepting [Decimal](decimal.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
 
 ## Description {#lowcardinality-dscr}
 
 `LowCardinality` is a superstructure that changes a data storage method and rules of data processing. ClickHouse applies [dictionary coding](https://en.wikipedia.org/wiki/Dictionary_coder) to `LowCardinality`-columns. Operating with dictionary encoded data significantly increases performance of [SELECT](../statements/select/index.md) queries for many applications.
+
+Efficiency of using `LowCarditality` data type depends on data diversity. If a dictionary contains less than 10,000 distinct values ClickHouse mostly shows higher efficiency of data reading and storing. If a dictionary contains more than 100,000 distinct values, then ClickHouse can perform worse in comparison with ordinary data types using.
 
 Consider using `LowCardinality` instead of [Enum](enum.md) when working with strings. `LowCardinality` provides more flexibility in use and often reveals the same or higher efficiency.
 

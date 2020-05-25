@@ -1285,7 +1285,9 @@ Default value: 0.
 
 Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](../../interfaces/formats.mdnative) format.
 
-If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
+If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
+
+This setting is required mainly for third-party clients which don't support `LowCardinality` data type.
 
 Possible values:
 
@@ -1297,9 +1299,15 @@ Default value: 1.
 
 ## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
 
-Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types of small fixed size (8 bits or less).
+Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types with fixed size of 8 bytes or less: numeric data types and `FixedString(8_bytes_or_less)`.
 
-When allowed, merge times and memory consumption can increase.
+For small fixed values using of `LowCardinality` is usually inefficient, because ClickHouse stores a numeric index for each row. As a result:
+
+- Disk space usage can rise.
+- RAM consumption can be higher, depending on a dictionary size.
+- Some functions can work slower due to extra coding/encoding operations.
+
+Merge times in [MergeTree](../../engines/table-engines/merge-tree-family/mergetree.md)-engine tables can grow due to all the reasons described above.
 
 Possible values:
 
