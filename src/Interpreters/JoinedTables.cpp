@@ -188,7 +188,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
 bool JoinedTables::resolveTables()
 {
     tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
-    assert(tables_with_columns.size == table_expressions.size);
+    assert(tables_with_columns.size() == table_expressions.size());
 
     const auto & settings = context.getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)

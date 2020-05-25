@@ -154,6 +154,8 @@ for i, q in enumerate(test_queries):
         for conn_index, c in enumerate(connections):
             res = c.execute(q, query_id = f'prewarm {0} {query_display_name}')
             print(f'prewarm\t{tsv_escape(query_display_name)}\t{conn_index}\t{c.last_query.elapsed}')
+    except KeyboardInterrupt:
+        raise
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the

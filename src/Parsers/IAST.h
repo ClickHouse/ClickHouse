@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <ostream>
 #include <set>
+#include <sstream>
 
 
 class SipHash;
@@ -217,6 +218,8 @@ public:
 
     // A simple way to add some user-readable context to an error message.
     std::string formatForErrorMessage() const;
+    template <typename AstArray>
+    static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
 
@@ -233,5 +236,20 @@ public:
 private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 };
+
+template <typename AstArray>
+std::string IAST::formatForErrorMessage(const AstArray & array)
+{
+    std::stringstream ss;
+    for (size_t i = 0; i < array.size(); ++i)
+    {
+        if (i > 0)
+        {
+            ss << ", ";
+        }
+        array[i]->format(IAST::FormatSettings(ss, true /* one line */));
+    }
+    return ss.str();
+}
 
 }
