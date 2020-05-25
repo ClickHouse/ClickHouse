@@ -200,10 +200,7 @@ void SelectStreamFactory::createForShard(
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
             if (shard_info.hasRemoteConnections())
             {
-                LOG_WARNING(
-                        &Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "There is no table " << main_table.getNameForLogs()
-                        << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
+                LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"), "There is no table {} on local replica of shard {}, will try remote replicas.", main_table.getNameForLogs(), shard_info.shard_num);
                 emplace_remote_stream();
             }
             else
@@ -239,9 +236,7 @@ void SelectStreamFactory::createForShard(
 
         /// If we reached this point, local replica is stale.
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
-        LOG_WARNING(
-            &Logger::get("ClusterProxy::SelectStreamFactory"),
-            "Local replica of shard " << shard_info.shard_num << " is stale (delay: " << local_delay << "s.)");
+        LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
@@ -289,9 +284,7 @@ void SelectStreamFactory::createForShard(
             catch (const Exception & ex)
             {
                 if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-                    LOG_WARNING(
-                        &Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "Connections to remote replicas of local shard " << shard_num << " failed, will use stale local replica");
+                    LOG_WARNING(&Logger::get("ClusterProxy::SelectStreamFactory"), "Connections to remote replicas of local shard {} failed, will use stale local replica", shard_num);
                 else
                     throw;
             }

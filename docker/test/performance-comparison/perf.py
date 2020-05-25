@@ -11,6 +11,9 @@ import string
 import time
 import traceback
 
+def tsv_escape(s):
+    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
+
 stage_start_seconds = time.perf_counter()
 
 def report_stage_end(stage_name):
@@ -112,8 +115,9 @@ for t in tables:
         try:
             res = c.execute("select 1 from {} limit 1".format(t))
         except:
-            print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
-            traceback.print_exc()
+            exception_message = traceback.format_exception_only(*sys.exc_info()[:2])[-1]
+            skipped_message = ' '.join(exception_message.split('\n')[:2])
+            print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
 
 report_stage_end('preconditions')
@@ -135,9 +139,6 @@ for c in connections:
 report_stage_end('fill')
 
 # Run test queries
-def tsv_escape(s):
-    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
-
 test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates)
 
@@ -151,7 +152,7 @@ for query_index, q in enumerate(test_queries):
     # use the test name + the test-wide query index.
     query_display_name = q
     if len(query_display_name) > 1000:
-        query_display_name = f'{query_display_name[:1000]}...({i})'
+        query_display_name = f'{query_display_name[:1000]}...({query_index})'
 
     print(f'display-name\t{query_index}\t{tsv_escape(query_display_name)}')
 

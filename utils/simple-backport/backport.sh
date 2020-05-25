@@ -13,14 +13,13 @@ branch_git_cmd=(git log "$merge_base..origin/$branch" --first-parent)
 "${branch_git_cmd[@]}" > "$branch-log.txt"
 
 # Check for diamond merges.
-"${master_git_cmd[@]}" --oneline --grep "Merge branch '" | grep ''
-diamonds_in_master=$?
+diamonds_in_master=$("${master_git_cmd[@]}" --oneline --grep "Merge branch '")
+diamonds_in_branch=$("${branch_git_cmd[@]}" --oneline --grep "Merge branch '")
 
-"${branch_git_cmd[@]}" --oneline --grep "Merge branch '" | grep ''
-diamonds_in_branch=$?
-
-if [ "$diamonds_in_master" -eq 0 ] || [ "$diamonds_in_branch" -eq 0 ]
+if [ "$diamonds_in_master" != "" ] || [ "$diamonds_in_branch" != "" ]
 then
+    echo "$diamonds_in_master"
+    echo "$diamonds_in_branch"
     # DO NOT ADD automated handling of diamond merges to this script.
     # It is an unsustainable way to work with git, and it MUST be visible.
     echo Warning: suspected diamond merges above.
