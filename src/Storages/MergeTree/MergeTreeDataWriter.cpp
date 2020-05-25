@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/Context.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
@@ -251,7 +252,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     if (new_data_part->volume->getDisk()->exists(full_path))
     {
-        LOG_WARNING(log, "Removing old temporary directory " + fullPath(new_data_part->volume->getDisk(), full_path));
+        LOG_WARNING(log, "Removing old temporary directory {}", fullPath(new_data_part->volume->getDisk(), full_path));
         new_data_part->volume->getDisk()->removeRecursive(full_path);
     }
 

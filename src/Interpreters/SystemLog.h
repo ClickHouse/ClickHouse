@@ -11,7 +11,6 @@
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -52,7 +51,7 @@ namespace DB
 
         static std::string name();
         static Block createBlock();
-        void appendToBlock(Block & block) const;
+        void appendToBlock(MutableColumns & columns) const;
     };
     */
 
@@ -63,8 +62,13 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
-
 class Context;
+class QueryLog;
+class QueryThreadLog;
+class PartLog;
+class TextLog;
+class TraceLog;
+class MetricLog;
 
 
 class ISystemLog
@@ -199,8 +203,8 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     size_t flush_interval_milliseconds_)
     : context(context_)
     , table_id(database_name_, table_name_)
-    , storage_def(storage_def_),
-    flush_interval_milliseconds(flush_interval_milliseconds_)
+    , storage_def(storage_def_)
+    , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
@@ -241,7 +245,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
             requested_flush_before = queue_end;
 
         flush_event.notify_all();
-        LOG_INFO(log, "Queue is half full for system log '" + demangle(typeid(*this).name()) + "'.");
+        LOG_INFO(log, "Queue is half full for system log '{}'.", demangle(typeid(*this).name()));
     }
 
     if (queue.size() >= DBMS_SYSTEM_LOG_QUEUE_SIZE)
@@ -257,9 +261,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
 
             // TextLog sets its logger level to 0, so this log is a noop and
             // there is no recursive logging.
-            LOG_ERROR(log, "Queue is full for system log '"
-                << demangle(typeid(*this).name()) << "'"
-                << " at " << queue_front_index);
+            LOG_ERROR(log, "Queue is full for system log '{}' at {}", demangle(typeid(*this).name()), queue_front_index);
         }
 
         return;
@@ -340,9 +342,8 @@ void SystemLog<LogElement>::savingThreadFunction()
             uint64_t to_flush_end = 0;
 
             {
-                LOG_TRACE(log, "Sleeping");
                 std::unique_lock lock(mutex);
-                const bool predicate = flush_event.wait_for(lock,
+                flush_event.wait_for(lock,
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
@@ -359,13 +360,6 @@ void SystemLog<LogElement>::savingThreadFunction()
                 queue.swap(to_flush);
 
                 exit_this_thread = is_shutdown;
-
-                LOG_TRACE(log, "Woke up"
-                    << (predicate ? " by condition" : " by timeout ("
-                            + toString(flush_interval_milliseconds) + " ms)")
-                    << ", " << to_flush.size() << " elements to flush"
-                    << " up to " << to_flush_end
-                    << (is_shutdown ? ", shutdown requested" : ""));
             }
 
             if (to_flush.empty())
@@ -389,8 +383,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, "
-            << to_flush.size() << " entries to flush");
+        LOG_TRACE(log, "Flushing system log, {} entries to flush", to_flush.size());
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
@@ -399,8 +392,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
 
         Block block = LogElement::createBlock();
+        MutableColumns columns = block.mutateColumns();
         for (const auto & elem : to_flush)
-            elem.appendToBlock(block);
+            elem.appendToBlock(columns);
+        block.setColumns(std::move(columns));
 
         /// We write to table indirectly, using InterpreterInsertQuery.
         /// This is needed to support DEFAULT-columns in table.
@@ -466,8 +461,7 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
-                " Renaming it to " << backQuoteIfNeed(to.table));
+            LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
@@ -475,13 +469,13 @@ void SystemLog<LogElement>::prepareTable()
             table = nullptr;
         }
         else if (!is_prepared)
-            LOG_DEBUG(log, "Will use existing table " << description << " for " + LogElement::name());
+            LOG_DEBUG(log, "Will use existing table {} for {}", description, LogElement::name());
     }
 
     if (!table)
     {
         /// Create the table.
-        LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
+        LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
         auto create = getCreateTableQuery();
 

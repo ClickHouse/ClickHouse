@@ -626,7 +626,7 @@ def test_materialize_ttl_in_partition(started_cluster, name, engine):
         node1.query("""
                 ALTER TABLE {name}
                     MODIFY TTL
-                    d1 TO DISK 'external'
+                    d1 TO DISK 'external' SETTINGS materialize_ttl_after_modify = 0
             """.format(name=name))
 
         time.sleep(0.5)

@@ -309,11 +309,28 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ASTSelectQuery & query = getSelectQuery();
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
-    auto analyze = [&] (bool try_move_to_prewhere = true)
+    ASTPtr row_policy_filter;
+    if (storage)
+        row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+
+    auto analyze = [&] (bool try_move_to_prewhere)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
                 options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
+
+        if (try_move_to_prewhere && storage && !row_policy_filter && query.where() && !query.prewhere() && !query.final())
+        {
+            /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
+            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+            {
+                SelectQueryInfo current_info;
+                current_info.query = query_ptr;
+                current_info.syntax_analyzer_result = syntax_analyzer_result;
+
+                MergeTreeWhereOptimizer{current_info, *context, *merge_tree, syntax_analyzer_result->requiredSourceColumns(), log};
+            }
+        }
 
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
@@ -365,7 +382,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = storage->getSampleBlockForColumns(required_columns);
 
             /// Fix source_header for filter actions.
-            auto row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
@@ -378,10 +394,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /// Calculate structure of the result.
-        result_header = getSampleBlockImpl(try_move_to_prewhere);
+        result_header = getSampleBlockImpl();
     };
 
-    analyze();
+    analyze(settings.optimize_move_to_prewhere);
 
     bool need_analyze_again = false;
     if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
@@ -481,40 +497,8 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 }
 
 
-Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
+Block InterpreterSelectQuery::getSampleBlockImpl()
 {
-    auto & query = getSelectQuery();
-    const Settings & settings = context->getSettingsRef();
-
-    /// Do all AST changes here, because actions from analysis_result will be used later in readImpl.
-
-    if (storage)
-    {
-        query_analyzer->makeSetsForIndex(query.where());
-        query_analyzer->makeSetsForIndex(query.prewhere());
-
-        /// PREWHERE optimization.
-        /// Turn off, if the table filter (row-level security) is applied.
-        if (!context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
-        {
-            auto optimize_prewhere = [&](auto & merge_tree)
-            {
-                SelectQueryInfo current_info;
-                current_info.query = query_ptr;
-                current_info.syntax_analyzer_result = syntax_analyzer_result;
-                current_info.sets = query_analyzer->getPreparedSets();
-
-                /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-                if (settings.optimize_move_to_prewhere && try_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                    MergeTreeWhereOptimizer{current_info, *context, merge_tree,
-                                            syntax_analyzer_result->requiredSourceColumns(), log};
-            };
-
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
-                optimize_prewhere(*merge_tree_data);
-        }
-    }
-
     if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_ptr);
 
@@ -792,7 +776,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere, save_context_and_storage);
 
-        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
+        LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
 
     if (options.to_stage > QueryProcessingStage::FetchColumns)

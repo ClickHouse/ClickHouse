@@ -13,7 +13,7 @@ RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_p
 
     for (const auto & name : data_provider->listCustomHierarchies())
     {
-        LOG_DEBUG(log, "Adding regions hierarchy for " << name);
+        LOG_DEBUG(log, "Adding regions hierarchy for {}", name);
         data.emplace(name, data_provider->getHierarchySource(name));
     }
 

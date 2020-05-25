@@ -202,7 +202,7 @@ bool DNSResolver::updateCache()
     }
 
     if (!lost_hosts.empty())
-        LOG_INFO(&Logger::get("DNSResolver"), "Cached hosts not found: " << lost_hosts);
+        LOG_INFO(&Logger::get("DNSResolver"), "Cached hosts not found: {}", lost_hosts);
 
     return updated;
 }

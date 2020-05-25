@@ -81,13 +81,13 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
-    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
-    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
+    , should_batch_inserts(storage.global_context->getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , min_batched_block_size_rows(storage.global_context->getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.global_context->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+    , default_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
-    , max_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
+    , max_sleep_time{storage.global_context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds()}
     , log{&Logger::get(getLoggerName())}
     , monitor_blocker(monitor_blocker_)
     , bg_pool(bg_pool_)
@@ -214,7 +214,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory);
 
-    const auto settings = storage.global_context.getSettings();
+    const auto settings = storage.global_context->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -261,8 +261,8 @@ bool StorageDistributedDirectoryMonitor::processFiles()
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    LOG_TRACE(log, "Started processing `" << file_path << '`');
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
+    LOG_TRACE(log, "Started processing `{}`", file_path);
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
     auto connection = pool->get(timeouts);
 
     try
@@ -290,7 +290,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
     Poco::File{file_path}.remove();
 
-    LOG_TRACE(log, "Finished processing `" << file_path << '`');
+    LOG_TRACE(log, "Finished processing `{}`", file_path);
 }
 
 void StorageDistributedDirectoryMonitor::readHeader(
@@ -317,10 +317,7 @@ void StorageDistributedDirectoryMonitor::readHeader(
         readVarUInt(initiator_revision, header_buf);
         if (ClickHouseRevision::get() < initiator_revision)
         {
-            LOG_WARNING(
-                log,
-                "ClickHouse shard version is older than ClickHouse initiator version. "
-                    << "It may lack support for new features.");
+            LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
         }
 
         readStringBinary(insert_query, header_buf);
@@ -428,7 +425,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             String tmp_file{parent.current_batch_file_path + ".tmp"};
 
             if (Poco::File{tmp_file}.exists())
-                LOG_ERROR(parent.log, "Temporary file " << backQuote(tmp_file) << " exists. Unclean shutdown?");
+                LOG_ERROR(parent.log, "Temporary file {} exists. Unclean shutdown?", backQuote(tmp_file));
 
             {
                 WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
@@ -437,7 +434,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
@@ -454,7 +451,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                 auto file_path = file_index_to_path.find(file_idx);
                 if (file_path == file_index_to_path.end())
                 {
-                    LOG_ERROR(parent.log, "Failed to send batch: file with index " << file_idx << " is absent");
+                    LOG_ERROR(parent.log, "Failed to send batch: file with index {} is absent", file_idx);
                     batch_broken = true;
                     break;
                 }
@@ -488,14 +485,14 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         if (!batch_broken)
         {
-            LOG_TRACE(parent.log, "Sent a batch of " << file_indices.size() << " files.");
+            LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
 
             for (UInt64 file_index : file_indices)
                 Poco::File{file_index_to_path.at(file_index)}.remove();
         }
         else
         {
-            LOG_ERROR(parent.log, "Marking a batch of " << file_indices.size() << " files as broken.");
+            LOG_ERROR(parent.log, "Marking a batch of {} files as broken.", file_indices.size());
 
             for (UInt64 file_idx : file_indices)
             {
@@ -695,7 +692,7 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
     Poco::File{broken_path}.createDirectory();
     Poco::File{file_path}.renameTo(broken_file_path);
 
-    LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
+    LOG_ERROR(log, "Renamed `{}` to `{}`", file_path, broken_file_path);
 }
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const

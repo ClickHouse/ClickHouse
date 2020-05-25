@@ -26,6 +26,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/Context.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
@@ -267,7 +268,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
             && part->info.min_block <= (*prev_part)->info.max_block)
         {
-            LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
+            LOG_ERROR(log, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;
@@ -314,7 +315,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         parts.push_back(part);
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
     return true;
 }
@@ -365,12 +366,14 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         if (now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
-            LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
-                << " because not enough free space: "
-                << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved, "
-                << formatReadableSizeWithBinarySuffix(sum_bytes)
-                << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
-                << "% on overhead); suppressing similar warnings for the next hour");
+            LOG_WARNING(log,
+                "Won't merge parts from {} to {} because not enough free space: {} free and unreserved"
+                ", {} required now (+{}% on overhead); suppressing similar warnings for the next hour",
+                parts.front()->name,
+                (*prev_it)->name,
+                formatReadableSizeWithBinarySuffix(available_disk_space),
+                formatReadableSizeWithBinarySuffix(sum_bytes),
+                static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100));
         }
 
         if (out_disable_reason)
@@ -380,7 +383,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         return false;
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
     available_disk_space -= required_disk_space;
     return true;
@@ -407,7 +410,7 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 static void extractMergingAndGatheringColumns(
-    const NamesAndTypesList & all_columns,
+    const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const MergeTreeIndices & indexes,
     const MergeTreeData::MergingParams & merging_params,
@@ -437,11 +440,11 @@ static void extractMergingAndGatheringColumns(
 
     /// Force to merge at least one column in case of empty key
     if (key_columns.empty())
-        key_columns.emplace(all_columns.front().name);
+        key_columns.emplace(storage_columns.front().name);
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
-    for (const auto & column : all_columns)
+    for (const auto & column : storage_columns)
     {
         if (key_columns.count(column.name))
         {
@@ -587,9 +590,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
-    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from "
-              << parts.front()->name << " to " << parts.back()->name
-              << " into " << TMP_PREFIX + future_part.name + " with type " + future_part.type.toString());
+    LOG_DEBUG(log, "Merging {} parts: from {} to {} into {}", parts.size(), parts.front()->name, parts.back()->name, future_part.type.toString());
 
     auto disk = space_reservation->getDisk();
     String part_path = data.relative_data_path;
@@ -600,14 +601,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList storage_columns = data.getColumns().getAllPhysical();
     const auto data_settings = data.getSettings();
 
     NamesAndTypesList gathering_columns;
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        all_columns, data.sorting_key_expr, data.skip_indices,
+        storage_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -618,7 +619,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         single_disk_volume,
         TMP_PREFIX + future_part.name);
 
-    new_data_part->setColumns(all_columns);
+    new_data_part->setColumns(storage_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = true;
 
@@ -632,14 +633,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
     {
-        LOG_INFO(log, "Part " << new_data_part->name << " has values with expired TTL, but merges with TTL are cancelled.");
+        LOG_INFO(log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", new_data_part->name);
         need_remove_expired_values = false;
     }
 
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
-    LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
+    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -670,7 +671,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
     else
     {
-        merging_columns = all_columns;
+        merging_columns = storage_columns;
         merging_column_names = all_column_names;
         gathering_columns.clear();
         gathering_column_names.clear();
@@ -948,19 +949,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG(log, std::fixed << std::setprecision(2)
-            << "Merge sorted " << merge_entry->rows_read << " rows"
-            << ", containing " << all_column_names.size() << " columns"
-            << " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
-            << " in " << elapsed_seconds << " sec., "
-            << merge_entry->rows_read / elapsed_seconds << " rows/sec., "
-            << merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MB/sec.");
+        LOG_DEBUG(log, "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",             merge_entry->rows_read, all_column_names.size(), merging_column_names.size(), gathering_column_names.size(),             elapsed_seconds, merge_entry->rows_read / elapsed_seconds,             formatReadableSizeWithBinarySuffix(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 
     if (merge_alg != MergeAlgorithm::Vertical)
         to.writeSuffixAndFinalizePart(new_data_part);
     else
-        to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
+        to.writeSuffixAndFinalizePart(new_data_part, &storage_columns, &checksums_gathered_columns);
 
     return new_data_part;
 }
@@ -999,12 +994,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
-        LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
+        LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
     }
     else
     {
-        LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+        LOG_TRACE(log, "Mutating part {} to mutation version {}", source_part->name, future_part.part_info.mutation);
     }
 
     BlockInputStreamPtr in = nullptr;
@@ -1019,7 +1014,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
 
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+    NamesAndTypesList storage_columns = data.getColumns().getAllPhysical();
 
     if (!for_interpreter.empty())
     {
@@ -1038,7 +1033,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
-    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns, for_file_renames));
+    new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, storage_columns, for_file_renames));
     new_data_part->partition.assign(source_part->partition);
 
     auto disk = new_data_part->volume->getDisk();
@@ -1115,7 +1110,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             disk->createHardLink(it->path(), destination);
         }
 
-        merge_entry->columns_written = all_columns.size() - updated_header.columns();
+        merge_entry->columns_written = storage_columns.size() - updated_header.columns();
 
         new_data_part->checksums = source_part->checksums;
 
@@ -1226,8 +1221,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
-            << " instead of " << parts.size());
+        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}", new_data_part->name, replaced_parts.size(), parts.size());
     }
     else
     {
@@ -1237,7 +1231,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_TRACE(log, "Merged {} parts: from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     return new_data_part;
 }
 
@@ -1257,74 +1251,85 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames)
 {
-    NameSet removed_columns_from_compact_part;
-    NameSet already_changed_columns;
-    bool is_compact_part = isCompactPart(part);
-    for (const auto & command : commands)
+    ColumnsDescription part_columns(part->getColumns());
+
+    if (isCompactPart(part))
     {
-        if (command.type == MutationCommand::Type::DELETE
-            || command.type == MutationCommand::Type::UPDATE
-            || command.type == MutationCommand::Type::MATERIALIZE_INDEX
-            || command.type == MutationCommand::Type::MATERIALIZE_TTL)
+        NameSet mutated_columns;
+        for (const auto & command : commands)
         {
-            for_interpreter.push_back(command);
-            for (const auto & [column_name, expr] : command.column_to_update_expression)
-                already_changed_columns.emplace(column_name);
-        }
-        else if (command.type == MutationCommand::Type::READ_COLUMN)
-        {
-            /// If we don't have this column in source part, than we don't
-            /// need to materialize it
-            if (part->getColumns().contains(command.column_name))
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::DELETE
+                || command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
-                if (!command.column_name.empty())
-                    already_changed_columns.emplace(command.column_name);
+                for (const auto & [column_name, expr] : command.column_to_update_expression)
+                    mutated_columns.emplace(column_name);
             }
-            else
-                for_file_renames.push_back(command);
-
-        }
-        else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN)
-        {
-            removed_columns_from_compact_part.emplace(command.column_name);
-            for_file_renames.push_back(command);
-        }
-        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-        {
-            if (is_compact_part)
+            else if (command.type == MutationCommand::Type::DROP_INDEX)
             {
-                for_interpreter.push_back(
-                {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = command.rename_to,
-                });
-                already_changed_columns.emplace(command.column_name);
-            }
-            else
                 for_file_renames.push_back(command);
+            }
+            else if (part_columns.has(command.column_name))
+            {
+                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                {
+                    mutated_columns.emplace(command.column_name);
+                }
+                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::Type::READ_COLUMN,
+                        .column_name = command.rename_to,
+                    });
+                    mutated_columns.emplace(command.column_name);
+                    part_columns.rename(command.column_name, command.rename_to);
+                }
+            }
         }
-        else
-        {
-            for_file_renames.push_back(command);
-        }
-    }
-
-    if (is_compact_part)
-    {
-        /// If it's compact part than we don't need to actually remove files from disk
-        /// we just don't read dropped columns
+        /// If it's compact part than we don't need to actually remove files
+        /// from disk we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
-            if (!removed_columns_from_compact_part.count(column.name)
-                && !already_changed_columns.count(column.name))
+            if (!mutated_columns.count(column.name))
+                for_interpreter.emplace_back(
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+        }
+    }
+    else
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::DELETE
+                || command.type == MutationCommand::Type::UPDATE)
             {
-                for_interpreter.emplace_back(MutationCommand
+                for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::DROP_INDEX)
+            {
+                for_file_renames.push_back(command);
+            }
+            /// If we don't have this column in source part, than we don't need
+            /// to materialize it
+            else if (part_columns.has(command.column_name))
+            {
+                if (command.type == MutationCommand::Type::READ_COLUMN)
                 {
-                    .type = MutationCommand::Type::READ_COLUMN,
-                    .column_name = column.name,
-                    .data_type = column.type
-                });
+                    for_interpreter.push_back(command);
+                }
+                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    part_columns.rename(command.column_name, command.rename_to);
+                    for_file_renames.push_back(command);
+                }
+                else
+                {
+                    for_file_renames.push_back(command);
+                }
             }
         }
     }
@@ -1431,9 +1436,14 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
 NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
-    NamesAndTypesList all_columns,
+    NamesAndTypesList storage_columns,
     const MutationCommands & commands_for_removes)
 {
+    /// In compact parts we read all columns, because they all stored in a
+    /// single file
+    if (isCompactPart(source_part))
+        return updated_header.getNamesAndTypesList();
+
     NameSet removed_columns;
     NameToNameMap renamed_columns;
     for (const auto & command : commands_for_removes)
@@ -1445,7 +1455,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     }
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
-    for (auto it = all_columns.begin(); it != all_columns.end();)
+    for (auto it = storage_columns.begin(); it != storage_columns.end();)
     {
         if (updated_header.has(it->name))
         {
@@ -1463,9 +1473,12 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
             ++it;
         }
         else
-            it = all_columns.erase(it);
+        {
+            it = storage_columns.erase(it);
+        }
     }
-    return all_columns;
+
+    return storage_columns;
 }
 
 MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(

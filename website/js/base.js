@@ -1,5 +1,8 @@
 (function () {
-    Sentry.init({ dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103' });
+    Sentry.init({
+        dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103',
+        environment: window.location.hostname === 'clickhouse.tech' ? 'prod' : 'test'
+    });
     $(document).click(function (event) {
         var target = $(event.target);
         var target_id = target.attr('id');
