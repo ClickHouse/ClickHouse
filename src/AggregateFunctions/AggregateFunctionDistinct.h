@@ -30,10 +30,7 @@ struct AggregateFunctionDistinctData
 
     bool ALWAYS_INLINE tryToInsert(const Key& key)
     {
-        std::lock_guard lock(mutex);
-        bool a = set.insert(key).second;
-        if (a) std::cerr << key.high << ' ' << key.low << ' ' << a << std::endl;
-        return a;
+        return set.insert(key).second;
     }
 };
 
@@ -63,7 +60,7 @@ public:
     : IAggregateFunctionDataHelper<AggregateFunctionDistinctData, AggregateFunctionDistinct>(arguments, {})
     , nested_func(nested), num_arguments(arguments.size())
     {
-        prefix_size = 640'000'000;
+        prefix_size = sizeof(AggregateFunctionDistinctData);
 
         if (arguments.empty())
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
