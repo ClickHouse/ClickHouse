@@ -588,7 +588,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
 
     auto new_column_ttl_asts = new_columns.getColumnTTLs();
 
-    StorageMetadataTTLColumnEntries new_column_ttl_by_name = getColumnTTLs();
+    StorageMetadataTTLColumnFields new_column_ttl_by_name = getColumnTTLs();
 
     if (!new_column_ttl_asts.empty())
     {

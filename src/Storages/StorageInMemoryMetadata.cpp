@@ -187,16 +187,17 @@ StorageMetadataTTLField StorageMetadataTTLField::getTTLFromAST(const ASTPtr & de
     StorageMetadataTTLField result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
 
-    /// First child is expression, like `TTL expr TO DISK`
+    /// First child is expression: `TTL expr TO DISK`
     if (ttl_element != nullptr)
-        result.definition_ast = ttl_element->children.front()->clone();
-    else
-        result.definition_ast = definition_ast->clone();
+        result.expression_ast = ttl_element->children.front()->clone();
+    else /// It's columns TTL without any additions, just copy it
+        result.expression_ast = definition_ast->clone();
 
-    auto ttl_ast = result.definition_ast->clone();
+    auto ttl_ast = result.expression_ast->clone();
     auto syntax_result = SyntaxAnalyzer(context).analyze(ttl_ast, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, context).getActions(false);
 
+    /// Move TTL to disk or volume
     if (ttl_element != nullptr)
     {
         result.destination_type = ttl_element->destination_type;

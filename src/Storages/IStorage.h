@@ -130,7 +130,7 @@ public:
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
-    virtual bool hasAnyTTL() const { return hasRowsTTL() || hasAnyTableTTL(); }
+    virtual bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -202,7 +202,7 @@ private:
     StorageMetadataKeyField sorting_key;
     StorageMetadataKeyField sampling_key;
 
-    StorageMetadataTTLColumnEntries column_ttls_by_name;
+    StorageMetadataTTLColumnFields column_ttls_by_name;
     StorageMetadataTableTTL table_ttl;
 
 private:
@@ -507,28 +507,31 @@ public:
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
 
 
-    /// Returns columns, which will be needed to calculate dependencies
-    /// (skip indices, TTL expressions) if we update @updated_columns set of columns.
+    /// Returns columns, which will be needed to calculate dependencies (skip
+    /// indices, TTL expressions) if we update @updated_columns set of columns.
     virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
 
-    /// Returns storage policy if storage supports it
+    /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
-    /// Returns true if there is set TTL for rows.
-    const StorageMetadataTTLField & getRowsTTL() const;
-    bool hasRowsTTL() const;
-
-    const StorageMetadataTTLFields & getMoveTTLs() const;
-    bool hasAnyMoveTTL() const;
-
+    /// Common tables TTLs (for rows and moves).
     const StorageMetadataTableTTL & getTableTTLs() const;
     void setTableTTLs(const StorageMetadataTableTTL & table_ttl_);
     bool hasAnyTableTTL() const;
 
-    const StorageMetadataTTLColumnEntries & getColumnTTLs() const;
-    void setColumnTTLs(const StorageMetadataTTLColumnEntries & column_ttls_by_name_);
-    bool hasAnyColumnTTL() const { return !column_ttls_by_name.empty(); }
+    /// Separate TTLs for columns.
+    const StorageMetadataTTLColumnFields & getColumnTTLs() const;
+    void setColumnTTLs(const StorageMetadataTTLColumnFields & column_ttls_by_name_);
+    bool hasAnyColumnTTL() const;
 
+    /// Just wrapper for table TTLs, return rows part of table TTLs.
+    const StorageMetadataTTLField & getRowsTTL() const;
+    bool hasRowsTTL() const;
+
+    /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
+    /// table TTL.
+    const StorageMetadataTTLFields & getMoveTTLs() const;
+    bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
