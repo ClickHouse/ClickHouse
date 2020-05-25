@@ -437,7 +437,8 @@ void IMergeTreeDataPart::loadIndex()
     if (!index_granularity.isInitialized())
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
 
-    size_t key_size = storage.primary_key_columns.size();
+    const auto & primary_key = storage.getPrimaryKey();
+    size_t key_size = primary_key.column_names.size();
 
     if (key_size)
     {
@@ -446,7 +447,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < key_size; ++i)
         {
-            loaded_index[i] = storage.primary_key_data_types[i]->createColumn();
+            loaded_index[i] = primary_key.data_types[i]->createColumn();
             loaded_index[i]->reserve(index_granularity.getMarksCount());
         }
 
@@ -455,7 +456,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j], *index_file);
+                primary_key.data_types[j]->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -493,7 +494,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
             minmax_idx.load(storage, volume->getDisk(), path);
     }
 
-    String calculated_partition_id = partition.getID(storage.partition_key_sample);
+    String calculated_partition_id = partition.getID(storage.getPartitionKey().sample_block);
     if (calculated_partition_id != info.partition_id)
         throw Exception(
             "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id
@@ -838,7 +839,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
     if (!checksums.empty())
     {
-        if (!storage.primary_key_columns.empty() && !checksums.files.count("primary.idx"))
+        if (storage.hasPrimaryKey() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -846,7 +847,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (!checksums.files.count("count.txt"))
                 throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
+            if (storage.hasPartitionKey() && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             if (!isEmpty())
@@ -872,14 +873,14 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.primary_key_columns.empty())
+        if (storage.hasPrimaryKey())
             check_file_not_empty(volume->getDisk(), path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             check_file_not_empty(volume->getDisk(), path + "count.txt");
 
-            if (storage.partition_key_expr)
+            if (storage.hasPartitionKey())
                 check_file_not_empty(volume->getDisk(), path + "partition.dat");
 
             for (const String & col_name : storage.minmax_idx_columns)
