@@ -288,25 +288,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
-        if (!col_decl.is_null && col_decl.is_not)
-            throw Exception{"Cant use NOT without NULL", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
+        if (!col_decl.isNULL && col_decl.isNot)
+            throw Exception{"Cant use NOT without NULL", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
 
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (col_decl.is_not && col_decl.is_null) {
+            if (col_decl.isNot && col_decl.isNULL) {
                 if (column_type->isNullable())
-                    throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
-            } else if (col_decl.is_null && !col_decl.is_not) {
+                    throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
+            } else if (col_decl.isNULL && !col_decl.isNot) {
                 if (column_type->isNullable())
-                    throw Exception{"Cant use NULL with Nullable", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
+                    throw Exception{"Cant use NULL with Nullable", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
                 else {
                     column_type = makeNullable(column_type);
                 }
             }
 
-            if (context.getSettingsRef().data_type_default_nullable && !column_type->isNullable() && !col_decl.is_not && !col_decl.is_null)
+            if (context.getSettingsRef().data_type_default_nullable && !column_type->isNullable() && !col_decl.isNot && !col_decl.isNULL)
                 column_type = makeNullable(column_type);
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
