@@ -302,7 +302,7 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
     }
 }
 
-void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges &equal_range) const
+void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_range) const
 {
     if (limit >= size() || limit > equal_range.back().second)
         limit = 0;
@@ -329,16 +329,13 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
                 chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) != 0)
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
         if (last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, last);
-        }
     }
 
     if (limit)
@@ -356,9 +353,7 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
                 chars.data() + offsetAt(res[new_first]), sizeAt(res[new_first]) - 1) != 0)
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
                 new_first = j;
             }
         }
@@ -374,9 +369,7 @@ void ColumnString::updatePermutation(bool reverse, size_t limit, int /*nan_direc
             }
         }
         if (new_last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, new_last);
-        }
     }
     equal_range = std::move(new_ranges);
 }
@@ -521,14 +514,12 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, bool r
 void ColumnString::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int, Permutation &res, EqualRanges &equal_range) const
 {
     if (limit >= size() || limit >= equal_range.back().second)
-    {
         limit = 0;
-    }
+
     size_t n = equal_range.size();
     if (limit)
-    {
         --n;
-    }
+
     EqualRanges new_ranges;
     for (size_t i = 0; i < n; ++i)
     {
@@ -545,17 +536,16 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, boo
                     reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) != 0)
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
         if (last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, last);
-        }
+
     }
+
     if (limit)
     {
         const auto& [first, last] = equal_range.back();
@@ -571,9 +561,8 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, boo
                     reinterpret_cast<const char *>(&chars[offsetAt(res[j])]), sizeAt(res[j])) != 0)
             {
                 if (j - new_first > 1)
-                {
                     new_ranges.emplace_back(new_first, j);
-                }
+
                 new_first = j;
             }
         }
@@ -589,9 +578,7 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, boo
             }
         }
         if (new_last - new_first > 1)
-        {
             new_ranges.emplace_back(new_first, new_last);
-        }
     }
     equal_range = std::move(new_ranges);
 }

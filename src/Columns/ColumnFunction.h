@@ -121,7 +121,7 @@ public:
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override
     {
         throw Exception("updatePermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
