@@ -314,7 +314,7 @@ void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_di
     }
 }
 
-void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const
+void ColumnLowCardinality::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
     if (limit >= size() || limit >= equal_range.back().second)
         limit = 0;

@@ -162,7 +162,7 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     }
 }
 
-void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges& equal_range) const
+void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const
 {
     if (limit >= size() || limit >= equal_range.back().second)
         limit = 0;

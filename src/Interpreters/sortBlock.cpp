@@ -184,13 +184,12 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             for (const auto& column : columns_with_sort_desc)
             {
                 while (!ranges.empty() && limit && limit <= ranges.back().first)
-                {
                     ranges.pop_back();
-                }
+
+
                 if (ranges.empty())
-                {
                     break;
-                }
+
 
                 if (isCollationRequired(column.description))
                 {
