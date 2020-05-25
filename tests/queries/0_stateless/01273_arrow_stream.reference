@@ -31,8 +31,6 @@
 992
 991
 990
-ContextLock	Number of times the lock of Context was acquired or tried to acquire. This is global lock.
-Query	Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.
 original:
 -128	0	-32768	0	-2147483648	0	-9223372036854775808	0	-1.032	-1.064	string-1	fixedstring-1\0\0	2003-04-05	2003-02-03 04:05:06
 -108	108	-1016	1116	-1032	1132	-1064	1164	-1.032	-1.064	string-0	fixedstring\0\0\0\0	2001-02-03	2002-02-03 04:05:06

@@ -31,11 +31,15 @@ Chunk ArrowBlockInputFormat::generate()
     Chunk res;
     const Block & header = getPort().getHeader();
 
-    if (!stream && record_batch_current >= record_batch_total)
-        return res;
+    if (!stream)
+    {
+        if (record_batch_current >= record_batch_total)
+            return res;
+    }
 
     std::vector<std::shared_ptr<arrow::RecordBatch>> single_batch(1);
     arrow::Status read_status;
+
     if (stream)
     {
         read_status = stream_reader->ReadNext(&single_batch[0]);
@@ -46,6 +50,7 @@ Chunk ArrowBlockInputFormat::generate()
     {
         read_status = file_reader->ReadRecordBatch(record_batch_current, &single_batch[0]);
     }
+
     if (!read_status.ok())
         throw Exception{"Error while reading batch of Arrow data: " + read_status.ToString(),
                         ErrorCodes::CANNOT_READ_ALL_DATA};
