@@ -436,8 +436,16 @@ public:
                 static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]),
                 static_cast<ResultType>(static_cast<const ColVecT2 &>(*columns[1]).getData()[row_num]));
         else
-            this->data(place).add(
-                static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
+        {
+            if constexpr (std::is_same_v<T1, Decimal256>)
+            {
+                const auto& val = static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num];
+                this->data(place).add(static_cast<ResultType>(val.value));
+            }
+            else
+                this->data(place).add(
+                    static_cast<ResultType>(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num]));
+        }
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

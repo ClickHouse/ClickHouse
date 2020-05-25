@@ -27,7 +27,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace {
+namespace
+{
 StringRef serializeBigIntIntoArena(const bInt256 & x, Arena & arena, char const *& begin)
 {
     static constexpr size_t bytesize = 32;

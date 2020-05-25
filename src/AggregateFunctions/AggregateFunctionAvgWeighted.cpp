@@ -17,7 +17,10 @@ namespace
 template <typename T>
 struct AvgWeighted
 {
-    using FieldType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
+    using FieldType = std::conditional_t<IsDecimalNumber<T>,
+                                         std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
+                                         NearestFieldType<T>>;
+    // using FieldType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
     using Function = AggregateFunctionAvgWeighted<T, AggregateFunctionAvgData<FieldType, FieldType>>;
 };
 
