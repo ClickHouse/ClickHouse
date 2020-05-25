@@ -84,6 +84,20 @@ struct StorageMetadataTTLField
     DataDestinationType destination_type;
 
     String destination_name;
+
+    static StorageMetadataTTLField getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
+};
+
+using StorageMetadataTTLColumnEntries = std::unordered_map<String, StorageMetadataTTLField>;
+using StorageMetadataTTLFields = std::vector<StorageMetadataTTLField>;
+
+struct StorageMetadataTableTTL
+{
+    ASTPtr definition_ast;
+
+    StorageMetadataTTLField rows_ttl;
+
+    StorageMetadataTTLFields move_ttl;
 };
 
 }

@@ -541,4 +541,50 @@ Names IStorage::getColumnsRequiredForSampling() const
     return {};
 }
 
+
+const StorageMetadataTTLField & IStorage::getRowsTTL() const
+{
+    return table_ttl.rows_ttl;
+}
+
+bool IStorage::hasRowsTTL() const
+{
+    return table_ttl.rows_ttl.expression != nullptr;
+}
+
+const StorageMetadataTTLFields & IStorage::getMoveTTLs() const
+{
+    return table_ttl.move_ttl;
+}
+
+bool IStorage::hasAnyMoveTTL() const
+{
+    return !table_ttl.move_ttl.empty();
+}
+
+const StorageMetadataTTLColumnEntries & IStorage::getColumnTTLs() const
+{
+    return column_ttls_by_name;
+}
+
+void IStorage::setColumnTTLs(const StorageMetadataTTLColumnEntries & column_ttls_by_name_)
+{
+    column_ttls_by_name = column_ttls_by_name_;
+}
+
+const StorageMetadataTableTTL & IStorage::getTableTTLs() const
+{
+    return table_ttl;
+}
+
+void IStorage::setTableTTLs(const StorageMetadataTableTTL & table_ttl_)
+{
+    table_ttl = table_ttl_;
+}
+
+bool IStorage::hasAnyTableTTL() const
+{
+    return hasAnyMoveTTL() || hasRowsTTL();
+}
+
 }
