@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TTL_EXPRESSION;
+    extern const int BAD_ARGUMENTS;
 };
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(
