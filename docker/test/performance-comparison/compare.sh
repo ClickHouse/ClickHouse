@@ -155,9 +155,6 @@ function run_tests
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # the grep is to filter out set -x output and keep only time output
         { time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
-
-        # The test completed with zero status, so we treat stderr as warnings
-        mv "$test_name-err.log" "$test_name-warn.log"
     done
 
     unset TIMEFORMAT
@@ -253,7 +250,7 @@ done
 unset IFS
 
 # for each query run, prepare array of metrics from query log
-clickhouse-local --query "
+clickhouse-local --verbose --query "
 create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
@@ -277,9 +274,9 @@ create table query_metrics engine File(TSV, -- do not add header -- will parse w
             , query_runs.time
         ] metrics
     from (
-        select *, 0 version from left_query_log
+        select query_duration_ms, memory_usage, query_id, 0 version from left_query_log
         union all
-        select *, 1 version from right_query_log
+        select query_duration_ms, memory_usage, query_id, 1 version from right_query_log
     ) query_logs
     right join query_runs
     using (query_id, version)
@@ -335,7 +332,8 @@ create view query_display_names as select * from
 
 create table query_metric_stats engine File(TSVWithNamesAndTypes,
         'report/query-metric-stats.tsv') as
-    select *, metric_name
+    select metric_name, left, right, diff, stat_threshold, test, query_index,
+        query_display_name
     from file ('analyze/query-reports.tsv', TSV, 'left Array(float),
         right Array(float), diff Array(float), stat_threshold Array(float),
         test text, query_index int') reports
@@ -479,11 +477,12 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
+
 # Prepare source data for metrics and flamegraphs for unstable queries.
 for version in {right,left}
-    do
+do
     rm -rf data
-    clickhouse-local --query "
+    clickhouse-local --verbose --query "
 create view queries_for_flamegraph as
     select * from file('report/queries-for-flamegraph.tsv', TSVWithNamesAndTypes,
         'test text, query_index int');
@@ -544,7 +543,13 @@ create view trace_log as select *
     from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
         '$(cat "$version-trace-log.tsv.columns")');
 
-create view addresses_src as select *
+create view addresses_src as select addr,
+        -- Some functions change name between builds, e.g. '__clone' or 'clone' or
+        -- even '__GI__clone@@GLIBC_2.32'. This breaks differential flame graphs, so
+        -- filter them out here.
+        [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
+            -- this line is a subscript operator of the above array
+            [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
     from file('$version-addresses.tsv', TSVWithNamesAndTypes,
         '$(cat "$version-addresses.tsv.columns")');
 
@@ -556,7 +561,8 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
     select
         test, query_index, query_id,
         count() value,
-        joinGet(addresses_join_$version, 'name', arrayJoin(trace)) metric
+        joinGet(addresses_join_$version, 'name', arrayJoin(trace))
+            || '(' || toString(trace_type) || ')' metric
     from trace_log
     join unstable_query_runs using query_id
     group by test, query_index, query_id, metric
@@ -564,7 +570,7 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
     ;
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
-        'metric-deviation.$version.rep') as
+        'report/metric-deviation.$version.tsv') as
     -- first goes the key used to split the file with grep
     select test, query_index, query_display_name,
         d, q, metric
@@ -583,20 +589,14 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
     order by test, query_index, d desc
     ;
 
-create table stacks engine File(TSV, 'stacks.$version.rep') as
+create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
     select
         -- first goes the key used to split the file with grep
-        test, query_index, any(query_display_name),
+        test, query_index, trace_type, any(query_display_name),
         -- next go the stacks in flamegraph format: 'func1;...;funcN count'
         arrayStringConcat(
-            arrayMap(addr -> replaceRegexpOne(
-                    joinGet(addresses_join_$version, 'name', addr),
-                    -- This function is at the base of the stack, and its name changes
-                    -- surprisingly often between builds, e.g. '__clone' or 'clone' or
-                    -- even '__GI__clone'. This breaks differential flame graphs, so
-                    -- filter it out here.
-                    '^clone\\.S.*', 'clone.S (name filtered by comparison script)'
-                ),
+            arrayMap(
+                addr -> joinGet(addresses_join_$version, 'name', addr),
                 arrayReverse(trace)
             ),
             ';'
@@ -604,8 +604,8 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
         count() c
     from trace_log
     join unstable_query_runs using query_id
-    group by test, query_index, trace
-    order by test, query_index, trace
+    group by test, query_index, trace_type, trace
+    order by test, query_index, trace_type, trace
     ;
 " 2> >(tee -a report/errors.log 1>&2) # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
 done
@@ -615,7 +615,7 @@ wait
 IFS=$'\n'
 for version in {right,left}
 do
-    for query in $(cut -d'	' -f1,2,3 "stacks.$version.rep" | sort | uniq)
+    for query in $(cut -d'	' -f1-4 "report/stacks.$version.tsv" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
         echo "$query_file" >> report/query-files.txt
@@ -623,15 +623,15 @@ do
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
         # string, but this is unlikely and escaping the query for grep is a pain.
-        grep -F "$query	" "stacks.$version.rep" \
-            | cut -f 4- \
+        grep -F "$query	" "report/stacks.$version.tsv" \
+            | cut -f 5- \
             | sed 's/\t/ /g' \
-            | tee "$query_file.stacks.$version.rep" \
+            | tee "report/$query_file.stacks.$version.tsv" \
             | ~/fg/flamegraph.pl --hash > "$query_file.$version.svg" &
 
         # Copy metric stats into separate files as well.
         # Ditto the above comment about -F.
-        grep -F "$query	" "metric-deviation.$version.rep" \
+        grep -F "$query	" "report/metric-deviation.$version.tsv" \
             | cut -f4- > "$query_file.$version.metrics.rep" &
     done
 done
@@ -642,8 +642,8 @@ unset IFS
 IFS=$'\n'
 for query_file in $(cat report/query-files.txt)
 do
-    ~/fg/difffolded.pl "$query_file.stacks.left.rep" "$query_file.stacks.right.rep" \
-        | tee "$query_file.stacks.diff.rep" \
+    ~/fg/difffolded.pl "report/$query_file.stacks.left.tsv" "report/$query_file.stacks.right.tsv" \
+        | tee "report/$query_file.stacks.diff.tsv" \
         | ~/fg/flamegraph.pl > "$query_file.diff.svg" &
 done
 unset IFS
