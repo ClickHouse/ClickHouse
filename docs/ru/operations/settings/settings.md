@@ -1153,4 +1153,14 @@ Default value: 0.
 
 Значение по умолчанию: 16.
 
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Задает количество потоков для выполнения фоновой очистки в таблицах типа [Buffer](../../engines/table-engines/special/buffer.md). Настройка применяется при запуске сервера ClickHouse и не может быть изменена в пользовательском сеансе.
+
+Допустимые значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: 16.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

@@ -1262,4 +1262,14 @@ Possible values:
 
 Default value: 16.
 
+## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
+
+Sets the number of threads performing background flush in [Buffer](../../engines/table-engines/special/buffer.md)-engine tables. This setting is applied at ClickHouse server start and can't be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
