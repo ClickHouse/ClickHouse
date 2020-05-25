@@ -116,6 +116,16 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
+    auto print_on_volume = [&]
+    {
+        settings.ostr << " ON VOLUME "
+                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(storage_policy)
+                      << (settings.hilite ? hilite_none : "")
+                      << "."
+                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
     if (!cluster.empty())
         formatOnCluster(settings);
 
@@ -136,6 +146,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (!table.empty())
             print_database_table();
+        else if (!volume.empty())
+            print_on_volume();
     }
     else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
     {

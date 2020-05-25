@@ -53,6 +53,8 @@ VolumeJBOD::VolumeJBOD(
     static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(logger, "Volume {} max_data_part_size is too low ({} < {})", backQuote(name), ReadableSize(max_data_part_size), ReadableSize(MIN_PART_SIZE));
+
+    are_merges_allowed_in_config = config.getBool(config_prefix + ".allow_merges", true);
 }
 
 DiskPtr VolumeJBOD::getNextDisk()
@@ -81,6 +83,20 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             return reservation;
     }
     return {};
+}
+
+bool VolumeJBOD::areMergesAllowed() const
+{
+    return (are_merges_allowed_from_query && *are_merges_allowed_from_query && are_merges_allowed_in_config)
+        || (!are_merges_allowed_from_query && are_merges_allowed_in_config);
+}
+
+void VolumeJBOD::setAllowMergesFromQuery(bool allow)
+{
+    if (are_merges_allowed_from_query)
+        *are_merges_allowed_from_query = allow;
+    else
+        are_merges_allowed_from_query = std::make_shared<bool>(allow);
 }
 
 }

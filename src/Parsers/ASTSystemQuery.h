@@ -61,6 +61,8 @@ public:
     String target_dictionary;
     String database;
     String table;
+    String storage_policy;
+    String volume;
 
     String getID(char) const override { return "SYSTEM query"; }
 

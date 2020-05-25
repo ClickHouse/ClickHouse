@@ -252,10 +252,10 @@ StoragePolicySelector::StoragePolicySelector(
     constexpr auto default_volume_name = "default";
     constexpr auto default_disk_name = "default";
 
-    /// Add default policy if it's not specified explicetly
+    /// Add default policy if it isn't explicitly specified.
     if (policies.find(default_storage_policy_name) == policies.end())
     {
-        auto default_volume = std::make_shared<VolumeJBOD>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0);
+        auto default_volume = std::make_shared<VolumeJBOD>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0, true);
 
         auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, VolumesJBOD{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);
@@ -278,6 +278,12 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
             throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
 
         policy->checkCompatibleWith(result->policies[name]);
+
+        /// Transfer state of Volume.
+        for (const auto & volume : policy->getVolumes())
+        {
+            result->get(name)->getVolumeByName(volume->getName())->are_merges_allowed_from_query = volume->are_merges_allowed_from_query;
+        }
     }
 
     return result;

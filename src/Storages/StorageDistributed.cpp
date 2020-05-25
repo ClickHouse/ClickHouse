@@ -331,7 +331,7 @@ void StorageDistributed::createStorage()
         if (!path.ends_with('/'))
             path += '/';
         auto disk = std::make_shared<DiskLocal>("default", path, 0);
-        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
+        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0, true);
     }
     else
     {
