@@ -37,7 +37,7 @@ public:
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledMessages() const;
-    auto rebalanceHappened() const { return rebalance_happened; }
+    bool polledDataUnusable() const { return (was_stopped || rebalance_happened); }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
@@ -68,6 +68,8 @@ private:
     Messages::const_iterator current;
 
     bool rebalance_happened = false;
+
+    bool was_stopped = false;
 
     // order is important, need to be destructed before consumer
     cppkafka::TopicPartitionList assignment;

@@ -50,6 +50,8 @@ class Connection;
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
+using Scalars = std::map<String, Block>;
+
 
 /// Packet that could be received from server.
 struct Packet

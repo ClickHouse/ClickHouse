@@ -8,6 +8,7 @@
 #include <Parsers/formatAST.h>
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Interpreters/Context.h>
 #include <filesystem>
 
 

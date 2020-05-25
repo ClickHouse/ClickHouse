@@ -1,6 +1,5 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/IdentifierSemantic.h>
