@@ -581,7 +581,6 @@ void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 }
 
 
-
 void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
