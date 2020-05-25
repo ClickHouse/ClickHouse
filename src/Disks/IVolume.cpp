@@ -46,7 +46,7 @@ MultiDiskReservation::MultiDiskReservation(Reservations &reservations_, UInt64 s
     : reservations(std::move(reservations_))
     , size(size_)
 {
-    if (reservations.size() == 0)
+    if (reservations.empty())
     {
         throw Exception("At least one reservation must be provided to MultiDiskReservation", ErrorCodes::NO_RESERVATIONS_PROVIDED);
     }
@@ -64,7 +64,7 @@ Disks MultiDiskReservation::getDisks() const
 {
     Disks res;
     res.reserve(reservations.size());
-    for (auto &r: reservations)
+    for (const auto &r: reservations)
     {
         res.push_back(r->getDisk());
     }
