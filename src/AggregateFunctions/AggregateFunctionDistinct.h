@@ -25,13 +25,15 @@ struct AggregateFunctionDistinctData
         UInt128TrivialHash,
         HashTableGrower<3>,
         HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>
-    > data;
+    > set;
     std::mutex mutex;
 
-    bool ALWAYS_INLINE TryToInsert(const Key& key)
+    bool ALWAYS_INLINE tryToInsert(const Key& key)
     {
         std::lock_guard lock(mutex);
-        return data.insert(key).second;
+        bool a = set.insert(key).second;
+        if (a) std::cerr << key.high << ' ' << key.low << ' ' << a << std::endl;
+        return a;
     }
 };
 
@@ -39,18 +41,30 @@ struct AggregateFunctionDistinctData
   * Adding -Distinct suffix to aggregate function
 **/
 
-class AggregateFunctionDistinct final : public IAggregateFunctionHelper<AggregateFunctionDistinct>
+class AggregateFunctionDistinct final : public IAggregateFunctionDataHelper<AggregateFunctionDistinctData, AggregateFunctionDistinct>
 {
 private:
     AggregateFunctionPtr nested_func;
     size_t num_arguments;
-    mutable AggregateFunctionDistinctData storage;
+    size_t prefix_size;
+
+    AggregateDataPtr getNestedPlace(AggregateDataPtr place) const noexcept
+    {
+        return place + prefix_size;
+    }
+
+    ConstAggregateDataPtr getNestedPlace(ConstAggregateDataPtr place) const noexcept
+    {
+        return place + prefix_size;
+    }
 
 public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested, const DataTypes & arguments)
-    : IAggregateFunctionHelper<AggregateFunctionDistinct>(arguments, {})
+    : IAggregateFunctionDataHelper<AggregateFunctionDistinctData, AggregateFunctionDistinct>(arguments, {})
     , nested_func(nested), num_arguments(arguments.size())
     {
+        prefix_size = 640'000'000;
+
         if (arguments.empty())
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
@@ -67,16 +81,19 @@ public:
 
     void create(AggregateDataPtr place) const override
     {
-        nested_func->create(place);
+        new (place) AggregateFunctionDistinctData;
+        nested_func->create(getNestedPlace(place));
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override {
-        nested_func->destroy(place);
+    void destroy(AggregateDataPtr place) const noexcept override
+    {
+        data(place).~AggregateFunctionDistinctData();
+        nested_func->destroy(getNestedPlace(place));
     }
 
     size_t sizeOfData() const override
     {
-        return nested_func->sizeOfData();
+        return prefix_size + nested_func->sizeOfData();
     }
 
     size_t alignOfData() const override
@@ -92,34 +109,35 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         SipHash hash;
-        for (size_t i = 0; i < num_arguments; ++i)
+        for (size_t i = 0; i < num_arguments; ++i) {
             columns[i]->updateHashWithValue(row_num, hash);
+        }
 
         UInt128 key;
         hash.get128(key.low, key.high);
 
-        if (storage.TryToInsert(key))
-            nested_func->add(place, columns, row_num, arena);
+        if (this->data(place).tryToInsert(key))
+            nested_func->add(getNestedPlace(place), columns, row_num, arena);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        nested_func->merge(place, rhs, arena);
+        nested_func->merge(getNestedPlace(place), rhs, arena);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        nested_func->serialize(place, buf);
+        nested_func->serialize(getNestedPlace(place), buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, arena);
+        nested_func->deserialize(getNestedPlace(place), buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr place, IColumn & to) const override
     {
-        nested_func->insertResultInto(place, to);
+        nested_func->insertResultInto(getNestedPlace(place), to);
     }
 
     bool allocatesMemoryInArena() const override
