@@ -375,24 +375,6 @@ private:
     std::unordered_map<Key, std::shared_ptr<InsertionAttempt>, KeyHash> insertion_attempts;
     std::mutex attempts_mutex;
 
-    struct mutex_unlocker
-    {
-        mutex_unlocker(std::mutex& m_, bool need_ = true)
-            : m(m_), need_to_unlock(need_)
-        {
-
-        }
-
-        ~mutex_unlocker()
-        {
-            if (need_to_unlock)
-                m.unlock();
-        }
-
-        std::mutex& m;
-        bool need_to_unlock;
-    };
-
 /**
  * Getting and setting utilities
  */
@@ -579,7 +561,7 @@ private:
         total_size_in_use += metadata.size; // atomic here.
     }
 
-    void onValueDelete(Value * value)
+    void onValueDelete(Value * value) noexcept
     {
         RegionMetadata * metadata;
 
@@ -590,8 +572,7 @@ private:
 
             /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
             /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
-            if (value_to_region.end() == it)
-                throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
+            BOOST_ASSERT(it != value_to_region.end())
 
             metadata = it->second;
 
@@ -605,6 +586,7 @@ private:
             /// Deleting last reference.
             value_to_region.erase(it);
 
+            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
             unused_regions.push_back(*metadata);
         }
 
@@ -612,6 +594,8 @@ private:
         total_size_in_use -= metadata->size;
 
         std::lock_guard used(used_regions_mutex);
+
+        BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
         used_regions.erase(used_regions.iterator_to(*metadata));
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
