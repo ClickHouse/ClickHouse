@@ -512,8 +512,6 @@ public:
             }
         }
 
-        total_size_currently_initialized.fetch_add(size, std::memory_order_release);
-
         try
         {
             onSharedValueCreate<true>(*region);
