@@ -591,13 +591,27 @@ Columns:
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
+!!! note "Note"
+    The table doesn’t contain input data for `INSERT` queries.
+
 To log queries you need to:
 
 1. Configure [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server parameters
 2. Set [log_queries](settings/settings.md#settings-log-queries] to 1.
 
 !!! note "Note"
-    The table doesn’t contain input data for `INSERT` queries.
+    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+
+You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
+
+By default, logs are added into the table with interval of 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md##query_language-system-flush_logs) query.
+
+If you delete the table manually from storage, ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
+
+The `system.query_log` table registers two kinds of queries:
+
+1.  Initial queries that were run directly by the client.
+2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
 
 Each query creates one or two rows in the `query_log` table, depending on the status of the query:
 
@@ -605,23 +619,9 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with types 1 and 4 are created.
 3.  If an error occurred before launching the query, a single event with type 3 is created.
 
-By default, logs are added into the table with interval of 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md##query_language-system-flush_logs) query.
-
-If you delete the table manually from storage, ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
-
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
-
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
-
-The `system.query_log` table registers two kinds of queries:
-
-1.  Initial queries that were run directly by the client.
-2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
-
 Columns:
 
--   `type` (`Enum8`) — [Type](../sql-reference/data-types/enum.md) of event that occurred when executing the query. Values:
+-   `type` ([Enum8](../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
     -   `'QueryStart' = 1` — Successful start of query execution.
     -   `'QueryFinish' = 2` — Successful end of query execution.
     -   `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
