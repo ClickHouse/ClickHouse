@@ -69,13 +69,13 @@ public:
 
     void transform(Chunk & chunk) override
     {
-        if (!chunk.getChunkInfo())
+        if (params->final)
+            finalizeChunk(chunk);
+        else if (!chunk.getChunkInfo())
         {
             auto info = std::make_shared<AggregatedChunkInfo>();
             chunk.setChunkInfo(std::move(info));
         }
-        if (params->final)
-            finalizeChunk(chunk);
     }
 
     String getName() const override { return "FinalizingSimpleTransform"; }
