@@ -28,8 +28,7 @@ template <typename T>
 struct AggregateFunctionGroupUniqArrayData
 {
     /// When creating, the hash table must be small.
-    using Set = HASH_TABLE_WITH_STACK_MEMORY(HashSet, T, DefaultHash<T>,
-        HashTableGrower<4>);
+    using Set = HashSetWithStackMemory<T, DefaultHash<T>, 4>;
 
     Set value;
 };
@@ -122,10 +121,10 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupUniqArrayGenericData
 {
-    static constexpr size_t INITIAL_SIZE_DEGREE = 1; /// adjustable
+    static constexpr size_t INITIAL_SIZE_DEGREE = 3; /// adjustable
 
-    using Set = HASH_TABLE_WITH_STACK_MEMORY(HashSetWithSavedHash,
-        StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>);
+    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash,
+        INITIAL_SIZE_DEGREE>;
 
     Set value;
 };

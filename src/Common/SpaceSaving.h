@@ -378,8 +378,7 @@ private:
             counter_map[counter->key] = counter;
     }
 
-    using CounterMap = HASH_TABLE_WITH_STACK_MEMORY(HashMap,
-        TKey, Counter *, Hash, HashTableGrower<4>);
+    using CounterMap = HashMapWithStackMemory<TKey, Counter *, Hash, 4>;
 
     CounterMap counter_map;
     std::vector<Counter *> counter_list;

@@ -64,45 +64,40 @@ private:
     template <typename T>
     struct MethodOneNumber
     {
-        using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashMap,
-            T, UInt32, DefaultHash<T>,
-            HashTableGrower<INITIAL_SIZE_DEGREE>);
+        using Set = ClearableHashMapWithStackMemory<T, UInt32, DefaultHash<T>,
+            INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodOneNumber<typename Set::value_type, UInt32, T, false>;
     };
 
     struct MethodString
     {
-        using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashMap,
-            StringRef, UInt32, StringRefHash,
-            HashTableGrower<INITIAL_SIZE_DEGREE>);
+        using Set = ClearableHashMapWithStackMemory<StringRef, UInt32, StringRefHash,
+            INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, UInt32, false, false>;
     };
 
     struct MethodFixedString
     {
-        using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashMap,
-            StringRef, UInt32, StringRefHash,
-            HashTableGrower<INITIAL_SIZE_DEGREE>);
+        using Set = ClearableHashMapWithStackMemory<StringRef, UInt32, StringRefHash,
+            INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, UInt32, false, false>;
     };
 
     struct MethodFixed
     {
-        using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashMap,
-            UInt128, UInt32, UInt128HashCRC32,
-            HashTableGrower<INITIAL_SIZE_DEGREE>);
+        using Set = ClearableHashMapWithStackMemory<UInt128, UInt32, UInt128HashCRC32,
+            INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodKeysFixed<typename Set::value_type, UInt128, UInt32, false, false, false>;
     };
 
     struct MethodHashed
     {
-        using Set = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashMap,
-            UInt128, UInt32, UInt128TrivialHash,
-            HashTableGrower<INITIAL_SIZE_DEGREE>);
+        using Set = ClearableHashMapWithStackMemory<UInt128, UInt32, UInt128TrivialHash,
+            INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, UInt32, false>;
     };
