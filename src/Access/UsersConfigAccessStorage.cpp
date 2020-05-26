@@ -52,18 +52,20 @@ namespace
 
         String user_config = "users." + user_name;
 
-        bool has_password = config.has(user_config + ".password");
+        bool has_no_password = config.has(user_config + ".no_password");
+        bool has_password_plaintext = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
 
-        if (has_password + has_password_sha256_hex + has_password_double_sha1_hex > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex' is used to specify password for user " + user_name + ". Must be only one of them.",
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex;
+        if (num_password_fields > 1)
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password' are used to specify password for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        if (!has_password && !has_password_sha256_hex && !has_password_double_sha1_hex)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+        if (num_password_fields < 1)
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-        if (has_password)
+        if (has_password_plaintext)
         {
             user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
             user->authentication.setPassword(config.getString(user_config + ".password"));
