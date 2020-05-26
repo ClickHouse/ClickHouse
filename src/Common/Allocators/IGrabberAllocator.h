@@ -531,9 +531,7 @@ public:
 
         try
         {
-            /// Inserting the value, the result should be true (not found + first reference).
-            assert(onSharedValueCreate<true>(*region));
-            mutex_unlocker global_unlock (mutex);
+            mutex_unlocker global_unlock (mutex, onSharedValueCreate<true>(*region));
 
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
                 region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
@@ -1161,7 +1159,7 @@ private:
      * @return std::nullptr if there are no unused regions.
      * @return Target region otherwise.
      */
-    constexpr RegionMetadata * evict(size_t requested) noexcept
+    RegionMetadata * evict(size_t requested) noexcept
     {
         if (unused_regions.empty())
             return nullptr;
