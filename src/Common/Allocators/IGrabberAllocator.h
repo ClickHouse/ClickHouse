@@ -192,7 +192,7 @@ public:
     }
 
     /// @return Count of pairs (#Key, #Value) that are currently in use.
-    constexpr size_t getUsedRegionsCount() const noexcept
+    inline size_t getUsedRegionsCount() const noexcept
     {
         std::lock_guard used_lock(used_regions_mutex);
         return used_regions.size();
