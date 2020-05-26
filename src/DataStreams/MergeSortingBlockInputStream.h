@@ -18,8 +18,8 @@ namespace DB
 
 struct TemporaryFileStream;
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 namespace ErrorCodes
 {

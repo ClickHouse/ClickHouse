@@ -22,6 +22,7 @@ RUN apt-get update \
     libicu-dev \
     bsdutils \
     curl \
+    python-pika \
     liblua5.1-dev \
     luajit \
     libssl-dev \

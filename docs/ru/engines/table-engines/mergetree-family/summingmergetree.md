@@ -105,7 +105,7 @@ ClickHouse может слить куски данных таким образо
 
 ### Суммирование в столбцах AggregateFunction {#summirovanie-v-stolbtsakh-aggregatefunction}
 
-Для столбцов типа [AggregateFunction](../../../engines/table-engines/mergetree-family/summingmergetree.md#data_type-aggregatefunction) ClickHouse выполняет агрегацию согласно заданной функции, повторяя поведение движка [AggregatingMergeTree](aggregatingmergetree.md).
+Для столбцов типа [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) ClickHouse выполняет агрегацию согласно заданной функции, повторяя поведение движка [AggregatingMergeTree](aggregatingmergetree.md).
 
 ### Вложенные структуры {#vlozhennye-struktury}
 
@@ -113,7 +113,7 @@ ClickHouse может слить куски данных таким образо
 
 Если название вложенной таблицы заканчивается на `Map` и она содержит не менее двух столбцов, удовлетворяющих критериям:
 
--   первый столбец - числовой `(*Int*, Date, DateTime)`, назовем его условно `key`,
+-   первый столбец - числовой `(*Int*, Date, DateTime)` или строковый `(String, FixedString)`, назовем его условно `key`,
 -   остальные столбцы - арифметические `(*Int*, Float32/64)`, условно `(values...)`,
 
 то вложенная таблица воспринимается как отображение `key => (values...)` и при слиянии её строк выполняется слияние элементов двух множеств по `key` со сложением соответствующих `(values...)`.

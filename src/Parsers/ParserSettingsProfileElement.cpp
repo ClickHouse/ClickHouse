@@ -102,7 +102,7 @@ namespace
 bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String parent_profile;
-    String name;
+    String setting_name;
     Field value;
     Field min_value;
     Field max_value;
@@ -119,7 +119,7 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
         ASTPtr name_ast;
         if (!ParserIdentifier{}.parse(pos, name_ast, expected))
             return false;
-        name = getIdentifierName(name_ast);
+        setting_name = getIdentifierName(name_ast);
 
         bool has_value_or_constraint = false;
         while (parseValue(pos, expected, value) || parseMinMaxValue(pos, expected, min_value, max_value)
@@ -134,7 +134,7 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
     auto result = std::make_shared<ASTSettingsProfileElement>();
     result->parent_profile = std::move(parent_profile);
-    result->name = std::move(name);
+    result->setting_name = std::move(setting_name);
     result->value = std::move(value);
     result->min_value = std::move(min_value);
     result->max_value = std::move(max_value);

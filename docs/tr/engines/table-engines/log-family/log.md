@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 33
 toc_title: "G\xFCnl\xFCk"
 ---
 
 # Günlük {#log}
 
-Motor günlük motorları ailesine aittir. Günlük motorlarının ortak özelliklerini ve farklılıklarını görün [Log Engine Ailesi](log-family.md) makale.
+Motor günlük motorları ailesine aittir. Günlük motorlarının ortak özelliklerini ve farklılıklarını görün [Log Engine Ailesi](log-family.md) Makale.
 
 Log differsar differsit fromma [TinyLog](tinylog.md) bu küçük bir dosyada “marks” sütun dosyaları ile bulunur. Bu işaretler her veri bloğuna yazılır ve belirtilen satır sayısını atlamak için dosyayı okumaya nereden başlayacağınızı gösteren uzaklıklar içerir. Bu, tablo verilerini birden çok iş parçacığında okumayı mümkün kılar.
 Eşzamanlı veri erişimi için, okuma işlemleri aynı anda gerçekleştirilebilirken, yazma işlemleri okur ve birbirlerini engeller.

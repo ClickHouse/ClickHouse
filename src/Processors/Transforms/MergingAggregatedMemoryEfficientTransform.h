@@ -28,11 +28,11 @@ private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
 
-    std::vector<Int32> last_bucket_number;
-    std::map<Int32, Chunks> chunks_map;
+    std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
+    std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
     Chunks overflow_chunks;
     Chunks single_level_chunks;
-    Int32 current_bucket = 0;
+    Int32 current_bucket = 0; /// Currently processing bucket.
     Int32 next_bucket_to_push = 0; /// Always <= current_bucket.
     bool has_two_level = false;
 
@@ -42,11 +42,17 @@ private:
 
     bool expect_several_chunks_for_single_bucket_per_source = false;
 
+    /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
+    /// Read from all inputs first chunk. It is needed to detect if any source has two-level aggregation.
     void readFromAllInputs();
+    /// Push chunks if all inputs has single level.
     bool tryPushSingleLevelData();
+    /// Push chunks from ready bucket if has one.
     bool tryPushTwoLevelData();
+    /// Push overflow chunks if has any.
     bool tryPushOverflowData();
+    /// Push chunks from bucket to output port.
     void pushData(Chunks chunks, Int32 bucket, bool is_overflows);
 };
 

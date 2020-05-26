@@ -8,7 +8,6 @@
 #include <Poco/NullChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
@@ -212,7 +211,7 @@ try
         /// Lock path directory before read
         status.emplace(context->getPath() + "status");
 
-        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
+        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);
@@ -279,7 +278,7 @@ void LocalServer::processQueries()
     context->makeSessionContext();
     context->makeQueryContext();
 
-    context->setUser("default", "", Poco::Net::SocketAddress{}, "");
+    context->setUser("default", "", Poco::Net::SocketAddress{});
     context->setCurrentQueryId("");
     applyCmdSettings();
 

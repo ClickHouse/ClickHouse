@@ -100,7 +100,7 @@ void WriteBufferFromS3::initiate()
     if (outcome.IsSuccess())
     {
         upload_id = outcome.GetResult().GetUploadId();
-        LOG_DEBUG(log, "Multipart upload initiated. Upload id: " << upload_id);
+        LOG_DEBUG(log, "Multipart upload initiated. Upload id: {}", upload_id);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -129,17 +129,13 @@ void WriteBufferFromS3::writePart(const String & data)
 
     auto outcome = client_ptr->UploadPart(req);
 
-    LOG_TRACE(
-        log, "Writing part. Bucket: " << bucket << ", Key: " << key << ", Upload_id: " << upload_id << ", Data size: " << data.size());
+    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, data.size());
 
     if (outcome.IsSuccess())
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG(
-            log,
-            "Writing part finished. "
-                << "Total parts: " << part_tags.size() << ", Upload_id: " << upload_id << ", Etag: " << etag);
+        LOG_DEBUG(log, "Writing part finished. Total parts: {}, Upload_id: {}, Etag: {}", part_tags.size(), upload_id, etag);
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -148,7 +144,7 @@ void WriteBufferFromS3::writePart(const String & data)
 
 void WriteBufferFromS3::complete()
 {
-    LOG_DEBUG(log, "Completing multipart upload. Bucket: " + bucket + ", Key: " + key + ", Upload_id: " + upload_id);
+    LOG_DEBUG(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}", bucket, key, upload_id);
 
     Aws::S3::Model::CompleteMultipartUploadRequest req;
     req.SetBucket(bucket);
@@ -170,7 +166,7 @@ void WriteBufferFromS3::complete()
     auto outcome = client_ptr->CompleteMultipartUpload(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Multipart upload completed. Upload_id: " << upload_id);
+        LOG_DEBUG(log, "Multipart upload completed. Upload_id: {}", upload_id);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }

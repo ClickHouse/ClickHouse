@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 34
 toc_title: JDBC
 ---
@@ -13,7 +13,7 @@ Para implementar la conexión JDBC, ClickHouse utiliza el programa independiente
 
 Este motor soporta el [NULL](../../../sql-reference/data-types/nullable.md) tipo de datos.
 
-## Creación De Una Tabla {#creating-a-table}
+## Creación de una tabla {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -34,7 +34,7 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 -   `external_table` — Name of the table in `external_database`.
 
-## Ejemplo De Uso {#usage-example}
+## Ejemplo de uso {#usage-example}
 
 Crear una tabla en el servidor MySQL conectándose directamente con su cliente de consola:
 

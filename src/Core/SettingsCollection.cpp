@@ -485,6 +485,12 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::UNKNOWN_LOAD_BALANCING)
 
 
+#define SPECIAL_SORT_ALGORITHM_NAMES(M) \
+    M(NOT_SPECIFIED, "not_specified") \
+    M(OPENCL_BITONIC, "opencl_bitonic")
+IMPLEMENT_SETTING_ENUM(SpecialSort, SPECIAL_SORT_ALGORITHM_NAMES, ErrorCodes::UNKNOWN_JOIN)
+
+
 #define JOIN_STRICTNESS_LIST_OF_NAMES(M) \
     M(Unspecified, "") \
     M(ALL, "ALL") \
@@ -593,7 +599,7 @@ namespace details
     void SettingsCollectionUtils::warningNameNotFound(const StringRef & name)
     {
         static auto * log = &Logger::get("Settings");
-        LOG_WARNING(log, "Unknown setting " << name << ", skipping");
+        LOG_WARNING(log, "Unknown setting {}, skipping", name);
     }
 
     void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)

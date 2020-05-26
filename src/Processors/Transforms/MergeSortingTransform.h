@@ -9,8 +9,8 @@
 namespace DB
 {
 
-class Volume;
-using VolumePtr = std::shared_ptr<Volume>;
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
 
 class MergeSortingTransform : public SortingTransform
 {
@@ -37,6 +37,9 @@ private:
     size_t max_bytes_before_external_sort;
     VolumePtr tmp_volume;
     size_t min_free_disk_space;
+
+    size_t sum_rows_in_blocks = 0;
+    size_t sum_bytes_in_blocks = 0;
 
     Logger * log = &Logger::get("MergeSortingTransform");
 

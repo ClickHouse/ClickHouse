@@ -914,7 +914,7 @@ SELECT arrayReverse([1, 2, 3])
 
 ## reverse(arr) {#array-functions-reverse}
 
-Synonym for [“arrayReverse”](#array_functions-arrayreverse)
+Synonym for [“arrayReverse”](#arrayreverse)
 
 ## arrayFlatten {#arrayflatten}
 

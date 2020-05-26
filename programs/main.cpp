@@ -11,9 +11,6 @@
 #if __has_include("config_tools.h")
 #include "config_tools.h"
 #endif
-#if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
-#include <common/config_common.h>
-#endif
 #if __has_include("config_core.h")
 #include "config_core.h"
 #endif

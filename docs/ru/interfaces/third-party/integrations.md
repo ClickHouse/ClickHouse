@@ -20,6 +20,7 @@
 -   Очереди сообщений
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (использует [Go client](https://github.com/ClickHouse/clickhouse-go/))
+        -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
 -   Потоковая обработка
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
