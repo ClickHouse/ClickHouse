@@ -306,8 +306,15 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         /// For convenience using LIKE and regular expressions,
         /// we leave backslash when user write something like 'Hello 100\%':
         /// it is parsed like Hello 100\% instead of Hello 100%
-        if (decoded_char != '\\' && !isControlASCII(decoded_char))
+        if (decoded_char != '\\'
+            && decoded_char != '\''
+            && decoded_char != '"'
+            && decoded_char != '`'  /// MySQL style identifiers
+            && decoded_char != '/'  /// JavaScript in HTML
+            && !isControlASCII(decoded_char))
+        {
             s.push_back('\\');
+        }
 
         s.push_back(decoded_char);
         ++buf.position();
