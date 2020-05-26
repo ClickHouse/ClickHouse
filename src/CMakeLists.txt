@@ -269,6 +269,7 @@ dbms_target_link_libraries (
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         ${Boost_SYSTEM_LIBRARY}
