@@ -73,7 +73,7 @@ private:
     const bool is_semi_join;
     const bool is_inner;
     const bool is_left;
-    const bool flush_left_blocks_on_disk; /// almost honest merge_join: flush and sort left table on disk
+    const bool flush_left_blocks_on_disk;
     static constexpr const bool skip_not_intersected = true; /// skip index for right blocks
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;

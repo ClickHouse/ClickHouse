@@ -101,9 +101,9 @@ public:
     bool allowMergeJoin() const;
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
-    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE || join_algorithm == JoinAlgorithm::MERGE; }
+    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE || join_algorithm == JoinAlgorithm::BUCKET_MERGE; }
     bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
-    bool flushOnDisk() const { return join_algorithm == JoinAlgorithm::MERGE; }
+    bool flushOnDisk() const { return join_algorithm == JoinAlgorithm::BUCKET_MERGE; }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }

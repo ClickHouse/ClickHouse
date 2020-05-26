@@ -537,7 +537,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     if (!not_processed)
     {
-        /// In current version flush_left_blocks_on_disk means almost honest merge_join: flush all, then sort all, then join all
+        /// TODO: Not OK. Need rewrite with buckets.
         if (flush_left_blocks_on_disk)
         {
             if (block)

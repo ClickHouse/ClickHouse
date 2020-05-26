@@ -500,9 +500,9 @@ IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes
 #define JOIN_ALGORITHM_NAMES(M) \
     M(AUTO, "auto") \
     M(HASH, "hash") \
-    M(MERGE, "merge") \
     M(PARTIAL_MERGE, "partial_merge") \
-    M(PREFER_PARTIAL_MERGE, "prefer_partial_merge")
+    M(PREFER_PARTIAL_MERGE, "prefer_partial_merge") \
+    M(BUCKET_MERGE, "bucket_merge")
 IMPLEMENT_SETTING_ENUM(JoinAlgorithm, JOIN_ALGORITHM_NAMES, ErrorCodes::UNKNOWN_JOIN)
 
 #define TOTALS_MODE_LIST_OF_NAMES(M) \
