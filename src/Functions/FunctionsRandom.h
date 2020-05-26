@@ -40,6 +40,7 @@ DECLARE_MULTITARGET_CODE(
 
 struct RandImpl
 {
+    /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
     static String getImplementationTag() { return ToString(BuildArch); }
 };
