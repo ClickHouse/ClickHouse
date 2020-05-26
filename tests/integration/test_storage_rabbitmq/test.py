@@ -528,7 +528,7 @@ def test_rabbitmq_sharding_between_tables(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        key = 'topic_' + str(randrange(0, NUMBER_OF_CONCURRENT_CONSUMERS))
+        key = str(randrange(1, NUMBER_OF_CONCURRENT_CONSUMERS))
         for message in messages:
             channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
         connection.close()
@@ -576,7 +576,6 @@ def test_rabbitmq_sharding_between_channels_publish(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
-                     rabbitmq_routing_key = 'clickhouse',
                      rabbitmq_num_consumers = 5,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
@@ -605,7 +604,7 @@ def test_rabbitmq_sharding_between_channels_publish(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        key = 'clickhouse_' + str(randrange(0, NUM_CHANNELS))
+        key = str(randrange(1, NUM_CHANNELS))
         for message in messages:
             channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
         connection.close()
@@ -641,7 +640,6 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_num_queues = 4,
-                     rabbitmq_routing_key = 'clickhouse',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         DROP TABLE IF EXISTS test.view;
@@ -669,7 +667,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        key = 'clickhouse_' + str(randrange(0, NUM_QUEUES))
+        key = str(randrange(1, NUM_QUEUES))
         for message in messages:
             channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
         connection.close()
@@ -707,7 +705,6 @@ def test_rabbitmq_sharding_between_channels_and_queues_publish(rabbitmq_cluster)
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_num_queues = 2,
                      rabbitmq_num_consumers = 10,
-                     rabbitmq_routing_key = 'clickhouse',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         DROP TABLE IF EXISTS test.view;
@@ -735,7 +732,7 @@ def test_rabbitmq_sharding_between_channels_and_queues_publish(rabbitmq_cluster)
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        key = 'clickhouse_' + str(randrange(0, NUM_QUEUES * NUM_CONSUMERS))
+        key = str(randrange(1, NUM_QUEUES * NUM_CONSUMERS))
         for message in messages:
             channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
         connection.close()
@@ -772,7 +769,6 @@ def test_rabbitmq_read_only_combo(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_num_consumers = 4,
-                     rabbitmq_routing_key = 'clickhouse',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
     ''')
@@ -807,7 +803,7 @@ def test_rabbitmq_read_only_combo(rabbitmq_cluster):
         for _ in range(messages_num):
             messages.append(json.dumps({'key': i[0], 'value': i[0]}))
             i[0] += 1
-        key = 'clickhouse_' + str(randrange(0, NUM_CONSUMERS))
+        key = str(randrange(1, NUM_CONSUMERS))
         for message in messages:
             channel.basic_publish(exchange='clickhouse-exchange', routing_key=key, body=message)
         connection.close()

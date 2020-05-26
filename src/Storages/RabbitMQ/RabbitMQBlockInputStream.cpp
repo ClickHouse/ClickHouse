@@ -5,6 +5,11 @@
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -117,13 +122,13 @@ Block RabbitMQBlockInputStream::readImpl()
 
         auto new_rows = read_rabbitmq_message();
 
-        auto _exchange = storage.getExchangeName();
-        auto _routingKey = storage.getRoutingKey();
+        auto exchange_name = storage.getExchangeName();
+        auto routing_key = storage.getRoutingKey();
 
         for (size_t i = 0; i < new_rows; ++i)
         {
-            virtual_columns[0]->insert(_exchange);
-            virtual_columns[1]->insert(_routingKey);
+            virtual_columns[0]->insert(exchange_name);
+            virtual_columns[1]->insert(routing_key);
         }
 
         total_rows = total_rows + new_rows;

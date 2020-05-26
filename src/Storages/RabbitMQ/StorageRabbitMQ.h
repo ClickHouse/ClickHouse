@@ -53,10 +53,13 @@ protected:
             Context & context_,
             const ColumnsDescription & columns_,
             const String & host_port_,
-            const String & routing_key_, const String & exchange_name_, 
-            const String & format_name_, char row_delimiter_,
-            size_t num_consumers_, bool bind_by_id_, size_t num_queues_, bool hash_exchange);
-
+            const String & routing_key_,
+            const String & exchange_name_, 
+            const String & format_name_,
+            char row_delimiter_,
+            size_t num_consumers_, 
+            size_t num_queues_, 
+            bool hash_exchange);
 
 private:
     Context global_context;
@@ -80,7 +83,7 @@ private:
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
-    size_t next_channel_id = 0;
+    size_t next_channel_id = 1; /// Must >= 1 because it is used as a binding key, which has to be > 0
     bool update_channel_id = false;
 
     BackgroundSchedulePool::TaskHolder task;

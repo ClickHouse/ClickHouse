@@ -59,9 +59,8 @@ private:
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    std::atomic<bool> exchange_declared = false;
+    bool exchange_declared = false;
     const size_t num_queues;
-    String consumerTag; // ID for the consumer
     Queues queues;
     bool subscribed = false;
     String current_exchange_name;
@@ -75,7 +74,7 @@ private:
     void initExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
-    void startNonBlockEventLoop();
+    void startEventLoop();
 
 };
 }
