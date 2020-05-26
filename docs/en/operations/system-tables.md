@@ -557,16 +557,9 @@ Columns:
 -   `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
 -   `source_line` (`UInt64`) - Source line from which the logging was done.
 
-## system.query\_log {#system_tables-query_log}
+## system.query_log {#system_tables-query_log}
 
-Contains information about executed queries.
-
-Here are the parametres of each query:  
-
-- processing start time, 
-- duration of processing, 
-- error messages, 
-- and other information.
+Contains information about executed queries, for example, start time, duration of processing, error messages.
 
 To log queries you need to:
 
@@ -582,7 +575,7 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with types 1 and 4 are created.
 3.  If an error occurred before launching the query, a single event with type 3 is created.
 
-By default, logs are added into the table with interval of 7.5 seconds. You can change this interval in the ``flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md##query_language-system-flush_logs) query.
+By default, logs are added into the table with interval of 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md##query_language-system-flush_logs) query.
 
 If you delete the table manually from storage, ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
 
@@ -707,9 +700,9 @@ Settings.Values:      ['0','random','1','10000000000']
 ```
 **See Also**
 
--   [system.query\_thread\_log](#system_tables-query-thread-log) — This table contains information about each query execution thread.
+-   [system.query_thread_log](#system_tables-query-thread-log) — This table contains information about each query execution thread.
 
-## system.query\_thread\_log {#system_tables-query-thread-log}
+## system.query_thread_log {#system_tables-query-thread-log}
 
 The table contains information about each query execution thread.
 

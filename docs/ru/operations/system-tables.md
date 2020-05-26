@@ -519,16 +519,10 @@ CurrentMetric_ReplicatedChecks:                             0
 
 ## system.query\_log {#system_tables-query_log}
 
-Эта таблица содержит информацию о выполняемых запросах.
-
-У каждого запроса есть следующие параметры:
-
-- время начала обработки,
-- продолжительность обработки,
-- сообщения об ошибках,
-- другая информация.
+Содержит информацию о выполняемых запросах, например, время начала обработки, продолжительность обработки, сообщения об ошибках.
 
 Чтобы ваши запросы логгировались, вам следует:
+
 1. Настроить параметр сервера [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
 2. Установить значение параметра [log_queries](settings/settings.md#settings-log-queries] равным 1. 
 
@@ -541,7 +535,7 @@ CurrentMetric_ReplicatedChecks:                             0
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами 1 и 4.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом 3.
 
-По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
+По умолчанию, строки добавляются в таблицу с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
 
 Если таблицу удалить вручную, она создается заново автоматически «на лету». При этом все логи на момент удаления таблицы будут убраны.
 
@@ -666,94 +660,9 @@ Settings.Values:      ['0','random','1','10000000000']
 ```
 **Смотрите также**
 
--   [system.query\_thread\_log](#system_tables-query-thread-log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
+-   [system.query_thread_log](#system_tables-query-thread-log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
 
-## system.query\_log {#system_tables-query_log}
-
-Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
-
-!!! note "Note"
-    The table doesn’t contain input data for `INSERT` queries.
-
-ClickHouse creates this table only if the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
-
-To enable query logging, set the [log\_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
-
-The `system.query_log` table registers two kinds of queries:
-
-1.  Initial queries that were run directly by the client.
-2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
-
-Columns:
-
--   `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
-    -   `'QueryStart' = 1` — Successful start of query execution.
-    -   `'QueryFinish' = 2` — Successful end of query execution.
-    -   `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
-    -   `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
--   `event_date` (Date) — Query starting date.
--   `event_time` (DateTime) — Query starting time.
--   `query_start_time` (DateTime) — Start time of query execution.
--   `query_duration_ms` (UInt64) — Duration of query execution.
--   `read_rows` (UInt64) — Number of read rows.
--   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
--   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
--   `result_rows` (UInt64) — Number of rows in the result.
--   `result_bytes` (UInt64) — Number of bytes in the result.
--   `memory_usage` (UInt64) — Memory consumption by the query.
--   `query` (String) — Query string.
--   `exception` (String) — Exception message.
--   `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
--   `is_initial_query` (UInt8) — Query type. Possible values:
-    -   1 — Query was initiated by the client.
-    -   0 — Query was initiated by another query for distributed query execution.
--   `user` (String) — Name of the user who initiated the current query.
--   `query_id` (String) — ID of the query.
--   `address` (IPv6) — IP address that was used to make the query.
--   `port` (UInt16) — The client port that was used to make the query.
--   `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
--   `initial_query_id` (String) — ID of the initial query (for distributed query execution).
--   `initial_address` (IPv6) — IP address that the parent query was launched from.
--   `initial_port` (UInt16) — The client port that was used to make the parent query.
--   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
-    -   1 — TCP.
-    -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
--   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
--   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
--   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-    -   0 — The query was launched from the TCP interface.
-    -   1 — `GET` method was used.
-    -   2 — `POST` method was used.
--   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` (String) — The «quota key» specified in the [quotas](quotas.md) setting (see `keyed`).
--   `revision` (UInt32) — ClickHouse revision.
--   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
--   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
--   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
-
-Each query creates one or two rows in the `query_log` table, depending on the status of the query:
-
-1.  If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
-2.  If an error occurred during query processing, two events with types 1 and 4 are created.
-3.  If an error occurred before launching the query, a single event with type 3 is created.
-
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
-
-When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
-
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
-
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
-\#\# system.query\_thread\_log {\#system\_tables-query-thread-log}
+## system.query_thread_log {#system_tables-query-thread-log}
 
 Содержит информацию о каждом потоке выполняемых запросов.
 
