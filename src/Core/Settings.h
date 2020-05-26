@@ -87,7 +87,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingUInt64, background_move_pool_size, 8, "Number of threads performing background moves for tables. Only has meaning at server startup.", 0) \
     M(SettingUInt64, background_schedule_pool_size, 16, "Number of threads performing background tasks for replicated tables, kafka streaming, dns cache updates. Only has meaning at server startup.", 0) \
     M(SettingUInt64, background_distributed_schedule_pool_size, 16, "Number of threads performing background tasks for distributed sends. Only has meaning at server startup.", 0) \
-    M(SettingUInt64, background_replicated_schedule_pool_size, 16, "Number of threads performing background tasks in replicated databases. Only has meaning at server startup.", 0) \
+    M(SettingUInt64, background_replicated_schedule_pool_size, 4, "Number of threads performing background tasks in replicated databases. One task corresponds to one replicated database replica. Only has meaning at server startup.", 0) \
     \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, 100, "Sleep time for StorageDistributed DirectoryMonitors, in case of any errors delay grows exponentially.", 0) \
     M(SettingMilliseconds, distributed_directory_monitor_max_sleep_time_ms, 30000, "Maximum sleep time for StorageDistributed DirectoryMonitors, it limits exponential growth too.", 0) \

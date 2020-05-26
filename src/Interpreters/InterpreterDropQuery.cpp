@@ -110,6 +110,9 @@ BlockIO InterpreterDropQuery::executeToTable(
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
+            if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
+                database->propose(query_ptr);
+            }
             table->truncate(query_ptr, metadata_snapshot, context, table_lock);
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
@@ -119,13 +122,8 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             table->shutdown();
 
-<<<<<<< HEAD
             TableExclusiveLockHolder table_lock;
-            if (database->getEngineName() != "Atomic")
-=======
-            TableStructureWriteLockHolder table_lock;
             if (database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
->>>>>>> 921e85e9c9... make db replicated inherited from atomic
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
