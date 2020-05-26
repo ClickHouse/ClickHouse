@@ -82,7 +82,9 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 {
 public:
     IStorage() = delete;
-    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {}
+    /// Storage fields should be initialized in separate methods like setColumns
+    /// or setTableTTLs.
+    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {} //-V730
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
