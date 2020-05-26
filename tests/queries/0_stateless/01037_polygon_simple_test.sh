@@ -87,7 +87,7 @@ do
     select 'dictGet', 'test_01037.dict_array' as dict_name, tuple(x, y) as key,
         dictGet(dict_name, 'name', key),
         dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
-    "  >> $outputFile
+    "  > $outputFile
     $CLICKHOUSE_CLIENT -n --query="
     select 'dictGetOrDefault', 'test_01037.dict_array' as dict_name, tuple(x, y) as key,
         dictGetOrDefault(dict_name, 'name', key, 'www'),
