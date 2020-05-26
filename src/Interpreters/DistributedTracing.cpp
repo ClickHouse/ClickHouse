@@ -140,7 +140,7 @@ SpanGuard::SpanGuard()
 //        : parent_span(nullptr)
 { }
 
-SpanGuard::SpanGuard(const String& operation_name)
+SpanGuard::SpanGuard(const String& /*operation_name*/)
 //        : parent_span(switchToChildSpan(operation_name))
 { }
 
