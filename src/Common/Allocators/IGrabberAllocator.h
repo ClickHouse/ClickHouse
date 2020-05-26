@@ -496,12 +496,7 @@ public:
         /// No try-catch here because it is not needed.
         size_t size = get_size();
 
-        RegionMetadata * region = nullptr;
-
-        {
-            std::lock_guard global_lock(mutex); /// Allocate does not need used_regions
-            region = allocate(size);
-        }
+        RegionMetadata * region = allocate(size);
 
         /// Cannot allocate memory, special case.
         if (!region)
@@ -531,6 +526,8 @@ public:
                 throw;
             }
         }
+
+        total_size_currently_initialized.fetch_add(size, std::memory_order_release);
 
         try
         {
@@ -586,7 +583,8 @@ private:
         if (++metadata.refcount != 1)
             return false;
 
-        // One reference.
+        // First reference.
+
         mutex.lock();
 
         if constexpr (MayBeInUnused)
@@ -683,13 +681,18 @@ private:
                 /// If global mutex is not locked, unlock used_regions on stack return.
                 mutex_unlocker unlock(used_regions_mutex, !mutex_locked);
 
+                // used_regions mutex either gets locked (1)
+
                 return {
                     std::shared_ptr<Value>( // NOLINT: not a nullptr
                         metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1)),
                     mutex_locked
                 };
+
+                // or gets unlocked here (2)
             }
 
+            // or here (3)
             used_regions_mutex.unlock();
         }
 
@@ -1039,6 +1042,8 @@ private:
      */
     constexpr RegionMetadata * allocate(size_t size)
     {
+        std::lock_guard global_lock(mutex); /// Allocate does not need used_regions
+
         size = ga::roundUp(size, ValueAlignment);
 
         if (auto it = free_regions.lower_bound(size, RegionCompareBySize()); free_regions.end() != it)
@@ -1068,6 +1073,8 @@ private:
 
     /**
      * @brief Given a #free_region, occupies its part of size #size.
+     *
+     * Modifies #free_regions, #all_regions.
      */
     constexpr RegionMetadata * allocateFromFreeRegion(RegionMetadata & free_region, size_t size)
     {
@@ -1112,6 +1119,8 @@ private:
      * @brief Allocates a MemoryChunk of specified size.
      * @return A free region, spanning through the whole allocated chunk.
      * @post #all_regions and #free_regions contain target region.
+     *
+     * Modifies #free_regions, #all_regions.
      */
     constexpr RegionMetadata * addNewChunk(size_t size)
     {
@@ -1292,4 +1301,5 @@ struct FakeMemoryAllocForIG
 
     constexpr static void free(char *, size_t) noexcept {}
 };
+
 }
