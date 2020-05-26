@@ -572,7 +572,7 @@ private:
 
             /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
             /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
-            BOOST_ASSERT(it != value_to_region.end())
+            BOOST_ASSERT(it != value_to_region.end());
 
             metadata = it->second;
 
