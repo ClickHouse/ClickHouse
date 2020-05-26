@@ -601,7 +601,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = setProperties(create);
 
-    // testing
+    /// DDL log for replicated databases can not
+    /// contain the right database name for every replica
+    /// therefore for such queries the AST database
+    /// field is modified right before an actual execution
     if (context.from_replicated_log) {
         create.database = current_database;
     }
@@ -637,8 +640,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
         else if (database->getEngineName() == "Replicated" && context.from_replicated_log) {
             if (create.uuid == UUIDHelpers::Nil)
-                // change error to incorrect log or something
-                throw Exception("Table UUID is not specified in the replicated log", ErrorCodes::INCORRECT_QUERY);
+                throw Exception("Table UUID is not specified in DDL log", ErrorCodes::INCORRECT_QUERY);
         }
         else
         {
