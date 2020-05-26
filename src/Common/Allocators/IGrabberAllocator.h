@@ -667,12 +667,11 @@ private:
             ++hits;
             ++concurrent_hits;
 
-            return {attempt->value, false};
+            return attempt->value;
         }
 
         ++misses;
-
-        return {nullptr, false};
+        return nullptr;
     }
 
 /**
