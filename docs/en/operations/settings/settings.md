@@ -409,7 +409,7 @@ Default value: 0.
 Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
 
 !!! note "Warning"
-    Use this setting only for purpose of backward compatibility if your use cases depend on legacy `JOIN` behavior.
+    Use this setting only for the purpose of backward compatibility if your use cases depend on legacy `JOIN` behavior.
 
 When the legacy behavior enabled:
 
