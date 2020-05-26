@@ -580,31 +580,70 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
 
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
-template <typename T> void readFloatTextFast(BFloat16 & x, ReadBuffer & in) {
+template <typename T>
+std::enable_if_t<!std::is_same<BFloat16> && !std::is_same<Float16>, void> readFloatTextFast(T & x, ReadBuffer & in) {
+    readFloatTextFastImpl<T, void>(x, in);
+}
+
+template <> void readFloatTextFast<BFloat16>(BFloat16 & x, ReadBuffer & in) {
     float floatX;
-    readFloatTextFastImpl<T, void>(floatX, in);
+    readFloatTextFastImpl<float, void>(floatX, in);
     x = BFloat16(floatX);
 }
 
-template <typename T> void readFloatTextFast(Float16 & x, ReadBuffer & in) {
+template <> void readFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
     float floatX;
-    readFloatTextFastImpl<T, void>(floatX, in);
+    readFloatTextFastImpl<float, void>(floatX, in);
     x = Float16(floatX);
 }
+template <typename T>
+std::enable_if_t<!std::is_same<T, BFloat16> && !std::is_same<T, Float16>, bool> tryReadFloatTextFast(T & x, ReadBuffer & in) {
+    return readFloatTextFastImpl<T, bool>(x, in);
+}
 
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
+template <> bool tryReadFloatTextFast<BFloat16>(BFloat16 & x, ReadBuffer & in) {
+    float floatX;
+    bool answer = readFloatTextFastImpl<float, bool>(floatX, in);
+    x = BFloat16(x);
+    return answer;
+}
 
-template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
-template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
-template <typename T> bool tryReadFloatTextSimple(BFloat16 & x, ReadBuffer & in) {
+template <> bool tryReadFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
+    float floatX;
+    bool answer = readFloatTextFastImpl<float, bool>(floatX, in);
+    x = Float16(x);
+    return answer;
+}
+
+template <typename T>
+std::enable_if_t<!std::is_same<T, BFloat16> && !std::is_same<T, Float16>, void> readFloatTextSimple(T & x, ReadBuffer & in) {
+    readFloatTextSimpleImpl<T, void>(x, in);
+}
+
+template <> void readFloatTextSimple<BFloat16>(Float16 & x, ReadBuffer & in) {
+    float floatX;
+    readFloatTextFastImpl<float, void>(floatX, in);
+    x = BFloat16(floatX);
+}
+template <> void readFloatTextSimple<Float16>(BFloat16 & x, ReadBuffer & in) {
+    float floatX;
+    readFloatTextFastImpl<float, void>(floatX, in);
+    x = BFloat16(floatX);
+}
+
+template <typename T>
+std::enable_if_t<!std::is_same<T, BFloat16> && !std::is_same<T, Float16>, bool> tryReadFloatTextSimple(T & x, ReadBuffer & in) {
+    return readFloatTextSimpleImpl<T, bool>(x, in);
+}
+
+template <> bool tryReadFloatTextSimple<BFloat16>(BFloat16 & x, ReadBuffer & in) {
     float floatX;
     bool answer = readFloatTextSimpleImpl<float, bool>(floatX, in);
     x = BFloat16(x);
     return answer;
 }
 
-template <typename T> bool tryReadFloatTextSimple(Float16 & x, ReadBuffer & in) {
+template <> bool tryReadFloatTextSimple<Float16>(Float16 & x, ReadBuffer & in) {
     float floatX;
     bool answer = readFloatTextSimpleImpl<float, bool>(floatX, in);
     x = Float16(x);

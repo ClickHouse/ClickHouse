@@ -130,6 +130,11 @@ struct BFloat16 {
         return *this;
     }
 
+    BFloat16 inline operator-() const {
+        unsigned short updatedValue = getValue() ^ (1 << 15);
+        return BFloat16(updatedValue);
+    }
+
     BFloat16 inline operator+(const BFloat16 &fl) const {
         if (isNull()) {
             return BFloat16(fl.getValue());

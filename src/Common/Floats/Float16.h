@@ -136,6 +136,11 @@ struct Float16 {
         return *this;
     }
 
+    Float16 inline operator-() const {
+        unsigned short updatedValue = getValue() ^ (1 << 15);
+        return Float16(updatedValue);
+    }
+
     Float16 inline operator+(const Float16 &fl) const {
         if (isNull()) {
             return Float16(fl.getValue());
