@@ -1184,19 +1184,19 @@ std::vector<DB::ASTPtr> get_select(DB::ASTPtr vertex)
     }
     return result;
 }
-TableList get_tables_from_select(std::string query)
+TableList get_tables_from_select(std::vector<std::string> queries)
 {
     DB::ParserQueryWithOutput parser;
-    DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
-
     TableList result;
-    for (auto select : get_select(ast))
+    for (std::string& query : queries)
     {
-        TableList local;
-        parse_select_query(select, local);
-        result.merge(local);
+        DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
+        for (auto select : get_select(ast)) {
+            TableList local;
+            parse_select_query(select, local);
+            result.merge(local);
+        }
     }
-
     return result;
 }
 int main(int, char **)
@@ -1208,26 +1208,29 @@ int main(int, char **)
     handlers["in"] = in_func;
     handlers[""] = simple_func;
 
-    std::string query = "";
-
+    std::vector<std::string> queries;
     std::string in;
-    while (1)
+    std::string query = "";
+    while(getline(std::cin, in))
     {
-        std::cin >> in;
-        query += " " + in;
+        query += in + " ";
         if (in.find(';') != std::string::npos)
-            break;
+        {
+            queries.push_back(query);
+            query = "";
+        }
     }
     try
     {
-        auto result = get_tables_from_select(query);
+        auto result = get_tables_from_select(queries);
 
         for (auto table : result.tables)
         {
             std::cout << table.second.create_query();
             std::cout << table.second.insert_query();
         }
-        std::cout << query << std::endl;
+        for (auto query: queries)
+            std::cout << query << std::endl;
     }
     catch (std::string e)
     {
