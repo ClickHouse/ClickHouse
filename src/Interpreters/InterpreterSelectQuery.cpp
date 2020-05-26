@@ -792,7 +792,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere, save_context_and_storage);
 
-        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
+        LOG_TRACE(log, "{} -> {}", QueryProcessingStage::toString(from_stage), QueryProcessingStage::toString(options.to_stage));
     }
 
     if (options.to_stage > QueryProcessingStage::FetchColumns)
@@ -1559,7 +1559,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         if constexpr (pipeline_with_processors)
         {
             if (streams.size() == 1 || pipes.size() == 1)
-                pipeline.setMaxThreads(streams.size());
+                pipeline.setMaxThreads(1);
 
             /// Unify streams. They must have same headers.
             if (streams.size() > 1)

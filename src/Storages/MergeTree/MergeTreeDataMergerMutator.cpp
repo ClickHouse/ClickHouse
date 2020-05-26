@@ -268,7 +268,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
             && part->info.min_block <= (*prev_part)->info.max_block)
         {
-            LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
+            LOG_ERROR(log, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
         }
 
         prev_part = &part;
@@ -315,7 +315,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         parts.push_back(part);
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
     return true;
 }
@@ -366,12 +366,14 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         if (now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
-            LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
-                << " because not enough free space: "
-                << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved, "
-                << formatReadableSizeWithBinarySuffix(sum_bytes)
-                << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
-                << "% on overhead); suppressing similar warnings for the next hour");
+            LOG_WARNING(log,
+                "Won't merge parts from {} to {} because not enough free space: {} free and unreserved"
+                ", {} required now (+{}% on overhead); suppressing similar warnings for the next hour",
+                parts.front()->name,
+                (*prev_it)->name,
+                formatReadableSizeWithBinarySuffix(available_disk_space),
+                formatReadableSizeWithBinarySuffix(sum_bytes),
+                static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100));
         }
 
         if (out_disable_reason)
@@ -381,7 +383,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         return false;
     }
 
-    LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
     available_disk_space -= required_disk_space;
     return true;
@@ -588,9 +590,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
 
-    LOG_DEBUG(log, "Merging " << parts.size() << " parts: from "
-              << parts.front()->name << " to " << parts.back()->name
-              << " into " << TMP_PREFIX + future_part.name + " with type " + future_part.type.toString());
+    LOG_DEBUG(log, "Merging {} parts: from {} to {} into {}", parts.size(), parts.front()->name, parts.back()->name, future_part.type.toString());
 
     auto disk = space_reservation->getDisk();
     String part_path = data.relative_data_path;
@@ -608,7 +608,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        storage_columns, data.sorting_key_expr, data.skip_indices,
+        storage_columns, data.getSortingKey().expression, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -633,14 +633,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (need_remove_expired_values && ttl_merges_blocker.isCancelled())
     {
-        LOG_INFO(log, "Part " << new_data_part->name << " has values with expired TTL, but merges with TTL are cancelled.");
+        LOG_INFO(log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", new_data_part->name);
         need_remove_expired_values = false;
     }
 
     size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
-    LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
+    LOG_DEBUG(log, "Selected MergeAlgorithm: {}", ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -727,7 +727,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         pipes.emplace_back(std::move(pipe));
     }
 
-    Names sort_columns = data.sorting_key_columns;
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -949,13 +949,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG(log, std::fixed << std::setprecision(2)
-            << "Merge sorted " << merge_entry->rows_read << " rows"
-            << ", containing " << all_column_names.size() << " columns"
-            << " (" << merging_column_names.size() << " merged, " << gathering_column_names.size() << " gathered)"
-            << " in " << elapsed_seconds << " sec., "
-            << merge_entry->rows_read / elapsed_seconds << " rows/sec., "
-            << merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MB/sec.");
+        LOG_DEBUG(log, "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",             merge_entry->rows_read, all_column_names.size(), merging_column_names.size(), gathering_column_names.size(),             elapsed_seconds, merge_entry->rows_read / elapsed_seconds,             formatReadableSizeWithBinarySuffix(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 
     if (merge_alg != MergeAlgorithm::Vertical)
@@ -1000,12 +994,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     if (!isStorageTouchedByMutations(storage_from_source_part, commands_for_part, context_for_reading))
     {
-        LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
+        LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info);
     }
     else
     {
-        LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+        LOG_TRACE(log, "Mutating part {} to mutation version {}", source_part->name, future_part.part_info.mutation);
     }
 
     BlockInputStreamPtr in = nullptr;
@@ -1227,8 +1221,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
-            << " instead of " << parts.size());
+        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}", new_data_part->name, replaced_parts.size(), parts.size());
     }
     else
     {
@@ -1238,7 +1231,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
+    LOG_TRACE(log, "Merged {} parts: from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
     return new_data_part;
 }
 

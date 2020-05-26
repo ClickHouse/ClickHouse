@@ -63,8 +63,8 @@ namespace ErrorCodes
   * TODO Pass alignment to Allocator.
   * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
-static constexpr size_t EmptyPODArraySize = 1024;
-extern const char EmptyPODArray[EmptyPODArraySize];
+static constexpr size_t empty_pod_array_size = 1024;
+extern const char empty_pod_array[empty_pod_array_size];
 
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
@@ -81,9 +81,9 @@ protected:
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
     static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, ELEMENT_SIZE), 16);
     /// Empty array will point to this static memory as padding.
-    static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
+    static constexpr char * null = pad_left ? const_cast<char *>(empty_pod_array) + empty_pod_array_size : nullptr;
 
-    static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
+    static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
@@ -224,13 +224,19 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void push_back_raw(const char * ptr, TAllocatorParams &&... allocator_params)
+    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
+    {
+        push_back_raw_many(1, ptr, std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
+    void push_back_raw_many(size_t number_of_items, const void * ptr, TAllocatorParams &&... allocator_params)
     {
         if (unlikely(c_end == c_end_of_storage))
-            reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
+            reserve(number_of_items, std::forward<TAllocatorParams>(allocator_params)...);
 
-        memcpy(c_end, ptr, ELEMENT_SIZE);
-        c_end += byte_size(1);
+        memcpy(c_end, ptr, ELEMENT_SIZE * number_of_items);
+        c_end += byte_size(number_of_items);
     }
 
     void protect()

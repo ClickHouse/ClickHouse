@@ -79,6 +79,7 @@ target_link_libraries (common
         Poco::Util
         Poco::Foundation
         replxx
+        fmt
 
     PRIVATE
         cctz

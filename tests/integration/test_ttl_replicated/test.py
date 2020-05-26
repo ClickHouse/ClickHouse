@@ -109,6 +109,50 @@ def test_ttl_table(started_cluster, delete_suffix):
     assert TSV(node1.query("SELECT * FROM test_ttl")) == TSV("")
     assert TSV(node2.query("SELECT * FROM test_ttl")) == TSV("")
 
+def test_modify_ttl(started_cluster):
+    drop_table([node1, node2], "test_ttl")
+    for node in [node1, node2]:
+        node.query(
+        '''
+            CREATE TABLE test_ttl(d DateTime, id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+            ORDER BY id
+        '''.format(replica=node.name))
+
+    node1.query("INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
+    node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
+
+    node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
+    assert node2.query("SELECT id FROM test_ttl") == "2\n3\n"
+
+    node2.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2")
+    assert node1.query("SELECT id FROM test_ttl") == "3\n"
+
+    node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
+    assert node2.query("SELECT id FROM test_ttl") == ""
+
+def test_modify_column_ttl(started_cluster):
+    drop_table([node1, node2], "test_ttl")
+    for node in [node1, node2]:
+        node.query(
+        '''
+            CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl', '{replica}')
+            ORDER BY d
+        '''.format(replica=node.name))
+
+    node1.query("INSERT INTO test_ttl VALUES (now() - INTERVAL 5 HOUR, 1), (now() - INTERVAL 3 HOUR, 2), (now() - INTERVAL 1 HOUR, 3)")
+    node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
+
+    node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
+    assert node2.query("SELECT id FROM test_ttl") == "42\n2\n3\n"
+
+    node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2")
+    assert node1.query("SELECT id FROM test_ttl") == "42\n42\n3\n"
+
+    node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
+    assert node2.query("SELECT id FROM test_ttl") == "42\n42\n42\n"
+
 def test_ttl_double_delete_rule_returns_error(started_cluster):
     drop_table([node1, node2], "test_ttl")
     try:
