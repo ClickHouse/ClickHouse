@@ -250,10 +250,10 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
-    if (hasPartitionKey())
+    if (isPartitionKeyDefined())
         metadata.partition_by_ast = getPartitionKeyAST()->clone();
 
-    if (hasSortingKey())
+    if (isSortingKeyDefined())
         metadata.order_by_ast = getSortingKeyAST()->clone();
 
     if (isPrimaryKeyDefined())
@@ -262,7 +262,7 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (ttl_table_ast)
         metadata.ttl_for_table_ast = ttl_table_ast->clone();
 
-    if (hasSamplingKey())
+    if (isSamplingKeyDefined())
         metadata.sample_by_ast = getSamplingKeyAST()->clone();
 
     if (settings_ast)
