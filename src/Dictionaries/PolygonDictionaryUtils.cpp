@@ -11,19 +11,11 @@
 namespace DB
 {
 
-FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_)
+FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_, bool is_last_covered_):
+polygon_ids(polygon_ids_)
 {
-    Polygon tmp_poly;
-    bg::convert(box_, tmp_poly);
-    for (const auto id : polygon_ids_)
-    {
-        if (bg::covered_by(tmp_poly, polygons_[id]))
-        {
-            first_covered = id;
-            break;
-        }
-        polygon_ids.push_back(id);
-    }
+    if (is_last_covered_)
+        polygon_ids.pop_back();
 }
 
 const FinalCell * FinalCell::find(Coord, Coord) const
@@ -36,7 +28,7 @@ inline void shift(Point & point, Coord val) {
     point.y(point.y() + val);
 }
 
-FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_)
+FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
 {
     auto extended = box_;
     shift(extended.min_corner(), -GridRoot<FinalCellWithSlabs>::kEps);
@@ -44,21 +36,19 @@ FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_,
     Polygon tmp_poly;
     bg::convert(extended, tmp_poly);
     std::vector<Polygon> intersections;
-    for (const auto id : polygon_ids_)
+    if (is_last_covered_)
+        first_covered = polygon_ids_.back();
+    for (size_t i = 0; i + is_last_covered_ < polygon_ids_.size(); ++i)
     {
-        if (bg::covered_by(tmp_poly, polygons_[id]))
-        {
-            first_covered = id;
-            break;
-        }
         std::vector<Polygon> intersection;
-        bg::intersection(tmp_poly, polygons_[id], intersection);
+        bg::intersection(tmp_poly, polygons_[polygon_ids_[i]], intersection);
         for (auto & polygon : intersection)
             intersections.emplace_back(std::move(polygon));
         while (corresponding_ids.size() < intersections.size())
-            corresponding_ids.push_back(id);
+            corresponding_ids.push_back(polygon_ids_[i]);
     }
-    index = SlabsPolygonIndex{intersections};
+    if (!intersections.empty())
+        index = SlabsPolygonIndex{intersections};
 }
 
 const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
