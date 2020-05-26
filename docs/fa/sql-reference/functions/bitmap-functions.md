@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 49
 toc_title: "\u0646\u06AF\u0627\u0634\u062A \u0628\u06CC\u062A"
 ---
@@ -173,7 +173,7 @@ bitmapHasAny(bitmap1, bitmap2)
 
 -   `bitmap*` – bitmap object.
 
-**بازگشت ارزش**
+**مقادیر بازگشتی**
 
 -   `1` اگر `bitmap1` و `bitmap2` حداقل یک عنصر مشابه داشته باشید.
 -   `0` وگرنه
@@ -399,7 +399,7 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS
 
 ## اطلاعات دقیق {#bitmapandcardinality}
 
-دو بیت مپ و محاسبه بازگشت cardinality از نوع uint64.
+دو بیت مپ و محاسبه بازگشت cardinality از نوع UInt64.
 
 ``` sql
 bitmapAndCardinality(bitmap,bitmap)
@@ -423,7 +423,7 @@ SELECT bitmapAndCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 ## کمبود سیگار {#bitmaporcardinality}
 
-دو بیت مپ و یا محاسبه بازگشت cardinality از نوع uint64.
+دو بیت مپ و یا محاسبه بازگشت cardinality از نوع UInt64.
 
 ``` sql
 bitmapOrCardinality(bitmap,bitmap)
@@ -447,7 +447,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 ## هشدار داده می شود {#bitmapxorcardinality}
 
-دو بیت مپ xor محاسبه بازگشت cardinality از نوع uint64.
+دو بیت مپ xor محاسبه بازگشت cardinality از نوع UInt64.
 
 ``` sql
 bitmapXorCardinality(bitmap,bitmap)
@@ -471,7 +471,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
 
 ## اطلاعات دقیق {#bitmapandnotcardinality}
 
-دو بیت مپ andnot محاسبه بازگشت cardinality از نوع uint64.
+دو بیت مپ andnot محاسبه بازگشت cardinality از نوع UInt64.
 
 ``` sql
 bitmapAndnotCardinality(bitmap,bitmap)

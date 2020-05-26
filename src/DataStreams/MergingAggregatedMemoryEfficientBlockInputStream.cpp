@@ -149,7 +149,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::cancel(bool kill)
               * (example: connection reset during distributed query execution)
               * - then don't care.
               */
-            LOG_ERROR(log, "Exception while cancelling " << input.stream->getName());
+            LOG_ERROR(log, "Exception while cancelling {}", input.stream->getName());
         }
     }
 }

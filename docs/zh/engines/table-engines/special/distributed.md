@@ -62,7 +62,7 @@ logs – 服务器配置文件中的集群名称。
 - `port` – 消息传递的 TCP 端口（「tcp\_port」配置通常设为 9000）。不要跟 http\_port 混淆。
 - `user` – 用于连接远程服务器的用户名。默认值：default。该用户必须有权限访问该远程服务器。访问权限配置在 users.xml 文件中。更多信息，请查看«访问权限»部分。
 - `password` – 用于连接远程服务器的密码。默认值：空字符串。
-- `secure` – 是否使用ssl进行连接，设为true时，通常也应该设置 `port` = 9440。服务器也要监听 <tcp_port_secure>9440</tcp_port_secure> 并有正确的证书。
+- `secure` – 是否使用ssl进行连接，设为true时，通常也应该设置 `port` = 9440。服务器也要监听 `<tcp_port_secure>9440</tcp_port_secure>` 并有正确的证书。
 - `compression` - 是否使用数据压缩。默认值：true。
 
 配置了副本，读取操作会从每个分片里选择一个可用的副本。可配置负载平衡算法（挑选副本的方式） - 请参阅«load\_balancing»设置。

@@ -7,6 +7,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>

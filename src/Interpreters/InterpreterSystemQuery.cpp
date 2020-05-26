@@ -21,6 +21,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Access/ContextAccess.h>
+#include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -198,6 +199,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DNS_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
+            AllowedClientHosts::dropDNSCaches();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
@@ -341,7 +343,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, false);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
     auto data_path = database->getTableDataPath(create);
 
@@ -399,12 +401,12 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            LOG_ERROR(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": Timed out!");
+            LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(
                     "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
-        LOG_TRACE(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": OK");
+        LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);

@@ -220,7 +220,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
 
     if (l_size != r_size)
     {
-        result = ::testing::AssertionFailure() << "size mismatch" << " expected: " << l_size << " got:" << r_size;
+        result = ::testing::AssertionFailure() << "size mismatch expected: " << l_size << " got:" << r_size;
     }
     if (l_size == 0 || r_size == 0)
     {
@@ -470,7 +470,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 
     parser.parse(token_iterator, codec_ast, expected);
 
-    return CompressionCodecFactory::instance().get(codec_ast, data_type);
+    return CompressionCodecFactory::instance().get(codec_ast, data_type, false);
 }
 
 template <typename Timer>

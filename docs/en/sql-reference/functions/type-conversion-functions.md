@@ -269,7 +269,7 @@ Also see the `toUnixTimestamp` function.
 ## toFixedString(s, N) {#tofixedstrings-n}
 
 Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant.
-If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
+If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
 ## toStringCutToZero(s) {#tostringcuttozeros}
 
@@ -516,7 +516,7 @@ Result:
 
 **See Also**
 
--   \[ISO 8601 announcement by @xkcd\](https://xkcd.com/1179/)
+-   [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
 -   [toDate](#todate)
 -   [toDateTime](#todatetime)
@@ -528,5 +528,44 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 
 Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+
+## toLowCardinality {#tolowcardinality}
+
+Converts input parameter to the [LowCardianlity](../data-types/lowcardinality.md) version of same data type.
+
+To convert data from the `LowCardinality` data type use the [CAST](#type_conversion_function-cast) function. For example, `CAST(x as String)`.
+
+**Syntax**
+
+```sql
+toLowCardinality(expr)
+```
+
+**Parameters**
+
+- `expr` — [Expression](../syntax.md#syntax-expressions) resulting in one of the [supported data types](../data-types/index.md#data_types).
+
+
+**Returned values**
+
+- Result of `expr`.
+
+Type: `LowCardinality(expr_result_type)`
+
+**Example**
+
+Query:
+
+```sql
+SELECT toLowCardinality('1')
+```
+
+Result:
+
+```text
+┌─toLowCardinality('1')─┐
+│ 1                     │
+└───────────────────────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

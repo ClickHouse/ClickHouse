@@ -32,6 +32,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/DictionaryReader.h>
+#include <Interpreters/Context.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -409,7 +410,7 @@ bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & action
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            getRootActions(arguments[i], true, actions);
+            getRootActionsNoMakeSet(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
             types[i] = actions->getSampleBlock().getByName(name).type;
             aggregate.argument_names[i] = name;
@@ -1024,6 +1025,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.clear();
     };
+
+    if (storage)
+    {
+        query_analyzer.makeSetsForIndex(query.where());
+        query_analyzer.makeSetsForIndex(query.prewhere());
+    }
 
     {
         ExpressionActionsChain chain(context);

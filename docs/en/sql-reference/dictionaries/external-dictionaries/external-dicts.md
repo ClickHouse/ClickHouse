@@ -17,6 +17,12 @@ The configuration of external dictionaries can be located in one or more xml-fil
 
 Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) setting.
 
+The [dictionaries](../../../operations/system-tables.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
+
+- Status of the dictionary.
+- Configuration parameters.
+- Metrics like amount of RAM allocated for the dictionary or a number of queries since the dictionary was successfully loaded.
+
 The dictionary configuration file has the following format:
 
 ``` xml

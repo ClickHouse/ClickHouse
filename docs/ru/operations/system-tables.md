@@ -1,4 +1,4 @@
-# Системные таблицы {#sistemnye-tablitsy}
+# Системные таблицы {#system-tables}
 
 Системные таблицы используются для реализации части функциональности системы, а также предоставляют доступ к информации о работе системы.
 Вы не можете удалить системную таблицу (хотя можете сделать DETACH).
@@ -240,7 +240,7 @@ SELECT * FROM system.events LIMIT 5
 
 ## system.graphite\_retentions {#system-graphite-retentions}
 
-Содержит информацию о том, какие параметры [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md).
+Содержит информацию о том, какие параметры [graphite\_rollup](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) используются в таблицах с движками [\*GraphiteMergeTree](../engines/table-engines/mergetree-family/graphitemergetree.md).
 
 Столбцы:
 
@@ -395,7 +395,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 Столбцы:
 
--   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql-reference/statements/alter.md#sql_reference_queries_alter).
+-   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql-reference/statements/alter.md#query_language_queries_alter).
 
     Форматы:
 
@@ -517,17 +517,58 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `query` (String) – текст запроса. Для запросов `INSERT` не содержит встаявляемые данные.
 -   `query_id` (String) – идентификатор запроса, если был задан.
 
-## system.query\_log {#system_tables-query_log}
+## system.text\_log {#system-tables-text-log}
+
+Содержит записи логов. Уровень логирования для таблицы может быть ограничен параметром сервера `text_log.level`.
+
+Столбцы:
+
+-   `event_date` (Date) — Дата создания записи.
+-   `event_time` (DateTime) — Время создания записи.
+-   `microseconds` (UInt32) — Время создания записи в микросекундах.
+-   `thread_name` (String) — Название потока, из которого была сделана запись.
+-   `thread_id` (UInt64) — Идентификатор потока ОС.
+-   `level` (Enum8) — Уровень логирования записи. Возможные значения:
+    -   `1` или `'Fatal'`.
+    -   `2` или `'Critical'`.
+    -   `3` или `'Error'`.
+    -   `4` или `'Warning'`.
+    -   `5` или `'Notice'`.
+    -   `6` или `'Information'`.
+    -   `7` или `'Debug'`.
+    -   `8` или `'Trace'`.
+-   `query_id` (String) — Идентификатор запроса.
+-   `logger_name` (LowCardinality(String)) — Название логгера (`DDLWorker`).
+-   `message` (String) — Само тело записи.
+-   `revision` (UInt32) — Ревизия ClickHouse.
+-   `source_file` (LowCardinality(String)) — Исходный файл, из которого была сделана запись.
+-   `source_line` (UInt64) — Исходная строка, из которой была сделана запись.
+
+## system.query_log {#system_tables-query_log}
 
 Содержит информацию о выполняемых запросах, например, время начала обработки, продолжительность обработки, сообщения об ошибках.
 
-Чтобы ваши запросы логгировались, вам следует:
-
-1. Настроить параметр сервера [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
-2. Установить значение параметра [log_queries](settings/settings.md#settings-log-queries] равным 1. 
-
 !!! note "Внимание"
     Таблица не содержит входных данных для запросов `INSERT`.
+
+Чтобы ваши запросы логгировались, вам следует:
+
+1. Настроить секцию [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) в конфигурации сервера.
+2. Установить значение параметра [log_queries](settings/settings.md#settings-log-queries] равным 1. 
+
+Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
+
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (параметр `partition_by`).
+
+
+По умолчанию, строки добавляются в таблицу с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
+
+Если таблицу удалить вручную, она создается заново автоматически «на лету». При этом все логи на момент удаления таблицы будут убраны.
+
+Таблица `system.query_log` содержит информацию о двух видах запросов:
+
+1.  Первоначальные запросы, которые были выполнены непосредственно клиентом.
+2.  Дочерние запросы, инициированные другими запросами (для выполнения распределенных запросов). Для дочерних запросов информация о первоначальном запросе содержится в столбцах `initial_*`.
 
 В зависимости от статуса каждый запрос создаёт одну или две строки в таблице `query_log`:
 
@@ -535,23 +576,9 @@ CurrentMetric_ReplicatedChecks:                             0
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами 1 и 4.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом 3.
 
-По умолчанию, строки добавляются в таблицу с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
-
-Если таблицу удалить вручную, она создается заново автоматически «на лету». При этом все логи на момент удаления таблицы будут убраны.
-
-!!! note "Примечание"
-    Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
-
-Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (параметр `partition_by`).
-
-Таблица `system.query_log` содержит информацию о двух видах запросов:
-
-1.  Первоначальные запросы, которые были выполнены непосредственно клиентом.
-2.  Дочерние запросы, инициированные другими запросами (для выполнения распределенных запросов). Для дочерних запросов информация о первоначальном запросе содержится в столбцах `initial_*`.
-
 Столбцы:
 
--   `type` (`Enum8`) — [тип](../sql-reference/data-types/enum.md) события, произошедшего при выполнении запроса. Значения:
+-   `type` ([Enum8](../sql-reference/data-types/enum.md)) — тип события, произошедшего при выполнении запроса. Значения:
     -   `'QueryStart' = 1` — успешное начало выполнения запроса.
     -   `'QueryFinish' = 2` — успешное завершение выполнения запроса.
     -   `'ExceptionBeforeStart' = 3` — исключение перед началом обработки запроса.
@@ -668,7 +695,7 @@ Settings.Values:      ['0','random','1','10000000000']
 
 ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
 
-Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
+Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md#settings).
 
 Столбцы:
 
@@ -725,6 +752,10 @@ ClickHouse создаёт таблицу только в том случае, к
     Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
 Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) (параметр `partition_by`).
+
+## system.query_thread_log {#system_tables-query-thread-log}
+
+Содержит информацию о каждом потоке исполнения запроса.
 
 ## system.trace\_log {#system_tables-trace_log}
 
@@ -968,8 +999,8 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   `supports_skipping_indices` (UInt8) — флаг, показывающий поддержку [индексов пропуска данных](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
 -   `supports_ttl` (UInt8) — флаг, показывающий поддержку [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
 -   `supports_sort_order` (UInt8) — флаг, показывающий поддержку секций `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` и `SAMPLE_BY`.
--   `supports_replication` (UInt8) — флаг, показвыающий поддержку [репликации](table_engines/replication/).
--   `supports_duduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
+-   `supports_replication` (UInt8) — флаг, показывающий поддержку [репликации](../engines/table-engines/mergetree-family/replication.md).
+-   `supports_deduplication` (UInt8) — флаг, показывающий наличие в движке дедупликации данных.
 
 Пример:
 

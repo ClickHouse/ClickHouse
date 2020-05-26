@@ -10,7 +10,7 @@ This section contains descriptions of server settings that cannot be changed at 
 
 These settings are stored in the `config.xml` file on the ClickHouse server.
 
-Other settings are described in the “[Settings](../settings/index.md#settings)” section.
+Other settings are described in the “[Settings](../settings/index.md#session-settings-intro)” section.
 
 Before studying the settings, read the [Configuration files](../configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 

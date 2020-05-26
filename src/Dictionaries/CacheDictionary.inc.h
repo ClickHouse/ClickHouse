@@ -38,12 +38,16 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const
 {
+    /// First fill everything with default values
+    const auto rows = ext::size(ids);
+    for (const auto row : ext::range(0, rows))
+        out[row] = get_default(row);
+
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
     std::unordered_map<Key, std::vector<size_t>> cache_expired_ids;
     std::unordered_map<Key, std::vector<size_t>> cache_not_found_ids;
 
     auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
-    const auto rows = ext::size(ids);
 
     size_t cache_hit = 0;
 
@@ -67,7 +71,8 @@ void CacheDictionary::getItemsNumberImpl(
             {
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
-                out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
+                if (!cell.isDefault())
+                    out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
             };
 
             if (!find_result.valid)
@@ -154,14 +159,7 @@ void CacheDictionary::getItemsNumberImpl(
             out[row] = static_cast<OutputType>(attribute_value);
     };
 
-    auto on_id_not_found = [&] (const auto id, const auto)
-    {
-        for (const size_t row : cache_not_found_ids[id])
-            out[row] = get_default(row);
-
-        for (const size_t row : cache_expired_ids[id])
-            out[row] = get_default(row);
-    };
+    auto on_id_not_found = [&] (auto, auto) {};
 
     /// Request new values
     auto update_unit_ptr = std::make_shared<UpdateUnit>(required_ids, on_cell_updated, on_id_not_found);

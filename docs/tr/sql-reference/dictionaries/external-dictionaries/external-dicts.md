@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "Genel A\xE7\u0131klama"
 ---
@@ -11,13 +11,19 @@ toc_title: "Genel A\xE7\u0131klama"
 
 ClickHouse:
 
--   Sözlükleri RAM’de tamamen veya kısmen saklar.
+-   Sözlükleri RAM'de tamamen veya kısmen saklar.
 -   Sözlükleri periyodik olarak günceller ve eksik değerleri dinamik olarak yükler. Başka bir deyişle, sözlükler dinamik olarak yüklenebilir.
 -   Xml dosyaları ile harici sözlükler oluşturmak için izin verir veya [DDL sorguları](../../statements/create.md#create-dictionary-query).
 
 Dış sözlüklerin yapılandırması bir veya daha fazla xml dosyasında bulunabilir. Yapılandırma yolu belirtilen [dictionaries\_config](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_config) parametre.
 
 Sözlükler sunucu başlangıçta veya ilk kullanımda, bağlı olarak yüklenebilir [dictionaries\_lazy\_load](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) ayar.
+
+Bu [sözlükler](../../../operations/system-tables.md#system_tables-dictionaries) sistem tablosu sunucuda yapılandırılmış sözlükler hakkında bilgi içerir. Her sözlük için orada bulabilirsiniz:
+
+-   Sözlük durumu.
+-   Yapılandırma parametreleri.
+-   Sözlük için ayrılan RAM miktarı veya sözlük başarıyla yüklendiğinden bu yana bir dizi sorgu gibi metrikler.
 
 Sözlük yapılandırma dosyası aşağıdaki biçime sahiptir:
 

@@ -23,10 +23,17 @@ public:
 
     static ClientFactory & instance();
 
-    std::shared_ptr<Aws::S3::S3Client> create(const String & endpoint,
-                                              const String & access_key_id,
-                                              const String & secret_access_key);
+    std::shared_ptr<Aws::S3::S3Client> create(
+        const String & endpoint,
+        bool is_virtual_hosted_style,
+        const String & access_key_id,
+        const String & secret_access_key);
 
+    std::shared_ptr<Aws::S3::S3Client> create(
+        Aws::Client::ClientConfiguration & cfg,
+        bool is_virtual_hosted_style,
+        const String & access_key_id,
+        const String & secret_access_key);
 private:
     ClientFactory();
 
@@ -48,6 +55,8 @@ struct URI
     String endpoint;
     String bucket;
     String key;
+
+    bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
 };

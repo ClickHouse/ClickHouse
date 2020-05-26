@@ -65,7 +65,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
     ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
     return
@@ -376,12 +376,12 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
         {
             Poco::File(getMetadataPath() + file_name).renameTo(getMetadataPath() + object_name + ".sql");
-            LOG_WARNING(log, "Object " << backQuote(object_name) << " was not dropped previously and will be restored");
+            LOG_WARNING(log, "Object {} was not dropped previously and will be restored", backQuote(object_name));
             process_metadata_file(object_name + ".sql");
         }
         else
         {
-            LOG_INFO(log, "Removing file " << getMetadataPath() + file_name);
+            LOG_INFO(log, "Removing file {}", getMetadataPath() + file_name);
             Poco::File(getMetadataPath() + file_name).remove();
         }
     };
@@ -406,7 +406,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const Iterati
         else if (endsWith(dir_it.name(), ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
-            LOG_INFO(log, "Removing file " << dir_it->path());
+            LOG_INFO(log, "Removing file {}", dir_it->path());
             Poco::File(dir_it->path()).remove();
         }
         else if (endsWith(dir_it.name(), ".sql"))
@@ -442,7 +442,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
       */
     if (remove_empty && query.empty())
     {
-        LOG_ERROR(loger, "File " << metadata_file_path << " is empty. Removing.");
+        LOG_ERROR(loger, "File {} is empty. Removing.", metadata_file_path);
         Poco::File(metadata_file_path).remove();
         return nullptr;
     }
@@ -466,8 +466,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
         table_name = unescapeForFileName(table_name);
 
         if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER)
-            LOG_WARNING(loger, "File " << metadata_file_path << " contains both UUID and table name. "
-                                                    "Will use name `" << table_name << "` instead of `" << create.table << "`");
+            LOG_WARNING(loger, "File {} contains both UUID and table name. Will use name `{}` instead of `{}`", metadata_file_path, table_name, create.table);
         create.table = table_name;
     }
 

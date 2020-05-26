@@ -207,7 +207,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 **Example**
 
 ``` xml
-<https>0000</https>
+<https_port>9999</https_port>
 ```
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
@@ -705,7 +705,7 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
+## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
 
@@ -733,7 +733,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#server-settings-tmp_path}
+## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
 
@@ -746,16 +746,17 @@ Path to temporary data for processing large queries.
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## tmp\_policy {#server-settings-tmp-policy}
+## tmp_policy {#tmp-policy}
 
-Policy from [`storage_configuration`](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
-If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
+Policy from [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
+
+If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
 !!! note "Note"
-    - `move_factor` is ignored
-- `keep_free_space_bytes` is ignored
-- `max_data_part_size_bytes` is ignored
-- you must have exactly one volume in that policy
+    - `move_factor` is ignored.
+    - `keep_free_space_bytes` is ignored.
+    - `max_data_part_size_bytes` is ignored.
+    - Уou must have exactly one volume in that policy.
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
@@ -890,5 +891,16 @@ The period of updating IP addresses stored in the ClickHouse internal DNS cache 
 The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
+
+
+## access_control_path {#access_control_path}
+
+Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
+
+Default value: `/var/lib/clickhouse/access/`.
+
+**See also**
+
+- [Access Control and Account Management](../access-rights.md#access-control)
 
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

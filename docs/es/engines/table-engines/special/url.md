@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: URL
 ---
@@ -10,7 +10,7 @@ toc_title: URL
 Administra datos en un servidor HTTP/HTTPS remoto. Este motor es similar
 a la [File](file.md) motor.
 
-## Uso Del Motor En El Servidor De Clickhouse {#using-the-engine-in-the-clickhouse-server}
+## Uso del motor en el servidor ClickHouse {#using-the-engine-in-the-clickhouse-server}
 
 El `format` debe ser uno que ClickHouse pueda usar en
 `SELECT` consultas y, si es necesario, en `INSERTs`. Para obtener la lista completa de formatos admitidos, consulte
@@ -71,7 +71,7 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## Detalles De La implementación {#details-of-implementation}
+## Detalles de la implementación {#details-of-implementation}
 
 -   Las lecturas y escrituras pueden ser paralelas
 -   No soportado:

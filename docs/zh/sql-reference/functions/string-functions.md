@@ -110,13 +110,13 @@ SELECT format('{} {}', 'Hello', 'World')
 └───────────────────────────────────┘
 ```
 
-## concat(s1, s2, …) {#concats1-s2}
+## concat(s1, s2, …) {#concat-s1-s2}
 
 将参数中的多个字符串拼接，不带分隔符。
 
 ## concatAssumeInjective(s1, s2, …) {#concatassumeinjectives1-s2}
 
-与[concat](./string-functions.md#concat-s1-s2)相同，区别在于，你需要保证concat(s1, s2, s3) -\> s4是单射的，它将用于GROUP BY的优化。
+与[concat](#concat-s1-s2)相同，区别在于，你需要保证concat(s1, s2, s3) -\> s4是单射的，它将用于GROUP BY的优化。
 
 ## 子串(s,offset,length),mid(s,offset,length),substr(s,offset,length) {#substrings-offset-length-mids-offset-length-substrs-offset-length}
 
