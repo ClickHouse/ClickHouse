@@ -38,7 +38,7 @@ struct MovingSumData
 
     Array value;
     Array window;
-    T sum = 0;
+    T sum{0};
 
     void add(T val, Arena * arena)
     {
@@ -66,7 +66,7 @@ struct MovingAvgData
 
     Array value;
     Array window;
-    T sum = 0;
+    T sum{0};
 
     void add(T val, Arena * arena)
     {
@@ -78,9 +78,9 @@ struct MovingAvgData
     T get(size_t idx, UInt64 win_size) const
     {
         if (idx < win_size)
-            return value[idx] / win_size;
+            return value[idx] / static_cast<T>(win_size);
         else
-            return (value[idx] - value[idx - win_size]) / win_size;
+            return (value[idx] - value[idx - win_size]) / static_cast<T>(win_size);
     }
 
 };
