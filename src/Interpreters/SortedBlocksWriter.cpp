@@ -233,4 +233,21 @@ Block SortedBlocksReader::read()
     return {};
 }
 
+
+Block SortedBlocksBuffer::mergeBlocks(const Blocks & blocks) const
+{
+    BlockInputStreams inputs;
+    inputs.reserve(blocks.size());
+
+    size_t num_rows = 0;
+    for (auto & block : blocks)
+    {
+        num_rows += block.rows();
+        inputs.emplace_back(std::make_shared<OneBlockInputStream>(block));
+    }
+
+    MergingSortedBlockInputStream stream(inputs, sort_description, num_rows);
+    return stream.read();
+}
+
 }

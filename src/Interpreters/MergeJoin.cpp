@@ -357,8 +357,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , is_semi_join(table_join->strictness() == ASTTableJoin::Strictness::Semi)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
-    , allow_flush_left_blocks(table_join->enablePartialMergeJoinOptimizations())
-    , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
+    , flush_left_blocks_on_disk(table_join->flushOnDisk())
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
@@ -406,6 +405,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
     makeSortAndMerge(table_join->keyNamesLeft(), left_sort_description, left_merge_description);
     makeSortAndMerge(table_join->keyNamesRight(), right_sort_description, right_merge_description);
+
+    /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
+    if (table_join->enablePartialMergeJoinOptimizations())
+        if (size_t max_bytes = table_join->maxBytesInLeftBuffer())
+            left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
 }
 
 void MergeJoin::setTotals(const Block & totals_block)
@@ -527,55 +531,63 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         sortBlock(block, left_sort_description);
     }
 
-    /// In current version flush_left_blocks_on_disk means almost honest merge_join: flush all, then sort all, then join all
-    bool flush_left_blocks_on_disk = allow_flush_left_blocks && !is_in_memory;
-    if (flush_left_blocks_on_disk && !not_processed)
+    if (!not_processed)
     {
-        if (block)
+        /// In current version flush_left_blocks_on_disk means almost honest merge_join: flush all, then sort all, then join all
+        if (flush_left_blocks_on_disk)
         {
-            /// Store new block on disk
-
-            if (block.rows())
+            if (block)
             {
-                while (!disk_writer)
+                /// Store new block on disk
+
+                if (block.rows())
+                {
+                    while (!disk_writer)
+                    {
+                        std::unique_lock lock(rwlock);
+
+                        if (!disk_writer)
+                            initLeftTableWriter(block.cloneEmpty());
+                    }
+
+                    Block out = block.cloneEmpty();
+                    disk_writer->insert(std::move(block)); /// lock inside: wait memory
+                    block = std::move(out); /// keep block structure, return 0 rows. We still need to add right columns.
+                }
+            }
+            else
+            {
+                /// Read block from disk
+
+                while (!disk_reader)
                 {
                     std::unique_lock lock(rwlock);
 
-                    if (!disk_writer)
-                        initLeftTableWriter(block.cloneEmpty());
+                    if (!disk_reader)
+                        disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
                 }
-
-                Block out = block.cloneEmpty();
-                disk_writer->insert(std::move(block)); /// lock inside: wait memory
-                block = std::move(out); /// keep block structure, return 0 rows. We still need to add right columns.
-            }
-        }
-        else
-        {
-            /// Read block from disk
-
-            while (!disk_reader)
-            {
-                std::unique_lock lock(rwlock);
-
-                if (!disk_reader)
-                    disk_reader = std::make_unique<SortedBlocksReader>(left_sort_description, max_rows_in_right_block);
-            }
-
-            block = disk_reader->read();
-            if (!block)
-            {
-                std::unique_lock lock(rwlock); /// premerge barier
 
                 block = disk_reader->read();
-                if (!block && disk_writer)
+                if (!block)
                 {
-                    disk_reader->addFiles(disk_writer->premerge());
-                    block = disk_reader->read();
-                }
-            }
+                    std::unique_lock lock(rwlock); /// premerge barier
 
-            /// No more data. Do not keep going. Return empty block.
+                    block = disk_reader->read();
+                    if (!block && disk_writer)
+                    {
+                        disk_reader->addFiles(disk_writer->premerge());
+                        block = disk_reader->read();
+                    }
+                }
+
+                /// No more data. Do not keep going. Return empty block.
+                if (!block)
+                    return;
+            }
+        }
+        else if (left_blocks_buffer)
+        {
+            block = left_blocks_buffer->exchange(std::move(block));
             if (!block)
                 return;
         }
@@ -596,8 +608,10 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             joinSortedBlock<false, false>(block, not_processed);
     }
 
+    bool keep_going = flush_left_blocks_on_disk || left_blocks_buffer;
+
     /// Back thread even with no data. We have some unfinished data on disk.
-    if (flush_left_blocks_on_disk)
+    if (keep_going)
         setKeepGoing(not_processed);
 }
 

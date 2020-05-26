@@ -132,4 +132,61 @@ private:
     std::shared_ptr<MergingSortedBlockInputStream> stream;
 };
 
+
+class SortedBlocksBuffer
+{
+public:
+    SortedBlocksBuffer(const SortDescription & sort_description_, size_t max_bytes_)
+        : max_bytes(max_bytes_)
+        , current_bytes(0)
+        , sort_description(sort_description_)
+    {}
+
+    Block exchange(Block && block)
+    {
+        Blocks to_merge;
+
+        /// If we have src block return empty block with same structure
+        Block out;
+        if (block)
+            out = block.cloneEmpty();
+
+        {
+            std::lock_guard lock(mutex);
+
+            bool is_empty = !block;
+            if (block)
+            {
+                current_bytes += block.bytes();
+                buffer.emplace_back(std::move(block));
+            }
+
+            if (is_empty || current_bytes >= max_bytes)
+            {
+                to_merge.swap(buffer);
+                buffer.reserve(to_merge.size() + size_t(0.1 * to_merge.size())); /// reserve 1.1 of prev size
+                current_bytes = 0;
+            }
+        }
+
+        if (!to_merge.empty())
+        {
+            if (to_merge.size() == 1)
+                return to_merge[0];
+            return mergeBlocks(to_merge);
+        }
+
+        return out;
+    }
+
+private:
+    std::mutex mutex;
+    size_t max_bytes;
+    size_t current_bytes;
+    Blocks buffer;
+    const SortDescription & sort_description;
+
+    Block mergeBlocks(const Blocks & blocks) const;
+};
+
 }

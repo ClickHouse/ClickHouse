@@ -246,6 +246,7 @@ enum class JoinAlgorithm
 {
     AUTO = 0,
     HASH,
+    MERGE,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
 };
