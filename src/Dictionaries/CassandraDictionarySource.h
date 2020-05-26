@@ -1,25 +1,29 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#include <Core/Block.h>
+#endif
 
 #if USE_CASSANDRA
 
-#    include "DictionaryStructure.h"
-#    include "IDictionarySource.h"
-#    include <cassandra.h>
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
+#include <Core/Block.h>
+#include <Poco/Logger.h>
+#include <cassandra.h>
 
 namespace DB
 {
 class CassandraDictionarySource final : public IDictionarySource {
     CassandraDictionarySource(
         const DictionaryStructure & dict_struct,
-        const std::string & host,
+        const String & host,
         UInt16 port,
-        const std::string & user,
-        const std::string & password,
-        const std::string & method,
-        const std::string & db,
+        const String & user,
+        const String & password,
+        //const std::string & method,
+        const String & db,
+        const String & table,
         const Block & sample_block);
 
 public:
@@ -44,15 +48,15 @@ public:
 
     DictionarySourcePtr clone() const override { return std::make_unique<CassandraDictionarySource>(*this); }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /* ids */) override
-    {
-        throw Exception{"Method loadIds is not implemented yet", ErrorCodes::NOT_IMPLEMENTED};
-    }
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    //{
+    //    throw Exception{"Method loadIds is not implemented yet", ErrorCodes::NOT_IMPLEMENTED};
+    //}
 
-    BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
-    {
-        throw Exception{"Method loadKeys is not implemented yet", ErrorCodes::NOT_IMPLEMENTED};
-    }
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    //{
+    //    throw Exception{"Method loadKeys is not implemented yet", ErrorCodes::NOT_IMPLEMENTED};
+    //}
         
     BlockInputStreamPtr loadUpdatedAll() override
     {
@@ -62,15 +66,17 @@ public:
     std::string toString() const override;
 
 private:
-    static std::string toConnectionString(const std::string & host, const UInt16 port);
+    //static std::string toConnectionString(const std::string & host, const UInt16 port);
 
+    Poco::Logger * log;
     const DictionaryStructure dict_struct;
-    const std::string host;
+    const String host;
     const UInt16 port;
-    const std::string user;
-    const std::string password;
-    const std::string method;
-    const std::string db;
+    const String user;
+    const String password;
+    //const std::string method;
+    const String db;
+    const String table;
     Block sample_block;
 
     CassCluster * cluster;

@@ -63,6 +63,13 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 std::string ExternalQueryBuilder::composeLoadAllQuery() const
 {
     WriteBufferFromOwnString out;
+    composeLoadAllQuery(out);
+    writeChar(';', out);
+    return out.str();
+}
+
+void ExternalQueryBuilder::composeLoadAllQuery(WriteBuffer & out) const
+{
     writeString("SELECT ", out);
 
     if (dict_struct.id)
@@ -149,24 +156,26 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
         writeString(" WHERE ", out);
         writeString(where, out);
     }
-
-    writeChar(';', out);
-
-    return out.str();
 }
 
 
 std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_field, const std::string & time_point) const
 {
-    std::string out = composeLoadAllQuery();
-    std::string update_query;
+    WriteBufferFromOwnString out;
+    composeLoadAllQuery(out);
 
     if (!where.empty())
-        update_query = " AND " + update_field + " >= '" + time_point + "'";
+        writeString(" AND ", out);
     else
-        update_query = " WHERE " + update_field + " >= '" + time_point + "'";
+        writeString(" WHERE ", out);
 
-    return out.insert(out.size() - 1, update_query); /// This is done to insert "update_query" before "out"'s semicolon
+    writeQuoted(update_field, out);
+    writeString(" >= '", out);
+    writeString(time_point, out);
+    writeChar('\'', out);
+
+    writeChar(';', out);
+    return out.str();
 }
 
 
@@ -303,7 +312,7 @@ ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const st
     }
     else /* if (method == IN_WITH_TUPLES) */
     {
-        writeString(composeKeyTupleDefinition(), out);
+        composeKeyTupleDefinition(out);
         writeString(" IN (", out);
 
         first = true;
@@ -346,7 +355,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         const auto & key_description = (*dict_struct.key)[i];
 
         /// key_i=value_i
-        writeString(key_description.name, out);
+        writeQuoted(key_description.name, out);
         writeString("=", out);
         key_description.type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
     }
@@ -355,26 +364,24 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
 }
 
 
-std::string ExternalQueryBuilder::composeKeyTupleDefinition() const
+void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out) const
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
-    std::string result{"("};
+    writeChar('(', out);
 
     auto first = true;
     for (const auto & key : *dict_struct.key)
     {
         if (!first)
-            result += ", ";
+            writeString(", ", out);
 
         first = false;
-        result += key.name;
+        writeQuoted(key.name, out);
     }
 
-    result += ")";
-
-    return result;
+    writeChar(')', out);
 }
 
 

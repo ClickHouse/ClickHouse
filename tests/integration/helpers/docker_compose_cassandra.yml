@@ -4,4 +4,4 @@ services:
         image: cassandra
         restart: always
         ports:
-          - 6340:6349
+          - 9043:9042

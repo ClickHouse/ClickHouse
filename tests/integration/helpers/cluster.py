@@ -19,6 +19,7 @@ import pprint
 import psycopg2
 import pymongo
 import pymysql
+import cassandra.cluster
 from dicttoxml import dicttoxml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
@@ -448,6 +449,18 @@ class ClickHouseCluster:
                 logging.warning("Can't connect to SchemaRegistry: %s", str(ex))
                 time.sleep(1)
 
+    def wait_cassandra_to_start(self, timeout=15):
+        cass_client = cassandra.cluster.Cluster(["localhost"], port="9043")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                cass_client.connect().execute("drop keyspace if exists test;")
+                logging.info("Connected to Cassandra %s")
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -526,7 +539,7 @@ class ClickHouseCluster:
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
-                time.sleep(10)
+                self.wait_cassandra_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             logging.info("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd)))
