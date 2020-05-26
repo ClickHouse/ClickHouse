@@ -645,7 +645,8 @@ FuncRet in_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 else
                     f = handlers[""];
                 FuncRet ret = (*f)(arg, columns);
-                if (ret.value != "") {
+                if (ret.value != "")
+                {
                     values.insert(ret.value);
                 }
                 type_value &=  ret.type;
@@ -1191,7 +1192,8 @@ TableList get_tables_from_select(std::vector<std::string> queries)
     for (std::string& query : queries)
     {
         DB::ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
-        for (auto select : get_select(ast)) {
+        for (auto select : get_select(ast))
+        {
             TableList local;
             parse_select_query(select, local);
             result.merge(local);
@@ -1211,7 +1213,7 @@ int main(int, char **)
     std::vector<std::string> queries;
     std::string in;
     std::string query = "";
-    while(getline(std::cin, in))
+    while (getline(std::cin, in))
     {
         query += in + " ";
         if (in.find(';') != std::string::npos)
