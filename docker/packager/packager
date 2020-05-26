@@ -54,7 +54,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
     CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     ARM_SUFFIX = "-aarch64"
@@ -131,6 +131,14 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if alien_pkgs:
         result.append("ALIEN_PKGS='" + ' '.join(['--' + pkg for pkg in alien_pkgs]) + "'")
 
+    if with_binaries == "programs":
+        result.append('BINARY_OUTPUT=programs')
+    elif with_binaries == "tests":
+        result.append('ENABLE_TESTS=1')
+        result.append('BINARY_OUTPUT=tests')
+        cmake_flags.append('-DENABLE_TESTS=1')
+        cmake_flags.append('-DUSE_GTEST=1')
+
     if unbundled:
         # TODO: fix build with ENABLE_RDKAFKA
         cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_ODBC=0 -DENABLE_REPLXX=0 -DENABLE_RDKAFKA=0')
@@ -179,6 +187,7 @@ if __name__ == "__main__":
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--alien-pkgs", nargs='+', default=[])
     parser.add_argument("--with-coverage", action="store_true")
+    parser.add_argument("--with-binaries", choices=("programs", "tests", ""), default="")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -195,6 +204,12 @@ if __name__ == "__main__":
     if args.alien_pkgs and not image_type == "deb":
         raise Exception("Can add alien packages only in deb build")
 
+    if args.with_binaries != "" and not image_type == "deb":
+        raise Exception("Can add additional binaries only in deb build")
+
+    if args.with_binaries != "" and image_type == "deb":
+        logging.info("Should place {} to output".format(args.with_binaries))
+
     dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
     if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
@@ -202,6 +217,6 @@ if __name__ == "__main__":
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
-        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage)
+        args.version, args.author, args.official, args.alien_pkgs, args.with_coverage, args.with_binaries)
     run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
     logging.info("Output placed into {}".format(args.output_dir))

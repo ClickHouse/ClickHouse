@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
@@ -430,6 +431,113 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 
 NamesAndTypesList IStorage::getVirtuals() const
 {
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getPartitionKey() const
+{
+    return partition_key;
+}
+
+void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
+{
+    partition_key = partition_key_;
+}
+
+bool IStorage::hasPartitionKey() const
+{
+    return partition_key.expression != nullptr;
+}
+
+Names IStorage::getColumnsRequiredForPartitionKey() const
+{
+    if (hasPartitionKey())
+        return partition_key.expression->getRequiredColumns();
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getSortingKey() const
+{
+    return sorting_key;
+}
+
+void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
+{
+    sorting_key = sorting_key_;
+}
+
+bool IStorage::hasSortingKey() const
+{
+    return sorting_key.expression != nullptr;
+}
+
+Names IStorage::getColumnsRequiredForSortingKey() const
+{
+    if (hasSortingKey())
+        return sorting_key.expression->getRequiredColumns();
+    return {};
+}
+
+Names IStorage::getSortingKeyColumns() const
+{
+    if (hasSortingKey())
+        return sorting_key.column_names;
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getPrimaryKey() const
+{
+    return primary_key;
+}
+
+void IStorage::setPrimaryKey(const StorageMetadataKeyField & primary_key_)
+{
+    primary_key = primary_key_;
+}
+
+bool IStorage::isPrimaryKeyDefined() const
+{
+    return primary_key.definition_ast != nullptr;
+}
+
+bool IStorage::hasPrimaryKey() const
+{
+    return primary_key.expression != nullptr;
+}
+
+Names IStorage::getColumnsRequiredForPrimaryKey() const
+{
+    if (hasPrimaryKey())
+        return primary_key.expression->getRequiredColumns();
+    return {};
+}
+
+Names IStorage::getPrimaryKeyColumns() const
+{
+    if (hasSortingKey())
+        return primary_key.column_names;
+    return {};
+}
+
+const StorageMetadataKeyField & IStorage::getSamplingKey() const
+{
+    return sampling_key;
+}
+
+void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
+{
+    sampling_key = sampling_key_;
+}
+
+bool IStorage::hasSamplingKey() const
+{
+    return sampling_key.expression != nullptr;
+}
+
+Names IStorage::getColumnsRequiredForSampling() const
+{
+    if (hasSamplingKey())
+        return sampling_key.expression->getRequiredColumns();
     return {};
 }
 

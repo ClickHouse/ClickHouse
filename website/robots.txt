@@ -12,4 +12,4 @@ Disallow: /docs/v3*
 Disallow: /cdn-cgi/
 Allow: /
 Host: https://clickhouse.tech
-Sitemap: https://clickhouse.tech/sitemap.xml
+Sitemap: https://clickhouse.tech/sitemap-index.xml
