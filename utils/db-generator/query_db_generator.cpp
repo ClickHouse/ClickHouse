@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include <pcg_random.hpp>
 #include <Core/Field.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.cpp>
@@ -16,45 +17,47 @@
 
 using column_type = uint32_t;
 using table_a_column = std::pair<std::string, std::string>;
+pcg64 rng;
+
 std::string random_string(size_t length)
 {
     auto randchar = []() -> char
     {
         const char charset[] = "0123456789" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "abcdefghijklmnopqrstuvwxyz";
         const size_t max_index = (sizeof(charset) - 1);
-        return charset[rand() % max_index];
+        return charset[rng() % max_index];
     };
     std::string str(length, 0);
     std::generate_n(str.begin(), length, randchar);
     return str;
 }
-std::string random_integer(unsigned int max = 4294967295)
+std::string random_integer(unsigned int min = 0, unsigned int max = 4294967295)
 {
-    int r = rand() % max;
+    int r = rng() % (max - min) + min;
     return std::to_string(r);
 }
-std::string random_float(unsigned int max = 4294967295)
+std::string random_float(unsigned int min = 0, unsigned int max = 4294967295)
 {
-    float r = static_cast<float>(rand() % max) / (static_cast<float>(rand() % 100));
+    float r = static_cast<float>(rng() % max) / (static_cast<float>(rng() % 100)) + min;
     return std::to_string(r);
 }
 std::string random_date()
 {
-    int32_t year = rand() % 136 + 1970;
-    int32_t month = rand() % 12 + 1;
-    int32_t day = rand() % 12 + 1;
+    int32_t year = rng() % 136 + 1970;
+    int32_t month = rng() % 12 + 1;
+    int32_t day = rng() % 12 + 1;
     char ans[13];
     sprintf(ans, "'%04u-%02u-%02u'", year, month, day);
     return std::string(ans);
 }
 std::string random_datetime()
 {
-    int32_t year = rand() % 136 + 1970;
-    int32_t month = rand() % 12 + 1;
-    int32_t day = rand() % 12 + 1;
-    int32_t hours = rand() % 24;
-    int32_t minutes = rand() % 60;
-    int32_t seconds = rand() % 60;
+    int32_t year = rng() % 136 + 1970;
+    int32_t month = rng() % 12 + 1;
+    int32_t day = rng() % 12 + 1;
+    int32_t hours = rng() % 24;
+    int32_t minutes = rng() % 60;
+    int32_t seconds = rng() % 60;
     char ans[22];
     sprintf(
             ans,
@@ -309,7 +312,7 @@ public:
             return random_datetime();
 
         if (type & type::s)
-            return "'" + random_string(rand() % 40) + "'";
+            return "'" + random_string(rng() % 40) + "'";
 
         if (type & type::b)
             return "0";
@@ -326,7 +329,7 @@ public:
             if (is_array)
             {
                 std::string v = "[";
-                for (int i = 0; i < rand() % 10; ++i)
+                for (int i = 0; i < static_cast<int>(rng()) % 10; ++i)
                 {
                     if (i != 0)
                         v += ", ";
@@ -807,7 +810,7 @@ FuncRet like_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 for (size_t i = 0; i != value.size(); ++i)
                 {
                     if (value[i] == '%')
-                        example += random_string(rand() % 10);
+                        example += random_string(rng() % 10);
                     else if (value[i] == '_')
                         example += random_string(1);
                     else
@@ -884,14 +887,14 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                 if (type == type::i)
                 {
                     values.insert(value);
-                    values.insert(value + " + " + random_integer(10));
-                    values.insert(value + " - " + random_integer(10));
+                    values.insert(value + " + " + random_integer(1, 10));
+                    values.insert(value + " - " + random_integer(1, 10));
                 }
                 if (type == type::f)
                 {
                     values.insert(value);
-                    values.insert(value + " + " + random_float(10));
-                    values.insert(value + " - " + random_float(10));
+                    values.insert(value + " + " + random_float(1, 10));
+                    values.insert(value + " - " + random_float(1, 10));
                 }
                 if (type & type::s || type & type::d || type & type::dt)
                 {
@@ -902,16 +905,16 @@ FuncRet simple_func(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                     if (type & type::d)
                     {
                         values.insert(value);
-                        values.insert("toDate(" + value + ") + " + random_integer(10));
-                        values.insert("toDate(" + value + ") - " + random_integer(10));
+                        values.insert("toDate(" + value + ") + " + random_integer(1, 10));
+                        values.insert("toDate(" + value + ") - " + random_integer(1, 10));
                     }
                     else if (type & type::dt)
                     {
                         values.insert(value);
                         values.insert(
-                                "toDateTime(" + value + ") + " + random_integer(10000));
+                                "toDateTime(" + value + ") + " + random_integer(1, 10000));
                         values.insert(
-                                "toDateTime(" + value + ") - " + random_integer(10000));
+                                "toDateTime(" + value + ") - " + random_integer(1, 10000));
                     }
                 }
             }
