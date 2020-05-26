@@ -28,7 +28,7 @@ int main() noexcept
            for (int i = 1; i < 10; ++i) {
                std::cout << "Th " << k << " key " << i << "\n";
                Holder inc(cache, i);
-               //Holder last(cache, i - 1);
+               Holder last(cache, i - 1);
            }});
 
    for (auto& t : thread_pool) t.join();
