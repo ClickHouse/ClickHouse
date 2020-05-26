@@ -97,7 +97,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             if (database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
-            if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
+            if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
             }
             database->detachTable(table_id.table_name);
@@ -110,7 +110,8 @@ BlockIO InterpreterDropQuery::executeToTable(
             auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
             /// Drop table data, don't touch metadata
-            if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+            if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
             }
             table->truncate(query_ptr, metadata_snapshot, context, table_lock);
@@ -126,7 +127,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             if (database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
                 table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
-            if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
+            if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
                 database->propose(query_ptr);
             }
             database->dropTable(context, table_id.table_name, query.no_delay);

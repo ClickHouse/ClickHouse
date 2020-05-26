@@ -49,9 +49,8 @@ BlockIO InterpreterAlterQuery::execute()
     auto alter_lock = table->lockForAlter(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    // TODO it's dirty. need to add database to parsing stage
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (database->getEngineName() == "Replicated" && !context.from_replicated_log && !table->supportsReplication()) {
+    if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY && !table->supportsReplication()) {
         database->propose(query_ptr);
     }
 

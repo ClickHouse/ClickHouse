@@ -214,9 +214,6 @@ private:
     Context();
 
 public:
-    ///testing
-    bool from_replicated_log = false;
-
     /// Create initial Context with ContextShared and etc.
     static Context createGlobal(ContextShared * shared);
     static SharedContextHolder createShared();

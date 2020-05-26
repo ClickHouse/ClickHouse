@@ -81,7 +81,7 @@ BlockIO InterpreterRenameQuery::execute()
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (database->getEngineName() == "Replicated" && !context.from_replicated_log) {
+        if (database->getEngineName() == "Replicated" && context.getClientInfo().query_kind != ClientInfo::QueryKind::REPLICATED_LOG_QUERY) {
             database->propose(query_ptr);
         }
         database->renameTable(
