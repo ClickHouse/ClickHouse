@@ -182,6 +182,16 @@ if args.report == 'main':
 
     print_tested_commits()
 
+    run_error_rows = tsvRows('run-errors.tsv')
+    error_tests += len(run_error_rows)
+    printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
+
+    slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
+    error_tests += len(slow_on_client_rows)
+    printSimpleTable('Slow on client',
+                     ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
+                     slow_on_client_rows)
+
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
         if not rows:
@@ -221,12 +231,6 @@ if args.report == 'main':
 
     print_changes()
 
-    slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
-    error_tests += len(slow_on_client_rows)
-    printSimpleTable('Slow on client',
-        ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
-        slow_on_client_rows)
-
     def print_unstable_queries():
         global unstable_queries
         global very_unstable_queries
@@ -264,10 +268,6 @@ if args.report == 'main':
         print(tableEnd())
 
     print_unstable_queries()
-
-    run_error_rows = tsvRows('run-errors.tsv')
-    error_tests += len(run_error_rows)
-    printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
 
     skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
     printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
