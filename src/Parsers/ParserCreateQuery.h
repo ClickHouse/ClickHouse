@@ -10,6 +10,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Poco/String.h>
 
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -162,6 +164,36 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
+
+    auto first_word = type->getID();
+
+    if (boost::algorithm::to_lower_copy(first_word) == "function_double") {
+        ParserKeyword s_presicion{"PRESICION"};
+        s_presicion.ignore(pos);
+    } else if (boost::algorithm::to_lower_copy(first_word) == "function_char") {
+        ParserKeyword s_varying{"VARYING"};
+        s_varying.ignore(pos);
+    } else if (boost::algorithm::to_lower_copy(first_word) == "function_native") {
+        ParserIdentifierWithOptionalParameters tmp;
+        ASTPtr second_word;
+        if (!tmp.parse(pos, second_word, expected)) {
+            return false;
+        }
+        if (boost::algorithm::to_lower_copy(second_word->getID()) != "function_character") {
+            return false;
+        }
+
+        type = second_word;
+    } else if (boost::algorithm::to_lower_copy(first_word) == "function_varying")
+    {
+        ParserIdentifierWithOptionalParameters tmp;
+        ASTPtr second_word;
+        if (!tmp.parse(pos, second_word, expected))
+            return false;
+        if (boost::algorithm::to_lower_copy(second_word->getID()) != "function_char")
+            return false;
+        type = second_word;
+    }
 
 
     if (s_comment.ignore(pos, expected))
