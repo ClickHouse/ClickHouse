@@ -163,6 +163,8 @@ for query_index, q in enumerate(test_queries):
             prewarm_id = f'{query_prefix}.prewarm0'
             res = c.execute(q, query_id = prewarm_id)
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
+    except KeyboardInterrupt:
+        raise
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the
