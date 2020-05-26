@@ -12,7 +12,6 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_dictionaries
         clickhouse_functions
         clickhouse_parsers
-        clickhouse_server
         clickhouse_storages_system
         clickhouse_table_functions
         string_utils
