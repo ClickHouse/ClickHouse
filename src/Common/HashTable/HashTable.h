@@ -208,6 +208,7 @@ struct HashTableGrower
     /// The state of this structure is enough to get the buffer size of the hash table.
 
     UInt8 size_degree = initial_size_degree;
+    static constexpr auto initial_count = 1ULL << initial_size_degree;
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
@@ -255,6 +256,7 @@ struct HashTableGrower
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
+    static constexpr auto initial_count = 1ULL << key_bits;
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
@@ -308,14 +310,6 @@ struct ZeroValueStorage<false, Cell>
     const Cell * zeroValue() const { return nullptr; }
 };
 
-// These templates give the initial hash table size, so that we can check
-// that it is in sync with initial allocator size.
-template <typename GenericGrower>
-constexpr size_t growerInitialCount = 0;
-
-template <size_t initial_size_degree>
-constexpr size_t growerInitialCount<HashTableGrower<initial_size_degree>>
-    = 1ULL << initial_size_degree;
 
 // The HashTable
 template
@@ -337,7 +331,7 @@ public:
     // Export the initial buffer sizes for the ease of using allocators with
     // inline memory.
     static constexpr size_t initial_buffer_bytes
-        = growerInitialCount<Grower> * sizeof(Cell);
+        = Grower::initial_count * sizeof(Cell);
 
     // If we use an allocator with inline memory, check that the initial
     // size of the hash table is in sync with the amount of this memory.
@@ -1096,12 +1090,3 @@ public:
 #endif
 };
 
-// A helper macro that declares hash table with allocator with stack memory,
-// and the initial size of the allocator is in sync with initial size of the
-// hash table.
-#define HASH_TABLE_WITH_STACK_MEMORY(HASH_TABLE_VARIANT, ...) \
-    HASH_TABLE_VARIANT<__VA_ARGS__, \
-        HashTableAllocatorWithStackMemory< \
-            HASH_TABLE_VARIANT<__VA_ARGS__>::initial_buffer_bytes \
-        > \
-    >

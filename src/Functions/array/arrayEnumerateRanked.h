@@ -308,9 +308,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const size_t depth_to_look = arrays_depths.max_array_depth;
     const auto & offsets = *offsets_by_depth[depth_to_look - 1];
 
-    using Map = HASH_TABLE_WITH_STACK_MEMORY(ClearableHashMap,
-        UInt128, UInt32, UInt128TrivialHash,
-        HashTableGrower<INITIAL_SIZE_DEGREE>);
+    using Map = ClearableHashMapWithStackMemory<UInt128, UInt32,
+        UInt128TrivialHash, INITIAL_SIZE_DEGREE>;
 
     Map indices;
 
