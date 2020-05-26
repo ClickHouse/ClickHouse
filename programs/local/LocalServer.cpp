@@ -211,7 +211,7 @@ try
         /// Lock path directory before read
         status.emplace(context->getPath() + "status");
 
-        LOG_DEBUG(log, "Loading metadata from " << context->getPath());
+        LOG_DEBUG(log, "Loading metadata from {}", context->getPath());
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);

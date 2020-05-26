@@ -10,16 +10,6 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 
-# Creates S3 bucket for tests and allows anonymous read-write access to it.
-def prepare_s3_bucket(cluster):
-    minio_client = cluster.minio_client
-
-    if minio_client.bucket_exists(cluster.minio_bucket):
-        minio_client.remove_bucket(cluster.minio_bucket)
-
-    minio_client.make_bucket(cluster.minio_bucket)
-
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -32,9 +22,6 @@ def cluster():
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
-
-        prepare_s3_bucket(cluster)
-        logging.info("S3 bucket created")
 
         yield cluster
     finally:
@@ -85,7 +72,7 @@ def drop_table(cluster):
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
 
-@pytest.mark.skip(reason="Cannot correctly start server")
+
 def test_insert_select_replicated(cluster):
     create_table(cluster)
 

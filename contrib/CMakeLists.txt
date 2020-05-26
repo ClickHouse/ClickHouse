@@ -21,16 +21,6 @@ add_subdirectory (consistent-hashing-sumbur)
 add_subdirectory (consistent-hashing)
 add_subdirectory (croaring)
 add_subdirectory (FastMemcpy)
-add_subdirectory (grpc-cmake)
-# ThreadPool select job randomly, and there can be some threads that had been
-# performed some memory heavy task before and will be inactive for some time,
-# but until it will became active again, the memory will not be freed since by
-# default each thread has it's own arena, but there should be not more then
-# 4*CPU arenas (see opt.nareans description).
-#
-# By enabling percpu_arena number of arenas limited to number of CPUs and hence
-# this problem should go away.
-set(JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu")
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
 add_subdirectory (murmurhash)
@@ -269,18 +259,15 @@ if (USE_INTERNAL_BROTLI_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    if (MAKE_STATIC_LIBRARIES)
-        set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
-    else ()
-        set(protobuf_BUILD_SHARED_LIBS ON CACHE INTERNAL "" FORCE)
-    endif ()
-    set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
-    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
-    add_subdirectory(protobuf/cmake)
+    add_subdirectory(protobuf-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
+endif ()
+
+if (USE_INTERNAL_GRPC_LIBRARY)
+    add_subdirectory(grpc-cmake)
 endif ()
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
@@ -331,3 +318,6 @@ if (USE_CASSANDRA)
     add_subdirectory(libuv-cmake)
     add_subdirectory(cassandra)
 endif()
+
+add_subdirectory (fmtlib-cmake)
+
