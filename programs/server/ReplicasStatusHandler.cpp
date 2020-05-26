@@ -46,7 +46,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
             for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
-                auto & table = iterator->table();
+                const auto & table = iterator->table();
                 StorageReplicatedMergeTree * table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
                 if (!table_replicated)

@@ -91,7 +91,7 @@ namespace
 
 void setupTmpPath(Logger * log, const std::string & path)
 {
-    LOG_DEBUG(log, "Setting up " << path << " to store temporary data in it");
+    LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
     Poco::File(path).createDirectories();
 
@@ -101,11 +101,11 @@ void setupTmpPath(Logger * log, const std::string & path)
     {
         if (it->isFile() && startsWith(it.name(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file " << it->path());
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path());
             it->remove();
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path " << it->path());
+            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path());
     }
 }
 
@@ -276,7 +276,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
                 if (0 != mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
+                    LOG_WARNING(log, "Failed mlockall: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
                 else
                     LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
             }
@@ -284,8 +284,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
                     " It could happen due to incorrect ClickHouse package installation."
-                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep " << executable_path << "'."
-                    " Note that it will not work on 'nosuid' mounted filesystems.");
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.", executable_path);
             }
         }
     }
@@ -349,7 +349,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         if (rlim.rlim_cur == rlim.rlim_max)
         {
-            LOG_DEBUG(log, "rlimit on number of file descriptors is " << rlim.rlim_cur);
+            LOG_DEBUG(log, "rlimit on number of file descriptors is {}", rlim.rlim_cur);
         }
         else
         {
@@ -357,12 +357,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
-                LOG_WARNING(log,
-                    "Cannot set max number of file descriptors to " << rlim.rlim_cur
-                        << ". Try to specify max_open_files according to your system limits. error: "
-                        << strerror(errno));
+                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, strerror(errno));
             else
-                LOG_DEBUG(log, "Set max number of file descriptors to " << rlim.rlim_cur << " (was " << old << ").");
+                LOG_DEBUG(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
     }
 
@@ -372,7 +369,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::instance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '" << DateLUT::instance().getTimeZone() << "'.");
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::instance().getTimeZone());
 
 
     /// Storage with temporary data for processing of heavy queries.
@@ -431,9 +428,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (this_host.empty())
             {
                 this_host = getFQDNOrHostName();
-                LOG_DEBUG(log,
-                    "Configuration parameter '" + String(host_tag) + "' doesn't exist or exists and empty. Will use '" + this_host
-                        + "' as replica host.");
+                LOG_DEBUG(log, "Configuration parameter '{}' doesn't exist or exists and empty. Will use '{}' as replica host.",
+                    host_tag, this_host);
             }
 
             String port_str = config().getString(port_tag);
@@ -538,8 +534,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size > max_cache_size)
     {
         uncompressed_cache_size = max_cache_size;
-        LOG_INFO(log, "Uncompressed cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)
-            << " because the system has low amount of memory");
+        LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setUncompressedCache(uncompressed_cache_size);
 
@@ -554,8 +549,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size > max_cache_size)
     {
         mark_cache_size = max_cache_size;
-        LOG_INFO(log, "Mark cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)
-            << " because the system has low amount of memory");
+        LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
     global_context->setMarkCache(mark_cache_size);
 
@@ -579,20 +573,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was set to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
     }
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage)
-            << " because the system has low amount of memory");
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {} because the system has low amount of memory", formatReadableSizeWithBinarySuffix(max_server_memory_usage));
     }
 
     total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-    LOG_INFO(log, "Loading metadata from " + path);
+    LOG_INFO(log, "Loading metadata from {}", path);
 
     try
     {
@@ -694,17 +687,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
             " neither clickhouse-server process has CAP_NET_ADMIN capability."
             " 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
-            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
+            " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep {}'."
             " Note that it will not work on 'nosuid' mounted filesystems."
-            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
+            " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.",
+            executable_path);
     }
 
     if (!hasLinuxCapability(CAP_SYS_NICE))
     {
         LOG_INFO(log, "It looks like the process has no CAP_SYS_NICE capability, the setting 'os_thread_nice' will have no effect."
             " It could happen due to incorrect ClickHouse package installation."
-            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep " << executable_path << "'."
-            " Note that it will not work on 'nosuid' mounted filesystems.");
+            " You could resolve the problem manually with 'sudo setcap cap_sys_nice=+ep {}'."
+            " Note that it will not work on 'nosuid' mounted filesystems.",
+            executable_path);
     }
 #else
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
@@ -746,11 +741,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
                     )
                 {
-                    LOG_ERROR(log,
-                        "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message() << ". "
+                    LOG_ERROR(log, "Cannot resolve listen_host ({}), error {}: {}. "
                         "If it is an IPv6 address and your host has disabled IPv6, then consider to "
                         "specify IPv4 address to listen in <listen_host> element of configuration "
-                        "file. Example: <listen_host>0.0.0.0</listen_host>");
+                        "file. Example: <listen_host>0.0.0.0</listen_host>",
+                        host, e.code(), e.message());
                 }
 
                 throw;
@@ -802,11 +797,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     if (listen_try)
                     {
-                        LOG_ERROR(log, message
-                            << ". If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
+                        LOG_ERROR(log, "{}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                             "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                             "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
-                            " Example for disabled IPv4: <listen_host>::</listen_host>");
+                            " Example for disabled IPv4: <listen_host>::</listen_host>",
+                            message);
                     }
                     else
                     {
@@ -826,7 +821,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for http://" + address.toString());
+                LOG_INFO(log, "Listening for http://{}", address.toString());
             });
 
             /// HTTPS
@@ -840,7 +835,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for https://" + address.toString());
+                LOG_INFO(log, "Listening for https://{}", address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
@@ -861,7 +856,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections with native protocol (tcp): " + address.toString());
+                LOG_INFO(log, "Listening for connections with native protocol (tcp): {}", address.toString());
             });
 
             /// TCP with SSL
@@ -877,7 +872,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     server_pool,
                     socket,
                     new Poco::Net::TCPServerParams));
-                LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
+                LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): {}", address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -895,7 +890,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
+                LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
 
             create_server("interserver_https_port", [&](UInt16 port)
@@ -908,7 +903,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
+                LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
 #else
                 UNUSED(port);
                 throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -928,7 +923,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket,
                     new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
+                LOG_INFO(log, "Listening for MySQL compatibility protocol: {}", address.toString());
             });
 
             /// Prometheus (if defined and not setup yet with http_port)
@@ -941,7 +936,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
-                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
+                LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
             });
         }
 
@@ -966,12 +961,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
             dns_cache_updater->start();
 
         {
-            std::stringstream message;
-            message << "Available RAM: " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
-                << " physical cores: " << getNumberOfPhysicalCPUCores() << ";"
-                // on ARM processors it can show only enabled at current moment cores
-                << " logical cores: " << std::thread::hardware_concurrency() << ".";
-            LOG_INFO(log, message.str());
+            LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
+                formatReadableSizeWithBinarySuffix(memory_amount),
+                getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
+                std::thread::hardware_concurrency());
         }
 
         LOG_INFO(log, "Ready for connections.");
@@ -989,9 +982,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 current_connections += server->currentConnections();
             }
 
-            LOG_INFO(log,
-                "Closed all listening sockets."
-                    << (current_connections ? " Waiting for " + toString(current_connections) + " outstanding connections." : ""));
+            if (current_connections)
+                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
             global_context->getProcessList().killAllQueries();
@@ -1013,9 +1007,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 }
             }
 
-            LOG_INFO(
-                log, "Closed connections." << (current_connections ? " But " + toString(current_connections) + " remains."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>" : ""));
+            if (current_connections)
+                LOG_INFO(log, "Closed connections. But {} remain."
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
+            else
+                LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
             main_config_reloader.reset();

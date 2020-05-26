@@ -3,13 +3,14 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Databases/DatabasesCommon.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
+
+class Context;
 
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
