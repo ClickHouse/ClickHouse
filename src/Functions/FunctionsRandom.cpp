@@ -109,7 +109,7 @@ inline UInt64x4 CombineValues(UInt64x4 a, UInt64x4 b)
     /// Now every 8-byte value in xa is xx....xx and every value in xb is ..xxxx.. where x is random byte we want to use.
     /// Just blend them to get the result vector.
     /// result = xa[0],xb[1,2],xa[3,4],xb[5,6],xa[7,8],xb[9,10],xa[11,12],xb[13,14],xa[15]
-    __m256i result = _mm256_blend_epi16(xa, xb, 0x66); 
+    __m256i result = _mm256_blend_epi16(xa, xb, 0x66);
     return reinterpret_cast<UInt64x4>(result);
 }
 
