@@ -127,7 +127,7 @@ BlockInputStreamPtr CassandraDictionarySource::loadAll()
     String query = builder.composeLoadAllQuery();
     query.pop_back();
     query += " ALLOW FILTERING;";
-    LOG_INFO(log, "Loading all using query: " << query);
+    LOG_INFO(log, "Loading all using query: ", query);
     return std::make_shared<CassandraBlockInputStream>(session, query, sample_block, max_block_size);
 }
 
@@ -141,7 +141,7 @@ BlockInputStreamPtr CassandraDictionarySource::loadIds(const std::vector<UInt64>
     String query = builder.composeLoadIdsQuery(ids);
     query.pop_back();
     query += " ALLOW FILTERING;";
-    LOG_INFO(log, "Loading ids using query: " << query);
+    LOG_INFO(log, "Loading ids using query: ", query);
     return std::make_shared<CassandraBlockInputStream>(session, query, sample_block, max_block_size);
 }
 
@@ -152,7 +152,7 @@ BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_colu
     String query = builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     query.pop_back();
     query += " ALLOW FILTERING;";
-    LOG_INFO(log, "Loading keys using query: " << query);
+    LOG_INFO(log, "Loading keys using query: ", query);
     return std::make_shared<CassandraBlockInputStream>(session, query, sample_block, max_block_size);
 }
 
