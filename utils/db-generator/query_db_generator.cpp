@@ -329,7 +329,7 @@ public:
             if (is_array)
             {
                 std::string v = "[";
-                for (int i = 0; i < static_cast<int>(rng()) % 10; ++i)
+                for (int i = 0; i < static_cast<unsigned int>(rng()) % 10 + 1; ++i)
                 {
                     if (i != 0)
                         v += ", ";
@@ -438,7 +438,7 @@ public:
             if (column != columns.begin())
                 create += ", \n";
             create += *column + " ";
-            create += column_description[*column].is_array ? "ARRAY(" : "";
+            create += column_description[*column].is_array ? "Array(" : "";
             create += type_definition[column_description[*column].type];
             create += column_description[*column].is_array ? ")" : "";
         }
