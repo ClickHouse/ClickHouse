@@ -111,7 +111,7 @@ public:
 class FinalCell : public ICell<FinalCell>
 {
 public:
-    explicit FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_, bool is_last_covered_);
+    explicit FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box &, bool is_last_covered_);
     std::vector<size_t> polygon_ids;
     size_t first_covered = kNone;
 

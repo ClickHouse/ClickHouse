@@ -28,7 +28,7 @@ inline void shift(Point & point, Coord val) {
     point.y(point.y() + val);
 }
 
-FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
+FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box &, bool is_last_covered_)
 {
     auto extended = box_;
     shift(extended.min_corner(), -GridRoot<FinalCellWithSlabs>::kEps);
