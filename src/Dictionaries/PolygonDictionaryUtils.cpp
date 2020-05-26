@@ -15,7 +15,10 @@ FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector
 polygon_ids(polygon_ids_)
 {
     if (is_last_covered_)
+    {
+        first_covered = polygon_ids.back();
         polygon_ids.pop_back();
+    }
 }
 
 const FinalCell * FinalCell::find(Coord, Coord) const
