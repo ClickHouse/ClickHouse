@@ -29,7 +29,7 @@ namespace ErrorCodes
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
     const std::string & host_,
-    short unsigned int port_,
+    uint16_t port_,
     const std::string & database_name_,
     const std::string & collection_name_,
     const std::string & username_,
