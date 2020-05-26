@@ -2,7 +2,9 @@
 
 namespace Poco {
 
-namespace Util { class LayeredConfiguration; }
+namespace Util {
+class LayeredConfiguration;
+}
 class Logger;
 
 }
