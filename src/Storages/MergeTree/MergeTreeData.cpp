@@ -2482,9 +2482,6 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         }), parts.end());
 
     if (parts.empty())
-        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
-
-    if (parts.empty())
     {
         String no_parts_to_move_message;
         if (moving_part)
