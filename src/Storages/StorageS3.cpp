@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -228,18 +228,18 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
         return {globbed_uri.key};
     }
 
-    Aws::S3::Model::ListObjectsRequest request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(globbed_uri.bucket);
     request.SetPrefix(key_prefix);
 
     re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
     Strings result;
-    Aws::S3::Model::ListObjectsOutcome outcome;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
     int page = 0;
     do
     {
         ++page;
-        outcome = client.ListObjects(request);
+        outcome = client.ListObjectsV2(request);
         if (!outcome.IsSuccess())
         {
             throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
@@ -256,7 +256,7 @@ Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & 
                 result.emplace_back(std::move(key));
         }
 
-        request.SetMarker(outcome.GetResult().GetNextMarker());
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
     }
     while (outcome.GetResult().GetIsTruncated());
 

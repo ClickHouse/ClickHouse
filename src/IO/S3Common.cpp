@@ -40,13 +40,13 @@ public:
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
+        LOG_IMPL(log, level, prio, "{}: {}", tag, format_str);
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        LOG_SIMPLE(log, std::string(tag) + ": " + message_stream.str(), level, prio);
+        LOG_IMPL(log, level, prio, "{}: {}", tag, message_stream.str());
     }
 
     void Flush() final {}
@@ -111,7 +111,7 @@ namespace S3
 
         if (!client_configuration.endpointOverride.empty())
         {
-            static const RE2 region_pattern(R"(s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+            static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
             Poco::URI uri(client_configuration.endpointOverride);
             if (uri.getScheme() == "http")
                 client_configuration.scheme = Aws::Http::Scheme::HTTP;
@@ -138,6 +138,7 @@ namespace S3
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
         static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3[.\-][a-z0-9\-.:]+))");
+
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access

@@ -1,6 +1,6 @@
 ---
 toc_priority: 62
-toc_title: Overview of ClickHouse Architecture
+toc_title: Architecture Overview
 ---
 
 # Overview of ClickHouse Architecture {#overview-of-clickhouse-architecture}
