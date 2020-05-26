@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
-# `pip install …`
-import git # gitpython
+try:
+    import git # `pip3 install gitpython`
+except ImportError:
+    sys.exit("Package 'gitpython' not found. Try run: `pip3 install [--user] gitpython`")
 
 import functools
 import os
@@ -11,7 +13,7 @@ import re
 class Local:
     '''Implements some useful methods atop of the local repository
     '''
-    RE_STABLE_REF = re.compile(r'^refs/remotes/.+/\d+\.\d+$')
+    RE_RELEASE_BRANCH_REF = re.compile(r'^refs/remotes/.+/\d+\.\d+$')
 
     def __init__(self, repo_path, remote_name, default_branch_name):
         self._repo = git.Repo(repo_path, search_parent_directories=(not repo_path))
@@ -42,16 +44,16 @@ class Local:
          * head (git.Commit)).
         List is sorted by commits in ascending order.
     '''
-    def get_stables(self):
-        stables = []
+    def get_release_branches(self):
+        release_branches = []
 
-        for stable in [r for r in self._remote.refs if Local.RE_STABLE_REF.match(r.path)]:
-            base = self._repo.merge_base(self._default, self._repo.commit(stable))
+        for branch in [r for r in self._remote.refs if Local.RE_RELEASE_BRANCH_REF.match(r.path)]:
+            base = self._repo.merge_base(self._default, self._repo.commit(branch))
             if not base:
-                print(f'Branch {stable.path} is not based on branch {self._default}. Ignoring.')
+                print(f'Branch {branch.path} is not based on branch {self._default}. Ignoring.')
             elif len(base) > 1:
-                print(f'Branch {stable.path} has more than one base commit. Ignoring.')
+                print(f'Branch {branch.path} has more than one base commit. Ignoring.')
             else:
-                stables.append((os.path.basename(stable.name), base[0]))
+                release_branches.append((os.path.basename(branch.name), base[0]))
 
-        return sorted(stables, key=lambda x : self.comparator(x[1]))
+        return sorted(release_branches, key=lambda x : self.comparator(x[1]))
