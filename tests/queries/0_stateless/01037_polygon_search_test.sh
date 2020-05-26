@@ -5,9 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TMP_DIR="/tmp"
 
-declare -a SearchTypes=("POLYGON" "GRID_POLYGON" "BUCKET_POLYGON" "ONE_BUCKET_POLYGON")
+declare -a SearchTypes=("POLYGON" "POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-unzip -q 01037_test_data.zip
+unzip -q 01037_test_data_search.zip
 
 $CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS test_01037;"
 
@@ -37,51 +37,33 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEac
 
 rm 01037_polygon_data
 
+$CLICKHOUSE_CLIENT --query="DROP DICTIONARY IF EXISTS test_01037.dict_array;"
+
 for type in ${SearchTypes[@]};
-do
-    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY IF EXISTS test_01037.dict_array;"
+do 
+   $CLICKHOUSE_CLIENT -n --query="
+   CREATE DICTIONARY test_01037.dict_array
+   (
+   key Array(Array(Array(Array(Float64)))),
+   name String DEFAULT 'qqq',
+   value UInt64 DEFAULT 101
+   )
+   PRIMARY KEY key
+   SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
+   LIFETIME(MIN 1 MAX 10)
+   LAYOUT($type());"
 
-    $CLICKHOUSE_CLIENT -n --query="
-    CREATE DICTIONARY test_01037.dict_array
-    (
-    key Array(Array(Array(Array(Float64)))),
-    name String DEFAULT 'qqq',
-    value UInt64 DEFAULT 101
-    )
-    PRIMARY KEY key
-    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
-    LIFETIME(MIN 1 MAX 10)
-    LAYOUT($type());"
+   outputFile="${TMP_DIR}/results${type}.out"
 
-    echo $type array finished
+   $CLICKHOUSE_CLIENT -n --query="
+   select 'dictGet', 'test_01037.dict_array' as dict_name, tuple(x, y) as key,
+      dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
+   " > $outputFile
 
-    $CLICKHOUSE_CLIENT -n --query="
-    select 'dictGet', 'test_01037.dict_array' as dict_name, tuple(x, y) as key,
-       dictGet(dict_name, 'name', key),
-       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
-    " > $TMP_DIR/results$type.out
+   diff -q "01037_polygon_search_test.reference" "$outputFile"
 
-    echo $type array query finished
-
-    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
-
-    echo $type finished
+   $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
 done
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE test_01037.points;"
 $CLICKHOUSE_CLIENT --query="DROP DATABASE test_01037;"
-
-for ((i = 0; i < ${#SearchTypes[@]}; i++))
-do
-   for ((j = ($i + 1); j < ${#SearchTypes[@]}; j++))
-   do
-      type1="${TMP_DIR}/results${SearchTypes[$i]}.out"
-      type2="${TMP_DIR}/results${SearchTypes[$j]}.out"
-      if diff -q $type1 $type2; then
-         echo "${SearchTypes[$i]} and ${SearchTypes[$j]} returned same results"
-      else
-         echo "Check diff in" ${SearchTypes[$i]}_diff_${SearchTypes[$j]}
-         diff $type1 $type2 > $TMP_DIR/${SearchTypes[$i]}_diff_${SearchTypes[$j]}
-      fi
-   done
-done
