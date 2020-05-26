@@ -95,6 +95,10 @@ def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
 
 def test_SYSTEM_FLUSH_LOGS(started_cluster):
     instance = cluster.instances['ch1']
+    instance.query('''
+        SET log_queries = 0;
+        TRUNCATE TABLE system.query_log;
+    ''')
     for i in range(4):
         # Sleep to execute flushing from background thread at first query
         # by expiration of flush_interval_millisecond and test probable race condition.
@@ -105,7 +109,10 @@ def test_SYSTEM_FLUSH_LOGS(started_cluster):
             SET log_queries = 0;
             SYSTEM FLUSH LOGS;
             SELECT count() FROM system.query_log;''')
-        instance.query('TRUNCATE TABLE system.query_log')
+        instance.query('''
+            SET log_queries = 0;
+            TRUNCATE TABLE system.query_log;
+        ''')
         assert TSV(result) == TSV('4')
 
 
