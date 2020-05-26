@@ -1,11 +1,13 @@
 #include <Functions/FunctionsPython.h>
 
-#include <mutex>
-
 #include <Functions/IFunctionImpl.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+
+#include <ext/scope_guard.h>
+
+#include <thread>
 
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wold-style-cast"
@@ -42,14 +44,15 @@ static class Python {
 public:
     Python() {
         Py_Initialize();
-        PyEval_InitThreads();
         bnumpy::initialize();
+        if (PyEval_ThreadsInitialized())
+            PyEval_SaveThread();
     }
-    ~Python() {
-        /// Boost currently does not support python finalize. Can not call this...
-        /// https://www.boost.org/doc/libs/1_73_0/libs/python/doc/html/tutorial/tutorial/embedding.html#tutorial.embedding.getting_started
-        // Py_Finalize();
-    }
+    /// Boost currently does not support python finalize. Can not call this...
+    /// https://www.boost.org/doc/libs/1_73_0/libs/python/doc/html/tutorial/tutorial/embedding.html#tutorial.embedding.getting_started
+    // ~Python() {
+    //    Py_Finalize();
+    // }
 } python;
 
 class FunctionPython : public IFunction
@@ -93,15 +96,15 @@ public:
 
         try
         {
-            static std::mutex locker;
-            std::unique_lock lock(locker);
-            bpython::dict locals = get_locals_from_arguments(block, arguments, input_rows_count);
+            PyGILState_STATE gstate = PyGILState_Ensure();
+            [[maybe_unused]] ext::scope_guard gil_releaser([=](){
+                PyGILState_Release(gstate);
+            });
+            bpython::dict locals = getLocalsFromArguments(block, arguments, input_rows_count);
             bpython::exec(body.c_str(), locals, locals);
-            if (!locals.has_key("result")) {
+            if (!locals.has_key("result"))
                 throw Exception("Wrong result type", 0);
-            }
             auto result_array = bpython::extract<bnumpy::ndarray>(locals["result"]);
-            std::cerr << input_rows_count << ' ' << column->getRawData().size << std::endl;
             memcpy(const_cast<char*>(column->getRawData().data), result_array().get_data(), column->getRawData().size);
         }
         catch (const bpython::error_already_set &)
@@ -109,15 +112,15 @@ public:
             PyObject *ptype, *pvalue, *ptraceback;
             PyErr_Fetch(&ptype, &pvalue, &ptraceback);
 
-            bpython::handle<> hType(ptype);
-            bpython::object extype(hType);
-            bpython::handle<> hTraceback(ptraceback);
-            bpython::object traceback(hTraceback);
+            bpython::handle<> h_type(ptype);
+            bpython::object ex_type(h_type);
+            bpython::handle<> h_traceback(ptraceback);
+            bpython::object traceback(h_traceback);
 
-            std::string strError = bpython::extract<std::string>(pvalue);
-            long lineno = bpython::extract<long> (traceback.attr("tb_lineno"));
+            std::string str_error = bpython::extract<std::string>(pvalue);
+            auto lineno = bpython::extract<int64_t> (traceback.attr("tb_lineno"));
 
-            throw Exception("Python error: " + strError + " at line " + std::to_string(lineno), 0);
+            throw Exception("Python error: " + str_error + " at line " + std::to_string(lineno), 0);
         }
 
 #pragma GCC diagnostic pop
@@ -126,7 +129,7 @@ public:
     }
 
 private:
-    bpython::dict get_locals_from_arguments(Block & block, const ColumnNumbers & arguments, size_t input_rows_count) const {
+    bpython::dict getLocalsFromArguments(Block & block, const ColumnNumbers & arguments, size_t input_rows_count) const {
         bpython::dict locals;
 
         for (auto argument_pos : arguments) {
@@ -136,7 +139,7 @@ private:
             }
             locals[argument_name] = bnumpy::from_data(block.getByPosition(argument_pos).column->getRawData().data,
                                                       args[argument_pos].numpy_type, bpython::make_tuple(input_rows_count),
-                                                      bpython::make_tuple(input_rows_count), bpython::object());
+                                                      bpython::make_tuple(args[argument_pos].numpy_type.get_itemsize()), bpython::object());
         }
 
         return locals;
@@ -150,10 +153,9 @@ private:
 
 void testRegisterFunctionsPython(FunctionFactory & factory)
 {
-    factory.registerUserDefinedFunction("python_test", [](const Context &){
-        std::string text = "    print(x)\n"
-                           "    return x * 2";
-        return std::make_unique<DefaultOverloadResolver>(std::make_unique<FunctionPython>("python_test", "def f():\n" + text + "\nresult = f()",
+    factory.registerUserDefinedFunction("python_mul2", [](const Context &){
+        std::string text = "    return x * 2";
+        return std::make_unique<DefaultOverloadResolver>(std::make_unique<FunctionPython>("python_mul2", "def f():\n" + text + "\nresult = f()",
                                                                                           std::vector<FunctionPython::DataTypeWithName>{{DataTypeFactory::instance().get("Int32"), bnumpy::dtype::get_builtin<int32_t>(), "x"}},
                                                                                           DataTypeFactory::instance().get("Int32")));
     });
