@@ -161,7 +161,7 @@ private:
     size_t total_allocated_size {0};
 
     /// Part of #max_cache_size that is currently used.
-    size_t total_size_in_use {0};
+    std::atomic_size_t total_size_in_use {0};
 
     std::atomic_size_t total_size_currently_initialized {0};
 
@@ -188,7 +188,7 @@ public:
     /// @return Total size (in bytes) occupied by the cache (does NOT include metadata size).
     constexpr size_t getSizeInUse() const noexcept
     {
-        return total_size_in_use;
+        return total_size_in_use.load();
     }
 
     /// @return Count of pairs (#Key, #Value) that are currently in use.
@@ -231,7 +231,7 @@ public:
 
         total_chunks_size = 0;
         total_allocated_size = 0;
-        total_size_in_use = 0;
+        total_size_in_use.store(0);
 
         total_size_currently_initialized.store(0, std::memory_order_relaxed);
 
@@ -271,7 +271,7 @@ public:
             out.chunks_size = total_chunks_size;
             out.allocated_size = total_allocated_size;
             out.initialized_size = total_size_currently_initialized.load(std::memory_order_relaxed);
-            out.used_size = total_size_in_use;
+            out.used_size = total_size_in_use.load(std::memory_order_relaxed);
 
             out.chunks = chunks.size();
             out.regions = all_regions.size();
@@ -408,12 +408,7 @@ public:
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        auto&& [ptr, mutexes_locked] = getImpl(key, disposer, attempt);
-
-        mutex_unlocker used_unlock(used_regions_mutex, mutexes_locked);
-        mutex_unlocker global_unlock(mutex, mutexes_locked);
-
-        return ptr;
+        return getImpl(key, disposer, attempt);
     }
 
     using GetOrSetRet = std::pair<ValuePtr, bool>;
@@ -480,18 +475,8 @@ public:
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        if (auto&& [out, mutexes_locked_] = getImpl(key, disposer, attempt); out)
-        {
-            /// mutexes_locked_
-            /// 1. false if value was not found in cache
-            /// 2. true if it is the first reference
-            /// 3. false otherwise
-
-            mutex_unlocker used_unlock(used_regions_mutex, mutexes_locked_);
-            mutex_unlocker global_unlock(mutex, mutexes_locked_);
-
+        if (ValuePtr out = getImpl(key, disposer, attempt); out)
             return {out, false}; // value was found in the cache.
-        }
 
         /// No try-catch here because it is not needed.
         size_t size = get_size();
@@ -531,23 +516,20 @@ public:
 
         try
         {
-            mutex_unlocker global_unlock (mutex, onSharedValueCreate<true>(*region));
+            onSharedValueCreate<true>(*region);
 
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
                 region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
 
             {
-                std::lock_guard att_lock(attempts_mutex);
+                std::scoped_lock att_used_lock(attempts_mutex, used_regions_mutex);
 
                 /// Insert the new value only if the attempt is still present in #insertion_attempts.
                 /// (may be absent because of a concurrent reset() call).
                 auto attempt_it = insertion_attempts.find(key);
 
                 if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
-                {
-                    std::lock_guard used_lock(used_regions_mutex);
                     used_regions.insert(*region);
-                }
 
                 if (!attempt->is_disposed)
                     disposer.dispose();
@@ -572,99 +554,78 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
-    /// @return true if the global mutex is locked (== the first reference to metadata).
     template <bool MayBeInUnused>
-    bool onSharedValueCreate(RegionMetadata& metadata) noexcept
+    void onSharedValueCreate(RegionMetadata& metadata) noexcept
     {
-        std::lock_guard meta_lock(metadata.mutex);
+        {
+            std::lock_guard meta_lock(metadata.mutex);
 
-        if (++metadata.refcount != 1)
-            return false;
+            if (++metadata.refcount != 1)
+                return;
+        }
 
         // First reference.
+        {
+            std::lock_guard global(mutex);
 
-        mutex.lock();
+            if constexpr (MayBeInUnused)
+                if (metadata.TUnusedRegionHook::is_linked())
+                    /// May be absent if the region was created by calling allocateFromFreeRegion.
+                    unused_regions.erase(unused_regions.iterator_to(metadata));
 
-        if constexpr (MayBeInUnused)
-            if (metadata.TUnusedRegionHook::is_linked())
-                /// May be absent if the region was created by calling allocateFromFreeRegion.
-                unused_regions.erase(unused_regions.iterator_to(metadata));
-
-        // already present in used_regions (in getOrSet), see line 506
-
-        value_to_region.emplace(metadata.value(), &metadata);
+            // already present in used_regions (in getOrSet), see line 506
+            value_to_region.emplace(metadata.value(), &metadata);
+        }
 
         ++metadata.chunk->used_refcount; //atomic here.
-
-        total_size_in_use += metadata.size;
-
-        return true;
+        total_size_in_use += metadata.size; // atomic here.
     }
 
     void onValueDelete(Value * value)
     {
-        std::lock_guard global_lock(mutex);
-
-        auto it = value_to_region.find(value);
-
-        /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
-        /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
-        if (value_to_region.end() == it)
-            throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
-
-        RegionMetadata * metadata = it->second;
-
-        std::lock_guard meta_lock(metadata->mutex);
-
-        if (--metadata->refcount != 0)
-            return;
-
-        /// Deleting last reference.
-        value_to_region.erase(it);
-
-        unused_regions.push_back(*metadata);
-
         {
-            std::lock_guard used(used_regions_mutex); //deadlock
-            used_regions.erase(used_regions.iterator_to(*metadata));
+            std::lock_guard global_lock(mutex);
+
+            auto it = value_to_region.find(value);
+
+            /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
+            /// invoking this function), thus value_to_region contains a metadata struct associated with #value.
+            if (value_to_region.end() == it)
+                throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
+
+            RegionMetadata * metadata = it->second;
+
+            {
+                std::lock_guard meta_lock(metadata->mutex);
+
+                if (--metadata->refcount != 0)
+                    return;
+            }
+
+            /// Deleting last reference.
+            value_to_region.erase(it);
+
+            unused_regions.push_back(*metadata);
         }
 
         --metadata->chunk->used_refcount; //atomic here.
-
         total_size_in_use -= metadata->size;
+
+        std::lock_guard used(used_regions_mutex);
+        used_regions.erase(used_regions.iterator_to(*metadata));
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
     }
 
     struct InsertionAttemptDisposer;
 
-    struct GetImplRes
-    {
-        ValuePtr value;      ///< Produced or found value (or nullptr).
-        bool mutexes_locked; ///< Whether #mutex and #used_regions_mutex were locked;
-    };
-
     /**
      * @brief Tries to find element in the cache, optionally creates a value request via InsertionAttempt.
-     *
-     * The function on return either:
-     *
-     * 1. Doesn't lock anything (#used_regions_mutex is released on stack return).
-     * 2. Locks #used_regions_mutex and #mutex in @e exactly that order.
-     *
-     * To understand on which condition the global #mutex is locked:
-     *
-     * @see IGrabberAllocator::onSharedValueCreate
-     *
-     * @return {value, true} if the value was found in #used_regions and it is the first reference to the value.
-     * @return {value, false} if the value was found in #used_regions but it is not the first reference to the value.
-     * @return {value, false} if the value was not found in cache but was concurrently produced by some other thread.
-     * @return {nullptr, false} if the value was neither found nor produced.
      */
-    inline GetImplRes getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
+    inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {
         {
-            used_regions_mutex.lock();
+            std::lock_guard used(used_regions_mutex);
 
             if (auto it = used_regions.find(key, RegionCompareByKey()); used_regions.end() != it)
             {
@@ -674,24 +635,11 @@ private:
 
                 RegionMetadata& metadata = *it;
 
-                bool mutex_locked = onSharedValueCreate<false>(metadata);
+                onSharedValueCreate<false>(metadata);
 
-                /// If global mutex is not locked, unlock used_regions on stack return.
-                mutex_unlocker unlock(used_regions_mutex, !mutex_locked);
-
-                // used_regions mutex either gets locked (1)
-
-                return {
-                    std::shared_ptr<Value>( // NOLINT: not a nullptr
-                        metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1)),
-                    mutex_locked
-                };
-
-                // or gets unlocked here (2)
+                return std::shared_ptr<Value>( // NOLINT: not a nullptr
+                        metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
             }
-
-            // or here (3)
-            used_regions_mutex.unlock();
         }
 
         {
