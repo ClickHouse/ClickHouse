@@ -259,8 +259,8 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (isPrimaryKeyDefined())
         metadata.primary_key_ast = getPrimaryKeyAST()->clone();
 
-    if (ttl_table_ast)
-        metadata.ttl_for_table_ast = ttl_table_ast->clone();
+    if (hasAnyTableTTL())
+        metadata.ttl_for_table_ast = getTableTTLs().definition_ast->clone();
 
     if (hasSamplingKey())
         metadata.sample_by_ast = getSamplingKeyAST()->clone();

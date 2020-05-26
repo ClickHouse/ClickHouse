@@ -682,7 +682,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
 
-    ASTPtr ttl_table_ast;
     ASTPtr settings_ast;
 
     bool require_part_metadata;
