@@ -25,7 +25,7 @@ namespace
 {
 
 template <bool has_left_nulls, bool has_right_nulls>
-int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
+int ALWAYS_INLINE nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
 
@@ -150,7 +150,7 @@ public:
         int first_vs_max = 0;
         int last_vs_min = 0;
 
-        for (size_t i = 0; i < impl.sort_columns.size(); ++i)
+        for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
             const auto & left_column = *impl.sort_columns[i];
             const auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
@@ -192,7 +192,7 @@ private:
     }
 
     template <bool left_nulls, bool right_nulls>
-    int compareAtCursor(const MergeJoinCursor & rhs) const
+    int ALWAYS_INLINE compareAtCursor(const MergeJoinCursor & rhs) const
     {
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
@@ -217,7 +217,7 @@ private:
     }
 
     /// Expects lhs_pos > 0
-    bool samePrev(size_t lhs_pos) const
+    bool ALWAYS_INLINE samePrev(size_t lhs_pos) const
     {
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
             if (impl.sort_columns[i]->compareAt(lhs_pos - 1, lhs_pos, *(impl.sort_columns[i]), 1) != 0)
