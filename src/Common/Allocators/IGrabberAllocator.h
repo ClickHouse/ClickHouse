@@ -586,8 +586,9 @@ private:
             /// Deleting last reference.
             value_to_region.erase(it);
 
-            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
-            unused_regions.push_back(*metadata);
+            //BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
+            if (!metadata->TUnusedRegionHook::is_linked()) //strange TODO investigate
+                unused_regions.push_back(*metadata);
         }
 
         --metadata->chunk->used_refcount; //atomic here.
@@ -595,7 +596,7 @@ private:
 
         std::lock_guard used(used_regions_mutex);
 
-        if (metadata->TUsedRegionHook::is_linked()) //strange but ok
+        if (metadata->TUsedRegionHook::is_linked()) //strange TODO investigate
             used_regions.erase(used_regions.iterator_to(*metadata));
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
