@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <Common/Allocators/IGrabberAllocator.h>
+#include <thread>
 
 using namespace DB;
 
