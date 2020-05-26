@@ -74,7 +74,6 @@ void registerFunctions()
     registerFunctionsMath(factory);
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
-    registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);
