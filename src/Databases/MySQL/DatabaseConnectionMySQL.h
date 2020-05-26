@@ -4,16 +4,26 @@
 #if USE_MYSQL
 
 #include <mysqlxx/Pool.h>
-#include <Databases/DatabasesCommon.h>
-#include <memory>
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/ThreadPool.h>
 
+#include <Common/ThreadPool.h>
+#include <Databases/DatabasesCommon.h>
+#include <Parsers/ASTCreateQuery.h>
+
+#include <atomic>
+#include <condition_variable>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
 
 class Context;
+
+
+std::map<String, NamesAndTypesList> fetchTablesColumnsList(mysqlxx::Pool & pool, const String & database_name, const std::vector<String> & tables_name, bool external_table_functions_use_nulls);
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.

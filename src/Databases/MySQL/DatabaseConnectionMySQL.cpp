@@ -60,7 +60,71 @@ static String toQueryStringWithQuote(const std::vector<String> & quote_list)
     return quote_list_query.str();
 }
 
-DatabaseConnectionMySQL::DatabaseConnectionMySQL(
+std::map<String, NamesAndTypesList> fetchTablesColumnsList(mysqlxx::Pool & pool, const String & database_name, const std::vector<String> & tables_name, bool external_table_functions_use_nulls)
+{
+    std::map<String, NamesAndTypesList> tables_and_columns;
+
+    if (tables_name.empty())
+        return tables_and_columns;
+
+    Block tables_columns_sample_block
+    {
+        { std::make_shared<DataTypeString>(),   "table_name" },
+        { std::make_shared<DataTypeString>(),   "column_name" },
+        { std::make_shared<DataTypeString>(),   "column_type" },
+        { std::make_shared<DataTypeUInt8>(),    "is_nullable" },
+        { std::make_shared<DataTypeUInt8>(),    "is_unsigned" },
+        { std::make_shared<DataTypeUInt64>(),   "length" },
+        { std::make_shared<DataTypeUInt64>(),   "precision" },
+        { std::make_shared<DataTypeUInt64>(),   "scale" },
+    };
+
+    WriteBufferFromOwnString query;
+    query << "SELECT "
+             " TABLE_NAME AS table_name,"
+             " COLUMN_NAME AS column_name,"
+             " COLUMN_TYPE AS column_type,"
+             " IS_NULLABLE = 'YES' AS is_nullable,"
+             " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
+             " CHARACTER_MAXIMUM_LENGTH AS length,"
+             " NUMERIC_PRECISION as '',"
+             " IF(ISNULL(NUMERIC_SCALE), DATETIME_PRECISION, NUMERIC_SCALE) AS scale" // we know DATETIME_PRECISION as a scale in CH
+             " FROM INFORMATION_SCHEMA.COLUMNS"
+             " WHERE TABLE_SCHEMA = " << quote << database_name
+          << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
+
+    MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
+    while (Block block = result.read())
+    {
+        const auto & table_name_col = *block.getByPosition(0).column;
+        const auto & column_name_col = *block.getByPosition(1).column;
+        const auto & column_type_col = *block.getByPosition(2).column;
+        const auto & is_nullable_col = *block.getByPosition(3).column;
+        const auto & is_unsigned_col = *block.getByPosition(4).column;
+        const auto & char_max_length_col = *block.getByPosition(5).column;
+        const auto & precision_col = *block.getByPosition(6).column;
+        const auto & scale_col = *block.getByPosition(7).column;
+
+        size_t rows = block.rows();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            String table_name = table_name_col[i].safeGet<String>();
+            tables_and_columns[table_name].emplace_back(column_name_col[i].safeGet<String>(),
+                                                        convertMySQLDataType(
+                                                            column_type_col[i].safeGet<String>(),
+                                                            is_nullable_col[i].safeGet<UInt64>() &&
+                                                            external_table_functions_use_nulls,
+                                                            is_unsigned_col[i].safeGet<UInt64>(),
+                                                            char_max_length_col[i].safeGet<UInt64>(),
+                                                            precision_col[i].safeGet<UInt64>(),
+                                                            scale_col[i].safeGet<UInt64>()));
+        }
+    }
+    return tables_and_columns;
+}
+
+
+DatabaseConnectionMySQL::DatabaseConnectionMySQL((
     const Context & global_context_, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
@@ -282,51 +346,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
 
 std::map<String, NamesAndTypesList> DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name) const
 {
-    std::map<String, NamesAndTypesList> tables_and_columns;
-
-    if (tables_name.empty())
-        return tables_and_columns;
-
-    Block tables_columns_sample_block
-    {
-        { std::make_shared<DataTypeString>(),   "table_name" },
-        { std::make_shared<DataTypeString>(),   "column_name" },
-        { std::make_shared<DataTypeString>(),   "column_type" },
-        { std::make_shared<DataTypeUInt8>(),    "is_nullable" },
-        { std::make_shared<DataTypeUInt8>(),    "is_unsigned" },
-        { std::make_shared<DataTypeUInt64>(),   "length" },
-    };
-
-    WriteBufferFromOwnString query;
-    query << "SELECT "
-             " TABLE_NAME AS table_name,"
-             " COLUMN_NAME AS column_name,"
-             " DATA_TYPE AS column_type,"
-             " IS_NULLABLE = 'YES' AS is_nullable,"
-             " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
-             " CHARACTER_MAXIMUM_LENGTH AS length"
-             " FROM INFORMATION_SCHEMA.COLUMNS"
-             " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql
-          << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
-
-    const auto & external_table_functions_use_nulls = global_context.getSettings().external_table_functions_use_nulls;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
-    while (Block block = result.read())
-    {
-        size_t rows = block.rows();
-        for (size_t i = 0; i < rows; ++i)
-        {
-            String table_name = (*block.getByPosition(0).column)[i].safeGet<String>();
-            tables_and_columns[table_name].emplace_back((*block.getByPosition(1).column)[i].safeGet<String>(),
-                                                        convertMySQLDataType(
-                                                            (*block.getByPosition(2).column)[i].safeGet<String>(),
-                                                            (*block.getByPosition(3).column)[i].safeGet<UInt64>() &&
-                                                            external_table_functions_use_nulls,
-                                                            (*block.getByPosition(4).column)[i].safeGet<UInt64>(),
-                                                            (*block.getByPosition(5).column)[i].safeGet<UInt64>()));
-        }
-    }
-    return tables_and_columns;
+    return DB::fetchTablesColumnsList(mysql_pool, database_name_in_mysql, tables_name, global_context.getSettings().external_table_functions_use_nulls);
 }
 
 void DatabaseConnectionMySQL::shutdown()

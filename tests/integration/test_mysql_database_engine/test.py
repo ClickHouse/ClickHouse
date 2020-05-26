@@ -7,6 +7,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
 
+from string import Template
+
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
 
@@ -32,7 +34,21 @@ class MySQLNodeInstance:
         if self.mysql_connection is None:
             self.mysql_connection = pymysql.connect(user=self.user, password=self.password, host=self.hostname, port=self.port)
         with self.mysql_connection.cursor() as cursor:
-            cursor.execute(execution_query)
+            def execute(query):
+                res = cursor.execute(query)
+                if query.lstrip().lower().startswith(('select', 'show')):
+                    # Mimic output of the ClickHouseInstance, which is:
+                    # tab-sparated values and newline (\n)-separated rows.
+                    rows = []
+                    for row in cursor.fetchall():
+                        rows.append("\t".join(str(item) for item in row))
+                    res = "\n".join(rows)
+                return res
+
+            if isinstance(execution_query, (str, bytes, unicode)):
+                return execute(execution_query)
+            else:
+                return [execute(q) for q in execution_query]
 
     def close(self):
         if self.mysql_connection is not None:
@@ -96,7 +112,7 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
         clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse')")
 
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '0'
-        clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i\`d`) select number from numbers(10000)")
+        clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i``d`) select number from numbers(10000)")
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '10000'
 
         mysql_node.query("DROP DATABASE test_database")
@@ -130,3 +146,117 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
             clickhouse_node.query("CREATE DATABASE test_database_bad_arguments ENGINE = MySQL('mysql1:3306', test_bad_arguments, root, 'clickhouse')")
         assert 'Database engine MySQL requested literal argument.' in str(exception.value)
         mysql_node.query("DROP DATABASE test_bad_arguments")
+
+
+decimal_values = [0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
+timestamp_values = ['2015-05-18 07:40:01.123', '2019-09-16 19:20:11.123']
+
+@pytest.mark.parametrize("case_name, mysql_type, expected_ch_type, mysql_values",
+[
+    ("decimal_default", "decimal NOT NULL", "Decimal(10, 0)", decimal_values),
+    ("decimal_default_nullable", "decimal", "Nullable(Decimal(10, 0))", decimal_values),
+    ("decimal_18_6", "decimal(18, 6) NOT NULL", "Decimal(18, 6)", decimal_values),
+    ("decimal_38_6", "decimal(38, 6) NOT NULL", "Decimal(38, 6)", decimal_values),
+    # # right now precision bigger than 39 is not supported by ClickHouse's Decimal, hence fall back to String
+    ("decimal_40_6", "decimal(40, 6) NOT NULL", "String", decimal_values),
+
+    # Due to python DB driver roundtrip MySQL timestamp and datetime values
+    # are printed with 6 digits after decimal point, so to simplify tests a bit,
+    # we only validate precision of 0 and 6.
+    ("timestamp_default", "timestamp", "DateTime", timestamp_values),
+    ("timestamp_6", "timestamp(6)", "DateTime64(6)", timestamp_values),
+    ("datetime_default", "DATETIME NOT NULL", "DateTime64(0)", timestamp_values),
+    ("datetime_6", "DATETIME(6) NOT NULL", "DateTime64(6)", timestamp_values),
+])
+def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, mysql_values):
+    """ Verify that values written to MySQL can be read on ClickHouse side via DB engine MySQL,
+    or Table engine MySQL, or mysql() table function.
+    Make sure that type is converted properly and values match exactly.
+    """
+
+    substitutes = dict(
+        mysql_db = 'decimal_support',
+        table_name = case_name,
+        mysql_type = mysql_type,
+        mysql_values = ', '.join('({})'.format(repr(x)) for x in mysql_values),
+        ch_mysql_db = 'mysql_db',
+        ch_mysql_table = 'mysql_table_engine_' + case_name,
+        expected_ch_type = expected_ch_type
+    )
+
+    def execute_query(node, query):
+        def do_execute(query):
+            query = Template(query).safe_substitute(substitutes)
+            res = node.query(query)
+            return res if isinstance(res, int) else res.rstrip('\n\r')
+
+        if isinstance(query, (str, bytes, unicode)):
+            return do_execute(query)
+        else:
+            return [do_execute(q) for q in query]
+
+    execute_query(clickhouse_node, "SELECT 'hello world';")
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        execute_query(mysql_node, [
+            "DROP DATABASE IF EXISTS ${mysql_db}",
+            "CREATE DATABASE ${mysql_db}  DEFAULT CHARACTER SET 'utf8'",
+            "CREATE TABLE `${mysql_db}`.`${table_name}` (value ${mysql_type})",
+            "INSERT INTO `${mysql_db}`.`${table_name}` (value) VALUES ${mysql_values}",
+            "SELECT * FROM `${mysql_db}`.`${table_name}`",
+            "FLUSH TABLES"
+        ])
+
+        assert execute_query(mysql_node, "SELECT COUNT(*) FROM ${mysql_db}.${table_name}") \
+            == \
+            "{}".format(len(mysql_values))
+
+
+        # MySQL TABLE ENGINE
+        execute_query(clickhouse_node, [
+            "DROP TABLE IF EXISTS ${ch_mysql_table}",
+            "CREATE TABLE ${ch_mysql_table} (value ${expected_ch_type}) ENGINE = MySQL('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
+        ])
+
+        # Validate type
+        assert \
+            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM ${ch_mysql_table} LIMIT 1") \
+            == \
+            expected_ch_type
+
+        # Validate values
+        assert \
+            execute_query(clickhouse_node, "SELECT value FROM ${ch_mysql_table}") \
+            == \
+            execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
+
+
+        # MySQL DATABASE ENGINE
+        execute_query(clickhouse_node, [
+            "DROP DATABASE IF EXISTS ${ch_mysql_db}",
+            "CREATE DATABASE ${ch_mysql_db} ENGINE = MySQL('mysql1:3306', '${mysql_db}', 'root', 'clickhouse')"
+        ])
+
+        # Validate type
+        assert \
+            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM ${ch_mysql_db}.${table_name} LIMIT 1") \
+            == \
+            expected_ch_type
+
+        # Validate values
+        assert \
+            execute_query(clickhouse_node, "SELECT value FROM ${ch_mysql_db}.${table_name}") \
+            == \
+            execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}")
+
+        # MySQL TABLE FUNCTION
+        # Validate type
+        assert \
+            execute_query(clickhouse_node, "SELECT toTypeName(value) FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse') LIMIT 1") \
+            == \
+            expected_ch_type
+
+        # Validate values
+        assert \
+            execute_query(mysql_node, "SELECT value FROM ${mysql_db}.${table_name}") \
+            == \
+            execute_query(clickhouse_node, "SELECT value FROM mysql('mysql1:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')")

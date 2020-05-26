@@ -12,6 +12,6 @@ namespace DB
 ASTPtr dataTypeConvertToQuery(const DataTypePtr & data_type);
 
 /// Convert MySQL type to ClickHouse data type.
-DataTypePtr convertMySQLDataType(const std::string & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length);
+DataTypePtr convertMySQLDataType(const std::string & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length, size_t precision, size_t scale);
 
 }
