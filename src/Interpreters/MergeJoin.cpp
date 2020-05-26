@@ -357,7 +357,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , is_semi_join(table_join->strictness() == ASTTableJoin::Strictness::Semi)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
-    , flush_left_blocks_on_disk(table_join->enablePartialMergeJoinOptimizations())
+    , allow_flush_left_blocks(table_join->enablePartialMergeJoinOptimizations())
     , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
@@ -528,6 +528,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     }
 
     /// In current version flush_left_blocks_on_disk means almost honest merge_join: flush all, then sort all, then join all
+    bool flush_left_blocks_on_disk = allow_flush_left_blocks && !is_in_memory;
     if (flush_left_blocks_on_disk && !not_processed)
     {
         if (block)

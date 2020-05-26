@@ -71,7 +71,7 @@ private:
     const bool is_semi_join;
     const bool is_inner;
     const bool is_left;
-    const bool flush_left_blocks_on_disk;
+    const bool allow_flush_left_blocks;
     const bool skip_not_intersected;
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
