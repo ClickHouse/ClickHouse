@@ -137,16 +137,16 @@ void switchToParentSpan(const std::shared_ptr<Span>& parent_span)
 
 
 SpanGuard::SpanGuard()
-        : parent_span(nullptr)
+//        : parent_span(nullptr)
 { }
 
 SpanGuard::SpanGuard(const String& operation_name)
-        : parent_span(switchToChildSpan(operation_name))
+//        : parent_span(switchToChildSpan(operation_name))
 { }
 
 SpanGuard::~SpanGuard()
 {
-    switchToParentSpan(std::move(parent_span));
+//    switchToParentSpan(std::move(parent_span));
 }
 
 }

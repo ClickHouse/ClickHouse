@@ -19,8 +19,8 @@ namespace DB::opentracing
         SpanGuard(const String& operation_name);
         ~SpanGuard();
 
-    private:
-        std::shared_ptr<DB::opentracing::Span> parent_span;
+//    private:
+//        std::shared_ptr<DB::opentracing::Span> parent_span;
     };
 
 }
