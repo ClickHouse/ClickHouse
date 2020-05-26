@@ -328,13 +328,10 @@ class HashTable :
     protected ZeroValueStorage<Cell::need_zero_value_storage, Cell>     /// empty base optimization
 {
 public:
-    // Export the initial buffer sizes for the ease of using allocators with
-    // inline memory.
-    static constexpr size_t initial_buffer_bytes
-        = Grower::initial_count * sizeof(Cell);
-
     // If we use an allocator with inline memory, check that the initial
     // size of the hash table is in sync with the amount of this memory.
+    static constexpr size_t initial_buffer_bytes
+        = Grower::initial_count * sizeof(Cell);
     static_assert(allocatorInitialBytes<Allocator> == 0
         || allocatorInitialBytes<Allocator> == initial_buffer_bytes);
 
@@ -1089,4 +1086,3 @@ public:
     }
 #endif
 };
-
