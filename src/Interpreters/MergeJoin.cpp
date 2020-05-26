@@ -43,9 +43,12 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
             /// NULL != NULL case
             if (left_column.isNullAt(lhs_pos))
                 return null_direction_hint;
+
+            return 0;
         }
     }
-    else if constexpr (has_left_nulls)
+
+    if constexpr (has_left_nulls)
     {
         if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
         {
@@ -54,7 +57,8 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
             return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
         }
     }
-    else if constexpr (has_right_nulls)
+
+    if constexpr (has_right_nulls)
     {
         if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
         {
