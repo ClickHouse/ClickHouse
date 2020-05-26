@@ -163,3 +163,6 @@
 [submodule "contrib/libevent"]
 	path = contrib/libevent
 	url = https://github.com/libevent/libevent.git
+[submodule "contrib/fmtlib"]
+	path = contrib/fmtlib
+	url = https://github.com/fmtlib/fmt.git

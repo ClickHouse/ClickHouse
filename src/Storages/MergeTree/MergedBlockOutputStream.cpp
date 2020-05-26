@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Interpreters/Context.h>
 #include <Poco/File.h>
 
 
@@ -161,7 +162,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
-    Block primary_key_block = getBlockAndPermute(block, storage.primary_key_columns, permutation);
+    Block primary_key_block = getBlockAndPermute(block, storage.getPrimaryKeyColumns(), permutation);
     Block skip_indexes_block = getBlockAndPermute(block, skip_indexes_column_names, permutation);
 
     writer->write(block, permutation, primary_key_block, skip_indexes_block);

@@ -6,9 +6,11 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
+#include <Common/formatReadable.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/Context.h>
 #include <Poco/DirectoryIterator.h>
 
 
@@ -189,11 +191,8 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     backup_stream.readSuffix();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
-    LOG_INFO(&Logger::get("StorageSetOrJoinBase"), std::fixed << std::setprecision(2)
-        << "Loaded from backup file " << file_path << ". "
-        << backup_stream.getProfileInfo().rows << " rows, "
-        << backup_stream.getProfileInfo().bytes / 1048576.0 << " MiB. "
-        << "State has " << getSize() << " unique rows.");
+    LOG_INFO(&Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
+        file_path, backup_stream.getProfileInfo().rows, formatReadableSizeWithBinarySuffix(backup_stream.getProfileInfo().bytes), getSize());
 }
 
 
