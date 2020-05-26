@@ -106,7 +106,7 @@ Pipes StorageRabbitMQ::read(
                         *this, context, column_names, log)));
     }
 
-    LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
+    LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     return pipes;
 }
 
@@ -136,7 +136,7 @@ void StorageRabbitMQ::shutdown()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto buffer = popReadBuffer();
+        popReadBuffer();
     }
 
     task->deactivate();
@@ -233,7 +233,7 @@ void StorageRabbitMQ::threadFunc()
                 if (!checkDependencies(table_id))
                     break;
 
-                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
+                LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                 if (!streamToViews())
                     break;

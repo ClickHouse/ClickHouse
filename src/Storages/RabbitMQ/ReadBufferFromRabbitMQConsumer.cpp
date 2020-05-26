@@ -46,11 +46,10 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
      * because in case when num_consumers > 1 - inputStreams run asynchronously and if they share the same connection,
      * then they also will share the same event loop. But it will mean that if one stream's consumer starts event loop,
      * then it will run all callbacks on the connection - including other stream's consumer's callbacks - 
-     * it result in asynchronous run of the same code (because local variables can be updated both by the current thread
-     * and in callbacks by another thread during event loop, which is blocking only to the thread that has started the loop).
-     * So sharing the connection (== sharing event loop) results in occasional seg faults in case of asynchronous run of objects that share the connection.
+     * as a result local variables can be updated both by the current thread and in callbacks by another thread during
+     * event loop, which is blocking only to the thread that has started the loop. Therefore sharing the connection
+     * (== sharing event loop) results in occasional seg faults in case of asynchronous run of objects that share the connection.
      */
-
     size_t cnt_retries = 0;
     while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
     {
@@ -97,7 +96,7 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     consumer_channel->declareExchange(exchange_name, AMQP::fanout).onError([&](const char * message)
     {
         exchange_declared = false;
-        LOG_ERROR(log, "Failed to declare fanout exchange: " << message);
+        LOG_ERROR(log, "Failed to declare fanout exchange: {}", message);
     });
 
     if (hash_exchange)
@@ -174,13 +173,13 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         .onError([&](const char * message)
         {
             bindings_error = true;
-            LOG_ERROR(log, "Failed to create queue binding: " << message);
+            LOG_ERROR(log, "Failed to create queue binding: {}", message);
         });
     })
     .onError([&](const char * message)
     {
         bindings_error = true;
-        LOG_ERROR(log, "Failed to declare queue on the channel: " << message);
+        LOG_ERROR(log, "Failed to declare queue on the channel: {}", message);
     });
 
     /* Run event loop (which updates local variables in a separate thread) until bindings are created or failed to be created.
@@ -241,7 +240,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
     .onError([&](const char * message)
     {
         consumer_error = true;
-        LOG_ERROR(log, "Consumer failed: " << message);
+        LOG_ERROR(log, "Consumer failed: {}", message);
     });
 
     while (!consumer_created && !consumer_error)
