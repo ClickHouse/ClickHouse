@@ -9,9 +9,9 @@
 #include <mutex>
 #include <random>
 
-/// This file contains Adaptors which help to combine several implementations of the function.
-/// Adaptors check that implementation can be executed on the current platform and choose
-/// that one which works faster according to previous runs. 
+/* This file contains helper class ImplementationSelector. It makes easier to combine
+ * several implementations of IFunction/IExecutableFunctionImpl.
+ */
 
 namespace DB
 {
@@ -120,9 +120,16 @@ namespace detail
             {
                 /// If there is a variant with not enough statistics, always choose it.
                 /// And in that case prefer variant with less number of invocations.
-                if (adjustedCount() < 2)
-                    return adjustedCount() - 1 + running_count * 2;
 
+                if (adjustedCount() < 2)
+                {
+                    // TODO(dakovalkov): rewrite it.
+                    int all_count = adjustedCount() + running_count;
+                    if (all_count < 3)
+                        return all_count - 2;
+                    else
+                        return adjustedCount() + running_count * 100;
+                }
                 return std::normal_distribution<>(mean(), sigma())(stat_rng);
             }
         };
@@ -142,6 +149,9 @@ namespace detail
     template <typename T>
     constexpr bool has_implementation_tag = decltype(hasImplementationTagTest(std::declval<T>()))::value;
 
+    /* Implementation tag is used to run specific implementation (for debug/testing purposes).
+     * It can be specified via static method ::getImplementationTag() in Function (optional).
+     */
     template <typename T>
     String getImplementationTag(TargetArch arch)
     {
@@ -161,8 +171,9 @@ namespace detail
  * Example of usage:
  * 
  * class MyDefaulImpl : public IFunction {...};
- * class MySecondImpl : public IFunction {...};
+ * DECLARE_AVX2_SPECIFIC_CODE(
  * class MyAVX2Impl : public IFunction {...};
+ * )
  * 
  * /// All methods but execute/executeImpl are usually not bottleneck, so just use them from
  * /// default implementation.
@@ -172,8 +183,9 @@ namespace detail
  *         /// Register all implementations in constructor.
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
- *         selector.registerImplementation<TargetArch::Default, MySecondImpl>();
- *         selector.registreImplementation<TargetArch::AVX2, MyAVX2Impl>();
+ *     #if USE_MULTITARGET_CODE
+ *         selector.registreImplementation<TargetArch::AVX2, TargetSpecific::AVX2::MyAVX2Impl>();
+ *     #endif
  *     }
  *
  *     void executeImpl(...) override {

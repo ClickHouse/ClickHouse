@@ -85,9 +85,9 @@ endif()
 
 option(ENABLE_MULTITARGET_CODE "" ON)
 if (ENABLE_MULTITARGET_CODE)
-    add_definitions(-DUSE_MULTITARGET_CODE=1)
+    add_definitions(-DENABLE_MULTITARGET_CODE=1)
 else()
-    add_definitions(-DUSE_MULTITARGET_CODE=0)
+    add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
 target_link_libraries(clickhouse_functions PUBLIC "simdxorshift")

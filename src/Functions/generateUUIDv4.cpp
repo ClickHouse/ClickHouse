@@ -66,8 +66,10 @@ public:
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
 
+    #if USE_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::AVX2,
             TargetSpecific::AVX2::FunctionGenerateUUIDv4>();
+    #endif
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override

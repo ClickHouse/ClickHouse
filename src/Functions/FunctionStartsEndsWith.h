@@ -151,17 +151,16 @@ public:
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
 
-        if constexpr (UseMultitargetCode)
-        {
-            selector.registerImplementation<TargetArch::SSE42,
-                TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>();
-            selector.registerImplementation<TargetArch::AVX,
-                TargetSpecific::AVX::FunctionStartsEndsWith<Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>();
-            selector.registerImplementation<TargetArch::AVX512F,
-                TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>();
-        }
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::SSE42,
+            TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>();
+        selector.registerImplementation<TargetArch::AVX,
+            TargetSpecific::AVX::FunctionStartsEndsWith<Name>>();
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>();
+        selector.registerImplementation<TargetArch::AVX512F,
+            TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>();
+    #endif
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
