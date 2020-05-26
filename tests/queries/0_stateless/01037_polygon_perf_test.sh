@@ -60,7 +60,7 @@ do
       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
    " > $outputFile
 
-   diff -q "01037_polygon_perf_test.reference" "$outputFile"
+   diff -q "01037_polygon_perf_test.ans" "$outputFile"
 
    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
 done
