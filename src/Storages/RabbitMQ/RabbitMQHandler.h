@@ -17,7 +17,7 @@ public:
     RabbitMQHandler(event_base * evbase_, Poco::Logger * log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
-    void startNonBlock(); 
+    void start(); 
     void stop();
 
 private:

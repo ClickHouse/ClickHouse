@@ -33,6 +33,11 @@
 #include <amqpcpp.h>
 
 
+enum
+ {
+     RESCHEDULE_WAIT = 500
+ };
+
 namespace DB
 {
 
@@ -55,7 +60,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         const String & format_name_,
         char row_delimiter_,
         size_t num_consumers_,
-        bool bind_by_id_,
         size_t num_queues_,
         bool hash_exchange_)
         : IStorage(table_id_)
@@ -66,7 +70,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
-        , bind_by_id(bind_by_id_)
         , num_queues(num_queues_)
         , hash_exchange(hash_exchange_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
@@ -79,8 +82,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
-    /// Enable a different routing algorithm.
-    bind_by_id = num_consumers > 1 || num_queues > 1 || bind_by_id;
+    bind_by_id = num_consumers > 1 || num_queues > 1;
 }
 
 
@@ -181,7 +183,8 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
         next_channel_id += num_queues;
     update_channel_id = true;
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(parsed_address, exchange_name, routing_key, next_channel_id, 
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(
+            parsed_address, exchange_name, routing_key, next_channel_id, 
             log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
 }
 
@@ -244,7 +247,7 @@ void StorageRabbitMQ::threadFunc()
 
     /// Wait for attached views
     if (!stream_cancelled)
-        task->scheduleAfter(500);
+        task->scheduleAfter(RESCHEDULE_WAIT);
 }
 
 
@@ -397,13 +400,13 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        size_t bind_by_id = static_cast<bool>(rabbitmq_settings.rabbitmq_bind_by_id);
+        bool hash_exchange = static_cast<bool>(rabbitmq_settings.rabbitmq_hash_exchange);
         if (args_count >= 6)
         {
             const auto * ast = engine_args[5]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
-                bind_by_id = static_cast<bool>(safeGet<UInt64>(ast->value));
+                hash_exchange = static_cast<bool>(safeGet<UInt64>(ast->value));
             }
             else
             {
@@ -439,22 +442,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        size_t hash_exchange = static_cast<bool>(rabbitmq_settings.rabbitmq_hash_exchange);
-        if (args_count >= 9)
-        {
-            const auto * ast = engine_args[8]->as<ASTLiteral>();
-            if (ast && ast->value.getType() == Field::Types::UInt64)
-            {
-                hash_exchange = static_cast<bool>(safeGet<UInt64>(ast->value));
-            }
-            else
-            {
-                throw Exception("Hash exchange flag must be a boolean", ErrorCodes::BAD_ARGUMENTS);
-            }
-        }
-
         return StorageRabbitMQ::create(args.table_id, args.context, args.columns, host_port, routing_key, exchange, 
-                format, row_delimiter, num_consumers, bind_by_id, num_queues, hash_exchange);
+                format, row_delimiter, num_consumers, num_queues, hash_exchange);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

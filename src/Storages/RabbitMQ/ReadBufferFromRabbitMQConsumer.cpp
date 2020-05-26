@@ -1,9 +1,17 @@
 #include <utility>
+#include <chrono>
+#include <thread>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <common/logger_useful.h>
 #include <amqpcpp.h>
 
+
+enum
+{
+    Connection_setup_sleep = 200,
+    Connection_setup_retries_max = 1000
+};
 
 namespace DB
 {
@@ -38,11 +46,21 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
      * because in case when num_consumers > 1 - inputStreams run asynchronously and if they share the same connection,
      * then they also will share the same event loop. But it will mean that if one stream's consumer starts event loop,
      * then it will run all callbacks on the connection - including other stream's consumer's callbacks - 
-     * it result in asynchronous run of the same code and lead to occasional seg faults.
+     * it result in asynchronous run of the same code (because local variables can be updated both by the current thread
+     * and in callbacks by another thread during event loop, which is blocking only to the thread that has started the loop).
+     * So sharing the connection (== sharing event loop) results in occasional seg faults in case of asynchronous run of objects that share the connection.
      */
-    while (!connection.ready())
+
+    size_t cnt_retries = 0;
+    while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
     {
         event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
+    }
+
+    if (!connection.ready())
+    {
+        LOG_ERROR(log, "Cannot set up connection for consumer");
     }
 
     consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
@@ -85,12 +103,12 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     if (hash_exchange)
     {
         current_exchange_name = exchange_name + "_hash";
-        consumer_channel->declareExchange(current_exchange_name, AMQP::consistent_hash).onError([&](const char * message)
+        consumer_channel->declareExchange(current_exchange_name, AMQP::consistent_hash).onError([&](const char * /* message */)
         {
             exchange_declared = false;
         });
 
-        consumer_channel->bindExchange(exchange_name, current_exchange_name, routing_key).onError([&](const char * message)
+        consumer_channel->bindExchange(exchange_name, current_exchange_name, routing_key).onError([&](const char * /* message */)
         {
             exchange_declared = false;
         });
@@ -98,12 +116,12 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
     else
     {
         current_exchange_name = exchange_name + "_direct";
-        consumer_channel->declareExchange(current_exchange_name, AMQP::direct).onError([&](const char * message)
+        consumer_channel->declareExchange(current_exchange_name, AMQP::direct).onError([&](const char * /* message */)
         {
             exchange_declared = false;
         });
 
-        consumer_channel->bindExchange(exchange_name, current_exchange_name, routing_key).onError([&](const char * message)
+        consumer_channel->bindExchange(exchange_name, current_exchange_name, routing_key).onError([&](const char * /* message */)
         {
             exchange_declared = false;
         });
@@ -113,30 +131,36 @@ void ReadBufferFromRabbitMQConsumer::initExchange()
 
 void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
 {
+    /* This varibale can be updated from a different thread in case of some error so its better to always check
+     * whether exchange is in a working state and if not - declare it once again.
+     */
     if (!exchange_declared)
     {
         initExchange();
         exchange_declared = true;
     }
 
-    bool bindings_ok = false, bindings_error = false;
+    bool bindings_created = false, bindings_error = false;
 
     consumer_channel->declareQueue(AMQP::exclusive)
     .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
     {
         queues.emplace_back(queue_name_);
-
         String binding_key = routing_key;
 
-        if (bind_by_id && !hash_exchange)
+        /* Every consumer has at least one unique queue. Bind the queues to exchange based on the consumer_channel_id
+         * in case there is one queue per consumer and bind by queue_id in case there is more than 1 queue per consumer.
+         * (queue_id is based on channel_id)
+         */
+        if (bind_by_id || hash_exchange)
         {
             if (queues.size() == 1)
             {
-                binding_key = routing_key + "_" + std::to_string(channel_id);
+                binding_key = std::to_string(channel_id);
             }
             else
             {
-                binding_key = routing_key + "_" + std::to_string(channel_id + queue_id);
+                binding_key = std::to_string(channel_id + queue_id);
             }
         }
 
@@ -145,7 +169,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         consumer_channel->bindQueue(current_exchange_name, queue_name_, binding_key)
         .onSuccess([&]
         {
-            bindings_ok = true;
+            bindings_created = true;
         })
         .onError([&](const char * message)
         {
@@ -159,9 +183,14 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         LOG_ERROR(log, "Failed to declare queue on the channel: " << message);
     });
 
-    while (!bindings_ok && !bindings_error)
+    /* Run event loop (which updates local variables in a separate thread) until bindings are created or failed to be created.
+     * It is important at this moment to make sure that queue bindings are created before any publishing can happen because
+     * otherwise messages will be routed nowhere.
+     */
+    while (!bindings_created && !bindings_error)
     {
-        startNonBlockEventLoop();
+        /// No need for timeouts as this event loop is blocking for the current thread and quits in case there are no active events
+        startEventLoop();
     }
 }
 
@@ -184,17 +213,14 @@ void ReadBufferFromRabbitMQConsumer::subscribeConsumer()
 
 void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 {
-    bool consumer_ok = false, consumer_error = false;
+    bool consumer_created = false, consumer_error = false;
 
     consumer_channel->consume(queue_name, AMQP::noack)
-    .onSuccess([&](const std::string & consumer)
+    .onSuccess([&](const std::string & /* consumer */)
     {
-        if (consumerTag == "")
-            consumerTag = consumer;
+        consumer_created = true;
 
-        consumer_ok = true;
-
-        LOG_TRACE(log, "Consumer " + consumerTag + " is subscribed to queue " + queue_name);
+        LOG_TRACE(log, "Consumer " + std::to_string(channel_id) + " is subscribed to queue " + queue_name);
     })
     .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
     {
@@ -218,16 +244,16 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
         LOG_ERROR(log, "Consumer failed: " << message);
     });
 
-    while (!consumer_ok && !consumer_error)
+    while (!consumer_created && !consumer_error)
     {
-        startNonBlockEventLoop();
+        startEventLoop();
     }
 }
 
 
-void ReadBufferFromRabbitMQConsumer::startNonBlockEventLoop()
+void ReadBufferFromRabbitMQConsumer::startEventLoop()
 {
-    eventHandler.startNonBlock();
+    eventHandler.start();
 }
 
 
@@ -242,12 +268,12 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         {
             /* Run the onReceived callbacks to save the messages that have been received by now
              */
-            startNonBlockEventLoop();
+            startEventLoop();
         }
 
         if (received.empty())
         {
-            LOG_TRACE(log, "Stalled");
+            LOG_TRACE(log, "No more messages to be fetched");
             return false;
         }
 
@@ -256,7 +282,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         current = messages.begin();
     }
 
-    auto new_position = const_cast<char *>(current->data());
+    auto * new_position = const_cast<char *>(current->data());
     BufferBase::set(new_position, current->size(), 0);
 
     ++current;
