@@ -597,6 +597,9 @@ BlockIO executeQuery(
             streams.null_format = true;
     }
 
+    if (streams.pipeline.initialized())
+        streams.in = streams.getInputStream();
+
     return streams;
 }
 
