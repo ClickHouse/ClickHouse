@@ -142,7 +142,7 @@ public:
 
     ~IGrabberAllocator() noexcept
     {
-        std::lock_guard _(mutex);
+        std::scoped_lock lock(mutex, used_regions_mutex);
 
         used_regions.clear();
         unused_regions.clear();
@@ -194,6 +194,7 @@ public:
     /// @return Count of pairs (#Key, #Value) that are currently in use.
     constexpr size_t getUsedRegionsCount() const noexcept
     {
+        std::lock_guard used_lock(used_regions_mutex);
         return used_regions.size();
     }
 
@@ -206,7 +207,7 @@ public:
      */
     void shrinkToFit(bool clear_stats = true)
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard global_lock(mutex);
 
         insertion_attempts.clear();
 
@@ -223,7 +224,7 @@ public:
         disposer(unused_regions);
         disposer(free_regions);
 
-        chunks.remove_if([](const auto& chunk) { return chunk.used_refcount == 0; });
+        chunks.remove_if([](const auto& chunk) { return chunk.used_refcount.load() == 0; });
 
         if (!clear_stats)
             return;
@@ -262,30 +263,35 @@ public:
      */
     [[nodiscard]] ga::Stats getStats() const noexcept
     {
-        std::lock_guard cache_lock(mutex);
-
         ga::Stats out = {};
 
-        out.chunks_size = total_chunks_size;
-        out.allocated_size = total_allocated_size;
-        out.initialized_size = total_size_currently_initialized.load(std::memory_order_relaxed);
-        out.used_size = total_size_in_use;
+        {
+            std::lock_guard global_lock(mutex);
 
-        out.chunks = chunks.size();
-        out.regions = all_regions.size();
-        out.free_regions = free_regions.size();
-        out.unused_regions = unused_regions.size();
+            out.chunks_size = total_chunks_size;
+            out.allocated_size = total_allocated_size;
+            out.initialized_size = total_size_currently_initialized.load(std::memory_order_relaxed);
+            out.used_size = total_size_in_use;
+
+            out.chunks = chunks.size();
+            out.regions = all_regions.size();
+            out.free_regions = free_regions.size();
+            out.unused_regions = unused_regions.size();
+
+            out.hits = hits.load(std::memory_order_relaxed);
+            out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
+            out.misses = misses.load(std::memory_order_relaxed);
+
+            out.allocations = allocations;
+            out.allocated_bytes = allocated_bytes;
+            out.evictions = evictions;
+            out.evicted_bytes = evicted_bytes;
+            out.secondary_evictions = secondary_evictions;
+        }
+
+        std::lock_guard used_lock(used_regions_mutex);
+
         out.used_regions = used_regions.size();
-
-        out.hits = hits.load(std::memory_order_relaxed);
-        out.concurrent_hits = concurrent_hits.load(std::memory_order_relaxed);
-        out.misses = misses.load(std::memory_order_relaxed);
-
-        out.allocations = allocations;
-        out.allocated_bytes = allocated_bytes;
-        out.evictions = evictions;
-        out.evicted_bytes = evicted_bytes;
-        out.secondary_evictions = secondary_evictions;
 
         return out;
     }
@@ -347,7 +353,7 @@ private:
      * Represented by a keymap (boost multiset).
      */
     TUsedRegionsMap used_regions;
-    std::mutex used_regions_mutex;
+    mutable std::mutex used_regions_mutex;
 
     /**
      * Represented by a LRU List (boost linked list).
@@ -371,8 +377,8 @@ private:
 
     struct mutex_unlocker
     {
-        mutex_unlocker(const std::mutex& m_, bool need_ = true)
-            : m(m_), need_to_unlock(need)
+        mutex_unlocker(std::mutex& m_, bool need_ = true)
+            : m(m_), need_to_unlock(need_)
         {
 
         }
@@ -382,20 +388,27 @@ private:
             if (need_to_unlock)
                 m.unlock();
         }
+
         std::mutex& m;
         bool need_to_unlock;
-    }
+    };
 
 /**
  * Getting and setting utilities
  */
 public:
+    /**
+     * @brief Tries to find the value for a given #key in the cache. On failure, creates a request for the value.
+     *
+     * @return value if found or concurrently produced.
+     * @return nullptr otherwise.
+     */
     inline ValuePtr get(const Key& key)
     {
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        auto&& [ptr, mutexes_locked] = getImpl(key, disposer, attempt)
+        auto&& [ptr, mutexes_locked] = getImpl(key, disposer, attempt);
 
         mutex_unlocker used_unlock(used_regions_mutex, mutexes_locked);
         mutex_unlocker global_unlock(mutex, mutexes_locked);
@@ -416,7 +429,7 @@ public:
     template<class Init, class S = SizeFunction, class I = InitFunction>
     inline typename std::enable_if<!std::is_same_v<S, ga::Runtime> &&
                                     std::is_same_v<I, ga::Runtime>,
-        GetOrSetRet>::type getOrSet(const Key & key, Init /* GAInitFunction auto */ && init_func)
+        GetOrSetRet>::type getOrSet(const Key & key, Init && init_func)
     {
         return getOrSet(key, getSize, init_func);
     }
@@ -424,7 +437,7 @@ public:
     template<class Size, class S = SizeFunction, class I = InitFunction>
     inline typename std::enable_if<std::is_same_v<S, ga::Runtime> &&
                                   !std::is_same_v<I, ga::Runtime>,
-        GetOrSetRet>::type getOrSet(const Key & key, Size /* GASizeFunction auto */ && size_func)
+        GetOrSetRet>::type getOrSet(const Key & key, Size && size_func)
     {
         return getOrSet(key, size_func, initValue);
     }
@@ -486,7 +499,7 @@ public:
         RegionMetadata * region = nullptr;
 
         {
-            std::lock_guard cache_lock(mutex); /// Allocate does not need used_regions
+            std::lock_guard global_lock(mutex); /// Allocate does not need used_regions
             region = allocate(size);
         }
 
@@ -509,7 +522,7 @@ public:
             catch (...)
             {
                 {
-                    std::lock_guard cache_lock(mutex);
+                    std::lock_guard global_lock(mutex);
                     freeAndCoalesce(*region); /// Does not need used_regions.
                 }
 
@@ -521,13 +534,12 @@ public:
 
         try
         {
-            ///inserting the value, the result should be true
-            assert(onSharedValueCreate<true>(cache_lock, *region));
-            mutex_unlocker global (mutex);
+            /// Inserting the value, the result should be true (not found + first reference).
+            assert(onSharedValueCreate<true>(*region));
+            mutex_unlocker global_unlock (mutex);
 
-            // can't use std::make_shared due to custom deleter.
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
-                    region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
+                region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
 
             {
                 std::lock_guard att_lock(attempts_mutex);
@@ -537,11 +549,14 @@ public:
                 auto attempt_it = insertion_attempts.find(key);
 
                 if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
+                {
+                    std::lock_guard used_lock(used_regions_mutex);
                     used_regions.insert(*region);
-            }
+                }
 
-            if (!attempt->is_disposed)
-                disposer.dispose();
+                if (!attempt->is_disposed)
+                    disposer.dispose();
+            }
 
             return {attempt->value, true};
         }
@@ -566,9 +581,9 @@ private:
     template <bool MayBeInUnused>
     bool onSharedValueCreate(RegionMetadata& metadata) noexcept
     {
-        std::lock_guard meta_lock(metadata->mutex);
+        std::lock_guard meta_lock(metadata.mutex);
 
-        if (++metadata.refcount != 1) // possible deadlock on further lock TODO make atomic
+        if (++metadata.refcount != 1)
             return false;
 
         // One reference.
@@ -576,14 +591,14 @@ private:
 
         if constexpr (MayBeInUnused)
             if (metadata.TUnusedRegionHook::is_linked())
-                /// May be not present if the region was created by calling allocateFromFreeRegion.
+                /// May be absent if the region was created by calling allocateFromFreeRegion.
                 unused_regions.erase(unused_regions.iterator_to(metadata));
 
         // already present in used_regions (in getOrSet), see line 506
 
         value_to_region.emplace(metadata.value(), &metadata);
 
-        ++metadata.chunk->used_refcount;
+        ++metadata.chunk->used_refcount; //atomic here.
 
         total_size_in_use += metadata.size;
 
@@ -592,7 +607,7 @@ private:
 
     void onValueDelete(Value * value)
     {
-        std::lock_guard global(mutex);
+        std::lock_guard global_lock(mutex);
 
         auto it = value_to_region.find(value);
 
@@ -614,11 +629,11 @@ private:
         unused_regions.push_back(*metadata);
 
         {
-            std::lock_guard used(used_regions_mutex);
+            std::lock_guard used(used_regions_mutex); //deadlock
             used_regions.erase(used_regions.iterator_to(*metadata));
         }
 
-        --metadata->chunk->used_refcount;
+        --metadata->chunk->used_refcount; //atomic here.
 
         total_size_in_use -= metadata->size;
 
@@ -629,10 +644,27 @@ private:
 
     struct GetImplRes
     {
-        ValuePtr value;
-        bool mutexes_locked; // mutex and used_mutex;
-    }
+        ValuePtr value;      ///< Produced or found value (or nullptr).
+        bool mutexes_locked; ///< Whether #mutex and #used_regions_mutex were locked;
+    };
 
+    /**
+     * @brief Tries to find element in the cache, optionally creates a value request via InsertionAttempt.
+     *
+     * The function on return either:
+     *
+     * 1. Doesn't lock anything (#used_regions_mutex is released on stack return).
+     * 2. Locks #used_regions_mutex and #mutex in @e exactly that order.
+     *
+     * To understand on which condition the global #mutex is locked:
+     *
+     * @see IGrabberAllocator::onSharedValueCreate
+     *
+     * @return {value, true} if the value was found in #used_regions and it is the first reference to the value.
+     * @return {value, false} if the value was found in #used_regions but it is not the first reference to the value.
+     * @return {value, false} if the value was not found in cache but was concurrently produced by some other thread.
+     * @return {nullptr, false} if the value was neither found nor produced.
+     */
     inline GetImplRes getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {
         {
@@ -642,13 +674,14 @@ private:
             {
                 /// Value found in cache
 
-                hits.fetch_add(1, std::memory_order_relaxed);
+                ++hits; // No more relaxed model (not locking the global mutex).
 
                 RegionMetadata& metadata = *it;
 
-                bool mutex_locked = onSharedValueCreate<false>(cache_lock, metadata);
+                bool mutex_locked = onSharedValueCreate<false>(metadata);
 
-                mutex_unlocker unlock(used_regions_mutex, !mutex_locked); //if global is not locked, unlock used_regions
+                /// If global mutex is not locked, unlock used_regions on stack return.
+                mutex_unlocker unlock(used_regions_mutex, !mutex_locked);
 
                 return {
                     std::shared_ptr<Value>( // NOLINT: not a nullptr
@@ -656,7 +689,10 @@ private:
                     mutex_locked
                 };
             }
+
+            used_regions_mutex.unlock();
         }
+
         {
             std::lock_guard att_lock(attempts_mutex);
 
@@ -677,13 +713,13 @@ private:
         if (attempt->value)
         {
             /// Another thread already produced the value while we were acquiring the attempt's mutex.
-            hits.fetch_add(1, std::memory_order_relaxed);
-            concurrent_hits.fetch_add(1, std::memory_order_relaxed);
+            ++hits;
+            ++concurrent_hits;
 
             return {attempt->value, false};
         }
 
-        misses.fetch_add(1, std::memory_order_relaxed);
+        ++misses;
 
         return {nullptr, false};
     }
@@ -745,6 +781,11 @@ private:
             ++attempt->refcount;
         }
 
+        /**
+         * @brief Erases InsertionAttempt form #insertion_attempts.
+         *
+         * @warning No sync.
+         */
         inline void dispose() noexcept
         {
             attempt->alloc.insertion_attempts.erase(*key);
@@ -771,12 +812,13 @@ private:
             if (attempt->is_disposed)
                 return;
 
-            std::lock_guard cache_lock(attempt->alloc.mutex);
-
             --attempt->refcount;
 
             if (attempt->refcount == 0)
+            {
+                std::lock_guard att_lock(attempt->alloc.attempts_mutex);
                 dispose();
+            }
         }
     };
 
@@ -805,7 +847,7 @@ private:
          *
          * @see IGrabberAllocator::shrinkToFit
          */
-        size_t used_refcount;
+        std::atomic_size_t used_refcount;
 
         constexpr MemoryChunk(size_t size_, void * address_hint)
             : size(size_), used_refcount(0)
@@ -1125,8 +1167,12 @@ private:
 
             unused_regions.erase(unused_regions.iterator_to(evicted));
 
-            if (evicted.TUsedRegionHook::is_linked())
-                used_regions.erase(used_regions.iterator_to(evicted));
+            {
+                std::lock_guard used_lock(used_regions_mutex);
+
+                if (evicted.TUsedRegionHook::is_linked())
+                    used_regions.erase(used_regions.iterator_to(evicted));
+            }
 
             ++evictions;
             evicted_bytes += evicted.size;
