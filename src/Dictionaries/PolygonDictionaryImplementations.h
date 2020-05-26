@@ -31,7 +31,7 @@ private:
     bool find(const Point & point, size_t & id) const override;
 };
 
-/** A polygon dictionary which generates a recursive grid in order to efficiently cut the number 
+/** A polygon dictionary which generates a recursive grid in order to efficiently cut the number
   * of polygons to be checked for a given point. 
   * For more detail see the GridRoot and FinalCell classes.
   * Separately, a slab index is built for each individual polygon. This allows to check the 

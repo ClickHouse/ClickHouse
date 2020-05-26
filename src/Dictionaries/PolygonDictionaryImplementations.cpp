@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 PolygonDictionarySimple::PolygonDictionarySimple(
         const std::string & database_,
         const std::string & name_,
@@ -147,8 +152,10 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() con
 bool PolygonDictionaryIndexCell::find(const Point & point, size_t & id) const
 {
     auto cell = index.find(point.x(), point.y());
-    if (cell) {
-        if (!(cell->corresponding_ids).empty() && cell->index.find(point, id)) {
+    if (cell)
+    {
+        if (!(cell->corresponding_ids).empty() && cell->index.find(point, id))
+        {
             id = cell->corresponding_ids[id];
             return true;
         }

@@ -26,7 +26,8 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
-inline void shift(Point & point, Coord val) {
+inline void shift(Point & point, Coord val)
+{
     point.x(point.x() + val);
     point.y(point.y() + val);
 }
@@ -101,9 +102,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     /** Sorting edges of (left_point, right_point, polygon_id) in that order */
     std::sort(all_edges.begin(), all_edges.end(), Edge::compare1);
     for (size_t i = 0; i != all_edges.size(); ++i)
-    {
         all_edges[i].edge_id = i;
-    }
     
     /** Total number of edges */
     size_t m = all_edges.size();
