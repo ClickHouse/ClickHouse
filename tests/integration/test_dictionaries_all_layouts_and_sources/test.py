@@ -8,7 +8,7 @@ from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceEx
 from external_sources import SourceMongo, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
 from external_sources import SourceMongo, SourceMongoURI, SourceHTTP, SourceHTTPS, SourceRedis, SourceCassandra
 import math
-
+import time
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 dict_configs_path = os.path.join(SCRIPT_DIR, 'configs/dictionaries')
 
@@ -119,7 +119,7 @@ LAYOUTS = [
 ]
 
 SOURCES = [
-    SourceCassandra("Cassandra", "localhost", "6340", "cassandra1", "6349", "", ""),
+    SourceCassandra("Cassandra", "localhost", "9043", "cassandra1", "9042", "", ""),
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMongoURI("MongoDB_URI", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
@@ -134,7 +134,7 @@ SOURCES = [
 
 DICTIONARIES = []
 
-# Key-value dictionaries with onle one possible field for key
+# Key-value dictionaries with only one possible field for key
 SOURCES_KV = [
     SourceRedis("RedisSimple", "localhost", "6380", "redis1", "6379", "", "", storage_type="simple"),
     SourceRedis("RedisHash", "localhost", "6380", "redis1", "6379", "", "", storage_type="hash_map"),
@@ -212,6 +212,7 @@ def get_dictionaries(fold, total_folds, all_dicts):
     return all_dicts[fold * chunk_len : (fold + 1) * chunk_len]
 
 
+#@pytest.mark.timeout(3000)
 @pytest.mark.parametrize("fold", list(range(10)))
 def test_simple_dictionaries(started_cluster, fold):
     fields = FIELDS["simple"]
@@ -226,6 +227,8 @@ def test_simple_dictionaries(started_cluster, fold):
         dct.load_data(data)
 
     node.query("system reload dictionaries")
+
+    #time.sleep(3000)
 
     queries_with_answers = []
     for dct in simple_dicts:

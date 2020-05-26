@@ -1,6 +1,8 @@
 #include "CassandraDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -51,25 +53,32 @@ static const size_t max_block_size = 8192;
 
 CassandraDictionarySource::CassandraDictionarySource(
     const DB::DictionaryStructure & dict_struct_,
-    const std::string & host_,
+    const String & host_,
     UInt16 port_,
-    const std::string & user_,
-    const std::string & password_,
-    const std::string & method_,
-    const std::string & db_,
+    const String & user_,
+    const String & password_,
+    //const std::string & method_,
+    const String & db_,
+    const String & table_,
     const DB::Block & sample_block_)
-    : dict_struct(dict_struct_)
+    : log(&Logger::get("CassandraDictionarySource"))
+    , dict_struct(dict_struct_)
     , host(host_)
     , port(port_)
     , user(user_)
     , password(password_)
-    , method(method_)
+    //, method(method_)
     , db(db_)
+    , table(table_)
     , sample_block(sample_block_)
-    , cluster(cass_cluster_new())
+    , cluster(cass_cluster_new())   //FIXME will not be freed in case of exception
     , session(cass_session_new())
 {
-    cass_cluster_set_contact_points(cluster, toConnectionString(host, port).c_str());
+    cassandraCheck(cass_cluster_set_contact_points(cluster, host.c_str()));
+    if (port)
+        cassandraCheck(cass_cluster_set_port(cluster, port));
+    cass_cluster_set_credentials(cluster, user.c_str(), password.c_str());
+    cassandraWaitAndCheck(cass_session_connect_keyspace(session, cluster, db.c_str()));
 }
 
 CassandraDictionarySource::CassandraDictionarySource(
@@ -80,11 +89,12 @@ CassandraDictionarySource::CassandraDictionarySource(
     : CassandraDictionarySource(
         dict_struct_,
         config.getString(config_prefix + ".host"),
-        config.getUInt(config_prefix + ".port"),
+        config.getUInt(config_prefix + ".port", 0),
         config.getString(config_prefix + ".user", ""),
         config.getString(config_prefix + ".password", ""),
-        config.getString(config_prefix + ".method", ""),
-        config.getString(config_prefix + ".db", ""),
+        //config.getString(config_prefix + ".method", ""),
+        config.getString(config_prefix + ".keyspace", ""),
+        config.getString(config_prefix + ".column_family"),
         sample_block_)
 {
 }
@@ -95,8 +105,9 @@ CassandraDictionarySource::CassandraDictionarySource(const CassandraDictionarySo
                                 other.port,
                                 other.user,
                                 other.password,
-                                other.method,
+                                //other.method,
                                 other.db,
+                                other.table,
                                 other.sample_block}
 {
 }
@@ -106,16 +117,43 @@ CassandraDictionarySource::~CassandraDictionarySource() {
     cass_cluster_free(cluster);
 }
 
-std::string CassandraDictionarySource::toConnectionString(const std::string &host, const UInt16 port) {
-    return host + (port != 0 ? ":" + std::to_string(port) : "");
-}
+//std::string CassandraDictionarySource::toConnectionString(const std::string &host, const UInt16 port) {
+//    return host + (port != 0 ? ":" + std::to_string(port) : "");
+//}
 
-BlockInputStreamPtr CassandraDictionarySource::loadAll() {
-    return std::make_shared<CassandraBlockInputStream>(nullptr, "", sample_block, max_block_size);
+BlockInputStreamPtr CassandraDictionarySource::loadAll()
+{
+    ExternalQueryBuilder builder{dict_struct, db, table, "", IdentifierQuotingStyle::DoubleQuotes};
+    String query = builder.composeLoadAllQuery();
+    query.pop_back();
+    query += " ALLOW FILTERING;";
+    LOG_INFO(log, "Loading all using query: " << query);
+    return std::make_shared<CassandraBlockInputStream>(session, query, sample_block, max_block_size);
 }
 
 std::string CassandraDictionarySource::toString() const {
     return "Cassandra: " + /*db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + */ host + ':' + DB::toString(port);
+}
+
+BlockInputStreamPtr CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+{
+    ExternalQueryBuilder builder{dict_struct, db, table, "", IdentifierQuotingStyle::DoubleQuotes};
+    String query = builder.composeLoadIdsQuery(ids);
+    query.pop_back();
+    query += " ALLOW FILTERING;";
+    LOG_INFO(log, "Loading ids using query: " << query);
+    return std::make_shared<CassandraBlockInputStream>(session, query, sample_block, max_block_size);
+}
+
+BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+{
+    //FIXME split conditions on partition key and clustering key
+    ExternalQueryBuilder builder{dict_struct, db, table, "", IdentifierQuotingStyle::DoubleQuotes};
+    String query = builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
+    query.pop_back();
+    query += " ALLOW FILTERING;";
+    LOG_INFO(log, "Loading keys using query: " << query);
+    return std::make_shared<CassandraBlockInputStream>(session, query, sample_block, max_block_size);
 }
 
 

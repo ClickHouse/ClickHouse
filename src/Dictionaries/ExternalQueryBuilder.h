@@ -58,11 +58,13 @@ struct ExternalQueryBuilder
 private:
     const FormatSettings format_settings;
 
+    void composeLoadAllQuery(WriteBuffer & out) const;
+
     /// Expression in form (x = c1 AND y = c2 ...)
     void composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out) const;
 
     /// Expression in form (x, y, ...)
-    std::string composeKeyTupleDefinition() const;
+    void composeKeyTupleDefinition(WriteBuffer & out) const;
 
     /// Expression in form (c1, c2, ...)
     void composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out) const;

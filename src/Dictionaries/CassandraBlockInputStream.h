@@ -8,6 +8,11 @@
 
 namespace DB
 {
+
+void cassandraCheck(CassError error);
+void cassandraWaitAndCheck(CassFuture * future);
+
+
 /// Allows processing results of a Cassandra query as a sequence of Blocks, simplifies chaining
     class CassandraBlockInputStream final : public IBlockInputStream
     {
