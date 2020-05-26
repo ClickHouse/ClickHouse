@@ -589,7 +589,11 @@ public:
                     auto needle_pos = needle + n;
 
                     while (needle_pos < needle_end && *pos == *needle_pos)
-                        ++pos, ++needle_pos;
+                    {
+                        ++pos;
+                        ++needle_pos;
+                    }
+
 
                     if (needle_pos == needle_end)
                         return true;
@@ -608,7 +612,11 @@ public:
             auto needle_pos = needle + 1;
 
             while (needle_pos < needle_end && *pos == *needle_pos)
-                ++pos, ++needle_pos;
+            {
+                ++pos;
+                ++needle_pos;
+            }
+
 
             if (needle_pos == needle_end)
                 return true;
@@ -659,7 +667,11 @@ public:
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    *haystack_pos == *needle_pos)
-                                ++haystack_pos, ++needle_pos;
+                            {
+                                ++haystack_pos;
+                                ++needle_pos;
+                            }
+
 
                             if (needle_pos == needle_end)
                                 return haystack;
@@ -684,7 +696,11 @@ public:
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        *haystack_pos == *needle_pos)
-                    ++haystack_pos, ++needle_pos;
+                {
+                    ++haystack_pos;
+                    ++needle_pos;
+                }
+
 
                 if (needle_pos == needle_end)
                     return haystack;
