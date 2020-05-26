@@ -595,8 +595,8 @@ private:
 
         std::lock_guard used(used_regions_mutex);
 
-        BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
-        used_regions.erase(used_regions.iterator_to(*metadata));
+        if (metadata->TUsedRegionHook::is_linked()) //strange but ok
+            used_regions.erase(used_regions.iterator_to(*metadata));
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
     }
