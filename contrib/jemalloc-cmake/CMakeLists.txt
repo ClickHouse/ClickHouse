@@ -17,7 +17,7 @@ if (ENABLE_JEMALLOC)
         #
         # By enabling percpu_arena number of arenas limited to number of CPUs and hence
         # this problem should go away.
-        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu" CACHE STRING "Change default configuration string of JEMalloc" )
+        set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:0" CACHE STRING "Change default configuration string of JEMalloc" )
         message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
         set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
