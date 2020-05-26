@@ -1040,7 +1040,7 @@ private:
      * @note Method does not insert allocated region to #used_regions or #unused_regions.
      * @return Desired region or std::nullptr.
      */
-    constexpr RegionMetadata * allocate(size_t size)
+    inline RegionMetadata * allocate(size_t size)
     {
         std::lock_guard global_lock(mutex); /// Allocate does not need used_regions
 
