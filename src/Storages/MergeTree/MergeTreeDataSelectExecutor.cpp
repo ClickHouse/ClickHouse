@@ -1024,9 +1024,9 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         if (pipes.size() > 1)
         {
             SortDescription sort_description;
-            for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
-                sort_description.emplace_back(data.sorting_key_columns[j],
-                    input_sorting_info->direction, 1);
+            for (size_t j = 0; j < input_order_info->order_key_prefix_descr.size(); ++j)
+                sort_description.emplace_back(data.getSortingKey().column_names[j],
+                      input_order_info->direction, 1);
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
             out_projection = createProjection(pipes.back(), data);
