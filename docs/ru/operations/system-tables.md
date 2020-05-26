@@ -554,7 +554,7 @@ CurrentMetric_ReplicatedChecks:                             0
 Чтобы ваши запросы логгировались, вам следует:
 
 1. Настроить секцию [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) в конфигурации сервера.
-2. Установить значение параметра [log_queries](settings/settings.md#settings-log-queries] равным 1. 
+2. Установить значение параметра [log_queries](settings/settings.md#settings-log-queries) равным 1. 
 
 Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
