@@ -99,7 +99,7 @@ public:
             argument_types.emplace_back(arguments.back().type);
 
         typename ColumnVector<ToType>::Container vec_to(1);
-        // TODO(dakovalkov): Rewrite this workaround
+
         TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 

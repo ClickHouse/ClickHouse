@@ -1,4 +1,5 @@
-<test max_ignored_relative_change="0.4">
+<!-- <test max_ignored_relative_change="0.4">
+TODO(dakovalkov): uncomment this -->
     <settings>
         <max_memory_usage>30000000000</max_memory_usage>
     </settings>

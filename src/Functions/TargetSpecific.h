@@ -4,16 +4,22 @@
 
 /* This file contains macros and helpers for writing platform-dependent code.
  * 
- * Macros DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside them into the 
+ * Macros DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside it into the 
  * namespace TargetSpecific::<Arch> and enable Arch-specific compile options.
  * Thus, it's allowed to call functions inside these namespaces only after
  * checking platform in runtime (see IsArchSupported() below).
  *
+ * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
+ * was set to OFF in cmake, all code inside these macroses will be removed and
+ * USE_MUTLITARGE_CODE will be set to 0. Use #if USE_MUTLITARGE_CODE whenever you
+ * use anything from this namespaces.
+ * 
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
  * into the namespace TargetSpecific::Default but dosn't specify any additional
- * copile options.
+ * copile options. Functions and classes inside this macros are available regardless
+ * of USE_MUTLITARGE_CODE.
  * 
- * Example:
+ * Example of usage:
  * 
  * DECLARE_DEFAULT_CODE (
  * int funcImpl() {
@@ -28,15 +34,17 @@
  * ) // DECLARE_DEFAULT_CODE
  * 
  * int func() {
+ * #if USE_MULTITARGET_CODE
  *     if (IsArchSupported(TargetArch::AVX2)) 
  *         return TargetSpecifc::AVX2::funcImpl();
+ * #endif
  *     return TargetSpecifc::Default::funcImpl();
  * } 
  * 
  * Sometimes code may benefit from compiling with different options.
- * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create several
- * copies of the code and compile it with different options. These copies are
- * available via TargetSpecifc namespaces described above.
+ * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
+ * of the code for every supported target and compile it with different options.
+ * These copies are available via TargetSpecifc namespaces described above.
  * 
  * Inside every TargetSpecific namespace there is a constexpr variable BuildArch, 
  * which indicates the target platform for current code.
@@ -50,16 +58,16 @@
  *         iteration_size = 2
  *     else if constexpr (BuildArch == TargetArch::AVX || BuildArch == TargetArch::AVX2)
  *         iteration_size = 4;
- *     else if constexpr (BuildArch == TargetArch::AVX512)
- *         iteration_size = 8;
  *     for (int i = 0; i < size; i += iteration_size)
  *     ...
  * }
  * ) // DECLARE_MULTITARGET_CODE
  *
- * // All 5 versions of func are available here. Use runtime detection to choose one.
+ * // All target-specific and default implementations are available here via
+ * TargetSpecific::<Arch>::funcImpl. Use runtime detection to choose one.
  *
- * If you want to write IFunction or IExecutableFuncionImpl with runtime dispatching, see PerformanceAdaptors.h.
+ * If you want to write IFunction or IExecutableFuncionImpl with several implementations
+ * see PerformanceAdaptors.h.
  */
 
 namespace DB
@@ -74,24 +82,24 @@ enum class TargetArch : UInt32
     AVX512F  = (1 << 3),
 };
 
-// Runtime detection.
+/// Runtime detection.
 bool IsArchSupported(TargetArch arch);
 
 String ToString(TargetArch arch);
 
-#if USE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+#if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
 
-constexpr bool UseMultitargetCode = true;
+#define USE_MULTITARGET_CODE 1
 
 #if defined(__clang__)
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx,avx2,avx512f\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f\"))),apply_to=function)")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx,avx2\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2\"))),apply_to=function)")
 #   define BEGIN_AVX_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx,avx\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx\"))),apply_to=function)")
 #   define BEGIN_SSE42_SPECIFIC_CODE \
-        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,mmx\"))),apply_to=function)")
+        _Pragma("clang attribute push(__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt\"))),apply_to=function)")
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("clang attribute pop")
 
@@ -102,16 +110,16 @@ constexpr bool UseMultitargetCode = true;
 #else
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,avx512f,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,avx512f,tune=native\")")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,tune=native\")")
 #   define BEGIN_AVX_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,avx,tune=native\")")
 #   define BEGIN_SSE42_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,tune=native\")")
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("GCC pop_options")
 
@@ -158,8 +166,10 @@ END_TARGET_SPECIFIC_CODE
 
 #else
 
-constexpr bool UseMultitargetCode = false;
+#define USE_MULTITARGET_CODE 0
 
+/* Multitarget code is disabled, just delete target-specific code.
+ */
 #define DECLARE_SSE42_SPECIFIC_CODE(...)
 #define DECLARE_AVX_SPECIFIC_CODE(...)
 #define DECLARE_AVX2_SPECIFIC_CODE(...)

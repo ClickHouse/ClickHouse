@@ -23,7 +23,7 @@ struct RandXorshiftImpl
 struct RandXorshiftImpl2
 {
     static void execute(char * output, size_t size);
-    static String getImplementationTag() { return ToString(BuildArch) + "_v2"; }
+    static String getImplementationTag() { return "v2"; }
 };
 
 ) // DECLARE_MULTITARGET_CODE
@@ -37,13 +37,12 @@ public:
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>();
 
-        if constexpr (UseMultitargetCode)
-        {
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>();
-            selector.registerImplementation<TargetArch::AVX2,
-                FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl2, ToType, Name>>();
-        }
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl, ToType, Name>>();
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomImpl<TargetSpecific::AVX2::RandXorshiftImpl2, ToType, Name>>();
+    #endif
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
