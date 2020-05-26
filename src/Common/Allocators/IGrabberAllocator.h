@@ -583,6 +583,8 @@ private:
 
     void onValueDelete(Value * value)
     {
+        RegionMetadata * metadata;
+
         {
             std::lock_guard global_lock(mutex);
 
@@ -593,7 +595,7 @@ private:
             if (value_to_region.end() == it)
                 throw Exception("Corrupted cache: onValueDelete", ErrorCodes::SYSTEM_ERROR);
 
-            RegionMetadata * metadata = it->second;
+            metadata = it->second;
 
             {
                 std::lock_guard meta_lock(metadata->mutex);
