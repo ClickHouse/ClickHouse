@@ -465,7 +465,7 @@ template <typename T, size_t>
 void FunctionArrayIntersect::DecimalExecutor::operator()()
 {
     using Map = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
-        INITIAL_SIZE_DEGREE);
+        INITIAL_SIZE_DEGREE>;
 
     if (!result)
         if (auto * decimal = typeid_cast<const DataTypeDecimal<T> *>(data_type.get()))
