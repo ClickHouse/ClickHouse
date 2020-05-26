@@ -362,7 +362,7 @@ void UATraits::loadProfiles(std::istream & istr)
         }
     }
 
-    LOG_INFO(log, "Loaded " << profiles.size() << " profiles");
+    LOG_INFO(log, "Loaded profiles");
 }
 
 
@@ -418,13 +418,6 @@ void UATraits::loadBrowsers(std::istream & istr)
         throw Poco::Exception("No branch element in " + std::string(browser_path));
 
     addBranch(*branch, root_node);
-
-    int i = 0;
-    for (auto pattern : regexp_patterns)
-    {
-        LOG_INFO(log, pattern.toString() << " " << i);
-        ++i;
-    }
 
     regexps_engine = DB::MultiRegexps::get<true, false>(regexp_patterns, 0);
 
