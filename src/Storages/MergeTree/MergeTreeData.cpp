@@ -131,8 +131,6 @@ MergeTreeData::MergeTreeData(
     : IStorage(table_id_)
     , global_context(context_)
     , merging_params(merging_params_)
-    , partition_by_ast(metadata.partition_by_ast)
-    , sample_by_ast(metadata.sample_by_ast)
     , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -153,16 +151,16 @@ MergeTreeData::MergeTreeData(
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    if (sample_by_ast)
+    if (metadata.sample_by_ast != nullptr)
     {
-        sampling_expr_column_name = sample_by_ast->getColumnName();
+        StorageMetadataKeyField candidate_sampling_key = StorageMetadataKeyField::getKeyFromAST(metadata.sample_by_ast, getColumns(), global_context);
 
-        if (!primary_key_sample.has(sampling_expr_column_name)
-            && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
+        const auto & pk_sample_block = getPrimaryKey().sample_block;
+        if (!pk_sample_block.has(candidate_sampling_key.column_names[0]) && !attach
+            && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = syntax->requiredSourceColumns();
+        setSamplingKey(candidate_sampling_key);
     }
 
     MergeTreeDataFormatVersion min_format_version(0);
@@ -170,8 +168,8 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
-            initPartitionKey();
+            auto partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
+            initPartitionKey(partition_by_ast);
 
             if (minmax_idx_date_column_pos == -1)
                 throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -186,7 +184,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        initPartitionKey();
+        initPartitionKey(metadata.partition_by_ast);
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
@@ -252,20 +250,20 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
-    if (partition_by_ast)
-        metadata.partition_by_ast = partition_by_ast->clone();
+    if (hasPartitionKey())
+        metadata.partition_by_ast = getPartitionKeyAST()->clone();
 
-    if (order_by_ast)
-        metadata.order_by_ast = order_by_ast->clone();
+    if (hasSortingKey())
+        metadata.order_by_ast = getSortingKeyAST()->clone();
 
-    if (primary_key_ast)
-        metadata.primary_key_ast = primary_key_ast->clone();
+    if (isPrimaryKeyDefined())
+        metadata.primary_key_ast = getPrimaryKeyAST()->clone();
 
     if (ttl_table_ast)
         metadata.ttl_for_table_ast = ttl_table_ast->clone();
 
-    if (sample_by_ast)
-        metadata.sample_by_ast = sample_by_ast->clone();
+    if (hasSamplingKey())
+        metadata.sample_by_ast = getSamplingKeyAST()->clone();
 
     if (settings_ast)
         metadata.settings_ast = settings_ast->clone();
@@ -352,17 +350,18 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     auto all_columns = metadata.columns.getAllPhysical();
 
     /// Order by check AST
-    if (order_by_ast && only_check)
+    if (hasSortingKey() && only_check)
     {
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
         /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
 
         ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+        const auto & old_sorting_key_columns = getSortingKeyColumns();
         for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
         {
-            if (old_i < sorting_key_columns.size())
+            if (old_i < old_sorting_key_columns.size())
             {
-                if (new_sorting_key_columns[new_i] != sorting_key_columns[old_i])
+                if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
                     added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
                 else
                     ++old_i;
@@ -417,6 +416,12 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_primary_key_data_types.push_back(elem.type);
     }
 
+    DataTypes new_sorting_key_data_types;
+    for (size_t i = 0; i < sorting_key_size; ++i)
+    {
+        new_sorting_key_data_types.push_back(new_sorting_key_sample.getByPosition(i).type);
+    }
+
     ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
     ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
 
@@ -466,17 +471,23 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     {
         setColumns(std::move(metadata.columns));
 
-        order_by_ast = metadata.order_by_ast;
-        sorting_key_columns = std::move(new_sorting_key_columns);
-        sorting_key_expr_ast = std::move(new_sorting_key_expr_list);
-        sorting_key_expr = std::move(new_sorting_key_expr);
+        StorageMetadataKeyField new_sorting_key;
+        new_sorting_key.definition_ast = metadata.order_by_ast;
+        new_sorting_key.column_names = std::move(new_sorting_key_columns);
+        new_sorting_key.expression_list_ast = std::move(new_sorting_key_expr_list);
+        new_sorting_key.expression = std::move(new_sorting_key_expr);
+        new_sorting_key.sample_block = std::move(new_sorting_key_sample);
+        new_sorting_key.data_types = std::move(new_sorting_key_data_types);
+        setSortingKey(new_sorting_key);
 
-        primary_key_ast = metadata.primary_key_ast;
-        primary_key_columns = std::move(new_primary_key_columns);
-        primary_key_expr_ast = std::move(new_primary_key_expr_list);
-        primary_key_expr = std::move(new_primary_key_expr);
-        primary_key_sample = std::move(new_primary_key_sample);
-        primary_key_data_types = std::move(new_primary_key_data_types);
+        StorageMetadataKeyField new_primary_key;
+        new_primary_key.definition_ast = metadata.primary_key_ast;
+        new_primary_key.column_names = std::move(new_primary_key_columns);
+        new_primary_key.expression_list_ast = std::move(new_primary_key_expr_list);
+        new_primary_key.expression = std::move(new_primary_key_expr);
+        new_primary_key.sample_block = std::move(new_primary_key_sample);
+        new_primary_key.data_types = std::move(new_primary_key_data_types);
+        setPrimaryKey(new_primary_key);
 
         setIndices(metadata.indices);
         skip_indices = std::move(new_indices);
@@ -511,28 +522,17 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 }
 
 
-void MergeTreeData::initPartitionKey()
+void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
 {
-    ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
+    StorageMetadataKeyField new_partition_key = StorageMetadataKeyField::getKeyFromAST(partition_by_ast, getColumns(), global_context);
 
-    if (partition_key_expr_list->children.empty())
+    if (new_partition_key.expression_list_ast->children.empty())
         return;
 
-    {
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(partition_key_expr_list, getColumns().getAllPhysical());
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
-    }
-
-    for (const ASTPtr & ast : partition_key_expr_list->children)
-    {
-        String col_name = ast->getColumnName();
-        partition_key_sample.insert(partition_key_expr->getSampleBlock().getByName(col_name));
-    }
-
-    checkKeyExpression(*partition_key_expr, partition_key_sample, "Partition");
+    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition");
 
     /// Add all columns used in the partition key to the min-max index.
-    const NamesAndTypesList & minmax_idx_columns_with_types = partition_key_expr->getRequiredColumnsWithTypes();
+    const NamesAndTypesList & minmax_idx_columns_with_types = new_partition_key.expression->getRequiredColumnsWithTypes();
     minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, global_context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
@@ -577,6 +577,7 @@ void MergeTreeData::initPartitionKey()
             }
         }
     }
+    setPartitionKey(new_partition_key);
 }
 
 namespace
@@ -631,12 +632,12 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
     {
         NameSet columns_ttl_forbidden;
 
-        if (partition_key_expr)
-            for (const auto & col : partition_key_expr->getRequiredColumns())
+        if (hasPartitionKey())
+            for (const auto & col : getColumnsRequiredForPartitionKey())
                 columns_ttl_forbidden.insert(col);
 
-        if (sorting_key_expr)
-            for (const auto & col : sorting_key_expr->getRequiredColumns())
+        if (hasSortingKey())
+            for (const auto & col : getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
         for (const auto & [name, ast] : new_column_ttls)
@@ -1418,12 +1419,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_type_metadata_only;
 
-    if (partition_key_expr)
+    if (hasPartitionKey())
     {
         /// Forbid altering partition key columns because it can change partition ID format.
         /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
         /// We should allow it.
-        for (const String & col : partition_key_expr->getRequiredColumns())
+        for (const String & col : getColumnsRequiredForPartitionKey())
             columns_alter_type_forbidden.insert(col);
     }
 
@@ -1433,8 +1434,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    if (sorting_key_expr)
+    if (hasSortingKey())
     {
+        auto sorting_key_expr = getSortingKey().expression;
         for (const ExpressionAction & action : sorting_key_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
@@ -2616,7 +2618,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
 
     /// Re-parse partition key fields using the information about expected field types.
 
-    size_t fields_count = partition_key_sample.columns();
+    size_t fields_count = getPartitionKey().sample_block.columns();
     if (partition_ast.fields_count != fields_count)
         throw Exception(
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
@@ -2633,7 +2635,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        auto input_stream = FormatFactory::instance().getInput("Values", buf, partition_key_sample, context, context.getSettingsRef().max_block_size);
+        auto input_stream = FormatFactory::instance().getInput("Values", buf, getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
 
         auto block = input_stream->read();
         if (!block || !block.rows())
@@ -3084,7 +3086,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
 {
     const String column_name = node->getColumnName();
 
-    for (const auto & name : primary_key_columns)
+    for (const auto & name : getPrimaryKeyColumns())
         if (column_name == name)
             return true;
 
@@ -3144,10 +3146,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(order_by_ast) != query_to_string(src_data->order_by_ast))
+    if (query_to_string(getSortingKeyAST()) != query_to_string(src_data->getSortingKeyAST()))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
-    if (query_to_string(partition_by_ast) != query_to_string(src_data->partition_by_ast))
+    if (query_to_string(getPartitionKeyAST()) != query_to_string(src_data->getPartitionKeyAST()))
         throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
 
     if (format_version != src_data->format_version)
