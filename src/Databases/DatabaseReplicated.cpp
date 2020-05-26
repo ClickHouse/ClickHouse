@@ -170,7 +170,7 @@ void DatabaseReplicated::executeFromZK(String & path) {
         try
         {
             current_context = std::make_unique<Context>(global_context);
-            current_context->from_replicated_log = true;
+            current_context->getClientInfo().query_kind = ClientInfo::QueryKind::REPLICATED_LOG_QUERY;
             current_context->setCurrentDatabase(database_name);
             current_context->setCurrentQueryId(""); // generate random query_id
             executeQuery(istr, ostr, false, *current_context, {});
