@@ -2,8 +2,8 @@
 
 #include <Core/Types.h>
 #include <Common/UInt128.h>
-//#include <Common/Floats/Float16.h>
-//#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/BFloat16.h>
+#include <Common/Floats/Float16.h>
 #include <common/unaligned.h>
 
 #include <type_traits>
@@ -82,6 +82,32 @@ intHashCRC32(const T & x, DB::UInt64 updated_value)
     {
         updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
         begin += sizeof(DB::UInt64);
+    }
+
+    return updated_value;
+}
+
+inline DB::UInt32 intHashCRC32(const DB::Float16 &x, DB::UInt32 updated_value)
+{
+    unsigned int extendedBytes = static_cast<unsigned int>(DB::Float16(x).getValue());
+    auto * begin = reinterpret_cast<const char *>(&extendedBytes);
+    for (size_t i = 0; i < sizeof(UInt32); i += sizeof(UInt32))
+    {
+        updated_value = intHashCRC32(unalignedLoad<DB::UInt32>(begin), updated_value);
+        begin += sizeof(DB::UInt32);
+    }
+
+    return updated_value;
+}
+
+inline DB::UInt32 intHashCRC32(const DB::BFloat16 &x, DB::UInt32 updated_value)
+{
+    unsigned int extendedBytes = static_cast<unsigned int>(DB::BFloat16(x).getValue());
+    auto * begin = reinterpret_cast<const char *>(&extendedBytes);
+    for (size_t i = 0; i < sizeof(UInt32); i += sizeof(UInt32))
+    {
+        updated_value = intHashCRC32(unalignedLoad<DB::UInt32>(begin), updated_value);
+        begin += sizeof(DB::UInt32);
     }
 
     return updated_value;
@@ -241,8 +267,8 @@ DEFINE_HASH(DB::Int8)
 DEFINE_HASH(DB::Int16)
 DEFINE_HASH(DB::Int32)
 DEFINE_HASH(DB::Int64)
-//DEFINE_HASH(DB::BFloat16)
-//DEFINE_HASH(DB::Float16)
+DEFINE_HASH(DB::BFloat16)
+DEFINE_HASH(DB::Float16)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 

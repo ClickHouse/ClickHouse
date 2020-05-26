@@ -6,7 +6,6 @@
 #include <cstring>
 #include <iomanip>
 #include <Core/Types.h>
-#include <Common/HashTable/Hash.h>
 
 #ifdef __SSE4_2__
 #include <nmmintrin.h>
@@ -365,7 +364,7 @@ namespace std
 template <>
 struct hash<DB::Float16>
 {
-    size_t operator()(const DB::Float16 & u) const { return std::hash<DB::Int32>()(static_cast<unsigned int>(u.getValue())); }
+    size_t operator()(const DB::Float16 & u) const { return std::hash<DB::UInt32>()(static_cast<unsigned int>(u.getValue())); }
 };
 
 }

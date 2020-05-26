@@ -358,7 +358,7 @@ namespace std
 template <>
 struct hash<DB::BFloat16>
 {
-    size_t operator()(const DB::BFloat16 & u) const { return std::hash<DB::Int32>()(static_cast<unsigned int>(u.getValue())); }
+    size_t operator()(const DB::BFloat16 & u) const { return std::hash<DB::UInt32>()(static_cast<unsigned int>(u.getValue())); }
 };
 
 }
