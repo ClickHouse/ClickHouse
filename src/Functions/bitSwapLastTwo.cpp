@@ -18,12 +18,13 @@ namespace DB
         using ResultType = UInt8;
         static constexpr const bool allow_fixed_string = false;
 
-        static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
+        static inline ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
         {
             if constexpr (!std::is_same_v<A, ResultType>)
                 throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_CAST);
-            return static_cast<ResultType>(
-                    ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
+            else
+                return static_cast<ResultType>(
+                        ((static_cast<ResultType>(a) & 1) << 1) | ((static_cast<ResultType>(a) >> 1) & 1));
         }
 
 #if USE_EMBEDDED_COMPILER

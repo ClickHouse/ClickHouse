@@ -15,7 +15,10 @@ struct AbsImpl
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (IsDecimalNumber<A>)
-            return a < 0 ? A(-a) : a;
+            return a < A(0) ? A(-a) : a;
+        else if constexpr (is_big_int_v<A>)
+            // from boost/multiprecision/number.hpp
+            return static_cast<ResultType>(abs(a));
         else if constexpr (is_integral_v<A> && is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
         else if constexpr (is_integral_v<A> && is_unsigned_v<A>)

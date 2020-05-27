@@ -16,12 +16,13 @@ CREATE TABLE IF NOT EXISTS decimal
     l numeric(9, 3),
     m NUMEric(18, 9),
     n FixED(12, 6),
-    o fixed(8, 6)
+    o fixed(8, 6),
+    p DECIMAL(60, 0)
 ) ENGINE = Memory;
 
-INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) VALUES (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42);
-INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42);
+INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) VALUES (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42.42, 42);
+INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42.42, -42);
 
 SELECT a + a, a - a, a * a, a / a, intDiv(a, a), intDivOrZero(a, a) FROM decimal WHERE a = 42;
 SELECT b + b, b - b, b * b, b / b, intDiv(b, b), intDivOrZero(b, b) FROM decimal WHERE b = 42;
@@ -34,6 +35,7 @@ SELECT h + h, h - h FROM decimal WHERE h > 0;
 SELECT i + i, i - i, i * i, i / i, intDiv(i, i), intDivOrZero(i, i) FROM decimal WHERE i > 0; -- { serverError 407 }
 SELECT i + i, i - i FROM decimal WHERE i > 0;
 SELECT j + j, j - j, j * j, j / j, intDiv(j, j), intDivOrZero(j, j) FROM decimal WHERE j > 0;
+SELECT p + p, p - p, p * p, p / p, intDiv(p, p), intDivOrZero(p, p) FROM decimal WHERE p = 42;
 
 SELECT a + 21, a - 21, a - 84, a * 21, a * -21, a / 21, a / 84, intDiv(a, 21), intDivOrZero(a, 84) FROM decimal WHERE a = 42;
 SELECT b + 21, b - 21, b - 84, b * 21, b * -21, b / 21, b / 84, intDiv(b, 21), intDivOrZero(b, 84) FROM decimal WHERE b = 42;
@@ -44,6 +46,7 @@ SELECT g + 21, g - 21, g - 84, g * 21, g * -21, g / 21, g / 84, intDiv(g, 21), i
 SELECT h + 21, h - 21, h - 84, h * 21, h * -21, h / 21, h / 84, intDiv(h, 21), intDivOrZero(h, 84) FROM decimal WHERE h > 0;
 SELECT i + 21, i - 21, i - 84, i * 21, i * -21, i / 21, i / 84, intDiv(i, 21), intDivOrZero(i, 84) FROM decimal WHERE i > 0;
 SELECT j + 21, j - 21, j - 84, j * 21, j * -21, j / 21, j / 84, intDiv(j, 21), intDivOrZero(j, 84) FROM decimal WHERE j > 0;
+SELECT p + 21, p - 21, p - 84, p * 21, p * -21, p / 21, p / 84, intDiv(p, 21), intDivOrZero(p, 84) FROM decimal WHERE p = 42;
 
 SELECT 21 + a, 21 - a, 84 - a, 21 * a, -21 * a, 21 / a, 84 / a, intDiv(21, a), intDivOrZero(84, a) FROM decimal WHERE a = 42;
 SELECT 21 + b, 21 - b, 84 - b, 21 * b, -21 * b, 21 / b, 84 / b, intDiv(21, b), intDivOrZero(84, b) FROM decimal WHERE b = 42;
@@ -55,9 +58,10 @@ SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h, 21 / h, 84 / h FROM decimal WHER
 SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h FROM decimal WHERE h > 0;
 SELECT 21 + i, 21 - i, 84 - i, 21 * i, -21 * i, 21 / i, 84 / i, intDiv(21, i), intDivOrZero(84, i) FROM decimal WHERE i > 0;
 SELECT 21 + j, 21 - j, 84 - j, 21 * j, -21 * j, 21 / j, 84 / j, intDiv(21, j), intDivOrZero(84, j) FROM decimal WHERE j > 0;
+SELECT 21 + p, 21 - p, 84 - p, 21 * p, -21 * p, 21 / p, 84 / p, intDiv(21, p), intDivOrZero(84, p) FROM decimal WHERE p = 42;
 
-SELECT a, -a, -b, -c, -d, -e, -f, -g, -h, -j from decimal ORDER BY a;
-SELECT abs(a), abs(b), abs(c), abs(d), abs(e), abs(f), abs(g), abs(h), abs(j) from decimal ORDER BY a;
+SELECT a, -a, -b, -c, -d, -e, -f, -g, -h, -j, -p from decimal ORDER BY a;
+SELECT abs(a), abs(b), abs(c), abs(d), abs(e), abs(f), abs(g), abs(h), abs(j), abs(p) from decimal ORDER BY a;
 
 SET decimal_check_overflow = 0;
 
@@ -73,10 +77,12 @@ SELECT 1 / toDecimal128(0, 2); -- { serverError 153 }
 SELECT 0 / toDecimal32(0, 3); -- { serverError 153 }
 SELECT 0 / toDecimal64(0, 4); -- { serverError 153 }
 SELECT 0 / toDecimal128(0, 5); -- { serverError 153 }
+SELECT 0 / toDecimal256(0, 5); -- { serverError 153 }
 
 SELECT toDecimal32(0, 0) / toInt8(0); -- { serverError 153 }
 SELECT toDecimal64(0, 1) / toInt32(0); -- { serverError 153 }
 SELECT toDecimal128(0, 2) / toInt64(0); -- { serverError 153 }
+SELECT toDecimal256(0, 2) / toInt64(0); -- { serverError 153 }
 
 SELECT toDecimal32(0, 4) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf(x = 0, NULL, intDivOrZero(x, 0));
 SELECT toDecimal64(0, 8) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf(x = 0, NULL, intDivOrZero(x, 0));
