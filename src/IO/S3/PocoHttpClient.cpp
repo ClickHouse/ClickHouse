@@ -87,25 +87,26 @@ void PocoHttpClient::MakeRequestInternal(
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 request_.set(header_name, header_value);
 
-            auto & request_body_stream = session->sendRequest(request_);
-
-            if (request.GetContentBody())
-            {
-                if (attempt > 0) /// Rewind buffer if it's not first attempt to write.
-                {
-                    request.GetContentBody()->clear();
-                    request.GetContentBody()->seekg(0);
-                }
-                auto sz = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                LOG_DEBUG(
-                    &Logger::get("AWSClient"), "Written {} bytes to request body", sz);
-            }
+            request_.setExpectContinue(true);
 
             Poco::Net::HTTPResponse response_;
+            auto & request_body_stream = session->sendRequest(request_);
+
+            if (session->peekResponse(response_))
+            {
+                if (request.GetContentBody())
+                {
+                    auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
+                    LOG_DEBUG(
+                        &Logger::get("AWSClient"), "Written {} bytes to request body", size);
+                }
+            }
+
             auto & response_body_stream = session->receiveResponse(response_);
 
+            int status_code = static_cast<int>(response_.getStatus());
             LOG_DEBUG(
-                &Logger::get("AWSClient"), "Response status: {}, {}", static_cast<UInt32>(response_.getStatus()), response_.getReason());
+                &Logger::get("AWSClient"), "Response status: {}, {}", status_code, response_.getReason());
 
             if (response_.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
@@ -116,7 +117,7 @@ void PocoHttpClient::MakeRequestInternal(
                 continue;
             }
 
-            response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(response_.getStatus()));
+            response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
             response->SetContentType(response_.getContentType());
 
             std::stringstream headers_ss;
@@ -131,7 +132,7 @@ void PocoHttpClient::MakeRequestInternal(
             /// TODO: Do not copy whole stream.
             Poco::StreamCopier::copyStream(response_body_stream, response->GetResponseBody());
 
-            if (response_.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+            if (status_code >= 300)
             {
                 response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
                 response->SetClientErrorMessage(response_.getReason());
