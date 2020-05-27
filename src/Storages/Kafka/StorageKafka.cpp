@@ -293,6 +293,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
 
     // Create a consumer and subscribe to topics
     auto consumer = std::make_shared<cppkafka::Consumer>(conf);
+    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
