@@ -4,6 +4,8 @@
 
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Core/Types.h>
+#include <IO/WriteBuffer.h>
 
 
 namespace DB
