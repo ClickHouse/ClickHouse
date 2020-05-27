@@ -7,7 +7,7 @@ TMP_DIR="/tmp"
 
 declare -a SearchTypes=("POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-unzip -q 01037_test_data_perf.zip
+tar -xf 01037_test_data_perf.tar.gz
 
 $CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS test_01037;"
 
@@ -60,7 +60,7 @@ do
       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
    " > $outputFile
 
-   diff -q "01037_polygon_perf_test.ans" "$outputFile"
+   diff -q "./01037_polygon_perf_test.ans" "$outputFile"
 
    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
 done
