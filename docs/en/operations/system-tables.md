@@ -643,7 +643,7 @@ Columns:
 -   `stack_trace` ([String](../sql-reference/data-types/string.md)) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
 -   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
     -   1 — Query was initiated by the client.
-    -   0 — Query was initiated by another query for distributed query execution.
+    -   0 — Query was initiated by another query as part of distributed query execution.
 -   `user` ([String](../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 -   `query_id` ([String](../sql-reference/data-types/string.md)) — ID of the query.
 -   `address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the query.
