@@ -30,13 +30,6 @@ Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
     const Block & header = getPort().getHeader();
-
-    if (!stream)
-    {
-        if (record_batch_current >= record_batch_total)
-            return res;
-    }
-
     std::vector<std::shared_ptr<arrow::RecordBatch>> single_batch(1);
     arrow::Status read_status;
 
@@ -48,6 +41,9 @@ Chunk ArrowBlockInputFormat::generate()
     }
     else
     {
+        if (record_batch_current >= record_batch_total)
+            return res;
+
         read_status = file_reader->ReadRecordBatch(record_batch_current, &single_batch[0]);
     }
 
