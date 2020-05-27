@@ -72,7 +72,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         if (!combinator)
             throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.", ErrorCodes::LOGICAL_ERROR);
 
-        DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality);
+        DataTypes nested_types = combinator->transformArguments(type_without_low_cardinality, parameters);
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function;
@@ -122,7 +122,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
-        DataTypes nested_types = combinator->transformArguments(argument_types);
+        DataTypes nested_types = combinator->transformArguments(argument_types, parameters);
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, nested_types, nested_parameters, recursion_level + 1);

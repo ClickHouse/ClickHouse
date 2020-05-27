@@ -18,7 +18,7 @@ class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "State"; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments, const Array &) const override
     {
         return arguments;
     }

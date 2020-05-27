@@ -17,7 +17,7 @@ class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombin
 public:
     String getName() const override { return "ForEach"; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments, const Array &) const override
     {
         DataTypes nested_arguments;
         for (const auto & type : arguments)

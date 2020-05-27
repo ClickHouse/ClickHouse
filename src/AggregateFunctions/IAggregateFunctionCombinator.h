@@ -38,7 +38,7 @@ public:
       *  get the arguments for nested function (ex: UInt64 for sum).
       * If arguments are not suitable for combined function, throw an exception.
       */
-    virtual DataTypes transformArguments(const DataTypes & arguments) const
+    virtual DataTypes transformArguments(const DataTypes & arguments, const Array &) const
     {
         return arguments;
     }

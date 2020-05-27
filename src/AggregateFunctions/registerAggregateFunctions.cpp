@@ -58,6 +58,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorNull(factory);
         registerAggregateFunctionCombinatorOrFill(factory);
         registerAggregateFunctionCombinatorResample(factory);
+        registerAggregateFunctionCombinatorDistinct(factory);
+        registerAggregateFunctionCombinatorOrderBy(factory);
     }
 }
 

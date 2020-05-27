@@ -18,7 +18,7 @@ class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "Merge"; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments, const Array &) const override
     {
         if (arguments.size() != 1)
             throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

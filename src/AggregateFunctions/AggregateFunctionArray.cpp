@@ -17,7 +17,7 @@ class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "Array"; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments, const Array &) const override
     {
         if (arguments.empty())
             throw Exception("-Array aggregate functions require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

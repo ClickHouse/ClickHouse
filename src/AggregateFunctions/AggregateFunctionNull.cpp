@@ -21,7 +21,7 @@ public:
 
     bool isForInternalUsageOnly() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    DataTypes transformArguments(const DataTypes & arguments, const Array &) const override
     {
         size_t size = arguments.size();
         DataTypes res(size);
