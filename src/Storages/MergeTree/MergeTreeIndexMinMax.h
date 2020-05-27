@@ -10,13 +10,10 @@
 namespace DB
 {
 
-class MergeTreeIndexMinMax;
-
-
 struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_);
-    MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_, std::vector<Range> && hyperrectangle_);
+    explicit MergeTreeIndexGranuleMinMax(const Block & index_sample_block_);
+    MergeTreeIndexGranuleMinMax(const Block & index_sample_block_, std::vector<Range> && hyperrectangle_);
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -24,21 +21,21 @@ struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 
     bool empty() const override { return hyperrectangle.empty(); }
 
-    const MergeTreeIndexMinMax & index;
+    Block index_sample_block;
     std::vector<Range> hyperrectangle;
 };
 
 
 struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
 {
-    explicit MergeTreeIndexAggregatorMinMax(const MergeTreeIndexMinMax & index);
+    explicit MergeTreeIndexAggregatorMinMax(const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
     bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    const MergeTreeIndexMinMax & index;
+    Block index_sample_block;
     std::vector<Range> hyperrectangle;
 };
 
@@ -47,9 +44,9 @@ class MergeTreeIndexConditionMinMax : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionMinMax(
+        const StorageMetadataSkipIndexField & index,
         const SelectQueryInfo & query,
-        const Context & context,
-        const MergeTreeIndexMinMax & index);
+        const Context & context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -57,7 +54,7 @@ public:
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
-    const MergeTreeIndexMinMax & index;
+    DataTypes index_data_types;
     KeyCondition condition;
 };
 
@@ -65,14 +62,9 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(
-        String name_,
-        ExpressionActionsPtr expr_,
-        const Names & columns_,
-        const DataTypes & data_types_,
-        const Block & header_,
-        size_t granularity_)
-        : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_) {}
+    MergeTreeIndexMinMax(const StorageMetadataSkipIndexField & index_)
+        : IMergeTreeIndex(index_)
+    {}
 
     ~MergeTreeIndexMinMax() override = default;
 

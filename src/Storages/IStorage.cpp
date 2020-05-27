@@ -37,9 +37,15 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
-const IndicesDescription & IStorage::getIndices() const
+const IndicesDescription & IStorage::getSkipIndices() const
 {
     return indices;
+}
+
+
+bool IStorage::hasSkipIndices() const
+{
+    return !indices.empty();
 }
 
 const ConstraintsDescription & IStorage::getConstraints() const
@@ -289,7 +295,7 @@ void IStorage::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void IStorage::setIndices(IndicesDescription indices_)
+void IStorage::setSkipIndices(IndicesDescription indices_)
 {
     indices = std::move(indices_);
 }
@@ -369,7 +375,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
+    return StorageInMemoryMetadata(getColumns(), getSkipIndices(), getConstraints());
 }
 
 void IStorage::alter(
