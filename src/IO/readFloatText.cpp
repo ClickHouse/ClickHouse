@@ -64,11 +64,6 @@ template void readFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatTextSimple<Float32>(Float32 &, ReadBuffer &);
 template bool tryReadFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
 
-template void readFloatText<BFloat16>(BFloat16 &, ReadBuffer &);
-template void readFloatText<Float16>(Float16 &, ReadBuffer &);
-template bool tryReadFloatText<BFloat16>(BFloat16 &, ReadBuffer &);
-template bool tryReadFloatText<Float16>(Float16 &, ReadBuffer &);
-
 template void readFloatText<Float32>(Float32 &, ReadBuffer &);
 template void readFloatText<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatText<Float32>(Float32 &, ReadBuffer &);

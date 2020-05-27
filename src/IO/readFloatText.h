@@ -581,27 +581,27 @@ template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFl
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
 template <typename T> void readFloatTextFast(T & x, ReadBuffer & in) { readFloatTextFastImpl<T, void>(x, in); }
 
-template <> void readFloatTextFast<BFloat16>(BFloat16 & x, ReadBuffer & in) {
+template <> inline void readFloatTextFast<BFloat16>(BFloat16 & x, ReadBuffer & in) {
     float floatX;
     readFloatTextFastImpl<float, void>(floatX, in);
     x = BFloat16(floatX);
 }
 
-template <> void readFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
+template <> inline void readFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
     float floatX;
     readFloatTextFastImpl<float, void>(floatX, in);
     x = Float16(floatX);
 }
 template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in) { return readFloatTextFastImpl<T, bool>(x, in); }
 
-template <> bool tryReadFloatTextFast<BFloat16>(BFloat16 & x, ReadBuffer & in) {
+template <> inline bool tryReadFloatTextFast<BFloat16>(BFloat16 & x, ReadBuffer & in) {
     float floatX;
     bool answer = readFloatTextFastImpl<float, bool>(floatX, in);
     x = BFloat16(x);
     return answer;
 }
 
-template <> bool tryReadFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
+template <> inline bool tryReadFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
     float floatX;
     bool answer = readFloatTextFastImpl<float, bool>(floatX, in);
     x = Float16(x);
@@ -609,26 +609,26 @@ template <> bool tryReadFloatTextFast<Float16>(Float16 & x, ReadBuffer & in) {
 }
 template <typename T> void readFloatTextSimple(T & x, ReadBuffer & in) { readFloatTextSimpleImpl<T, void>(x, in); }
 
-template <> void readFloatTextSimple<BFloat16>(BFloat16 & x, ReadBuffer & in) {
+template <> inline void readFloatTextSimple<BFloat16>(BFloat16 & x, ReadBuffer & in) {
     float floatX;
     readFloatTextFastImpl<float, void>(floatX, in);
     x = BFloat16(floatX);
 }
-template <> void readFloatTextSimple<Float16>(Float16 & x, ReadBuffer & in) {
+template <> inline void readFloatTextSimple<Float16>(Float16 & x, ReadBuffer & in) {
     float floatX;
     readFloatTextFastImpl<float, void>(floatX, in);
     x = Float16(floatX);
 }
 template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in) { return readFloatTextSimpleImpl<T, bool>(x, in); }
 
-template <> bool tryReadFloatTextSimple<BFloat16>(BFloat16 & x, ReadBuffer & in) {
+template <> inline bool tryReadFloatTextSimple<BFloat16>(BFloat16 & x, ReadBuffer & in) {
     float floatX;
     bool answer = readFloatTextSimpleImpl<float, bool>(floatX, in);
     x = BFloat16(x);
     return answer;
 }
 
-template <> bool tryReadFloatTextSimple<Float16>(Float16 & x, ReadBuffer & in) {
+template <> inline bool tryReadFloatTextSimple<Float16>(Float16 & x, ReadBuffer & in) {
     float floatX;
     bool answer = readFloatTextSimpleImpl<float, bool>(floatX, in);
     x = Float16(x);
