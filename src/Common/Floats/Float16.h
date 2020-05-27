@@ -20,7 +20,7 @@ namespace DB
 static constexpr const unsigned short FLOAT16_NAN = 0x7c01;
 
 struct Float16 {
-    unsigned short value;
+    mutable unsigned short value;
 
     Float16() = default;
     explicit Float16(const unsigned short value_) : value(value_) { }
@@ -46,7 +46,15 @@ struct Float16 {
         value = Float16(static_cast<double>(l)).getValue();
     }
 
+    explicit Float16(const unsigned long int &l) {
+        value = Float16(static_cast<double>(l)).getValue();
+    }
+
     explicit Float16(const int i) {
+        value = Float16(static_cast<float>(i)).getValue();
+    }
+
+    explicit Float16(const unsigned int i) {
         value = Float16(static_cast<float>(i)).getValue();
     }
 
@@ -116,6 +124,11 @@ struct Float16 {
     }
 
     Float16 & operator= (const Float16 &fl) = default;
+
+    Float16 & operator= (const int &i) {
+        value = Float16(static_cast<float>(i)).getValue();
+        return *this;
+    }
 
     Float16 & operator= (const float &f) {
         value = Float16(f).getValue();
@@ -307,6 +320,64 @@ struct Float16 {
         return Float16(resultValue);
     }
 
+    Float16 inline operator&(const Float16 &fl) const {
+        return Float16(getValue() & fl.getValue());
+    }
+
+    Float16 inline operator|(const Float16 &fl) const {
+        return Float16(getValue() | fl.getValue());
+    }
+
+    Float16 inline operator^(const Float16 &fl) const {
+        return Float16(getValue() ^ fl.getValue());
+    }
+
+    Float16 inline operator~() const {
+        return Float16(~getValue());
+    }
+
+    Float16 & operator+=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) + fl;
+        value = result.getValue();
+        return *this;
+    }
+
+    Float16 & operator-=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) - fl;
+        value = result.getValue();
+        return *this;
+    }
+
+    Float16 & operator*=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) * fl;
+        value = result.getValue();
+        return *this;
+    }
+
+    Float16 & operator/=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) / fl;
+        value = result.getValue();
+        return *this;
+    }
+
+    Float16 & operator&=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) & fl;
+        value = result.getValue();
+        return *this;
+    }
+
+    Float16 & operator|=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) | fl;
+        value = result.getValue();
+        return *this;
+    }
+
+    Float16 & operator^=(const Float16 &fl) {
+        Float16 result = Float16(getValue()) ^ fl;
+        value = result.getValue();
+        return *this;
+    }
+
     template <typename T> bool inline operator== (const T rhs) const { return *this == Float16(rhs); }
     template <typename T> bool inline operator!= (const T rhs) const { return *this != Float16(rhs); }
     template <typename T> bool inline operator>= (const T rhs) const { return *this >= Float16(rhs); }
@@ -317,6 +388,16 @@ struct Float16 {
     template <typename T> Float16 inline operator- (const T rhs) { return *this - Float16(rhs); }
     template <typename T> Float16 inline operator* (const T rhs) { return *this * Float16(rhs); }
     template <typename T> Float16 inline operator/ (const T rhs) { return *this / Float16(rhs); }
+    template <typename T> Float16 inline operator& (const T rhs) { return *this & Float16(rhs); }
+    template <typename T> Float16 inline operator| (const T rhs) { return *this | Float16(rhs); }
+    template <typename T> Float16 inline operator^ (const T rhs) { return *this ^ Float16(rhs); }
+    template <typename T> Float16 & operator+= (const T rhs) { return *this += Float16(rhs); }
+    template <typename T> Float16 & operator-= (const T rhs) { return *this -= Float16(rhs); }
+    template <typename T> Float16 & operator*= (const T rhs) { return *this *= Float16(rhs); }
+    template <typename T> Float16 & operator/= (const T rhs) { return *this /= Float16(rhs); }
+    template <typename T> Float16 & operator&= (const T rhs) { return *this &= Float16(rhs); }
+    template <typename T> Float16 & operator|= (const T rhs) { return *this |= Float16(rhs); }
+    template <typename T> Float16 & operator^= (const T rhs) { return *this ^= Float16(rhs); }
     template <typename T> explicit operator T() const { return static_cast<T>(value); }
     explicit operator float() const { return asFloat(); }
     explicit operator double() const { return static_cast<double>(asFloat()); }
@@ -329,17 +410,9 @@ template <typename T> bool inline operator>= (T a, const Float16 b) { return Flo
 template <typename T> bool inline operator>  (T a, const Float16 b) { return Float16(a) > b; }
 template <typename T> bool inline operator<= (T a, const Float16 b) { return Float16(a) <= b; }
 template <typename T> bool inline operator<  (T a, const Float16 b) { return Float16(a) < b; }
-//template <typename T> Float16 inline operator+ (T a, const Float16 b) { return Float16(a) + b; }
-//template <typename T> Float16 inline operator- (T a, const Float16 b) { return Float16(a) - b; }
-//template <typename T> Float16 inline operator* (T a, const Float16 b) { return Float16(a) * b; }
-//template <typename T> Float16 inline operator/ (T a, const Float16 b) { return Float16(a) / b; }
-//template <typename T> Float16 inline operator+ (const Float16 a, T b) { return a + Float16(b); }
-//template <typename T> Float16 inline operator- (const Float16 a, T b) { return a - Float16(b); }
-//template <typename T> Float16 inline operator* (const Float16 a, T b) { return a * Float16(b); }
-//template <typename T> Float16 inline operator/ (const Float16 a, T b) { return a / Float16(b); }
 
 template <> inline constexpr bool IsNumber<Float16> = true;
-template <> struct TypeName<Float16> { static const char * get() { return "Float16"; } };
+template <> struct TypeName<Float16> { static constexpr const char * get() { return "Float16"; } };
 template <> struct TypeId<Float16> { static constexpr const TypeIndex value = TypeIndex::Float16; };
 
 }

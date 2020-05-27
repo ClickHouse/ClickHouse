@@ -165,7 +165,7 @@ struct IntegerRoundingComputation
         if (sizeof(T) <= sizeof(scale) && scale > size_t(std::numeric_limits<T>::max()))
             *out = 0;
         else
-            *out = compute(*in, scale);
+            *out = compute(*in, T(scale));
     }
 
 };

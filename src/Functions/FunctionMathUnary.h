@@ -74,7 +74,7 @@ private:
             {
                 PODArray<Float64> tmp_vec(size);
                 for (size_t i = 0; i < size; ++i)
-                    tmp_vec[i] = src_data[i];
+                    tmp_vec[i] = double(src_data[i]);
 
                 Impl::execute(tmp_vec.data(), size, dst_data);
             }
