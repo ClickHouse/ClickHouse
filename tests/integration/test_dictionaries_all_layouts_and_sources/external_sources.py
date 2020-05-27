@@ -178,6 +178,26 @@ class SourceMongo(ExternalSource):
 
         result = tbl.insert_many(to_insert)
 
+class SourceMongoURI(SourceMongo):
+    def compatible_with_layout(self, layout):
+        # It is enough to test one layout for this dictionary, since we're
+        # only testing that the connection with URI works.
+        return layout.name == 'flat'
+
+    def get_source_str(self, table_name):
+        return '''
+            <mongodb>
+                <uri>mongodb://{user}:{password}@{host}:{port}/test</uri>
+                <collection>{tbl}</collection>
+            </mongodb>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            user=self.user,
+            password=self.password,
+            tbl=table_name,
+        )
+
 class SourceClickHouse(ExternalSource):
 
     def get_source_str(self, table_name):

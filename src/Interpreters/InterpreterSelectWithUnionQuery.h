@@ -1,15 +1,16 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <Processors/QueryPipeline.h>
 
 namespace DB
 {
 
+class Context;
 class InterpreterSelectQuery;
 
 

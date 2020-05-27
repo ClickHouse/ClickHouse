@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
+#include <Interpreters/Context.h>
 
 
 namespace Poco { class Logger; }
@@ -15,8 +16,6 @@ namespace Poco { class Logger; }
 
 namespace DB
 {
-
-class Context;
 
 
 /** During insertion, buffers the data in the RAM until certain thresholds are exceeded.

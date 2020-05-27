@@ -9,4 +9,5 @@
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_UNWIND
 #cmakedefine01 USE_OPENCL
+#cmakedefine01 USE_GRPC
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY

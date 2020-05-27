@@ -17,11 +17,12 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
 #include <pdqsort.h>
+#include <numeric>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #    if USE_OPENCL
-#        include "Common/BitonicSort.h"
+#        include "Common/BitonicSort.h" // Y_IGNORE
 #    endif
 #else
 #undef USE_OPENCL
@@ -38,6 +39,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int OPENCL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -116,8 +118,35 @@ namespace
     struct RadixSortTraits : RadixSortNumTraits<T>
     {
         using Element = ValueWithIndex<T>;
+        using Result = size_t;
+
         static T & extractKey(Element & elem) { return elem.value; }
+        static size_t extractResult(Element & elem) { return elem.index; }
     };
+}
+
+template <typename T>
+void ColumnVector<T>::getSpecialPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res,
+                                            IColumn::SpecialSort special_sort) const
+{
+    if (special_sort == IColumn::SpecialSort::OPENCL_BITONIC)
+    {
+#if !defined(ARCADIA_BUILD)
+#if USE_OPENCL
+        if (!limit || limit >= data.size())
+        {
+            res.resize(data.size());
+
+            if (data.empty() || BitonicSort::getInstance().sort(data, res, !reverse))
+                return;
+        }
+#else
+        throw DB::Exception("'special_sort = bitonic' specified but OpenCL not available", DB::ErrorCodes::OPENCL_ERROR);
+#endif
+#endif
+    }
+
+    getPermutation(reverse, limit, nan_direction_hint, res);
 }
 
 template <typename T>
@@ -144,12 +173,6 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     }
     else
     {
-#if USE_OPENCL
-        /// If bitonic sort if specified as preferred than `nan_direction_hint` equals specific value 42.
-        if (nan_direction_hint == 42 && BitonicSort::getInstance().sort(data, res, !reverse))
-            return;
-#endif
-
         /// A case for radix sort
         if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
         {
@@ -160,53 +183,27 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                 for (UInt32 i = 0; i < UInt32(s); ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s);
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
-                size_t nans_to_move = 0;
                 if (std::is_floating_point_v<T> && nan_direction_hint < 0)
                 {
-                    for (ssize_t i = s - 1; i >= 0; --i)
+                    size_t nans_to_move = 0;
+
+                    for (size_t i = 0; i < s; ++i)
                     {
-                        if (isNaN(pairs[i].value))
+                        if (isNaN(data[res[reverse ? i : s - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
                     }
-                }
 
-                if (reverse)
-                {
                     if (nans_to_move)
                     {
-                        for (size_t i = 0; i < s - nans_to_move; ++i)
-                            res[i] = pairs[s - nans_to_move - 1 - i].index;
-                        for (size_t i = s - nans_to_move; i < s; ++i)
-                            res[i] = pairs[s - 1 - (i - (s - nans_to_move))].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[s - 1 - i] = pairs[i].index;
+                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
                     }
                 }
-                else
-                {
-                    if (nans_to_move)
-                    {
-                        for (size_t i = 0; i < nans_to_move; ++i)
-                            res[i] = pairs[i + s - nans_to_move].index;
-                        for (size_t i = nans_to_move; i < s; ++i)
-                            res[i] = pairs[i - nans_to_move].index;
-                    }
-                    else
-                    {
-                        for (size_t i = 0; i < s; ++i)
-                            res[i] = pairs[i].index;
-                    }
-                }
-
                 return;
             }
         }
@@ -220,6 +217,76 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
         else
             pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
     }
+}
+
+template <typename T>
+void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+{
+    if (limit >= data.size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+
+    for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+        if (reverse)
+            pdqsort(res.begin() + first, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            pdqsort(res.begin() + first, res.begin() + last, less(*this, nan_direction_hint));
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, last);
+        }
+    }
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+        if (reverse)
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
 }
 
 

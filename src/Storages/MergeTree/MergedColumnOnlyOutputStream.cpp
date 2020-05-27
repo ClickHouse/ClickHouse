@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
