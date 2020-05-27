@@ -84,8 +84,8 @@ protected:
     /// Empty array will point to this static memory as padding.
     static constexpr char * null = pad_left ? const_cast<char *>(empty_pod_array) + empty_pod_array_size : nullptr;
 
-    static_assert(pad_left <= EmptyPODArraySize,
-            "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
+    static_assert(pad_left <= empty_pod_array_size,
+            "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
