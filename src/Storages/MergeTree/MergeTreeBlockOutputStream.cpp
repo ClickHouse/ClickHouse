@@ -49,12 +49,13 @@ void MergeTreeBlockOutputStream::write(const Block & block)
                 storage.merging_mutating_task_handle->wake();
             }
 
-            return;
+            continue;
         }
-
-        /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-        if (storage.merging_mutating_task_handle)
+        else if (storage.merging_mutating_task_handle)
+        {
+            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.merging_mutating_task_handle->wake();
+        }
     }
 }
 

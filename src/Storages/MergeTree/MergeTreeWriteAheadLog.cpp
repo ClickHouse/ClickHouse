@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/File.h>
 
 namespace DB
@@ -48,7 +49,8 @@ void MergeTreeWriteAheadLog::write(const Block & block, const String & part_name
     block_out->write(block);
     block_out->flush();
 
-    if (out->count() > MAX_WAL_BYTES)
+    auto max_wal_bytes = storage.getSettings()->write_ahead_log_max_bytes;
+    if (out->count() > max_wal_bytes)
         rotate();
 }
 
@@ -106,7 +108,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
                 if (max_block_number == -1)
-                    Poco::File(path).remove();
+                    disk->remove(path);
                 else if (name == DEFAULT_WAL_FILE)
                     rotate();
 
@@ -133,6 +135,24 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore()
     }
 
     return result;
+}
+
+std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>
+MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(const String & filename)
+{
+    Int64 min_block;
+    Int64 max_block;
+    ReadBufferFromString in(filename);
+    if (!checkString(WAL_FILE_NAME, in)
+        || !checkChar('_', in)
+        || !tryReadIntText(min_block, in)
+        || !checkChar('_', in)
+        || !tryReadIntText(max_block, in))
+    {
+        return {};
+    }
+
+    return std::make_pair(min_block, max_block);
 }
 
 }

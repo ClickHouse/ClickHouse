@@ -298,6 +298,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// Temporary directories contain untinalized results of Merges or Fetches (after forced restart)
         ///  and don't allow to reinitialize them, so delete each of them immediately
         clearOldTemporaryDirectories(0);
+        clearOldWriteAheadLogs();
     }
 
     createNewZooKeeperNodes();
@@ -1050,7 +1051,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     for (auto & part_ptr : parts)
     {
         ttl_infos.update(part_ptr->ttl_infos);
-        max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
+        if (part_ptr->isStoredOnDisk())
+            max_volume_index = std::max(max_volume_index, getStoragePolicy()->getVolumeIndexByDisk(part_ptr->disk));
     }
     ReservationPtr reserved_space = reserveSpacePreferringTTLRules(estimated_space_for_merge,
             ttl_infos, time(nullptr), max_volume_index);
@@ -1091,6 +1093,20 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         try
         {
             checkPartChecksumsAndCommit(transaction, part);
+
+            DataPartsVector parts_to_remove_immediatly;
+            for (const auto & part_ptr : parts)
+            {
+                part_ptr->notifyMerged();
+                if (isInMemoryPart(part_ptr))
+                {
+                    modifyPartState(part_ptr, DataPartState::Deleting);
+                    parts_to_remove_immediatly.push_back(part_ptr);
+                }
+            }
+
+            tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_immediatly);
+            removePartsFinally(parts_to_remove_immediatly);
         }
         catch (const Exception & e)
         {

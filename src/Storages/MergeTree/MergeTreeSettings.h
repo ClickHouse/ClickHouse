@@ -35,6 +35,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingUInt64, min_rows_for_compact_part, 0, "Minimal number of rows to create part in compact format instead of saving it in RAM", 0) \
     M(SettingBool, in_memory_parts_enable_wal, 1, "Whether to write blocks in Native format to write-ahead-log before creation in-memory part", 0) \
     M(SettingBool, in_memory_parts_insert_sync, 0, "", 0) \
+    M(SettingUInt64, write_ahead_log_max_bytes, 1024 * 1024 * 1024, "Rotate WAL, if it exceeds that amount of bytes", 0) \
     \
     /** Merge settings. */ \
     M(SettingUInt64, merge_max_block_size, DEFAULT_MERGE_BLOCK_SIZE, "How many rows in blocks should be formed for merge operations.", 0) \

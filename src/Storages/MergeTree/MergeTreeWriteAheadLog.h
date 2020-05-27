@@ -16,13 +16,15 @@ public:
     constexpr static auto WAL_FILE_NAME = "wal";
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
     constexpr static auto DEFAULT_WAL_FILE = "wal.bin";
-    constexpr static size_t MAX_WAL_BYTES = 1024 * 1024 * 1024;
 
     MergeTreeWriteAheadLog(const MergeTreeData & storage_, const DiskPtr & disk_,
         const String & name = DEFAULT_WAL_FILE);
 
     void write(const Block & block, const String & part_name);
     std::vector<MergeTreeMutableDataPartPtr> restore();
+
+    using MinMaxBlockNumber = std::pair<Int64, Int64>;
+    static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
 
 private:
     void init();

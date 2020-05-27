@@ -87,6 +87,7 @@ StorageMergeTree::StorageMergeTree(
 void StorageMergeTree::startup()
 {
     clearOldPartsFromFilesystem();
+    clearOldWriteAheadLogs();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
@@ -632,7 +633,21 @@ bool StorageMergeTree::merge(
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part, *merge_entry, table_lock_holder, time(nullptr),
             merging_tagger->reserved_space, deduplicate, force_ttl);
+
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+
+        DataPartsVector parts_to_remove_immediately;
+        for (const auto & part : future_part.parts)
+        {
+            part->notifyMerged();
+            if (isInMemoryPart(part))
+            {
+                modifyPartState(part, DataPartState::Deleting);
+                parts_to_remove_immediately.push_back(part);
+            }
+        }
+
+        removePartsFinally(parts_to_remove_immediately);
 
         merging_tagger->is_successful = true;
         write_part_log({});
@@ -643,9 +658,6 @@ bool StorageMergeTree::merge(
         write_part_log(ExecutionStatus::fromCurrentException());
         throw;
     }
-
-    for (const auto & part : future_part.parts)
-        part->notifyMerged();
 
     return true;
 }
@@ -818,6 +830,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
                 clearOldTemporaryDirectories();
             }
             clearOldMutations();
+            clearOldWriteAheadLogs();
         }
 
         ///TODO: read deduplicate option from table config

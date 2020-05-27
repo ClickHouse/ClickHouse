@@ -78,7 +78,7 @@ private:
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
-            const String & replica_path,
+            ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

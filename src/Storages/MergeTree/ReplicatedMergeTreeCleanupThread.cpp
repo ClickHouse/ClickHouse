@@ -54,6 +54,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
     storage.clearOldPartsAndRemoveFromZK();
+    storage.clearOldWriteAheadLogs();
 
     {
         /// TODO: Implement tryLockStructureForShare.
