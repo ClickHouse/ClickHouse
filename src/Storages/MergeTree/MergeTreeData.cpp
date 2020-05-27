@@ -646,18 +646,18 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         }
         else if (ttl_element->mode == TTLMode::GROUP_BY)
         {
-            if (ttl_element->group_by_key.size() > this->primary_key_columns.size())
+            if (ttl_element->group_by_key.size() > this->getPrimaryKey().column_names.size())
                 throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
 
-            NameSet primary_key_columns_set(this->primary_key_columns.begin(), this->primary_key_columns.end());
+            NameSet primary_key_columns_set(this->getPrimaryKey().column_names.begin(), this->getPrimaryKey().column_names.end());
             NameSet aggregation_columns_set;
 
-            for (const auto & column : this->primary_key_expr->getRequiredColumns())
+            for (const auto & column : this->getPrimaryKey().expression->getRequiredColumns())
                 primary_key_columns_set.insert(column);
 
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
-                if (ttl_element->group_by_key[i]->getColumnName() != this->primary_key_columns[i])
+                if (ttl_element->group_by_key[i]->getColumnName() != this->getPrimaryKey().column_names[i])
                     throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
             }
             for (const auto & [name, value] : ttl_element->group_by_aggregations)
@@ -669,12 +669,12 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             if (aggregation_columns_set.size() != ttl_element->group_by_aggregations.size())
                 throw Exception("Multiple aggregations set for one column in TTL Expression", ErrorCodes::BAD_TTL_EXPRESSION);
 
-            result.group_by_keys = Names(this->primary_key_columns.begin(), this->primary_key_columns.begin() + ttl_element->group_by_key.size());
+            result.group_by_keys = Names(this->getPrimaryKey().column_names.begin(), this->getPrimaryKey().column_names.begin() + ttl_element->group_by_key.size());
 
             auto aggregations = ttl_element->group_by_aggregations;
-            for (size_t i = 0; i < this->primary_key_columns.size(); ++i)
+            for (size_t i = 0; i < this->getPrimaryKey().column_names.size(); ++i)
             {
-                ASTPtr value = this->primary_key_expr_ast->children[i]->clone();
+                ASTPtr value = this->getPrimaryKey().expression_list_ast->children[i]->clone();
 
                 if (i >= ttl_element->group_by_key.size())
                 {
