@@ -95,7 +95,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     {
         indexAddRing(polygons[i].outer(), i);
 
-        for (auto & inner : polygons[i].inners())
+        for (const auto & inner : polygons[i].inners())
             indexAddRing(inner, i);
     }
 
