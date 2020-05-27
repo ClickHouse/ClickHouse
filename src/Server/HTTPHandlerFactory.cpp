@@ -4,6 +4,7 @@
 #include <re2/stringpiece.h>
 #include <common/find_symbols.h>
 #include <Poco/StringTokenizer.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include "HTTPHandler.h"
 #include "NotFoundHandler.h"
@@ -30,13 +31,10 @@ HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string &
 
 Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactoryMain::createRequestHandler(const Poco::Net::HTTPServerRequest & request)
 {
-    LOG_TRACE(log, "HTTP Request for " << name << ". "
-        << "Method: " << request.getMethod()
-        << ", Address: " << request.clientAddress().toString()
-        << ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none")
-        << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
-        << ", Content Type: " << request.getContentType()
-        << ", Transfer Encoding: " << request.getTransferEncoding());
+    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}",
+        name, request.getMethod(), request.clientAddress().toString(), request.has("User-Agent") ? request.get("User-Agent") : "none",
+        (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
+        request.getContentType(), request.getTransferEncoding());
 
     for (auto & handler_factory : child_factories)
     {

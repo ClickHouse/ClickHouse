@@ -11,6 +11,9 @@ import string
 import time
 import traceback
 
+def tsv_escape(s):
+    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
+
 stage_start_seconds = time.perf_counter()
 
 def report_stage_end(stage_name):
@@ -112,8 +115,9 @@ for t in tables:
         try:
             res = c.execute("select 1 from {} limit 1".format(t))
         except:
-            print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
-            traceback.print_exc()
+            exception_message = traceback.format_exception_only(*sys.exc_info()[:2])[-1]
+            skipped_message = ' '.join(exception_message.split('\n')[:2])
+            print(f'skipped\t{tsv_escape(skipped_message)}')
             sys.exit(0)
 
 report_stage_end('preconditions')
@@ -135,9 +139,6 @@ for c in connections:
 report_stage_end('fill')
 
 # Run test queries
-def tsv_escape(s):
-    return s.replace('\\', '\\\\').replace('\t', '\\t').replace('\n', '\\n').replace('\r','')
-
 test_query_templates = [q.text for q in root.findall('query')]
 test_queries = substitute_parameters(test_query_templates)
 
@@ -162,6 +163,8 @@ for query_index, q in enumerate(test_queries):
             prewarm_id = f'{query_prefix}.prewarm0'
             res = c.execute(q, query_id = prewarm_id)
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
+    except KeyboardInterrupt:
+        raise
     except:
         # If prewarm fails for some query -- skip it, and try to test the others.
         # This might happen if the new test introduces some function that the

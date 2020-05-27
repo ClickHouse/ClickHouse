@@ -3,8 +3,8 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
-#include "IServer.h"
-#include "TCPHandler.h"
+#include <Server/IServer.h>
+#include <Server/TCPHandler.h>
 
 namespace Poco { class Logger; }
 
@@ -35,7 +35,7 @@ public:
     {
         try
         {
-            LOG_TRACE(log, "TCP Request. Address: " << socket.peerAddress().toString());
+            LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
             return new TCPHandler(server, socket);
         }
         catch (const Poco::Net::NetException &)

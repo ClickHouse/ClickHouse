@@ -3,6 +3,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <common/logger_useful.h>
 #include <Common/HTMLForm.h>
 #include <Common/setThreadName.h>
@@ -53,7 +54,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 {
     HTMLForm params(request);
 
-    LOG_TRACE(log, "Request URI: " << request.getURI());
+    LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
@@ -103,7 +104,7 @@ void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & requ
             response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString(message, *used_output.out);
-            LOG_WARNING(log, "Query processing failed request: '" << request.getURI() << "' authentication failed");
+            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
         }
     }
     catch (Exception & e)

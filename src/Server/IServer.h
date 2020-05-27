@@ -1,13 +1,21 @@
 #pragma once
 
-#include <Poco/Logger.h>
-#include <Poco/Util/LayeredConfiguration.h>
+namespace Poco
+{
 
-#include <Interpreters/Context.h>
+namespace Util
+{
+class LayeredConfiguration;
+}
+class Logger;
+
+}
 
 
 namespace DB
 {
+
+class Context;
 
 class IServer
 {
