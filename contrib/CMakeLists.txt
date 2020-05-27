@@ -274,7 +274,7 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
-if (USE_INTERNAL_AWS_S3_LIBRARY)
+if (USE_INTERNAL_AWS_S3_LIBRARY OR USE_SENTRY)
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (save_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
     set (save_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
@@ -286,12 +286,18 @@ if (USE_INTERNAL_AWS_S3_LIBRARY)
     set (CMAKE_CMAKE_REQUIRED_INCLUDES ${save_CMAKE_REQUIRED_INCLUDES})
     set (CMAKE_REQUIRED_FLAGS ${save_CMAKE_REQUIRED_FLAGS})
     set (CMAKE_CMAKE_MODULE_PATH ${save_CMAKE_MODULE_PATH})
+
+    # The library is large - avoid bloat.
+    target_compile_options (curl PRIVATE -g0)
+endif ()
+
+if (USE_INTERNAL_AWS_S3_LIBRARY)
     add_subdirectory(aws-s3-cmake)
 
     # The library is large - avoid bloat.
     target_compile_options (aws_s3 PRIVATE -g0)
     target_compile_options (aws_s3_checksums PRIVATE -g0)
-    target_compile_options (curl PRIVATE -g0)
+
 endif ()
 
 if (USE_BASE64)
@@ -316,6 +322,10 @@ endif()
 
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
+endif()
+
+if (USE_SENTRY)
+    add_subdirectory (sentry-native)
 endif()
 
 add_subdirectory (fmtlib-cmake)

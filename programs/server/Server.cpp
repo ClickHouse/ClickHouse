@@ -60,6 +60,8 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
+#include <daemon/SentryWriter.h>
+
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"

@@ -190,6 +190,63 @@ static void * getCallerAddress(const ucontext_t & context)
 #endif
 }
 
+static void symbolize(const void * const * frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
+{
+#if defined(__ELF__) && !defined(__FreeBSD__)
+
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+    for (size_t i = 0; i < offset; ++i) {
+        frames.value()[i].virtual_addr = frame_pointers[i];
+    }
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        StackTrace::Frame & current_frame = frames.value()[i];
+        current_frame.virtual_addr = frame_pointers[i];
+        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
+        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+        current_frame.physical_addr = reinterpret_cast<void *>(uintptr_t(current_frame.virtual_addr) - virtual_offset);
+
+        if (object)
+        {
+            current_frame.object = object->name;
+            if (std::filesystem::exists(current_frame.object.value()))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST)) {
+                    current_frame.file = location.file.toString();
+                    current_frame.line = location.line;
+                }
+            }
+        }
+        else
+        {
+            current_frame.object = "?";
+        }
+
+        const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr);
+        if (symbol)
+        {
+            int status = 0;
+            current_frame.symbol = demangle(symbol->name, status);
+        }
+        else
+        {
+            current_frame.symbol = "?";
+        }
+    }
+# else
+    for (size_t i = 0; i < size; ++i) {
+        frames.value()[i].virtual_addr = frame_pointers[i];
+    }
+    UNUSED(offset);
+#endif
+}
+
 StackTrace::StackTrace()
 {
     tryCapture();
@@ -203,7 +260,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
     if (size == 0 && caller_address)
     {
-        frames[0] = caller_address;
+        frame_pointers[0] = caller_address;
         size = 1;
     }
     else
@@ -212,7 +269,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
         for (size_t i = 0; i < size; ++i)
         {
-            if (frames[i] == caller_address)
+            if (frame_pointers[i] == caller_address)
             {
                 offset = i;
                 break;
@@ -229,8 +286,8 @@ void StackTrace::tryCapture()
 {
     size = 0;
 #if USE_UNWIND
-    size = unw_backtrace(frames.data(), capacity);
-    __msan_unpoison(frames.data(), size * sizeof(frames[0]));
+    size = unw_backtrace(frame_pointers.data(), capacity);
+    __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 #endif
 }
 
@@ -244,84 +301,71 @@ size_t StackTrace::getOffset() const
     return offset;
 }
 
-const StackTrace::Frames & StackTrace::getFrames() const
+const StackTrace::FramePointers & StackTrace::getFramePointers() const
 {
-    return frames;
+    return frame_pointers;
 }
 
+const StackTrace::Frames & StackTrace::getFrames() const
+{
+    if (!frames.has_value()) {
+        frames = {{}};
+        symbolize(frame_pointers.data(), offset, size, frames);
+    }
+    return frames;
+}
 
 static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
         return callback("<Empty trace>");
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
-    std::unordered_map<std::string, DB::Dwarf> dwarfs;
-
     std::stringstream out;
 
     for (size_t i = offset; i < size; ++i)
     {
-        const void * virtual_addr = frames[i];
-        const auto * object = symbol_index.findObject(virtual_addr);
-        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-        const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
-
+        const StackTrace::Frame& current_frame = frames.value()[i];
         out << i << ". ";
 
-        if (object)
+        if (current_frame.file.has_value() && current_frame.line.has_value())
         {
-            if (std::filesystem::exists(object->name))
-            {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
-
-                DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
-                    out << location.file.toString() << ":" << location.line << ": ";
-            }
+            out << current_frame.file.value() << ":" << current_frame.line.value() << ": ";
         }
 
-        const auto * symbol = symbol_index.findSymbol(virtual_addr);
-        if (symbol)
+        if (current_frame.symbol.has_value())
         {
-            int status = 0;
-            out << demangle(symbol->name, status);
+            out << current_frame.symbol.value();
         }
-        else
-            out << "?";
 
-        out << " @ " << physical_addr;
-        out << " in " << (object ? object->name : "?");
+        out << " @ " << current_frame.physical_addr;
+        if (current_frame.object.has_value()) {
+            out << " in " << current_frame.object.value();
+        }
 
         callback(out.str());
         out.str({});
     }
-#else
-    std::stringstream out;
-
-    for (size_t i = offset; i < size; ++i)
-    {
-        const void * addr = frames[i];
-        out << i << ". " << addr;
-
-        callback(out.str());
-        out.str({});
-    }
-#endif
 }
 
-static std::string toStringImpl(const StackTrace::Frames & frames, size_t offset, size_t size)
+static std::string toStringImpl(const void * const * frame_pointers, size_t offset, size_t size)
 {
     std::stringstream out;
+    StackTrace::Frames frames{};
+    frames = {{}};
+    symbolize(frame_pointers, offset, size, frames);
     toStringEveryLineImpl(frames, offset, size, [&](const std::string & str) { out << str << '\n'; });
     return out.str();
 }
 
 void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
 {
-    toStringEveryLineImpl(frames, offset, size, std::move(callback));
+    toStringEveryLineImpl(getFrames(), offset, size, std::move(callback));
 }
+
+void StackTrace::resetFrames() {
+    frames.reset();
+}
+
 
 std::string StackTrace::toString() const
 {
@@ -329,17 +373,17 @@ std::string StackTrace::toString() const
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
 
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frames, offset, size);
+    return func_cached(frame_pointers.data(), offset, size);
 }
 
-std::string StackTrace::toString(void ** frames_, size_t offset, size_t size)
+std::string StackTrace::toString(void ** frame_pointers, size_t offset, size_t size)
 {
     __msan_unpoison(frames_, size * sizeof(*frames_));
 
-    StackTrace::Frames frames_copy{};
+    StackTrace::FramePointers frame_pointers_copy{};
     for (size_t i = 0; i < size; ++i)
-        frames_copy[i] = frames_[i];
+        frame_pointers_copy[i] = frame_pointers[i];
 
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frames_copy, offset, size);
+    return func_cached(frame_pointers_copy.data(), offset, size);
 }
