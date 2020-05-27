@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <Core/Block.h>
-#include <Core/SortDescription.h>
 #include <Columns/IColumn.h>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
