@@ -444,9 +444,14 @@ void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
     partition_key = partition_key_;
 }
 
+bool IStorage::isPartitionKeyDefined() const
+{
+    return partition_key.definition_ast != nullptr;
+}
+
 bool IStorage::hasPartitionKey() const
 {
-    return partition_key.expression != nullptr;
+    return !partition_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPartitionKey() const
@@ -466,9 +471,14 @@ void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
     sorting_key = sorting_key_;
 }
 
+bool IStorage::isSortingKeyDefined() const
+{
+    return sorting_key.definition_ast != nullptr;
+}
+
 bool IStorage::hasSortingKey() const
 {
-    return sorting_key.expression != nullptr;
+    return !sorting_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSortingKey() const
@@ -502,7 +512,7 @@ bool IStorage::isPrimaryKeyDefined() const
 
 bool IStorage::hasPrimaryKey() const
 {
-    return primary_key.expression != nullptr;
+    return !primary_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPrimaryKey() const
@@ -529,9 +539,15 @@ void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
     sampling_key = sampling_key_;
 }
 
+
+bool IStorage::isSamplingKeyDefined() const
+{
+    return sampling_key.definition_ast != nullptr;
+}
+
 bool IStorage::hasSamplingKey() const
 {
-    return sampling_key.expression != nullptr;
+    return !sampling_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSampling() const
