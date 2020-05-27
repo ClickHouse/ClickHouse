@@ -85,7 +85,7 @@ std::vector<Coord> SlabsPolygonIndex::uniqueX(const std::vector<Polygon> & polyg
     std::sort(all_x.begin(), all_x.end());
     all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
 
-    LOG_TRACE(log, "Found " << all_x.size() << " unique x coordinates");
+    LOG_TRACE(log, "Found {} unique x coordinates", all_x.size());
     return all_x;
 }
 
@@ -103,11 +103,11 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     std::sort(all_edges.begin(), all_edges.end(), Edge::compare1);
     for (size_t i = 0; i != all_edges.size(); ++i)
         all_edges[i].edge_id = i;
-    
+
     /** Total number of edges */
     size_t m = all_edges.size();
 
-    LOG_TRACE(log, "Just sorted " << all_edges.size() << " edges from all " << polygons.size() << " polygons");
+    LOG_TRACE(log, "Just sorted {} edges from all {} polygons", all_edges.size(), polygons.size());
 
     /** Using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
@@ -147,9 +147,6 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
             interesting_edges.insert(all_edges[edges_it]);
             edge_left[all_edges[edges_it].edge_id] = l;
         }
-
-        if (l % 10000 == 0 || r + 1 == sorted_x.size())
-            LOG_TRACE(log, "Iteration " << r << "/" << sorted_x.size());
     }
 
     for (size_t i = 0; i != all_edges.size(); i++)
@@ -158,9 +155,8 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         size_t r = edge_right[i];
         if (l == n || sorted_x[l] != all_edges[i].l.x() || sorted_x[r] != all_edges[i].r.x())
         {
-            LOG_ERROR(log, "Error occured while building polygon index. Edge " << i << " is ["
-                << all_edges[i].l.x() << ";" << all_edges[i].r.x() << "] but found ["
-                << sorted_x[l] << ";" << sorted_x[r] << "]. l=" << l << ", r=" << r);
+            LOG_ERROR(log, "Error occured while building polygon index. Edge {}  is [{}, {}] but found [{}, {}]. l = {}, r = {}",
+                    i, all_edges[i].l.x(), all_edges[i].r.x(), sorted_x[l], sorted_x[r], l, r);
             throw Poco::Exception("polygon index build error");
         }
 
@@ -180,7 +176,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
     }
 
-    LOG_TRACE(log, "Polygon index is built, total_index_edges=" << total_index_edges);
+    LOG_TRACE(log, "Polygon index is built, total_index_edges = {}", total_index_edges);
 }
 
 void SlabsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
