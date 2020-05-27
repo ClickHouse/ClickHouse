@@ -148,12 +148,14 @@ void DatabaseReplicated::runBackgroundLogExecutor() {
 }
 
 void DatabaseReplicated::saveState() {
-    current_zookeeper->createOrUpdate(replica_path + "/last_entry", std::to_string(current_log_entry_n), zkutil::CreateMode::Persistent);
-    // TODO rename vars
-    String statement = std::to_string(current_log_entry_n);
-    String metadatafile = getMetadataPath() + ".last_entry";
-    WriteBufferFromFile out(metadatafile, statement.size(), O_WRONLY | O_CREAT);
-    writeString(statement, out);
+    String state = std::to_string(current_log_entry_n);
+
+    current_zookeeper = getZooKeeper();
+    current_zookeeper->createOrUpdate(replica_path + "/last_entry", state, zkutil::CreateMode::Persistent);
+
+    String metadata_file = getMetadataPath() + ".last_entry";
+    WriteBufferFromFile out(metadata_file, state.size(), O_WRONLY | O_CREAT);
+    writeString(state, out);
     out.next();
     if (global_context.getSettingsRef().fsync_metadata)
         out.sync();
