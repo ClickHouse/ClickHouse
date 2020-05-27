@@ -1017,7 +1017,7 @@ def test_kafka_flush_by_block_size(kafka_cluster):
 
     time.sleep(1)
 
-    # TODO: due to https://github.com/ClickHouse/ClickHouse/pull/11149
+    # TODO: due to https://github.com/ClickHouse/ClickHouse/issues/11216
     # second flush happens earlier than expected, so we have 2 parts here instead of one
     # flush by block size works correctly, so the feature checked by the test is working correctly
     result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
