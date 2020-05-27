@@ -208,4 +208,14 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
 
+inline const String & Authentication::getLDAPServerName() const
+{
+    return ldap_server_name;
+}
+
+inline void Authentication::setLDAPServerName(const String & server_name)
+{
+    ldap_server_name = server_name;
+}
+
 }
