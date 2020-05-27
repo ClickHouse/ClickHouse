@@ -594,13 +594,12 @@ Contains information about executed queries, for example, start time, duration o
 !!! note "Note"
     The table doesn’t contain input data for `INSERT` queries.
 
-To log queries you need to:
+You can change settings of queries logging in the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 
-1. Configure [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server parameters.
-2. Set [log_queries](settings/settings.md#settings-log-queries) to 1.
+You can disable queries logging by setting [log_queries = 0](settings/settings.md#settings-log-queries). We don't recommend to turn off logging because information in this table is important for solving issues.
 
 !!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs by yourself.
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
 
@@ -613,11 +612,11 @@ The `system.query_log` table registers two kinds of queries:
 1.  Initial queries that were run directly by the client.
 2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
 
-Each query creates one or two rows in the `query_log` table, depending on the status of the query:
+Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
-1.  If the query execution was successful, two events with types 1 and 2 are created (see the `type` column).
-2.  If an error occurred during query processing, two events with types 1 and 4 are created.
-3.  If an error occurred before launching the query, a single event with type 3 is created.
+1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created .
+2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created .
+3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
 Columns:
 
