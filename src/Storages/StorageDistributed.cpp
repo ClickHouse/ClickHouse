@@ -278,6 +278,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , global_context(std::make_unique<Context>(context_))
+    , log(&Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , storage_policy(storage_policy_)
@@ -438,7 +439,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
         reason = "GROUP BY " + backQuote(serializeAST(*group_by, true));
     }
 
-    LOG_DEBUG(log, "Force distributed_group_by_no_merge for " << reason << " (injective)");
+    LOG_DEBUG(log, "Force distributed_group_by_no_merge for {} (injective)", reason);
     return true;
 }
 
@@ -474,20 +475,14 @@ Pipes StorageDistributed::read(
     if (settings.optimize_skip_unused_shards)
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(context, query_info.query);
-        auto table_id = getStorageID();
         if (optimized_cluster)
         {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
-                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
-                           " " << makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}", makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
         }
         else
         {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                           (has_sharding_key ? "" : " (no sharding key)") << ": "
-                           "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
-                           "the query will be sent to all shards of the cluster");
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}", has_sharding_key ? "" : " (no sharding key)");
         }
     }
 
@@ -589,7 +584,7 @@ void StorageDistributed::startup()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG(log, "Auto-increment is " << file_names_increment.value);
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -818,7 +813,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
         auto new_path = path + new_path_to_table_data;
         Poco::File(path + relative_data_path).renameTo(new_path);
 
-        LOG_DEBUG(log, "Updating path to " << new_path);
+        LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)

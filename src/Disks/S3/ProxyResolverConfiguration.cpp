@@ -21,7 +21,7 @@ ProxyResolverConfiguration::ProxyResolverConfiguration(const Poco::URI & endpoin
 
 Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const Aws::Http::HttpRequest &)
 {
-    LOG_DEBUG(&Logger::get("AWSClient"), "Obtain proxy using resolver: " << endpoint.toString());
+    LOG_DEBUG(&Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
     /// 1 second is enough for now.
     /// TODO: Make timeouts configurable.
@@ -49,7 +49,7 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
         /// Read proxy host as string from response body.
         Poco::StreamCopier::copyToString(response_body_stream, proxy_host);
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Use proxy: " << proxy_scheme << "://" << proxy_host << ":" << proxy_port);
+        LOG_DEBUG(&Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_scheme, proxy_host, proxy_port);
 
         cfg.proxyScheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
         cfg.proxyHost = proxy_host;
