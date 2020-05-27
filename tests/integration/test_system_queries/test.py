@@ -97,6 +97,7 @@ def test_SYSTEM_FLUSH_LOGS(started_cluster):
     instance = cluster.instances['ch1']
     instance.query('''
         SET log_queries = 0;
+        SYSTEM FLUSH LOGS;
         TRUNCATE TABLE system.query_log;
     ''')
     for i in range(4):
@@ -104,13 +105,13 @@ def test_SYSTEM_FLUSH_LOGS(started_cluster):
         # by expiration of flush_interval_millisecond and test probable race condition.
         time.sleep(0.5)
         result = instance.query('''
-            SET log_queries = 1;
             SELECT 1 FORMAT Null;
             SET log_queries = 0;
             SYSTEM FLUSH LOGS;
             SELECT count() FROM system.query_log;''')
         instance.query('''
             SET log_queries = 0;
+            SYSTEM FLUSH LOGS;
             TRUNCATE TABLE system.query_log;
         ''')
         assert TSV(result) == TSV('4')
