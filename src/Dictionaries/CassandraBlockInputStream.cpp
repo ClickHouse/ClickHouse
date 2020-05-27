@@ -1,16 +1,17 @@
-#    include <Common/config.h>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <Core/ExternalResultDescription.h>
-#    include <Columns/ColumnString.h>
-#    include <IO/ReadHelpers.h>
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
 
 #if USE_CASSANDRA
 
-#   include <utility>
-#   include "CassandraBlockInputStream.h"
-#   include "CassandraBlockInputStream.h"
+#include <utility>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/ExternalResultDescription.h>
+#include <Columns/ColumnString.h>
+#include <IO/ReadHelpers.h>
+#include "CassandraBlockInputStream.h"
 
 
 namespace DB

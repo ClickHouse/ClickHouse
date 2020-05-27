@@ -447,6 +447,7 @@ class SourceCassandra(ExternalSource):
         self.client = cassandra.cluster.Cluster([self.internal_hostname], port=self.internal_port)
         self.session = self.client.connect()
         self.session.execute("create keyspace if not exists test with replication = {'class': 'SimpleStrategy', 'replication_factor' : 1};")
+        self.session.execute('drop table if exists test."{}"'.format(table_name))
         self.structure[table_name] = structure
         columns = ['"' + col.name + '" ' + self.TYPE_MAPPING[col.field_type] for col in structure.get_all_fields()]
         keys = ['"' + col.name + '"' for col in structure.keys]

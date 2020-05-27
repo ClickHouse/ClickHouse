@@ -465,11 +465,11 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                cass_client.connect().execute("drop keyspace if exists test;")
-                logging.info("Connected to Cassandra %s")
+                cass_client.connect()
+                logging.info("Connected to Cassandra")
                 return
             except Exception as ex:
-                logging.warning("Can't connect to Minio: %s", str(ex))
+                logging.warning("Can't connect to Cassandra: %s", str(ex))
                 time.sleep(1)
 
     def start(self, destroy_dirs=True):
