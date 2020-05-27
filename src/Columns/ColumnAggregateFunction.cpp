@@ -549,6 +549,8 @@ void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/,
         res[i] = i;
 }
 
+void ColumnAggregateFunction::updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const {}
+
 void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);

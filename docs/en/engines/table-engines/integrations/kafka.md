@@ -72,7 +72,7 @@ Examples:
                             kafka_format = 'JSONEachRow',
                             kafka_num_consumers = 4;
 
-  CREATE TABLE queue2 (
+  CREATE TABLE queue3 (
     timestamp UInt64,
     level String,
     message String

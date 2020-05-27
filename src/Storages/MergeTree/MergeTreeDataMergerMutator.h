@@ -160,7 +160,7 @@ private:
         NamesAndTypesList storage_columns,
         const MutationCommands & commands_for_removes);
 
-    /// Get skip indcies, that should exists in the resulting data part.
+    /// Get skip indices, that should exists in the resulting data part.
     static MergeTreeIndices getIndicesForNewDataPart(
         const MergeTreeIndices & all_indices,
         const MutationCommands & commands_for_removes);

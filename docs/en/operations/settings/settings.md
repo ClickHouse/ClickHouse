@@ -404,6 +404,36 @@ Possible values:
 
 Default value: 0.
 
+## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
+
+Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
+
+!!! note "Warning"
+    Use this setting only for the purpose of backward compatibility if your use cases depend on legacy `JOIN` behavior.
+
+When the legacy behavior enabled:
+
+- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
+- Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
+
+When the legacy behavior disabled:
+
+- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
+- Results of `ANY INNER JOIN` operations contain one row per key from both left and right tables.
+
+Possible values:
+
+- 0 — Legacy behavior is disabled.
+- 1 — Legacy behavior is enabled.
+
+
+Default value: 0.
+
+See also:
+
+-   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+
+
 ## max\_block\_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
@@ -1264,5 +1294,64 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## low_cardinality_max_dictionary_size {#low_cardinality_max_dictionary_size}
+
+Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 8192.
+
+## low_cardinality_use_single_dictionary_for_part {#low_cardinality_use_single_dictionary_for_part}
+
+Turns on or turns off using of single dictionary for the data part.
+
+By default, ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
+
+Possible values:
+
+- 1 — Creating several dictionaries for the data part is prohibited.
+- 0 — Creating several dictionaries for the data part is not prohibited.
+
+Default value: 0.
+
+## low_cardinality_allow_in_native_format {#low_cardinality_allow_in_native_format}
+
+Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](../../interfaces/formats.md#native) format.
+
+If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
+
+This setting is required mainly for third-party clients which don't support `LowCardinality` data type.
+
+Possible values:
+
+- 1 — Usage of `LowCardinality` is not restricted.
+- 0 — Usage of `LowCardinality` is restricted.
+
+Default value: 1.
+
+
+## allow_suspicious_low_cardinality_types {#allow_suspicious_low_cardinality_types}
+
+Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types with fixed size of 8 bytes or less: numeric data types and `FixedString(8_bytes_or_less)`.
+
+For small fixed values using of `LowCardinality` is usually inefficient, because ClickHouse stores a numeric index for each row. As a result:
+
+- Disk space usage can rise.
+- RAM consumption can be higher, depending on a dictionary size.
+- Some functions can work slower due to extra coding/encoding operations.
+
+Merge times in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables can grow due to all the reasons described above.
+
+Possible values:
+
+- 1 — Usage of `LowCardinality` is not restricted.
+- 0 — Usage of `LowCardinality` is restricted.
+
+Default value: 0.
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

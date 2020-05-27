@@ -174,7 +174,7 @@ Upd. Всё ещё ждём удаление старого кода, котор
 
 ### 2.3. Перенос столбцового ser/de из DataType в Column {#perenos-stolbtsovogo-serde-iz-datatype-v-column}
 
-В очереди.
+В очереди. Антон Попов.
 
 ### 2.4. Перевод LowCardinality из DataType в Column. Добавление ColumnSparse {#perevod-lowcardinality-iz-datatype-v-column-dobavlenie-columnsparse}
 
@@ -977,10 +977,10 @@ Q2.
 
 [Виталий Баранов](https://github.com/vitlibar) и Денис Глазачев, Altinity. Требует 12.1.
 
-### 12.6. Информация о пользователях и квотах в системной таблице {#informatsiia-o-polzovateliakh-i-kvotakh-v-sistemnoi-tablitse}
+### 12.6. + Информация о пользователях и квотах в системной таблице {#informatsiia-o-polzovateliakh-i-kvotakh-v-sistemnoi-tablitse}
 
 [Виталий Баранов](https://github.com/vitlibar). Требует 12.1.
-Есть pull request. Q2.
+Есть pull request. Q2. Готово.
 
 
 ## 13. Разделение ресурсов, multi-tenancy {#razdelenie-resursov-multi-tenancy}
