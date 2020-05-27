@@ -5,6 +5,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/File.h>
+#include <filesystem>
 
 
 namespace DB
@@ -82,6 +83,12 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     if (auto table = tryGetTable(table_name))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
+}
+
+void DatabaseMemory::drop(const Context & context)
+{
+    /// Remove data on explicit DROP DATABASE
+    std::filesystem::remove_all(context.getPath() + data_path);
 }
 
 }

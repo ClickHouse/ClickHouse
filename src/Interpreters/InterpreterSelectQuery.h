@@ -5,7 +5,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <DataStreams/IBlockStream_fwd.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreter.h>
@@ -25,6 +24,7 @@ namespace DB
 
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
+class Context;
 
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
@@ -106,7 +106,7 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
-    Block getSampleBlockImpl(bool try_move_to_prewhere);
+    Block getSampleBlockImpl();
 
     struct Pipeline
     {

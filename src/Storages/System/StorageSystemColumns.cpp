@@ -12,6 +12,7 @@
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB

@@ -1,43 +1,15 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Formats/LazyOutputFormat.h>
-#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Formats/PullingOutputFormat.h>
 #include <Processors/QueryPipeline.h>
-
-#include <Common/setThreadName.h>
-#include <ext/scope_guard.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 namespace DB
 {
 
-struct PullingPipelineExecutor::Data
-{
-    PipelineExecutorPtr executor;
-    std::exception_ptr exception;
-    std::atomic_bool is_executed = false;
-    std::atomic_bool has_exception = false;
-    ThreadFromGlobalPool thread;
-
-    ~Data()
-    {
-        if (thread.joinable())
-            thread.join();
-    }
-
-    void rethrowExceptionIfHas()
-    {
-        if (has_exception)
-        {
-            has_exception = false;
-            std::rethrow_exception(std::move(exception));
-        }
-    }
-};
-
 PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
-    pipeline.setOutput(lazy_format);
+    pulling_format = std::make_shared<PullingOutputFormat>(pipeline.getHeader(), has_data_flag);
+    pipeline.setOutput(pulling_format);
 }
 
 PullingPipelineExecutor::~PullingPipelineExecutor()
@@ -52,70 +24,28 @@ PullingPipelineExecutor::~PullingPipelineExecutor()
     }
 }
 
-static void threadFunction(PullingPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
+const Block & PullingPipelineExecutor::getHeader() const
 {
-    if (thread_group)
-        CurrentThread::attachTo(thread_group);
-
-    SCOPE_EXIT(
-        if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
-    );
-
-    setThreadName("QueryPipelineEx");
-
-    try
-    {
-        data.executor->execute(num_threads);
-    }
-    catch (...)
-    {
-        data.exception = std::current_exception();
-        data.has_exception = true;
-    }
+    return pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader();
 }
 
-
-bool PullingPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
+bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
-    if (!data)
-    {
-        data = std::make_unique<Data>();
-        data->executor = pipeline.execute();
+    if (!executor)
+        executor = pipeline.execute();
 
-        auto func = [&, thread_group = CurrentThread::getGroup()]()
-        {
-            threadFunction(*data, thread_group, pipeline.getNumThreads());
-        };
-
-        data->thread = ThreadFromGlobalPool(std::move(func));
-    }
-
-    if (data->has_exception)
-    {
-        /// Finish lazy format in case of exception. Otherwise thread.join() may hung.
-        lazy_format->finish();
-        data->has_exception = false;
-        std::rethrow_exception(std::move(data->exception));
-    }
-
-    if (lazy_format->isFinished())
-    {
-        data->is_executed = true;
-        /// Wait thread ant rethrow exception if any.
-        cancel();
+    if (!executor->executeStep(&has_data_flag))
         return false;
-    }
 
-    chunk = lazy_format->getChunk(milliseconds);
+    chunk = pulling_format->getChunk();
     return true;
 }
 
-bool PullingPipelineExecutor::pull(Block & block, uint64_t milliseconds)
+bool PullingPipelineExecutor::pull(Block & block)
 {
     Chunk chunk;
 
-    if (!pull(chunk, milliseconds))
+    if (!pull(chunk))
         return false;
 
     if (!chunk)
@@ -125,7 +55,7 @@ bool PullingPipelineExecutor::pull(Block & block, uint64_t milliseconds)
         return true;
     }
 
-    block = lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
+    block = pulling_format->getPort(IOutputFormat::PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (auto chunk_info = chunk.getChunkInfo())
     {
@@ -142,30 +72,22 @@ bool PullingPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 void PullingPipelineExecutor::cancel()
 {
     /// Cancel execution if it wasn't finished.
-    if (data && !data->is_executed && data->executor)
-        data->executor->cancel();
+    if (executor)
+        executor->cancel();
 
-    /// Finish lazy format. Otherwise thread.join() may hung.
-    if (!lazy_format->isFinished())
-        lazy_format->finish();
-
-    /// Join thread here to wait for possible exception.
-    if (data && data->thread.joinable())
-        data->thread.join();
-
-    /// Rethrow exception to not swallow it in destructor.
-    if (data)
-        data->rethrowExceptionIfHas();
+    /// Read all data and finish execution.
+    Chunk chunk;
+    while (pull(chunk));
 }
 
 Chunk PullingPipelineExecutor::getTotals()
 {
-    return lazy_format->getTotals();
+    return pulling_format->getTotals();
 }
 
 Chunk PullingPipelineExecutor::getExtremes()
 {
-    return lazy_format->getExtremes();
+    return pulling_format->getExtremes();
 }
 
 Block PullingPipelineExecutor::getTotalsBlock()
@@ -175,7 +97,7 @@ Block PullingPipelineExecutor::getTotalsBlock()
     if (totals.empty())
         return {};
 
-    const auto & header = lazy_format->getPort(IOutputFormat::PortKind::Totals).getHeader();
+    const auto & header = pulling_format->getPort(IOutputFormat::PortKind::Totals).getHeader();
     return header.cloneWithColumns(totals.detachColumns());
 }
 
@@ -186,13 +108,13 @@ Block PullingPipelineExecutor::getExtremesBlock()
     if (extremes.empty())
         return {};
 
-    const auto & header = lazy_format->getPort(IOutputFormat::PortKind::Extremes).getHeader();
+    const auto & header = pulling_format->getPort(IOutputFormat::PortKind::Extremes).getHeader();
     return header.cloneWithColumns(extremes.detachColumns());
 }
 
 BlockStreamProfileInfo & PullingPipelineExecutor::getProfileInfo()
 {
-    return lazy_format->getProfileInfo();
+    return pulling_format->getProfileInfo();
 }
 
 }
