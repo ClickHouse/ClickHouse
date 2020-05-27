@@ -453,6 +453,8 @@ public:
     void setPartitionKey(const StorageMetadataKeyField & partition_key_);
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
     ASTPtr getPartitionKeyAST() const { return partition_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) partition key.
+    bool isPartitionKeyDefined() const;
     /// Storage has partition key.
     bool hasPartitionKey() const;
     /// Returns column names that need to be read to calculate partition key.
@@ -466,7 +468,9 @@ public:
     void setSortingKey(const StorageMetadataKeyField & sorting_key_);
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
     ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
-    /// Storage has sorting key.
+    /// Storage has user-defined (in CREATE query) sorting key.
+    bool isSortingKeyDefined() const;
+    /// Storage has sorting key. It means, that it contains at least one column.
     bool hasSortingKey() const;
     /// Returns column names that need to be read to calculate sorting key.
     Names getColumnsRequiredForSortingKey() const;
@@ -483,7 +487,8 @@ public:
     ASTPtr getPrimaryKeyAST() const { return primary_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isPrimaryKeyDefined() const;
-    /// Storage has primary key (maybe part of some other key).
+    /// Storage has primary key (maybe part of some other key). It means, that
+    /// it contains at least one column.
     bool hasPrimaryKey() const;
     /// Returns column names that need to be read to calculate primary key.
     Names getColumnsRequiredForPrimaryKey() const;
@@ -498,6 +503,8 @@ public:
     void setSamplingKey(const StorageMetadataKeyField & sampling_key_);
     /// Returns sampling expression AST for storage or nullptr if there is none.
     ASTPtr getSamplingKeyAST() const { return sampling_key.definition_ast; }
+    /// Storage has user-defined (in CREATE query) sampling key.
+    bool isSamplingKeyDefined() const;
     /// Storage has sampling key.
     bool hasSamplingKey() const;
     /// Returns column names that need to be read to calculate sampling key.
