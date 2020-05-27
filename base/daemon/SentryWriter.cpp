@@ -30,9 +30,10 @@ namespace {
 void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
 #if USE_SENTRY
     bool enabled = false;
+    bool debug = config.getBool("send_crash_reports.debug", false);
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if ((strlen(VERSION_OFFICIAL) > 0) || config.getBool("send_crash_reports.debug", false))
+        if (debug || (strlen(VERSION_OFFICIAL) > 0))
         {
             enabled = true;
         }
@@ -45,7 +46,10 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
         );
         sentry_options_t * options = sentry_options_new();
         sentry_options_set_release(options, VERSION_STRING);
-        sentry_options_set_debug(options, 1);
+        if (debug)
+        {
+            sentry_options_set_debug(options, 1);
+        }
         sentry_init(options);
         sentry_options_set_dsn(options, endpoint.c_str());
         if (strstr(VERSION_DESCRIBE, "-stable") || strstr(VERSION_DESCRIBE, "-lts")) {
