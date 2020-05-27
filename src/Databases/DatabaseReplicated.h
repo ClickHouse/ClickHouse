@@ -10,10 +10,27 @@
 
 namespace DB
 {
-/** Replicated database engine.
-  * It stores tables list using list of .sql files,
-  *  that contain declaration of table represented by SQL ATTACH TABLE query
-  *  and operation log in zookeeper
+/** DatabaseReplicated engine
+  * supports replication of metadata
+  * via DDL log being written to ZooKeeper
+  * and executed on all of the replicas
+  * for a given database.
+  *
+  * One Clickhouse server can have multiple
+  * replicated databases running and updating
+  * at the same time.
+  * 
+  * The engine has two parameters ZooKeeper path and 
+  * replica name.
+  * The same ZooKeeper path corresponds to the same
+  * database. Replica names must be different for all replicas
+  * of the same database.
+  *
+  * Using this engine, creation of Replicated tables
+  * requires no ZooKeeper path and replica name parameters.
+  * Table's replica name is the same as database replica name.
+  * Table's ZooKeeper path is a concatenation of database's
+  * ZooKeeper path, /tables/, and UUID of the table.
   */
 class DatabaseReplicated : public DatabaseAtomic
 {
