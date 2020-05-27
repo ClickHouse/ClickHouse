@@ -163,8 +163,8 @@
 	branch = ch-tmp
 [submodule "contrib/libuv"]
 	path = contrib/libuv
-	url = https://github.com/libuv/libuv.git
-	branch = v1.x
+	url = https://github.com/tavplubix/libuv.git
+	branch = clickhouse
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git

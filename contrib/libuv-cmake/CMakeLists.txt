@@ -1,95 +1,22 @@
 cmake_minimum_required(VERSION 3.4)
 project(libuv LANGUAGES C)
 
-cmake_policy(SET CMP0057 NEW) # Enable IN_LIST operator
-cmake_policy(SET CMP0064 NEW) # Support if (TEST) operator
-
-#list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-
 include(CMakePackageConfigHelpers)
 include(CMakeDependentOption)
-include(CheckCCompilerFlag)
 include(GNUInstallDirs)
 include(CTest)
-
-set(CMAKE_C_VISIBILITY_PRESET hidden)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS ON)
-set(CMAKE_C_STANDARD 90)
 
 #cmake_dependent_option(LIBUV_BUILD_TESTS
 #  "Build the unit tests when BUILD_TESTING is enabled and we are the root project" ON
 #  "BUILD_TESTING;CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR" OFF)
-#cmake_dependent_option(LIBUV_BUILD_BENCH
-#  "Build the benchmarks when building unit tests and we are the root project" ON
-#  "LIBUV_BUILD_TESTS" OFF)
 
-# Qemu Build
-option(QEMU "build for qemu" OFF)
-if(QEMU)
-  add_definitions(-D__QEMU__=1)
+if(MSVC)
+  list(APPEND uv_cflags /W4)
+elseif(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
+  list(APPEND uv_cflags -fvisibility=hidden --std=gnu89)
+  list(APPEND uv_cflags -Wall -Wextra -Wstrict-prototypes)
+  list(APPEND uv_cflags -Wno-unused-parameter)
 endif()
-
-# Compiler check
-string(CONCAT is-msvc $<OR:
-  $<C_COMPILER_ID:MSVC>,
-  $<STREQUAL:${CMAKE_C_COMPILER_FRONTEND_VARIANT},MSVC>
->)
-
-check_c_compiler_flag(/W4 UV_LINT_W4)
-check_c_compiler_flag(/wd4100 UV_LINT_NO_UNUSED_PARAMETER_MSVC)
-check_c_compiler_flag(/wd4127 UV_LINT_NO_CONDITIONAL_CONSTANT_MSVC)
-check_c_compiler_flag(/wd4201 UV_LINT_NO_NONSTANDARD_MSVC)
-check_c_compiler_flag(/wd4206 UV_LINT_NO_NONSTANDARD_EMPTY_TU_MSVC)
-check_c_compiler_flag(/wd4210 UV_LINT_NO_NONSTANDARD_FILE_SCOPE_MSVC)
-check_c_compiler_flag(/wd4232 UV_LINT_NO_NONSTANDARD_NONSTATIC_DLIMPORT_MSVC)
-check_c_compiler_flag(/wd4456 UV_LINT_NO_HIDES_LOCAL)
-check_c_compiler_flag(/wd4457 UV_LINT_NO_HIDES_PARAM)
-check_c_compiler_flag(/wd4459 UV_LINT_NO_HIDES_GLOBAL)
-check_c_compiler_flag(/wd4706 UV_LINT_NO_CONDITIONAL_ASSIGNMENT_MSVC)
-check_c_compiler_flag(/wd4996 UV_LINT_NO_UNSAFE_MSVC)
-
-check_c_compiler_flag(-Wall UV_LINT_WALL) # DO NOT use this under MSVC
-
-# TODO: Place these into its own function
-check_c_compiler_flag(-Wno-unused-parameter UV_LINT_NO_UNUSED_PARAMETER)
-check_c_compiler_flag(-Wstrict-prototypes UV_LINT_STRICT_PROTOTYPES)
-check_c_compiler_flag(-Wextra UV_LINT_EXTRA)
-
-set(lint-no-unused-parameter $<$<BOOL:${UV_LINT_NO_UNUSED_PARAMETER}>:-Wno-unused-parameter>)
-set(lint-strict-prototypes $<$<BOOL:${UV_LINT_STRICT_PROTOTYPES}>:-Wstrict-prototypes>)
-set(lint-extra $<$<BOOL:${UV_LINT_EXTRA}>:-Wextra>)
-set(lint-w4 $<$<BOOL:${UV_LINT_W4}>:/W4>)
-set(lint-no-unused-parameter-msvc $<$<BOOL:${UV_LINT_NO_UNUSED_PARAMETER_MSVC}>:/wd4100>)
-set(lint-no-conditional-constant-msvc $<$<BOOL:${UV_LINT_NO_CONDITIONAL_CONSTANT_MSVC}>:/wd4127>)
-set(lint-no-nonstandard-msvc $<$<BOOL:${UV_LINT_NO_NONSTANDARD_MSVC}>:/wd4201>)
-set(lint-no-nonstandard-empty-tu-msvc $<$<BOOL:${UV_LINT_NO_NONSTANDARD_EMPTY_TU_MSVC}>:/wd4206>)
-set(lint-no-nonstandard-file-scope-msvc $<$<BOOL:${UV_LINT_NO_NONSTANDARD_FILE_SCOPE_MSVC}>:/wd4210>)
-set(lint-no-nonstandard-nonstatic-dlimport-msvc $<$<BOOL:${UV_LINT_NO_NONSTANDARD_NONSTATIC_DLIMPORT_MSVC}>:/wd4232>)
-set(lint-no-hides-local-msvc $<$<BOOL:${UV_LINT_NO_HIDES_LOCAL}>:/wd4456>)
-set(lint-no-hides-param-msvc $<$<BOOL:${UV_LINT_NO_HIDES_PARAM}>:/wd4457>)
-set(lint-no-hides-global-msvc $<$<BOOL:${UV_LINT_NO_HIDES_GLOBAL}>:/wd4459>)
-set(lint-no-conditional-assignment-msvc $<$<BOOL:${UV_LINT_NO_CONDITIONAL_ASSIGNMENT_MSVC}>:/wd4706>)
-set(lint-no-unsafe-msvc $<$<BOOL:${UV_LINT_NO_UNSAFE_MSVC}>:/wd4996>)
-# Unfortunately, this one is complicated because MSVC and clang-cl support -Wall
-# but using it is like calling -Weverything
-string(CONCAT lint-default $<
-  $<AND:$<BOOL:${UV_LINT_WALL}>,$<NOT:${is-msvc}>>:-Wall
->)
-
-list(APPEND uv_cflags ${lint-strict-prototypes} ${lint-extra} ${lint-default} ${lint-w4})
-list(APPEND uv_cflags ${lint-no-unused-parameter})
-list(APPEND uv_cflags ${lint-no-unused-parameter-msvc})
-list(APPEND uv_cflags ${lint-no-conditional-constant-msvc})
-list(APPEND uv_cflags ${lint-no-nonstandard-msvc})
-list(APPEND uv_cflags ${lint-no-nonstandard-empty-tu-msvc})
-list(APPEND uv_cflags ${lint-no-nonstandard-file-scope-msvc})
-list(APPEND uv_cflags ${lint-no-nonstandard-nonstatic-dlimport-msvc})
-list(APPEND uv_cflags ${lint-no-hides-local-msvc})
-list(APPEND uv_cflags ${lint-no-hides-param-msvc})
-list(APPEND uv_cflags ${lint-no-hides-global-msvc})
-list(APPEND uv_cflags ${lint-no-conditional-assignment-msvc})
-list(APPEND uv_cflags ${lint-no-unsafe-msvc})
 
 set(uv_sources
     src/fs-poll.c
@@ -103,11 +30,172 @@ set(uv_sources
     src/uv-data-getter-setters.c
     src/version.c)
 
+set(uv_test_sources
+    test/blackhole-server.c
+    test/echo-server.c
+    test/run-tests.c
+    test/runner.c
+    test/test-active.c
+    test/test-async-null-cb.c
+    test/test-async.c
+    test/test-barrier.c
+    test/test-callback-order.c
+    test/test-callback-stack.c
+    test/test-close-fd.c
+    test/test-close-order.c
+    test/test-condvar.c
+    test/test-connect-unspecified.c
+    test/test-connection-fail.c
+    test/test-cwd-and-chdir.c
+    test/test-default-loop-close.c
+    test/test-delayed-accept.c
+    test/test-dlerror.c
+    test/test-eintr-handling.c
+    test/test-embed.c
+    test/test-emfile.c
+    test/test-env-vars.c
+    test/test-error.c
+    test/test-fail-always.c
+    test/test-fork.c
+    test/test-fs-copyfile.c
+    test/test-fs-event.c
+    test/test-fs-poll.c
+    test/test-fs.c
+    test/test-fs-readdir.c
+    test/test-fs-fd-hash.c
+    test/test-fs-open-flags.c
+    test/test-get-currentexe.c
+    test/test-get-loadavg.c
+    test/test-get-memory.c
+    test/test-get-passwd.c
+    test/test-getaddrinfo.c
+    test/test-gethostname.c
+    test/test-getnameinfo.c
+    test/test-getsockname.c
+    test/test-getters-setters.c
+    test/test-gettimeofday.c
+    test/test-handle-fileno.c
+    test/test-homedir.c
+    test/test-hrtime.c
+    test/test-idle.c
+    test/test-idna.c
+    test/test-ip4-addr.c
+    test/test-ip6-addr.c
+    test/test-ipc-heavy-traffic-deadlock-bug.c
+    test/test-ipc-send-recv.c
+    test/test-ipc.c
+    test/test-loop-alive.c
+    test/test-loop-close.c
+    test/test-loop-configure.c
+    test/test-loop-handles.c
+    test/test-loop-stop.c
+    test/test-loop-time.c
+    test/test-multiple-listen.c
+    test/test-mutexes.c
+    test/test-osx-select.c
+    test/test-pass-always.c
+    test/test-ping-pong.c
+    test/test-pipe-bind-error.c
+    test/test-pipe-close-stdout-read-stdin.c
+    test/test-pipe-connect-error.c
+    test/test-pipe-connect-multiple.c
+    test/test-pipe-connect-prepare.c
+    test/test-pipe-getsockname.c
+    test/test-pipe-pending-instances.c
+    test/test-pipe-sendmsg.c
+    test/test-pipe-server-close.c
+    test/test-pipe-set-fchmod.c
+    test/test-pipe-set-non-blocking.c
+    test/test-platform-output.c
+    test/test-poll-close-doesnt-corrupt-stack.c
+    test/test-poll-close.c
+    test/test-poll-closesocket.c
+    test/test-poll-oob.c
+    test/test-poll.c
+    test/test-process-priority.c
+    test/test-process-title-threadsafe.c
+    test/test-process-title.c
+    test/test-queue-foreach-delete.c
+    test/test-random.c
+    test/test-ref.c
+    test/test-run-nowait.c
+    test/test-run-once.c
+    test/test-semaphore.c
+    test/test-shutdown-close.c
+    test/test-shutdown-eof.c
+    test/test-shutdown-twice.c
+    test/test-signal-multiple-loops.c
+    test/test-signal-pending-on-close.c
+    test/test-signal.c
+    test/test-socket-buffer-size.c
+    test/test-spawn.c
+    test/test-stdio-over-pipes.c
+    test/test-strscpy.c
+    test/test-tcp-alloc-cb-fail.c
+    test/test-tcp-bind-error.c
+    test/test-tcp-bind6-error.c
+    test/test-tcp-close-accept.c
+    test/test-tcp-close-while-connecting.c
+    test/test-tcp-close.c
+    test/test-tcp-close-reset.c
+    test/test-tcp-connect-error-after-write.c
+    test/test-tcp-connect-error.c
+    test/test-tcp-connect-timeout.c
+    test/test-tcp-connect6-error.c
+    test/test-tcp-create-socket-early.c
+    test/test-tcp-flags.c
+    test/test-tcp-oob.c
+    test/test-tcp-open.c
+    test/test-tcp-read-stop.c
+    test/test-tcp-shutdown-after-write.c
+    test/test-tcp-try-write.c
+    test/test-tcp-try-write-error.c
+    test/test-tcp-unexpected-read.c
+    test/test-tcp-write-after-connect.c
+    test/test-tcp-write-fail.c
+    test/test-tcp-write-queue-order.c
+    test/test-tcp-write-to-half-open-connection.c
+    test/test-tcp-writealot.c
+    test/test-thread-equal.c
+    test/test-thread.c
+    test/test-threadpool-cancel.c
+    test/test-threadpool.c
+    test/test-timer-again.c
+    test/test-timer-from-check.c
+    test/test-timer.c
+    test/test-tmpdir.c
+    test/test-tty-duplicate-key.c
+    test/test-tty.c
+    test/test-udp-alloc-cb-fail.c
+    test/test-udp-bind.c
+    test/test-udp-connect.c
+    test/test-udp-create-socket-early.c
+    test/test-udp-dgram-too-big.c
+    test/test-udp-ipv6.c
+    test/test-udp-multicast-interface.c
+    test/test-udp-multicast-interface6.c
+    test/test-udp-multicast-join.c
+    test/test-udp-multicast-join6.c
+    test/test-udp-multicast-ttl.c
+    test/test-udp-open.c
+    test/test-udp-options.c
+    test/test-udp-send-and-recv.c
+    test/test-udp-send-hang-loop.c
+    test/test-udp-send-immediate.c
+    test/test-udp-send-unreachable.c
+    test/test-udp-try-send.c
+    test/test-uname.c
+    test/test-walk-handles.c
+    test/test-watcher-cross-stop.c)
+
 #if(WIN32)
 #  list(APPEND uv_defines WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0600)
 #  list(APPEND uv_libraries
-#       psapi
+#       advapi32
 #       iphlpapi
+#       psapi
+#       shell32
+#       user32
 #       userenv
 #       ws2_32)
 #  list(APPEND uv_sources
@@ -140,8 +228,7 @@ set(uv_sources
 #  list(APPEND uv_test_sources src/win/snprintf.c test/runner-win.c)
 #else()
 list(APPEND uv_defines _FILE_OFFSET_BITS=64 _LARGEFILE_SOURCE)
-if(NOT CMAKE_SYSTEM_NAME MATCHES "Android|OS390")
-  # TODO: This should be replaced with find_package(Threads) if possible
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android has pthread as part of its c library, not as a separate
   # libpthread.so.
   list(APPEND uv_libraries pthread)
@@ -173,16 +260,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "AIX")
        _ALL_SOURCE
        _LINUX_SOURCE_COMPAT
        _THREAD_SAFE
-       _XOPEN_SOURCE=500
-       HAVE_SYS_AHAFS_EVPRODS_H)
+       _XOPEN_SOURCE=500)
   list(APPEND uv_libraries perfstat)
-  list(APPEND uv_sources
-       src/unix/aix.c
-       src/unix/aix-common.c)
+  list(APPEND uv_sources src/unix/aix.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-  list(APPEND uv_libraries dl)
+  list(APPEND uv_libs dl)
   list(APPEND uv_sources
        src/unix/android-ifaddrs.c
        src/unix/linux-core.c
@@ -190,13 +274,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android")
        src/unix/linux-syscalls.c
        src/unix/procfs-exepath.c
        src/unix/pthread-fixes.c
-       src/unix/random-getentropy.c
        src/unix/random-getrandom.c
        src/unix/random-sysctl-linux.c
        src/unix/sysinfo-loadavg.c)
 endif()
 
-if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Android|Linux|OS390")
+if(APPLE OR CMAKE_SYSTEM_NAME MATCHES "Android|Linux|OS/390")
   list(APPEND uv_sources src/unix/proctitle.c)
 endif()
 
@@ -250,11 +333,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
   list(APPEND uv_sources src/unix/openbsd.c)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "OS390")
+if(CMAKE_SYSTEM_NAME STREQUAL "OS/390")
   list(APPEND uv_defines PATH_MAX=255)
   list(APPEND uv_defines _AE_BIMODAL)
   list(APPEND uv_defines _ALL_SOURCE)
-  list(APPEND uv_defines _ISOC99_SOURCE)
   list(APPEND uv_defines _LARGE_TIME_API)
   list(APPEND uv_defines _OPEN_MSGQ_EXT)
   list(APPEND uv_defines _OPEN_SYS_FILE_EXT)
@@ -267,25 +349,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OS390")
   list(APPEND uv_defines _XOPEN_SOURCE_EXTENDED)
   list(APPEND uv_sources
        src/unix/pthread-fixes.c
+       src/unix/pthread-barrier.c
        src/unix/os390.c
        src/unix/os390-syscalls.c)
-  list(APPEND uv_cflags -Wc,DLL -Wc,exportall -Wc,xplink)
-  list(APPEND uv_libraries -Wl,xplink)
-  list(APPEND uv_test_libraries -Wl,xplink)
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "OS400")
-  list(APPEND uv_defines
-       _ALL_SOURCE
-       _LINUX_SOURCE_COMPAT
-       _THREAD_SAFE
-       _XOPEN_SOURCE=500)
-  list(APPEND uv_sources
-    src/unix/aix-common.c
-    src/unix/ibmi.c
-    src/unix/no-fsevents.c
-    src/unix/no-proctitle.c
-    src/unix/posix-poll.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
@@ -304,225 +370,24 @@ foreach(file ${uv_sources})
 endforeach(file)
 set(uv_sources "${uv_sources_tmp}")
 
+list(APPEND uv_defines CLICKHOUSE_GLIBC_COMPATIBILITY)
+
 add_library(uv SHARED ${uv_sources})
 target_compile_definitions(uv
-  INTERFACE
-    USING_UV_SHARED=1
-  PRIVATE
-    BUILDING_UV_SHARED=1
-    ${uv_defines})
+                           INTERFACE USING_UV_SHARED=1
+                           PRIVATE ${uv_defines} BUILDING_UV_SHARED=1)
 target_compile_options(uv PRIVATE ${uv_cflags})
-target_include_directories(uv
-  PUBLIC
-    $<BUILD_INTERFACE:${LIBUV_ROOT_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  PRIVATE
-    $<BUILD_INTERFACE:${LIBUV_ROOT_DIR}/src>)
+target_include_directories(uv PUBLIC ${LIBUV_ROOT_DIR}/include PRIVATE ${LIBUV_ROOT_DIR}/src)
 target_link_libraries(uv ${uv_libraries})
 
 add_library(uv_a STATIC ${uv_sources})
 target_compile_definitions(uv_a PRIVATE ${uv_defines})
 target_compile_options(uv_a PRIVATE ${uv_cflags})
-target_include_directories(uv_a
-  PUBLIC
-    $<BUILD_INTERFACE:${LIBUV_ROOT_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  PRIVATE
-    $<BUILD_INTERFACE:${LIBUV_ROOT_DIR}/src>)
+target_include_directories(uv_a PUBLIC ${LIBUV_ROOT_DIR}/include PRIVATE ${LIBUV_ROOT_DIR}/src)
 target_link_libraries(uv_a ${uv_libraries})
 
 #if(LIBUV_BUILD_TESTS)
-#  # Small hack: use ${uv_test_sources} now to get the runner skeleton,
-#  # before the actual tests are added.
-#  add_executable(
-#    uv_run_benchmarks_a
-#    ${uv_test_sources}
-#    test/benchmark-async-pummel.c
-#    test/benchmark-async.c
-#    test/benchmark-fs-stat.c
-#    test/benchmark-getaddrinfo.c
-#    test/benchmark-loop-count.c
-#    test/benchmark-million-async.c
-#    test/benchmark-million-timers.c
-#    test/benchmark-multi-accept.c
-#    test/benchmark-ping-pongs.c
-#    test/benchmark-ping-udp.c
-#    test/benchmark-pound.c
-#    test/benchmark-pump.c
-#    test/benchmark-sizes.c
-#    test/benchmark-spawn.c
-#    test/benchmark-tcp-write-batch.c
-#    test/benchmark-thread.c
-#    test/benchmark-udp-pummel.c
-#    test/blackhole-server.c
-#    test/dns-server.c
-#    test/echo-server.c
-#    test/run-benchmarks.c
-#    test/runner.c)
-#  target_compile_definitions(uv_run_benchmarks_a PRIVATE ${uv_defines})
-#  target_compile_options(uv_run_benchmarks_a PRIVATE ${uv_cflags})
-#  target_link_libraries(uv_run_benchmarks_a uv_a ${uv_test_libraries})
-#
-#  list(APPEND uv_test_sources
-#       test/blackhole-server.c
-#       test/echo-server.c
-#       test/run-tests.c
-#       test/runner.c
-#       test/test-active.c
-#       test/test-async-null-cb.c
-#       test/test-async.c
-#       test/test-barrier.c
-#       test/test-callback-order.c
-#       test/test-callback-stack.c
-#       test/test-close-fd.c
-#       test/test-close-order.c
-#       test/test-condvar.c
-#       test/test-connect-unspecified.c
-#       test/test-connection-fail.c
-#       test/test-cwd-and-chdir.c
-#       test/test-default-loop-close.c
-#       test/test-delayed-accept.c
-#       test/test-dlerror.c
-#       test/test-eintr-handling.c
-#       test/test-embed.c
-#       test/test-emfile.c
-#       test/test-env-vars.c
-#       test/test-error.c
-#       test/test-fail-always.c
-#       test/test-fork.c
-#       test/test-fs-copyfile.c
-#       test/test-fs-event.c
-#       test/test-fs-poll.c
-#       test/test-fs.c
-#       test/test-fs-readdir.c
-#       test/test-fs-fd-hash.c
-#       test/test-fs-open-flags.c
-#       test/test-get-currentexe.c
-#       test/test-get-loadavg.c
-#       test/test-get-memory.c
-#       test/test-get-passwd.c
-#       test/test-getaddrinfo.c
-#       test/test-gethostname.c
-#       test/test-getnameinfo.c
-#       test/test-getsockname.c
-#       test/test-getters-setters.c
-#       test/test-gettimeofday.c
-#       test/test-handle-fileno.c
-#       test/test-homedir.c
-#       test/test-hrtime.c
-#       test/test-idle.c
-#       test/test-idna.c
-#       test/test-ip4-addr.c
-#       test/test-ip6-addr.c
-#       test/test-ipc-heavy-traffic-deadlock-bug.c
-#       test/test-ipc-send-recv.c
-#       test/test-ipc.c
-#       test/test-loop-alive.c
-#       test/test-loop-close.c
-#       test/test-loop-configure.c
-#       test/test-loop-handles.c
-#       test/test-loop-stop.c
-#       test/test-loop-time.c
-#       test/test-multiple-listen.c
-#       test/test-mutexes.c
-#       test/test-osx-select.c
-#       test/test-pass-always.c
-#       test/test-ping-pong.c
-#       test/test-pipe-bind-error.c
-#       test/test-pipe-close-stdout-read-stdin.c
-#       test/test-pipe-connect-error.c
-#       test/test-pipe-connect-multiple.c
-#       test/test-pipe-connect-prepare.c
-#       test/test-pipe-getsockname.c
-#       test/test-pipe-pending-instances.c
-#       test/test-pipe-sendmsg.c
-#       test/test-pipe-server-close.c
-#       test/test-pipe-set-fchmod.c
-#       test/test-pipe-set-non-blocking.c
-#       test/test-platform-output.c
-#       test/test-poll-close-doesnt-corrupt-stack.c
-#       test/test-poll-close.c
-#       test/test-poll-closesocket.c
-#       test/test-poll-oob.c
-#       test/test-poll.c
-#       test/test-process-priority.c
-#       test/test-process-title-threadsafe.c
-#       test/test-process-title.c
-#       test/test-queue-foreach-delete.c
-#       test/test-random.c
-#       test/test-ref.c
-#       test/test-run-nowait.c
-#       test/test-run-once.c
-#       test/test-semaphore.c
-#       test/test-shutdown-close.c
-#       test/test-shutdown-eof.c
-#       test/test-shutdown-twice.c
-#       test/test-signal-multiple-loops.c
-#       test/test-signal-pending-on-close.c
-#       test/test-signal.c
-#       test/test-socket-buffer-size.c
-#       test/test-spawn.c
-#       test/test-stdio-over-pipes.c
-#       test/test-strscpy.c
-#       test/test-tcp-alloc-cb-fail.c
-#       test/test-tcp-bind-error.c
-#       test/test-tcp-bind6-error.c
-#       test/test-tcp-close-accept.c
-#       test/test-tcp-close-while-connecting.c
-#       test/test-tcp-close.c
-#       test/test-tcp-close-reset.c
-#       test/test-tcp-connect-error-after-write.c
-#       test/test-tcp-connect-error.c
-#       test/test-tcp-connect-timeout.c
-#       test/test-tcp-connect6-error.c
-#       test/test-tcp-create-socket-early.c
-#       test/test-tcp-flags.c
-#       test/test-tcp-oob.c
-#       test/test-tcp-open.c
-#       test/test-tcp-read-stop.c
-#       test/test-tcp-shutdown-after-write.c
-#       test/test-tcp-try-write.c
-#       test/test-tcp-try-write-error.c
-#       test/test-tcp-unexpected-read.c
-#       test/test-tcp-write-after-connect.c
-#       test/test-tcp-write-fail.c
-#       test/test-tcp-write-queue-order.c
-#       test/test-tcp-write-to-half-open-connection.c
-#       test/test-tcp-writealot.c
-#       test/test-thread-equal.c
-#       test/test-thread.c
-#       test/test-threadpool-cancel.c
-#       test/test-threadpool.c
-#       test/test-timer-again.c
-#       test/test-timer-from-check.c
-#       test/test-timer.c
-#       test/test-tmpdir.c
-#       test/test-tty-duplicate-key.c
-#       test/test-tty-escape-sequence-processing.c
-#       test/test-tty.c
-#       test/test-udp-alloc-cb-fail.c
-#       test/test-udp-bind.c
-#       test/test-udp-connect.c
-#       test/test-udp-create-socket-early.c
-#       test/test-udp-dgram-too-big.c
-#       test/test-udp-ipv6.c
-#       test/test-udp-multicast-interface.c
-#       test/test-udp-multicast-interface6.c
-#       test/test-udp-multicast-join.c
-#       test/test-udp-multicast-join6.c
-#       test/test-udp-multicast-ttl.c
-#       test/test-udp-open.c
-#       test/test-udp-options.c
-#       test/test-udp-send-and-recv.c
-#       test/test-udp-send-hang-loop.c
-#       test/test-udp-send-immediate.c
-#       test/test-udp-send-unreachable.c
-#       test/test-udp-try-send.c
-#       test/test-uname.c
-#       test/test-walk-handles.c
-#       test/test-watcher-cross-stop.c)
-#
-#  add_executable(uv_run_tests ${uv_test_sources} uv_win_longpath.manifest)
+#  add_executable(uv_run_tests ${uv_test_sources})
 #  target_compile_definitions(uv_run_tests
 #                             PRIVATE ${uv_defines} USING_UV_SHARED=1)
 #  target_compile_options(uv_run_tests PRIVATE ${uv_cflags})
@@ -530,18 +395,10 @@ target_link_libraries(uv_a ${uv_libraries})
 #  add_test(NAME uv_test
 #           COMMAND uv_run_tests
 #           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-#  if(CMAKE_SYSTEM_NAME STREQUAL "OS390")
-#    set_tests_properties(uv_test PROPERTIES ENVIRONMENT
-#                         "LIBPATH=${CMAKE_BINARY_DIR}:$ENV{LIBPATH}")
-#  endif()
-#  add_executable(uv_run_tests_a ${uv_test_sources} uv_win_longpath.manifest)
+#  add_executable(uv_run_tests_a ${uv_test_sources})
 #  target_compile_definitions(uv_run_tests_a PRIVATE ${uv_defines})
 #  target_compile_options(uv_run_tests_a PRIVATE ${uv_cflags})
-#  if(QEMU)
-#    target_link_libraries(uv_run_tests_a uv_a ${uv_test_libraries} -static)
-#  else()
-#    target_link_libraries(uv_run_tests_a uv_a ${uv_test_libraries})
-#  endif()
+#  target_link_libraries(uv_run_tests_a uv_a ${uv_test_libraries})
 #  add_test(NAME uv_test_a
 #           COMMAND uv_run_tests_a
 #           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -549,18 +406,15 @@ target_link_libraries(uv_a ${uv_libraries})
 
 if(UNIX)
   # Now for some gibbering horrors from beyond the stars...
-  foreach(lib IN LISTS uv_libraries)
-    list(APPEND LIBS "-l${lib}")
-  endforeach()
-  string(REPLACE ";" " " LIBS "${LIBS}")
-  # Consider setting project version via project() call?
+  foreach(x ${uv_libraries})
+    set(LIBS "${LIBS} -l${x}")
+  endforeach(x)
   file(STRINGS ${LIBUV_ROOT_DIR}/configure.ac configure_ac REGEX ^AC_INIT)
-  string(REGEX MATCH "([0-9]+)[.][0-9]+[.][0-9]+" PACKAGE_VERSION "${configure_ac}")
-  set(UV_VERSION_MAJOR "${CMAKE_MATCH_1}")
+  string(REGEX MATCH [0-9]+[.][0-9]+[.][0-9]+ PACKAGE_VERSION "${configure_ac}")
+  string(REGEX MATCH ^[0-9]+ UV_VERSION_MAJOR "${PACKAGE_VERSION}")
   # The version in the filename is mirroring the behaviour of autotools.
-  set_target_properties(uv PROPERTIES
-    VERSION ${UV_VERSION_MAJOR}.0.0
-    SOVERSION ${UV_VERSION_MAJOR})
+  set_target_properties(uv PROPERTIES VERSION ${UV_VERSION_MAJOR}.0.0
+				      SOVERSION ${UV_VERSION_MAJOR})
   set(includedir ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR})
   set(libdir ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
   set(prefix ${CMAKE_INSTALL_PREFIX})
@@ -568,7 +422,7 @@ if(UNIX)
 
   install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
   install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
-  install(FILES ${PROJECT_BINARY_DIR}/libuv.pc
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/libuv.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
   install(TARGETS uv LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(TARGETS uv_a ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -581,11 +435,3 @@ endif()
 #          RUNTIME DESTINATION lib/$<CONFIG>
 #          ARCHIVE DESTINATION lib/$<CONFIG>)
 #endif()
-#
-#message(STATUS "summary of build options:
-#    Install prefix:  ${CMAKE_INSTALL_PREFIX}
-#    Target system:   ${CMAKE_SYSTEM_NAME}
-#    Compiler:
-#      C compiler:    ${CMAKE_C_COMPILER}
-#      CFLAGS:        ${CMAKE_C_FLAGS_${_build_type}} ${CMAKE_C_FLAGS}
-#")
