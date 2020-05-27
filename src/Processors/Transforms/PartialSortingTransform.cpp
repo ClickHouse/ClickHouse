@@ -81,7 +81,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    if (limit && limit < rows_num &&
+    if (limit && limit < block.rows() &&
         (threshold_block_columns.empty() || less(block_columns, limit - 1, threshold_block_columns, limit - 1, description)))
     {
         threshold_block = block.cloneWithColumns(block.getColumns());
