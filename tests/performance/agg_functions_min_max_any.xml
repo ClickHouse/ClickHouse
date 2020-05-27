@@ -35,10 +35,6 @@
 <query>select max(PageCharset) from test.hits where PageCharset != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
 <query>select any(PageCharset) from test.hits where PageCharset != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
 <query>select anyHeavy(PageCharset) from test.hits where PageCharset != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
-<query>select min(OriginalURL) from test.hits where OriginalURL != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
-<query>select max(OriginalURL) from test.hits where OriginalURL != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
-<query>select any(OriginalURL) from test.hits where OriginalURL != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
-<query>select anyHeavy(OriginalURL) from test.hits where OriginalURL != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
 <query>select min(SocialNetwork) from test.hits where SocialNetwork != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
 <query>select max(SocialNetwork) from test.hits where SocialNetwork != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>
 <query>select any(SocialNetwork) from test.hits where SocialNetwork != '' group by intHash32(UserID) % 1000000 FORMAT Null</query>

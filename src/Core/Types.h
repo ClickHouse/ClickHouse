@@ -98,21 +98,21 @@ template <> inline constexpr bool IsNumber<Float64> = true;
 
 template <typename T> struct TypeName;
 
-template <> struct TypeName<UInt8>   { static const char * get() { return "UInt8";   } };
-template <> struct TypeName<UInt16>  { static const char * get() { return "UInt16";  } };
-template <> struct TypeName<UInt32>  { static const char * get() { return "UInt32";  } };
-template <> struct TypeName<UInt64>  { static const char * get() { return "UInt64";  } };
-template <> struct TypeName<bUInt128>  { static const char * get() { return "UInt128";  } };
-template <> struct TypeName<bUInt256>  { static const char * get() { return "UInt256";  } };
-template <> struct TypeName<Int8>    { static const char * get() { return "Int8";    } };
-template <> struct TypeName<Int16>   { static const char * get() { return "Int16";   } };
-template <> struct TypeName<Int32>   { static const char * get() { return "Int32";   } };
-template <> struct TypeName<Int64>   { static const char * get() { return "Int64";   } };
-template <> struct TypeName<bInt128>  { static const char * get() { return "Int128";  } };
-template <> struct TypeName<bInt256>  { static const char * get() { return "Int256";  } };
-template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
-template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
-template <> struct TypeName<String>  { static const char * get() { return "String";  } };
+template <> struct TypeName<UInt8>   { static constexpr const char * get() { return "UInt8";   } };
+template <> struct TypeName<UInt16>  { static constexpr const char * get() { return "UInt16";  } };
+template <> struct TypeName<UInt32>  { static constexpr const char * get() { return "UInt32";  } };
+template <> struct TypeName<UInt64>  { static constexpr const char * get() { return "UInt64";  } };
+template <> struct TypeName<bUInt128> { static constexpr const char * get() { return "UInt128"; } };
+template <> struct TypeName<bUInt256> { static constexpr const char * get() { return "UInt256"; } };
+template <> struct TypeName<Int8>    { static constexpr const char * get() { return "Int8";    } };
+template <> struct TypeName<Int16>   { static constexpr const char * get() { return "Int16";   } };
+template <> struct TypeName<Int32>   { static constexpr const char * get() { return "Int32";   } };
+template <> struct TypeName<Int64>   { static constexpr const char * get() { return "Int64";   } };
+template <> struct TypeName<bInt128> { static constexpr const char * get() { return "Int128";  } };
+template <> struct TypeName<bInt256> { static constexpr const char * get() { return "Int256";  } };
+template <> struct TypeName<Float32> { static constexpr const char * get() { return "Float32"; } };
+template <> struct TypeName<Float64> { static constexpr const char * get() { return "Float64"; } };
+template <> struct TypeName<String>  { static constexpr const char * get() { return "String";  } };
 
 template <typename T> struct TypeId;
 template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };
@@ -136,7 +136,7 @@ using Strings = std::vector<String>;
 
 using Int128 = __int128;
 template <> inline constexpr bool IsNumber<Int128> = true;
-template <> struct TypeName<Int128> { static const char * get() { return "Int128";  } };
+template <> struct TypeName<Int128> { static constexpr const char * get() { return "Int128";  } };
 template <> struct TypeId<Int128>   { static constexpr const TypeIndex value = TypeIndex::Int128; };
 
 /// Own FieldType for Decimal.
@@ -175,10 +175,6 @@ struct Decimal
     T value;
 };
 
-// template <typename T> inline bool operator< (const Decimal<bInt256> & x, const T & y) { return x.value < static_cast<bInt256>(y); }
-// template <typename T> inline bool operator> (const Decimal<bInt256> & x, const T & y) { return x.value > static_cast<bInt256>(y); }
-// template <typename T> inline bool operator== (const Decimal<bInt256> & x, const T & y) { return x.value == static_cast<bInt256>(y); }
-
 template <typename T> inline bool operator< (const Decimal<T> & x, const Decimal<T> & y) { return x.value < y.value; }
 template <typename T> inline bool operator> (const Decimal<T> & x, const Decimal<T> & y) { return x.value > y.value; }
 template <typename T> inline bool operator== (const Decimal<T> & x, const Decimal<T> & y) { return x.value == y.value; }
@@ -197,10 +193,10 @@ using Decimal256 = Decimal<bInt256>;
 
 using DateTime64 = Decimal64;
 
-template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
-template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };
-template <> struct TypeName<Decimal128>  { static const char * get() { return "Decimal128";  } };
-template <> struct TypeName<Decimal256>  { static const char * get() { return "Decimal256";  } };
+template <> struct TypeName<Decimal32>   { static constexpr const char * get() { return "Decimal32";   } };
+template <> struct TypeName<Decimal64>   { static constexpr const char * get() { return "Decimal64";   } };
+template <> struct TypeName<Decimal128>  { static constexpr const char * get() { return "Decimal128";  } };
+template <> struct TypeName<Decimal256>  { static constexpr const char * get() { return "Decimal256";  } };
 
 template <> struct TypeId<Decimal32>    { static constexpr const TypeIndex value = TypeIndex::Decimal32; };
 template <> struct TypeId<Decimal64>    { static constexpr const TypeIndex value = TypeIndex::Decimal64; };
@@ -224,7 +220,7 @@ template <> inline Int64 Decimal64::getScaleMultiplier(UInt32 scale) { return co
 template <> inline Int128 Decimal128::getScaleMultiplier(UInt32 scale) { return common::exp10_i128(scale); }
 template <> inline bInt256 Decimal256::getScaleMultiplier(UInt32 scale) { return common::exp10_i256(scale); }
 
-inline const char * getTypeName(TypeIndex idx)
+inline constexpr const char * getTypeName(TypeIndex idx)
 {
     switch (idx)
     {
