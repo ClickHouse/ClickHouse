@@ -1,53 +1,53 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 28
-toc_title: "\u30D3\u30B8\u30E5\u30A2\u30EB"
+toc_title: "\u8996\u754C\u9762"
 ---
 
-# サードパー {#visual-interfaces-from-third-party-developers}
+# サードパーテ {#visual-interfaces-from-third-party-developers}
 
 ## オープンソース {#open-source}
 
 ### Tabix {#tabix}
 
-のclickhouseのための網インターフェイス [Tabix](https://github.com/tabixio/tabix) プロジェクト。
+のClickHouseのためのWebインターフェイス [Tabix](https://github.com/tabixio/tabix) プロジェクト
 
 特徴:
 
--   追加のソフトウェアをインストールする必要なく、ブラウザから直接clickhouseで動作します。
--   構文強調表示のクエリエディター。
+-   追加のソフトウェアをインストールする必要なしに、ブラウザから直接ClickHouseで動作します。
+-   構文の強調表示とクエリエディタ。
 -   コマンドの自動補完。
--   クエリ実行のグラフ分析のためのツール。
+-   ツールのためのグラフィカルに分析クエリを実行します。
 -   配色オプション。
 
 [Tabixドキュメント](https://tabix.io/doc/).
 
-### HouseOps {#houseops}
+### ハウスオップ {#houseops}
 
-[HouseOps](https://github.com/HouseOps/HouseOps) OSX、Linux、Windows用のUI/IDEです。
+[ハウスオップ](https://github.com/HouseOps/HouseOps) OSX、Linux、Windows用のUI/IDEです。
 
 特徴:
 
--   構文の強調表示を使用したクエリビルダー。 テーブルまたはjsonビューで応答を表示します。
+-   構文の強調表示とクエリビルダー。 テーブルまたはJSONビューで応答を表示します。
 -   CSVまたはJSONとしてエクスポートクエリ結果。
 -   説明付きのプロセスのリスト。 書き込みモード。 停止する能力 (`KILL`）プロセス。
--   データベースグラフ すべてのテーブルとその列に追加情報を表示します。
+-   データベー すべてのテーブルとその列に追加情報が表示されます。
 -   列サイズのクイックビュー。
 -   サーバー構成。
 
-次の機能は、開発のために計画されています:
+以下の機能の開発が計画されています:
 
 -   データベース管理。
 -   ユーザー管理。
--   リアルタイムデータ分析。
--   クラスタ監視。
--   クラスター管理。
--   監視レプリケートおよびkafkaテーブル。
+-   リアルタイムデータ解析。
+-   クラスター監視。
+-   クラスタ管理。
+-   複製されたテーブルとカフカテーブルの監視。
 
 ### 灯台 {#lighthouse}
 
-[灯台](https://github.com/VKCOM/lighthouse) ClickHouseのための軽量のwebインターフェイスです。
+[灯台](https://github.com/VKCOM/lighthouse) ClickHouseのための軽量なwebインターフェイスです。
 
 特徴:
 
@@ -55,97 +55,101 @@ toc_title: "\u30D3\u30B8\u30E5\u30A2\u30EB"
 -   テーブルのプレビューとフィルタです。
 -   読み取り専用クエリの実行。
 
-### Redash {#redash}
+### レダッシュ {#redash}
 
-[Redash](https://github.com/getredash/redash) めるためのプラットフォームのデータを可視化する。
+[レダッシュ](https://github.com/getredash/redash) めるためのプラットフォームのデータを可視化する。
 
-サポート、多数のデータソースを含むclickhouse,redash参加できる結果のクエリからデータソースへの最終データセットである。
+サポート、多数のデータソースを含むClickHouse,Redash参加できる結果のクエリからデータソースへの最終データセットである。
 
 特徴:
 
 -   クエリの強力なエディタ。
--   データベ
--   視覚化ツールを使用すると、さまざまな形式のデータを表現できます。
+-   エクスプローラ
+-   さまざまな形でデータを表現できる視覚化ツール。
 
-### デービーバーname {#dbeaver}
+### DBeaver {#dbeaver}
 
-[デービーバーname](https://dbeaver.io/) -ユニバーサルデスクトップのデータベースのクライアントClickHouseます。
+[DBeaver](https://dbeaver.io/) -ユニバーサルデスクトップのデータベースのクライアントClickHouseます。
 
 特徴:
 
--   構文ハイライトと自動補完によるクエリ開発。
+-   構文の強調表示と自動補完によるクエリ開発。
 -   テーブルリフィルとメタデータを検索する
 -   表データプレビュー。
--   フルテキスト検索。
+-   全文検索。
 
-### クリックハウス-cli {#clickhouse-cli}
+### clickhouse-cli {#clickhouse-cli}
 
-[クリックハウス-cli](https://github.com/hatarist/clickhouse-cli) Python3で書かれたClickHouseの代替コマンドラインクライアントです。
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) Python3で書かれたClickHouseの代替コマンドラインクライアントです。
 
 特徴:
 
 -   自動補完。
 -   クエリとデータ出力の構文強調表示。
--   データ出力のためのポケベルサポート。
--   カスタムpostgresqlのようなコマンド。
+-   データ出力のためのポケットベルサポート。
+-   カスタムPostgreSQLのようなコマンド。
 
-### clickhouse-flamegraph {#clickhouse-flamegraph}
+### クリックハウス-フラメグラフ {#clickhouse-flamegraph}
 
-[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 視覚化する専門にされた用具はある `system.trace_log` として [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+[クリックハウス-フラメグラフ](https://github.com/Slach/clickhouse-flamegraph) このツールは `system.trace_log` として [フラメグラフ](http://www.brendangregg.com/flamegraphs.html).
+
+### クリックハウス-プランタム {#clickhouse-plantuml}
+
+[チックハウス-プランタム](https://pypi.org/project/clickhouse-plantuml/) 生成するスクリプトです [プランタム](https://plantuml.com/) テーブルのスキームの図。
 
 ## 商業 {#commercial}
 
-### データグリップ {#datagrip}
+### DataGrip {#datagrip}
 
-[データグリップ](https://www.jetbrains.com/datagrip/) JetbrainsのデータベースIDEで、ClickHouse専用サポートがあります。 PyCharm、IntelliJ IDEA、GoLand、PhpStormなどの他のIntelliJベースのツールにも組み込まれています。
+[DataGrip](https://www.jetbrains.com/datagrip/) ClickHouse専用のサポートを持つJetBrainsのデータベースIDEです。 PyCharm、IntelliJ IDEA、GoLand、PhpStormなど、他のIntelliJベースのツールにも埋め込まれています。
 
 特徴:
 
 -   非常に高速なコード補完。
 -   ClickHouse構文の強調表示。
--   ClickHouse固有の機能のサポート。
+-   ネストされた列、テーブルエンジンなど、ClickHouse固有の機能のサポート。
 -   データエディタ。
 -   リファクタリング。
 -   検索とナビゲーション。
 
-### YandexのDataLens {#yandex-datalens}
+### Yandexデータレンズ {#yandex-datalens}
 
-[YandexのDataLens](https://cloud.yandex.ru/services/datalens) データの可視化と分析のサービスです。
+[Yandexデータレンズ](https://cloud.yandex.ru/services/datalens) データの可視化と分析のサービスです。
 
 特徴:
 
 -   シンプルな棒グラフから複雑なダッシュボードまで、幅広い視覚化が可能です。
--   ダッシュボードは一般公開されます。
+-   ダッシュボードを公開できます。
 -   ClickHouseを含む複数のデータソースのサポート。
--   ClickHouseに基づく具体化されたデータのための貯蔵。
+-   ClickHouseに基づく実体化されたデータのストレージ。
 
-データレンスは [無料で利用可能](https://cloud.yandex.com/docs/datalens/pricing) 商業使用のための低負荷プロジェクトのため。
+データレンズは [自由のために利用できる](https://cloud.yandex.com/docs/datalens/pricing) 商業使用の低負荷プロジェクトのため。
 
--   [DataLens書](https://cloud.yandex.com/docs/datalens/).
--   [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) ClickHouseデータベースからデータを視覚化する。
+-   [DataLensドキュメント](https://cloud.yandex.com/docs/datalens/).
+-   [チュートリ](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) 上の可視化するデータからClickHouseデータベースです。
 
 ### Holisticsソフトウェア {#holistics-software}
 
-[ホリスティクス](https://www.holistics.io/) フルスタックのデータプラットフォームは、ビジネスインツールです。
+[ホリスティック](https://www.holistics.io/) フルスタックのデータプラットフォームは、ビジネスインツールです。
 
 特徴:
 
--   自動メール、slackやグーグルシートのスケジュール。
--   SQLエディタと可視化、バージョン管理の自動完了し、再利用可能なクエリー部品、ダイナミックフィルター.
--   Iframe経由のレポートとダッシュボードの埋め込み分析。
--   データ準備およびetl機能。
+-   自動メール、Slackやグーグルシートのスケジュール。
+-   Visualizations、バージョン管理、自動補完、再利用可能なクエリコンポーネントと動的フィルタとSQLエディタ。
+-   Iframeによるレポートとダッシュボードの組み込み分析。
+-   データ準備とETL機能。
 -   SQLデータモデリング支援のためのリレーショナルマッピングのデータです。
 
-### 見物人 {#looker}
+### ルッカー {#looker}
 
-[見物人](https://looker.com) ClickHouseを含む50以上のデータベース方言をサポートするdata platform and business intelligenceツールです。 LookerはSaaSプラットフォームとして利用でき、セルフホスト型です。 ユーザーが利用できLookerる場合は、vpnクライアントの直接探索、データの構築の可視化とダッシュボード、スケジュール、識農場管理について学んでいます。 Lookerのツールを埋め込むためのチャプターでは、これらの機能の他のアプリケーション、およびAPI
+[ルッカー](https://looker.com) はデータプラットフォームは、ビジネスインツールをサポート50+データベースの方言を含むClickHouse. LookerはSaaSプラットフォームとして利用可能で、セルフホスト型です。 ユーザーが利用できLookerる場合は、vpnクライアントの直接探索、データの構築の可視化とダッシュボード、スケジュール、識農場管理について学んでいます。 Lookerのツールを埋め込むためのチャプターでは、これらの機能の他のアプリケーション、およびAPI
 統合データを、他のアプリケーション
 
 特徴:
 
--   簡単-アジャイル開発をlookml、言語に対応したキュレーション
-    [データモデル](https://looker.com/platform/data-modeling) レポート作成者とエンドユーザーをサポートする。
--   Lookerのを経由して強力なワークフローの統合 [データ操作](https://looker.com/platform/actions).
+-   LookMLを使った簡単でアジャイルな開発
+    [データモデル化](https://looker.com/platform/data-modeling) レポート作成者とエンドユーザーをサポートする。
+-   見物人による強力なワークフローの統合 [データ操作](https://looker.com/platform/actions).
 
 [LookerでClickHouseを設定する方法。](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 

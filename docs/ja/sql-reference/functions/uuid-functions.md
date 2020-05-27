@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 53
 toc_title: "UUID\u306E\u64CD\u4F5C"
 ---
@@ -9,7 +9,7 @@ toc_title: "UUID\u306E\u64CD\u4F5C"
 
 UUIDを操作するための関数を以下に示します。
 
-## generateUUIDv4 {#uuid-function-generate}
+## generateuidv4 {#uuid-function-generate}
 
 を生成する。 [UUID](../../sql-reference/data-types/uuid.md) の [バージョン4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
@@ -23,7 +23,7 @@ UUID型の値。
 
 **使用例**
 
-この例では、uuid型の列を使用してテーブルを作成し、テーブルに値を挿入する方法を示します。
+この例では、UUID型の列を持つテーブルを作成し、テーブルに値を挿入する方法を示します。
 
 ``` sql
 CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
@@ -39,9 +39,9 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┘
 ```
 
-## toUUID(x) {#touuid-x}
+## トウイド(x) {#touuid-x}
 
-文字列型の値をuuid型に変換します。
+文字列型の値をUUID型に変換します。
 
 ``` sql
 toUUID(String)
@@ -65,7 +65,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 
 ## UUIDStringToNum {#uuidstringtonum}
 
-次の形式の36文字を含む文字列を受け取ります `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` そして、それをaのバイトのセットとして返します [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+形式で36文字を含む文字列を受け入れます `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` これを、aのバイトセットとして返します [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 ``` sql
 UUIDStringToNum(String)
@@ -91,7 +91,7 @@ SELECT
 
 ## UUIDNumToString {#uuidnumtostring}
 
-を受け入れる [FixedString(16)](../../sql-reference/data-types/fixedstring.md) 値、およびテキスト形式で36文字を含む文字列を返します。
+受け入れるa [FixedString(16)](../../sql-reference/data-types/fixedstring.md) テキスト形式で36文字を含む文字列を返します。
 
 ``` sql
 UUIDNumToString(FixedString(16))
@@ -99,7 +99,7 @@ UUIDNumToString(FixedString(16))
 
 **戻り値**
 
-文字列。
+文字列
 
 **使用例**
 
@@ -115,7 +115,7 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## また見なさい {#see-also}
+## も参照。 {#see-also}
 
 -   [dictGetUUID](ext-dict-functions.md#ext_dict_functions-other)
 

@@ -152,7 +152,7 @@ bool DatabaseLazy::empty() const
 
 void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table, const String &)
 {
-    LOG_DEBUG(log, "Attach table " << backQuote(table_name) << ".");
+    LOG_DEBUG(log, "Attach table {}.", backQuote(table_name));
     std::lock_guard lock(mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
@@ -169,7 +169,7 @@ StoragePtr DatabaseLazy::detachTable(const String & table_name)
 {
     StoragePtr res;
     {
-        LOG_DEBUG(log, "Detach table " << backQuote(table_name) << ".");
+        LOG_DEBUG(log, "Detach table {}.", backQuote(table_name));
         std::lock_guard lock(mutex);
         auto it = tables_cache.find(table_name);
         if (it == tables_cache.end())
@@ -216,7 +216,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
 
-    LOG_DEBUG(log, "Load table " << backQuote(table_name) << " to cache.");
+    LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
     const String table_metadata_path = getMetadataPath() + "/" + escapeForFileName(table_name) + ".sql";
 
@@ -277,14 +277,14 @@ void DatabaseLazy::clearExpiredTables() const
 
         if (!it->second.table || it->second.table.unique())
         {
-            LOG_DEBUG(log, "Drop table " << backQuote(it->first) << " from cache.");
+            LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
             it->second.table.reset();
             expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();
         }
         else
         {
-            LOG_DEBUG(log, "Table " << backQuote(it->first) << " is busy.");
+            LOG_DEBUG(log, "Table {} is busy.", backQuote(it->first));
             busy_tables.splice(busy_tables.end(), expired_tables, it->second.expiration_iterator);
         }
     }

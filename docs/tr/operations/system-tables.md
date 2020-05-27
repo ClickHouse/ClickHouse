@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "Sistem Tablolar\u0131"
 ---
@@ -180,7 +180,7 @@ Sütun:
 -   `loading_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
 -   `last_successful_update_time` ([DateTime](../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with external sources and investigate causes.
 -   `loading_duration` ([Float32](../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
--   `last_exception` ([Dize](../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
+-   `last_exception` ([Dize](../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 
 **Örnek**
 
@@ -400,7 +400,7 @@ Testler için kullanılır.
 
 Bu tablo, tek bir satır içeren tek bir satır içerir ‘dummy’ 0 değerini içeren uint8 sütunu.
 SELECT sorgusu FROM yan tümcesi belirtmezse, bu tablo kullanılır.
-Bu, diğer Dbms’lerde bulunan ikili tabloya benzer.
+Bu, diğer Dbms'lerde bulunan ikili tabloya benzer.
 
 ## sistem.parçalar {#system_tables-parts}
 
@@ -419,7 +419,7 @@ Sütun:
 
 -   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
 -   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` dizin ayrıntısına göre (genellikle 8192) (bu ipucu uyarlanabilir ayrıntı için çalışmaz).
 
@@ -461,7 +461,7 @@ Sütun:
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -588,8 +588,8 @@ Sütun:
 -   `query_duration_ms` (UInt64) — Duration of query execution.
 -   `read_rows` (UInt64) — Number of read rows.
 -   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` sorgular, yazılı satır sayısı. Diğer sorgular için sütun değeri 0’dır.
--   `written_bytes` (UInt64) — For `INSERT` sorgular, yazılı bayt sayısı. Diğer sorgular için sütun değeri 0’dır.
+-   `written_rows` (UInt64) — For `INSERT` sorgular, yazılı satır sayısı. Diğer sorgular için sütun değeri 0'dır.
+-   `written_bytes` (UInt64) — For `INSERT` sorgular, yazılı bayt sayısı. Diğer sorgular için sütun değeri 0'dır.
 -   `result_rows` (UInt64) — Number of rows in the result.
 -   `result_bytes` (UInt64) — Number of bytes in the result.
 -   `memory_usage` (UInt64) — Memory consumption by the query.
@@ -610,7 +610,7 @@ Sütun:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-müşteri](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [clickhouse-müşteri](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-müşteri](../interfaces/cli.md) veya başka bir TCP istemcisi çalıştırılır.
 -   `client_name` (String) — The [clickhouse-müşteri](../interfaces/cli.md) veya başka bir TCP istemci adı.
 -   `client_revision` (UInt32) — Revision of the [clickhouse-müşteri](../interfaces/cli.md) veya başka bir TCP istemcisi.
@@ -661,8 +661,8 @@ Sütun:
 -   `query_duration_ms` (UInt64) — Duration of query execution.
 -   `read_rows` (UInt64) — Number of read rows.
 -   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` sorgular, yazılı satır sayısı. Diğer sorgular için sütun değeri 0’dır.
--   `written_bytes` (UInt64) — For `INSERT` sorgular, yazılı bayt sayısı. Diğer sorgular için sütun değeri 0’dır.
+-   `written_rows` (UInt64) — For `INSERT` sorgular, yazılı satır sayısı. Diğer sorgular için sütun değeri 0'dır.
+-   `written_bytes` (UInt64) — For `INSERT` sorgular, yazılı bayt sayısı. Diğer sorgular için sütun değeri 0'dır.
 -   `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
 -   `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 -   `thread_name` (String) — Name of the thread.
@@ -684,7 +684,7 @@ Sütun:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-müşteri](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [clickhouse-müşteri](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-müşteri](../interfaces/cli.md) veya başka bir TCP istemcisi çalıştırılır.
 -   `client_name` (String) — The [clickhouse-müşteri](../interfaces/cli.md) veya başka bir TCP istemci adı.
 -   `client_revision` (UInt32) — Revision of the [clickhouse-müşteri](../interfaces/cli.md) veya başka bir TCP istemcisi.
@@ -720,24 +720,26 @@ Günlükleri analiz etmek için `addressToLine`, `addressToSymbol` ve `demangle`
 
 Sütun:
 
--   `event_date`([Tarihli](../sql-reference/data-types/date.md)) — Date of sampling moment.
+-   `event_date` ([Tarihli](../sql-reference/data-types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../sql-reference/data-types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
 
--   `revision`([Uİnt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
+-   `timestamp_ns` ([Uİnt64](../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
+
+-   `revision` ([Uİnt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
     Tarafından sunucuya Bağlan byırken `clickhouse-client`, benzer diz theg seeeyi görüyorsunuz `Connected to ClickHouse server version 19.18.1 revision 54429.`. Bu alan şunları içerir `revision` ama `version` bir sunucunun.
 
--   `timer_type`([Enum8](../sql-reference/data-types/enum.md)) — Timer type:
+-   `timer_type` ([Enum8](../sql-reference/data-types/enum.md)) — Timer type:
 
     -   `Real` duvar saati zamanını temsil eder.
     -   `CPU` CPU süresini temsil eder.
 
--   `thread_number`([Uİnt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_number` ([Uİnt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id`([Dize](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) sistem tablosu.
+-   `query_id` ([Dize](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) sistem tablosu.
 
--   `trace`([Dizi (Uİnt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace` ([Dizi (Uİnt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Örnek**
 
@@ -816,7 +818,7 @@ Sütun:
     Yazma kullanılabilir ve bir oturum ZK, bir lider olup olmadığına bakılmaksızın olan herhangi bir yineleme için gerçekleştirilebilir unutmayın.
 -   `can_become_leader` (`UInt8`)- Rep .lik leaderanın lider olarak seçil .ip seçil .emeyeceği.
 -   `is_readonly` (`UInt8`)- Yinelemenin salt okunur modda olup olmadığı.
-    Yapılandırmanın ZooKeeper ile bölümleri yoksa, zookeeper’daki oturumları yeniden başlatırken ve Zookeeper’daki oturum yeniden başlatılırken bilinmeyen bir hata oluşmuşsa bu mod açılır.
+    Yapılandırmanın ZooKeeper ile bölümleri yoksa, zookeeper'daki oturumları yeniden başlatırken ve Zookeeper'daki oturum yeniden başlatılırken bilinmeyen bir hata oluşmuşsa bu mod açılır.
 -   `is_session_expired` (`UInt8`)- ZooKeeper ile oturum süresi doldu. Temelde aynı `is_readonly`.
 -   `future_parts` (`UInt32`)- Henüz yapılmamış ekler veya birleştirmelerin sonucu olarak görünecek veri parçalarının sayısı.
 -   `parts_to_check` (`UInt32`)- Doğrulama için kuyruktaki veri parçalarının sayısı. Hasar görebileceğinden şüphe varsa, bir parça doğrulama kuyruğuna konur.
@@ -893,7 +895,7 @@ Sütun:
 -   `max` ([Nullable](../sql-reference/data-types/nullable.md)([Dize](../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [kısıtlamalar](settings/constraints-on-settings.md#constraints-on-settings). Ayarın maksimum değeri yoksa, şunları içerir [NULL](../sql-reference/syntax.md#null-literal).
 -   `readonly` ([Uİnt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     -   `0` — Current user can change the setting.
-    -   `1` — Current user can’t change the setting.
+    -   `1` — Current user can't change the setting.
 
 **Örnek**
 
@@ -926,7 +928,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **Ayrıca bakınız**
 
--   [Ayarlar](settings/index.md#settings)
+-   [Ayarlar](settings/index.md#session-settings-intro)
 -   [Sorgular için izinler](settings/permissions-for-queries.md#settings_readonly)
 -   [Ayarlardaki kısıtlamalar](settings/constraints-on-settings.md)
 

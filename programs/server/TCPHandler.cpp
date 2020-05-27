@@ -28,7 +28,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
 
-#include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 #include "TCPHandler.h"
 
@@ -115,8 +115,7 @@ void TCPHandler::runImpl()
         if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTraceString());
+            LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -278,8 +277,11 @@ void TCPHandler::runImpl()
             sendLogs();
             sendEndOfStream();
 
-            query_scope.reset();
+            /// QueryState should be cleared before QueryScope, since otherwise
+            /// the MemoryTracker will be wrong for possible deallocations.
+            /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            query_scope.reset();
         }
         catch (const Exception & e)
         {
@@ -359,8 +361,11 @@ void TCPHandler::runImpl()
 
         try
         {
-            query_scope.reset();
+            /// QueryState should be cleared before QueryScope, since otherwise
+            /// the MemoryTracker will be wrong for possible deallocations.
+            /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            query_scope.reset();
         }
         catch (...)
         {
@@ -373,8 +378,7 @@ void TCPHandler::runImpl()
 
         watch.stop();
 
-        LOG_INFO(log, std::fixed << std::setprecision(3)
-            << "Processed in " << watch.elapsedSeconds() << " sec.");
+        LOG_INFO(log, "Processed in {} sec.", watch.elapsedSeconds());
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
@@ -553,68 +557,23 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
-        auto & header = pipeline.getHeader();
+        const auto & header = pipeline.getHeader();
 
         if (header)
             sendData(header);
     }
 
-    auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
-    pipeline.setOutput(lazy_format);
-
     {
-        auto thread_group = CurrentThread::getGroup();
-        ThreadPool pool(1);
-        auto executor = pipeline.execute();
-        std::atomic_bool exception = false;
+        PullingAsyncPipelineExecutor executor(pipeline);
+        CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
-        pool.scheduleOrThrowOnError([&]()
-        {
-            /// ThreadStatus thread_status;
-
-            if (thread_group)
-                CurrentThread::attachTo(thread_group);
-
-            SCOPE_EXIT(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-            );
-
-            CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
-            setThreadName("QueryPipelineEx");
-
-            try
-            {
-                executor->execute(pipeline.getNumThreads());
-            }
-            catch (...)
-            {
-                exception = true;
-                throw;
-            }
-        });
-
-        /// Wait in case of exception happened outside of pool.
-        SCOPE_EXIT(
-                lazy_format->finish();
-
-                try
-                {
-                    pool.wait();
-                }
-                catch (...)
-                {
-                    /// If exception was thrown during pipeline execution, skip it while processing other exception.
-                    tryLogCurrentException(log);
-                }
-        );
-
-        while (!lazy_format->isFinished() && !exception)
+        Block block;
+        while (executor.pull(block, query_context->getSettingsRef().interactive_delay / 1000))
         {
             if (isQueryCancelled())
             {
                 /// A packet was received requesting to stop execution of the request.
-                executor->cancel();
+                executor.cancel();
                 break;
             }
 
@@ -627,16 +586,12 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
 
             sendLogs();
 
-            if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
+            if (block)
             {
                 if (!state.io.null_format)
                     sendData(block);
             }
         }
-
-        /// Finish lazy_format before waiting. Otherwise some thread may write into it, and waiting will lock.
-        lazy_format->finish();
-        pool.wait();
 
         /** If data has run out, we will send the profiling data and total values to
           * the last zero block to be able to use
@@ -647,9 +602,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
           */
         if (!isQueryCancelled())
         {
-            sendTotals(lazy_format->getTotals());
-            sendExtremes(lazy_format->getExtremes());
-            sendProfileInfo(lazy_format->getProfileInfo());
+            sendTotals(executor.getTotalsBlock());
+            sendExtremes(executor.getExtremesBlock());
+            sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
         }
@@ -775,16 +730,14 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
-    LOG_DEBUG(log, "Connected " << client_name
-        << " version " << client_version_major
-        << "." << client_version_minor
-        << "." << client_version_patch
-        << ", revision: " << client_revision
-        << (!default_database.empty() ? ", database: " + default_database : "")
-        << (!user.empty() ? ", user: " + user : "")
-        << ".");
+    LOG_DEBUG(log, "Connected {} version {}.{}.{}, revision: {}{}{}.",
+        client_name,
+        client_version_major, client_version_minor, client_version_patch,
+        client_revision,
+        (!default_database.empty() ? ", database: " + default_database : ""),
+        (!user.empty() ? ", user: " + user : ""));
 
-    connection_context.setUser(user, password, socket().peerAddress(), "");
+    connection_context.setUser(user, password, socket().peerAddress());
 }
 
 
@@ -1248,8 +1201,7 @@ void TCPHandler::run()
         /// Timeout - not an error.
         if (!strcmp(e.what(), "Timeout"))
         {
-            LOG_DEBUG(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+            LOG_DEBUG(log, "Poco::Exception. Code: {}, e.code() = {}, e.displayText() = {}, e.what() = {}", ErrorCodes::POCO_EXCEPTION, e.code(), e.displayText(), e.what());
         }
         else
             throw;

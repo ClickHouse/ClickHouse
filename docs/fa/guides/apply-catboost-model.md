@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
 toc_title: "\u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u0627\u0632 \u0645\u062F\u0644\
   \ \u0647\u0627\u06CC \u0627\u062F\u0645 \u06A9\u0648\u062F\u0646 \u0648 \u0627\u062D\
@@ -37,7 +37,7 @@ toc_title: "\u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u0627\u0632 \u0645\u062F
 $ docker pull yandex/tutorial-catboost-clickhouse
 ```
 
-این docker تصویر شامل همه چیز شما نیاز به اجرای catboost و clickhouse: کد در زمان اجرا کتابخانه های محیط متغیر و فایل های پیکربندی.
+این Docker تصویر شامل همه چیز شما نیاز به اجرای CatBoost و ClickHouse: کد در زمان اجرا کتابخانه های محیط متغیر و فایل های پیکربندی.
 
 **2.** اطمینان حاصل کنید که تصویر کارگر بارانداز شده است با موفقیت کشیده:
 

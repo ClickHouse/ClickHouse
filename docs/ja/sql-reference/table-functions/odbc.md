@@ -1,13 +1,13 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: odbc
 ---
 
 # odbc {#table-functions-odbc}
 
-接続されたテーブルを返します。 [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+接続されているテーブルを返します [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 ``` sql
 odbc(connection_settings, external_database, external_table)
@@ -15,23 +15,23 @@ odbc(connection_settings, external_database, external_table)
 
 パラメータ:
 
--   `connection_settings` — Name of the section with connection settings in the `odbc.ini` ファイル。
+-   `connection_settings` — Name of the section with connection settings in the `odbc.ini` ファイル
 -   `external_database` — Name of a database in an external DBMS.
 -   `external_table` — Name of a table in the `external_database`.
 
-ODBC接続を安全に実装するには、ClickHouseは別のプログラムを使用します `clickhouse-odbc-bridge`. ODBCドライバーが直接読み込まれている場合 `clickhouse-server` ドライバの問題でクラッシュのClickHouseサーバーです。 クリックハウスが自動的に起動 `clickhouse-odbc-bridge` それが必要なとき。 ODBCブリッジプログラムは、次のパッケージと同じパッケー `clickhouse-server`.
+ODBC接続を安全に実装するために、ClickHouseは別のプログラムを使用します `clickhouse-odbc-bridge`. ODBCドライバーが直接ロードされる場合 `clickhouse-server` ドライバの問題でクラッシュのClickHouseサーバーです。 ClickHouseは自動的に起動します `clickhouse-odbc-bridge` それが必要なとき。 ODBC bridgeプログラムは、 `clickhouse-server`.
 
-のフィールド `NULL` 外部テーブルの値は、基本データ型のデフォルト値に変換されます。 例えば、リモートMySQLテーブル分野の `INT NULL` タイプは0に変換されます（ClickHouseのデフォルト値 `Int32` データ型)。
+を持つフィールド `NULL` 外部テーブルの値は、基本データ型の既定値に変換されます。 たとえば、リモートMySQLテーブルフィールドに `INT NULL` 0に変換される型(ClickHouseのデフォルト値 `Int32` データ型）。
 
 ## 使用例 {#usage-example}
 
 **PpsはインタラクティブのMySQLのインストール目盛**
 
-この例は、ubuntu linux18.04およびmysql server5.7で確認されています。
+この例では、Ubuntu Linux18.04およびMySQL server5.7がチェックされています。
 
 UnixODBCとMySQL Connectorがインストールされていることを確認します。
 
-デフォルトでインストールされた場合、パッケージから),clickhouse開始してユーザー `clickhouse`. したがって、MySQLサーバでこのユーザを作成して設定する必要があります。
+デフォルトでインストールされた場合、パッケージから),ClickHouse開始してユーザー `clickhouse`. したがって、MySQLサーバでこのユーザを作成して構成する必要があります。
 
 ``` bash
 $ sudo mysql
@@ -55,7 +55,7 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-チェックでき、接続を使用 `isql` unixODBCインストールからのユーティリティ。
+接続を確認するには `isql` unixODBCの取付けからの実用性。
 
 ``` bash
 $ isql -v mysqlconn
@@ -88,7 +88,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-ClickHouseのMySQLテーブルからデータを取得する:
+ClickHouseのMySQLテーブルからのデータの取得:
 
 ``` sql
 SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
@@ -100,7 +100,7 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## また見なさい {#see-also}
+## も参照。 {#see-also}
 
 -   [ODBC外部辞書](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBCテーブルエンジン](../../engines/table-engines/integrations/odbc.md).

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 46
 toc_title: "Ar\u0131za"
 ---
@@ -14,7 +14,7 @@ toc_title: "Ar\u0131za"
 
 ## Kurulum {#troubleshooting-installation-errors}
 
-### Apt-get Ile ClickHouse Deposundan Deb Paketleri alınamıyor {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### Apt-get ile ClickHouse deposundan Deb paketleri alınamıyor {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Güvenlik Duvarı ayarlarını kontrol edin.
 -   Depoya herhangi bir nedenle erişemiyorsanız, paketleri aşağıda açıklandığı gibi indirin [Başlarken](../getting-started/index.md) makale ve bunları kullanarak manuel olarak yükleyin `sudo dpkg -i <packages>` komut. Ayrıca ihtiyacınız olacak `tzdata` paket.
@@ -87,7 +87,7 @@ Eğer herhangi bir yararlı bilgi bulamazsanız `clickhouse-server` günlükler 
 $ sudo journalctl -u clickhouse-server
 ```
 
-**Clickhouse-Server’ı etkileşimli modda Başlat**
+**Clickhouse-Server'ı etkileşimli modda Başlat**
 
 ``` bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
@@ -101,7 +101,7 @@ Kontrol:
 
 -   Docker ayarları.
 
-    Bir IPv6 ağında Docker’da ClickHouse çalıştırırsanız, `network=host` ayar .lanmıştır.
+    Bir IPv6 ağında Docker'da ClickHouse çalıştırırsanız, `network=host` ayar .lanmıştır.
 
 -   Bitiş noktası ayarları.
 
@@ -135,12 +135,12 @@ $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-Eğer başlarsanız `clickhouse-client` ile… `stack-trace` parametre, ClickHouse bir hata açıklaması ile sunucu yığın izleme döndürür.
+Eğer başlarsanız `clickhouse-client` ile... `stack-trace` parametre, ClickHouse bir hata açıklaması ile sunucu yığın izleme döndürür.
 
 Bozuk bir bağlantı hakkında bir mesaj görebilirsiniz. Bu durumda, sorguyu tekrarlayabilirsiniz. Sorguyu her gerçekleştirdiğinizde bağlantı kesilirse, sunucu günlüklerini hatalar için denetleyin.
 
 ## Sorgu işleme verimliliği {#troubleshooting-too-slow}
 
-Clickhouse’un çok yavaş çalıştığını görürseniz, sorgularınız için sunucu kaynakları ve ağdaki yükü profillemeniz gerekir.
+Clickhouse'un çok yavaş çalıştığını görürseniz, sorgularınız için sunucu kaynakları ve ağdaki yükü profillemeniz gerekir.
 
 Profil sorguları için clickhouse-benchmark yardımcı programını kullanabilirsiniz. Saniyede işlenen sorgu sayısını, saniyede işlenen satır sayısını ve sorgu işleme sürelerinin yüzdelerini gösterir.

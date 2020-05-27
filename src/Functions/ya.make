@@ -127,8 +127,6 @@ SRCS(
     cos.cpp
     CRC.cpp
     currentDatabase.cpp
-    currentQuota.cpp
-    currentRowPolicies.cpp
     currentUser.cpp
     dateDiff.cpp
     defaultValueOfArgumentType.cpp
@@ -153,6 +151,9 @@ SRCS(
     finalizeAggregation.cpp
     formatDateTime.cpp
     formatString.cpp
+    fromUnixTimestamp64Micro.cpp
+    fromUnixTimestamp64Milli.cpp
+    fromUnixTimestamp64Nano.cpp
     FunctionFactory.cpp
     FunctionFQDN.cpp
     FunctionHelpers.cpp
@@ -170,6 +171,7 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
+    FunctionUnixTimestamp64.h
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
@@ -207,7 +209,6 @@ SRCS(
     ifNull.cpp
     IFunction.cpp
     ignore.cpp
-    ignoreExceptNull.cpp
     in.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -286,6 +287,8 @@ SRCS(
     rand.cpp
     randomPrintableASCII.cpp
     randomString.cpp
+    randomStringUTF8.cpp
+    randomFixedString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -306,6 +309,7 @@ SRCS(
     registerFunctionsStringSearch.cpp
     registerFunctionsTuple.cpp
     registerFunctionsVisitParam.cpp
+    registerFunctionsUnixTimestamp64.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
     reinterpretStringAs.cpp
@@ -380,12 +384,16 @@ SRCS(
     toStartOfMinute.cpp
     toStartOfMonth.cpp
     toStartOfQuarter.cpp
+    toStartOfSecond.cpp
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
     toTimeZone.cpp
     toTypeName.cpp
     toValidUTF8.cpp
+    toUnixTimestamp64Micro.cpp
+    toUnixTimestamp64Milli.cpp
+    toUnixTimestamp64Nano.cpp
     toYear.cpp
     toYYYYMM.cpp
     toYYYYMMDD.cpp

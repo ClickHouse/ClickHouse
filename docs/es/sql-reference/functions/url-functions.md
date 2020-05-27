@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 54
 toc_title: Trabajar con URL
 ---
 
-# Funciones Para Trabajar Con URL {#functions-for-working-with-urls}
+# Funciones para trabajar con URL {#functions-for-working-with-urls}
 
 Todas estas funciones no siguen el RFC. Se simplifican al máximo para mejorar el rendimiento.
 
-## Funciones Que Extraen Partes De Una URL {#functions-that-extract-parts-of-a-url}
+## Funciones que extraen partes de una URL {#functions-that-extract-parts-of-a-url}
 
 Si la parte relevante no está presente en una URL, se devuelve una cadena vacía.
 
@@ -66,7 +66,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 └────────────────────────────────────────────────────────┘
 ```
 
-### Nuestros Servicios {#domainwithoutwww}
+### Nuestros servicios {#domainwithoutwww}
 
 Devuelve el dominio y no elimina más de uno ‘www.’ desde el principio de la misma, si está presente.
 
@@ -182,11 +182,11 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## Funciones Que Eliminan Parte De Una URL {#functions-that-remove-part-of-a-url}
+## Funciones que eliminan parte de una URL {#functions-that-remove-part-of-a-url}
 
 Si la URL no tiene nada similar, la URL permanece sin cambios.
 
-### Sistema Abierto {#cutwww}
+### Sistema abierto {#cutwww}
 
 Elimina no más de uno ‘www.’ desde el principio del dominio de la URL, si está presente.
 

@@ -95,7 +95,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 При обработке `NULL` есть множество особенностей. Например, если хотя бы один из аргументов операции сравнения — `NULL`, то результатом такой операции тоже будет `NULL`. Этим же свойством обладают операции умножения, сложения и пр. Подробнее читайте в документации на каждую операцию.
 
-В запросах можно проверить `NULL` с помощью операторов [IS NULL](operators.md#operator-is-null) и [IS NOT NULL](operators.md), а также соответствующих функций `isNull` и `isNotNull`.
+В запросах можно проверить `NULL` с помощью операторов [IS NULL](operators/index.md#operator-is-null) и [IS NOT NULL](operators/index.md), а также соответствующих функций `isNull` и `isNotNull`.
 
 ## Функции {#funktsii}
 

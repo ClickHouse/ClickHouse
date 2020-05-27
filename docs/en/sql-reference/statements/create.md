@@ -327,23 +327,23 @@ There are multiple ways of user identification:
 
 #### User Host
 
-User host is a host from which a connection to ClickHouse server could be established. Host can be specified in the `HOST` section of query by the following ways:
+User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
 
 - `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. For use in production, only specify `HOST IP` elements (IP addresses and their masks), since using `host` and `host_regexp` might cause extra latency.
-- `HOST ANY` — User can connect from any location. This is default option.
+- `HOST ANY` — User can connect from any location. This is a default option.
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'template'` — Allows you use the [LIKE](../functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
+- `HOST LIKE 'template'` — Allows you to use the [LIKE](../functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
-Another way of specifying host is to use `@` syntax with the user name. Examples:
+Another way of specifying host is to use `@` syntax following the username. Examples:
 
 - `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` syntax.
 - `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
 - `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
 !!! info "Warning"
-    ClickHouse treats `user_name@'address'` as a user name as a whole. Thus, technically you can create multiple users with `user_name` and different constructions after `@`. We don't recommend to do so.
+    ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we don't recommend to do so.
 
 
 ### Examples {#create-user-examples}
@@ -369,7 +369,7 @@ Create the user account `john` and make all his future roles default:
 ALTER USER user DEFAULT ROLE ALL
 ```
 
-When some role will be assigned to `john` in the future it will become default automatically.
+When some role is assigned to `john` in the future, it will become default automatically.
 
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
@@ -391,15 +391,15 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 ### Description {#create-role-description}
 
-Role is a set of [privileges](grant.md#grant-privileges). A user granted with a role gets all the privileges of this role. 
+Role is a set of [privileges](grant.md#grant-privileges). A user assigned a role gets all the privileges of this role. 
 
-A user can be assigned with multiple roles. Users can apply their granted roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
+A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
 
 User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 
 To revoke a role, use the [REVOKE](revoke.md) statement.
 
-To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was granted.
+To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ### Examples {#create-role-examples}
 
@@ -410,13 +410,13 @@ GRANT SELECT ON db.* TO accountant;
 
 This sequence of queries creates the role `accountant` that has the privilege of reading data from the `accounting` database.
 
-Granting the role to the user `mira`:
+Assigning the role to the user `mira`:
 
 ```sql
 GRANT accountant TO mira;
 ```
 
-After the role is granted, the user can use it and perform the allowed queries. For example:
+After the role is assigned, the user can apply it and execute the allowed queries. For example:
 
 ```sql
 SET ROLE accountant;
@@ -443,15 +443,15 @@ Using this section you can create permissive or restrictive policies.
 
 Permissive policy grants access to rows. Permissive policies which apply to the same table are combined together using the boolean `OR` operator. Policies are permissive by default.
 
-Restrictive policy restricts access to row. Restrictive policies which apply to the same table are combined together using the boolean `AND` operator.
+Restrictive policy restricts access to rows. Restrictive policies which apply to the same table are combined together using the boolean `AND` operator.
 
 Restrictive policies apply to rows that passed the permissive filters. If you set restrictive policies but no permissive policies, the user can't get any row from the table.
 
 #### Section TO {#create-row-policy-to}
 
-In the section `TO` you can give a mixed list of roles and users, for example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+In the section `TO` you can provide a mixed list of roles and users, for example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
-Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to to exclude some users from the all users list, for example `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to exclude some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
 ### Examples
 
@@ -494,7 +494,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_na
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-# Example {#create-settings-profile-syntax}
+### Example {#create-settings-profile-syntax}
 
 Create the `max_memory_usage_profile` settings profile with value and constraints for the `max_memory_usage` setting. Assign it to `robin`:
 

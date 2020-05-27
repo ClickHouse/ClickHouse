@@ -1,12 +1,12 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 59
 toc_title: "Sorgu karma\u015F\u0131kl\u0131\u011F\u0131 \xFCzerindeki k\u0131s\u0131\
   tlamalar"
 ---
 
-# Sorgu Karmaşıklığı Üzerindeki Kısıtlamalar {#restrictions-on-query-complexity}
+# Sorgu karmaşıklığı üzerindeki kısıtlamalar {#restrictions-on-query-complexity}
 
 Sorgu karmaşıklığı üzerindeki kısıtlamalar ayarların bir parçasıdır.
 Kullanıcı arabiriminden daha güvenli yürütme sağlamak için kullanılırlar.
@@ -22,13 +22,13 @@ ClickHouse, her satır için değil, veri bölümleri için kısıtlamaları den
 
 `break` – Stop executing the query and return the partial result, as if the source data ran out.
 
-`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
+`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
 ## max\_memory\_usage {#settings_max_memory_usage}
 
 Tek bir sunucuda bir sorgu çalıştırmak için kullanılacak en fazla RAM miktarı.
 
-Varsayılan yapılandırma dosyasında maksimum 10 GB’DİR.
+Varsayılan yapılandırma dosyasında maksimum 10 GB'DİR.
 
 Bu ayar, kullanılabilir belleğin hacmini veya makinedeki toplam bellek hacmini dikkate almaz.
 Kısıtlama, tek bir sunucu içindeki tek bir sorgu için geçerlidir.
@@ -79,15 +79,15 @@ Toplama alınan benzersiz anahtarların maksimum sayısı. Bu ayar, toplama sır
 ## group\_by\_overflow\_mode {#group-by-overflow-mode}
 
 Toplama için benzersiz anahtarların sayısı sınırı aştığında ne yapmalı: ‘throw’, ‘break’, veya ‘any’. Varsayılan olarak, atın.
-Kullanarak ‘any’ değer, GROUP BY’NİN bir yaklaşımını çalıştırmanızı sağlar. Bu yaklaşımın kalitesi, verilerin istatistiksel niteliğine bağlıdır.
+Kullanarak ‘any’ değer, GROUP BY'NİN bir yaklaşımını çalıştırmanızı sağlar. Bu yaklaşımın kalitesi, verilerin istatistiksel niteliğine bağlıdır.
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Çalıştırmayı etkinleştirir veya devre dışı bırakır `GROUP BY` harici bellekte yan tümceleri. Görmek [Harici bellekte grupla](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+Çalıştırmayı etkinleştirir veya devre dışı bırakır `GROUP BY` harici bellekte yan tümceleri. Görmek [Harici bellekte grupla](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 Olası değerler:
 
--   Tek tarafından kullanılabilecek maksimum RAM hacmi (bayt cinsinden) [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause) işleyiş.
+-   Tek tarafından kullanılabilecek maksimum RAM hacmi (bayt cinsinden) [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operasyon.
 -   0 — `GROUP BY` harici bellekte devre dışı.
 
 Varsayılan değer: 0.
@@ -170,7 +170,7 @@ Tek bir sorguda bir tablodan okunabilen sütun sayısı. Bir sorgu daha fazla sa
 
 ## max\_temporary\_columns {#max-temporary-columns}
 
-Sabit sütunlar da dahil olmak üzere bir sorgu çalıştırırken aynı anda RAM’de tutulması gereken geçici sütun sayısı. Bundan daha fazla geçici sütun varsa, bir istisna atar.
+Sabit sütunlar da dahil olmak üzere bir sorgu çalıştırırken aynı anda RAM'de tutulması gereken geçici sütun sayısı. Bundan daha fazla geçici sütun varsa, bir istisna atar.
 
 ## max\_temporary\_non\_const\_columns {#max-temporary-non-const-columns}
 
@@ -235,11 +235,11 @@ Veri miktarı sınırlardan birini aştığında ne yapmalı: ‘throw’ veya �
 
 Tabloları birleştirirken kullanılan karma tablodaki satır sayısını sınırlar.
 
-Bu ayarlar aşağıdakiler için geçerlidir [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) işlemleri ve [Katmak](../../engines/table-engines/special/join.md) masa motoru.
+Bu ayarlar aşağıdakiler için geçerlidir [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) işlemleri ve [Katmak](../../engines/table-engines/special/join.md) masa motoru.
 
 Bir sorgu birden çok birleşim içeriyorsa, ClickHouse her Ara sonuç için bu ayarı denetler.
 
-Limit ulaşıldığında ClickHouse farklı eylemlerle devam edebilirsiniz. Kullan… [join\_overflow\_mode](#settings-join_overflow_mode) eylemi seçmek için ayarlama.
+Limit ulaşıldığında ClickHouse farklı eylemlerle devam edebilirsiniz. Kullan... [join\_overflow\_mode](#settings-join_overflow_mode) eylemi seçmek için ayarlama.
 
 Olası değerler:
 
@@ -252,7 +252,7 @@ Varsayılan değer: 0.
 
 Tabloları birleştirirken kullanılan karma tablonun bayt cinsinden boyutunu sınırlar.
 
-Bu ayarlar aşağıdakiler için geçerlidir [SELECT … JOIN](../../sql-reference/statements/select.md#select-join) işlemleri ve [Jo tablein table engine](../../engines/table-engines/special/join.md).
+Bu ayarlar aşağıdakiler için geçerlidir [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) işlemleri ve [Jo tablein table engine](../../engines/table-engines/special/join.md).
 
 Sorgu birleşimler içeriyorsa, ClickHouse her Ara sonuç için bu ayarı denetler.
 
@@ -275,13 +275,13 @@ Tanımlar katılın aşağıdaki sınırlar her zaman eylem ClickHouse gerçekle
 Olası değerler:
 
 -   `THROW` — ClickHouse throws an exception and breaks operation.
--   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+-   `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
 
 Varsayılan değer: `THROW`.
 
 **Ayrıca Bakınız**
 
--   [Jo](../../sql-reference/statements/select.md#select-join)
+-   [Jo](../../sql-reference/statements/select/join.md#select-join)
 -   [Jo tablein table engine](../../engines/table-engines/special/join.md)
 
 ## max\_partitions\_per\_ınsert\_block {#max-partitions-per-insert-block}

@@ -768,8 +768,7 @@ void CacheDictionary::updateThreadFunction()
         const size_t current_queue_size = update_queue.size();
 
         if (current_queue_size > 0)
-            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with "
-                            << current_queue_size + 1 << " keys");
+            LOG_TRACE(log, "Performing bunch of keys update in cache dictionary with {} keys", current_queue_size + 1);
 
         std::vector<UpdateUnitPtr> update_request;
         update_request.reserve(current_queue_size + 1);
@@ -777,7 +776,7 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr current_unit_ptr;
 
-        while (!update_request.empty() && update_queue.tryPop(current_unit_ptr))
+        while (update_request.size() < current_queue_size + 1 && update_queue.tryPop(current_unit_ptr))
             update_request.emplace_back(std::move(current_unit_ptr));
 
         BunchUpdateUnit bunch_update_unit(update_request);
@@ -817,7 +816,7 @@ void CacheDictionary::waitForCurrentUpdateFinish(UpdateUnitPtr & update_unit_ptr
     bool result = is_update_finished.wait_for(
             update_lock,
             std::chrono::milliseconds(timeout_for_wait),
-            [&] {return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
+            [&] { return update_unit_ptr->is_done || update_unit_ptr->current_exception; });
 
     if (!result)
     {
@@ -936,7 +935,6 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
-
                     bunch_update_unit.informCallersAboutPresentId(id, cell_idx);
                     /// mark corresponding id as found
                     remaining_ids[id] = 1;
@@ -962,7 +960,8 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         }
     }
 
-    size_t not_found_num = 0, found_num = 0;
+    size_t not_found_num = 0;
+    size_t found_num = 0;
 
     /// Check which ids have not been found and require setting null_value
     for (const auto & id_found_pair : remaining_ids)

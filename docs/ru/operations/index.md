@@ -19,7 +19,7 @@ toc_title: intro
 - [Квоты](quotas.md)
 - [Системные таблицы](system-tables.md)
 - [Конфигурационные параметры сервера](server-configuration-parameters/index.md)
-- [Тестирование севреров с помощью ClickHouse](performance-test.md)
+- [Тестирование серверов с помощью ClickHouse](performance-test.md)
 - [Настройки](settings/index.md#settings)
 - [Утилиты](utilities/index.md)
 

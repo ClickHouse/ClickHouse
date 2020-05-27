@@ -9,6 +9,7 @@ CFLAGS (GLOBAL -DARCADIA_BUILD)
 
 CFLAGS (GLOBAL -DUSE_CPUID=1)
 CFLAGS (GLOBAL -DUSE_JEMALLOC=0)
+CFLAGS (GLOBAL -DUSE_RAPIDJSON=1)
 
 IF (OS_DARWIN)
     CFLAGS (GLOBAL -DOS_DARWIN)
@@ -23,6 +24,7 @@ PEERDIR(
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
+    contrib/libs/fmt
     contrib/restricted/boost
     contrib/restricted/cityhash-1.0.2
 )

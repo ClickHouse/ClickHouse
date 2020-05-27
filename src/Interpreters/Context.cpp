@@ -28,7 +28,9 @@
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
@@ -293,6 +295,10 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
+    /// Separate mutex for storage policies. During server startup we may
+    /// initialize some important storages (system logs with MergeTree engine)
+    /// under context lock.
+    mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
@@ -565,7 +571,7 @@ void Context::setPath(const String & path)
 
 VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (policy_name.empty())
     {
@@ -578,13 +584,13 @@ VolumeJBODPtr Context::setTemporaryStorage(const String & path, const String & p
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
-    if (shared->tmp_volume->disks.empty())
+    if (shared->tmp_volume->getDisks().empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
@@ -646,15 +652,13 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
+void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
     client_info.current_user = name;
     client_info.current_password = password;
     client_info.current_address = address;
-    if (!quota_key.empty())
-        client_info.quota_key = quota_key;
 
     auto new_user_id = getAccessControlManager().find<User>(name);
     std::shared_ptr<const ContextAccess> new_access;
@@ -681,14 +685,18 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
 std::shared_ptr<const User> Context::getUser() const
 {
+    return getAccess()->getUser();
+}
+
+void Context::setQuotaKey(String quota_key_)
+{
     auto lock = getLock();
-    return access->getUser();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const
 {
-    auto lock = getLock();
-    return access->getUserName();
+    return getAccess()->getUserName();
 }
 
 std::optional<UUID> Context::getUserID() const
@@ -698,7 +706,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -718,24 +726,19 @@ void Context::setCurrentRolesDefault()
     calculateAccessRights();
 }
 
-std::vector<UUID> Context::getCurrentRoles() const
+boost::container::flat_set<UUID> Context::getCurrentRoles() const
 {
-    return getAccess()->getCurrentRoles();
+    return getRolesInfo()->current_roles;
 }
 
-Strings Context::getCurrentRolesNames() const
+boost::container::flat_set<UUID> Context::getEnabledRoles() const
 {
-    return getAccess()->getCurrentRolesNames();
+    return getRolesInfo()->enabled_roles;
 }
 
-std::vector<UUID> Context::getEnabledRoles() const
+std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 {
-    return getAccess()->getEnabledRoles();
-}
-
-Strings Context::getEnabledRolesNames() const
-{
-    return getAccess()->getEnabledRolesNames();
+    return getAccess()->getRolesInfo();
 }
 
 
@@ -780,11 +783,6 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
     return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
 }
 
-std::shared_ptr<const EnabledRowPolicies> Context::getRowPolicies() const
-{
-    return getAccess()->getRowPolicies();
-}
-
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
@@ -798,6 +796,12 @@ void Context::setInitialRowPolicy()
 std::shared_ptr<const EnabledQuota> Context::getQuota() const
 {
     return getAccess()->getQuota();
+}
+
+
+std::optional<QuotaUsage> Context::getQuotaUsage() const
+{
+    return getAccess()->getQuotaUsage();
 }
 
 
@@ -1011,8 +1015,7 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
 {
-    auto lock = getLock();
-    return access->getSettingsConstraints();
+    return getAccess()->getSettingsConstraints();
 }
 
 
@@ -1689,18 +1692,37 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 
 DiskPtr Context::getDisk(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
-    auto disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector(lock);
 
     return disk_selector->get(name);
 }
 
-
-DiskSelectorPtr Context::getDiskSelector() const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->get(name);
+}
+
+
+DisksMap Context::getDisksMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getDiskSelector(lock)->getDisksMap();
+}
+
+StoragePoliciesMap Context::getPoliciesMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getStoragePolicySelector(lock)->getPoliciesMap();
+}
+
+DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
@@ -1711,27 +1733,14 @@ DiskSelectorPtr Context::getDiskSelector() const
     return shared->merge_tree_disk_selector;
 }
 
-
-StoragePolicyPtr Context::getStoragePolicy(const String & name) const
+StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const
 {
-    auto lock = getLock();
-
-    auto policy_selector = getStoragePolicySelector();
-
-    return policy_selector->get(name);
-}
-
-
-StoragePolicySelectorPtr Context::getStoragePolicySelector() const
-{
-    auto lock = getLock();
-
     if (!shared->merge_tree_storage_policy_selector)
     {
         constexpr auto config_name = "storage_configuration.policies";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector(lock));
     }
     return shared->merge_tree_storage_policy_selector;
 }
@@ -1739,7 +1748,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (shared->merge_tree_disk_selector)
         shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
@@ -1752,7 +1761,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 }

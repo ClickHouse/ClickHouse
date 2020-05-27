@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
 toc_title: "\u063A\u06CC\u0631\u0647"
 ---
@@ -10,6 +10,63 @@ toc_title: "\u063A\u06CC\u0631\u0647"
 ## نام میزبان() {#hostname}
 
 بازگرداندن یک رشته با نام میزبان که این تابع در انجام شد. برای پردازش توزیع شده, این نام میزبان سرور از راه دور است, اگر تابع بر روی یک سرور از راه دور انجام.
+
+## گدماکرو {#getmacro}
+
+می شود یک مقدار به نام از [& کلاندارها](../../operations/server-configuration-parameters/settings.md#macros) بخش پیکربندی سرور.
+
+**نحو**
+
+``` sql
+getMacro(name);
+```
+
+**پارامترها**
+
+-   `name` — Name to retrieve from the `macros` بخش. [رشته](../../sql-reference/data-types/string.md#string).
+
+**مقدار بازگشتی**
+
+-   ارزش ماکرو مشخص.
+
+نوع: [رشته](../../sql-reference/data-types/string.md).
+
+**مثال**
+
+به عنوان مثال `macros` بخش در فایل پیکربندی سرور:
+
+``` xml
+<macros>
+    <test>Value</test>
+</macros>
+```
+
+پرسوجو:
+
+``` sql
+SELECT getMacro('test');
+```
+
+نتیجه:
+
+``` text
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+```
+
+یک راه جایگزین برای دریافت همان مقدار:
+
+``` sql
+SELECT * FROM system.macros
+WHERE macro = 'test';
+```
+
+``` text
+┌─macro─┬─substitution─┐
+│ test  │ Value        │
+└───────┴──────────────┘
+```
 
 ## FQDN {#fqdn}
 
@@ -152,7 +209,7 @@ SELECT visibleWidth(NULL)
 
 ## currentUser() {#other-function-currentuser}
 
-بازده ورود به سایت از کاربر فعلی. ورود کاربر که آغاز پرس و جو بازگردانده خواهد شد در مورد distibuted پرس و جو.
+بازگرداندن ورود کاربر فعلی. ورود کاربر, که پرس و جو شروع, خواهد شد در پرس و جو مورد رقیق بازگشت.
 
 ``` sql
 SELECT currentUser();
@@ -183,13 +240,82 @@ SELECT currentUser();
 └───────────────┘
 ```
 
+## & ایستانت {#is-constant}
+
+بررسی اینکه استدلال بیان ثابت است.
+
+A constant expression means an expression whose resulting value is known at the query analysis (i.e. before execution). For example, expressions over [literals](../syntax.md#literals) عبارات ثابت هستند.
+
+این تابع برای توسعه در نظر گرفته شده, اشکال زدایی و تظاهرات.
+
+**نحو**
+
+``` sql
+isConstant(x)
+```
+
+**پارامترها**
+
+-   `x` — Expression to check.
+
+**مقادیر بازگشتی**
+
+-   `1` — `x` ثابت است.
+-   `0` — `x` غیر ثابت است.
+
+نوع: [UInt8](../data-types/int-uint.md).
+
+**مثالها**
+
+پرسوجو:
+
+``` sql
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
+```
+
+نتیجه:
+
+``` text
+┌─isConstant(plus(x, 1))─┐
+│                      1 │
+└────────────────────────┘
+```
+
+پرسوجو:
+
+``` sql
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
+```
+
+نتیجه:
+
+``` text
+┌─isConstant(cos(pi))─┐
+│                   1 │
+└─────────────────────┘
+```
+
+پرسوجو:
+
+``` sql
+SELECT isConstant(number) FROM numbers(1)
+```
+
+نتیجه:
+
+``` text
+┌─isConstant(number)─┐
+│                  0 │
+└────────────────────┘
+```
+
 ## اطلاعات دقیق) {#isfinitex}
 
-قبول float32 و float64 و بازده uint8 برابر با 1 اگر این استدلال بی نهایت است و نه یک نان در غیر این صورت 0 است.
+قبول Float32 و Float64 و بازده UInt8 برابر با 1 اگر این استدلال بی نهایت است و نه یک نان در غیر این صورت 0 است.
 
 ## اطلاعات دقیق) {#isinfinitex}
 
-قبول float32 و float64 و بازده uint8 برابر با 1 اگر این استدلال بی نهایت است در غیر این صورت 0 است. توجه داشته باشید که 0 برای نان بازگشت.
+قبول Float32 و Float64 و بازده UInt8 برابر با 1 اگر این استدلال بی نهایت است در غیر این صورت 0 است. توجه داشته باشید که 0 برای نان بازگشت.
 
 ## اطلاعات دقیق {#ifnotfinite}
 
@@ -225,7 +351,7 @@ SELECT currentUser();
 
 ## اطلاعات دقیق) {#isnanx}
 
-قبول float32 و float64 و بازده uint8 برابر با 1 اگر استدلال این است که یک نان در غیر این صورت 0 است.
+قبول Float32 و Float64 و بازده UInt8 برابر با 1 اگر استدلال این است که یک نان در غیر این صورت 0 است.
 
 ## قابل تنظیم(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’) {#hascolumnintablehostname-username-password-database-table-column}
 
@@ -311,7 +437,7 @@ ORDER BY h ASC
 
 `T` و `U` می تواند عددی, رشته,یا تاریخ و یا انواع تاریخ ساعت.
 از کجا همان نامه نشان داده شده است (تی یا تو), برای انواع عددی این ممکن است تطبیق انواع, اما انواع که یک نوع رایج.
-برای مثال استدلال می توانید نوع int64 در حالی که دوم آرایه(uint16) نوع.
+برای مثال استدلال می توانید نوع Int64 در حالی که دوم آرایه(UInt16) نوع.
 
 اگر ‘x’ ارزش به یکی از عناصر در برابر است ‘array\_from’ مجموعه, این بازگرداندن عنصر موجود (که شماره همان) از ‘array\_to’ صف کردن. در غیر این صورت, باز می گردد ‘default’. اگر عناصر تطبیق های متعدد در وجود دارد ‘array\_from’ این یکی از مسابقات را برمی گرداند.
 
@@ -445,7 +571,7 @@ neighbor(column, offset[, default_value])
 **مقادیر بازگشتی**
 
 -   مقدار برای `column` داخل `offset` فاصله از ردیف فعلی اگر `offset` ارزش خارج از مرزهای بلوک نیست.
--   مقدار پیشفرض برای `column` اگر `offset` ارزش مرزهای بلوک خارج است. اگر `default_value` داده می شود و سپس از آن استفاده خواهد شد.
+-   مقدار پیشفرض برای `column` اگر `offset` ارزش مرزهای بلوک خارج است. اگر `default_value` داده می شود و سپس استفاده می شود.
 
 نوع: نوع بلوک های داده را تحت تاثیر قرار و یا نوع مقدار پیش فرض.
 
@@ -612,7 +738,7 @@ WHERE diff != 1
 
 ## هشدار داده می شود) {#macnumtostringnum}
 
-قبول uint64 شماره. تفسیر به عنوان نشانی مک در اندی بزرگ. بازگرداندن یک رشته حاوی نشانی مک مربوطه را در قالب قلمی: ب: ر. ن:دکتر: ف.ا: ف. ف. (تعداد کولون جدا شده در فرم هگزادسیمال).
+قبول UInt64 شماره. تفسیر به عنوان نشانی مک در اندی بزرگ. بازگرداندن یک رشته حاوی نشانی مک مربوطه را در قالب قلمی: ب: ر. ن:دکتر: ف.ا: ف. ف. (تعداد کولون جدا شده در فرم هگزادسیمال).
 
 ## MACStringToNum(s) {#macstringtonums}
 
@@ -929,7 +1055,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 ## خرابی اجرا {#function-runningaccumulate}
 
 طول می کشد کشورهای تابع جمع و یک ستون با ارزش را برمی گرداند, در نتیجه تجمع این کشورها برای مجموعه ای از خطوط بلوک هستند, از اول به خط فعلی.
-برای مثال طول می کشد state of aggregate function (به عنوان مثال runningaccumulate(uniqstate(userid))) و برای هر ردیف از بلوک بازگشت نتیجه از مجموع عملکرد در ادغام دولت قبلی تمام ردیف و ردیف جاری است.
+برای مثال طول می کشد state of aggregate function (به عنوان مثال runningAccumulate(uniqState(UserID))) و برای هر ردیف از بلوک بازگشت نتیجه از مجموع عملکرد در ادغام دولت قبلی تمام ردیف و ردیف جاری است.
 بنابراین نتیجه عملکرد بستگی به پارتیشن داده ها به بلوک ها و به ترتیب داده ها در بلوک دارد.
 
 ## جوینت {#joinget}

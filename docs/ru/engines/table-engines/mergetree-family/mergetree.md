@@ -6,21 +6,13 @@
 
 Основные возможности:
 
--   Хранит данные, отсортированные по первичному ключу.
+-   **Хранит данные, отсортированные по первичному ключу.** Это позволяет создавать разреженный индекс небольшого объёма, который позволяет быстрее находить данные.
 
-        Это позволяет создавать разреженный индекс небольшого объёма, который позволяет быстрее находить данные.
+-   **Позволяет оперировать партициями, если задан [ключ партиционирования](custom-partitioning-key.md).** ClickHouse поддерживает отдельные операции с партициями, которые работают эффективнее, чем общие операции с этим же результатом над этими же данными. Также, ClickHouse автоматически отсекает данные по партициям там, где ключ партиционирования указан в запросе. Это также увеличивает эффективность выполнения запросов.
 
--   Позволяет оперировать партициями, если задан [ключ партиционирования](custom-partitioning-key.md).
+-   **Поддерживает репликацию данных.** Для этого используется семейство таблиц `ReplicatedMergeTree`. Подробнее читайте в разделе [Репликация данных](replication.md).
 
-        ClickHouse поддерживает отдельные операции с партициями, которые работают эффективнее, чем общие операции с этим же результатом над этими же данными. Также, ClickHouse автоматически отсекает данные по партициям там, где ключ партиционирования указан в запросе. Это также увеличивает эффективность выполнения запросов.
-
--   Поддерживает репликацию данных.
-
-        Для этого используется семейство таблиц `ReplicatedMergeTree`. Подробнее читайте в разделе [Репликация данных](replication.md).
-
--   Поддерживает сэмплирование данных.
-
-        При необходимости можно задать способ сэмплирования данных в таблице.
+-   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
 !!! info "Info"
     Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
@@ -53,44 +45,30 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 -   `ENGINE` — имя и параметры движка. `ENGINE = MergeTree()`. `MergeTree` не имеет параметров.
 
--   `PARTITION BY` — [ключ партиционирования](custom-partitioning-key.md).
+-   `PARTITION BY` — [ключ партиционирования](custom-partitioning-key.md). Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](../../../engines/table-engines/mergetree-family/mergetree.md). В этом случае имена партиций имеют формат `"YYYYMM"`.
 
-        Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](../../../engines/table_engines/mergetree_family/mergetree.md). В этом случае имена партиций имеют формат `"YYYYMM"`.
+-   `ORDER BY` — ключ сортировки. Кортеж столбцов или произвольных выражений. Пример: `ORDER BY (CounterID, EventDate)`.
 
--   `ORDER BY` — ключ сортировки.
+-   `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](#pervichnyi-kliuch-otlichnyi-ot-kliucha-sortirovki). По умолчанию первичный ключ совпадает с ключом сортировки (который задаётся секцией `ORDER BY`.) Поэтому в большинстве случаев секцию `PRIMARY KEY` отдельно указывать не нужно.
 
-        Кортеж столбцов или произвольных выражений. Пример: `ORDER BY (CounterID, EventDate)`.
+-   `SAMPLE BY` — выражение для сэмплирования. Если используется выражение для сэмплирования, то первичный ключ должен содержать его. Пример: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
--   `PRIMARY KEY` — первичный ключ, если он [отличается от ключа сортировки](#pervichnyi-kliuch-otlichnyi-ot-kliucha-sortirovki).
-
-        По умолчанию первичный ключ совпадает с ключом сортировки (который задаётся секцией `ORDER BY`.) Поэтому в большинстве случаев секцию `PRIMARY KEY` отдельно указывать не нужно.
-
--   `SAMPLE BY` — выражение для сэмплирования.
-
-        Если используется выражение для сэмплирования, то первичный ключ должен содержать его. Пример:
-
-    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
-
--   `TTL` — список правил, определяющих длительности хранения строк, а также задающих правила перемещения частей на определённые тома или диски.
-
-        Выражение должно возвращать столбец `Date` или `DateTime`. Пример: `TTL date + INTERVAL 1 DAY`.
-
-        Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` указывает действие, которое будет выполнено с частью, удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`). Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
-
-        Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
+-   `TTL` — список правил, определяющих длительности хранения строк, а также задающих правила перемещения частей на определённые тома или диски. Выражение должно возвращать столбец `Date` или `DateTime`. Пример: `TTL date + INTERVAL 1 DAY`.    
+    - Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` указывает действие, которое будет выполнено с частью, удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`).
+    - Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
+    - Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
 
 -   `SETTINGS` — дополнительные параметры, регулирующие поведение `MergeTree`:
 
-        - `index_granularity` — максимальное количество строк данных между засечками индекса. По умолчанию — 8192. Смотрите [Хранение данных](#mergetree-data-storage).
-        - `index_granularity_bytes` — максимальный размер гранул данных в байтах. По умолчанию — 10Mb. Чтобы ограничить размер гранул только количеством строк, установите значение 0 (не рекомендовано). Смотрите [Хранение данных](#mergetree-data-storage).
-        - `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. До версии 19.11, размер гранул ограничивался только настройкой `index_granularity`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
-        - `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../../../operations/server_configuration_parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
-        - `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
-        <a name="mergetree_setting-merge_with_ttl_timeout"></a>
-        - `merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
-        - `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
-        - `merge_max_block_size` — Максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
-        - `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
+    - `index_granularity` — максимальное количество строк данных между засечками индекса. По умолчанию — 8192. Смотрите [Хранение данных](#mergetree-data-storage).
+    - `index_granularity_bytes` — максимальный размер гранул данных в байтах. По умолчанию — 10Mb. Чтобы ограничить размер гранул только количеством строк, установите значение 0 (не рекомендовано). Смотрите [Хранение данных](#mergetree-data-storage).
+    - `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
+    - `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
+    - `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
+    - <a name="mergetree_setting-merge_with_ttl_timeout"></a>`merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
+    - `write_final_mark` — включает или отключает запись последней засечки индекса в конце куска данных, указывающей за последний байт. По умолчанию — 1. Не отключайте её.
+    - `merge_max_block_size` — Максимальное количество строк в блоке для операций слияния. Значение по умолчанию: 8192.
+    - `storage_policy` — политика хранения данных. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](#table_engine-mergetree-multiple-volumes).
 
 **Пример задания секций**
 
@@ -313,30 +291,30 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
-#### Поддержка для функций {#podderzhka-dlia-funktsii}
+#### Поддержка для функций {#functions-support}
 
 Условия в секции `WHERE` содержат вызовы функций, оперирующих со столбцами. Если столбец - часть индекса, ClickHouse пытается использовать индекс при выполнении функции. Для разных видов индексов, ClickHouse поддерживает различные наборы функций, которые могут использоваться индексами.
 
 Индекс `set` используется со всеми функциями. Наборы функций для остальных индексов представлены в таблице ниже.
 
-| Function (operator) / Index                                                                                    | primary key | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter |
-|----------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
-| [equals (=, ==)](../../../engines/table-engines/mergetree-family/mergetree.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, \<\>)](../../../engines/table-engines/mergetree-family/mergetree.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](../../../engines/table-engines/mergetree-family/mergetree.md#function-like)                             | ✔           | ✔      | ✔           | ✗           | ✗             |
-| [notLike](../../../engines/table-engines/mergetree-family/mergetree.md#function-notlike)                       | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [startsWith](../../../engines/table-engines/mergetree-family/mergetree.md#startswith)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [endsWith](../../../engines/table-engines/mergetree-family/mergetree.md#endswith)                              | ✗           | ✗      | ✔           | ✔           | ✗             |
-| [multiSearchAny](../../../engines/table-engines/mergetree-family/mergetree.md#function-multisearchany)         | ✗           | ✗      | ✔           | ✔           | ✗             |
-| [in](../../../engines/table-engines/mergetree-family/mergetree.md#in-functions)                                | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](../../../engines/table-engines/mergetree-family/mergetree.md#in-functions)                             | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (\<)](../../../engines/table-engines/mergetree-family/mergetree.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (\>)](../../../engines/table-engines/mergetree-family/mergetree.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (\<=)](../../../engines/table-engines/mergetree-family/mergetree.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (\>=)](../../../engines/table-engines/mergetree-family/mergetree.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [empty](../../../engines/table-engines/mergetree-family/mergetree.md#function-empty)                           | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [notEmpty](../../../engines/table-engines/mergetree-family/mergetree.md#function-notempty)                     | ✔           | ✔      | ✗           | ✗           | ✗             |
-| hasToken                                                                                                       | ✗           | ✗      | ✗           | ✔           | ✗             |
+| Функция (оператор) / Индекс                                                                                | primary key | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✗           | ✗             |
+| [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
+| [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
+| [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Функции с постоянным агрументом, который меньше, чем размер ngram не могут использовать индекс `ngrambf_v1` для оптимизации запроса.
 

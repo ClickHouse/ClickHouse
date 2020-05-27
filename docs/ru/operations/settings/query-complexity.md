@@ -76,11 +76,11 @@
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../sql-reference/statements/select.md#select-group-by-in-external-memory).
+Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 Возможные значения:
 
--   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../sql-reference/statements/select.md#select-group-by-clause).
+-   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause).
 -   0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -228,7 +228,7 @@ FORMAT Null;
 
 Ограничивает количество строк в хэш-таблице, используемой при соединении таблиц.
 
-Параметр применяется к операциям [SELECT… JOIN](../../sql-reference/statements/select.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
+Параметр применяется к операциям [SELECT… JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -245,7 +245,7 @@ FORMAT Null;
 
 Ограничивает размер (в байтах) хэш-таблицы, используемой при объединении таблиц.
 
-Параметр применяется к операциям [SELECT… JOIN](../../sql-reference/statements/select.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
+Параметр применяется к операциям [SELECT… JOIN](../../sql-reference/statements/select/join.md#select-join) и к движку таблиц [Join](../../engines/table-engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -274,7 +274,7 @@ FORMAT Null;
 
 **Смотрите также**
 
--   [Секция JOIN](../../sql-reference/statements/select.md#select-join)
+-   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
 -   [Движоy таблиц Join](../../engines/table-engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}

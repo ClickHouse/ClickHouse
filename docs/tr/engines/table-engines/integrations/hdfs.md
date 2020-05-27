@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 36
 toc_title: HDFS
 ---
@@ -16,7 +16,7 @@ to the [Dosya](../special/file.md#table_engines-file) ve [URL](../special/url.md
 ENGINE = HDFS(URI, format)
 ```
 
-Bu `URI` parametre, HDFS’DEKİ tüm dosya URI’SIDIR.
+Bu `URI` parametre, HDFS'DEKİ tüm dosya URI'SIDIR.
 Bu `format` parametre kullanılabilir dosya biçimlerinden birini belirtir. Gerçekleştirmek
 `SELECT` sorgular, biçim giriş için desteklenmeli ve gerçekleştirmek için
 `INSERT` queries – for output. The available formats are listed in the
@@ -71,7 +71,7 @@ Birden çok yol bileşenleri globs olabilir. İşlenmek için dosya var olmalı 
 
 **Örnek**
 
-1.  HDFS’DE aşağıdaki Urı’lerle TSV formatında birkaç dosyamız olduğunu varsayalım:
+1.  HDFS'DE aşağıdaki Urı'lerle TSV formatında birkaç dosyamız olduğunu varsayalım:
 
 -   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
 -   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
