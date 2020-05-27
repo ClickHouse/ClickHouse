@@ -198,7 +198,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     {
         uint64_t a = 0;
         uint64_t b = 0;
-        __asm__ volatile ("popcnt %1, %0" : "=r"(a) :"r"(b) : );
+        __asm__ volatile ("popcnt %1, %0" : "=r"(a) :"r"(b) :);
     }
 #endif
 
