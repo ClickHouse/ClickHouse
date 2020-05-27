@@ -1,8 +1,10 @@
 #pragma once
 
-namespace Poco {
+namespace Poco
+{
 
-namespace Util {
+namespace Util
+{
 class LayeredConfiguration;
 }
 class Logger;
