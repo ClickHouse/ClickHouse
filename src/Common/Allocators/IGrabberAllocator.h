@@ -23,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int SYSTEM_ERROR;
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int CANNOT_MUNMAP;
