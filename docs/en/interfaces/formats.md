@@ -1143,13 +1143,13 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
 
-## Arrow {data-format-arrow}
+## Arrow {#data-format-arrow}
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 
 `Arrow` is Apache Arrow's "file mode" format. It is designed for in-memory random access.
 
-## ArrowStream {data-format-arrow-stream}
+## ArrowStream {#data-format-arrow-stream}
 
 `ArrowStream` is Apache Arrow's "stream mode" format. It is designed for in-memory stream processing.
 
