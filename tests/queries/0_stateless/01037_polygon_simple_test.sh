@@ -124,7 +124,7 @@ do
         dictHas(dict_name, key) from test_01037.points order by x, y;
     "  >> $outputFile
 
-    diff -q "01037_polygon_simple_test.ans" "$outputFile"
+    diff -q "./01037_polygon_simple_test.ans" "$outputFile"
 done
 
 $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
