@@ -9,7 +9,10 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 #include <Poco/String.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -262,6 +265,47 @@ StorageMetadataSkipIndexField StorageMetadataSkipIndexField::getSkipIndexFromAST
             result.arguments.emplace_back(argument->value);
         }
     }
+
+    return result;
+}
+
+bool StorageMetadataSkipIndices::empty() const
+{
+    return indices.empty();
+}
+
+bool StorageMetadataSkipIndices::has(const String & name) const
+{
+    for (const auto & index : indices)
+        if (index.name == name)
+            return true;
+    return false;
+}
+
+String StorageMetadataSkipIndices::toString() const
+{
+    if (indices.empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & index : indices)
+        list.children.push_back(index.definition_ast);
+
+    return serializeAST(list, true);
+}
+
+
+StorageMetadataSkipIndices StorageMetadataSkipIndices::parse(const String & str, const ColumnsDescription & columns, const Context & context)
+{
+    StorageMetadataSkipIndices result;
+    if (str.empty())
+        return result;
+
+    ParserIndexDeclarationList parser;
+    ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+    for (const auto & index : list->children)
+        result.indices.emplace_back(StorageMetadataSkipIndexField::getSkipIndexFromAST(index, columns, context));
 
     return result;
 }
