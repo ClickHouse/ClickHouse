@@ -44,94 +44,105 @@ void PocoHttpClient::MakeRequestInternal(
 
     LOG_DEBUG(&Logger::get("AWSClient"), "Make request to: {}", uri);
 
-    /// 1 second is enough for now.
-    /// TODO: Make timeouts configurable.
-    ConnectionTimeouts timeouts(
-        Poco::Timespan(1000000), /// Connection timeout.
-        Poco::Timespan(1000000), /// Send timeout.
-        Poco::Timespan(1000000) /// Receive timeout.
-    );
-    auto session = makeHTTPSession(Poco::URI(uri), timeouts);
-
-    LOG_DEBUG(&Logger::get("AWSClient"), "Here 1");
-
+    const int MAX_REDIRECT_ATTEMPTS = 10;
     try
     {
-        Poco::Net::HTTPRequest request_(Poco::Net::HTTPRequest::HTTP_1_1);
-
-        request_.setURI(uri);
-
-        LOG_DEBUG(&Logger::get("AWSClient"), "Here 2");
-
-        switch (request.GetMethod())
+        for (int attempt = 0; attempt < MAX_REDIRECT_ATTEMPTS; ++attempt)
         {
-            case Aws::Http::HttpMethod::HTTP_GET:
-                request_.setMethod(Poco::Net::HTTPRequest::HTTP_GET);
-                break;
-            case Aws::Http::HttpMethod::HTTP_POST:
-                request_.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
-                break;
-            case Aws::Http::HttpMethod::HTTP_DELETE:
-                request_.setMethod(Poco::Net::HTTPRequest::HTTP_DELETE);
-                break;
-            case Aws::Http::HttpMethod::HTTP_PUT:
-                request_.setMethod(Poco::Net::HTTPRequest::HTTP_PUT);
-                break;
-            case Aws::Http::HttpMethod::HTTP_HEAD:
-                request_.setMethod(Poco::Net::HTTPRequest::HTTP_HEAD);
-                break;
-            case Aws::Http::HttpMethod::HTTP_PATCH:
-                request_.setMethod(Poco::Net::HTTPRequest::HTTP_PATCH);
-                break;
-        }
+            /// 1 second is enough for now.
+            /// TODO: Make timeouts configurable.
+            ConnectionTimeouts timeouts(
+                Poco::Timespan(2000000), /// Connection timeout.
+                Poco::Timespan(2000000), /// Send timeout.
+                Poco::Timespan(2000000) /// Receive timeout.
+            );
+            auto session = makeHTTPSession(Poco::URI(uri), timeouts);
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Here 3");
+            Poco::Net::HTTPRequest request_(Poco::Net::HTTPRequest::HTTP_1_1);
 
-        for (const auto & [header_name, header_value] : request.GetHeaders())
-            request_.set(header_name, header_value);
+            request_.setURI(uri);
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Here 4");
+            switch (request.GetMethod())
+            {
+                case Aws::Http::HttpMethod::HTTP_GET:
+                    request_.setMethod(Poco::Net::HTTPRequest::HTTP_GET);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_POST:
+                    request_.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_DELETE:
+                    request_.setMethod(Poco::Net::HTTPRequest::HTTP_DELETE);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_PUT:
+                    request_.setMethod(Poco::Net::HTTPRequest::HTTP_PUT);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_HEAD:
+                    request_.setMethod(Poco::Net::HTTPRequest::HTTP_HEAD);
+                    break;
+                case Aws::Http::HttpMethod::HTTP_PATCH:
+                    request_.setMethod(Poco::Net::HTTPRequest::HTTP_PATCH);
+                    break;
+            }
 
-        auto & request_body_stream = session->sendRequest(request_);
+            for (const auto & [header_name, header_value] : request.GetHeaders())
+                request_.set(header_name, header_value);
 
-        if (request.GetContentBody())
-            Poco::StreamCopier::copyStream(*(request.GetContentBody()), request_body_stream);
-        else
-            LOG_ERROR(&Logger::get("AWSClient"), "No content body :(");
+            auto & request_body_stream = session->sendRequest(request_);
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Here 5");
+            if (request.GetContentBody())
+            {
+                if (attempt > 0) /// Rewind buffer if it's not first attempt to write.
+                {
+                    request.GetContentBody()->clear();
+                    request.GetContentBody()->seekg(0);
+                }
+                auto sz = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
+                LOG_DEBUG(
+                    &Logger::get("AWSClient"), "Written {} bytes to request body", sz);
+            }
 
-        Poco::Net::HTTPResponse response_;
-        auto & response_body_stream = session->receiveResponse(response_);
+            Poco::Net::HTTPResponse response_;
+            auto & response_body_stream = session->receiveResponse(response_);
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Here 6");
+            LOG_DEBUG(
+                &Logger::get("AWSClient"), "Response status: {}, {}", static_cast<UInt32>(response_.getStatus()), response_.getReason());
 
-        response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(response_.getStatus()));
+            if (response_.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
+            {
+                auto location = response_.get("location");
+                uri = location;
+                LOG_DEBUG(&Logger::get("AWSClient"), "Redirecting request to new location: {}", location);
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Here 7");
+                continue;
+            }
 
-        response->SetContentType(response_.getContentType());
+            response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(response_.getStatus()));
+            response->SetContentType(response_.getContentType());
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Content length: {}", response_.getContentLength());
+            std::stringstream headers_ss;
+            for (const auto & [header_name, header_value] : response_)
+            {
+                response->AddHeader(header_name, header_value);
+                headers_ss << " " << header_name << " : " << header_value << ";";
+            }
 
-        LOG_DEBUG(&Logger::get("AWSClient"), "Received headers:");
-        for (auto it = response_.begin(); it != response_.end(); ++it)
-        {
-            LOG_DEBUG(&Logger::get("AWSClient"), "{} : {}", it->first, it->second);
-        }
+            LOG_DEBUG(&Logger::get("AWSClient"), "Received headers:{}", headers_ss.str());
 
-        /// TODO: Do not copy whole stream.
-        Poco::StreamCopier::copyStream(response_body_stream, response->GetResponseBody());
+            /// TODO: Do not copy whole stream.
+            Poco::StreamCopier::copyStream(response_body_stream, response->GetResponseBody());
 
-        if (response_.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        {
-            response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
-            response->SetClientErrorMessage(response_.getReason());
+            if (response_.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+            {
+                response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
+                response->SetClientErrorMessage(response_.getReason());
+            }
+
+            break;
         }
     }
     catch (...)
     {
-        tryLogCurrentException(&Logger::get("AWSClient"), "Failed to make request");
+        tryLogCurrentException(&Logger::get("AWSClient"), "Failed to make request to: " + uri);
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(true));
     }
