@@ -7,7 +7,7 @@ TMP_DIR="/tmp"
 
 declare -a SearchTypes=("POLYGON_INDEX_EACH" "POLYGON_INDEX_CELL")
 
-tar -xf ${CURDIR}/01037_test_data_perf.tar.gz
+tar -xf ${CURDIR}/01037_test_data_perf.tar.gz -C ${CURDIR}
 
 $CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS test_01037;"
 
