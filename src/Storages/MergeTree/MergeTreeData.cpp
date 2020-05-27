@@ -662,7 +662,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             }
             for (const auto & [name, value] : ttl_element->group_by_aggregations)
             {
-                if (primary_key_columns_set.contains(name))
+                if (primary_key_columns_set.count(name))
                     throw Exception("Can not set custom aggregation for column in primary key in TTL Expression", ErrorCodes::BAD_TTL_EXPRESSION);
                 aggregation_columns_set.insert(name);
             }
@@ -703,7 +703,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             }
             for (const auto & column : new_columns.getAllPhysical())
             {
-                if (!primary_key_columns_set.contains(column.name) && !aggregation_columns_set.contains(column.name))
+                if (!primary_key_columns_set.count(column.name) && !aggregation_columns_set.count(column.name))
                 {
                     ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));
