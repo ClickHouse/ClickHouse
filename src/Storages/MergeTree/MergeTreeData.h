@@ -517,7 +517,6 @@ public:
      */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    bool hasSkipIndices() const { return !skip_indices.empty(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const VolumePtr & volume, const String & relative_path) const;
@@ -642,9 +641,6 @@ public:
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
-
-    /// Secondary (data skipping) indices for MergeTree
-    MergeTreeIndices skip_indices;
 
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;

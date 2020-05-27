@@ -142,7 +142,10 @@ public:
 public: /// thread-unsafe part. lockStructure must be acquired
     virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
     virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
-    const IndicesDescription & getIndices() const;
+
+    void setSkipIndices(StorageMetadataSkipIndices indices_);
+    const StorageMetadataSkipIndices & getSkipIndices() const;
+    bool hasSkipIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);
@@ -183,8 +186,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// By default return empty list of columns.
     virtual NamesAndTypesList getVirtuals() const;
 
-protected: /// still thread-unsafe part.
-    void setIndices(IndicesDescription indices_);
+protected:
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -196,7 +198,7 @@ private:
     mutable std::mutex id_mutex;
 
     ColumnsDescription columns;
-    IndicesDescription indices;
+    StorageMetadataSkipIndices indices;
     ConstraintsDescription constraints;
 
     StorageMetadataKeyField partition_key;

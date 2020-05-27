@@ -489,7 +489,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_primary_key.data_types = std::move(new_primary_key_data_types);
         setPrimaryKey(new_primary_key);
 
-        setIndices(metadata.indices);
+        setSkipIndices(metadata.indices);
         skip_indices = std::move(new_indices);
 
         setConstraints(metadata.constraints);

@@ -18,30 +18,20 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-void MergeTreeIndexFactory::registerIndex(const std::string & name, Creator creator)
+void MergeTreeIndexFactory::registerIndex(const std::string & index_type, Creator creator)
 {
-    if (!indexes.emplace(name, std::move(creator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index creator name '" + name + "' is not unique",
+    if (!indexes.emplace(index_type, std::move(creator)).second)
+        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 }
 
 std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context,
-    bool attach) const
+    const StorageMetadataSkipIndexField & index, bool attach) const
 {
-    if (!node->type)
-        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
-
-    if (node->type->parameters && !node->type->parameters->children.empty())
-        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
-
-    boost::algorithm::to_lower(node->type->name);
-    auto it = indexes.find(node->type->name);
+    auto it = indexes.find(index.type);
     if (it == indexes.end())
         throw Exception(
-                "Unknown Index type '" + node->type->name + "'. Available index types: " +
+                "Unknown Index type '" + index.type + "'. Available index types: " +
                 std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
@@ -52,7 +42,7 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return it->second(columns, node, context, attach);
+    return it->second(index, attach);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()

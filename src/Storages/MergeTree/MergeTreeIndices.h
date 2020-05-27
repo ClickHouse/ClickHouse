@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <Core/Block.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -75,54 +76,29 @@ using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 class IMergeTreeIndex
 {
 public:
-    IMergeTreeIndex(
-        String name_,
-        ExpressionActionsPtr expr_,
-        const Names & columns_,
-        const DataTypes & data_types_,
-        const Block & header_,
-        size_t granularity_)
-        : name(name_)
-        , expr(expr_)
-        , columns(columns_)
-        , data_types(data_types_)
-        , header(header_)
-        , granularity(granularity_) {}
+    IMergeTreeIndex(const StorageMetadataSkipIndexField & index_)
+        : index(index_)
+    {
+    }
 
     virtual ~IMergeTreeIndex() = default;
 
     /// gets filename without extension
-    String getFileName() const { return INDEX_FILE_PREFIX + name; }
+    String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
 
     /// Checks whether the column is in data skipping index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
-    Names getColumnsRequiredForIndexCalc() const { return expr->getRequiredColumns(); }
+    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
-    /// Index name
-    String name;
-
-    /// Index expression (x * y)
-    /// with columns arguments
-    ExpressionActionsPtr expr;
-
-    /// Names of columns for index
-    Names columns;
-
-    /// Data types of columns
-    DataTypes data_types;
-
-    /// Block with columns and data_types
-    Block header;
-
-    /// Skip index granularity
-    size_t granularity;
+    const StorageMetadataSkipIndexField & index;
 };
 
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
@@ -135,18 +111,14 @@ public:
 
     using Creator = std::function<
             std::unique_ptr<IMergeTreeIndex>(
-                    const NamesAndTypesList & columns,
-                    std::shared_ptr<ASTIndexDeclaration> node,
-                    const Context & context,
+                    const StorageMetadataSkipIndexField & index,
                     bool attach)>;
 
     std::unique_ptr<IMergeTreeIndex> get(
-        const NamesAndTypesList & columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context,
+        const StorageMetadataSkipIndexField & index,
         bool attach) const;
 
-    void registerIndex(const std::string & name, Creator creator);
+    void registerIndex(const std::string & index_type, Creator creator);
 
     const auto & getAllIndexes() const { return indexes; }
 
@@ -159,27 +131,14 @@ private:
 };
 
 std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context,
-    bool attach);
+    const StorageMetadataSkipIndexField & index, bool attach);
 
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context,
-    bool attach);
+    const StorageMetadataSkipIndexField & index, bool attach);
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context,
-    bool attach);
+    const StorageMetadataSkipIndexField & index, bool attach);
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context,
-    bool attach);
-
+    const StorageMetadataSkipIndexField & index, bool attach);
 }

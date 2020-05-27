@@ -28,23 +28,25 @@ namespace ErrorCodes
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
-    const String & name_, const ExpressionActionsPtr & expr_, const Names & columns_, const DataTypes & data_types_, const Block & header_,
-    size_t granularity_, size_t bits_per_row_, size_t hash_functions_)
-    : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_), bits_per_row(bits_per_row_),
-      hash_functions(hash_functions_)
+    const StorageMetadataSkipIndexField & index_,
+    size_t bits_per_row_,
+    size_t hash_functions_)
+    : IMergeTreeIndex(index)
+    , bits_per_row(bits_per_row_)
+    , hash_functions(hash_functions_)
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, columns.size());
+    return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
 }
 
 bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     const String & column_name = node->getColumnName();
 
-    for (const auto & cname : columns)
+    for (const auto & cname : index.column_names)
         if (column_name == cname)
             return true;
 
@@ -60,12 +62,12 @@ bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) co
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, columns);
+    return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQueryInfo & query_info, const Context & context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(query_info, context, header, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionBloomFilter>(query_info, context, index.sample_block, hash_functions);
 }
 
 static void assertIndexColumnsType(const Block & header)
@@ -88,32 +90,20 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context, bool attach)
+    const StorageMetadataSkipIndexField & index, bool attach)
 {
-    if (node->name.empty())
-        throw Exception("Index must have unique name.", ErrorCodes::INCORRECT_QUERY);
-
-    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-
-    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns);
-    auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
-    auto index_sample = ExpressionAnalyzer(expr_list, syntax, context).getActions(true)->getSampleBlock();
-
-    assertIndexColumnsType(index_sample);
+    assertIndexColumnsType(index.sample_block);
 
     double max_conflict_probability = 0.025;
-    const auto & arguments = node->type->arguments;
 
-    if (arguments && arguments->children.size() > 1)
+    if (index.arguments.size() > 1)
     {
         if (!attach)    /// This is for backward compatibility.
             throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        arguments->children = { arguments->children[0] };
     }
 
 
-    if (arguments && !arguments->children.empty())
+    if (!index.arguments.empty())
     {
         auto * argument = arguments->children[0]->as<ASTLiteral>();
 
