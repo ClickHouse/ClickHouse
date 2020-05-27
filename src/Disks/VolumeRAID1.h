@@ -29,7 +29,7 @@ public:
     ReservationPtr reserve(UInt64 bytes) override;
 };
 
-using VolumeRAIDPtr = std::shared_ptr<VolumeRAID1>;
-using VolumesJBODPtr = std::vector<VolumeRAIDPtr>;
+using VolumeRAID1Ptr = std::shared_ptr<VolumeRAID1>;
+using VolumesRAID1Ptr = std::vector<VolumeRAID1Ptr>;
 
 }
