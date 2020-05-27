@@ -27,6 +27,7 @@ function execute_group_by()
     execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(toUInt64(1e6)) GROUP BY number % 5e5'
 }
 
+# This is needed to keep at least one running query for user for the time of test.
 execute_null <<<'SELECT sleep(3)' &
 execute_group_by
 # if memory accounting will be incorrect, the second query will be failed with MEMORY_LIMIT_EXCEEDED
