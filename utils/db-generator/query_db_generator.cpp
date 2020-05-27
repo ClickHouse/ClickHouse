@@ -329,7 +329,7 @@ public:
             if (is_array)
             {
                 std::string v = "[";
-                for (int i = 0; i < static_cast<unsigned int>(rng()) % 10 + 1; ++i)
+                for (unsigned int i = 0; i < static_cast<unsigned int>(rng()) % 10 + 1; ++i)
                 {
                     if (i != 0)
                         v += ", ";
@@ -1234,8 +1234,8 @@ int main(int, char **)
             std::cout << table.second.create_query();
             std::cout << table.second.insert_query();
         }
-        for (auto query: queries)
-            std::cout << query << std::endl;
+        for (auto q: queries)
+            std::cout << q << std::endl;
     }
     catch (std::string e)
     {
