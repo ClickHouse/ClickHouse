@@ -214,7 +214,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &, TableStructureW
         auto parts_to_remove = getDataPartsVector();
         removePartsFromWorkingSet(parts_to_remove, true);
 
-        LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
+        LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
     }
 
     clearOldMutations(true);
@@ -230,7 +230,7 @@ void StorageMergeTree::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(metadata);
+    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify);
     commands.apply(metadata);
 
     /// This alter can be performed at metadata level only
@@ -384,18 +384,18 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
     auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
     current_mutations_by_version.emplace(version, insertion.first->second);
 
-    LOG_INFO(log, "Added mutation: " << mutation_file_name);
+    LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     merging_mutating_task_handle->wake();
     return version;
 }
 
 void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
 {
-    LOG_INFO(log, "Waiting mutation: " << file_name);
+    LOG_INFO(log, "Waiting mutation: {}", file_name);
     auto check = [version, this]() { return shutdown_called || isMutationDone(version); };
     std::unique_lock lock(mutation_wait_mutex);
     mutation_wait_event.wait(lock, check);
-    LOG_INFO(log, "Mutation " << file_name << " done");
+    LOG_INFO(log, "Mutation {} done", file_name);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context & query_context)
@@ -492,7 +492,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
-    LOG_TRACE(log, "Killing mutation " << mutation_id);
+    LOG_TRACE(log, "Killing mutation {}", mutation_id);
 
     std::optional<MergeTreeMutationEntry> to_kill;
     {
@@ -511,7 +511,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
-    LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+    LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
         std::lock_guard<std::mutex> lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
@@ -534,7 +534,7 @@ void StorageMergeTree::loadMutations()
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
                 Int64 block_number = entry.block_number;
-                LOG_DEBUG(log, "Loading mutation: " << it->name() << " entry, commands size: " << entry.commands.size());
+                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
                 auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
@@ -896,7 +896,7 @@ void StorageMergeTree::clearOldMutations(bool truncate)
 
     for (auto & mutation : mutations_to_delete)
     {
-        LOG_TRACE(log, "Removing mutation: " << mutation.file_name);
+        LOG_TRACE(log, "Removing mutation: {}", mutation.file_name);
         mutation.removeFile();
     }
 }
@@ -923,7 +923,7 @@ bool StorageMergeTree::optimize(
                     message << ": " << disable_reason;
                 else
                     message << " by some reason.";
-                LOG_INFO(log, message.rdbuf());
+                LOG_INFO(log, message.str());
 
                 if (context.getSettingsRef().optimize_throw_if_noop)
                     throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
@@ -945,7 +945,7 @@ bool StorageMergeTree::optimize(
                 message << ": " << disable_reason;
             else
                 message << " by some reason.";
-            LOG_INFO(log, message.rdbuf());
+            LOG_INFO(log, message.str());
 
             if (context.getSettingsRef().optimize_throw_if_noop)
                 throw Exception(message.str(), ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
@@ -1050,12 +1050,15 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
             /// If DETACH clone parts to detached/ directory
             for (const auto & part : parts_to_remove)
             {
-                LOG_INFO(log, "Detaching " << part->relative_path);
+                LOG_INFO(log, "Detaching {}", part->relative_path);
                 part->makeCloneInDetached("");
             }
         }
 
-        LOG_INFO(log, (detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
+        if (detach)
+            LOG_INFO(log, "Detached {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
+        else
+            LOG_INFO(log, "Removed {} parts inside partition ID {}.", parts_to_remove.size(), partition_id);
     }
 
     clearOldPartsFromFilesystem();
@@ -1071,7 +1074,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        LOG_INFO(log, "Attaching part " << loaded_parts[i]->name << " from " << renamed_parts.old_and_new_names[i].second);
+        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].second);
         renameTempPartAndAdd(loaded_parts[i], &increment);
         renamed_parts.old_and_new_names[i].first.clear();
         LOG_INFO(log, "Finished attaching part");

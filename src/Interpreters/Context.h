@@ -97,8 +97,10 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
+using DisksMap = std::map<String, DiskPtr>;
 class StoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
@@ -541,14 +543,12 @@ public:
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
-    DiskSelectorPtr getDiskSelector() const;
 
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
-    DiskPtr getDefaultDisk() const { return getDisk("default"); }
 
-    StoragePolicySelectorPtr getStoragePolicySelector() const;
-
+    StoragePoliciesMap getPoliciesMap() const;
+    DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Provides storage politics schemes
@@ -626,6 +626,10 @@ private:
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
     void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
+
+    StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
+
+    DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
 };
 
 

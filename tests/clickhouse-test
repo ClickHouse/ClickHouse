@@ -234,14 +234,6 @@ def run_tests_array(all_tests_with_params):
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                         clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
-                    if not args.no_system_log_cleanup:
-                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                        clickhouse_proc.communicate("SYSTEM FLUSH LOGS")
-
-                        for table in ['query_log', 'query_thread_log', 'trace_log', 'metric_log']:
-                            clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                            clickhouse_proc.communicate("TRUNCATE TABLE IF EXISTS system.{}".format(table))
-
                     reference_file = os.path.join(suite_dir, name) + '.reference'
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
@@ -572,7 +564,6 @@ if __name__ == '__main__':
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
     parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
-    parser.add_argument('--no-system-log-cleanup', action='store_true', default=None, help='Do not cleanup system.*_log tables')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')

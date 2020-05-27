@@ -45,9 +45,7 @@ Pipes StorageSystemStoragePolicies::read(
     MutableColumnPtr col_max_part_size = ColumnUInt64::create();
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
 
-    const auto & policy_selector = context.getStoragePolicySelector();
-
-    for (const auto & [policy_name, policy_ptr] : policy_selector->getPoliciesMap())
+    for (const auto & [policy_name, policy_ptr] : context.getPoliciesMap())
     {
         const auto & volumes = policy_ptr->getVolumes();
         for (size_t i = 0; i != volumes.size(); ++i)
