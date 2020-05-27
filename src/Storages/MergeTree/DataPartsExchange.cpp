@@ -276,13 +276,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
         readStringBinary(part_type, in);
 
-    return part_type == "InMemory" ? downloadPartToMemory(part_name, replica_path, in)
+    return part_type == "InMemory" ? downloadPartToMemory(part_name, std::move(reservation), in)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
-    const String & /* replica_path */,
+    ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
     MergeTreeData::DataPart::Checksums checksums;
@@ -292,7 +292,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
     MergeTreeData::MutableDataPartPtr new_data_part =
-        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, nullptr);
+        std::make_shared<MergeTreeDataPartInMemory>(data, part_name, reservation->getDisk());
 
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());

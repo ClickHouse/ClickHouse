@@ -492,6 +492,9 @@ public:
     void clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
+    /// Delete WAL files containing parts, that all already stored on disk.
+    void clearOldWriteAheadLogs();
+
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
     /// Must be called with locked lockStructureForShare().

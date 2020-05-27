@@ -58,6 +58,7 @@
 #include <typeinfo>
 #include <typeindex>
 #include <unordered_set>
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -1046,6 +1047,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (auto & part : parts_from_wal)
     {
+        if (getActiveContainingPart(part->info, DataPartState::Committed, part_lock))
+            continue;
+
         part->modification_time = time(nullptr);
         /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
         part->state = DataPartState::Committed;
@@ -1318,6 +1322,61 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         {
             LOG_DEBUG(log, "Removing part from filesystem " << part->name);
             part->remove();
+        }
+    }
+}
+
+void MergeTreeData::clearOldWriteAheadLogs()
+{
+    DataPartsVector parts = getDataPartsVector();
+    std::vector<std::pair<Int64, Int64>> all_block_numbers_on_disk;
+    std::vector<std::pair<Int64, Int64>> block_numbers_on_disk;
+
+    for (const auto & part : parts)
+        if (part->isStoredOnDisk())
+            all_block_numbers_on_disk.emplace_back(part->info.min_block, part->info.max_block);
+
+    if (all_block_numbers_on_disk.empty())
+        return;
+
+    std::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
+    block_numbers_on_disk.push_back(all_block_numbers_on_disk[0]);
+    for (size_t i = 1; i < all_block_numbers_on_disk.size(); ++i)
+    {
+        if (all_block_numbers_on_disk[i].first == all_block_numbers_on_disk[i - 1].second + 1)
+            block_numbers_on_disk.back().second = all_block_numbers_on_disk[i].second;
+        else
+            block_numbers_on_disk.push_back(all_block_numbers_on_disk[i]);
+    }
+
+    auto is_range_on_disk = [&block_numbers_on_disk](Int64 min_block, Int64 max_block)
+    {
+        auto lower = std::upper_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, -1L));
+        if (lower != block_numbers_on_disk.end() && min_block >= lower->first && max_block <= lower->second)
+            return true;
+
+        if (lower != block_numbers_on_disk.begin())
+        {
+            --lower;
+            if (min_block >= lower->first && max_block <= lower->second)
+                return true;
+        }
+
+        return false;
+    };
+
+    auto disks = getStoragePolicy()->getDisks();
+    for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
+    {
+        auto disk_ptr = *disk_it;
+        for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        {
+            auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
+            if (min_max_block_number && is_range_on_disk(min_max_block_number->first, min_max_block_number->second))
+            {
+                LOG_DEBUG(log, "Removing from filesystem outdated WAL file " + it->name());
+                disk_ptr->remove(relative_data_path + it->name());
+            }
         }
     }
 }
@@ -1875,6 +1934,7 @@ void MergeTreeData::renameTempPartAndReplace(
 
     DataPartPtr covering_part;
     DataPartsVector covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock);
+    DataPartsVector covered_parts_in_memory;
 
     if (covering_part)
     {
@@ -3690,6 +3750,7 @@ void MergeTreeData::MergesThrottler::add(size_t bytes, size_t rows)
 
 void MergeTreeData::MergesThrottler::reset()
 {
+    std::lock_guard lock(mutex);
     have_bytes = 0;
     have_rows = 0;
 }

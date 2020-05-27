@@ -380,8 +380,6 @@ String IMergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 
 String IMergeTreeDataPart::getFullPath() const
 {
-    // assertOnDisk(); //TODO
-
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
@@ -390,8 +388,6 @@ String IMergeTreeDataPart::getFullPath() const
 
 String IMergeTreeDataPart::getFullRelativePath() const
 {
-    // assertOnDisk(); //TODO
-
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
 
