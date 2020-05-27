@@ -4,6 +4,11 @@
 #include <Core/Block.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/IDataType.h>
+<<<<<<< 788e32822adc97ebb4538d335049c25174011b2f
+=======
+#include <Interpreters/Context.h>
+#include <Interpreters/ISet.h>
+>>>>>>> wip
 #include <Interpreters/SetVariants.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -14,16 +19,16 @@
 namespace DB
 {
 
-struct Range;
+// struct Range;
 
 class Context;
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+// class IFunctionBase;
+// using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 
 /** Data structure for implementation of IN expression.
   */
-class Set
+class Set : public ISet
 {
 public:
     /// 'fill_set_elements': in addition to hash table
@@ -36,45 +41,36 @@ public:
     {
     }
 
-    bool empty() const { return data.empty(); }
-
-    /** Set can be created either from AST or from a stream of data (subquery result).
-      */
-
-    /** Create a Set from expression (specified literally in the query).
-      * 'types' - types of what are on the left hand side of IN.
-      * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      */
-    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
+    bool empty() const override { return data.empty(); }
 
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    void setHeader(const Block & header);
+    void setHeader(const Block & header) override;
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Block & block);
+    bool insertFromBlock(const Block & block) override;
     /// Call after all blocks were inserted. To get the information that set is already created.
-    void finishInsert() { is_created = true; }
+    void finishInsert() override { is_created = true; }
 
-    bool isCreated() const { return is_created; }
+    bool isCreated() const override { return is_created; }
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    ColumnPtr execute(const Block & block, bool negative) const;
+    ColumnPtr execute(const Block & block, bool negative) const override;
 
-    size_t getTotalRowCount() const { return data.getTotalRowCount(); }
-    size_t getTotalByteCount() const { return data.getTotalByteCount(); }
+    size_t getTotalRowCount() const override { return data.getTotalRowCount(); }
+    size_t getTotalByteCount() const override { return data.getTotalByteCount(); }
 
-    const DataTypes & getDataTypes() const { return data_types; }
-    const DataTypes & getElementsTypes() const { return set_elements_types; }
+    const DataTypes & getDataTypes() const override { return data_types; }
+    const DataTypes & getElementsTypes() const override { return set_elements_types; }
 
-    bool hasExplicitSetElements() const { return fill_set_elements; }
-    Columns getSetElements() const { return { set_elements.begin(), set_elements.end() }; }
+    bool hasExplicitSetElements() const override { return fill_set_elements; }
+    Columns getSetElements() const override { return { set_elements.begin(), set_elements.end() }; }
 
-    void checkColumnsNumber(size_t num_key_columns) const;
-    void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
+    void checkColumnsNumber(size_t num_key_columns) const override;
+    void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const override;
 
 private:
     size_t keys_size = 0;
@@ -175,9 +171,9 @@ private:
         ConstNullMapPtr null_map) const;
 };
 
-using SetPtr = std::shared_ptr<Set>;
-using ConstSetPtr = std::shared_ptr<const Set>;
-using Sets = std::vector<SetPtr>;
+// using SetPtr = std::shared_ptr<Set>;
+// using ConstSetPtr = std::shared_ptr<const Set>;
+// using Sets = std::vector<SetPtr>;
 
 
 class IFunction;

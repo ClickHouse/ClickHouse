@@ -37,6 +37,7 @@
 #include <Interpreters/misc.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/MySet.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -187,7 +188,9 @@ SetPtr makeExplicitSet(
     else
         throw_unsupported_type(right_arg_type);
 
-    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
+    // SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
+    // HERE!!!
+    SetPtr set = std::make_shared<MySet>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
 
     set->setHeader(block);
     set->insertFromBlock(block);
@@ -340,6 +343,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr & ast,
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
+    std::cerr << "HERE in ::visit\n";
     CachedColumnName column_name;
     if (data.hasColumn(column_name.get(ast)))
         return;
@@ -368,14 +372,21 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 
     SetPtr prepared_set;
+    std::cerr << "HERE1\n";
+    // std::stringstream ss;
+    // ast->dumpTree(ss);
+    // std::cerr << ss.str();
+    std::cerr << "HERE2\n";
     if (functionIsInOrGlobalInOperator(node.name))
     {
+        std::cerr << "HERE3\n";
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
         if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries)))
         {
             /// Transform tuple or subquery into a set.
+            std::cerr << "HERE4\n";
         }
         else
         {
@@ -425,6 +436,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     for (size_t arg = 0; arg < node.arguments->children.size(); ++arg)
     {
+        std::cerr << "HERE arg: " << arg << std::endl;
         auto & child = node.arguments->children[arg];
 
         const auto * lambda = child->as<ASTFunction>();
@@ -521,6 +533,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (data.only_consts && !arguments_present)
         return;
 
+    std::cerr << "HERE5\n";
+
     if (has_lambda_arguments && !data.only_consts)
     {
         function_builder->getLambdaArgumentTypes(argument_types);
@@ -576,8 +590,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
+    std::cerr << "HERE6\n";
+
     if (data.only_consts)
     {
+        std::cerr << "HERE7\n";
         for (const auto & argument_name : argument_names)
         {
             if (!data.hasColumn(argument_name))
@@ -587,6 +604,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
         }
     }
+
+    std::cerr << "HERE8\n";
 
     if (arguments_present)
     {
@@ -696,7 +715,9 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
+        // SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
+        // HERE !!! 2
+        SetPtr set = std::make_shared<MySet>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,

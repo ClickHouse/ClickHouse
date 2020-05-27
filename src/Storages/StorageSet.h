@@ -8,8 +8,8 @@
 namespace DB
 {
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
+class ISet;
+using SetPtr = std::shared_ptr<ISet>;
 
 
 /** Common part of StorageSet and StorageJoin.

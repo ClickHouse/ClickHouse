@@ -91,9 +91,11 @@ public:
         const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
-        if (!column_set)
+        if (!column_set) {
+            std::cerr << "HERE before error\n";
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+        }
 
         Block block_of_key_columns;
 
