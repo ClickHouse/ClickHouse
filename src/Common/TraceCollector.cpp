@@ -81,7 +81,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     size_t stack_trace_offset = stack_trace.getOffset();
     writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
     for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-        writePODBinary(stack_trace.getFrames()[i], out);
+        writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);

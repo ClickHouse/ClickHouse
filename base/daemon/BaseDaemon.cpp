@@ -1,4 +1,5 @@
 #include <daemon/BaseDaemon.h>
+#include <daemon/SentryWriter.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -222,6 +223,7 @@ public:
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
+                stack_trace.resetFrames();
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
@@ -247,6 +249,7 @@ private:
         UInt32 thread_num,
         const std::string & query_id) const
     {
+        SentryWriter::onFault(sig, info, context, stack_trace);
         LOG_FATAL(log, "########################################");
 
         {
@@ -272,7 +275,7 @@ private:
             std::stringstream bare_stacktrace;
             bare_stacktrace << "Stack trace:";
             for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-                bare_stacktrace << ' ' << stack_trace.getFrames()[i];
+                bare_stacktrace << ' ' << stack_trace.getFramePointers()[i];
 
             LOG_FATAL(log, bare_stacktrace.str());
         }
@@ -511,6 +514,8 @@ void debugIncreaseOOMScore() {}
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
+    SentryWriter::initialize();
+
     task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
 
@@ -518,7 +523,6 @@ void BaseDaemon::initialize(Application & self)
     argsToConfig(argv(), config(), PRIO_APPLICATION - 100);
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
-
     if (is_daemon)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
