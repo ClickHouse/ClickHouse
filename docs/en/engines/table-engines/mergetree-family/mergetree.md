@@ -104,7 +104,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](../../../sql-reference/statements/select.md#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](../../../sql-reference/statements/select/sample.md#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 The `index_granularity` setting can be omitted because 8192 is the default value.
 
@@ -385,7 +385,7 @@ TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](../../../sql-reference/operators.md#operators-datetime) operators.
+To define `interval`, use [time interval](../../../sql-reference/operators/index.md#operators-datetime) operators.
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH

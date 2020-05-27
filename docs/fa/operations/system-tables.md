@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 52
 toc_title: "\u062C\u062F\u0627\u0648\u0644 \u0633\u06CC\u0633\u062A\u0645"
 ---
@@ -11,7 +11,7 @@ toc_title: "\u062C\u062F\u0627\u0648\u0644 \u0633\u06CC\u0633\u062A\u0645"
 شما می توانید یک جدول سیستم را حذف کنید (اما شما می توانید جدا انجام).
 جداول سیستم فایل های با داده ها بر روی دیسک و یا فایل های با ابرداده ندارد. سرور ایجاد تمام جداول سیستم زمانی که شروع می شود.
 جداول سیستم فقط خواندنی.
-این در واقع ‘system’ پایگاه داده است.
+این در واقع ‘system’ بانک اطلاعات.
 
 ## سیستم.\_نامهنویسی ناهمزمان {#system_tables-asynchronous_metrics}
 
@@ -79,7 +79,7 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 حاوی اطلاعات در مورد ستون در تمام جداول.
 
-شما می توانید با استفاده از این جدول برای دریافت اطلاعات مشابه به [DESCRIBE TABLE](../sql-reference/statements/misc.md#misc-describe-table) پرس و جو, اما برای جداول متعدد در یک بار.
+شما می توانید از این جدول برای دریافت اطلاعات شبیه به [DESCRIBE TABLE](../sql-reference/statements/misc.md#misc-describe-table) پرس و جو, اما برای جداول متعدد در یک بار.
 
 این `system.columns` جدول شامل ستون های زیر (نوع ستون در براکت نشان داده شده است):
 
@@ -147,29 +147,69 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 ## سیستم.قطعات مجزا {#system_tables-detached_parts}
 
-حاوی اطلاعات در مورد قطعات جدا شده از [ادغام](../engines/table-engines/mergetree-family/mergetree.md) میز این `reason` ستون مشخص می کند که چرا بخش جدا شد. برای قطعات کاربر جدا, دلیل خالی است. چنین قطعات را می توان با [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) فرمان. برای توضیحات ستون های دیگر را ببینید [سیستم.قطعات](#system_tables-parts). اگر نام قسمت نامعتبر است, ارزش برخی از ستون ممکن است `NULL`. این قطعات را می توان با حذف [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+حاوی اطلاعات در مورد قطعات جدا شده از [ادغام](../engines/table-engines/mergetree-family/mergetree.md) میز این `reason` ستون مشخص می کند که چرا بخش جدا شد. برای قطعات کاربر جدا, دلیل خالی است. چنین قطعات را می توان با [ALTER TABLE ATTACH PARTITION\|PART](../sql-reference/statements/alter.md#alter_attach-partition) فرمان. برای توضیحات ستون های دیگر را ببینید [سیستم.قطعات](#system_tables-parts). اگر نام قسمت نامعتبر است, ارزش برخی از ستون ممکن است `NULL`. این قطعات را می توان با حذف [ALTER TABLE DROP DETACHED PART](../sql-reference/statements/alter.md#alter_drop-detached).
 
-## سیستم.واژهنامهها {#system-dictionaries}
+## سیستم.واژهنامهها {#system_tables-dictionaries}
 
-شامل اطلاعات در مورد لغت نامه های خارجی.
+حاوی اطلاعات در مورد [واژهنامهها خارجی](../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ستونها:
 
--   `name` (String) — Dictionary name.
--   `type` (String) — Dictionary type: Flat, Hashed, Cache.
--   `origin` (String) — Path to the configuration file that describes the dictionary.
--   `attribute.names` (Array(String)) — Array of attribute names provided by the dictionary.
--   `attribute.types` (Array(String)) — Corresponding array of attribute types that are provided by the dictionary.
--   `has_hierarchy` (UInt8) — Whether the dictionary is hierarchical.
--   `bytes_allocated` (UInt64) — The amount of RAM the dictionary uses.
--   `hit_rate` (Float64) — For cache dictionaries, the percentage of uses for which the value was in the cache.
--   `element_count` (UInt64) — The number of items stored in the dictionary.
--   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
--   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
--   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
--   `source` (String) — Text describing the data source for the dictionary.
+-   `database` ([رشته](../sql-reference/data-types/string.md)) — Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries.
+-   `name` ([رشته](../sql-reference/data-types/string.md)) — [نام واژهنامه](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict.md).
+-   `status` ([شمار8](../sql-reference/data-types/enum.md)) — Dictionary status. Possible values:
+    -   `NOT_LOADED` — Dictionary was not loaded because it was not used.
+    -   `LOADED` — Dictionary loaded successfully.
+    -   `FAILED` — Unable to load the dictionary as a result of an error.
+    -   `LOADING` — Dictionary is loading now.
+    -   `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](../sql-reference/statements/system.md#query_language-system-reload-dictionary) پرس و جو, ایست, پیکربندی فرهنگ لغت تغییر کرده است).
+    -   `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
+-   `origin` ([رشته](../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
+-   `type` ([رشته](../sql-reference/data-types/string.md)) — Type of a dictionary allocation. [ذخیره واژهنامهها در حافظه](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md).
+-   `key` — [نوع کلید](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-key): کلید عددی ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) or Сomposite key ([رشته](../sql-reference/data-types/string.md)) — form “(type 1, type 2, …, type n)”.
+-   `attribute.names` ([& حذف](../sql-reference/data-types/array.md)([رشته](../sql-reference/data-types/string.md))) — Array of [نام خصیصه](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes) فراهم شده توسط فرهنگ لغت.
+-   `attribute.types` ([& حذف](../sql-reference/data-types/array.md)([رشته](../sql-reference/data-types/string.md))) — Corresponding array of [انواع خصیصه](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes) که توسط فرهنگ لغت فراهم شده است.
+-   `bytes_allocated` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Amount of RAM allocated for the dictionary.
+-   `query_count` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
+-   `hit_rate` ([جسم شناور64](../sql-reference/data-types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.
+-   `element_count` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of items stored in the dictionary.
+-   `load_factor` ([جسم شناور64](../sql-reference/data-types/float.md)) — Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+-   `source` ([رشته](../sql-reference/data-types/string.md)) — Text describing the [منبع داده](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) برای فرهنگ لغت.
+-   `lifetime_min` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Minimum [طول عمر](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) از فرهنگ لغت در حافظه, پس از کلیک که تلاش می کند به بازنگری فرهنگ لغت (اگر `invalidate_query` قرار است, سپس تنها در صورتی که تغییر کرده است). تنظیم در ثانیه.
+-   `lifetime_max` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Maximum [طول عمر](../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) از فرهنگ لغت در حافظه, پس از کلیک که تلاش می کند به بازنگری فرهنگ لغت (اگر `invalidate_query` قرار است, سپس تنها در صورتی که تغییر کرده است). تنظیم در ثانیه.
+-   `loading_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
+-   `last_successful_update_time` ([DateTime](../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with external sources and investigate causes.
+-   `loading_duration` ([Float32](../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
+-   `last_exception` ([رشته](../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 
-توجه داشته باشید که مقدار حافظه مورد استفاده توسط فرهنگ لغت متناسب با تعداد اقلام ذخیره شده در این نیست. بنابراین برای لغت نامه تخت و کش, تمام سلول های حافظه از پیش تعیین شده, صرف نظر از چگونه کامل فرهنگ لغت در واقع.
+**مثال**
+
+پیکربندی فرهنگ لغت.
+
+``` sql
+CREATE DICTIONARY dictdb.dict
+(
+    `key` Int64 DEFAULT -1,
+    `value_default` String DEFAULT 'world',
+    `value_expression` String DEFAULT 'xxx' EXPRESSION 'toString(127 * 172)'
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dicttbl' DB 'dictdb'))
+LIFETIME(MIN 0 MAX 1)
+LAYOUT(FLAT())
+```
+
+اطمینان حاصل کنید که فرهنگ لغت لود شده است.
+
+``` sql
+SELECT * FROM system.dictionaries
+```
+
+``` text
+┌─database─┬─name─┬─status─┬─origin──────┬─type─┬─key────┬─attribute.names──────────────────────┬─attribute.types─────┬─bytes_allocated─┬─query_count─┬─hit_rate─┬─element_count─┬───────────load_factor─┬─source─────────────────────┬─lifetime_min─┬─lifetime_max─┬──loading_start_time─┌──last_successful_update_time─┬──────loading_duration─┬─last_exception─┐
+│ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
+└──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
+```
 
 ## سیستم.رویدادها {#system_tables-events}
 
@@ -259,7 +299,7 @@ SELECT * FROM system.events LIMIT 5
 -   `value` ([Int64](../sql-reference/data-types/int-uint.md)) — Metric value.
 -   `description` ([رشته](../sql-reference/data-types/string.md)) — Metric description.
 
-لیستی از معیارهای پشتیبانی شده شما می توانید در [افراد زیر در این افزونه مشارکت کردهاندپردازنده](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) فایل منبع از خانه کلیک.
+لیستی از معیارهای پشتیبانی شده شما می توانید در [همایش های بین المللیپردازنده](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) فایل منبع از خانه کلیک.
 
 **مثال**
 
@@ -347,7 +387,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 ## سیستم.اعداد {#system-numbers}
 
-این جدول شامل یک uint64 ستون به نام ‘number’ که شامل تقریبا تمام اعداد طبیعی با شروع از صفر.
+این جدول شامل یک UInt64 ستون به نام ‘number’ که شامل تقریبا تمام اعداد طبیعی با شروع از صفر.
 شما می توانید این جدول برای تست استفاده, و یا اگر شما نیاز به انجام یک جستجو نیروی بی رحم.
 بار خوانده شده از این جدول موازی نیست.
 
@@ -379,7 +419,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
 -   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` با دانه دانه دانه شاخص (معمولا 8192) (این اشاره برای دانه دانه تطبیقی کار نمی کند).
 
@@ -421,7 +461,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql-reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -570,7 +610,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [کلیک مشتری](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [کلیک مشتری](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی اجرا می شود.
 -   `client_name` (String) — The [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از نام مشتری تی پی.
 -   `client_revision` (UInt32) — Revision of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
@@ -644,7 +684,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [کلیک مشتری](../interfaces/cli.md).
+-   `os_user` (String) — OS's username who runs [کلیک مشتری](../interfaces/cli.md).
 -   `client_hostname` (String) — Hostname of the client machine where the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی اجرا می شود.
 -   `client_name` (String) — The [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از نام مشتری تی پی.
 -   `client_revision` (UInt32) — Revision of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
@@ -680,24 +720,26 @@ CurrentMetric_ReplicatedChecks:                             0
 
 ستونها:
 
--   `event_date`([تاریخ](../sql-reference/data-types/date.md)) — Date of sampling moment.
+-   `event_date` ([تاریخ](../sql-reference/data-types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../sql-reference/data-types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Timestamp of the sampling moment.
 
--   `revision`([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
+-   `timestamp_ns` ([UInt64](../sql-reference/data-types/int-uint.md)) — Timestamp of the sampling moment in nanoseconds.
+
+-   `revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
     هنگام اتصال به سرور توسط `clickhouse-client`, شما رشته شبیه به دیدن `Connected to ClickHouse server version 19.18.1 revision 54429.`. این فیلد شامل `revision` اما نه `version` از یک سرور.
 
--   `timer_type`([شمار8](../sql-reference/data-types/enum.md)) — Timer type:
+-   `timer_type` ([شمار8](../sql-reference/data-types/enum.md)) — Timer type:
 
     -   `Real` نشان دهنده زمان دیوار ساعت.
     -   `CPU` نشان دهنده زمان پردازنده.
 
--   `thread_number`([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
+-   `thread_number` ([UInt32](../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
--   `query_id`([رشته](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [\_خروج](#system_tables-query_log) جدول سیستم.
+-   `query_id` ([رشته](../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [\_خروج](#system_tables-query_log) جدول سیستم.
 
--   `trace`([Array(UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace` ([Array(UInt64)](../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **مثال**
 
@@ -839,29 +881,58 @@ WHERE
 
 اگر این پرس و جو چیزی نمی گرداند, به این معنی که همه چیز خوب است.
 
-## سیستم.تنظیمات {#system-settings}
+## سیستم.تنظیمات {#system-tables-system-settings}
 
-حاوی اطلاعات در مورد تنظیمات که در حال حاضر در حال استفاده.
-به عنوان مثال مورد استفاده برای اجرای پرس و جو شما با استفاده از به خواندن از سیستم. جدول تنظیمات.
+شامل اطلاعات در مورد تنظیمات جلسه برای کاربر فعلی.
 
 ستونها:
 
--   `name` (String) — Setting name.
--   `value` (String) — Setting value.
--   `description` (String) — Setting description.
--   `type` (String) — Setting type (implementation specific string value).
--   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
--   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [قیدها](settings/constraints-on-settings.md#constraints-on-settings)).
--   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [قیدها](settings/constraints-on-settings.md#constraints-on-settings)).
--   `readonly` (UInt8) — Can user change this setting (for more info, look into [قیدها](settings/constraints-on-settings.md#constraints-on-settings)).
+-   `name` ([رشته](../sql-reference/data-types/string.md)) — Setting name.
+-   `value` ([رشته](../sql-reference/data-types/string.md)) — Setting value.
+-   `changed` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
+-   `description` ([رشته](../sql-reference/data-types/string.md)) — Short setting description.
+-   `min` ([Nullable](../sql-reference/data-types/nullable.md)([رشته](../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [قیدها](settings/constraints-on-settings.md#constraints-on-settings). اگر تنظیمات دارای حداقل مقدار, شامل [NULL](../sql-reference/syntax.md#null-literal).
+-   `max` ([Nullable](../sql-reference/data-types/nullable.md)([رشته](../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [قیدها](settings/constraints-on-settings.md#constraints-on-settings). اگر تنظیمات دارای حداکثر مقدار, شامل [NULL](../sql-reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
+    -   `0` — Current user can change the setting.
+    -   `1` — Current user can't change the setting.
 
-مثال:
+**مثال**
+
+مثال زیر نشان می دهد که چگونه برای دریافت اطلاعات در مورد تنظیمات که شامل نام `min_i`.
 
 ``` sql
-SELECT name, value
+SELECT *
 FROM system.settings
-WHERE changed
+WHERE name LIKE '%min_i%'
 ```
+
+``` text
+┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
+│ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+└─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
+```
+
+استفاده از `WHERE changed` می تواند مفید باشد, مثلا, زمانی که شما می خواهید برای بررسی:
+
+-   اینکه تنظیمات در پروندههای پیکربندی به درستی بارگذاری شوند یا در حال استفاده باشند.
+-   تنظیماتی که در جلسه فعلی تغییر کرده است.
+
+<!-- -->
+
+``` sql
+SELECT * FROM system.settings WHERE changed AND name='load_balancing'
+```
+
+**همچنین نگاه کنید به**
+
+-   [تنظیمات](settings/index.md#session-settings-intro)
+-   [مجوز برای نمایش داده شد](settings/permissions-for-queries.md#settings_readonly)
+-   [محدودیت در تنظیمات](settings/constraints-on-settings.md)
+
+## سیستم.\_زبانهها {#system.table_engines}
 
 ``` text
 ┌─name───────────────────┬─value───────┐

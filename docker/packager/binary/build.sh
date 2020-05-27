@@ -15,6 +15,7 @@ mkdir -p build/build_docker
 cd build/build_docker
 ccache --show-stats ||:
 ccache --zero-stats ||:
+ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
 cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
 ninja

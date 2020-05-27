@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 44
 toc_title: "Matem\xE1tica"
 ---
@@ -51,7 +51,7 @@ Acepta un argumento numérico y devuelve un número Float64 cercano a la raíz c
 
 ## erf(x) {#erfx}
 
-Si ‘x’ is non-negative, then `erf(x / σ√2)` es la probabilidad de que una variable aleatoria tenga una distribución normal con desviación estándar ‘σ’ toma el valor que está separado del valor esperado en más de ‘x’.
+Si ‘x’ no es negativo, entonces `erf(x / σ√2)` es la probabilidad de que una variable aleatoria tenga una distribución normal con desviación estándar ‘σ’ toma el valor que está separado del valor esperado en más de ‘x’.
 
 Ejemplo (regla de tres sigma):
 
@@ -93,7 +93,7 @@ Tangente.
 
 El arco sinusoidal.
 
-## Acerca De) {#acosx}
+## Acerca de) {#acosx}
 
 El arco coseno.
 

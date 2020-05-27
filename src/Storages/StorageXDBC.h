@@ -29,6 +29,8 @@ public:
                 const ColumnsDescription & columns_,
                 const Context & context_, BridgeHelperPtr bridge_helper_);
 
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
+
 private:
 
     BridgeHelperPtr bridge_helper;

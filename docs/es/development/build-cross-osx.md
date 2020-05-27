@@ -1,11 +1,11 @@
 ---
 machine_translated: true
-machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 66
 toc_title: "C\xF3mo construir ClickHouse en Linux para Mac OS X"
 ---
 
-# Cómo Construir ClickHouse En Linux Para Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
+# Cómo construir ClickHouse en Linux para Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
 Esto es para el caso cuando tiene una máquina Linux y desea usarla para compilar `clickhouse` Esto está destinado a las comprobaciones de integración continuas que se ejecutan en servidores Linux. Si desea crear ClickHouse directamente en Mac OS X, continúe con [otra instrucción](build-osx.md).
 
@@ -21,7 +21,7 @@ sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8
 sudo apt-get install clang-8
 ```
 
-# Instalar Conjunto De Herramientas De compilación Cruzada {#install-cross-compilation-toolset}
+# Instalar conjunto de herramientas de compilación cruzada {#install-cross-compilation-toolset}
 
 Recordemos la ruta donde instalamos `cctools` como ${CCTOOLS}
 

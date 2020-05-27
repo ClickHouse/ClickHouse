@@ -1,15 +1,15 @@
 ---
 machine_translated: true
-machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 63
 toc_title: Travailler avec des arguments nullables
 ---
 
-# Fonctions Pour Travailler Avec Des agrégats Nullables {#functions-for-working-with-nullable-aggregates}
+# Fonctions pour travailler avec des agrégats nullables {#functions-for-working-with-nullable-aggregates}
 
 ## isNull {#isnull}
 
-Vérifie si l’argument est [NULL](../../sql-reference/syntax.md#null-literal).
+Vérifie si l'argument est [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNull(x)
@@ -22,11 +22,11 @@ isNull(x)
 **Valeur renvoyée**
 
 -   `1` si `x` être `NULL`.
--   `0` si `x` n’est pas `NULL`.
+-   `0` si `x` n'est pas `NULL`.
 
 **Exemple**
 
-Table d’entrée
+Table d'entrée
 
 ``` text
 ┌─x─┬────y─┐
@@ -49,7 +49,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-Vérifie si l’argument est [NULL](../../sql-reference/syntax.md#null-literal).
+Vérifie si l'argument est [NULL](../../sql-reference/syntax.md#null-literal).
 
 ``` sql
 isNotNull(x)
@@ -62,11 +62,11 @@ isNotNull(x)
 **Valeur renvoyée**
 
 -   `0` si `x` être `NULL`.
--   `1` si `x` n’est pas `NULL`.
+-   `1` si `x` n'est pas `NULL`.
 
 **Exemple**
 
-Table d’entrée
+Table d'entrée
 
 ``` text
 ┌─x─┬────y─┐
@@ -97,7 +97,7 @@ coalesce(x,...)
 
 **Paramètre:**
 
--   N’importe quel nombre de paramètres d’un type non composé. Tous les paramètres doivent être compatibles par type de données.
+-   N'importe quel nombre de paramètres d'un type non composé. Tous les paramètres doivent être compatibles par type de données.
 
 **Valeurs renvoyées**
 
@@ -115,7 +115,7 @@ Considérez une liste de contacts qui peuvent spécifier plusieurs façons de co
 └──────────┴──────┴───────────┴──────┘
 ```
 
-Le `mail` et `phone` les champs sont de type Chaîne de caractères, mais la `icq` le terrain est `UInt32`, de sorte qu’il doit être converti en `String`.
+Le `mail` et `phone` les champs sont de type Chaîne de caractères, mais la `icq` le terrain est `UInt32`, de sorte qu'il doit être converti en `String`.
 
 Obtenir la première méthode de contact pour le client à partir de la liste de contacts:
 
@@ -132,7 +132,7 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 
 ## ifNull {#ifnull}
 
-Renvoie une valeur alternative si l’argument principal est `NULL`.
+Renvoie une valeur alternative si l'argument principal est `NULL`.
 
 ``` sql
 ifNull(x,alt)
@@ -145,7 +145,7 @@ ifNull(x,alt)
 
 **Valeurs renvoyées**
 
--   Valeur `x`, si `x` n’est pas `NULL`.
+-   Valeur `x`, si `x` n'est pas `NULL`.
 -   Valeur `alt`, si `x` être `NULL`.
 
 **Exemple**
@@ -211,7 +211,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull {#assumenotnull}
 
-Résultats dans une valeur de type [Nullable](../../sql-reference/data-types/nullable.md) pour un non- `Nullable` si la valeur n’est pas `NULL`.
+Résultats dans une valeur de type [Nullable](../../sql-reference/data-types/nullable.md) pour un non- `Nullable` si la valeur n'est pas `NULL`.
 
 ``` sql
 assumeNotNull(x)
@@ -223,12 +223,12 @@ assumeNotNull(x)
 
 **Valeurs renvoyées**
 
--   La valeur d’origine du non-`Nullable` type, si elle n’est pas `NULL`.
--   La valeur par défaut pour le non-`Nullable` Tapez si la valeur d’origine était `NULL`.
+-   La valeur d'origine du non-`Nullable` type, si elle n'est pas `NULL`.
+-   La valeur par défaut pour le non-`Nullable` Tapez si la valeur d'origine était `NULL`.
 
 **Exemple**
 
-Envisager l’ `t_null` table.
+Envisager l' `t_null` table.
 
 ``` sql
 SHOW CREATE TABLE t_null
@@ -273,7 +273,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null
 
 ## toNullable {#tonullable}
 
-Convertit le type d’argument en `Nullable`.
+Convertit le type d'argument en `Nullable`.
 
 ``` sql
 toNullable(x)
@@ -285,7 +285,7 @@ toNullable(x)
 
 **Valeur renvoyée**
 
--   La valeur d’entrée avec un `Nullable` type.
+-   La valeur d'entrée avec un `Nullable` type.
 
 **Exemple**
 

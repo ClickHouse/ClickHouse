@@ -97,9 +97,9 @@ def test_drop():
     def check():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1\n"
         assert instance.query("SHOW CREATE SETTINGS PROFILE s2") == "CREATE SETTINGS PROFILE s2\n"
-        assert "User `u2` not found" in instance.query_and_get_error("SHOW CREATE USER u2")
-        assert "Row policy `p ON mydb.mytable` not found" in instance.query_and_get_error("SHOW CREATE ROW POLICY p ON mydb.mytable")
-        assert "Quota `q` not found" in instance.query_and_get_error("SHOW CREATE QUOTA q")
+        assert "There is no user `u2`" in instance.query_and_get_error("SHOW CREATE USER u2")
+        assert "There is no row policy `p ON mydb.mytable`" in instance.query_and_get_error("SHOW CREATE ROW POLICY p ON mydb.mytable")
+        assert "There is no quota `q`" in instance.query_and_get_error("SHOW CREATE QUOTA q")
 
     check()
     instance.restart_clickhouse()  # Check persistency

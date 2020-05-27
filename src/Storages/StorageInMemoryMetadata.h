@@ -43,4 +43,34 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };
 
+/// Common structure for primary, partition and other storage keys
+struct StorageMetadataKeyField
+{
+    /// User defined AST in CREATE/ALTER query. This field may be empty, but key
+    /// can exists because some of them maybe set implicitly (for example,
+    /// primary key in merge tree can be part of sorting key)
+    ASTPtr definition_ast;
+
+    /// ASTExpressionList with key fields, example: (x, toStartOfMonth(date))).
+    ASTPtr expression_list_ast;
+
+    /// Expression from expression_list_ast created by ExpressionAnalyzer. Useful,
+    /// when you need to get required columns for key, example: a, date, b.
+    ExpressionActionsPtr expression;
+
+    /// Sample block with key columns (names, types, empty column)
+    Block sample_block;
+
+    /// Column names in key definition, example: x, toStartOfMonth(date), a * b.
+    Names column_names;
+
+    /// Types from sample block ordered in columns order.
+    DataTypes data_types;
+
+    /// Parse key structure from key definition. Requires all columns, available
+    /// in storage.
+    static StorageMetadataKeyField getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
+};
+
+
 }

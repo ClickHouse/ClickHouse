@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: e8cd92bba3269f47787db090899f7c242adf7818
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 38
 toc_title: SHOW
 ---
@@ -48,7 +48,7 @@ Tablo listesini görüntüler.
 SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Eğer… `FROM` yan tümcesi belirtilmemiş, sorgu geçerli veritabanından tabloların listesini döndürür.
+Eğer... `FROM` yan tümcesi belirtilmemiş, sorgu geçerli veritabanından tabloların listesini döndürür.
 
 Aynı sonuçları elde edebilirsiniz `SHOW TABLES` aşağıdaki şekilde sorgu:
 
@@ -79,7 +79,7 @@ Bir listesini görüntüler [dış söz dictionarieslükler](../../sql-reference
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-Eğer… `FROM` yan tümcesi belirtilmemiş, sorgu geçerli veritabanından sözlükler listesini döndürür.
+Eğer... `FROM` yan tümcesi belirtilmemiş, sorgu geçerli veritabanından sözlükler listesini döndürür.
 
 Aynı sonuçları elde edebilirsiniz `SHOW DICTIONARIES` aşağıdaki şekilde sorgu:
 
@@ -100,6 +100,70 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 │ regions      │
 │ region_names │
 └──────────────┘
+```
+
+## SHOW GRANTS {#show-grants-statement}
+
+Bir kullanıcı için ayrıcalıkları gösterir.
+
+### Sözdizimi {#show-grants-syntax}
+
+``` sql
+SHOW GRANTS [FOR user]
+```
+
+Kullanıcı belirtilmezse, sorgu geçerli kullanıcı için ayrıcalıklar döndürür.
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+Kullanılan parametreleri gösterir. [kullanıcı oluşturma](create.md#create-user-statement).
+
+`SHOW CREATE USER` kullanıcı şifreleri çıkmıyor.
+
+### Sözdizimi {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+Kullanılan parametreleri gösterir. [rol oluşturma](create.md#create-role-statement)
+
+### Sözdizimi {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+Kullanılan parametreleri gösterir. [satır ilkesi oluşturma](create.md#create-row-policy-statement)
+
+### Sözdizimi {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+Kullanılan parametreleri gösterir. [Ko creationta oluşturma](create.md#create-quota-statement)
+
+### Sözdizimi {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+Kullanılan parametreleri gösterir. [ayarlar profil oluşturma](create.md#create-settings-profile-statement)
+
+### Sözdizimi {#show-create-row-policy-syntax}
+
+``` sql
+SHOW CREATE [SETTINGS] PROFILE name
 ```
 
 [Orijinal makale](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

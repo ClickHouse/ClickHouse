@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-05-08 17:57+0300\n"
+"POT-Creation-Date: 2020-05-20 15:32+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -32,27 +32,27 @@ msgstr ""
 msgid "ClickHouse DBMS"
 msgstr ""
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "open-source"
 msgstr ""
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "relational"
 msgstr ""
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytics"
 msgstr ""
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "analytical"
 msgstr ""
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "Big Data"
 msgstr ""
 
-#: templates/common_meta.html:21
+#: templates/common_meta.html:24
 msgid "web-analytics"
 msgstr ""
 
@@ -70,15 +70,51 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr ""
 
+#: templates/docs/footer.html:3
+msgid "Rating"
+msgstr ""
+
+#: templates/docs/footer.html:3
+msgid "votes"
+msgstr ""
+
 #: templates/docs/footer.html:4
+msgid "Article Rating"
+msgstr ""
+
+#: templates/docs/footer.html:4
+msgid "Was this content helpful?"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Unusable"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Poor"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Good"
+msgstr ""
+
+#: templates/docs/footer.html:7
+msgid "Excellent"
+msgstr ""
+
+#: templates/docs/footer.html:8
+msgid "documentation"
+msgstr ""
+
+#: templates/docs/footer.html:15
 msgid "Built from"
 msgstr ""
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "published on"
 msgstr ""
 
-#: templates/docs/footer.html:4
+#: templates/docs/footer.html:15
 msgid "modified on"
 msgstr ""
 

@@ -173,7 +173,7 @@ namespace
                 auto msg = Poco::AnyCast<std::string>(session_data);
                 if (!msg.empty())
                 {
-                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");
+                    LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with {} with error '{}' will try to reconnect session", host, msg);
                     /// Host can change IP
                     const auto ip = DNSResolver::instance().resolveHost(host).toString();
                     if (ip != session->getHost())
