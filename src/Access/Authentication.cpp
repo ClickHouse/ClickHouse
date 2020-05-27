@@ -1,4 +1,6 @@
 #include <Access/Authentication.h>
+#include <Access/ExternalAuthenticators.h>
+#include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <Poco/SHA1Engine.h>
 
@@ -11,6 +13,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+const String & Authentication::getLDAPServerName() const
+{
+    return ldap_server_name;
+}
+
+void Authentication::setLDAPServerName(const String & server_name)
+{
+    ldap_server_name = server_name;
+}
 
 Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 {
@@ -36,12 +47,15 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 
         case DOUBLE_SHA1_PASSWORD:
             return password_hash;
+
+        case LDAP_PASSWORD:
+            throw Exception("Cannot get password double SHA1 for user with 'LDAP_PASSWORD' authentication.", ErrorCodes::BAD_ARGUMENTS);
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
-bool Authentication::isCorrectPassword(const String & password_) const
+bool Authentication::isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators) const
 {
     switch (type)
     {
@@ -70,6 +84,15 @@ bool Authentication::isCorrectPassword(const String & password_) const
                 return true;
 
             return encodeSHA1(first_sha1) == password_hash;
+        }
+
+        case LDAP_PASSWORD:
+        {
+            auto ldap_server_params = external_authenticators.getLDAPServerParams(ldap_server_name);
+            ldap_server_params.user = user_;
+            ldap_server_params.password = password_;
+            LDAPSimpleAuthClient ldap_client(ldap_server_params);
+            return ldap_client.check();
         }
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
