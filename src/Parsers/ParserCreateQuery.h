@@ -171,18 +171,17 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     // Pos pos_before_null = pos;
 
-    if (s_not.check(pos, expected)) {
-        if (s_null.check(pos, expected)) {
+    if (s_not.check(pos, expected))
+        if (s_null.check(pos, expected))
+        {
             is_not = std::make_shared<ASTIdentifier>("NOT");
             is_null = std::make_shared<ASTIdentifier>("NULL");
-        } else {
+        }
+        else
             return false;
-        }
-    } else {
-        if (s_null.check(pos, expected)) {
+    else
+        if (s_null.check(pos, expected))
             is_null = std::make_shared<ASTIdentifier>("NULL");
-        }
-    }
 
     if (s_comment.ignore(pos, expected))
     {
@@ -213,12 +212,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(type));
     }
 
-    if (is_null) {
+    if (is_null)
+    {
         column_declaration->is_null = is_null;
         column_declaration->children.push_back(std::move(is_null));
     }
 
-    if (is_not) {
+    if (is_not)
+    {
         column_declaration->is_not = is_not;
         column_declaration->children.push_back(std::move(is_not));
     }
