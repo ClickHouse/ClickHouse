@@ -72,10 +72,10 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
           max_depth(max_depth_)
 {
     buckets.reserve(polygons.size());
-    for (size_t i = 0; i < polygons.size(); ++i)
+    for (const auto & polygon : polygons)
     {
         std::vector<Polygon> single;
-        single.emplace_back(polygons[i]);
+        single.emplace_back(polygon);
         buckets.emplace_back(single);
     }
 }
@@ -96,12 +96,11 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() con
 
 bool PolygonDictionaryIndexEach::find(const Point & point, size_t & id) const
 {
-    auto cell = grid.find(point.x(), point.y());
+    const auto * cell = grid.find(point.x(), point.y());
     if (cell)
     {
-        for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
+        for (const auto & candidate : cell->polygon_ids)
         {
-            const auto & candidate = (cell->polygon_ids)[i];
             size_t unused;
             if (buckets[candidate].find(point, unused))
             {
@@ -151,7 +150,7 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() con
 
 bool PolygonDictionaryIndexCell::find(const Point & point, size_t & id) const
 {
-    auto cell = index.find(point.x(), point.y());
+    const auto * cell = index.find(point.x(), point.y());
     if (cell)
     {
         if (!(cell->corresponding_ids).empty() && cell->index.find(point, id))
