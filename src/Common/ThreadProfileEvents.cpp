@@ -223,27 +223,27 @@ using getLoggerFunc = Logger * ();
 static void enablePerfEvent(int event_fd, getLoggerFunc getLogger)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_ENABLE, 0))
-        LOG_WARNING(getLogger(), "Can't enable perf event with file descriptor: " << event_fd);
+        LOG_WARNING(getLogger(), "Can't enable perf event with file descriptor {}", event_fd);
 }
 
 static void resetPerfEvent(int event_fd, getLoggerFunc getLogger)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_RESET, 0))
-        LOG_WARNING(getLogger(), "Can't reset perf event with file descriptor: " << event_fd);
+        LOG_WARNING(getLogger(), "Can't reset perf event with file descriptor {}",
+                    event_fd);
 }
 
 static void disablePerfEvent(int event_fd, getLoggerFunc getLogger)
 {
     if (ioctl(event_fd, PERF_EVENT_IOC_DISABLE, 0))
-        LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor: " << event_fd);
+        LOG_WARNING(getLogger(), "Can't disable perf event with file descriptor {}"  , event_fd);
 }
 
 static void releasePerfEvent(int event_fd, getLoggerFunc getLogger)
 {
     if (close(event_fd))
     {
-        LOG_WARNING(getLogger(), "Can't close perf event file descriptor: " << event_fd
-                        << "; error: " << errno << " - " << strerror(errno));
+        LOG_WARNING(getLogger(), "Can't close perf event file descriptor {}: {} ({})", event_fd, errno, strerror(errno));
     }
 }
 
@@ -286,12 +286,12 @@ static bool validatePerfEventDescriptor(int & fd, getLoggerFunc getLogger)
 
     if (errno == EBADF)
     {
-        LOG_WARNING(getLogger(), "Event descriptor " << fd << " was closed from the outside; reopening");
+        LOG_WARNING(getLogger(), "Event descriptor {} was closed from the outside; reopening", fd);
     }
     else
     {
-        LOG_WARNING(getLogger(), "Error while checking event descriptor's (" << fd << ") availability: "
-                        << "errno = " << errno << ", message = `" << strerror(errno) << "`; reopening event descriptor");
+        LOG_WARNING(getLogger(), "Error while checking availability of event descriptor {}: {} ({})", fd, strerror(errno), errno);
+
         disablePerfEvent(fd, getLogger);
         releasePerfEvent(fd, getLogger);
     }
@@ -366,7 +366,8 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     rlimit64 limits{};
     if (getrlimit64(RLIMIT_NOFILE, &limits))
     {
-        LOG_WARNING(getLogger(), "Unable to get rlimit: errno = " << errno << ", message = " << strerror(errno));
+        LOG_WARNING(getLogger(), "Unable to get rlimit: {} ({})", strerror(errno),
+                    errno);
         return false;
     }
     UInt64 maximum_open_descriptors = limits.rlim_cur;
@@ -377,8 +378,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     DIR * fd_dir = opendir(dir_path.c_str());
     if (fd_dir == nullptr)
     {
-        LOG_WARNING(getLogger(), "Unable to get file descriptors used by the current process: "
-                        << "errno = " << errno << ", message = " << strerror(errno));
+        LOG_WARNING(getLogger(), "Unable to get file descriptors used by the current process: {} ({})", strerror(errno), errno);
         return false;
     }
     UInt64 opened_descriptors = 0;
@@ -390,9 +390,9 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     UInt64 threshold = static_cast<UInt64>(maximum_open_descriptors * FILE_DESCRIPTORS_THRESHOLD);
     if (fd_count_afterwards > threshold)
     {
-        LOG_WARNING(getLogger(), "Can't measure perf events as the result number of file descriptors ("
-                        << fd_count_afterwards << ") is more than the current threshold (" << threshold << " = "
-                        << maximum_open_descriptors << " * " << FILE_DESCRIPTORS_THRESHOLD << ")");
+        LOG_WARNING(getLogger(), "Can't measure perf events as the result number of file descriptors ({}) is more than the current threshold ({} = {} * {})",
+            fd_count_afterwards, threshold, maximum_open_descriptors,
+            FILE_DESCRIPTORS_THRESHOLD);
         return false;
     }
 
@@ -406,8 +406,10 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
 
         if (fd == -1)
         {
-            LOG_WARNING(getLogger(), "Perf event is unsupported: `" << event_info.settings_name
-                        << "` (event_type=" << event_info.event_type << ", event_config=" << event_info.event_config << ")");
+            LOG_WARNING(getLogger(), "Perf event is unsupported: {}"
+                " (event_type={}, event_config={})",
+                event_info.settings_name, event_info.event_type,
+                event_info.event_config);
         }
     }
 
@@ -430,7 +432,7 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
     {
         std::vector<size_t> event_indices = eventNameToIndices(event_name);
         if (event_indices.empty())
-            LOG_WARNING(getLogger(), "Unknown event: `" << event_name << "`");
+            LOG_WARNING(getLogger(), "Unknown event: '{}'", event_name);
         else
             indices.insert(std::end(indices), std::begin(event_indices), std::end(event_indices));
     };
@@ -498,9 +500,12 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
             continue;
 
         constexpr ssize_t bytes_to_read = sizeof(counters.raw_event_values[0]);
-        if (read(fd, &counters.raw_event_values[i], bytes_to_read) != bytes_to_read)
+        const int bytes_read = read(fd, &counters.raw_event_values[i],
+            bytes_to_read);
+
+        if (bytes_read != bytes_to_read)
         {
-            LOG_WARNING(getLogger(), "Can't read event value from file descriptor: " << fd);
+            LOG_WARNING(getLogger(), "Can't read event value from file descriptor: {}", fd);
             counters.raw_event_values[i] = {};
         }
     }
