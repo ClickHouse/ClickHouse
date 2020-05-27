@@ -379,7 +379,8 @@ bool DataTypeString::equals(const IDataType & rhs) const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments) {
+    if (arguments)
+    {
         if (arguments->children.size() > 1)
             throw Exception("String data type family mustnt have more than one argument - size in characters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -410,5 +411,4 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
 }
-
 }
