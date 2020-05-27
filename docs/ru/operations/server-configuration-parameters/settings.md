@@ -686,7 +686,7 @@ TCP порт для защищённого обмена данными с кли
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#tmp-path}
+## tmp_path {#tmp-path}
 
 Путь ко временным данным для обработки больших запросов.
 
@@ -698,6 +698,17 @@ TCP порт для защищённого обмена данными с кли
 ``` xml
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
+## tmp_policy {#tmp-policy}
+
+Политика из [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) для хранения временных файлов.
+
+Если политика не задана, используется [tmp_path](#tmp-path). В противном случае `tmp_path` игнорируется.
+
+!!! note "Примечание"
+    - `move_factor` игнорируется.
+    - `keep_free_space_bytes` игнорируется.
+    - `max_data_part_size_bytes` игнорируется.
+    - В данной политике у вас должен быть ровно один том.
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 

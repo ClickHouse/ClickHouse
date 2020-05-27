@@ -35,10 +35,8 @@ Block MetricLogElement::createBlock()
 }
 
 
-void MetricLogElement::appendToBlock(Block & block) const
+void MetricLogElement::appendToBlock(MutableColumns & columns) const
 {
-    MutableColumns columns = block.mutateColumns();
-
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time));
@@ -50,8 +48,6 @@ void MetricLogElement::appendToBlock(Block & block) const
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         columns[column_idx++]->insert(current_metrics[i]);
-
-    block.setColumns(std::move(columns));
 }
 
 

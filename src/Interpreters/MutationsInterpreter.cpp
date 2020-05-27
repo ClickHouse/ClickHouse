@@ -221,14 +221,11 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 
     NameSet key_columns;
 
-    if (merge_tree_data->partition_key_expr)
-        for (const String & col : merge_tree_data->partition_key_expr->getRequiredColumns())
-            key_columns.insert(col);
+    for (const String & col : merge_tree_data->getColumnsRequiredForPartitionKey())
+        key_columns.insert(col);
 
-    auto sorting_key_expr = merge_tree_data->sorting_key_expr;
-    if (sorting_key_expr)
-        for (const String & col : sorting_key_expr->getRequiredColumns())
-            key_columns.insert(col);
+    for (const String & col : merge_tree_data->getColumnsRequiredForSortingKey())
+        key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
     if (!merge_tree_data->merging_params.sign_column.empty())

@@ -25,6 +25,9 @@ very_unstable_queries = 0
 # max seconds to run one query by itself, not counting preparation
 allowed_single_run_time = 2
 
+color_bad='#ffb0c0'
+color_good='#b0d050'
+
 header_template = """
 <!DOCTYPE html>
 <html>
@@ -179,6 +182,16 @@ if args.report == 'main':
 
     print_tested_commits()
 
+    run_error_rows = tsvRows('run-errors.tsv')
+    error_tests += len(run_error_rows)
+    printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
+
+    slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
+    error_tests += len(slow_on_client_rows)
+    printSimpleTable('Slow on client',
+                     ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
+                     slow_on_client_rows)
+
     def print_changes():
         rows = tsvRows('report/changed-perf.tsv')
         if not rows:
@@ -188,8 +201,8 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s.',                                         # 0
-            'New, s.',                                         # 1
+            'Old, s',                                          # 0
+            'New, s',                                          # 1
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old',   # 2
             'p&nbsp;<&nbsp;0.001 threshold',                   # 3
             # Failed                                           # 4
@@ -205,10 +218,10 @@ if args.report == 'main':
             if int(row[4]):
                 if float(row[2]) < 0.:
                     faster_queries += 1
-                    attrs[2] = 'style="background: #00ff00"'
+                    attrs[2] = f'style="background: {color_good}"'
                 else:
                     slower_queries += 1
-                    attrs[2] = 'style="background: #ff0000"'
+                    attrs[2] = f'style="background: {color_bad}"'
             else:
                 attrs[2] = ''
 
@@ -217,12 +230,6 @@ if args.report == 'main':
         print(tableEnd())
 
     print_changes()
-
-    slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
-    error_tests += len(slow_on_client_rows)
-    printSimpleTable('Slow on client',
-        ['Client time, s.', 'Server time, s.', 'Ratio', 'Query'],
-        slow_on_client_rows)
 
     def print_unstable_queries():
         global unstable_queries
@@ -252,7 +259,7 @@ if args.report == 'main':
         for r in unstable_rows:
             if int(r[4]):
                 very_unstable_queries += 1
-                attrs[3] = 'style="background: #ffb0a0"'
+                attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[3] = ''
 
@@ -262,11 +269,7 @@ if args.report == 'main':
 
     print_unstable_queries()
 
-    run_error_rows = tsvRows('run-errors.tsv')
-    error_tests += len(run_error_rows)
-    printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
-
-    skipped_tests_rows = tsvRows('skipped-tests.tsv')
+    skipped_tests_rows = tsvRows('analyze/skipped-tests.tsv')
     printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
     printSimpleTable('Tests with most unstable queries',
@@ -281,13 +284,13 @@ if args.report == 'main':
 
         columns = [
             'Test',                                          #0
-            'Wall clock time, s.',                           #1
-            'Total client time, s.',                         #2
+            'Wall clock time, s',                            #1
+            'Total client time, s',                          #2
             'Total queries',                                 #3
             'Ignored short queries',                         #4
-            'Longest query<br>(sum for all runs), s.',       #5
-            'Avg wall clock time<br>(sum for all runs), s.', #6
-            'Shortest query<br>(sum for all runs), s.',      #7
+            'Longest query<br>(sum for all runs), s',        #5
+            'Avg wall clock time<br>(sum for all runs), s',  #6
+            'Shortest query<br>(sum for all runs), s',       #7
             ]
 
         print(tableStart('Test times'))
@@ -300,13 +303,13 @@ if args.report == 'main':
             if float(r[6]) > 1.5 * total_runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
-                attrs[6] = 'style="background: #ffb0a0"'
+                attrs[6] = f'style="background: {color_bad}"'
             else:
                 attrs[6] = ''
 
             if float(r[5]) > allowed_single_run_time * total_runs:
                 slow_average_tests += 1
-                attrs[5] = 'style="background: #ffb0a0"'
+                attrs[5] = f'style="background: {color_bad}"'
             else:
                 attrs[5] = ''
 
@@ -320,9 +323,9 @@ if args.report == 'main':
 
     print("""
     <p class="links">
-    <a href="output.7z">Test output</a>
     <a href="all-queries.html">All queries</a>
     <a href="compare.log">Log</a>
+    <a href="output.7z">Test output</a>
     </p>
     </body>
     </html>
@@ -382,8 +385,8 @@ elif args.report == 'all-queries':
         columns = [
             # Changed #0
             # Unstable #1
-            'Old, s.', #2
-            'New, s.', #3
+            'Old, s', #2
+            'New, s', #3
             'Relative difference (new&nbsp;&minus;&nbsp;old) / old', #4
             'Times speedup / slowdown',                 #5
             'p&nbsp;<&nbsp;0.001 threshold',          #6
@@ -399,21 +402,21 @@ elif args.report == 'all-queries':
         attrs[1] = None
         for r in rows:
             if int(r[1]):
-                attrs[6] = 'style="background: #ffb0a0"'
+                attrs[6] = f'style="background: {color_bad}"'
             else:
                 attrs[6] = ''
 
             if int(r[0]):
                 if float(r[4]) > 0.:
-                    attrs[4] = 'style="background: #ffb0a0"'
+                    attrs[4] = f'style="background: {color_bad}"'
                 else:
-                    attrs[4] = 'style="background: #adbdff"'
+                    attrs[4] = f'style="background: {color_good}"'
             else:
                 attrs[4] = ''
 
             if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
-                attrs[2] = 'style="background: #ffb0a0"'
-                attrs[3] = 'style="background: #ffb0a0"'
+                attrs[2] = f'style="background: {color_bad}"'
+                attrs[3] = f'style="background: {color_bad}"'
             else:
                 attrs[2] = ''
                 attrs[3] = ''
@@ -428,9 +431,9 @@ elif args.report == 'all-queries':
 
     print("""
     <p class="links">
-    <a href="output.7z">Test output</a>
     <a href="report.html">Main report</a>
     <a href="compare.log">Log</a>
+    <a href="output.7z">Test output</a>
     </p>
     </body>
     </html>

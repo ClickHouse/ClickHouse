@@ -1,16 +1,20 @@
 #pragma once
 #include <memory>
+#include <atomic>
 
 namespace DB
 {
 
-class QueryPipeline;
 class Block;
 class Chunk;
-class LazyOutputFormat;
+class QueryPipeline;
+class PipelineExecutor;
+class PullingOutputFormat;
 struct BlockStreamProfileInfo;
 
-/// Pulling executor for QueryPipeline.
+using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+
+/// Pulling executor for QueryPipeline. Always execute pipeline in single thread.
 /// Typical usage is:
 ///
 /// PullingPipelineExecutor executor(query_pipeline);
@@ -22,11 +26,13 @@ public:
     explicit PullingPipelineExecutor(QueryPipeline & pipeline_);
     ~PullingPipelineExecutor();
 
+    /// Get structure of returned block or chunk.
+    const Block & getHeader() const;
+
     /// Methods return false if query is finished.
-    /// If milliseconds > 0, returns empty object and `true` after timeout exceeded.
     /// You can use any pull method.
-    bool pull(Chunk & chunk, uint64_t milliseconds = 0);
-    bool pull(Block & block, uint64_t milliseconds = 0);
+    bool pull(Chunk & chunk);
+    bool pull(Block & block);
 
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
@@ -42,13 +48,11 @@ public:
     /// Get query profile info.
     BlockStreamProfileInfo & getProfileInfo();
 
-    /// Internal executor data.
-    struct Data;
-
 private:
+    std::atomic_bool has_data_flag = false;
     QueryPipeline & pipeline;
-    std::shared_ptr<LazyOutputFormat> lazy_format;
-    std::unique_ptr<Data> data;
+    std::shared_ptr<PullingOutputFormat> pulling_format;
+    PipelineExecutorPtr executor;
 };
 
 }
