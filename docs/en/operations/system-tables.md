@@ -629,7 +629,7 @@ Columns:
 -   `event_date` ([Date](../sql-reference/data-types/date.md)) — Query starting date.
 -   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Query starting time.
 -   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time of query execution.
--   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
+-   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
 -   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
 -   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
 -   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
