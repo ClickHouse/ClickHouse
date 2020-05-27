@@ -127,8 +127,8 @@ public:
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    Context global_context;
-    Logger * log = &Logger::get("StorageDistributed");
+    std::unique_ptr<Context> global_context;
+    Logger * log;
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
