@@ -52,12 +52,13 @@ void PartialSortingTransform::transform(Chunk & chunk)
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     chunk.clear();
 
+    ColumnRawPtrs block_columns;
     UInt64 rows_num = block.rows();
 
     if (!threshold_block_columns.empty())
     {
         IColumn::Filter filter(rows_num, 0);
-        ColumnRawPtrs block_columns = extractColumns(block, description);
+        block_columns = extractColumns(block, description);
         size_t filtered_count = 0;
 
         for (UInt64 i = 0; i < rows_num; ++i)
@@ -80,7 +81,8 @@ void PartialSortingTransform::transform(Chunk & chunk)
 
     sortBlock(block, description, limit);
 
-    if (threshold_block_columns.empty() && limit && limit < rows_num)
+    if (limit && limit < rows_num &&
+        (threshold_block_columns.empty() || less(block_columns, limit - 1, threshold_block_columns, limit - 1, description)))
     {
         threshold_block = block.cloneWithColumns(block.getColumns());
         threshold_block_columns = extractColumns(threshold_block, description);
