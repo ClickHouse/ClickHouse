@@ -28,7 +28,7 @@ public:
         const std::atomic<bool> & stopped_,
         const Names & _topics
     );
-
+    ~ReadBufferFromKafkaConsumer() override;
     void allowNext() { allowed = true; } // Allow to read next message.
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
@@ -74,6 +74,8 @@ private:
     // order is important, need to be destructed before consumer
     cppkafka::TopicPartitionList assignment;
     const Names topics;
+
+    void drain();
 
     bool nextImpl() override;
 };
