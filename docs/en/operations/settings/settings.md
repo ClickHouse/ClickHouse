@@ -406,11 +406,9 @@ Default value: 0.
 
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
-Enables of disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
+Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
 
-Optimizations:
-
-- Skipping of  unneeded right blocks instead of pass through them.
+By default, this setting enables improvements that could possibly lead to wrong results. If you see suspicious results in your queries, disable optimizations by this setting. Optimizations can be different in different versions of ClickHouse server. 
 
 Possible values:
 
@@ -421,18 +419,17 @@ Default value: 1.
 
 ## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
 
-Limits a size of right-hand join data blocks.
+Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
 
 ClickHouse server:
 
-- Splits right-hand join data in blocks of the specified size.
-- Indexes each block with minimum and maximum values
-- Unloads prepared blocks to disk if possible.
+1. Splits right-hand join data into blocks with up to specified number of rows.
+2. Indexes each block with their minimum and maximum values
+3. Unloads prepared blocks to disk if possible.
 
 Possible values:
 
-- Any positive integer.
-- 0 — Limitation is turned off.
+- Any positive integer. Recommended range of values: [1000, 100000].
 
 Default value: 65536.
 
