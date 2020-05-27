@@ -26,12 +26,9 @@ protected:
 
 private:
     // Whether to use ArrowStream format
-    // Whether to use ArrowStream format
     bool stream;
     // This field is only used for ArrowStream format
-    // This field is only used for ArrowStream format
     std::shared_ptr<arrow::RecordBatchReader> stream_reader;
-    // The following fields are used only for Arrow format
     // The following fields are used only for Arrow format
     std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
 
