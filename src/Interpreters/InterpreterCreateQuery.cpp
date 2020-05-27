@@ -295,7 +295,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (col_decl.is_not && col_decl.is_null) {
+            if (col_decl.is_not && col_decl.is_null)
+            {
                 if (column_type->isNullable())
                     throw Exception{"Cant use NOT NULL with Nullable", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE};
             }
