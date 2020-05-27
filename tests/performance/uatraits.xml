@@ -1,0 +1,24 @@
+<test>
+
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+    <create_query>DROP TABLE IF EXISTS test_uatraits</create_query>
+    <create_query>CREATE TABLE test_uatraits ( d Date, ua string) engine=MergeTree(d, (ua), 8192)</create_query>
+
+<!-- prepare data -->
+    <query>INSERT INTO test_uatraits format Values (now(), 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:76.0) Gecko/20100101 Firefox/76.0')</query>
+    <query>INSERT INTO test_uatraits format Values (now(), 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:76.0) Gecko/20100101 Firefox/76.0')</query>
+
+<!-- execute request -->
+    <query>select extractOSFromUserAgent(ua) as OS, extractBrowserFromUserAgent(ua) as browser from test_uatraits </query>
+    <query>select extractOSFromUserAgent(ua) as OS from test_uatraits </query>
+    <query>select extractBrowserFromUserAgent(ua) as browser from test_uatraits </query>
+
+
+    <drop_query>DROP TABLE IF EXISTS test_uatraits</drop_query>
+</test>
