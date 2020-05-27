@@ -13,16 +13,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-const String & Authentication::getLDAPServerName() const
-{
-    return ldap_server_name;
-}
-
-void Authentication::setLDAPServerName(const String & server_name)
-{
-    ldap_server_name = server_name;
-}
-
 Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 {
     switch (type)
