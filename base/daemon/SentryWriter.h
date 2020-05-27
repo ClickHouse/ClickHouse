@@ -3,6 +3,8 @@
 #include <common/types.h>
 #include <Common/StackTrace.h>
 
+#include <Poco/Util/LayeredConfiguration.h>
+
 #include <string>
 
 class SentryWriter
@@ -10,7 +12,7 @@ class SentryWriter
 public:
     SentryWriter() = delete;
 
-    static void initialize();
+    static void initialize(Poco::Util::LayeredConfiguration & config);
     static void shutdown();
     static void onFault(
         int sig,

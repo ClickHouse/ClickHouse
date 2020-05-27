@@ -514,7 +514,6 @@ void debugIncreaseOOMScore() {}
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
-    SentryWriter::initialize();
 
     task_manager = std::make_unique<Poco::TaskManager>();
     ServerApplication::initialize(self);
@@ -533,6 +532,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     reloadConfiguration();
+    SentryWriter::initialize(config());
 
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;
