@@ -408,7 +408,7 @@ Default value: 0.
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
 
-By default, this setting enables improvements that could possibly lead to wrong results. If you see suspicious results in your queries, disable optimizations by this setting. Optimizations can be different in different versions of ClickHouse server. 
+By default, this setting enables improvements that could lead to wrong results. If you see suspicious results in your queries, disable optimizations by this setting. Optimizations can be different in different versions of the ClickHouse server. 
 
 Possible values:
 
@@ -423,7 +423,7 @@ Limits sizes of right-hand join data blocks in partial merge join algorithm for 
 
 ClickHouse server:
 
-1. Splits right-hand join data into blocks with up to specified number of rows.
+1. Splits right-hand join data into blocks with up to the specified number of rows.
 2. Indexes each block with their minimum and maximum values
 3. Unloads prepared blocks to disk if possible.
 
@@ -432,6 +432,7 @@ Possible values:
 - Any positive integer. Recommended range of values: [1000, 100000].
 
 Default value: 65536.
+
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
