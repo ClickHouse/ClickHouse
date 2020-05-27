@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 template <typename T>
