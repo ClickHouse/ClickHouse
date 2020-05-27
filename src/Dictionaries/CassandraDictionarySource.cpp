@@ -13,19 +13,16 @@ namespace DB
 
     void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
     {
-        auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                     const Poco::Util::AbstractConfiguration & config,
-                                     const std::string & config_prefix,
-                                     Block & sample_block,
-                                     const Context & /* context */,
-                                     bool /*check_config*/) -> DictionarySourcePtr {
+        auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+                                       [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+                                       [[maybe_unused]] const std::string & config_prefix,
+                                       [[maybe_unused]] Block & sample_block,
+                                                        const Context & /* context */,
+                                                        bool /*check_config*/) -> DictionarySourcePtr
+        {
 #if USE_CASSANDRA
         return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
 #else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
         throw Exception{"Dictionary source of type `cassandra` is disabled because library was built without cassandra support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
@@ -37,9 +34,9 @@ namespace DB
 
 #if USE_CASSANDRA
 
-#    include <cassandra.h>
-#    include <IO/WriteHelpers.h>
-#    include "CassandraBlockInputStream.h"
+#include <cassandra.h>
+#include <IO/WriteHelpers.h>
+#include "CassandraBlockInputStream.h"
 
 namespace DB
 {
