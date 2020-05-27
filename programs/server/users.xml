@@ -27,6 +27,38 @@
         </readonly>
     </profiles>
 
+    <!-- External user directories (LDAP). -->
+    <ldap_servers>
+        <!-- List LDAP servers with their connection parameters here to later use them as authenticators for dedicated users,
+             who have 'ldap' authentication mechanism specified instead of 'password'.
+             Parameters:
+                host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
+                port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
+                auth_dn_prefix, auth_dn_suffix - prefix and suffix used to construct the DN to bind to.
+                        Effectively, the resulting DN will be constructed as auth_dn_prefix + escape(user_name) + auth_dn_suffix string.
+                        Note, that this implies that auth_dn_suffix should usually have comma ',' as its first non-space character.
+                enable_tls - flag to trigger use of secure connection to the LDAP server.
+                        Specify 'no' for plain text (ldap://) protocol (not recommended).
+                        Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
+                        Specify 'starttls' for legacy StartTLS protocol (plain text (ldap://) protocol, upgraded to TLS).
+                tls_cert_verify - TLS peer certificate verification behavior.
+                        Accepted values are: never, allow, try, demand.
+                ca_cert_dir - path to CA certificates directory.
+                ca_cert_file - path to CA certificate file.
+             Example: 
+                <my_ldap_server>
+                    <host>localhost</host>
+                    <port>636</port>
+                    <auth_dn_prefix>cn=</auth_dn_prefix>
+                    <auth_dn_suffix>, ou=users, dc=example, dc=com</auth_dn_suffix>
+                    <enable_tls>yes</enable_tls>
+                    <tls_cert_verify>demand</tls_cert_verify>
+                    <ca_cert_dir>/path/to/ca_cert_dir</ca_cert_dir>
+                    <ca_cert_file>/path/to/ca_cert_file</ca_cert_file>
+                </my_ldap_server>
+        -->
+    </ldap_servers>
+
     <!-- Users and ACL. -->
     <users>
         <!-- If user name was not specified, 'default' user is used. -->
@@ -43,6 +75,9 @@
 
                  If you want to specify double SHA1, place it in 'password_double_sha1_hex' element.
                  Example: <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
+
+                 If you want to specify a previously defined LDAP server (see 'ldap_servers' above) for authentication, place its name in 'server' element inside 'ldap' element.
+                 Example: <ldap><server>my_ldap_server</server></ldap>
 
                  How to generate decent password:
                  Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'

@@ -125,6 +125,17 @@ namespace
                 return true;
             }
 
+            if (ParserKeyword{"LDAP"}.ignore(pos, expected))
+            {
+                String server_name;
+                if (!parseByPassword(pos, expected, server_name))
+                    return false;
+
+                authentication = Authentication{Authentication::LDAP_PASSWORD};
+                authentication->setLDAPServerName(server_name);
+                return true;
+            }
+
             if (!ParserKeyword{"NO_PASSWORD"}.ignore(pos, expected))
                 return false;
 

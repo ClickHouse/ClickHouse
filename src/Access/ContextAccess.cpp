@@ -176,12 +176,12 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 }
 
 
-bool ContextAccess::isCorrectPassword(const String & password) const
+bool ContextAccess::isCorrectPassword(const String & password, const ExternalAuthenticators & external_authenticators) const
 {
     std::lock_guard lock{mutex};
     if (!user)
         return false;
-    return user->authentication.isCorrectPassword(password);
+    return user->authentication.isCorrectPassword(password, user_name, external_authenticators);
 }
 
 bool ContextAccess::isClientHostAllowed() const

@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+class ExternalAuthenticators;
 
 /// Authentication type and encrypted password for checking when an user logins.
 class Authentication
@@ -35,6 +36,9 @@ public:
         /// SHA1(SHA1(password)).
         /// This kind of hash is used by the `mysql_native_password` authentication plugin.
         DOUBLE_SHA1_PASSWORD,
+
+        /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
+        LDAP_PASSWORD,
     };
 
     using Digest = std::vector<uint8_t>;
@@ -67,8 +71,13 @@ public:
     /// Allowed to use for Type::NO_PASSWORD, Type::PLAINTEXT_PASSWORD, Type::DOUBLE_SHA1_PASSWORD.
     Digest getPasswordDoubleSHA1() const;
 
+    /// Sets an external LDAP server name. LDAP server name is used when authentication type is LDAP_PASSWORD.
+    void setLDAPServerName(const String & server_name);
+    const String & getLDAPServerName() const;
+
     /// Checks if the provided password is correct. Returns false if not.
-    bool isCorrectPassword(const String & password) const;
+    /// User name and external authenticators' info is used only by some specific authentication mechanisms (e.g., LDAP).
+    bool isCorrectPassword(const String & password_, const String & user_, const ExternalAuthenticators & external_authenticators) const;
 
     friend bool operator ==(const Authentication & lhs, const Authentication & rhs) { return (lhs.type == rhs.type) && (lhs.password_hash == rhs.password_hash); }
     friend bool operator !=(const Authentication & lhs, const Authentication & rhs) { return !(lhs == rhs); }
@@ -82,6 +91,7 @@ private:
 
     Type type = Type::NO_PASSWORD;
     Digest password_hash;
+    String ldap_server_name;
 };
 
 
@@ -122,6 +132,9 @@ inline void Authentication::setPassword(const String & password_)
 
         case DOUBLE_SHA1_PASSWORD:
             return setPasswordHashBinary(encodeDoubleSHA1(password_));
+
+        case LDAP_PASSWORD:
+            throw Exception("Cannot specify password for the 'LDAP_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
@@ -145,6 +158,8 @@ inline void Authentication::setPasswordHashHex(const String & hash)
 
 inline String Authentication::getPasswordHashHex() const
 {
+    if (type == LDAP_PASSWORD)
+        throw Exception("Cannot get password of a user with the 'LDAP_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
     String hex;
     hex.resize(password_hash.size() * 2);
     boost::algorithm::hex(password_hash.begin(), password_hash.end(), hex.data());
@@ -186,6 +201,9 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
             password_hash = hash;
             return;
         }
+
+        case LDAP_PASSWORD:
+            throw Exception("Cannot specify password for the 'LDAP_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }

@@ -55,13 +55,14 @@ namespace
         bool has_password = config.has(user_config + ".password");
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
+        bool has_ldap = config.has(user_config + ".ldap");
 
-        if (has_password + has_password_sha256_hex + has_password_double_sha1_hex > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex' is used to specify password for user " + user_name + ". Must be only one of them.",
+        if (has_password + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap > 1)
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'ldap' is specified for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        if (!has_password && !has_password_sha256_hex && !has_password_double_sha1_hex)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+        if (!has_password && !has_password_sha256_hex && !has_password_double_sha1_hex && !has_ldap)
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'ldap' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password)
         {
@@ -77,6 +78,17 @@ namespace
         {
             user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
             user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+        }
+        else if (has_ldap)
+        {
+            bool has_ldap_server = config.has(user_config + ".ldap.server");
+            if (!has_ldap_server)
+                throw Exception("Missing mandatory 'server' in 'ldap', with LDAP server name, for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+            const auto ldap_server_name = config.getString(user_config + ".ldap.server");
+
+            user->authentication = Authentication{Authentication::LDAP_PASSWORD};
+            user->authentication.setLDAPServerName(ldap_server_name);
         }
 
         const auto profile_name_config = user_config + ".profile";

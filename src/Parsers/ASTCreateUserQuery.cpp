@@ -35,6 +35,10 @@ namespace
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "double_sha1_hash BY " << (settings.hilite ? IAST::hilite_none : "")
                               << quoteString(authentication.getPasswordHashHex());
                 break;
+            case Authentication::Type::LDAP_PASSWORD:
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ldap BY " << (settings.hilite ? IAST::hilite_none : "")
+                              << quoteString(authentication.getLDAPServerName());
+                break;
         }
     }
 
