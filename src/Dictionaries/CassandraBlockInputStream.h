@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void cassandraCheck(CassError error);
+void cassandraCheck(CassError code);
 void cassandraWaitAndCheck(CassFuture * future);
 
 

@@ -460,7 +460,7 @@ class ClickHouseCluster:
                 logging.warning("Can't connect to SchemaRegistry: %s", str(ex))
                 time.sleep(1)
 
-    def wait_cassandra_to_start(self, timeout=15):
+    def wait_cassandra_to_start(self, timeout=30):
         cass_client = cassandra.cluster.Cluster(["localhost"], port="9043")
         start = time.time()
         while time.time() - start < timeout:
