@@ -604,7 +604,7 @@ To log queries you need to:
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
 
-By default, logs are added into the table with interval of 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+By default, information about queries is flushed to the table each 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 If you delete the table manually from storage, ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
 
