@@ -4,6 +4,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/DataDestinationType.h>
+#include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -116,6 +117,29 @@ struct StorageMetadataTableTTL
 
     /// Moving data TTL (to other disks or volumes)
     StorageMetadataTTLFields move_ttl;
+};
+
+struct StorageMetadataSkipIndexField
+{
+    ASTPtr definition_ast;
+
+    String name;
+
+    String type;
+
+    ExpressionActionsPtr expression;
+
+    FieldVector arguments;
+
+    Names column_names;
+
+    DataTypes data_types;
+
+    Block sample_block;
+
+    size_t granularity;
+
+    static StorageMetadataSkipIndexField getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
 }
