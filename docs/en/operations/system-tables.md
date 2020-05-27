@@ -603,9 +603,9 @@ You can disable queries logging by setting [log_queries = 0](settings/settings.m
 
 You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
 
-By default, logs are added into the table with interval of 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+By default, information about queries is flushed to the table each 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-If you delete the table manually from storage, ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
+If you delete the `query_log` table manually from storage, the ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
 
 The `system.query_log` table registers two kinds of queries:
 
@@ -628,7 +628,7 @@ Columns:
 -   `event_date` ([Date](../sql-reference/data-types/date.md)) — Query starting date.
 -   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Query starting time.
 -   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time of query execution.
--   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution.
+-   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
 -   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
 -   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
 -   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
@@ -642,7 +642,7 @@ Columns:
 -   `stack_trace` ([String](../sql-reference/data-types/string.md)) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
 -   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
     -   1 — Query was initiated by the client.
-    -   0 — Query was initiated by another query for distributed query execution.
+    -   0 — Query was initiated by another query as part of distributed query execution.
 -   `user` ([String](../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 -   `query_id` ([String](../sql-reference/data-types/string.md)) — ID of the query.
 -   `address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the query.
@@ -654,7 +654,7 @@ Columns:
 -   `interface` ([UInt8](../sql-reference/data-types/int-uint.md)) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` ([String](../sql-reference/data-types/string.md)) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
+-   `os_user` ([String](../sql-reference/data-types/string.md)) — Operating system username who runs [clickhouse-client](../interfaces/cli.md).
 -   `client_hostname` ([String](../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
 -   `client_name` ([String](../sql-reference/data-types/string.md)) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
 -   `client_revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
