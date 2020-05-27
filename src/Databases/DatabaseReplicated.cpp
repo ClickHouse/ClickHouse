@@ -201,6 +201,13 @@ void DatabaseReplicated::propose(const ASTPtr & query) {
     current_zookeeper = getZooKeeper();
     auto lock = createSimpleZooKeeperLock(current_zookeeper, zookeeper_path, "propose_lock", replica_name);
 
+    while (!lock->tryLock()) {
+        // TODO it seems that zk lock doesn't work at all
+        // need to find a different solution for proposal
+        pcg64 rng(randomSeed());
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
+    }
+
     // schedule and deactive combo 
     // ensures that replica is up to date
     // and since propose lock is acquired,
@@ -224,6 +231,7 @@ void DatabaseReplicated::propose(const ASTPtr & query) {
 
     lock->unlock();
     saveState();
+    background_log_executor->activateAndSchedule();
 }
 
 void DatabaseReplicated::updateSnapshot() {
