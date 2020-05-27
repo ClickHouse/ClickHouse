@@ -623,7 +623,7 @@ if (USE_INTERNAL_CCTZ)
         # libraries in linker command. To avoid this we hardcode whole-archive
         # library into single string.
         add_dependencies(cctz tzdata)
-        target_link_libraries(cctz PRIVATE "-Wl,--whole-archive contrib/cctz-cmake/libtzdata.a -Wl,--no-whole-archive")
+        target_link_libraries(cctz PUBLIC "-Wl,--whole-archive contrib/cctz-cmake/libtzdata.a -Wl,--no-whole-archive")
     endif ()
 
 else ()
