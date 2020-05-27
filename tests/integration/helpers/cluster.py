@@ -133,6 +133,8 @@ class ClickHouseCluster:
         self.schema_registry_host = "schema-registry"
         self.schema_registry_port = 8081
 
+        self.zookeeper_use_tmpfs = True
+
         self.docker_client = None
         self.is_up = False
 
@@ -148,7 +150,7 @@ class ClickHouseCluster:
                      with_redis=False, with_minio=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
-                     zookeeper_docker_compose_path=None):
+                     zookeeper_docker_compose_path=None, zookeeper_use_tmpfs=True):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -187,6 +189,7 @@ class ClickHouseCluster:
                 zookeeper_docker_compose_path = p.join(DOCKER_COMPOSE_DIR, 'docker_compose_zookeeper.yml')
 
             self.with_zookeeper = True
+            self.zookeeper_use_tmpfs = zookeeper_use_tmpfs
             self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', zookeeper_docker_compose_path]
@@ -408,7 +411,7 @@ class ClickHouseCluster:
                 print "Can't connect to Mongo " + str(ex)
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=10):
+    def wait_minio_to_start(self, timeout=30):
         minio_client = Minio('localhost:9001',
                              access_key='minio',
                              secret_key='minio123',
@@ -416,13 +419,24 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                buckets = minio_client.list_buckets()
+                minio_client.list_buckets()
+
+                logging.info("Connected to Minio.")
+
+                if minio_client.bucket_exists(self.minio_bucket):
+                    minio_client.remove_bucket(self.minio_bucket)
+
+                minio_client.make_bucket(self.minio_bucket)
+
+                logging.info("S3 bucket '%s' created", self.minio_bucket)
+
                 self.minio_client = minio_client
-                logging.info("Connected to Minio %s", buckets)
                 return
             except Exception as ex:
                 logging.warning("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
+
+        raise Exception("Can't wait Minio to start")
 
     def wait_schema_registry_to_start(self, timeout=10):
         sr_client = CachedSchemaRegistryClient('http://localhost:8081')
@@ -464,7 +478,19 @@ class ClickHouseCluster:
             common_opts = ['up', '-d', '--force-recreate']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
-                subprocess_check_call(self.base_zookeeper_cmd + common_opts)
+                env = os.environ.copy()
+                if not self.zookeeper_use_tmpfs:
+                    env['ZK_FS'] = 'bind'
+                    for i in range(1, 4):
+                        zk_data_path = self.instances_dir + '/zkdata' + str(i)
+                        zk_log_data_path = self.instances_dir + '/zklog' + str(i)
+                        if not os.path.exists(zk_data_path):
+                            os.mkdir(zk_data_path)
+                        if not os.path.exists(zk_log_data_path):
+                            os.mkdir(zk_log_data_path)
+                        env['ZK_DATA' + str(i)] = zk_data_path
+                        env['ZK_DATA_LOG' + str(i)] = zk_log_data_path
+                subprocess.check_call(self.base_zookeeper_cmd + common_opts, env=env)
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start(120)
@@ -547,6 +573,15 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
+        if not self.zookeeper_use_tmpfs:
+             for i in range(1, 4):
+                 zk_data_path = self.instances_dir + '/zkdata' + str(i)
+                 zk_log_data_path = self.instances_dir + '/zklog' + str(i)
+                 if os.path.exists(zk_data_path):
+                     shutil.rmtree(zk_data_path)
+                 if os.path.exists(zk_log_data_path):
+                     shutil.rmtree(zk_log_data_path)
+
         if sanitizer_assert_instance is not None:
             raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
 
@@ -586,7 +621,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
 CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
 
 DOCKER_COMPOSE_TEMPLATE = '''
-version: '2.2'
+version: '2.3'
 services:
     {name}:
         image: {image}

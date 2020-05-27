@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.4">
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} (x UInt64) ENGINE = File(`{format}`)</create_query>
 
     <substitutions>

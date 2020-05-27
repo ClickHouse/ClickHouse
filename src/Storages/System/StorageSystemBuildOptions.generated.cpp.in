@@ -53,6 +53,7 @@ const char * auto_config_build[]
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@USE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_GRPC", "@USE_GRPC@",
 
     nullptr, nullptr
 };
