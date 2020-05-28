@@ -5,21 +5,10 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
-#include <Functions/IFunction.h>
-
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDate.h>
 
 namespace DB
 {
 
-
-namespace ErrorCodes
-{
-    extern const int BAD_TTL_EXPRESSION;
-    extern const int BAD_ARGUMENTS;
-};
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
