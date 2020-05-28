@@ -1,4 +1,6 @@
-<test max_ignored_relative_change="0.2">
+<!-- <test max_ignored_relative_change="0.2">
+TODO(dakovalkov): uncomment it -->
+<test>
     <substitutions>
         <substitution>
            <name>gp_hash_func</name>

@@ -1,5 +1,5 @@
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRandom.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/VectorExtension.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
