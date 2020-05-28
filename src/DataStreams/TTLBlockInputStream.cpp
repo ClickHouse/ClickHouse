@@ -277,18 +277,18 @@ void TTLBlockInputStream::finalizeAggregates(MutableColumns & result_columns)
         auto aggregated_res = aggregator->convertToBlocks(agg_result, true, 1);
         for (auto & agg_block : aggregated_res)
         {
-            for (const auto & it : storage.getRowsTTL().group_by_aggregations)
-                std::get<2>(it)->execute(agg_block);
+            for (const auto & it : storage.getRowsTTL().set_parts)
+                it.expression->execute(agg_block);
             for (const auto & name : storage.getRowsTTL().group_by_keys)
             {
                 const IColumn * values_column = agg_block.getByName(name).column.get();
                 auto & result_column = result_columns[header.getPositionByName(name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
             }
-            for (const auto & it : storage.getRowsTTL().group_by_aggregations)
+            for (const auto & it : storage.getRowsTTL().set_parts)
             {
-                const IColumn * values_column = agg_block.getByName(get<1>(it)).column.get();
-                auto & result_column = result_columns[header.getPositionByName(std::get<0>(it))];
+                const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();
+                auto & result_column = result_columns[header.getPositionByName(it.column_name)];
                 result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
             }
         }
