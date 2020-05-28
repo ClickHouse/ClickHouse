@@ -1379,19 +1379,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 }
 
 MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
-    MergeTreeIndexPtr index,
+    MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const Settings & settings) const
 {
-    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
+    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
     {
-        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index->index.name));
+        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
         return ranges;
     }
 
-    auto index_granularity = index->index.granularity;
+    auto index_granularity = index_helper->index.granularity;
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
         settings.merge_tree_min_rows_for_seek,
@@ -1406,7 +1406,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
     MergeTreeIndexReader reader(
-            index, part,
+            index_helper, part,
             index_marks_count,
             ranges);
 
@@ -1449,7 +1449,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         last_index_mark = index_range.end - 1;
     }
 
-    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index->index.name), granules_dropped);
+    LOG_DEBUG(log, "Index {} has dropped {} granules.", backQuote(index_helper->index.name), granules_dropped);
 
     return res;
 }

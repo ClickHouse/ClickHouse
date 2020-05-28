@@ -190,7 +190,7 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
     return false;
 }
 
-std::shared_ptr<IMergeTreeIndex> minmaxIndexCreator(
+MergeTreeIndexPtr minmaxIndexCreator(
     const IndexDescription & index)
 {
     return std::make_shared<MergeTreeIndexMinMax>(index);

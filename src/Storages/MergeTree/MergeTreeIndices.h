@@ -19,10 +19,7 @@ namespace DB
 {
 
 class MergeTreeData;
-class IMergeTreeIndex;
 
-using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
-using MutableMergeTreeIndexPtr = std::shared_ptr<IMergeTreeIndex>;
 
 
 /// Stores some info about a single block of data.
@@ -72,10 +69,8 @@ public:
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 
 
-/// Structure for storing basic index info like columns, expression, arguments, ...
-class IMergeTreeIndex
+struct IMergeTreeIndex
 {
-public:
     IMergeTreeIndex(const IndexDescription & index_)
         : index(index_)
     {
@@ -101,6 +96,7 @@ public:
     const IndexDescription & index;
 };
 
+using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
 
@@ -109,15 +105,13 @@ class MergeTreeIndexFactory : private boost::noncopyable
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Creator = std::function<
-            std::shared_ptr<IMergeTreeIndex>(
-                    const IndexDescription & index)>;
+    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index)>;
 
     using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
     void validate(const IndexDescription & index, bool attach) const;
 
-    std::shared_ptr<IMergeTreeIndex> get(const IndexDescription & index) const;
+    MergeTreeIndexPtr get(const IndexDescription & index) const;
 
     MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
 
@@ -134,22 +128,16 @@ private:
     Validators validators;
 };
 
-std::shared_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const IndexDescription & index);
+MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
 void minmaxIndexValidator(const IndexDescription & index, bool attach);
 
-
-std::shared_ptr<IMergeTreeIndex> setIndexCreator(
-    const IndexDescription & index);
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
-std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
-    const IndexDescription & index);
-
+MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
-
-std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const IndexDescription & index);
+MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
 void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
+
 }

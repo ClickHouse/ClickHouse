@@ -768,7 +768,7 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
 }
 
 
-std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
+MergeTreeIndexPtr bloomFilterIndexCreator(
     const IndexDescription & index)
 {
     if (index.type == NgramTokenExtractor::getName())

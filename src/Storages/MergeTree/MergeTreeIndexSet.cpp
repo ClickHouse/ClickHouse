@@ -477,7 +477,7 @@ bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
     return false;
 }
 
-std::shared_ptr<IMergeTreeIndex> setIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
     size_t max_rows = index.arguments[0].get<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);

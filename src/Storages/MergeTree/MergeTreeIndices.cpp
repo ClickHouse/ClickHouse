@@ -31,7 +31,7 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
 }
 
 
-std::shared_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
+MergeTreeIndexPtr MergeTreeIndexFactory::get(
     const IndexDescription & index) const
 {
     auto it = creators.find(index.type);
