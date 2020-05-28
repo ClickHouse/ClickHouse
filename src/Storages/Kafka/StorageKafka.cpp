@@ -34,6 +34,7 @@
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
+#include <common/getFQDNOrHostName.h>
 
 
 namespace DB
@@ -133,7 +134,7 @@ StorageKafka::StorageKafka(
     , topics(global_context.getMacros()->expand(topics_))
     , brokers(global_context.getMacros()->expand(brokers_))
     , group(global_context.getMacros()->expand(group_))
-    , client_id(global_context.getMacros()->expand(client_id_))
+    , client_id(client_id_.empty() ? getDefaultClientId(table_id_) : global_context.getMacros()->expand(client_id_))
     , format_name(global_context.getMacros()->expand(format_name_))
     , row_delimiter(row_delimiter_)
     , schema_name(global_context.getMacros()->expand(schema_name_))
@@ -149,6 +150,13 @@ StorageKafka::StorageKafka(
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
+}
+
+const String StorageKafka::getDefaultClientId(const StorageID & table_id_) const
+{
+    std::stringstream ss;
+    ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
+    return ss.str();
 }
 
 
@@ -196,7 +204,7 @@ void StorageKafka::startup()
     {
         try
         {
-            pushReadBuffer(createReadBuffer());
+            pushReadBuffer(createReadBuffer(i));
             ++num_created_consumers;
         }
         catch (const cppkafka::Exception &)
@@ -277,13 +285,22 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 }
 
 
-ConsumerBufferPtr StorageKafka::createReadBuffer()
+ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
 {
     cppkafka::Configuration conf;
 
     conf.set("metadata.broker.list", brokers);
     conf.set("group.id", group);
-    conf.set("client.id", client_id);
+    if (num_consumers > 1)
+    {
+        std::stringstream ss;
+        ss << client_id << "-" << consumer_number;
+        conf.set("client.id", ss.str() );
+    }
+    else
+    {
+        conf.set("client.id", client_id );
+    }
 
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
 
@@ -548,7 +565,6 @@ void registerStorageKafka(StorageFactory & factory)
         CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size)
         CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages)
         CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch)
-        CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id)
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
@@ -714,12 +730,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Get and check client id
-         String client_id = kafka_settings.kafka_client_id.value;
-        if (args_count >= 11)
-        {
-            engine_args[10] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[10], args.local_context);
-            client_id = engine_args[10]->as<ASTLiteral &>().value.safeGet<String>();
-        }
+        String client_id = kafka_settings.kafka_client_id.value;
 
         return StorageKafka::create(
             args.table_id, args.context, args.columns,
