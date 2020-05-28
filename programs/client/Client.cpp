@@ -39,7 +39,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -76,6 +75,10 @@
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
