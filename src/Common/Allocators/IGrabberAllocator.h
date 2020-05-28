@@ -514,6 +514,8 @@ public:
                     disposer.dispose();
             }
 
+            auto metadata = region;
+
             BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
             BOOST_ASSERT(metadata->TAllRegionsHook::is_linked());
             BOOST_ASSERT(!metadata->TFreeRegionHook::is_linked());
