@@ -96,6 +96,11 @@ void PocoHttpClient::MakeRequestInternal(
             {
                 if (request.GetContentBody())
                 {
+                    if (attempt > 0) /// rewind content body buffer.
+                    {
+                        request.GetContentBody()->clear();
+                        request.GetContentBody()->seekg(0);
+                    }
                     auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
                     LOG_DEBUG(
                         &Logger::get("AWSClient"), "Written {} bytes to request body", size);
