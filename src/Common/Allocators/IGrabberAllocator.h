@@ -379,17 +379,34 @@ private:
  */
 public:
     /**
-     * @brief Tries to find the value for a given #key in the cache. On failure, creates a request for the value.
+     * @brief Tries to find the value for a given #key in the cache.
      *
-     * @return value if found or concurrently produced.
+     * @return value if found.
      * @return nullptr otherwise.
      */
     inline ValuePtr get(const Key& key)
     {
-        InsertionAttemptDisposer disposer;
-        InsertionAttempt * attempt;
+        std::lock_guard used(used_regions_mutex);
 
-        return getImpl(key, disposer, attempt);
+        auto it = used_regions.find(key, RegionCompareByKey());
+
+        if (used_regions.end() == it)
+            return nullptr;
+
+        ++hits; // No more relaxed model (not locking the global mutex).
+
+        RegionMetadata& metadata = *it;
+
+        onSharedValueCreate<false>(metadata);
+
+        BOOST_ASSERT(metadata.TUsedRegionHook::is_linked());
+        BOOST_ASSERT(metadata.TAllRegionsHook::is_linked());
+        BOOST_ASSERT(!metadata.TFreeRegionHook::is_linked());
+        BOOST_ASSERT(!metadata.TUnusedRegionHook::is_linked());
+
+        return std::shared_ptr<Value>( // NOLINT: not a nullptr
+                metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
+        }
     }
 
     using GetOrSetRet = std::pair<ValuePtr, bool>;
@@ -453,11 +470,41 @@ public:
     template <class Init, class Size>
     inline GetOrSetRet getOrSet(const Key & key, Size && get_size, Init && initialize)
     {
+        if (ValuePtr out = get(key); out)
+            return {out, false}; // value was found in the cache.
+
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        if (ValuePtr out = getImpl(key, disposer, attempt); out)
-            return {out, false}; // value was found in the cache.
+        {
+            std::lock_guard att_lock(attempts_mutex);
+
+            auto & insertion_attempt = insertion_attempts[key];
+
+            if (!insertion_attempt)
+                insertion_attempt = std::make_shared<InsertionAttempt>(*this);
+
+            disposer.acquire(&key, insertion_attempt);
+        }
+
+        attempt = disposer.attempt.get();
+
+        std::lock_guard attempt_lock(attempt->mutex);
+
+        disposer.attempt_disposed = attempt->is_disposed;
+
+        if (attempt->value)
+        {
+            /// Another thread already produced the value while we were acquiring the attempt's mutex.
+            ++hits;
+            ++concurrent_hits;
+
+            return {attempt->value, false};
+        }
+
+        ++misses;
+
+        disposer->dispose();
 
         /// No try-catch here because it is not needed.
         size_t size = get_size();
@@ -500,26 +547,12 @@ public:
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
                 region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
 
-            {
-                std::scoped_lock att_used_lock(attempts_mutex, used_regions_mutex);
+            // init attempt value so other threads, being at line 496, could get the value.
 
-                /// Insert the new value only if the attempt is still present in #insertion_attempts.
-                /// (may be absent because of a concurrent reset() call).
-                auto attempt_it = insertion_attempts.find(key);
-
-                if (insertion_attempts.end() != attempt_it && attempt_it->second.get() == attempt)
-                    used_regions.insert(*region);
-
-                if (!attempt->is_disposed)
-                    disposer.dispose();
-            }
-
-            auto metadata = region;
-
-            BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
-            BOOST_ASSERT(metadata->TAllRegionsHook::is_linked());
-            BOOST_ASSERT(!metadata->TFreeRegionHook::is_linked());
-            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
+            BOOST_ASSERT(region->TUsedRegionHook::is_linked());
+            BOOST_ASSERT(region->TAllRegionsHook::is_linked());
+            BOOST_ASSERT(!region->TFreeRegionHook::is_linked());
+            BOOST_ASSERT(!region->TUnusedRegionHook::is_linked());
 
             return {attempt->value, true};
         }
@@ -550,7 +583,11 @@ private:
                 return;
         }
 
-        // First reference.
+        {
+            std::lock_guard used(used_regions_mutex);
+            used_regions.insert(metadata);
+        }
+
         {
             std::lock_guard global(mutex);
 
@@ -622,64 +659,6 @@ private:
 
     struct InsertionAttemptDisposer;
 
-    /**
-     * @brief Tries to find element in the cache, optionally creates a value request via InsertionAttempt.
-     */
-    inline ValuePtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
-    {
-        {
-            std::lock_guard used(used_regions_mutex);
-
-            if (auto it = used_regions.find(key, RegionCompareByKey()); used_regions.end() != it)
-            {
-                /// Value found in cache
-
-                ++hits; // No more relaxed model (not locking the global mutex).
-
-                RegionMetadata& metadata = *it;
-
-                onSharedValueCreate<false>(metadata);
-
-                BOOST_ASSERT(metadata.TUsedRegionHook::is_linked());
-                BOOST_ASSERT(metadata.TAllRegionsHook::is_linked());
-                BOOST_ASSERT(!metadata.TFreeRegionHook::is_linked());
-                BOOST_ASSERT(!metadata.TUnusedRegionHook::is_linked());
-
-                return std::shared_ptr<Value>( // NOLINT: not a nullptr
-                        metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
-            }
-        }
-
-        {
-            std::lock_guard att_lock(attempts_mutex);
-
-            auto & insertion_attempt = insertion_attempts[key];
-
-            if (!insertion_attempt)
-                insertion_attempt = std::make_shared<InsertionAttempt>(*this);
-
-            disposer.acquire(&key, insertion_attempt);
-        }
-
-        attempt = disposer.attempt.get();
-
-        std::lock_guard attempt_lock(attempt->mutex);
-
-        disposer.attempt_disposed = attempt->is_disposed;
-
-        if (attempt->value)
-        {
-            /// Another thread already produced the value while we were acquiring the attempt's mutex.
-            ++hits;
-            ++concurrent_hits;
-
-            return attempt->value;
-        }
-
-        ++misses;
-        return nullptr;
-    }
-
 /**
  * Tokens and attempts
  */
@@ -739,11 +718,10 @@ private:
 
         /**
          * @brief Erases InsertionAttempt form #insertion_attempts.
-         *
-         * @warning No sync.
          */
         inline void dispose() noexcept
         {
+            std::lock_guard att_lock(attempt->alloc.attempts_mutex);
             attempt->alloc.insertion_attempts.erase(*key);
             attempt->is_disposed = true;
             attempt_disposed = true;
@@ -768,13 +746,8 @@ private:
             if (attempt->is_disposed)
                 return;
 
-            --attempt->refcount;
-
-            if (attempt->refcount == 0)
-            {
-                std::lock_guard att_lock(attempt->alloc.attempts_mutex);
+            if (--attempt->refcount == 0)
                 dispose();
-            }
         }
     };
 
