@@ -586,7 +586,7 @@ private:
 
         {
             std::lock_guard used(used_regions_mutex);
-            used_regions.insert(metadata);
+            used_regions.push_back(metadata);
         }
 
         {
