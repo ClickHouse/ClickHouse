@@ -4,8 +4,7 @@
 #include <Poco/Util/Application.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
-#include "IServer.h"
-#include "MySQLHandler.h"
+#include <Server/MySQLHandler.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>

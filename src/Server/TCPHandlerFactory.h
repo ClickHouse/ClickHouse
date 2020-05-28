@@ -3,8 +3,8 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
-#include "IServer.h"
-#include "TCPHandler.h"
+#include <Server/IServer.h>
+#include <Server/TCPHandler.h>
 
 namespace Poco { class Logger; }
 

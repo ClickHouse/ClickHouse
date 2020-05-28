@@ -6,31 +6,10 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTTTLElement.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
-#include <Poco/String.h>
-
 #include <Storages/extractKeyExpressionList.h>
-
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDate.h>
 
 namespace DB
 {
-
-
-namespace ErrorCodes
-{
-    extern const int BAD_TTL_EXPRESSION;
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
-};
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(
     const ColumnsDescription & columns_,
@@ -133,67 +112,6 @@ StorageMetadataKeyField StorageMetadataKeyField::getKeyFromAST(const ASTPtr & de
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
         result.data_types.emplace_back(result.sample_block.getByPosition(i).type);
 
-    return result;
-}
-
-
-namespace
-{
-
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
-{
-    for (const auto & action : ttl_expression->getActions())
-    {
-        if (action.type == ExpressionAction::APPLY_FUNCTION)
-        {
-            IFunctionBase & func = *action.function_base;
-            if (!func.isDeterministic())
-                throw Exception(
-                    "TTL expression cannot contain non-deterministic functions, "
-                    "but contains function "
-                        + func.getName(),
-                    ErrorCodes::BAD_ARGUMENTS);
-        }
-    }
-
-    const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
-
-    if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
-    {
-        throw Exception(
-            "TTL expression result column should have DateTime or Date type, but has " + result_column.type->getName(),
-            ErrorCodes::BAD_TTL_EXPRESSION);
-    }
-}
-
-}
-
-StorageMetadataTTLField StorageMetadataTTLField::getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
-{
-    StorageMetadataTTLField result;
-    const auto * ttl_element = definition_ast->as<ASTTTLElement>();
-
-    /// First child is expression: `TTL expr TO DISK`
-    if (ttl_element != nullptr)
-        result.expression_ast = ttl_element->children.front()->clone();
-    else /// It's columns TTL without any additions, just copy it
-        result.expression_ast = definition_ast->clone();
-
-    auto ttl_ast = result.expression_ast->clone();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(ttl_ast, columns.getAllPhysical());
-    result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, context).getActions(false);
-
-    /// Move TTL to disk or volume
-    if (ttl_element != nullptr)
-    {
-        result.destination_type = ttl_element->destination_type;
-        result.destination_name = ttl_element->destination_name;
-    }
-
-    result.result_column = ttl_ast->getColumnName();
-
-    checkTTLExpression(result.expression, result.result_column);
     return result;
 }
 

@@ -2,7 +2,8 @@
 
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <atomic>
-#include "IServer.h"
+#include <memory>
+#include <Server/IServer.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>

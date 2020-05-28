@@ -6,6 +6,7 @@
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
