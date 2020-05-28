@@ -490,6 +490,10 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
     if (current_thread_counters_id != counters.id)
         return;
 
+    PerfEventValue old_values[NUMBER_OF_RAW_EVENTS];
+    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
+        old_values[i] = counters.raw_event_values[i];
+
     // only read counters here to have as little overhead for processing as possible
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
@@ -513,13 +517,21 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
             continue;
 
         const PerfEventInfo & info = raw_events_info[i];
-        const PerfEventValue & raw_value = counters.raw_event_values[i];
+        const PerfEventValue & old_value = old_values[i];
+        const PerfEventValue & new_value = counters.raw_event_values[i];
 
-        profile_events.increment(info.profile_event, raw_value.value);
+        UInt64 time_running = new_value.time_running - old_value.time_running;
+        UInt64 time_enabled = new_value.time_enabled - old_value.time_enabled;
+        // no need to use old value for delta as it is zero after resetting event on initialize
+        UInt64 scaled_value = time_running != 0
+            ? UInt64(new_value.value * (Float64(time_enabled) / time_running))
+            : 0;
+
+        profile_events.increment(info.profile_event, scaled_value);
         if (info.profile_event_running.has_value())
-            profile_events.increment(info.profile_event_running.value(), raw_value.time_running);
+            profile_events.increment(info.profile_event_running.value(), time_running);
         if (info.profile_event_enabled.has_value())
-            profile_events.increment(info.profile_event_enabled.value(), raw_value.time_enabled);
+            profile_events.increment(info.profile_event_enabled.value(), time_enabled);
 
         disablePerfEvent(fd, getLogger);
     }
