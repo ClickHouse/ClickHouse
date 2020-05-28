@@ -124,7 +124,7 @@ Q2.
 Upd. Олег будет делать только часть про HDFS.
 Upd. Реализация поверх S3 является рабочей на уровне PoC.
 
-### 1.13. Ускорение запросов с FINAL {#uskorenie-zaprosov-s-final}
+### 1.13. + Ускорение запросов с FINAL {#uskorenie-zaprosov-s-final}
 
 Требует 2.1. Делает [Николай Кочетов](https://github.com/KochetovNicolai). Нужно для Яндекс.Метрики. Q2.
 Upd: PR [#10463](https://github.com/ClickHouse/ClickHouse/pull/10463)
