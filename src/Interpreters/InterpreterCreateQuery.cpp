@@ -504,7 +504,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = context.resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name);
+        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, context);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
@@ -546,7 +546,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached
-        auto query = database->getCreateTableQuery(create.table);
+        auto query = database->getCreateTableQuery(create.table, context);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
         create.attach_short_syntax = true;
@@ -608,7 +608,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
-        if (database->isTableExist(table_name))
+        if (database->isTableExist(table_name, context))
         {
             /// TODO Check structure of table
             if (create.if_not_exists)
