@@ -141,7 +141,7 @@ template <typename Name>
 class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
 {
 public:
-    FunctionStartsEndsWith(const Context & context) : selector(context)
+    explicit FunctionStartsEndsWith(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionStartsEndsWith<Name>>();

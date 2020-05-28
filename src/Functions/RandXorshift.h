@@ -35,7 +35,7 @@ template <typename ToType, typename Name>
 class FunctionRandomXorshift : public FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>
 {
 public:
-    FunctionRandomXorshift(const Context & context) : selector(context)
+    explicit FunctionRandomXorshift(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomImpl<TargetSpecific::Default::RandXorshiftImpl, ToType, Name>>();
