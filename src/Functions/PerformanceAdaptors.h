@@ -32,7 +32,7 @@ namespace detail
             if (size() == 1)
                 return 0;
 
-            std::lock_guard guard(lock);    
+            std::lock_guard guard(lock);
 
             size_t best = 0;
             double best_sample = data[0].sample(rng);
@@ -57,8 +57,8 @@ namespace detail
         {
             if (size() == 1)
                 return;
-            
-            std::lock_guard guard(lock);    
+
+            std::lock_guard guard(lock);
             data[id].complete(seconds, bytes);
         }
 
