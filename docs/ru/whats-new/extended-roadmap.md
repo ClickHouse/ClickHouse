@@ -203,10 +203,11 @@ Upd. SharedContext вынесен из Context.
 
 Upd. В очереди. Иван Лежанкин.
 
-### 2.9. Логгировние в format-стиле {#loggirovnie-v-format-stile}
+### 2.9. + Логгировние в format-стиле {#loggirovnie-v-format-stile}
 
-Делает [Иван Лежанкин](https://github.com/abyss7). Низкий приоритет.
-[\#6049](https://github.com/ClickHouse/ClickHouse/issues/6049#issuecomment-570836998)
+[#6049](https://github.com/ClickHouse/ClickHouse/issues/6049#issuecomment-570836998)
+
+Сделано.
 
 ### 2.10. Запрашивать у таблиц не столбцы, а срезы {#zaprashivat-u-tablits-ne-stolbtsy-a-srezy}
 
