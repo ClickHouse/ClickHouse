@@ -24,8 +24,8 @@ namespace
         query.table_id.table_name = table_name;
         query.columns = std::make_shared<ASTExpressionList>(',');
         query.children.push_back(query.columns);
-        for (size_t i = 0; i < columns.size(); ++i)
-            query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(columns[i].name));
+        for (const auto & column : columns)
+            query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
         std::stringstream ss;
         IAST::FormatSettings settings(ss, true);

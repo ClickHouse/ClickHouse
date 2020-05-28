@@ -295,6 +295,10 @@ struct ContextShared
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
+    /// Separate mutex for storage policies. During server startup we may
+    /// initialize some important storages (system logs with MergeTree engine)
+    /// under context lock.
+    mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
@@ -567,7 +571,7 @@ void Context::setPath(const String & path)
 
 VolumeSingleDiskPtr Context::setTemporaryStorage(const String & path, const String & policy_name)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (policy_name.empty())
     {
@@ -580,7 +584,7 @@ VolumeSingleDiskPtr Context::setTemporaryStorage(const String & path, const Stri
     }
     else
     {
-        StoragePolicyPtr tmp_policy = getStoragePolicySelector()->get(policy_name);
+        StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
         if (tmp_policy->getVolumes().size() != 1)
              throw Exception("Policy " + policy_name + " is used temporary files, such policy should have exactly one volume", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
         auto tmp_vol = tmp_policy->getVolume(0);
@@ -1689,18 +1693,37 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 
 DiskPtr Context::getDisk(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
-    auto disk_selector = getDiskSelector();
+    auto disk_selector = getDiskSelector(lock);
 
     return disk_selector->get(name);
 }
 
-
-DiskSelectorPtr Context::getDiskSelector() const
+StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->get(name);
+}
+
+
+DisksMap Context::getDisksMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getDiskSelector(lock)->getDisksMap();
+}
+
+StoragePoliciesMap Context::getPoliciesMap() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return getStoragePolicySelector(lock)->getPoliciesMap();
+}
+
+DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const
+{
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
@@ -1711,27 +1734,14 @@ DiskSelectorPtr Context::getDiskSelector() const
     return shared->merge_tree_disk_selector;
 }
 
-
-StoragePolicyPtr Context::getStoragePolicy(const String & name) const
+StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const
 {
-    auto lock = getLock();
-
-    auto policy_selector = getStoragePolicySelector();
-
-    return policy_selector->get(name);
-}
-
-
-StoragePolicySelectorPtr Context::getStoragePolicySelector() const
-{
-    auto lock = getLock();
-
     if (!shared->merge_tree_storage_policy_selector)
     {
         constexpr auto config_name = "storage_configuration.policies";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
+        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector(lock));
     }
     return shared->merge_tree_storage_policy_selector;
 }
@@ -1739,7 +1749,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector() const
 
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    auto lock = getLock();
+    std::lock_guard lock(shared->storage_policies_mutex);
 
     if (shared->merge_tree_disk_selector)
         shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
@@ -1752,7 +1762,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: " << e.message());
+            LOG_ERROR(shared->log, "An error has occured while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 }

@@ -5,6 +5,7 @@
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/formatReadable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -551,7 +552,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+        LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
     if (isCancelled())
@@ -722,7 +723,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeBlockOutputStream block_out(compressed_buf, ClickHouseRevision::get(), getHeader(false));
 
-    LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
+    LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}.", path);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
     /// Flush only two-level data and possibly overflow data.
@@ -761,17 +762,20 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Written part in " << elapsed_seconds << " sec., "
-        << rows << " rows, "
-        << (uncompressed_bytes / 1048576.0) << " MiB uncompressed, "
-        << (compressed_bytes / 1048576.0) << " MiB compressed, "
-        << (uncompressed_bytes / rows) << " uncompressed bytes per row, "
-        << (compressed_bytes / rows) << " compressed bytes per row, "
-        << "compression rate: " << (uncompressed_bytes / compressed_bytes)
-        << " (" << (rows / elapsed_seconds) << " rows/sec., "
-        << (uncompressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. uncompressed, "
-        << (compressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. compressed)");
+    LOG_TRACE(log,
+        "Written part in {} sec., {} rows, {} uncompressed, {} compressed,"
+        " {} uncompressed bytes per row, {} compressed bytes per row, compression rate: {}"
+        " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
+        elapsed_seconds,
+        rows,
+        formatReadableSizeWithBinarySuffix(uncompressed_bytes),
+        formatReadableSizeWithBinarySuffix(compressed_bytes),
+        uncompressed_bytes / rows,
+        compressed_bytes / rows,
+        uncompressed_bytes / compressed_bytes,
+        rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(uncompressed_bytes / elapsed_seconds),
+        formatReadableSizeWithBinarySuffix(compressed_bytes / elapsed_seconds));
 }
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
@@ -867,9 +871,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Max size of temporary block: " << max_temporary_block_size_rows << " rows, "
-        << (max_temporary_block_size_bytes / 1048576.0) << " MiB.");
+    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, formatReadableSizeWithBinarySuffix(max_temporary_block_size_bytes));
 }
 
 
@@ -939,10 +941,11 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
-        << " in " << elapsed_seconds << " sec."
-        << " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
+        src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
+        elapsed_seconds, src_rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
 }
 
 
@@ -1308,11 +1311,11 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Converted aggregated data to blocks. "
-        << rows << " rows, " << bytes / 1048576.0 << " MiB"
-        << " in " << elapsed_seconds << " sec."
-        << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+    LOG_TRACE(log,
+        "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
+        rows, formatReadableSizeWithBinarySuffix(bytes),
+        elapsed_seconds, rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
 
     return blocks;
 }
@@ -1943,8 +1946,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
     }
 
-    LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows
-                           << " rows.");
+    LOG_TRACE(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
 
     mergeBlocks(bucket_to_blocks, result, max_threads);
 }
@@ -2099,7 +2101,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     auto bucket_num = blocks.front().info.bucket_num;
     bool is_overflows = blocks.front().info.is_overflows;
 
-    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
+    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
     Stopwatch watch;
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
@@ -2175,11 +2177,10 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, std::fixed << std::setprecision(3)
-        << "Merged partially aggregated blocks. "
-        << rows << " rows, " << bytes / 1048576.0 << " MiB."
-        << " in " << elapsed_seconds << " sec."
-        << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+    LOG_TRACE(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
+        rows, formatReadableSizeWithBinarySuffix(bytes),
+        elapsed_seconds, rows / elapsed_seconds,
+        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
 
     if (isCancelled())
         return {};

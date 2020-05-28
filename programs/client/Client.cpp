@@ -485,7 +485,7 @@ private:
                 history_file = config().getString("history_file");
             else
             {
-                auto history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
+                auto * history_file_from_env = getenv("CLICKHOUSE_HISTORY_FILE");
                 if (history_file_from_env)
                     history_file = history_file_from_env;
                 else if (!home_path.empty())
@@ -1480,7 +1480,7 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        auto indicator = indicators[increment % 8];
+        const char * indicator = indicators[increment % 8];
 
         if (!send_logs && written_progress_chars)
             message << '\r';

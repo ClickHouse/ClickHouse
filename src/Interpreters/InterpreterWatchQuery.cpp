@@ -13,6 +13,7 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/Context.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
