@@ -659,7 +659,7 @@ public:
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
-    
+
     #if USE_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::AVX2,
             TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
@@ -670,9 +670,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        selector.selectAndExecute(block, arguments, result, input_rows_count);        
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
     }
-    
+
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionIntHash>(context);
