@@ -472,34 +472,35 @@ public:
         if (ValuePtr out = get(key); out)
             return {out, false}; // value was found in the cache.
 
+        InsertionAttemptDisposer disposer;
+        InsertionAttempt * attempt;
+
         {
-            InsertionAttemptDisposer disposer;
+            std::lock_guard att_lock(attempts_mutex);
 
-            {
-                std::lock_guard att_lock(attempts_mutex);
+            auto & insertion_attempt = insertion_attempts[key];
 
-                auto & insertion_attempt = insertion_attempts[key];
+            if (!insertion_attempt)
+                insertion_attempt = std::make_shared<InsertionAttempt>(*this);
 
-                if (!insertion_attempt)
-                    insertion_attempt = std::make_shared<InsertionAttempt>(*this);
+            disposer.acquire(&key, insertion_attempt);
+        }
 
-                disposer.acquire(&key, insertion_attempt);
-            }
+        attempt = disposer.attempt.get();
 
-            InsertionAttempt * attempt = disposer.attempt.get();
+        std::lock_guard attempt_lock(attempt->mutex);
 
-            std::lock_guard attempt_lock(attempt->mutex);
+        disposer.attempt_disposed = attempt->is_disposed;
 
-            disposer.attempt_disposed = attempt->is_disposed;
+        if (attempt->value)
+        {
+            /// Another thread already produced the value while we were acquiring the attempt's mutex.
+            ++hits;
+            ++concurrent_hits;
 
-            if (attempt->value)
-            {
-                /// Another thread already produced the value while we were acquiring the attempt's mutex.
-                ++hits;
-                ++concurrent_hits;
+            disposer.dispose();
 
-                return {attempt->value, false};
-            }
+            return {attempt->value, false};
         }
 
         ++misses;
@@ -701,6 +702,11 @@ private:
     {
         constexpr InsertionAttemptDisposer() noexcept = default;
 
+        ~InsertionAttemptDisposer() noexcept
+        {
+            dispose();
+        }
+
         const Key * key {nullptr};
         bool attempt_disposed{false};
 
@@ -720,7 +726,7 @@ private:
          * - Requires a @e read access to #attempt.
          * - May require a @e write access to #attempt and a @e write attempt to #insertion_attempts via dispose().
          */
-        ~InsertionAttemptDisposer() noexcept
+        void dispose() noexcept
         {
             if (!attempt)
                 return;
