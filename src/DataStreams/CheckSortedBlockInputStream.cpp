@@ -6,7 +6,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int SORT_ORDER_VIOLATED;
+extern const int LOGICAL_ERROR;
 }
 
 CheckSortedBlockInputStream::CheckSortedBlockInputStream(
@@ -72,12 +72,12 @@ Block CheckSortedBlockInputStream::readImpl()
 
     auto block_columns = block.getColumns();
     if (!last_row.empty() && !less(last_row, 0, block_columns, 0))
-        throw Exception("Sort order of blocks violated", ErrorCodes::SORT_ORDER_VIOLATED);
+        throw Exception("Sort order of blocks violated", ErrorCodes::LOGICAL_ERROR);
 
     size_t rows = block.rows();
     for (size_t i = 1; i < rows; ++i)
         if (!less(block_columns, i - 1, block_columns, i))
-            throw Exception("Sort order of blocks violated", ErrorCodes::SORT_ORDER_VIOLATED);
+            throw Exception("Sort order of blocks violated", ErrorCodes::LOGICAL_ERROR);
 
     last_row.clear();
     for (size_t i = 0; i < block.columns(); ++i)
