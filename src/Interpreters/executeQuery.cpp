@@ -363,6 +363,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else
             res = interpreter->execute();
 
+        if (res.pipeline.initialized())
+            use_processors = true;
+
         if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
@@ -390,7 +393,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Limits apply only to the final result.
             pipeline.setProgressCallback(context.getProgressCallback());
             pipeline.setProcessListElement(context.getProcessListElement());
-            if (stage == QueryProcessingStage::Complete)
+            if (stage == QueryProcessingStage::Complete && !pipeline.isCompleted())
             {
                 pipeline.resize(1);
                 pipeline.addSimpleTransform([&](const Block & header)
@@ -771,29 +774,36 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->settings_ast)
                 InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
-            pipeline.addSimpleTransform([](const Block & header)
+            if (!pipeline.isCompleted())
             {
-                return std::make_shared<MaterializingTransform>(header);
-            });
+                pipeline.addSimpleTransform([](const Block & header)
+                {
+                    return std::make_shared<MaterializingTransform>(header);
+                });
 
-            auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
-            out->setAutoFlush();
+                auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+                out->setAutoFlush();
 
-            /// Save previous progress callback if any. TODO Do it more conveniently.
-            auto previous_progress_callback = context.getProgressCallback();
+                /// Save previous progress callback if any. TODO Do it more conveniently.
+                auto previous_progress_callback = context.getProgressCallback();
 
-            /// NOTE Progress callback takes shared ownership of 'out'.
-            pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+                /// NOTE Progress callback takes shared ownership of 'out'.
+                pipeline.setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+                {
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    out->onProgress(progress);
+                });
+
+                if (set_result_details)
+                    set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
+
+                pipeline.setOutputFormat(std::move(out));
+            }
+            else
             {
-                if (previous_progress_callback)
-                    previous_progress_callback(progress);
-                out->onProgress(progress);
-            });
-
-            if (set_result_details)
-                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
-
-            pipeline.setOutput(std::move(out));
+                pipeline.setProgressCallback(context.getProgressCallback());
+            }
 
             {
                 auto executor = pipeline.execute();

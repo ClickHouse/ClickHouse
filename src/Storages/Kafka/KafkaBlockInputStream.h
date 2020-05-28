@@ -25,6 +25,7 @@ public:
     void readSuffixImpl() override;
 
     void commit();
+    bool isStalled() const { return buffer->isStalled(); }
 
 private:
     StorageKafka & storage;

@@ -85,6 +85,11 @@ protected:
 
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
+    // If we are using allocator with inline memory, the minimal size of
+    // array must be in sync with the size of this memory.
+    static_assert(allocatorInitialBytes<TAllocator> == 0
+                  || allocatorInitialBytes<TAllocator> == initial_bytes);
+
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
     char * c_end_of_storage = null;    /// Does not include pad_right.
@@ -224,13 +229,19 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void push_back_raw(const char * ptr, TAllocatorParams &&... allocator_params)
+    void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
+    {
+        push_back_raw_many(1, ptr, std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
+    void push_back_raw_many(size_t number_of_items, const void * ptr, TAllocatorParams &&... allocator_params)
     {
         if (unlikely(c_end == c_end_of_storage))
-            reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
+            reserve(number_of_items, std::forward<TAllocatorParams>(allocator_params)...);
 
-        memcpy(c_end, ptr, ELEMENT_SIZE);
-        c_end += byte_size(1);
+        memcpy(c_end, ptr, ELEMENT_SIZE * number_of_items);
+        c_end += byte_size(number_of_items);
     }
 
     void protect()

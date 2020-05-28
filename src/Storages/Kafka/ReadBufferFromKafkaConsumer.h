@@ -38,6 +38,7 @@ public:
 
     bool hasMorePolledMessages() const;
     bool polledDataUnusable() const { return (was_stopped || rebalance_happened); }
+    bool isStalled() const { return stalled; }
 
     void storeLastReadMessageOffset();
     void resetToLastCommitted(const char * msg);
