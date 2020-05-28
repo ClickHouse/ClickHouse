@@ -670,7 +670,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (identifier)
         {
             auto table_id = data.context.resolveStorageID(right_in_operand);
-            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.context);
 
             if (table)
             {
