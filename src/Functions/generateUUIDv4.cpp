@@ -61,7 +61,7 @@ public:
 class FunctionGenerateUUIDv4 : public TargetSpecific::Default::FunctionGenerateUUIDv4
 {
 public:
-    FunctionGenerateUUIDv4(const Context & context) : selector(context)
+    explicit FunctionGenerateUUIDv4(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGenerateUUIDv4>();
