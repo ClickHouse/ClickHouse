@@ -223,16 +223,18 @@ private:
         {
             return !bg::intersects(current_box, polygons[id]);
         }), possible_ids.end());
+        int covered = 0;
+#ifndef __clang_analyzer__ /// Triggers a warning in boost geometry.
         auto it = std::find_if(possible_ids.begin(), possible_ids.end(), [&](const auto id)
         {
             return bg::covered_by(tmp_poly, polygons[id]);
         });
-        int covered = 0;
         if (it != possible_ids.end())
         {
             possible_ids.erase(it + 1, possible_ids.end());
             covered = 1;
         }
+#endif
         size_t intersections = possible_ids.size() - covered;
         if (intersections <= kMinIntersections || depth++ == kMaxDepth)
             return std::make_unique<ReturnCell>(possible_ids, polygons, current_box, covered);
