@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/ConnectionTimeouts.h>
 #include <aws/core/http/HttpClient.h>
 
 namespace Aws::Http::Standard
@@ -13,6 +14,7 @@ namespace DB::S3
 class PocoHttpClient : public Aws::Http::HttpClient
 {
 public:
+    explicit PocoHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration);
     ~PocoHttpClient() override = default;
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(
         Aws::Http::HttpRequest & request,
@@ -31,6 +33,8 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
+    std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
+    ConnectionTimeouts timeouts;
 };
 
 }
