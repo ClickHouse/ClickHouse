@@ -19,6 +19,8 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 
 
 namespace DB
@@ -62,29 +64,42 @@ Pipes StorageView::read(
     if (context.getSettings().enable_optimize_predicate_expression)
         current_inner_query = getRuntimeViewQuery(*query_info.query->as<const ASTSelectQuery>(), context);
 
-    QueryPipeline pipeline;
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
     /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
     if (query_info.force_tree_shaped_pipeline)
     {
+        QueryPipeline pipeline;
         BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
+
+        for (auto & stream : streams)
+        {
+            stream = std::make_shared<MaterializingBlockInputStream>(stream);
+            stream = std::make_shared<ConvertingBlockInputStream>(stream, getSampleBlockForColumns(column_names),
+                                                                  ConvertingBlockInputStream::MatchColumnsMode::Name);
+        }
+
         for (auto & stream : streams)
             pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
     }
     else
-        /// TODO: support multiple streams here. Need more general interface than pipes.
-        pipes.emplace_back(interpreter.executeWithProcessors().getPipe());
-
-    /// It's expected that the columns read from storage are not constant.
-    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    for (auto & pipe : pipes)
     {
-        pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
+        auto pipeline = interpreter.executeWithProcessors();
+
+        /// It's expected that the columns read from storage are not constant.
+        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+        pipeline.addSimpleTransform([](const Block & header)
+        {
+            return std::make_shared<MaterializingTransform>(header);
+        });
 
         /// And also convert to expected structure.
-        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-            pipe.getHeader(), getSampleBlockForColumns(column_names),
-            ConvertingTransform::MatchColumnsMode::Name));
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(header, getSampleBlockForColumns(column_names),
+                                                         ConvertingTransform::MatchColumnsMode::Name);
+        });
+
+        pipes = std::move(pipeline).getPipes();
     }
 
     return pipes;
