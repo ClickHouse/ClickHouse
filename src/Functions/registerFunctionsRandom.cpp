@@ -10,7 +10,6 @@ void registerFunctionRandomPrintableASCII(FunctionFactory & factory);
 void registerFunctionRandomString(FunctionFactory & factory);
 void registerFunctionRandomFixedString(FunctionFactory & factory);
 void registerFunctionRandomStringUTF8(FunctionFactory & factory);
-void registerFunctionRandXorshift(FunctionFactory & factory);
 
 void registerFunctionsRandom(FunctionFactory & factory)
 {
@@ -22,7 +21,6 @@ void registerFunctionsRandom(FunctionFactory & factory)
     registerFunctionRandomString(factory);
     registerFunctionRandomFixedString(factory);
     registerFunctionRandomStringUTF8(factory);
-    registerFunctionRandXorshift(factory);
 }
 
 }
