@@ -182,35 +182,15 @@
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
     M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
-    M(PerfCpuCyclesRunning, "Total cycles (<time running>).")  \
-    M(PerfCpuCyclesEnabled, "Total cycles (<time enabled>).")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
-    M(PerfInstructionsRunning, "Retired instructions (<time running>).") \
-    M(PerfInstructionsEnabled, "Retired instructions (<time enabled>).") \
     M(PerfCacheReferences, "Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
-    M(PerfCacheReferencesRunning, "Cache accesses (<time running>).") \
-    M(PerfCacheReferencesEnabled, "Cache accesses (<time enabled>).") \
     M(PerfCacheMisses, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in con‐junction with the PERFCOUNTHWCACHEREFERENCES event to calculate cache miss rates.") \
-    M(PerfCacheMissesRunning, "Cache misses (<time running>).") \
-    M(PerfCacheMissesEnabled, "Cache misses (<time enabled>).") \
     M(PerfBranchInstructions, "Retired branch instructions. Prior to Linux 2.6.35, this used the wrong event on AMD processors.") \
-    M(PerfBranchInstructionsRunning, "Retired branch instructions (<time running>).") \
-    M(PerfBranchInstructionsEnabled, "Retired branch instructions (<time enabled>).") \
     M(PerfBranchMisses, "Mispredicted branch instructions.") \
-    M(PerfBranchMissesRunning, "Mispredicted branch instructions (<time running>).") \
-    M(PerfBranchMissesEnabled, "Mispredicted branch instructions (<time enabled>).") \
     M(PerfBusCycles, "Bus cycles, which can be different from total cycles.") \
-    M(PerfBusCyclesRunning, "Bus cycles, which can be different from total cycles (<time running>).") \
-    M(PerfBusCyclesEnabled, "Bus cycles, which can be different from total cycles (<time enabled>).") \
     M(PerfStalledCyclesFrontend, "Stalled cycles during issue.") \
-    M(PerfStalledCyclesFrontendRunning, "Stalled cycles during issue (<time running>).") \
-    M(PerfStalledCyclesFrontendEnabled, "Stalled cycles during issue (<time enabled>).") \
     M(PerfStalledCyclesBackend, "Stalled cycles during retirement.") \
-    M(PerfStalledCyclesBackendRunning, "Stalled cycles during retirement (<time running>).") \
-    M(PerfStalledCyclesBackendEnabled, "Stalled cycles during retirement (<time enabled>).") \
     M(PerfRefCpuCycles, "Total cycles; not affected by CPU frequency scaling.") \
-    M(PerfRefCpuCyclesRunning, "Total cycles; not affected by CPU frequency scaling (<time running>).") \
-    M(PerfRefCpuCyclesEnabled, "Total cycles; not affected by CPU frequency scaling (<time enabled>).") \
     \
     M(PerfCpuClock, "The CPU clock, a high-resolution per-CPU timer") \
     M(PerfTaskClock, "A clock count specific to the task that is running") \

@@ -114,49 +114,43 @@ void TasksStatsCounters::incrementProfileEvents(const ::taskstats & prev, const 
     profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.write_bytes, curr.write_bytes));
 }
 
-static PerfEventInfo softwareEvent(int event_config, ProfileEvents::Event profile_event, const std::string & settings_name)
-{
-    return PerfEventInfo
-    {
-        .event_type = perf_type_id::PERF_TYPE_SOFTWARE,
-        .event_config = event_config,
-        .profile_event = profile_event,
-        .profile_event_running = std::nullopt,
-        .profile_event_enabled = std::nullopt,
-        .settings_name = settings_name
-    };
-}
+#define SOFTWARE_EVENT(PERF_NAME, LOCAL_NAME) \
+    PerfEventInfo \
+    { \
+        .event_type = perf_type_id::PERF_TYPE_SOFTWARE, \
+        .event_config = (PERF_NAME), \
+        .profile_event = ProfileEvents::LOCAL_NAME, \
+        .settings_name = #LOCAL_NAME \
+    }
 
-#define HARDWARE_EVENT(PERF_NAME, LOCAL_NAME, SETTINGS_NAME) \
+#define HARDWARE_EVENT(PERF_NAME, LOCAL_NAME) \
     PerfEventInfo \
     { \
         .event_type = perf_type_id::PERF_TYPE_HARDWARE, \
         .event_config = (PERF_NAME), \
         .profile_event = ProfileEvents::LOCAL_NAME, \
-        .profile_event_running = {ProfileEvents::LOCAL_NAME##Running}, \
-        .profile_event_enabled = {ProfileEvents::LOCAL_NAME##Enabled}, \
-        .settings_name = (SETTINGS_NAME) \
+        .settings_name = #LOCAL_NAME \
     }
 
 // descriptions' source: http://man7.org/linux/man-pages/man2/perf_event_open.2.html
 const PerfEventInfo PerfEventsCounters::raw_events_info[] = {
-    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles, "cpu-cycles"),
-    HARDWARE_EVENT(PERF_COUNT_HW_INSTRUCTIONS, PerfInstructions, "instructions"),
-    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_REFERENCES, PerfCacheReferences, "cache-references"),
-    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_MISSES, PerfCacheMisses, "cache-misses"),
-    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, PerfBranchInstructions, "branch-instructions"),
-    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_MISSES, PerfBranchMisses, "branch-misses"),
-    HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles, "bus-cycles"),
-    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend, "stalled-cycles-frontend"),
-    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend, "stalled-cycles-backend"),
-    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles, "ref-cpu-cycles"),
+    HARDWARE_EVENT(PERF_COUNT_HW_CPU_CYCLES, PerfCpuCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_INSTRUCTIONS, PerfInstructions),
+    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_REFERENCES, PerfCacheReferences),
+    HARDWARE_EVENT(PERF_COUNT_HW_CACHE_MISSES, PerfCacheMisses),
+    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_INSTRUCTIONS, PerfBranchInstructions),
+    HARDWARE_EVENT(PERF_COUNT_HW_BRANCH_MISSES, PerfBranchMisses),
+    HARDWARE_EVENT(PERF_COUNT_HW_BUS_CYCLES, PerfBusCycles),
+    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, PerfStalledCyclesFrontend),
+    HARDWARE_EVENT(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, PerfStalledCyclesBackend),
+    HARDWARE_EVENT(PERF_COUNT_HW_REF_CPU_CYCLES, PerfRefCpuCycles),
     // `cpu-clock` is a bit broken according to this: https://stackoverflow.com/a/56967896
-    softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PerfCpuClock, "cpu-clock"),
-    softwareEvent(PERF_COUNT_SW_TASK_CLOCK, ProfileEvents::PerfTaskClock, "task-clock"),
-    softwareEvent(PERF_COUNT_SW_CONTEXT_SWITCHES, ProfileEvents::PerfContextSwitches, "context-switches"),
-    softwareEvent(PERF_COUNT_SW_CPU_MIGRATIONS, ProfileEvents::PerfCpuMigrations, "cpu-migrations"),
-    softwareEvent(PERF_COUNT_SW_ALIGNMENT_FAULTS, ProfileEvents::PerfAlignmentFaults, "alignment-faults"),
-    softwareEvent(PERF_COUNT_SW_EMULATION_FAULTS, ProfileEvents::PerfEmulationFaults, "emulation-faults")
+    SOFTWARE_EVENT(PERF_COUNT_SW_CPU_CLOCK, PerfCpuClock),
+    SOFTWARE_EVENT(PERF_COUNT_SW_TASK_CLOCK, PerfTaskClock),
+    SOFTWARE_EVENT(PERF_COUNT_SW_CONTEXT_SWITCHES, PerfContextSwitches),
+    SOFTWARE_EVENT(PERF_COUNT_SW_CPU_MIGRATIONS, PerfCpuMigrations),
+    SOFTWARE_EVENT(PERF_COUNT_SW_ALIGNMENT_FAULTS, PerfAlignmentFaults),
+    SOFTWARE_EVENT(PERF_COUNT_SW_EMULATION_FAULTS, PerfEmulationFaults)
 };
 
 #undef HARDWARE_EVENT
@@ -492,6 +486,8 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
     if (current_thread_counters_id != counters.id)
         return;
 
+    const auto old_values = counters.raw_event_values;
+
     // only read counters here to have as little overhead for processing as possible
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
@@ -518,13 +514,17 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
             continue;
 
         const PerfEventInfo & info = raw_events_info[i];
-        const PerfEventValue & raw_value = counters.raw_event_values[i];
+        const PerfEventValue & old_value = old_values[i];
+        const PerfEventValue & new_value = counters.raw_event_values[i];
 
-        profile_events.increment(info.profile_event, raw_value.value);
-        if (info.profile_event_running.has_value())
-            profile_events.increment(info.profile_event_running.value(), raw_value.time_running);
-        if (info.profile_event_enabled.has_value())
-            profile_events.increment(info.profile_event_enabled.value(), raw_value.time_enabled);
+        // Account for counter multiplexing. time_running/time_enabled are
+        // not reset by PERF_EVENT_IOC_RESET, so we have to calculate deltas
+        // from old values.
+        profile_events.increment(info.profile_event,
+            (new_value.value - old_value.value)
+                * (new_value.time_running - old_value.time_running)
+                / std::max(1.f,
+                    float(new_value.time_enabled - old_value.time_enabled)));
 
         disablePerfEvent(fd, getLogger);
     }
