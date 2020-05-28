@@ -317,7 +317,7 @@ function report
 rm -r report ||:
 mkdir report report/tmp ||:
 
-rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
 
 build_log_column_definitions
 
@@ -434,7 +434,7 @@ create table wall_clock engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
 
 create table slow_on_client_tsv engine File(TSV, 'report/slow-on-client.tsv') as
-    select client, server, floor(client/server, 3) p, query_display_name
+    select client, server, floor(client/server, 3) p, test, query_display_name
     from query_time left join query_display_names using (test, query_index)
     where p > 1.02 order by p desc;
 
