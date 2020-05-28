@@ -6,6 +6,8 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/TargetSpecific.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <ext/range.h>
 #include <cmath>
 
@@ -153,6 +155,12 @@ enum class Method
     WGS84_METERS,
 };
 
+}
+
+DECLARE_MULTITARGET_CODE(
+
+namespace
+{
 
 template <Method method>
 float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
@@ -220,7 +228,6 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
 
 }
 
-
 template <Method method>
 class FunctionGeoDistance : public IFunction
 {
@@ -229,8 +236,6 @@ public:
         (method == Method::SPHERE_DEGREES) ? "greatCircleAngle"
         : ((method == Method::SPHERE_METERS) ? "greatCircleDistance"
             : "geoDistance");
-
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeoDistance<method>>(); }
 
 private:
     String getName() const override { return name; }
@@ -272,6 +277,40 @@ private:
     }
 };
 
+) // DECLARE_MULTITARGET_CODE
+
+template <Method method>
+class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
+{
+public:
+    explicit FunctionGeoDistance(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            TargetSpecific::Default::FunctionGeoDistance<method>>();
+        
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX,
+            TargetSpecific::AVX::FunctionGeoDistance<method>>();
+        selector.registerImplementation<TargetArch::AVX2,
+            TargetSpecific::AVX2::FunctionGeoDistance<method>>();
+        selector.registerImplementation<TargetArch::AVX512F,
+            TargetSpecific::AVX512F::FunctionGeoDistance<method>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionGeoDistance<method>>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
 
 void registerFunctionGeoDistance(FunctionFactory & factory)
 {
