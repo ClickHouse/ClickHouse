@@ -129,15 +129,17 @@ public:
     DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
-    void assertTableDoesntExist(const StorageID & table_id) const;
-    bool isTableExist(const StorageID & table_id) const;
+    void assertTableDoesntExist(const StorageID & table_id, const Context & context) const;
+    bool isTableExist(const StorageID & table_id, const Context & context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    StoragePtr getTable(const StorageID & table_id) const;
-    StoragePtr tryGetTable(const StorageID & table_id) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id, std::optional<Exception> * exception = nullptr) const;
+    StoragePtr getTable(const StorageID & table_id, const Context & context) const;
+    StoragePtr tryGetTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id,
+                                  const Context & context,
+                                  std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
