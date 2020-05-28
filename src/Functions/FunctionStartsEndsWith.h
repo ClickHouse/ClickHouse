@@ -41,11 +41,6 @@ public:
         return name;
     }
 
-    static String getImplementationTag()
-    {
-        return ToString(BuildArch);
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 2;
