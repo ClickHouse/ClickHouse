@@ -112,6 +112,10 @@ private:
     static constexpr auto getSize = SizeFunction();
     static constexpr auto initValue = InitFunction();
 
+
+    struct RegionMetadata;
+    static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
+
     Logger& log;
 
 /**
@@ -940,8 +944,6 @@ private:
         RegionMetadata() {}
         ~RegionMetadata() = default;
     };
-
-    static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
 
     struct RegionCompareBySize
     {
