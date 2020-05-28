@@ -27,10 +27,6 @@ struct ITokenExtractor
 
 using TokenExtractorPtr = const ITokenExtractor *;
 
-
-class MergeTreeIndexFullText;
-
-
 struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleFullText(
@@ -53,7 +49,6 @@ struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
 };
 
 using MergeTreeIndexGranuleFullTextPtr = std::shared_ptr<MergeTreeIndexGranuleFullText>;
-
 
 struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
 {
@@ -158,7 +153,6 @@ private:
     /// Sets from syntax analyzer.
     PreparedSets prepared_sets;
 };
-
 
 
 /// Parser extracting all ngrams from string.

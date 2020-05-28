@@ -18,10 +18,6 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
-class MergeTreeData;
-
-
-
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
 {
