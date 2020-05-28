@@ -28,8 +28,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include <Functions/TargetSpecific.h>
-
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
@@ -54,11 +52,13 @@ namespace ErrorCodes
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
 }
 
+
 /** Arithmetic operations: +, -, *, /, %,
   * intDiv (integer division)
   * Bitwise operations: |, &, ^, ~.
   * Etc.
   */
+
 template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
 struct BinaryOperationImplBase
 {
@@ -88,7 +88,6 @@ struct BinaryOperationImplBase
         return Op::template apply<ResultType>(a, b);
     }
 };
-
 
 template <typename Op>
 struct FixedStringOperationImpl
