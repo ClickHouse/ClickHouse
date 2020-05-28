@@ -505,7 +505,7 @@ public:
 
         ++misses;
 
-        disposer->dispose();
+        disposer.dispose();
 
         /// No try-catch here because it is not needed.
         size_t size = get_size();
