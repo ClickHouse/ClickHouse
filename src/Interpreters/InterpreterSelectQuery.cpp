@@ -996,13 +996,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 argument_types[j] = header.getByName(desc->argument_names[j]).type;
 
             Block block_with_count{
-                {ColumnPtr(column->cloneEmpty()), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
+                {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
 
-            Chunk chunk(Columns(), column->size());
-            chunk.addColumn(std::move(column));
-
-            auto source = std::make_shared<SourceFromSingleChunk>(std::move(block_with_count), std::move(chunk));
-            pipeline.init(Pipe(std::move(source)));
+            auto istream = std::make_shared<OneBlockInputStream>(block_with_count);
+            pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(istream)));
             from_stage = QueryProcessingStage::WithMergeableState;
             analysis_result.first_stage = false;
             return;
