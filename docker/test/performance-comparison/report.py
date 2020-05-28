@@ -189,7 +189,7 @@ if args.report == 'main':
     slow_on_client_rows = tsvRows('report/slow-on-client.tsv')
     error_tests += len(slow_on_client_rows)
     printSimpleTable('Slow on client',
-                     ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
+                     ['Client time, s', 'Server time, s', 'Ratio', 'Test', 'Query'],
                      slow_on_client_rows)
 
     def print_changes():
