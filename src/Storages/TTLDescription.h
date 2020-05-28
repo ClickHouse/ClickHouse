@@ -10,6 +10,24 @@
 namespace DB
 {
 
+struct TTLSetPartDescription
+{
+    /// Name of column in set part of ttl expression
+    /// x = sum(y)
+    /// ^
+    String column_name;
+
+    /// Name of column on the right hand of the set part of TTL expression
+    /// x = sum(y)
+    ///    ^~~~~~^
+    String expression_result_column_name;
+
+    /// Expressions to calculate the value of set expression
+    ExpressionActionsPtr expression;
+};
+
+using TTLSetPartDescriptions = std::vector<TTLSetPartDescription>;
+
 /// Common struct for TTL record in storage
 struct TTLDescription
 {
@@ -17,7 +35,7 @@ struct TTLDescription
 
     /// Expression part of TTL AST:
     /// TTL d + INTERVAL 1 DAY
-    ///    ^~~~~expression~~~~^
+    ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
 
     /// Expresion actions evaluated from AST
@@ -26,13 +44,23 @@ struct TTLDescription
     /// Result column of this TTL expression
     String result_column;
 
+    /// WHERE part in TTL expression
+    /// TTL ... WHERE x % 10 == 0 and y > 5
+    ///              ^~~~~~~~~~~~~~~~~~~~~~^
     ExpressionActionsPtr where_expression;
 
+    /// Name of result column from WHERE expression
     String where_result_column;
 
+    /// Names of key columns in GROUP BY expression
+    /// TTL ... GROUP BY toDate(d), x SET ...
+    ///                  ^~~~~~~~~~~~^
     Names group_by_keys;
 
-    std::vector<std::tuple<String, String, ExpressionActionsPtr>> group_by_aggregations;
+    /// SET parts of TTL expression
+    TTLSetPartDescriptions set_parts;
+
+    /// Aggregate descriptions for GROUP BY in TTL
     AggregateDescriptions aggregate_descriptions;
 
     /// Destination type, only valid for table TTLs.
