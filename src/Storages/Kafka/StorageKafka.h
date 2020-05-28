@@ -110,12 +110,13 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
-    ConsumerBufferPtr createReadBuffer();
+    ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & conf);
 
     void threadFunc();
+    const String getDefaultClientId(const StorageID & table_id_) const;
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 };
