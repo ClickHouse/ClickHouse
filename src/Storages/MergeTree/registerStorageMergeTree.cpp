@@ -607,7 +607,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
-                indices_description.indices.push_back(StorageMetadataSkipIndexField::getSkipIndexFromAST(index, args.columns, args.context));
+                indices_description.push_back(StorageMetadataSkipIndexField::getSkipIndexFromAST(index, args.columns, args.context));
 
         storage_settings->loadFromQuery(*args.storage_def);
 

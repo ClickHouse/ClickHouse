@@ -35,11 +35,9 @@ struct StorageMetadataSkipIndexField
     getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
-struct IndicesDescription
+struct IndicesDescription : public std::vector<StorageMetadataSkipIndexField>
 {
-    std::vector<StorageMetadataSkipIndexField> indices;
 
-    bool empty() const;
     bool has(const String & name) const;
     String toString() const;
 

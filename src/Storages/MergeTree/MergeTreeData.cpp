@@ -429,7 +429,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     {
         std::set<String> indices_names;
 
-        for (const auto & index : metadata.indices.indices)
+        for (const auto & index : metadata.indices)
         {
 
             MergeTreeIndexFactory::instance().validate(index, attach);
@@ -1379,7 +1379,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    for (const auto & index : getIndices().indices)
+    for (const auto & index : getIndices())
     {
         for (const String & col : index.expression->getRequiredColumns())
             columns_alter_type_forbidden.insert(col);
@@ -3064,7 +3064,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
         {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-            for (const auto & index : getIndices().indices)
+            for (const auto & index : getIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
         }
@@ -3073,7 +3073,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
     else
     {
-        for (const auto & index : getIndices().indices)
+        for (const auto & index : getIndices())
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
@@ -3487,7 +3487,7 @@ ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_
         return false;
     };
 
-    for (const auto & index : getIndices().indices)
+    for (const auto & index : getIndices())
         add_dependent_columns(index.expression, indices_columns);
 
     if (hasRowsTTL())
