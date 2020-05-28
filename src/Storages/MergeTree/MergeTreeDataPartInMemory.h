@@ -39,7 +39,7 @@ public:
 
     bool isStoredOnDisk() const override { return false; }
 
-    bool hasColumnFiles(const String & /* column_name */, const IDataType & /* type */) const override { return true; }
+    bool hasColumnFiles(const String & column_name, const IDataType & /* type */) const override { return !!getColumnPosition(column_name); }
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
 
