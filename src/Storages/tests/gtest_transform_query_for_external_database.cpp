@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
+#include <Functions/registerFunctions.h>
 #include <Common/tests/gtest_global_context.h>
 
 
@@ -29,7 +30,7 @@ struct State
     explicit State()
         : context(getContext().context)
     {
-        DB::registerFunctions();
+        registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test");
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
         context.makeGlobalContext();
