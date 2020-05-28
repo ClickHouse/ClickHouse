@@ -246,7 +246,7 @@ void SelectStreamFactory::createForShard(
         auto lazily_create_stream = [
                 pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast, context, throttler,
                 main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
-                stage = processed_stage, local_delay, add_totals_port, add_extremes_port]()
+                stage = processed_stage, local_delay]()
             -> BlockInputStreamPtr
         {
             auto current_settings = context.getSettingsRef();
