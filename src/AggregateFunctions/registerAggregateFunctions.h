@@ -46,6 +46,9 @@ void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory 
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 
+class EarlyWindowFunctionFactory;
+void registerEarlyWindowFunction(EarlyWindowFunctionFactory &);
+
 void registerAggregateFunctions();
 
 }

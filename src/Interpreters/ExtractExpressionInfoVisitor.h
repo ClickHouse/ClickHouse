@@ -20,6 +20,7 @@ struct ExpressionInfoMatcher
 
         bool is_array_join = false;
         bool is_stateful_function = false;
+        bool is_early_window_function = false;
         bool is_aggregate_function = false;
         std::unordered_set<size_t> unique_reference_tables_pos = {};
     };

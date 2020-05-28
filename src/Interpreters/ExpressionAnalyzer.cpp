@@ -19,6 +19,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Columns/IColumn.h>
 
@@ -134,6 +135,8 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
     initGlobalSubqueriesAndExternalTables(do_global);
 
+    analyzeEarlyWindow();
+
     /// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
     /// This analysis should be performed after processing global subqueries, because otherwise,
     /// if the aggregate function contains a global subquery, then `analyzeAggregation` method will save
@@ -161,7 +164,9 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     auto * select_query = query->as<ASTSelectQuery>();
 
-    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(sourceColumns(), context);
+    NamesAndTypesList columns = sourceColumns();
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(columns, context);
 
     if (select_query)
     {
@@ -254,6 +259,25 @@ void ExpressionAnalyzer::analyzeAggregation()
     else
     {
         aggregated_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+    }
+}
+
+
+ 
+void ExpressionAnalyzer::analyzeEarlyWindow()
+{
+    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(sourceColumns(), context);
+
+    has_early_window = makeEarlyWindowDescriptions(temp_actions);
+
+    if (has_early_window)
+    {
+        getSelectQuery(); /// assertSelect()
+
+        for (const auto & desc : early_window_descriptions)
+        {
+            early_window_columns.emplace_back(desc.column_name, desc.function->getReturnType());
+        }
     }
 }
 
@@ -397,6 +421,35 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_sub
 }
 
 
+bool ExpressionAnalyzer::makeEarlyWindowDescriptions(ExpressionActionsPtr & actions)
+{
+    for (const ASTFunction * node : earlyWindows())
+    {
+        EarlyWindowDescription early_window;
+        early_window.column_name = node->getColumnName();
+
+        const ASTs & arguments = node->arguments->children;
+        early_window.argument_names.resize(arguments.size());
+        DataTypes types(arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            getRootActions(arguments[i], true, actions);
+            const std::string & name = arguments[i]->getColumnName();
+            types[i] = actions->getSampleBlock().getByName(name).type;
+            early_window.argument_names[i] = name;
+        }
+
+        early_window.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
+        early_window.function = EarlyWindowFunctionFactory::instance().get(node->name, types, early_window.parameters, early_window.info);
+
+        early_window_descriptions.push_back(early_window);
+    }
+
+    return !earlyWindows().empty();
+}
+
+
 bool ExpressionAnalyzer::makeAggregateDescriptions(ExpressionActionsPtr & actions)
 {
     for (const ASTFunction * node : aggregates())
@@ -432,6 +485,13 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
     if (!select_query)
         throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
     return select_query;
+}
+
+const ASTSelectQuery * SelectQueryExpressionAnalyzer::getEarlyWinndowingQuery() const
+{
+    if (!has_early_window)
+        throw Exception("No early window", ErrorCodes::LOGICAL_ERROR);
+    return getSelectQuery();
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
@@ -722,6 +782,37 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     return true;
 }
 
+void SelectQueryExpressionAnalyzer::appendEarlyWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
+{
+    const auto * select_query = getEarlyWinndowingQuery();
+
+    initChain(chain, sourceColumns());
+    ExpressionActionsChain::Step & step = chain.steps.back();
+
+    for (const auto & desc : early_window_descriptions)
+        for (const auto & name : desc.argument_names)
+            step.required_output.emplace_back(name);
+
+    /// Collect aggregates removing duplicates by node.getColumnName()
+    /// It's not clear why we recollect aggregates (for query parts) while we're able to use previously collected ones (for entire query)
+    /// @note The original recollection logic didn't remove duplicates.
+    GetEarlyWindowsVisitor::Data data;
+    GetEarlyWindowsVisitor(data).visit(select_query->select());
+
+    if (select_query->having())
+        GetEarlyWindowsVisitor(data).visit(select_query->having());
+
+    if (select_query->orderBy())
+        GetEarlyWindowsVisitor(data).visit(select_query->orderBy());
+
+    for (auto column_name : data.column_names)
+        step.required_output.push_back(column_name);
+
+    for (const ASTFunction * node : data.early_windows)
+        for (auto & argument : node->arguments->children)
+            getRootActions(argument, only_types, step.actions);
+}
+
 bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getAggregatingQuery();
@@ -729,7 +820,10 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     if (!select_query->groupBy())
         return false;
 
-    initChain(chain, sourceColumns());
+    NamesAndTypesList columns = sourceColumns();
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     ASTs asts = select_query->groupBy()->children;
@@ -746,7 +840,10 @@ void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(Expression
 {
     const auto * select_query = getAggregatingQuery();
 
-    initChain(chain, sourceColumns());
+    NamesAndTypesList columns = sourceColumns();
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     for (const auto & desc : aggregate_descriptions)
@@ -778,7 +875,11 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     if (!select_query->having())
         return false;
 
-    initChain(chain, aggregated_columns);
+    NamesAndTypesList columns;
+    columns.insert(columns.end(), aggregated_columns.begin(), aggregated_columns.end());
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     step.required_output.push_back(select_query->having()->getColumnName());
@@ -791,7 +892,11 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 {
     const auto * select_query = getSelectQuery();
 
-    initChain(chain, aggregated_columns);
+    NamesAndTypesList columns;
+    columns.insert(columns.end(), aggregated_columns.begin(), aggregated_columns.end());
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     getRootActions(select_query->select(), only_types, step.actions);
@@ -808,7 +913,11 @@ bool SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain
     if (!select_query->orderBy())
         return false;
 
-    initChain(chain, aggregated_columns);
+    NamesAndTypesList columns;
+    columns.insert(columns.end(), aggregated_columns.begin(), aggregated_columns.end());
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     getRootActions(select_query->orderBy(), only_types, step.actions);
@@ -842,7 +951,11 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     if (!select_query->limitBy())
         return false;
 
-    initChain(chain, aggregated_columns);
+    NamesAndTypesList columns;
+    columns.insert(columns.end(), aggregated_columns.begin(), aggregated_columns.end());
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     getRootActions(select_query->limitBy(), only_types, step.actions);
@@ -868,7 +981,11 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
 {
     const auto * select_query = getSelectQuery();
 
-    initChain(chain, aggregated_columns);
+    NamesAndTypesList columns;
+    columns.insert(columns.end(), aggregated_columns.begin(), aggregated_columns.end());
+    columns.insert(columns.end(), early_window_columns.begin(), early_window_columns.end());
+
+    initChain(chain, columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     NamesWithAliases result_columns;
@@ -996,6 +1113,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     : first_stage(first_stage_)
     , second_stage(second_stage_)
     , need_aggregate(query_analyzer.hasAggregation())
+    , need_early_window(query_analyzer.hasEarlyWindow())
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -1013,17 +1131,17 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     bool finalized = false;
     size_t where_step_num = 0;
 
-    auto finalize_chain = [&](ExpressionActionsChain & chain)
+    auto finalizeChain = [&](ExpressionActionsChain & chain)
     {
         chain.finalize();
 
         if (!finalized)
         {
             finalize(chain, context, where_step_num);
-            finalized = true;
         }
 
         chain.clear();
+        finalized = true;
     };
 
     if (storage)
@@ -1109,13 +1227,21 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
+        if (need_early_window)
+        {
+            query_analyzer.appendEarlyWindowFunctionsArguments(chain, only_types);
+            before_early_window = chain.getLastActions();
+
+            finalizeChain(chain);
+        }
+
         if (need_aggregate)
         {
             query_analyzer.appendGroupBy(chain, only_types || !first_stage);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
-            finalize_chain(chain);
+            finalizeChain(chain);
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
@@ -1149,7 +1275,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         query_analyzer.appendProjectResult(chain);
         final_projection = chain.getLastActions();
 
-        finalize_chain(chain);
+        finalizeChain(chain);
     }
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).

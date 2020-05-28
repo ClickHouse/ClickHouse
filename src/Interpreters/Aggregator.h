@@ -48,6 +48,8 @@ class IBlockOutputStream;
 class VolumeJBOD;
 using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
 
+using PlacesPtr = std::shared_ptr<PODArray<AggregateDataPtr>>;
+
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
   * Data and pool ownership (states of aggregate functions)
@@ -682,7 +684,6 @@ struct AggregatedDataVariants : private boost::noncopyable
 
         __builtin_unreachable();
     }
-
     bool isTwoLevel() const
     {
         switch (type)
@@ -923,6 +924,14 @@ public:
     using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
     using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
 
+    /// For early window function
+    PlacesPtr executeOnBlockEarlyWindow(const Block & block, AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        bool & no_more_keys, const AggregateDescription & descr);
+    PlacesPtr executeOnBlockEarlyWindow(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        bool & no_more_keys, const AggregateDescription & descr);
+ 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block, AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
@@ -1000,6 +1009,7 @@ public:
 protected:
     friend struct AggregatedDataVariants;
     friend class MergingAndConvertingBlockInputStream;
+    friend class EarlyWindowBlockInputStream;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
 
@@ -1110,6 +1120,24 @@ protected:
         AggregatedDataVariants & data_variants,
         Method & method,
         IBlockOutputStream & out);
+
+    /// For early window function
+    template <typename Method>
+    PlacesPtr executeImplEarlyWindow(
+        Method & method,
+        Arena * aggregates_pool,
+        size_t rows,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys,
+        AggregateDataPtr overflow_row) const;
+    template <typename Method>
+    PlacesPtr executeImplBatchEarlyWindow(
+        Method & method,
+        typename Method::State & state,
+        Arena * aggregates_pool,
+        size_t rows,
+        AggregateFunctionInstruction * aggregate_instructions) const;
 
 protected:
     /// Merge NULL key data from hash table `src` into `dst`.

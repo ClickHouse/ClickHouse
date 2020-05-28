@@ -59,6 +59,12 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorOrFill(factory);
         registerAggregateFunctionCombinatorResample(factory);
     }
+
+    {
+        auto & factory = EarlyWindowFunctionFactory::instance();
+
+        registerEarlyWindowFunction(factory);
+    }
 }
 
 }

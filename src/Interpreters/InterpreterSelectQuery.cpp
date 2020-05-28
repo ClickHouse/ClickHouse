@@ -26,6 +26,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
+#include <DataStreams/EarlyWindowBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -79,7 +80,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/InflatingExpressionTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
+//#include <Processors/Transforms/EarlyWindowTransform.h>
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
@@ -932,6 +933,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             if (expressions.hasWhere())
                 executeWhere(pipeline, expressions.before_where, expressions.remove_where_filter);
 
+            if (expressions.need_early_window)
+            {
+                executeEarlyWindow(pipeline, expressions.before_early_window);
+            }
+
             if (expressions.need_aggregate)
                 executeAggregation(pipeline, expressions.before_aggregation, aggregate_overflow_row, aggregate_final);
             else
@@ -1344,6 +1350,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         && !query.limitBy()
         && query.limitLength()
         && !query_analyzer->hasAggregation()
+        && !query_analyzer->hasEarlyWindow()
         && limit_length + limit_offset < max_block_size)
     {
         max_block_size = std::max(UInt64(1), limit_length + limit_offset);
@@ -1611,6 +1618,49 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_filter, on_totals);
     });
+}
+
+void InterpreterSelectQuery::executeEarlyWindow(Pipeline & pipeline, const ExpressionActionsPtr & expression)
+{
+    pipeline.transform([&](auto & stream)
+    {
+        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
+    });
+
+    const Settings & settings = context->getSettingsRef();
+
+    Block header = pipeline.firstStream()->getHeader();
+
+    ColumnNumbers keys;
+
+    EarlyWindowDescriptions early_windows = query_analyzer->earlyWindows();
+    std::vector<Aggregator::Params> params_vec;
+    for (auto & descr : early_windows)
+    {
+        size_t i = 0;
+        for (; i < descr.argument_names.size(); ++i)
+            descr.arguments.push_back(header.getPositionByName(descr.argument_names[i]));
+
+        descr.keys.push_back(header.getPositionByName(descr.argument_names[descr.info.keys[0]]));   // TODO: support multiple keys.
+
+        params_vec.push_back(
+            Aggregator::Params(header, descr.keys, {descr},
+                false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+                SettingUInt64(0),
+                SettingUInt64(0),
+                settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+                context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data)
+            );
+    }
+
+    pipeline.firstStream() = std::make_shared<EarlyWindowBlockInputStream>(std::make_shared<ConcatBlockInputStream>(pipeline.streams), params_vec);
+    pipeline.streams.resize(1);
+    pipeline.stream_with_non_joined_data = nullptr;
+}
+
+void InterpreterSelectQuery::executeEarlyWindow(QueryPipeline & /*pipeline*/, const ExpressionActionsPtr & /*expression*/)
+{
+    // Not suported yet.
 }
 
 void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
@@ -1998,7 +2048,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
          * we have to finish sorting after the merge.
          */
 
-        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
+        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size()) || analysis_result.need_early_window;
 
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
         executeMergeSorted(pipeline, input_sorting_info->order_key_prefix_descr, limit_for_merging);

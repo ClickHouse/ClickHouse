@@ -81,7 +81,10 @@ public:
     BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
 
     QueryPipeline executeWithProcessors() override;
-    bool canExecuteWithProcessors() const override { return true; }
+    bool canExecuteWithProcessors() const override
+    {
+        return !analysis_result.need_early_window;
+    }
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
@@ -173,6 +176,7 @@ private:
         QueryPipeline & save_context_and_storage);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
+    void executeEarlyWindow(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -193,6 +197,7 @@ private:
     void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
+    void executeEarlyWindow(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);

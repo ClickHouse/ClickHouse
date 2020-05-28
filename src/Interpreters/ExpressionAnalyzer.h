@@ -44,10 +44,14 @@ struct ExpressionAnalyzerData
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
     NamesAndTypesList array_join_columns;
+    NamesAndTypesList early_window_columns;
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
+
+    bool has_early_window = false;
+    EarlyWindowDescriptions early_window_descriptions;
 
     bool has_global_subqueries = false;
 
@@ -126,6 +130,7 @@ protected:
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
+    const std::vector<const ASTFunction *> & earlyWindows() const { return syntax->early_windows; }
     NamesAndTypesList sourceWithJoinedColumns() const;
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
@@ -151,6 +156,9 @@ protected:
     void analyzeAggregation();
     bool makeAggregateDescriptions(ExpressionActionsPtr & actions);
 
+    void analyzeEarlyWindow();
+    bool makeEarlyWindowDescriptions(ExpressionActionsPtr & actions);
+
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
@@ -170,6 +178,7 @@ struct ExpressionAnalysisResult
     bool second_stage = false;
 
     bool need_aggregate = false;
+    bool need_early_window = false;
     bool has_order_by   = false;
 
     bool remove_where_filter = false;
@@ -177,6 +186,7 @@ struct ExpressionAnalysisResult
 
     ExpressionActionsPtr before_join;   /// including JOIN
     ExpressionActionsPtr before_where;
+    ExpressionActionsPtr before_early_window;
     ExpressionActionsPtr before_aggregation;
     ExpressionActionsPtr before_having;
     ExpressionActionsPtr before_order_and_select;
@@ -237,10 +247,12 @@ public:
     }
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
+    bool hasEarlyWindow() const { return has_early_window; }
     bool hasAggregation() const { return has_aggregation; }
     bool hasGlobalSubqueries() { return has_global_subqueries; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    const EarlyWindowDescriptions & earlyWindows() const { return early_window_descriptions; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
@@ -278,6 +290,7 @@ private:
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
 
+    const ASTSelectQuery * getEarlyWinndowingQuery() const;
     const ASTSelectQuery * getAggregatingQuery() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
@@ -303,6 +316,7 @@ private:
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
+    void appendEarlyWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 

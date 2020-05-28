@@ -32,6 +32,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -257,6 +258,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
+    const EarlyWindowFunctionFactory & early_window_function_factory = EarlyWindowFunctionFactory::instance();
 
     if (!select_query->groupBy())
     {
@@ -306,6 +308,11 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     ++i;
                     continue;
                 }
+            }
+            else if (early_window_function_factory.isAggregateFunctionName(function->name))
+            {
+                ++i;
+                continue;
             }
             else if (!function_factory.get(function->name, context)->isInjective(Block{}))
             {
@@ -543,6 +550,26 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
         if (is_asof)
             data.asofToJoinKeys();
     }
+}
+
+std::vector<const ASTFunction *> getEarlyWindows(ASTPtr & query, const ASTSelectQuery & select_query)
+{
+    /// There can not be early window functions inside the WHERE and PREWHERE.
+    if (select_query.where())
+        assertNoEarlyWindows(select_query.where(), "in WHERE");
+    if (select_query.prewhere())
+        assertNoEarlyWindows(select_query.prewhere(), "in PREWHERE");
+    if (select_query.having())
+        assertNoEarlyWindows(select_query.having(), "in HAVING");
+
+    GetEarlyWindowsVisitor::Data data;
+    GetEarlyWindowsVisitor(data).visit(query);
+
+    /// There can not be other aggregate functions within the aggregate functions.
+    for (const ASTFunction * node : data.early_windows)
+        for (auto & arg : node->arguments->children)
+            assertNoEarlyWindows(arg, "inside another early window function");
+    return data.early_windows;
 }
 
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
@@ -834,6 +861,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_column_names, result.aliases);
     }
 
+    result.early_windows = getEarlyWindows(query, *select_query);
     result.aggregates = getAggregates(query, *select_query);
     result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);

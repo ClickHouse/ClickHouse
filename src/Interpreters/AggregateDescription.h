@@ -15,8 +15,21 @@ struct AggregateDescription
     ColumnNumbers arguments;
     Names argument_names;    /// used if no `arguments` are specified.
     String column_name;      /// What name to use for a column with aggregate function values
+    ColumnNumbers keys;
 };
 
 using AggregateDescriptions = std::vector<AggregateDescription>;
+
+struct EarlyWindowFunctionInfo
+{
+    ColumnNumbers keys;
+};
+
+struct EarlyWindowDescription : AggregateDescription
+{
+    EarlyWindowFunctionInfo info;
+};
+
+using EarlyWindowDescriptions = std::vector<EarlyWindowDescription>;
 
 }

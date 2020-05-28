@@ -33,7 +33,7 @@ public:
     BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
 
     QueryPipeline executeWithProcessors() override;
-    bool canExecuteWithProcessors() const override { return true; }
+    bool canExecuteWithProcessors() const override;
 
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }

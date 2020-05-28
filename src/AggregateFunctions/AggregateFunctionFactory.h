@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Interpreters/AggregateDescription.h>
 #include <Common/IFactoryWithAliases.h>
 
 
@@ -25,6 +25,7 @@ using DataTypes = std::vector<DataTypePtr>;
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &)>;
+using EarlyWindowFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, EarlyWindowFunctionInfo &)>;
 
 
 /** Creates an aggregate function by name.
@@ -79,5 +80,62 @@ private:
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
 
 };
+
+
+class EarlyWindowFunctionFactory final : private boost::noncopyable, public IFactoryWithAliases<EarlyWindowFunctionCreator>
+{
+public:
+
+    static EarlyWindowFunctionFactory & instance();
+
+    /// Register a function by its name.
+    /// No locking, you must register all functions before usage of get.
+    void registerFunction(
+        const String & name,
+        Creator creator,
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+    /// Throws an exception if not found.
+    AggregateFunctionPtr get(
+        const String & name,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        EarlyWindowFunctionInfo & early_window_info,
+        int recursion_level = 0) const;
+
+    /// Returns nullptr if not found.
+    AggregateFunctionPtr tryGet(
+        const String & name,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        EarlyWindowFunctionInfo & early_window_info) const;
+
+    bool isAggregateFunctionName(const String & name, int recursion_level = 0) const;
+
+private:
+    AggregateFunctionPtr getImpl(
+        const String & name,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        EarlyWindowFunctionInfo & early_window_info,
+        int recursion_level) const;
+
+private:
+    using AggregateFunctions = std::unordered_map<String, Creator>;
+
+    /// EarlyWindowFunction is based on the AggregateFunctio.
+    AggregateFunctions early_window_functions;
+
+    /// Case insensitive aggregate functions will be additionally added here with lowercased name.
+    AggregateFunctions case_insensitive_aggregate_functions;
+
+    const AggregateFunctions & getCreatorMap() const override { return early_window_functions; }
+
+    const AggregateFunctions & getCaseInsensitiveCreatorMap() const override { return case_insensitive_aggregate_functions; }
+
+    String getFactoryName() const override { return "EarlyWindowFunctionFactory"; }
+
+};
+
 
 }

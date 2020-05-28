@@ -398,6 +398,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
+    if (EarlyWindowFunctionFactory::instance().isAggregateFunctionName(node.name))
+        return;
+
     /// Context object that we pass to function should live during query.
     const Context & function_context = data.context.hasQueryContext()
         ? data.context.getQueryContext()

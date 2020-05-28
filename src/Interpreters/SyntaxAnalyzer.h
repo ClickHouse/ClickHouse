@@ -28,6 +28,7 @@ struct SyntaxAnalyzerResult
     NamesAndTypesList required_source_columns;
 
     Aliases aliases;
+    std::vector<const ASTFunction *> early_windows;
     std::vector<const ASTFunction *> aggregates;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.

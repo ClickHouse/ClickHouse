@@ -385,6 +385,73 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 }
 
 
+template <typename Method>
+PlacesPtr NO_INLINE Aggregator::executeImplEarlyWindow(
+    Method & method,
+    Arena * aggregates_pool,
+    size_t rows,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    AggregateDataPtr /*overflow_row*/) const
+{
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+
+    if (!no_more_keys)
+        return executeImplBatchEarlyWindow(method, state, aggregates_pool, rows, aggregate_instructions);
+    else
+        throw Exception("executeImplEarlyWindow does not support no_more_keys", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+template <typename Method>
+PlacesPtr NO_INLINE Aggregator::executeImplBatchEarlyWindow(
+    Method & method,
+    typename Method::State & state,
+    Arena * aggregates_pool,
+    size_t rows,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    PlacesPtr places_ptr = std::make_shared<PODArray<AggregateDataPtr>>(rows);
+
+    /// For all rows.
+    for (size_t i = 0; i < rows; ++i)
+    {
+        AggregateDataPtr aggregate_data = nullptr;
+
+        auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+        if (emplace_result.isInserted())
+        {
+            /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+            emplace_result.setMapped(nullptr);
+
+            aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data);
+
+            emplace_result.setMapped(aggregate_data);
+        }
+        else
+            aggregate_data = emplace_result.getMapped();
+
+        (*places_ptr)[i] = aggregate_data;
+        assert((*places_ptr)[i] != nullptr);
+    }
+
+    /// Add values to the aggregate functions.
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchArray(rows, (*places_ptr).data(), inst->state_offset, inst->batch_arguments, inst->offsets, aggregates_pool);
+        else
+            inst->batch_that->addBatch(rows, (*places_ptr).data(), inst->state_offset, inst->batch_arguments, aggregates_pool);
+    }
+
+    return places_ptr;
+}
+
+
 /** It's interesting - if you remove `noinline`, then gcc for some reason will inline this function, and the performance decreases (~ 10%).
   * (Probably because after the inline of this function, more internal functions no longer be inlined.)
   * Inline does not make sense, since the inner loop is entirely inside this function.
@@ -527,6 +594,129 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         else
             inst->batch_that->addBatchSinglePlace(rows, res + inst->state_offset, inst->batch_arguments, arena);
     }
+}
+
+
+PlacesPtr Aggregator::executeOnBlockEarlyWindow(const Block & block, AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys, const AggregateDescription & descr)
+{
+    UInt64 num_rows = block.rows();
+    return executeOnBlockEarlyWindow(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys, descr);
+}
+
+
+PlacesPtr Aggregator::executeOnBlockEarlyWindow(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
+    ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, bool & no_more_keys, const AggregateDescription & descr)
+{
+    if (isCancelled())
+        return nullptr;
+
+    /// `result` will destroy the states of aggregate functions in the destructor
+    result.aggregator = this;
+
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        result.init(method_chosen);
+        result.keys_size = 1;
+        result.key_sizes = key_sizes;
+    }
+
+    if (isCancelled())
+        return nullptr;
+
+    aggregate_columns[0].resize(descr.arguments.size());
+
+    /** Constant columns are not supported directly during aggregation.
+      * To make them work anyway, we materialize them.
+      */
+    Columns materialized_columns;
+
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < 1; ++i) // TODO : Support multiple key columns
+    {
+        materialized_columns.push_back(columns.at(descr.keys[i])->convertToFullColumnIfConst());
+        key_columns[i] = materialized_columns.back().get();
+
+        if (!result.isLowCardinality())
+        {
+            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
+            if (column_no_lc.get() != key_columns[i])
+            {
+                materialized_columns.emplace_back(std::move(column_no_lc));
+                key_columns[i] = materialized_columns.back().get();
+            }
+        }
+    }
+
+    AggregateFunctionInstructions aggregate_functions_instructions(2);
+    aggregate_functions_instructions[1].that = nullptr;
+
+    std::vector<std::vector<const IColumn *>> nested_columns_holder;
+    for (size_t i = 0; i < 1; ++i)
+    {
+        for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+        {
+            materialized_columns.push_back(columns.at(descr.arguments[j])->convertToFullColumnIfConst());
+            aggregate_columns[i][j] = materialized_columns.back().get();
+
+            auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
+            if (column_no_lc.get() != aggregate_columns[i][j])
+            {
+                materialized_columns.emplace_back(std::move(column_no_lc));
+                aggregate_columns[i][j] = materialized_columns.back().get();
+            }
+        }
+
+        aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+        auto that = aggregate_functions[i];
+        /// Unnest consecutive trailing -State combinators
+        while (auto func = typeid_cast<const AggregateFunctionState *>(that))
+            that = func->getNestedFunction().get();
+        aggregate_functions_instructions[i].that = that;
+        aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
+
+        if (auto func = typeid_cast<const AggregateFunctionArray *>(that))
+        {
+            /// Unnest consecutive -State combinators before -Array
+            that = func->getNestedFunction().get();
+            while (auto nested_func = typeid_cast<const AggregateFunctionState *>(that))
+                that = nested_func->getNestedFunction().get();
+            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+            nested_columns_holder.push_back(std::move(nested_columns));
+            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+            aggregate_functions_instructions[i].offsets = offsets;
+        }
+        else
+            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+        aggregate_functions_instructions[i].batch_that = that;
+    }
+
+    if (isCancelled())
+        return nullptr;
+
+    if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
+    {
+        AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(place);
+        result.without_key = place;
+    }
+
+    /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
+    AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            return executeImplEarlyWindow(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
+                no_more_keys, overflow_row_ptr);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+
+    return nullptr;
 }
 
 

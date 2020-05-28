@@ -22,6 +22,8 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
         data.is_array_join = true;
     else if (AggregateFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
         data.is_aggregate_function = true;
+    else if (EarlyWindowFunctionFactory::instance().isAggregateFunctionName(ast_function.name))
+        data.is_early_window_function = true;
     else
     {
         const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
