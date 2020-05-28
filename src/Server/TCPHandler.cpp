@@ -262,8 +262,8 @@ void TCPHandler::runImpl()
             else if (state.need_receive_data_for_input)
             {
                 /// It is special case for input(), all works for reading data from client will be done in callbacks.
-                /// state.io.in is NullAndDoCopyBlockInputStream so read it once.
-                state.io.in->read();
+                auto executor = state.io.pipeline.execute();
+                executor->execute(state.io.pipeline.getNumThreads());
                 state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())

@@ -79,7 +79,7 @@ void buildScatterSelector(
 
 /// Computes ttls and updates ttl infos
 void updateTTL(
-    const StorageMetadataTTLField & ttl_entry,
+    const TTLDescription & ttl_entry,
     IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
     Block & block,

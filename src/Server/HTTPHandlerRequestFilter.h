@@ -6,6 +6,7 @@
 #include <re2/stringpiece.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <common/find_symbols.h>
 
