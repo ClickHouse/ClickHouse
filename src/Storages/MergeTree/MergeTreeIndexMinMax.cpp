@@ -131,7 +131,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const StorageMetadataSkipIndexField & index,
+    const IndexDescription & index,
     const SelectQueryInfo & query,
     const Context & context)
     : index_data_types(index.data_types)
@@ -191,12 +191,12 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
 }
 
 std::shared_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const StorageMetadataSkipIndexField & index)
+    const IndexDescription & index)
 {
     return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
-void minmaxIndexValidator(const StorageMetadataSkipIndexField & /* index */, bool /* attach */)
+void minmaxIndexValidator(const IndexDescription & /* index */, bool /* attach */)
 {
 }
 }

@@ -192,7 +192,7 @@ class MergeTreeIndexFullText : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexFullText(
-        const StorageMetadataSkipIndexField & index_,
+        const IndexDescription & index_,
         const BloomFilterParameters & params_,
         std::unique_ptr<ITokenExtractor> && token_extractor_)
         : IMergeTreeIndex(index_)

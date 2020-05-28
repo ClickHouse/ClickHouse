@@ -12,7 +12,7 @@
 namespace DB
 {
 
-struct StorageMetadataSkipIndexField
+struct IndexDescription
 {
     ASTPtr definition_ast;
 
@@ -34,11 +34,10 @@ struct StorageMetadataSkipIndexField
 
     size_t granularity;
 
-    static StorageMetadataSkipIndexField
-    getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
+    static IndexDescription getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
 
-struct IndicesDescription : public std::vector<StorageMetadataSkipIndexField>
+struct IndicesDescription : public std::vector<IndexDescription>
 {
     bool has(const String & name) const;
     String toString() const;

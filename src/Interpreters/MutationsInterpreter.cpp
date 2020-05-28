@@ -392,7 +392,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         {
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
-                    [&](const StorageMetadataSkipIndexField & index)
+                    [&](const IndexDescription & index)
                     {
                         return index.name == command.index_name;
                     });

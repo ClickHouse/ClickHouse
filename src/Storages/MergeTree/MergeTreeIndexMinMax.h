@@ -50,7 +50,7 @@ class MergeTreeIndexConditionMinMax : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionMinMax(
-        const StorageMetadataSkipIndexField & index,
+        const IndexDescription & index,
         const SelectQueryInfo & query,
         const Context & context);
 
@@ -68,7 +68,7 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(const StorageMetadataSkipIndexField & index_)
+    MergeTreeIndexMinMax(const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}
 

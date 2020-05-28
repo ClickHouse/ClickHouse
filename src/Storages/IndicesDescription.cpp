@@ -19,7 +19,7 @@ namespace ErrorCodes
 };
 
 
-StorageMetadataSkipIndexField StorageMetadataSkipIndexField::getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
+IndexDescription IndexDescription::getSkipIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -34,7 +34,7 @@ StorageMetadataSkipIndexField StorageMetadataSkipIndexField::getSkipIndexFromAST
     if (index_definition->type->parameters && !index_definition->type->parameters->children.empty())
         throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
 
-    StorageMetadataSkipIndexField result;
+    IndexDescription result;
     result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
     result.type = Poco::toLower(index_definition->type->name);
@@ -101,7 +101,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & index : list->children)
-        result.emplace_back(StorageMetadataSkipIndexField::getSkipIndexFromAST(index, columns, context));
+        result.emplace_back(IndexDescription::getSkipIndexFromAST(index, columns, context));
 
     return result;
 }

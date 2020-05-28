@@ -12,7 +12,7 @@ class MergeTreeIndexBloomFilter : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(
-        const StorageMetadataSkipIndexField & index_,
+        const IndexDescription & index_,
         size_t bits_per_row_,
         size_t hash_functions_);
 

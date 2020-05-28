@@ -32,7 +32,7 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
 
 
 std::shared_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
-    const StorageMetadataSkipIndexField & index) const
+    const IndexDescription & index) const
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
@@ -52,7 +52,7 @@ std::shared_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
 }
 
 
-MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<StorageMetadataSkipIndexField> & indices) const
+MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices) const
 {
     MergeTreeIndices result;
     for (const auto & index : indices)
@@ -60,7 +60,7 @@ MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<StorageMetadat
     return result;
 }
 
-void MergeTreeIndexFactory::validate(const StorageMetadataSkipIndexField & index, bool attach) const
+void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
 {
     auto it = validators.find(index.type);
     if (it == validators.end())
