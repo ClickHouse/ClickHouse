@@ -152,7 +152,7 @@ StorageKafka::StorageKafka(
     task->deactivate();
 }
 
-const String StorageKafka::getDefaultClientId(const StorageID & table_id_) const
+String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 {
     std::stringstream ss;
     ss << VERSION_NAME << "-" << getFQDNOrHostName() << "-" << table_id_.database_name << "-" << table_id_.table_name;
