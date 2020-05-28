@@ -637,13 +637,16 @@ bool StorageMergeTree::merge(
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
         DataPartsVector parts_to_remove_immediately;
-        for (const auto & part : future_part.parts)
         {
-            part->notifyMerged();
-            if (isInMemoryPart(part))
+            auto lock = lockParts();
+            for (const auto & part : future_part.parts)
             {
-                modifyPartState(part, DataPartState::Deleting);
-                parts_to_remove_immediately.push_back(part);
+                part->notifyMerged();
+                if (isInMemoryPart(part))
+                {
+                    modifyPartState(part, DataPartState::Deleting);
+                    parts_to_remove_immediately.push_back(part);
+                }
             }
         }
 

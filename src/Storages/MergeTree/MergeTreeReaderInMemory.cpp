@@ -49,7 +49,7 @@ size_t MergeTreeReaderInMemory::readRows(size_t from_mark, bool /* continue_read
         if (!part_in_memory->block.has(name))
             continue;
 
-        const auto block_column = part_in_memory->block.getByName(name).column;
+        const auto & block_column = part_in_memory->block.getByName(name).column;
         if (total_rows_read == 0 && part_rows <= max_rows_to_read)
         {
             res_columns[i] = block_column;

@@ -1351,7 +1351,7 @@ void MergeTreeData::clearOldWriteAheadLogs()
 
     auto is_range_on_disk = [&block_numbers_on_disk](Int64 min_block, Int64 max_block)
     {
-        auto lower = std::upper_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, -1L));
+        auto lower = std::lower_bound(block_numbers_on_disk.begin(), block_numbers_on_disk.end(), std::make_pair(min_block, -1L));
         if (lower != block_numbers_on_disk.end() && min_block >= lower->first && max_block <= lower->second)
             return true;
 
