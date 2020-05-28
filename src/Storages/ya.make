@@ -174,6 +174,7 @@ SRCS(
     transformQueryForExternalDatabase.cpp
     VirtualColumnUtils.cpp
     extractKeyExpressionList.cpp
+    TTLDescriptions.cpp
 )
 
 END()

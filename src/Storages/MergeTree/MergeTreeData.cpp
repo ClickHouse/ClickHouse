@@ -575,11 +575,11 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
 
-    auto new_column_ttl_asts = new_columns.getColumnTTLs();
+    auto new_column_ttls_asts = new_columns.getColumnTTLs();
 
-    StorageMetadataTTLColumnFields new_column_ttl_by_name = getColumnTTLs();
+    TTLColumnsDescription new_column_ttl_by_name = getColumnTTLs();
 
-    if (!new_column_ttl_asts.empty())
+    if (!new_column_ttls_asts.empty())
     {
         NameSet columns_ttl_forbidden;
 
@@ -591,13 +591,13 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             for (const auto & col : getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
-        for (const auto & [name, ast] : new_column_ttl_asts)
+        for (const auto & [name, ast] : new_column_ttls_asts)
         {
             if (columns_ttl_forbidden.count(name))
                 throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
             else
             {
-                auto new_ttl_entry = StorageMetadataTTLField::getTTLFromAST(ast, new_columns, global_context);
+                auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_columns, global_context, getPrimaryKey());
                 new_column_ttl_by_name[name] = new_ttl_entry;
             }
         }
@@ -607,8 +607,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
 
     if (new_ttl_table_ast)
     {
-        StorageMetadataTTLFields update_move_ttl_entries;
-        StorageMetadataTTLField update_rows_ttl_entry;
+        TTLDescriptions update_move_ttl_entries;
+        TTLDescription update_rows_ttl_entry;
 
         bool seen_delete_ttl = false;
         for (const auto & ttl_element_ptr : new_ttl_table_ast->children)
@@ -624,14 +624,13 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
                     throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                auto new_rows_ttl_entry = StorageMetadataTTLField::getTTLFromAST(ttl_element_ptr, new_columns, global_context);
-                update_rows_ttl_entry = new_rows_ttl_entry;
+                update_rows_ttl_entry = TTLDescription::getTTLFromAST(ttl_element_ptr, new_columns, global_context, getPrimaryKey());
 
                 seen_delete_ttl = true;
             }
             else
             {
-                auto new_ttl_entry = StorageMetadataTTLField::getTTLFromAST(ttl_element_ptr, new_columns, global_context);
+                auto new_ttl_entry = TTLDescription::getTTLFromAST(ttl_element_ptr, new_columns, global_context, getPrimaryKey());
 
                 if (!getDestinationForTTL(new_ttl_entry))
                 {
@@ -649,7 +648,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
 
         if (!only_check)
         {
-            StorageMetadataTableTTL new_table_ttl
+            TTLTableDescription new_table_ttl
             {
                 .definition_ast = new_ttl_table_ast,
                 .rows_ttl = update_rows_ttl_entry,
@@ -2887,7 +2886,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     return reservation;
 }
 
-SpacePtr MergeTreeData::getDestinationForTTL(const StorageMetadataTTLField & ttl) const
+SpacePtr MergeTreeData::getDestinationForTTL(const TTLDescription & ttl) const
 {
     auto policy = getStoragePolicy();
     if (ttl.destination_type == DataDestinationType::VOLUME)
@@ -2898,7 +2897,7 @@ SpacePtr MergeTreeData::getDestinationForTTL(const StorageMetadataTTLField & ttl
         return {};
 }
 
-bool MergeTreeData::isPartInTTLDestination(const StorageMetadataTTLField & ttl, const IMergeTreeDataPart & part) const
+bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const
 {
     auto policy = getStoragePolicy();
     if (ttl.destination_type == DataDestinationType::VOLUME)
@@ -2912,11 +2911,11 @@ bool MergeTreeData::isPartInTTLDestination(const StorageMetadataTTLField & ttl, 
     return false;
 }
 
-std::optional<StorageMetadataTTLField>
+std::optional<TTLDescription>
 MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const
 {
     time_t max_max_ttl = 0;
-    StorageMetadataTTLFields::const_iterator best_entry_it;
+    TTLDescriptions::const_iterator best_entry_it;
 
     auto lock = std::lock_guard(move_ttl_entries_mutex);
     const auto & move_ttl_entries = getMoveTTLs();
@@ -2933,7 +2932,7 @@ MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & tt
         }
     }
 
-    return max_max_ttl ? *best_entry_it : std::optional<StorageMetadataTTLField>();
+    return max_max_ttl ? *best_entry_it : std::optional<TTLDescription>();
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const

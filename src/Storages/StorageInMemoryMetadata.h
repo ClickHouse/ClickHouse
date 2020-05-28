@@ -3,7 +3,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
-#include <Storages/DataDestinationType.h>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -73,51 +72,5 @@ struct StorageMetadataKeyField
     /// in storage.
     static StorageMetadataKeyField getKeyFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
 };
-
-/// Common struct for TTL record in storage
-struct StorageMetadataTTLField
-{
-    /// Expression part of TTL AST:
-    /// TTL d + INTERVAL 1 DAY
-    ///    ^~~~~expression~~~~^
-    ASTPtr expression_ast;
-
-    /// Expresion actions evaluated from AST
-    ExpressionActionsPtr expression;
-
-    /// Result column of this TTL expression
-    String result_column;
-
-    /// Destination type, only valid for table TTLs.
-    /// For example DISK or VOLUME
-    DataDestinationType destination_type;
-
-    /// Name of destination disk or volume
-    String destination_name;
-
-    /// Parse TTL structure from definition. Able to parse both column and table
-    /// TTLs.
-    static StorageMetadataTTLField getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context);
-};
-
-/// Mapping from column name to column TTL
-using StorageMetadataTTLColumnFields = std::unordered_map<String, StorageMetadataTTLField>;
-using StorageMetadataTTLFields = std::vector<StorageMetadataTTLField>;
-
-/// Common TTL for all table. Specified after defining the table columns.
-struct StorageMetadataTableTTL
-{
-    /// Definition. Include all parts of TTL:
-    /// TTL d + INTERVAL 1 day TO VOLUME 'disk1'
-    /// ^~~~~~~~~~~~~~~definition~~~~~~~~~~~~~~~^
-    ASTPtr definition_ast;
-
-    /// Rows removing TTL
-    StorageMetadataTTLField rows_ttl;
-
-    /// Moving data TTL (to other disks or volumes)
-    StorageMetadataTTLFields move_ttl;
-};
-
 
 }

@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
+#include <Interpreters/Aggregator.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -621,11 +622,11 @@ public:
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
     /// Returns destination disk or volume for the TTL rule according to current
     /// storage policy
-    SpacePtr getDestinationForTTL(const StorageMetadataTTLField & ttl) const;
+    SpacePtr getDestinationForTTL(const TTLDescription & ttl) const;
 
     /// Checks if given part already belongs destination disk or volume for the
     /// TTL rule.
-    bool isPartInTTLDestination(const StorageMetadataTTLField & ttl, const IMergeTreeDataPart & part) const;
+    bool isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -645,7 +646,7 @@ public:
     ExpressionActionsPtr primary_key_and_skip_indices_expr;
     ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
-    std::optional<StorageMetadataTTLField> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
+    std::optional<TTLDescription> selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const;
 
     /// This mutex is required for background move operations which do not
     /// obtain global locks.

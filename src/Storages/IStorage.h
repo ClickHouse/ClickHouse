@@ -14,6 +14,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TTLDescription.h>
 #include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
@@ -206,8 +207,8 @@ private:
     StorageMetadataKeyField sorting_key;
     StorageMetadataKeyField sampling_key;
 
-    StorageMetadataTTLColumnFields column_ttls_by_name;
-    StorageMetadataTableTTL table_ttl;
+    TTLColumnsDescription column_ttls_by_name;
+    TTLTableDescription table_ttl;
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
@@ -526,22 +527,22 @@ public:
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
     /// Common tables TTLs (for rows and moves).
-    const StorageMetadataTableTTL & getTableTTLs() const;
-    void setTableTTLs(const StorageMetadataTableTTL & table_ttl_);
+    const TTLTableDescription & getTableTTLs() const;
+    void setTableTTLs(const TTLTableDescription & table_ttl_);
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
-    const StorageMetadataTTLColumnFields & getColumnTTLs() const;
-    void setColumnTTLs(const StorageMetadataTTLColumnFields & column_ttls_by_name_);
+    const TTLColumnsDescription & getColumnTTLs() const;
+    void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
-    const StorageMetadataTTLField & getRowsTTL() const;
+    const TTLDescription & getRowsTTL() const;
     bool hasRowsTTL() const;
 
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
-    const StorageMetadataTTLFields & getMoveTTLs() const;
+    const TTLDescriptions & getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
