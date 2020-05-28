@@ -2,14 +2,8 @@
 
 #include <DataStreams/BlockIO.h>
 
-#include <Processors/QueryPipeline.h>
-
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 /** Interpreters interface for different queries.
   */
@@ -25,7 +19,7 @@ public:
     virtual bool ignoreQuota() const { return false; }
     virtual bool ignoreLimits() const { return false; }
 
-    virtual ~IInterpreter() {}
+    virtual ~IInterpreter() = default;
 };
 
 }
