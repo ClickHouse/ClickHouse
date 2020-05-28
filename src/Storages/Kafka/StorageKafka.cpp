@@ -37,7 +37,6 @@
 #include <librdkafka/rdkafka.h>
 
 
-
 namespace DB
 {
 
