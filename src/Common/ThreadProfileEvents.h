@@ -37,35 +37,15 @@ namespace ProfileEvents
     extern const Event OSWriteBytes;
 
     extern const Event PerfCpuCycles;
-    extern const Event PerfCpuCyclesRunning;
-    extern const Event PerfCpuCyclesEnabled;
     extern const Event PerfInstructions;
-    extern const Event PerfInstructionsRunning;
-    extern const Event PerfInstructionsEnabled;
     extern const Event PerfCacheReferences;
-    extern const Event PerfCacheReferencesRunning;
-    extern const Event PerfCacheReferencesEnabled;
     extern const Event PerfCacheMisses;
-    extern const Event PerfCacheMissesRunning;
-    extern const Event PerfCacheMissesEnabled;
     extern const Event PerfBranchInstructions;
-    extern const Event PerfBranchInstructionsRunning;
-    extern const Event PerfBranchInstructionsEnabled;
     extern const Event PerfBranchMisses;
-    extern const Event PerfBranchMissesRunning;
-    extern const Event PerfBranchMissesEnabled;
     extern const Event PerfBusCycles;
-    extern const Event PerfBusCyclesRunning;
-    extern const Event PerfBusCyclesEnabled;
     extern const Event PerfStalledCyclesFrontend;
-    extern const Event PerfStalledCyclesFrontendRunning;
-    extern const Event PerfStalledCyclesFrontendEnabled;
     extern const Event PerfStalledCyclesBackend;
-    extern const Event PerfStalledCyclesBackendRunning;
-    extern const Event PerfStalledCyclesBackendEnabled;
     extern const Event PerfRefCpuCycles;
-    extern const Event PerfRefCpuCyclesRunning;
-    extern const Event PerfRefCpuCyclesEnabled;
 
     extern const Event PerfCpuClock;
     extern const Event PerfTaskClock;
@@ -164,16 +144,14 @@ struct PerfEventInfo
     // see configs in perf_event.h
     int event_config;
     ProfileEvents::Event profile_event;
-    std::optional<ProfileEvents::Event> profile_event_running;
-    std::optional<ProfileEvents::Event> profile_event_enabled;
     std::string settings_name;
 };
 
 struct PerfEventValue
 {
-    UInt64 value;
-    UInt64 time_enabled;
-    UInt64 time_running;
+    UInt64 value = 0;
+    UInt64 time_enabled = 0;
+    UInt64 time_running = 0;
 };
 
 struct PerfDescriptorsHolder;
