@@ -439,8 +439,9 @@ public:
         {
             if constexpr (std::is_same_v<T1, Decimal256>)
             {
-                const auto& val = static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num];
-                this->data(place).add(static_cast<ResultType>(val.value));
+                this->data(place).add(static_cast<ResultType>(
+                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value
+                ));
             }
             else
                 this->data(place).add(

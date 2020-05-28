@@ -106,7 +106,7 @@ namespace DB
                 }
                 case Field::Types::bInt256:
                 {
-                    bUInt256 value;
+                    bInt256 value;
                     DB::readBinary(value, buf);
                     x.push_back(value);
                     break;
@@ -297,7 +297,7 @@ namespace DB
                 }
                 case Field::Types::bInt256:
                 {
-                    bUInt256 value;
+                    bInt256 value;
                     DB::readBinary(value, buf);
                     x.push_back(value);
                     break;
