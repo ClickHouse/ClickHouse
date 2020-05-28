@@ -996,7 +996,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 argument_types[j] = header.getByName(desc->argument_names[j]).type;
 
             Block block_with_count{
-                {nullptr, std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
+                {ColumnPtr(column->cloneEmpty()), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc->parameters), desc->column_name}};
 
             Chunk chunk(Columns(), column->size());
             chunk.addColumn(std::move(column));
