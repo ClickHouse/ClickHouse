@@ -22,10 +22,6 @@ public:
       */
     virtual BlockIO execute() = 0;
 
-    virtual QueryPipeline executeWithProcessors() { throw Exception("executeWithProcessors not implemented", ErrorCodes::NOT_IMPLEMENTED); }
-
-    virtual bool canExecuteWithProcessors() const { return false; }
-
     virtual bool ignoreQuota() const { return false; }
     virtual bool ignoreLimits() const { return false; }
 

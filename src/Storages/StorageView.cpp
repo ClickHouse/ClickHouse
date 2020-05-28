@@ -64,16 +64,8 @@ Pipes StorageView::read(
 
     QueryPipeline pipeline;
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
-    /// FIXME res may implicitly use some objects owned be pipeline, but them will be destructed after return
-    if (query_info.force_tree_shaped_pipeline)
-    {
-        BlockInputStreams streams = interpreter.executeWithMultipleStreams(pipeline);
-        for (auto & stream : streams)
-            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
-    }
-    else
-        /// TODO: support multiple streams here. Need more general interface than pipes.
-        pipes.emplace_back(interpreter.executeWithProcessors().getPipe());
+    /// TODO: support multiple streams here. Need more general interface than pipes.
+    pipes.emplace_back(interpreter.execute().pipeline.getPipe());
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
