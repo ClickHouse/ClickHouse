@@ -270,14 +270,10 @@ StorageMetadataSkipIndexField StorageMetadataSkipIndexField::getSkipIndexFromAST
     return result;
 }
 
-bool IndicesDescription::empty() const
-{
-    return indices.empty();
-}
 
 bool IndicesDescription::has(const String & name) const
 {
-    for (const auto & index : indices)
+    for (const auto & index : *this)
         if (index.name == name)
             return true;
     return false;
@@ -285,11 +281,11 @@ bool IndicesDescription::has(const String & name) const
 
 String IndicesDescription::toString() const
 {
-    if (indices.empty())
+    if (empty())
         return {};
 
     ASTExpressionList list;
-    for (const auto & index : indices)
+    for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
     return serializeAST(list, true);
@@ -306,7 +302,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
     for (const auto & index : list->children)
-        result.indices.emplace_back(StorageMetadataSkipIndexField::getSkipIndexFromAST(index, columns, context));
+        result.emplace_back(StorageMetadataSkipIndexField::getSkipIndexFromAST(index, columns, context));
 
     return result;
 }

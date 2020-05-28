@@ -609,7 +609,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     Names gathering_column_names, merging_column_names;
     const auto & index_factory = MergeTreeIndexFactory::instance();
     extractMergingAndGatheringColumns(
-        storage_columns, data.getSortingKey().expression, index_factory.getMany(data.getIndices().indices),
+        storage_columns, data.getSortingKey().expression, index_factory.getMany(data.getIndices()),
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -800,7 +800,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
-        index_factory.getMany(data.getIndices().indices),
+        index_factory.getMany(data.getIndices()),
         compression_codec,
         merged_column_to_size,
         data_settings->min_merge_bytes_to_use_direct_io,
@@ -1492,7 +1492,7 @@ MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
             removed_indices.insert(command.column_name);
 
     MergeTreeIndices new_indices;
-    for (const auto & index : all_indices.indices)
+    for (const auto & index : all_indices)
         if (!removed_indices.count(index.name))
             new_indices.push_back(MergeTreeIndexFactory::instance().get(index));
 
@@ -1510,7 +1510,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & col : updated_columns.getNames())
     {
-        const auto & indices = data.getIndices().indices;
+        const auto & indices = data.getIndices();
         for (size_t i = 0; i < indices.size(); ++i)
         {
             const auto & index = indices[i];
