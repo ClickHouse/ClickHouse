@@ -20,7 +20,7 @@ class ActionLocksManager
 {
 public:
     /// Adds new locks for each table
-    void add(StorageActionBlockType action_type);
+    void add(StorageActionBlockType action_type, const Context & context);
     /// Add new lock for a table if it has not been already added
     void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);

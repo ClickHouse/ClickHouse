@@ -30,7 +30,7 @@ struct State
     explicit State(Context & context_) : context(context_)
     {
         registerFunctions();
-        DatabasePtr database = std::make_shared<DatabaseMemory>("test");
+        DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
         context.makeGlobalContext();
         DatabaseCatalog::instance().attachDatabase("test", database);
