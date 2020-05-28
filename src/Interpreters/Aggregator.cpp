@@ -727,7 +727,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        const std::string tmp_path = params.tmp_volume->getNextDisk()->getPath();
+        const std::string tmp_path = params.tmp_volume->getDisk()->getPath();
 
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
@@ -815,7 +815,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
 }
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
-    return writeToTemporaryFile(data_variants, params.tmp_volume->getNextDisk()->getPath());
+    return writeToTemporaryFile(data_variants, params.tmp_volume->getDisk()->getPath());
 }
 
 
