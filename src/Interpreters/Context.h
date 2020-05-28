@@ -104,8 +104,8 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class SingleDiskVolume;
+using VolumeSingleDiskPtr = std::shared_ptr<SingleDiskVolume>;
 struct NamedSession;
 
 
@@ -223,14 +223,14 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
-    VolumeJBODPtr getTemporaryVolume() const;
+    VolumeSingleDiskPtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
 
-    VolumeJBODPtr setTemporaryStorage(const String & path, const String & policy_name = "");
+    VolumeSingleDiskPtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 

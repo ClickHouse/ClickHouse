@@ -192,7 +192,7 @@ try
 
     auto cur_path = Poco::Path().absolute().toString();
     auto disk = std::make_shared<DiskLocal>("tmp", cur_path, 0);
-    auto tmp_volume = std::make_shared<VolumeJBOD>("tmp", std::vector<DiskPtr>{disk}, 0);
+    auto tmp_volume = std::make_shared<SingleDiskVolume>("tmp", disk);
 
     auto execute_one_stream = [&](String msg, size_t num_threads, bool two_level, bool external)
     {

@@ -71,7 +71,7 @@ StoragePolicy::StoragePolicy(
 }
 
 
-StoragePolicy::StoragePolicy(String name_, VolumesJBOD volumes_, double move_factor_)
+StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_)
     : volumes(std::move(volumes_)), name(std::move(name_)), move_factor(move_factor_)
 {
     if (volumes.empty())
@@ -257,7 +257,7 @@ StoragePolicySelector::StoragePolicySelector(
     {
         auto default_volume = std::make_shared<VolumeJBOD>(default_volume_name, std::vector<DiskPtr>{disks->get(default_disk_name)}, 0);
 
-        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, VolumesJBOD{default_volume}, 0.0);
+        auto default_policy = std::make_shared<StoragePolicy>(default_storage_policy_name, Volumes{default_volume}, 0.0);
         policies.emplace(default_storage_policy_name, default_policy);
     }
 }

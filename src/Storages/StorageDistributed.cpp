@@ -330,14 +330,15 @@ void StorageDistributed::createStorage()
         if (!path.ends_with('/'))
             path += '/';
         auto disk = std::make_shared<DiskLocal>("default", path, 0);
-        volume = std::make_shared<VolumeJBOD>("default", std::vector<DiskPtr>{disk}, 0);
+        volume = std::make_shared<SingleDiskVolume>("default", disk);
     }
     else
     {
         auto policy = global_context.getStoragePolicySelector()->get(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
-        volume = policy->getVolume(0);
+        auto tmp_vol = policy->getVolume(0);
+        volume = std::make_shared<SingleDiskVolume>(tmp_vol->getName(), tmp_vol->getDisk());
     }
 }
 
@@ -667,7 +668,7 @@ size_t StorageDistributed::getShardCount() const
 
 std::pair<const std::string &, const std::string &> StorageDistributed::getPath()
 {
-    return {volume->getNextDisk()->getPath(), relative_data_path};
+    return {volume->getDisk()->getPath(), relative_data_path};
 }
 
 ClusterPtr StorageDistributed::getCluster() const

@@ -19,8 +19,8 @@ namespace DB
 class Context;
 class StorageDistributedDirectoryMonitor;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class SingleDiskVolume;
+using VolumeSingleDiskPtr = std::shared_ptr<SingleDiskVolume>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -176,7 +176,7 @@ protected:
     String storage_policy;
     String relative_data_path;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
-    VolumeJBODPtr volume;
+    VolumeSingleDiskPtr volume;
 
     struct ClusterNodeData
     {
