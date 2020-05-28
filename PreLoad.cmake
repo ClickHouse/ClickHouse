@@ -7,14 +7,9 @@
 # How to install Ninja on Ubuntu:
 #  sudo apt-get install ninja-build
 
-# CLion does not support Ninja
-# You can add your vote on CLion task tracker:
-# https://youtrack.jetbrains.com/issue/CPP-2659
-# https://youtrack.jetbrains.com/issue/CPP-870
-
-if (NOT DEFINED ENV{CLION_IDE})
-    find_program(NINJA_PATH ninja)
-    if (NINJA_PATH)
-        set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)
-    endif ()
-endif()
+find_program(NINJA_PATH ninja)
+if (NINJA_PATH)
+    set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)
+else ()
+    message(FATAL_ERROR "ClickHouse requires 'ninja' build system. It does not work with 'make'. On Ubuntu/Debian, run: sudo apt-get install ninja-build")
+endif ()
