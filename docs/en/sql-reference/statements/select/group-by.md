@@ -1,3 +1,7 @@
+---
+toc_title: GROUP BY
+---
+
 # GROUP BY Clause {#select-group-by-clause}
 
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:

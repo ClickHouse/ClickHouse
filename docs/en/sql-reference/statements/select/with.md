@@ -1,3 +1,7 @@
+---
+toc_title: WITH
+---
+
 # WITH Clause {#with-clause}
 
 This section provides support for Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), so the results of `WITH` clause can be used in the rest of `SELECT` query.

@@ -8,10 +8,14 @@
 
 #    include <Poco/Data/ODBC/Utility.h>
 
+#include <Parsers/IdentifierQuotingStyle.h>
+
 namespace DB
 {
 
 std::string getIdentifierQuote(SQLHDBC hdbc);
+
+IdentifierQuotingStyle getQuotingStyle(SQLHDBC hdbc);
 
 }
 

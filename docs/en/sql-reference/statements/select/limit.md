@@ -1,3 +1,7 @@
+---
+toc_title: LIMIT
+---
+
 # LIMIT Clause {#limit-clause}
 
 `LIMIT m` allows to select the first `m` rows from the result.

@@ -1,3 +1,7 @@
+---
+toc_title: HAVING
+---
+
 # HAVING Clause {#having-clause}
 
 Allows filtering the aggregation results produced by [GROUP BY](group-by.md). It is similar to the [WHERE](where.md) clause, but the difference is that `WHERE` is performed before aggregation, while `HAVING` is performed after it.

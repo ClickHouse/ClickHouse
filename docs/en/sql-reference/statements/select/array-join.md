@@ -1,3 +1,7 @@
+---
+toc_title: ARRAY JOIN
+---
+
 # ARRAY JOIN Clause {#select-array-join-clause}
 
 It is a common operation for tables that contain an array column to produce a new table that has a column with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.

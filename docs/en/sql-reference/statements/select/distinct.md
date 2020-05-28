@@ -1,3 +1,7 @@
+---
+toc_title: DISTINCT
+---
+
 # DISTINCT Clause {#select-distinct}
 
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus only a single row will remain out of all the sets of fully matching rows in the result.

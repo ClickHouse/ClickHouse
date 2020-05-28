@@ -1,3 +1,7 @@
+---
+toc_title: UNION ALL
+---
+
 # UNION ALL Clause {#union-all-clause}
 
 You can use `UNION ALL` to combine any number of `SELECT` queries by extending their results. Example:

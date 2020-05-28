@@ -243,8 +243,6 @@ public:
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
@@ -274,6 +272,9 @@ private:
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
     SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
 

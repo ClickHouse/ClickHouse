@@ -1,6 +1,7 @@
 ---
 toc_priority: 33
-toc_title: SELECT
+toc_folder_title: SELECT
+toc_title: Queries Syntax
 ---
 
 # SELECT Queries Syntax {#select-queries-syntax}

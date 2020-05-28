@@ -1,3 +1,7 @@
+---
+toc_title: JOIN
+---
+
 # JOIN Clause {#select-join}
 
 Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as "self-join".
@@ -39,6 +43,8 @@ Modifies how matching by "join keys" is performed
 
 !!! note "Note"
     The default strictness value can be overriden using [join\_default\_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+
+    Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 
 
 ### ASOF JOIN Usage

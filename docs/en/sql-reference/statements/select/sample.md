@@ -1,3 +1,7 @@
+---
+toc_title: SAMPLE
+---
+
 # SAMPLE Clause {#select-sample-clause}
 
 The `SAMPLE` clause allows for approximated `SELECT` query processing.

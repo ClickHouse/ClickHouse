@@ -1,3 +1,7 @@
+---
+toc_title: ORDER BY
+---
+
 # ORDER BY Clause {#select-order-by}
 
 The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it's usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`
