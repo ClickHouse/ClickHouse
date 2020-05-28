@@ -16,8 +16,8 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
-class VolumeJBOD;
-using VolumeJBODPtr = std::shared_ptr<VolumeJBOD>;
+class SingleDiskVolume;
+using VolumeSingleDiskPtr = std::shared_ptr<SingleDiskVolume>;
 
 struct SortedBlocksWriter
 {
@@ -63,7 +63,7 @@ struct SortedBlocksWriter
     std::mutex insert_mutex;
     std::condition_variable flush_condvar;
     const SizeLimits & size_limits;
-    VolumeJBODPtr volume;
+    VolumeSingleDiskPtr volume;
     Block sample_block;
     const SortDescription & sort_description;
     Blocks inserted_blocks;
@@ -76,8 +76,8 @@ struct SortedBlocksWriter
     size_t flush_number = 0;
     size_t flush_inflight = 0;
 
-    SortedBlocksWriter(const SizeLimits & size_limits_, VolumeJBODPtr volume_, const Block & sample_block_,
-                       const SortDescription & description, size_t rows_in_block_, size_t num_files_to_merge_, const String & codec_)
+    SortedBlocksWriter(const SizeLimits & size_limits_, VolumeSingleDiskPtr volume_, const Block & sample_block_, const SortDescription & description,
+                       Blocks & blocks, size_t rows_in_block_, size_t num_files_to_merge_, const String & codec_)
         : size_limits(size_limits_)
         , volume(volume_)
         , sample_block(sample_block_)
