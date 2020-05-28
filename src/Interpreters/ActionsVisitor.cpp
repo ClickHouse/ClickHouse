@@ -706,7 +706,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         {
             auto interpreter = interpretSubquery(right_in_operand, data.context, data.subquery_depth, {});
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().in; });
+                interpreter->getSampleBlock(), [interpreter]() mutable { return interpreter->execute().getInputStream(); });
 
             /** Why is LazyBlockInputStream used?
               *
