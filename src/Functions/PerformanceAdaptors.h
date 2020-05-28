@@ -122,14 +122,7 @@ namespace detail
                 /// And in that case prefer variant with less number of invocations.
 
                 if (adjustedCount() < 2)
-                {
-                    // TODO(dakovalkov): rewrite it.
-                    int all_count = adjustedCount() + running_count;
-                    if (all_count < 3)
-                        return all_count - 2;
-                    else
-                        return adjustedCount() + running_count * 100;
-                }
+                    return adjustedCount() - 1 + running_count;
                 return std::normal_distribution<>(mean(), sigma())(stat_rng);
             }
         };
