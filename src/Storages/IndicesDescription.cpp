@@ -45,13 +45,14 @@ IndexDescription IndexDescription::getSkipIndexFromAST(const ASTPtr & definition
 
     auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
-    result.sample_block = result.expression->getSampleBlock();
+    Block block_without_columns = result.expression->getSampleBlock();
 
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    for (size_t i = 0; i < block_without_columns.columns(); ++i)
     {
-        const auto & column = result.sample_block.getByPosition(i);
+        const auto & column = block_without_columns.getByPosition(i);
         result.column_names.emplace_back(column.name);
         result.data_types.emplace_back(column.type);
+        result.sample_block.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
     }
 
     const auto & definition_arguments = index_definition->type->arguments;
