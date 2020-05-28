@@ -433,6 +433,18 @@ Possible values:
 
 Default value: 65536.
 
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+
+Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk. 
+
+The bigger the value of the setting, the more RAM used and the less disk I/O needed.
+
+Possible values:
+
+- Any positive integer, starting from 2.
+
+Default value: 64.
+
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
@@ -461,6 +473,18 @@ Default value: 0.
 See also:
 
 -   [JOIN strictness](../../sql-reference/statements/select/join.md#select-join-strictness)
+
+
+## temporary_files_codec {#temporary_files_codec}
+
+Sets compression codec for temporary files used in sorting and joining operations on disk.
+
+Possible values: 
+
+- LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
+- NONE — No compression is applied.
+
+Default value: LZ4.
 
 
 ## max\_block\_size {#setting-max_block_size}
