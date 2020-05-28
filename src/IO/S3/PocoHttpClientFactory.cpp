@@ -9,9 +9,9 @@
 namespace DB::S3
 {
 std::shared_ptr<Aws::Http::HttpClient>
-PocoHttpClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration &) const
+PocoHttpClientFactory::CreateHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration) const
 {
-    return std::make_shared<PocoHttpClient>();
+    return std::make_shared<PocoHttpClient>(clientConfiguration);
 }
 
 std::shared_ptr<Aws::Http::HttpRequest> PocoHttpClientFactory::CreateHttpRequest(
