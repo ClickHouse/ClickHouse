@@ -134,7 +134,7 @@ public:
                 ast = database_and_table_name;
 
             external_tables[external_table_name] = external_storage_holder;
-            subqueries_for_sets[external_table_name].source = interpreter->execute().in;
+            subqueries_for_sets[external_table_name].source = interpreter->execute().getInputStream();
             subqueries_for_sets[external_table_name].table = external_storage;
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
