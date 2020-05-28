@@ -15,8 +15,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_VOLUME_TYPE;
 }
 
-String volumeTypeToString(VolumeType t) {
-    switch (t) {
+String volumeTypeToString(VolumeType t)
+{
+    switch (t)
+    {
         case VolumeType::JBOD:
             return "JBOD";
         case VolumeType::RAID1:
