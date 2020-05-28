@@ -112,8 +112,6 @@ private:
     static constexpr auto getSize = SizeFunction();
     static constexpr auto initValue = InitFunction();
 
-
-    struct RegionMetadata;
     static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
 
     Logger& log;
@@ -410,7 +408,6 @@ public:
 
         return std::shared_ptr<Value>( // NOLINT: not a nullptr
                 metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
-        }
     }
 
     using GetOrSetRet = std::pair<ValuePtr, bool>;
