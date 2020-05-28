@@ -1475,6 +1475,7 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 
     # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
     assert instance.contains_in_log("Local: Waiting for coordinator")
+    assert instance.contains_in_log("All commit attempts failed")
 
     result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
     print(result)
@@ -1484,7 +1485,10 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
         DROP TABLE test.view;
     ''')
 
-    assert TSV(result) == TSV('22\t22\t22')
+    # After https://github.com/edenhill/librdkafka/issues/2631
+    # timeout triggers rebalance, making further commits to the topic after getting back online
+    # impossible. So we have a duplicate in that scenario, but we report that situation properly.
+    assert TSV(result) == TSV('42\t22\t22')
 
 
 
