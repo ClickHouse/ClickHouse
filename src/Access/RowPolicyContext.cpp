@@ -1,6 +1,7 @@
 #include <Access/RowPolicyContext.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -8,6 +9,26 @@
 
 namespace DB
 {
+namespace
+{
+    bool tryGetLiteralBool(const IAST & ast, bool & value)
+    {
+        try
+        {
+            if (const ASTLiteral * literal = ast.as<ASTLiteral>())
+            {
+                value = !literal->value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);
+                return true;
+            }
+            return false;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+}
+
 size_t RowPolicyContext::Hash::operator()(const DatabaseAndTableNameRef & database_and_table_name) const
 {
     return std::hash<std::string_view>{}(database_and_table_name.first) - std::hash<std::string_view>{}(database_and_table_name.second);
@@ -35,15 +56,24 @@ ASTPtr RowPolicyContext::getCondition(const String & database, const String & ta
     auto it = loaded->find({database, table_name});
     if (it == loaded->end())
         return {};
-    return it->second.mixed_conditions[index];
+    auto ast = it->second.mixed_conditions[index];
+    bool value;
+    if (ast && tryGetLiteralBool(*ast, value) && value)
+        ast = nullptr; /// The condition is always true, no need to check it.
+    return ast;
 }
 
 
 ASTPtr RowPolicyContext::combineConditionsUsingAnd(const ASTPtr & lhs, const ASTPtr & rhs)
 {
-    if (!lhs)
+    bool lhs_value, rhs_value;
+    if (!lhs || (tryGetLiteralBool(*lhs, lhs_value) && lhs_value))
+    {
+        if (!rhs || (tryGetLiteralBool(*rhs, rhs_value) && rhs_value))
+            return nullptr;
         return rhs;
-    if (!rhs)
+    }
+    if (!rhs || (tryGetLiteralBool(*rhs, rhs_value) && rhs_value))
         return lhs;
     auto function = std::make_shared<ASTFunction>();
     auto exp_list = std::make_shared<ASTExpressionList>();
