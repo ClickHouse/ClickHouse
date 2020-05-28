@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
+#include <Functions/registerFunctions.h>
 
 struct ContextHolder
 {
@@ -11,15 +12,15 @@ struct ContextHolder
         : shared_context(DB::Context::createShared())
         , context(DB::Context::createGlobal(shared_context.get()))
     {
+        context.makeGlobalContext();
+        context.setPath("./");
     }
 
     ContextHolder(ContextHolder &&) = default;
 };
 
-inline ContextHolder getContext()
+inline const ContextHolder & getContext()
 {
-    ContextHolder holder;
-    holder.context.makeGlobalContext();
-    holder.context.setPath("./");
+    static ContextHolder holder;
     return holder;
 }
