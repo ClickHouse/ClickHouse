@@ -113,7 +113,7 @@ int main(int argc, char ** argv)
         ASSERT(client.err.header == server.header)
         ASSERT(client.err.error_code == server.error_code)
         ASSERT(client.err.sql_state == server.sql_state)
-        ASSERT(client.err.error_message.data() == server.error_message)
+        ASSERT(client.err.error_message.compare(server.error_message))
     }
 
     /// EOF Packet
