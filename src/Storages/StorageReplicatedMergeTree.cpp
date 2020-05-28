@@ -501,7 +501,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         }
 
         if (metadata_diff.skip_indices_changed)
-            metadata.indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
+            metadata.indices = IndicesDescription::parse(metadata_diff.new_skip_indices, new_columns, global_context);
 
         if (metadata_diff.constraints_changed)
             metadata.constraints = ConstraintsDescription::parse(metadata_diff.new_constraints);
@@ -3276,7 +3276,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
-        params.apply(metadata);
+        params.apply(metadata, query_context);
 
 
         changeSettings(metadata.settings_ast, table_lock_holder);
@@ -3310,7 +3310,7 @@ void StorageReplicatedMergeTree::alter(
         StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
 
         StorageInMemoryMetadata future_metadata = current_metadata;
-        params.apply(future_metadata);
+        params.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this);
         if (ast_to_str(future_metadata.order_by_ast) != ast_to_str(current_metadata.order_by_ast))
@@ -3357,7 +3357,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify);
+        auto maybe_mutation_commands = params.getMutationCommands(current_metadata, query_context.getSettingsRef().materialize_ttl_after_modify, query_context);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", alter_entry->toString(), zkutil::CreateMode::PersistentSequential));

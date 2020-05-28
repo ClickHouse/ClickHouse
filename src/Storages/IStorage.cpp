@@ -37,13 +37,13 @@ const ColumnsDescription & IStorage::getColumns() const
     return columns;
 }
 
-const IndicesDescription & IStorage::getSkipIndices() const
+const IndicesDescription & IStorage::getIndices() const
 {
     return indices;
 }
 
 
-bool IStorage::hasSkipIndices() const
+bool IStorage::hasIndices() const
 {
     return !indices.empty();
 }
@@ -295,7 +295,7 @@ void IStorage::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void IStorage::setSkipIndices(IndicesDescription indices_)
+void IStorage::setIndices(IndicesDescription indices_)
 {
     indices = std::move(indices_);
 }
@@ -375,7 +375,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getSkipIndices(), getConstraints());
+    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -386,7 +386,7 @@ void IStorage::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }

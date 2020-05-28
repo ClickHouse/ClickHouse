@@ -12,8 +12,12 @@ namespace DB
 
 struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeIndexGranuleMinMax(const Block & index_sample_block_);
-    MergeTreeIndexGranuleMinMax(const Block & index_sample_block_, std::vector<Range> && hyperrectangle_);
+    MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_);
+    MergeTreeIndexGranuleMinMax(
+        const String & index_name_,
+        const Block & index_sample_block_,
+        std::vector<Range> && hyperrectangle_);
+
     ~MergeTreeIndexGranuleMinMax() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
@@ -21,6 +25,7 @@ struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 
     bool empty() const override { return hyperrectangle.empty(); }
 
+    String index_name;
     Block index_sample_block;
     std::vector<Range> hyperrectangle;
 };
@@ -28,13 +33,14 @@ struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 
 struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
 {
-    explicit MergeTreeIndexAggregatorMinMax(const Block & index_sample_block);
+    MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
 
     bool empty() const override { return hyperrectangle.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
+    String index_name;
     Block index_sample_block;
     std::vector<Range> hyperrectangle;
 };

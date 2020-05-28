@@ -425,36 +425,27 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
     ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
 
-    MergeTreeIndices new_indices;
-
-    if (!metadata.indices.indices.empty())
+    if (!metadata.indices.empty())
     {
         std::set<String> indices_names;
 
-        for (const auto & index_ast : metadata.indices.indices)
+        for (const auto & index : metadata.indices.indices)
         {
-            const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
-            new_indices.push_back(
-                 MergeTreeIndexFactory::instance().get(
-                        all_columns,
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl),
-                        global_context,
-                        attach));
+            MergeTreeIndexFactory::instance().validate(index, attach);
 
-            if (indices_names.find(new_indices.back()->name) != indices_names.end())
+            if (indices_names.find(index.name) != indices_names.end())
                 throw Exception(
-                        "Index with name " + backQuote(new_indices.back()->name) + " already exsists",
+                        "Index with name " + backQuote(index.name) + " already exsists",
                         ErrorCodes::LOGICAL_ERROR);
 
-            ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
-            for (const auto & expr : expr_list->children)
+            for (const auto & expr : index.expression_list_ast->children)
             {
                 skip_indices_with_primary_key_expr_list->children.push_back(expr->clone());
                 skip_indices_with_sorting_key_expr_list->children.push_back(expr->clone());
             }
 
-            indices_names.insert(new_indices.back()->name);
+            indices_names.insert(index.name);
         }
     }
     auto syntax_primary = SyntaxAnalyzer(global_context).analyze(
@@ -489,8 +480,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
         new_primary_key.data_types = std::move(new_primary_key_data_types);
         setPrimaryKey(new_primary_key);
 
-        setSkipIndices(metadata.indices);
-        skip_indices = std::move(new_indices);
+        setIndices(metadata.indices);
 
         setConstraints(metadata.constraints);
 
@@ -1367,7 +1357,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    commands.apply(metadata);
+    commands.apply(metadata, global_context);
     if (getIndices().empty() && !metadata.indices.empty() &&
             !settings.allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
@@ -1389,9 +1379,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             columns_alter_type_forbidden.insert(col);
     }
 
-    for (const auto & index : skip_indices)
+    for (const auto & index : getIndices().indices)
     {
-        for (const String & col : index->expr->getRequiredColumns())
+        for (const String & col : index.expression->getRequiredColumns())
             columns_alter_type_forbidden.insert(col);
     }
 
@@ -3067,14 +3057,15 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
     ///  must be part of the key (probably wrapped by a chain of some acceptable functions).
     const auto * left_in_operand_tuple = left_in_operand->as<ASTFunction>();
+    const auto & index_wrapper_factory = MergeTreeIndexFactory::instance();
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
         {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-            for (const auto & index : skip_indices)
-                if (index->mayBenefitFromIndexForIn(item))
+            for (const auto & index : getIndices().indices)
+                if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
@@ -3082,8 +3073,8 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, con
     }
     else
     {
-        for (const auto & index : skip_indices)
-            if (index->mayBenefitFromIndexForIn(left_in_operand))
+        for (const auto & index : getIndices().indices)
+            if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
@@ -3496,8 +3487,8 @@ ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_
         return false;
     };
 
-    for (const auto & index : skip_indices)
-        add_dependent_columns(index->expr, indices_columns);
+    for (const auto & index : getIndices().indices)
+        add_dependent_columns(index.expression, indices_columns);
 
     if (hasRowsTTL())
     {

@@ -294,7 +294,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
                 ++skip_index_filling[i];
 
                 /// write index if it is filled
-                if (skip_index_filling[i] == index->granularity)
+                if (skip_index_filling[i] == index->index.granularity)
                 {
                     skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                     skip_index_filling[i] = 0;

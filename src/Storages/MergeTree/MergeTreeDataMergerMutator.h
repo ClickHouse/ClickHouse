@@ -162,7 +162,7 @@ private:
 
     /// Get skip indices, that should exists in the resulting data part.
     static MergeTreeIndices getIndicesForNewDataPart(
-        const MergeTreeIndices & all_indices,
+        const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
@@ -171,7 +171,6 @@ private:
     /// wraps input stream into additional expression stream
     std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
-        StoragePtr storage_from_source_part,
         const NamesAndTypesList & updated_columns,
         const Context & context) const;
 
