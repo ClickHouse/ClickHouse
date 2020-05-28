@@ -472,37 +472,37 @@ public:
         if (ValuePtr out = get(key); out)
             return {out, false}; // value was found in the cache.
 
-        InsertionAttemptDisposer disposer;
-
         {
-            std::lock_guard att_lock(attempts_mutex);
+            InsertionAttemptDisposer disposer;
 
-            auto & insertion_attempt = insertion_attempts[key];
+            {
+                std::lock_guard att_lock(attempts_mutex);
 
-            if (!insertion_attempt)
-                insertion_attempt = std::make_shared<InsertionAttempt>(*this);
+                auto & insertion_attempt = insertion_attempts[key];
 
-            disposer.acquire(&key, insertion_attempt);
-        }
+                if (!insertion_attempt)
+                    insertion_attempt = std::make_shared<InsertionAttempt>(*this);
 
-        InsertionAttempt * attempt = disposer.attempt.get();
+                disposer.acquire(&key, insertion_attempt);
+            }
 
-        std::lock_guard attempt_lock(attempt->mutex);
+            InsertionAttempt * attempt = disposer.attempt.get();
 
-        disposer.attempt_disposed = attempt->is_disposed;
+            std::lock_guard attempt_lock(attempt->mutex);
 
-        if (attempt->value)
-        {
-            /// Another thread already produced the value while we were acquiring the attempt's mutex.
-            ++hits;
-            ++concurrent_hits;
+            disposer.attempt_disposed = attempt->is_disposed;
 
-            return {attempt->value, false};
+            if (attempt->value)
+            {
+                /// Another thread already produced the value while we were acquiring the attempt's mutex.
+                ++hits;
+                ++concurrent_hits;
+
+                return {attempt->value, false};
+            }
         }
 
         ++misses;
-
-        disposer.dispose();
 
         /// No try-catch here because it is not needed.
         size_t size = get_size();
@@ -715,17 +715,6 @@ private:
         }
 
         /**
-         * @brief Erases InsertionAttempt form #insertion_attempts.
-         */
-        inline void dispose() noexcept
-        {
-            std::lock_guard att_lock(attempt->alloc.attempts_mutex);
-            attempt->alloc.insertion_attempts.erase(*key);
-            attempt->is_disposed = true;
-            attempt_disposed = true;
-        }
-
-        /**
          * @brief Disposes the handled InsertionAttempt if possible.
          *
          * - Requires a @e read access to #attempt.
@@ -744,8 +733,14 @@ private:
             if (attempt->is_disposed)
                 return;
 
-            if (--attempt->refcount == 0)
-                dispose();
+            if (--attempt->refcount != 0)
+                return;
+
+            std::lock_guard att_lock(attempt->alloc.attempts_mutex);
+
+            attempt->alloc.insertion_attempts.erase(*key);
+            attempt->is_disposed = true;
+            attempt_disposed = true;
         }
     };
 
