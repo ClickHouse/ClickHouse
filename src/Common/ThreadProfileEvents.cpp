@@ -6,7 +6,12 @@
 #include "ProcfsMetricsProvider.h"
 #include "hasLinuxCapability.h"
 
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <sstream>
+#include <unordered_set>
+
 #include <fcntl.h>
 #include <unistd.h>
 #include <linux/perf_event.h>
@@ -166,32 +171,6 @@ Logger * PerfEventsCounters::getLogger()
     return &Logger::get("PerfEventsCounters");
 }
 
-// cat /proc/sys/kernel/perf_event_paranoid
-// -1: Allow use of (almost) all events by all users
-// >=0: Disallow raw tracepoint access by users without CAP_IOC_LOCK
-// >=1: Disallow CPU event access by users without CAP_SYS_ADMIN
-// >=2: Disallow kernel profiling by users without CAP_SYS_ADMIN
-// >=3: Disallow all event access by users without CAP_SYS_ADMIN
-static bool getPerfEventParanoid(Int32 & result)
-{
-    // the longest possible variant: "-1\0"
-    constexpr Int32 max_length = 3;
-
-    FILE * fp = fopen("/proc/sys/kernel/perf_event_paranoid", "r");
-    if (fp == nullptr)
-        return false;
-
-    char str[max_length];
-    char * res = fgets(str, max_length, fp);
-    fclose(fp);
-    if (res == nullptr)
-        return false;
-
-    str[max_length - 1] = '\0';
-    result = static_cast<Int32>(strtol(str, nullptr, 10));
-    return true;
-}
-
 static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
 {
     return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
@@ -239,38 +218,6 @@ static void releasePerfEvent(int event_fd, getLoggerFunc getLogger)
     {
         LOG_WARNING(getLogger(), "Can't close perf event file descriptor {}: {} ({})", event_fd, errno, strerror(errno));
     }
-}
-
-// can process events in format "<symbols><spaces>", e.g. "cpu-cycles" or "cpu-cycles   "
-std::vector<size_t> eventNameToIndices(const std::string & event)
-{
-    std::vector<size_t> indices;
-
-    ssize_t last_non_space_index = event.size() - 1;
-    for (; last_non_space_index >= 0 && isspace(event[last_non_space_index]); --last_non_space_index)
-        ;
-    size_t non_space_width = last_non_space_index + 1;
-
-    if (event.find(PerfEventsCounters::ALL_EVENTS_NAME) == 0 && strlen(PerfEventsCounters::ALL_EVENTS_NAME) == non_space_width)
-    {
-        indices.reserve(PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
-        for (size_t i = 0; i < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++i)
-            indices.push_back(i);
-        return indices;
-    }
-
-    indices.reserve(1);
-    for (size_t event_index = 0; event_index < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++event_index)
-    {
-        const std::string & settings_name = PerfEventsCounters::raw_events_info[event_index].settings_name;
-        if (event.find(settings_name) == 0 && settings_name.size() == non_space_width)
-        {
-            indices.push_back(event_index);
-            break;
-        }
-    }
-
-    return indices;
 }
 
 static bool validatePerfEventDescriptor(int & fd, getLoggerFunc getLogger)
@@ -341,18 +288,22 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         return true;
 
     // check permissions
+    // cat /proc/sys/kernel/perf_event_paranoid
+    // -1: Allow use of (almost) all events by all users
+    // >=0: Disallow raw tracepoint access by users without CAP_IOC_LOCK
+    // >=1: Disallow CPU event access by users without CAP_SYS_ADMIN
+    // >=2: Disallow kernel profiling by users without CAP_SYS_ADMIN
+    // >=3: Disallow all event access by users without CAP_SYS_ADMIN
     Int32 perf_event_paranoid = 0;
-    bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
-    if (!is_pref_available)
-    {
-        LOG_WARNING(getLogger(), "Perf events are unsupported");
-        return false;
-    }
+    std::ifstream paranoid_file("/proc/sys/kernel/perf_event_paranoid");
+    paranoid_file >> perf_event_paranoid;
 
     bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
     if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
     {
-        LOG_WARNING(getLogger(), "Not enough permissions to record perf events");
+        LOG_WARNING(getLogger(), "Not enough permissions to record perf events: "
+            "perf_event_paranoid = {} and CAP_SYS_ADMIN = 0",
+            perf_event_paranoid);
         return false;
     }
 
@@ -366,19 +317,9 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     }
     UInt64 maximum_open_descriptors = limits.rlim_cur;
 
-    std::string dir_path("/proc/");
-    dir_path += std::to_string(getpid());
-    dir_path += "/fd";
-    DIR * fd_dir = opendir(dir_path.c_str());
-    if (fd_dir == nullptr)
-    {
-        LOG_WARNING(getLogger(), "Unable to get file descriptors used by the current process: {} ({})", strerror(errno), errno);
-        return false;
-    }
-    UInt64 opened_descriptors = 0;
-    while (readdir(fd_dir) != nullptr)
-        ++opened_descriptors;
-    closedir(fd_dir);
+    const size_t opened_descriptors = std::distance(
+        std::filesystem::directory_iterator("/proc/self/fd"),
+        std::filesystem::directory_iterator());
 
     UInt64 fd_count_afterwards = opened_descriptors + events_to_open.size();
     UInt64 threshold = static_cast<UInt64>(maximum_open_descriptors * FILE_DESCRIPTORS_THRESHOLD);
@@ -410,51 +351,41 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     return true;
 }
 
-// can process events in format "<spaces><symbols><spaces>,<spaces><symbols><spaces>,...",
-// e.g. "cpu-cycles" or " cpu-cycles    " or "cpu-cycles,instructions" or "    cpu-cycles    ,    instructions    "
+// Parse comma-separated list of event names. Empty or 'all' means all available
+// events.
+// TODO add validation to setting
 std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string & events_list)
 {
-    if (last_parsed_events.has_value())
-    {
-        const ParsedEvents & events = last_parsed_events.value();
-        if (events.first == events_list)
-            return events.second;
-    }
-
-    std::vector<size_t> indices;
-    auto push_back_event = [& indices] (const std::string & event_name)
-    {
-        std::vector<size_t> event_indices = eventNameToIndices(event_name);
-        if (event_indices.empty())
-            LOG_WARNING(getLogger(), "Unknown event: '{}'", event_name);
-        else
-            indices.insert(std::end(indices), std::begin(event_indices), std::end(event_indices));
-    };
-
+    std::unordered_set<std::string> requested_events;
+    std::istringstream iss(events_list);
     std::string event_name;
-    for (size_t i = 0; i < events_list.size(); ++i)
+    while (std::getline(iss, event_name, ','))
     {
-        char symbol = events_list[i];
+        requested_events.insert(event_name);
+    }
 
-        if (symbol == ',')
+    std::vector<size_t> result;
+    result.reserve(PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
+    if (requested_events.size() == 0
+        || requested_events.count("all") > 0)
+    {
+        for (size_t i = 0; i < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++i)
         {
-            push_back_event(event_name);
-            event_name.clear();
+            result.push_back(i);
         }
-        else if (i == events_list.size() - 1)
+        return result;
+    }
+
+    for (size_t i = 0; i < PerfEventsCounters::NUMBER_OF_RAW_EVENTS; ++i)
+    {
+        if (requested_events.count(
+            PerfEventsCounters::raw_events_info[i].settings_name) > 0)
         {
-            event_name += symbol;
-            push_back_event(event_name);
-            event_name.clear();
-        }
-        else if (!isspace(symbol) || !event_name.empty())
-        {
-            event_name += symbol;
+            result.push_back(i);
         }
     }
 
-    last_parsed_events = std::make_pair(events_list, indices);
-    return indices;
+    return result;
 }
 
 void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list)
