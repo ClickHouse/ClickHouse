@@ -295,11 +295,11 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     {
         std::stringstream ss;
         ss << client_id << "-" << consumer_number;
-        conf.set("client.id", ss.str() );
+        conf.set("client.id", ss.str());
     }
     else
     {
-        conf.set("client.id", client_id );
+        conf.set("client.id", client_id);
     }
 
     conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
