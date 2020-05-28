@@ -514,6 +514,11 @@ public:
                     disposer.dispose();
             }
 
+            BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
+            BOOST_ASSERT(metadata->TAllRegionsHook::is_linked());
+            BOOST_ASSERT(!metadata->TFreeRegionHook::is_linked());
+            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
+
             return {attempt->value, true};
         }
         catch (...)
@@ -575,6 +580,11 @@ private:
 
             metadata = it->second;
 
+            BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
+            BOOST_ASSERT(metadata->TAllRegionsHook::is_linked());
+            BOOST_ASSERT(!metadata->TFreeRegionHook::is_linked());
+            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
+
             {
                 std::lock_guard meta_lock(metadata->mutex);
 
@@ -585,9 +595,12 @@ private:
             /// Deleting last reference.
             value_to_region.erase(it);
 
-            //BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
-            if (!metadata->TUnusedRegionHook::is_linked()) //strange TODO investigate
-                unused_regions.push_back(*metadata);
+            BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
+            BOOST_ASSERT(metadata->TAllRegionsHook::is_linked());
+            BOOST_ASSERT(!metadata->TFreeRegionHook::is_linked());
+            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
+
+            unused_regions.push_back(*metadata);
         }
 
         --metadata->chunk->used_refcount; //atomic here.
@@ -595,8 +608,12 @@ private:
 
         std::lock_guard used(used_regions_mutex);
 
-        if (metadata->TUsedRegionHook::is_linked()) //strange TODO investigate
-            used_regions.erase(used_regions.iterator_to(*metadata));
+        BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
+        BOOST_ASSERT(metadata->TAllRegionsHook::is_linked());
+        BOOST_ASSERT(!metadata->TFreeRegionHook::is_linked());
+        BOOST_ASSERT(metadata->TUnusedRegionHook::is_linked());
+
+        used_regions.erase(used_regions.iterator_to(*metadata));
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
     }
@@ -620,6 +637,11 @@ private:
                 RegionMetadata& metadata = *it;
 
                 onSharedValueCreate<false>(metadata);
+
+                BOOST_ASSERT(metadata.TUsedRegionHook::is_linked());
+                BOOST_ASSERT(metadata.TAllRegionsHook::is_linked());
+                BOOST_ASSERT(!metadata.TFreeRegionHook::is_linked());
+                BOOST_ASSERT(!metadata.TUnusedRegionHook::is_linked());
 
                 return std::shared_ptr<Value>( // NOLINT: not a nullptr
                         metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
