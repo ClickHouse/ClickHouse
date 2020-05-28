@@ -19,8 +19,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , column_names(columns)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
-    , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
-    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
+    , non_virtual_header(storage.getSampleBlockNonMaterialized())
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms"}))
 
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
@@ -141,8 +141,7 @@ Block KafkaBlockInputStream::readImpl()
         auto offset        = buffer->currentOffset();
         auto partition     = buffer->currentPartition();
         auto timestamp_raw = buffer->currentTimestamp();
-        auto timestamp     = timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(timestamp_raw->get_timestamp()).count()
-                                                : 0;
+
         for (size_t i = 0; i < new_rows; ++i)
         {
             virtual_columns[0]->insert(topic);
@@ -151,11 +150,14 @@ Block KafkaBlockInputStream::readImpl()
             virtual_columns[3]->insert(partition);
             if (timestamp_raw)
             {
-                virtual_columns[4]->insert(timestamp);
+                auto ts = timestamp_raw->get_timestamp();
+                virtual_columns[4]->insert(std::chrono::duration_cast<std::chrono::seconds>(ts).count());
+                virtual_columns[5]->insert(DecimalField<Decimal64>(std::chrono::duration_cast<std::chrono::milliseconds>(ts).count(),3));
             }
             else
             {
                 virtual_columns[4]->insertDefault();
+                virtual_columns[5]->insertDefault();
             }
         }
 
