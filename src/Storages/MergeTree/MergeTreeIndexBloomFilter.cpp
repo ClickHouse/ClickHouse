@@ -89,7 +89,7 @@ static void assertIndexColumnsType(const Block & header)
     }
 }
 
-std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
+MergeTreeIndexPtr bloomFilterIndexCreatorNew(
     const IndexDescription & index)
 {
 

@@ -412,7 +412,7 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
-    const MergeTreeIndices & indexes,
+    const IndicesDescription & indexes,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -421,7 +421,7 @@ static void extractMergingAndGatheringColumns(
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
     for (const auto & index : indexes)
     {
-        Names index_columns_vec = index->getColumnsRequiredForIndexCalc();
+        Names index_columns_vec = index.expression->getRequiredColumns();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
@@ -607,9 +607,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList gathering_columns;
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
-    const auto & index_factory = MergeTreeIndexFactory::instance();
     extractMergingAndGatheringColumns(
-        storage_columns, data.getSortingKey().expression, index_factory.getMany(data.getIndices()),
+        storage_columns, data.getSortingKey().expression, data.getIndices(),
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -797,6 +796,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (need_remove_expired_values)
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge, force_ttl);
 
+    const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
