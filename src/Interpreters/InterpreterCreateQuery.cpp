@@ -24,6 +24,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -252,7 +253,7 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     auto res = std::make_shared<ASTExpressionList>();
 
     for (const auto & index : indices.indices)
-        res->children.push_back(index->clone());
+        res->children.push_back(index.definition_ast->clone());
 
     return res;
 }
@@ -399,7 +400,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
                 properties.indices.indices.push_back(
-                    std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+                    StorageMetadataSkipIndexField::getSkipIndexFromAST(index->clone(), properties.columns, context));
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints);
     }

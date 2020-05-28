@@ -392,14 +392,14 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         {
             auto it = std::find_if(
                     std::cbegin(indices_desc.indices), std::end(indices_desc.indices),
-                    [&](const std::shared_ptr<ASTIndexDeclaration> & index)
+                    [&](const StorageMetadataSkipIndexField & index)
                     {
-                        return index->name == command.index_name;
+                        return index.name == command.index_name;
                     });
             if (it == std::cend(indices_desc.indices))
                 throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
 
-            auto query = (*it)->expr->clone();
+            auto query = (*it).expression_list_ast->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
             for (const auto & column : required_columns)

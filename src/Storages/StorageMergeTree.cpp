@@ -230,8 +230,8 @@ void StorageMergeTree::alter(
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify);
-    commands.apply(metadata);
+    auto maybe_mutation_commands = commands.getMutationCommands(metadata, context.getSettingsRef().materialize_ttl_after_modify, context);
+    commands.apply(metadata, context);
 
     /// This alter can be performed at metadata level only
     if (commands.isSettingsAlter())

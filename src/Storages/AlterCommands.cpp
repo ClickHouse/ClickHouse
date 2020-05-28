@@ -253,7 +253,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -334,9 +334,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         if (std::any_of(
                 metadata.indices.indices.cbegin(),
                 metadata.indices.indices.cend(),
-                [this](const ASTPtr & index_ast)
+                [this](const auto & index)
                 {
-                    return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                    return index.name == index_name;
                 }))
         {
             if (if_not_exists)
@@ -353,9 +353,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             insert_it = std::find_if(
                     metadata.indices.indices.begin(),
                     metadata.indices.indices.end(),
-                    [this](const ASTPtr & index_ast)
+                    [this](const auto & index)
                     {
-                        return index_ast->as<ASTIndexDeclaration &>().name == after_index_name;
+                        return index.name == after_index_name;
                     });
 
             if (insert_it == metadata.indices.indices.end())
@@ -365,7 +365,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             ++insert_it;
         }
 
-        metadata.indices.indices.emplace(insert_it, std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl));
+        metadata.indices.indices.emplace(insert_it, StorageMetadataSkipIndexField::getSkipIndexFromAST(index_decl, metadata.columns, context));
     }
     else if (type == DROP_INDEX)
     {
@@ -374,9 +374,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
             auto erase_it = std::find_if(
                     metadata.indices.indices.begin(),
                     metadata.indices.indices.end(),
-                    [this](const ASTPtr & index_ast)
+                    [this](const auto & index)
                     {
-                        return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                        return index.name == index_name;
                     });
 
             if (erase_it == metadata.indices.indices.end())
@@ -615,7 +615,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     return ttl_changed;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -658,7 +658,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     }
 
     result.ast = ast->clone();
-    apply(metadata);
+    apply(metadata, context);
     return result;
 }
 
@@ -697,7 +697,7 @@ String alterTypeToString(const AlterCommand::Type type)
     __builtin_unreachable();
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -705,7 +705,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata) const
     auto metadata_copy = metadata;
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy);
+            command.apply(metadata_copy, context);
 
     metadata = std::move(metadata_copy);
 }
@@ -975,11 +975,11 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
             result.push_back(*mutation_cmd);
 
     if (materialize_ttl)

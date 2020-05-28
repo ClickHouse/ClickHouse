@@ -607,8 +607,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList gathering_columns;
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
+    const auto & index_factory = MergeTreeIndexFactory::instance();
     extractMergingAndGatheringColumns(
-        storage_columns, data.getSortingKey().expression, data.skip_indices,
+        storage_columns, data.getSortingKey().expression, index_factory.getMany(data.getIndices().indices),
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -715,7 +716,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         Pipe pipe(std::move(input));
 
-        if (data.hasPrimaryKey() || data.hasSkipIndices())
+        if (data.hasPrimaryKey() || data.hasIndices())
         {
             auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_and_skip_indices_expr);
             pipe.addSimpleTransform(std::move(expr));
@@ -799,7 +800,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
-        data.skip_indices,
+        index_factory.getMany(data.getIndices().indices),
         compression_codec,
         merged_column_to_size,
         data_settings->min_merge_bytes_to_use_direct_io,
@@ -1063,7 +1064,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// All columns from part are changed and may be some more that were missing before in part
     if (isCompactPart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
-        auto part_indices = getIndicesForNewDataPart(data.skip_indices, for_file_renames);
+        auto part_indices = getIndicesForNewDataPart(data.getIndices(), for_file_renames);
         mutateAllPartColumns(
             new_data_part,
             part_indices,
@@ -1079,7 +1080,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else /// TODO: check that we modify only non-key columns in this case.
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        auto indices_to_recalc = getIndicesToRecalculate(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
+        auto indices_to_recalc = getIndicesToRecalculate(in, updated_header.getNamesAndTypesList(), context);
 
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
@@ -1482,7 +1483,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 }
 
 MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
-    const MergeTreeIndices & all_indices,
+    const IndicesDescription & all_indices,
     const MutationCommands & commands_for_removes)
 {
     NameSet removed_indices;
@@ -1491,33 +1492,35 @@ MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
             removed_indices.insert(command.column_name);
 
     MergeTreeIndices new_indices;
-    for (const auto & index : all_indices)
-        if (!removed_indices.count(index->name))
-            new_indices.push_back(index);
+    for (const auto & index : all_indices.indices)
+        if (!removed_indices.count(index.name))
+            new_indices.push_back(MergeTreeIndexFactory::instance().get(index));
 
     return new_indices;
 }
 
 std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
-    StoragePtr storage_from_source_part,
     const NamesAndTypesList & updated_columns,
     const Context & context) const
 {
     /// Checks if columns used in skipping indexes modified.
+    const auto & index_factory = MergeTreeIndexFactory::instance();
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & col : updated_columns.getNames())
     {
-        for (size_t i = 0; i < data.skip_indices.size(); ++i)
+        const auto & indices = data.getIndices().indices;
+        for (size_t i = 0; i < indices.size(); ++i)
         {
-            const auto & index = data.skip_indices[i];
-            const auto & index_cols = index->getColumnsRequiredForIndexCalc();
+            const auto & index = indices[i];
+            const auto & index_cols = index.expression->getRequiredColumns();
             auto it = std::find(std::cbegin(index_cols), std::cend(index_cols), col);
-            if (it != std::cend(index_cols) && indices_to_recalc.insert(index).second)
+
+            if (it != std::cend(index_cols)
+                && indices_to_recalc.insert(index_factory.get(index)).second)
             {
-                ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(
-                        storage_from_source_part->getIndices().indices[i]->expr->clone());
+                ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
             }
@@ -1571,7 +1574,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-    if (data.hasPrimaryKey() || data.hasSkipIndices())
+    if (data.hasPrimaryKey() || data.hasIndices())
         mutating_stream = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.primary_key_and_skip_indices_expr));
 

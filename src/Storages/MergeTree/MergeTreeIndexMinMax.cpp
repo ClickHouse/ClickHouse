@@ -16,20 +16,24 @@ namespace ErrorCodes
 }
 
 
-MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const Block & index_sample_block_)
-    : index_sample_block(index_sample_block_)
+MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
 {}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
-    const Block & index_sample_block_, std::vector<Range> && hyperrectangle_)
-    : index_sample_block(index_sample_block_),
-      hyperrectangle(std::move(hyperrectangle_)) {}
+    const String & index_name_,
+    const Block & index_sample_block_,
+    std::vector<Range> && hyperrectangle_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+    , hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-            "Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+            "Attempt to write empty minmax index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
@@ -84,13 +88,14 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     }
 }
 
-MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const Block & index_sample_block_)
-    : index_sample_block(index_sample_block_)
+MergeTreeIndexAggregatorMinMax::MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorMinMax::getGranuleAndReset()
 {
-    return std::make_shared<MergeTreeIndexGranuleMinMax>(index_sample_block, std::move(hyperrectangle));
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(index_name, index_sample_block, std::move(hyperrectangle));
 }
 
 void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, size_t limit)
@@ -149,19 +154,19 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     for (const auto & range : granule->hyperrectangle)
         if (range.left.isNull() || range.right.isNull())
             return true;
-    return condition.checkInHyperrectangle(granule->hyperrectangle, index.data_types).can_be_true;
+    return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 
 
 MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleMinMax>(index.sample_block);
+    return std::make_shared<MergeTreeIndexGranuleMinMax>(index.name, index.sample_block);
 }
 
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.sample_block);
+    return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
@@ -185,11 +190,13 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
     return false;
 }
 
-std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const StorageMetadataSkipIndexField & index,
-    bool /*attach*/)
+std::shared_ptr<IMergeTreeIndex> minmaxIndexCreator(
+    const StorageMetadataSkipIndexField & index)
 {
-    return std::make_unique<MergeTreeIndexMinMax>(index);
+    return std::make_shared<MergeTreeIndexMinMax>(index);
 }
 
+void minmaxIndexValidator(const StorageMetadataSkipIndexField & /* index */, bool /* attach */)
+{
+}
 }

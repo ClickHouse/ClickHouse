@@ -257,7 +257,7 @@ void StorageMaterializedView::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    params.apply(metadata, context);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)

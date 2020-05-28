@@ -31,7 +31,7 @@ MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
     const StorageMetadataSkipIndexField & index_,
     size_t bits_per_row_,
     size_t hash_functions_)
-    : IMergeTreeIndex(index)
+    : IMergeTreeIndex(index_)
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
@@ -89,40 +89,41 @@ static void assertIndexColumnsType(const Block & header)
     }
 }
 
-std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const StorageMetadataSkipIndexField & index, bool attach)
+std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
+    const StorageMetadataSkipIndexField & index)
 {
-    assertIndexColumnsType(index.sample_block);
 
     double max_conflict_probability = 0.025;
 
-    if (index.arguments.size() > 1)
-    {
-        if (!attach)    /// This is for backward compatibility.
-            throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
-
-
     if (!index.arguments.empty())
     {
-        auto * argument = arguments->children[0]->as<ASTLiteral>();
-
-        if (!argument || (argument->value.safeGet<Float64>() < 0 || argument->value.safeGet<Float64>() > 1))
-        {
-            if (!attach || !argument)   /// This is for backward compatibility.
-                throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
-
-            argument->value = Field(std::min(Float64(1), std::max(argument->value.safeGet<Float64>(), Float64(0))));
-        }
-
-        max_conflict_probability = argument->value.safeGet<Float64>();
+        const auto & argument = index.arguments[0];
+        max_conflict_probability = std::min(Float64(1), std::max(argument.safeGet<Float64>(), Float64(0)));
     }
 
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);
 
-    return std::make_unique<MergeTreeIndexBloomFilter>(
-        node->name, std::move(index_expr), index_sample.getNames(), index_sample.getDataTypes(), index_sample, node->granularity,
-        bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+    return std::make_shared<MergeTreeIndexBloomFilter>(
+        index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+}
+
+void bloomFilterIndexValidatorNew(const StorageMetadataSkipIndexField & index, bool attach)
+{
+    assertIndexColumnsType(index.sample_block);
+
+    if (index.arguments.size() > 1)
+    {
+        if (!attach) /// This is for backward compatibility.
+            throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    if (!index.arguments.empty())
+    {
+        const auto & argument = index.arguments[0];
+
+        if (!attach && (argument.getType() != Field::Types::Float64 || argument.get<Float64>() < 0 || argument.get<Float64>() > 1))
+            throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 }

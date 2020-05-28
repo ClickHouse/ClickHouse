@@ -18,21 +18,27 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-void MergeTreeIndexFactory::registerIndex(const std::string & index_type, Creator creator)
+void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
 {
-    if (!indexes.emplace(index_type, std::move(creator)).second)
+    if (!creators.emplace(index_type, std::move(creator)).second)
         throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
 }
-
-std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
-    const StorageMetadataSkipIndexField & index, bool attach) const
+void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
-    auto it = indexes.find(index.type);
-    if (it == indexes.end())
+    if (!validators.emplace(index_type, std::move(validator)).second)
+        throw Exception("MergeTreeIndexFactory: the Index validator name '" + index_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+std::shared_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
+    const StorageMetadataSkipIndexField & index) const
+{
+    auto it = creators.find(index.type);
+    if (it == creators.end())
         throw Exception(
                 "Unknown Index type '" + index.type + "'. Available index types: " +
-                std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
+                std::accumulate(creators.cbegin(), creators.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
                             if (left.empty())
@@ -42,16 +48,56 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return it->second(index, attach);
+    return it->second(index);
+}
+
+
+MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<StorageMetadataSkipIndexField> & indices) const
+{
+    MergeTreeIndices result;
+    for (const auto & index : indices)
+        result.emplace_back(get(index));
+    return result;
+}
+
+void MergeTreeIndexFactory::validate(const StorageMetadataSkipIndexField & index, bool attach) const
+{
+    auto it = validators.find(index.type);
+    if (it == validators.end())
+        throw Exception(
+            "Unknown Index type '" + index.type + "'. Available index types: "
+                + std::accumulate(
+                    validators.cbegin(),
+                    validators.cend(),
+                    std::string{},
+                    [](auto && left, const auto & right) -> std::string
+                    {
+                        if (left.empty())
+                            return right.first;
+                        else
+                            return left + ", " + right.first;
+                    }),
+            ErrorCodes::INCORRECT_QUERY);
+
+    it->second(index, attach);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
-    registerIndex("minmax", minmaxIndexCreator);
-    registerIndex("set", setIndexCreator);
-    registerIndex("ngrambf_v1", bloomFilterIndexCreator);
-    registerIndex("tokenbf_v1", bloomFilterIndexCreator);
-    registerIndex("bloom_filter", bloomFilterIndexCreatorNew);
+    registerCreator("minmax", minmaxIndexCreator);
+    registerValidator("minmax", minmaxIndexValidator);
+
+    registerCreator("set", setIndexCreator);
+    registerValidator("set", setIndexValidator);
+
+    registerCreator("ngrambf_v1", bloomFilterIndexCreator);
+    registerValidator("ngrambf_v1", bloomFilterIndexValidator);
+
+    registerCreator("tokenbf_v1", bloomFilterIndexCreator);
+    registerValidator("tokenbf_v1", bloomFilterIndexValidator);
+
+    registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
+    registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

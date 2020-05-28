@@ -242,6 +242,7 @@ StorageMetadataSkipIndexField StorageMetadataSkipIndexField::getSkipIndexFromAST
     result.granularity = index_definition->granularity;
 
     ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
+    result.expression_list_ast = expr_list->clone();
 
     auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
@@ -269,12 +270,12 @@ StorageMetadataSkipIndexField StorageMetadataSkipIndexField::getSkipIndexFromAST
     return result;
 }
 
-bool StorageMetadataSkipIndices::empty() const
+bool IndicesDescription::empty() const
 {
     return indices.empty();
 }
 
-bool StorageMetadataSkipIndices::has(const String & name) const
+bool IndicesDescription::has(const String & name) const
 {
     for (const auto & index : indices)
         if (index.name == name)
@@ -282,7 +283,7 @@ bool StorageMetadataSkipIndices::has(const String & name) const
     return false;
 }
 
-String StorageMetadataSkipIndices::toString() const
+String IndicesDescription::toString() const
 {
     if (indices.empty())
         return {};
@@ -295,9 +296,9 @@ String StorageMetadataSkipIndices::toString() const
 }
 
 
-StorageMetadataSkipIndices StorageMetadataSkipIndices::parse(const String & str, const ColumnsDescription & columns, const Context & context)
+IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, const Context & context)
 {
-    StorageMetadataSkipIndices result;
+    IndicesDescription result;
     if (str.empty())
         return result;
 

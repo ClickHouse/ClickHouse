@@ -477,19 +477,18 @@ bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
     return false;
 }
 
-std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-    const StorageMetadataSkipIndexField & index,
-    bool /*attach*/)
+std::shared_ptr<IMergeTreeIndex> setIndexCreator(const StorageMetadataSkipIndexField & index)
 {
-    size_t max_rows = 0;
+    size_t max_rows = index.arguments[0].get<size_t>();
+    return std::make_shared<MergeTreeIndexSet>(index, max_rows);
+}
+
+void setIndexValidator(const StorageMetadataSkipIndexField & index, bool /*attach*/)
+{
     if (index.arguments.size() != 1)
         throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
     else if (index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception("Set index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
-    else ()
-        max_rows = index.arguments[0].get<size_t>();
-
-    return std::make_unique<MergeTreeIndexSet>(index, max_rows);
 }
 
 }
