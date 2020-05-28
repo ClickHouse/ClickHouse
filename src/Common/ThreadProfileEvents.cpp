@@ -461,6 +461,17 @@ std::vector<size_t> PerfEventsCounters::eventIndicesFromString(const std::string
     return indices;
 }
 
+static bool readEventValue(int fd, PerfEventValue & result, getLoggerFunc getLogger)
+{
+    constexpr ssize_t bytes_to_read = sizeof(result);
+    if (read(fd, &result, bytes_to_read) == bytes_to_read)
+        return true;
+
+    LOG_WARNING(getLogger(), "Can't read event value from file descriptor: " << fd);
+    result = {};
+    return false;
+}
+
 void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list)
 {
     if (current_thread_counters_id.has_value())
@@ -473,12 +484,15 @@ void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters, 
     if (!processThreadLocalChanges(events_list))
         return;
 
-    for (int fd : thread_events_descriptors_holder.descriptors)
+    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
+        int fd = thread_events_descriptors_holder.descriptors[i];
         if (fd == -1)
             continue;
 
         resetPerfEvent(fd, getLogger);
+        // read initial values to find deltas afterwards
+        readEventValue(fd, counters.raw_event_values[i], getLogger);
         enablePerfEvent(fd, getLogger);
     }
 
@@ -491,9 +505,6 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
         return;
 
     PerfEventValue old_values[NUMBER_OF_RAW_EVENTS];
-    for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
-        old_values[i] = counters.raw_event_values[i];
-
     // only read counters here to have as little overhead for processing as possible
     for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
     {
@@ -501,12 +512,8 @@ void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, Pr
         if (fd == -1)
             continue;
 
-        constexpr ssize_t bytes_to_read = sizeof(counters.raw_event_values[0]);
-        if (read(fd, &counters.raw_event_values[i], bytes_to_read) != bytes_to_read)
-        {
-            LOG_WARNING(getLogger(), "Can't read event value from file descriptor: " << fd);
-            counters.raw_event_values[i] = {};
-        }
+        old_values[i] = counters.raw_event_values[i];
+        readEventValue(fd, counters.raw_event_values[i], getLogger);
     }
 
     // actually process counters' values and stop measuring
