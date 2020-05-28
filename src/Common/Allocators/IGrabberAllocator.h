@@ -112,8 +112,6 @@ private:
     static constexpr auto getSize = SizeFunction();
     static constexpr auto initValue = InitFunction();
 
-    static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
-
     Logger& log;
 
 /**
@@ -475,7 +473,6 @@ public:
             return {out, false}; // value was found in the cache.
 
         InsertionAttemptDisposer disposer;
-        InsertionAttempt * attempt;
 
         {
             std::lock_guard att_lock(attempts_mutex);
@@ -488,7 +485,7 @@ public:
             disposer.acquire(&key, insertion_attempt);
         }
 
-        attempt = disposer.attempt.get();
+        InsertionAttempt * attempt = disposer.attempt.get();
 
         std::lock_guard attempt_lock(attempt->mutex);
 
@@ -522,7 +519,7 @@ public:
         region->init_key(key);
 
         {
-            total_size_currently_initialized.fetch_add(size, std::memory_order_release);
+            total_size_currently_initialized += size;
 
             try
             {
@@ -941,6 +938,8 @@ private:
         RegionMetadata() {}
         ~RegionMetadata() = default;
     };
+
+    static constexpr auto region_metadata_disposer = [](RegionMetadata * ptr) { ptr->destroy(); };
 
     struct RegionCompareBySize
     {
