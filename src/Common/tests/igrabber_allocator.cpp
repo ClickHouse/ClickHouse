@@ -24,7 +24,7 @@ int main() noexcept
    std::vector<std::thread> thread_pool;
 
    for (size_t k = 0; k < 4; k++)
-       thread_pool.emplace_back([k, &cache] {
+       thread_pool.emplace_back([&cache] {
            for (int i = 1; i < 10; ++i) {
                Holder inc(cache, i);
                Holder last(cache, i - 1);
