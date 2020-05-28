@@ -1,5 +1,8 @@
 #pragma once
 
+/// disable xorshift
+#if 0
+
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunctionImpl.h>
@@ -60,3 +63,5 @@ private:
 };
 
 }
+
+#endif

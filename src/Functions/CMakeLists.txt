@@ -90,9 +90,6 @@ else()
     add_definitions(-DENABLE_MULTITARGET_CODE=0)
 endif()
 
-target_link_libraries(clickhouse_functions PUBLIC "simdxorshift")
-message(STATUS "Using SIMDXORSHIFT ${SIMDXORSHIFT_LIBRARY}")
-
 add_subdirectory(GatherUtils)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_gatherutils)
 

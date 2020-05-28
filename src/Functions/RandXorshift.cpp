@@ -1,3 +1,5 @@
+/// Disable xorshift
+#if 0
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRandom.h>
 #include <Common/HashTable/Hash.h>
@@ -162,3 +164,4 @@ void registerFunctionRandXorshift(FunctionFactory & factory)
 }
 
 }
+#endif
