@@ -76,8 +76,8 @@ void PullingPipelineExecutor::cancel()
         executor->cancel();
 
     /// Read all data and finish execution.
-    Chunk chunk;
-    while (pull(chunk));
+    /// Chunk chunk;
+    /// while (pull(chunk));
 }
 
 Chunk PullingPipelineExecutor::getTotals()
