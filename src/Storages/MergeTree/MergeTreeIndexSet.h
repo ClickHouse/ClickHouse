@@ -117,7 +117,7 @@ class MergeTreeIndexSet : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
-        const StorageMetadataSkipIndexField & index_,
+        const IndexDescription & index_,
         size_t max_rows_)
         : IMergeTreeIndex(index_)
         , max_rows(max_rows_)

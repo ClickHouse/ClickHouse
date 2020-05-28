@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
-    const StorageMetadataSkipIndexField & index_,
+    const IndexDescription & index_,
     size_t bits_per_row_,
     size_t hash_functions_)
     : IMergeTreeIndex(index_)
@@ -90,7 +90,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const StorageMetadataSkipIndexField & index)
+    const IndexDescription & index)
 {
 
     double max_conflict_probability = 0.025;
@@ -107,7 +107,7 @@ std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
         index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
-void bloomFilterIndexValidatorNew(const StorageMetadataSkipIndexField & index, bool attach)
+void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach)
 {
     assertIndexColumnsType(index.sample_block);
 

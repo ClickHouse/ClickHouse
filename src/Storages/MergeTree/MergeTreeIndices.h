@@ -76,7 +76,7 @@ using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 class IMergeTreeIndex
 {
 public:
-    IMergeTreeIndex(const StorageMetadataSkipIndexField & index_)
+    IMergeTreeIndex(const IndexDescription & index_)
         : index(index_)
     {
     }
@@ -98,7 +98,7 @@ public:
 
     Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
-    const StorageMetadataSkipIndexField & index;
+    const IndexDescription & index;
 };
 
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
@@ -111,15 +111,15 @@ public:
 
     using Creator = std::function<
             std::shared_ptr<IMergeTreeIndex>(
-                    const StorageMetadataSkipIndexField & index)>;
+                    const IndexDescription & index)>;
 
-    using Validator = std::function<void(const StorageMetadataSkipIndexField & index, bool attach)>;
+    using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
-    void validate(const StorageMetadataSkipIndexField & index, bool attach) const;
+    void validate(const IndexDescription & index, bool attach) const;
 
-    std::shared_ptr<IMergeTreeIndex> get(const StorageMetadataSkipIndexField & index) const;
+    std::shared_ptr<IMergeTreeIndex> get(const IndexDescription & index) const;
 
-    MergeTreeIndices getMany(const std::vector<StorageMetadataSkipIndexField> & indices) const;
+    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
 
     void registerCreator(const std::string & index_type, Creator creator);
     void registerValidator(const std::string & index_type, Validator creator);
@@ -135,21 +135,21 @@ private:
 };
 
 std::shared_ptr<IMergeTreeIndex> minmaxIndexCreator(
-    const StorageMetadataSkipIndexField & index);
-void minmaxIndexValidator(const StorageMetadataSkipIndexField & index, bool attach);
+    const IndexDescription & index);
+void minmaxIndexValidator(const IndexDescription & index, bool attach);
 
 
 std::shared_ptr<IMergeTreeIndex> setIndexCreator(
-    const StorageMetadataSkipIndexField & index);
-void setIndexValidator(const StorageMetadataSkipIndexField & index, bool attach);
+    const IndexDescription & index);
+void setIndexValidator(const IndexDescription & index, bool attach);
 
 std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
-    const StorageMetadataSkipIndexField & index);
+    const IndexDescription & index);
 
-void bloomFilterIndexValidator(const StorageMetadataSkipIndexField & index, bool attach);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
 
 std::shared_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const StorageMetadataSkipIndexField & index);
-void bloomFilterIndexValidatorNew(const StorageMetadataSkipIndexField & index, bool attach);
+    const IndexDescription & index);
+void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 }
