@@ -116,7 +116,7 @@ private:
     void updateConfiguration(cppkafka::Configuration & conf);
 
     void threadFunc();
-    const String getDefaultClientId(const StorageID & table_id_) const;
+    static String getDefaultClientId(const StorageID & table_id_);
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 };
