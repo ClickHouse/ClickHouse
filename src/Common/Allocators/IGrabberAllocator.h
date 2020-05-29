@@ -490,7 +490,7 @@ public:
                 ++hits;
                 ++concurrent_hits;
 
-                disposer.dispose(true);
+                disposer.dispose();
 
                 return {attempt->value, false};
             }
