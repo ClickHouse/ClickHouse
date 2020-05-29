@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -15,12 +16,26 @@
 
 namespace DB
 {
+namespace
+{
+    DataTypeEnum8::Values getAuthenticationTypeEnumValues()
+    {
+        DataTypeEnum8::Values enum_values;
+        for (auto type : ext::range(Authentication::MAX_TYPE))
+            enum_values.emplace_back(Authentication::TypeInfo::get(type).name, static_cast<Int8>(type));
+        return enum_values;
+    }
+}
+
+
 NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
 {
     NamesAndTypesList names_and_types{
         {"name", std::make_shared<DataTypeString>()},
         {"id", std::make_shared<DataTypeUUID>()},
         {"storage", std::make_shared<DataTypeString>()},
+        {"auth_type", std::make_shared<DataTypeEnum8>(getAuthenticationTypeEnumValues())},
+        {"auth_params", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"host_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"host_names_regexp", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -43,6 +58,9 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_auth_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_auth_params = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_auth_params_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_ip = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_host_ip_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_host_names = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
@@ -60,12 +78,15 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
+                       const Authentication & authentication,
                        const AllowedClientHosts & allowed_hosts,
                        const ExtendedRoleSet & default_roles)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id);
         column_storage.insertData(storage_name.data(), storage_name.length());
+        column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
+        column_auth_params_offsets.push_back(column_auth_params.size());
 
         if (allowed_hosts.containsAnyHost())
         {
@@ -128,7 +149,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, const Context & 
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->allowed_client_hosts, user->default_roles);
+        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles);
     }
 }
 

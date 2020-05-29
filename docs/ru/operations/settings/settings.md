@@ -536,7 +536,7 @@ log_queries=1
 
 Установка логирования информации о потоках выполнения запроса.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log).
+Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
 Пример:
 

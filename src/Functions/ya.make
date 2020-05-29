@@ -425,6 +425,7 @@ SRCS(
     URL/path.cpp
     URL/pathFull.cpp
     URL/protocol.cpp
+    URL/port.cpp
     URL/queryStringAndFragment.cpp
     URL/queryString.cpp
     URL/registerFunctionsURL.cpp
