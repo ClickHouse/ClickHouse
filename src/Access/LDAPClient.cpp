@@ -23,6 +23,12 @@ LDAPClient::~LDAPClient()
     closeConnection();
 }
 
+void LDAPClient::openConnection()
+{
+    const bool graceful_bind_failure = false;
+    diag(openConnection(graceful_bind_failure));
+}
+
 #if USE_LDAP
 
 namespace
@@ -196,12 +202,6 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
     return rc;
 }
 
-void LDAPClient::openConnection()
-{
-    const bool graceful_bind_failure = false;
-    diag(openConnection(graceful_bind_failure));
-}
-
 void LDAPClient::closeConnection() noexcept
 {
     if (!handle)
@@ -256,11 +256,6 @@ void LDAPClient::diag(const int)
 }
 
 int LDAPClient::openConnection(const bool)
-{
-    throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
-}
-
-void LDAPClient::openConnection()
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
