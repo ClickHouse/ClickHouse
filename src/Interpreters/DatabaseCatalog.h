@@ -21,6 +21,7 @@ class Context;
 class IDatabase;
 class Exception;
 class ColumnsDescription;
+struct ConstraintsDescription;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
@@ -71,7 +72,11 @@ struct TemporaryTableHolder : boost::noncopyable
     TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
-    TemporaryTableHolder(const Context & context, const ColumnsDescription & columns, const ASTPtr & query = {});
+    TemporaryTableHolder(
+        const Context & context,
+        const ColumnsDescription & columns,
+        const ConstraintsDescription & constraints,
+        const ASTPtr & query = {});
 
     TemporaryTableHolder(TemporaryTableHolder && rhs);
     TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);

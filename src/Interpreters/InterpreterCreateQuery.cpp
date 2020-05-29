@@ -637,7 +637,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (create.if_not_exists && context.tryResolveStorageID({"", table_name}, Context::ResolveExternal))
             return false;
 
-        auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
+        auto temporary_table = TemporaryTableHolder(context, properties.columns, properties.constraints, query_ptr);
         context.getSessionContext().addExternalTable(table_name, std::move(temporary_table));
         return true;
     }

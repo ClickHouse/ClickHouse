@@ -58,13 +58,17 @@ TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
 }
 
 
-TemporaryTableHolder::TemporaryTableHolder(const Context & context_, const ColumnsDescription & columns, const ASTPtr & query)
+TemporaryTableHolder::TemporaryTableHolder(
+    const Context & context_,
+    const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints,
+    const ASTPtr & query)
     : TemporaryTableHolder
       (
           context_,
           [&](const StorageID & table_id)
           {
-              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{});
+              return StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints});
           },
           query
       )
