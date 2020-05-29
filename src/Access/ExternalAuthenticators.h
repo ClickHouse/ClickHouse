@@ -8,8 +8,10 @@
 #include <mutex>
 
 
-namespace Poco {
+namespace Poco
+{
     class Logger;
+
     namespace Util
     {
         class AbstractConfiguration;

@@ -55,7 +55,7 @@ if (ENABLE_LDAP)
             set (USE_INTERNAL_LDAP_LIBRARY 1)
             set (OPENLDAP_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap")
             set (OPENLDAP_INCLUDE_DIRS
-                "${ClickHouse_SOURCE_DIR}/contrib/openldap-cmake/${_system_name}_${_system_processor}"
+                "${ClickHouse_SOURCE_DIR}/contrib/openldap-cmake/${_system_name}_${_system_processor}/include"
                 "${ClickHouse_SOURCE_DIR}/contrib/openldap/include"
             )
             # Below, 'ldap'/'ldap_r' and 'lber' will be resolved to
