@@ -6,14 +6,9 @@ set(CLICKHOUSE_CLIENT_SOURCES
 
 set(CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_common_config clickhouse_functions clickhouse_aggregate_functions clickhouse_common_io clickhouse_parsers string_utils ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-include(CheckSymbolExists)
-check_symbol_exists(readpassphrase readpassphrase.h HAVE_READPASSPHRASE)
-configure_file(config_client.h.in ${ConfigIncludePath}/config_client.h)
-
-if(NOT HAVE_READPASSPHRASE)
-    add_subdirectory(readpassphrase)
-    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
-endif()
+# Always use internal readpassphrase
+add_subdirectory(readpassphrase)
+list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
 
 clickhouse_program_add(client)
 
