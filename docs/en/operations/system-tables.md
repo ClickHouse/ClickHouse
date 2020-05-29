@@ -5,7 +5,7 @@ toc_title: System Tables
 
 # System Tables {#system-tables}
 
-## Introduction
+## Introduction {#system-tables-introduction}
 
 System tables provide information about:
 
@@ -18,9 +18,12 @@ System tables:
 - Available only for reading data.
 - Can't be dropped or altered, but can be detached.
 
-The `metric_log`, `query_log`, `query_thread_log`, `trace_log` system tables store data in a storage filesystem. Other system tables store their data in RAM. ClickHouse server creates such system tables at the start.
+Most of system tables store their data in RAM. ClickHouse server creates such system tables at the start.
 
-### Sources of System Metrics
+The [metric_log](#system_tables-metric_log), [query_log](#system_tables-query_log), [query_thread_log](#system_tables-query_thread_log), [trace_log](#system_tables-trace_log) system tables store data in a storage filesystem. You can alter them or remove from a disk manually. If you remove one of that tables from a disk, the ClickHouse server creates the table again at the time of the next recording. A storage period for these tables is not limited, and ClickHouse server doesn't delete their data automatically. You need to organize removing of outdated logs by yourself. For example, you can use [TTL](../sql-reference/statements/alter.md#manipulations-with-table-ttl) settings for removing outdated log records. 
+
+
+### Sources of System Metrics {#system-tables-sources-of-system-metrics}
 
 For collecting system metrics ClickHouse server uses:
 
@@ -598,14 +601,9 @@ You can change settings of queries logging in the [query_log](server-configurati
 
 You can disable queries logging by setting [log_queries = 0](settings/settings.md#settings-log-queries). We don't recommend to turn off logging because information in this table is important for solving issues.
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs by yourself.
+The flushing period of logs is set in `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
-
-By default, information about queries is flushed to the table each 7.5 seconds. You can change this interval in the `flush_interval_milliseconds` parameter of the [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing logs, use the [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs) query.
-
-If you delete the `query_log` table manually from storage, the ClickHouse server recreates it on the fly. All the previous logs are deleted with the table files.
+ClickHouse doesn't delete logs from the table automatically. See [Introduction](#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 
@@ -629,17 +627,17 @@ Columns:
 -   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Query starting time.
 -   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — Start time of query execution.
 -   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
--   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
--   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
+-   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn't affect this value.
+-   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number or bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarize all received and local values. The cache volumes doesn't affect this value.
 -   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
 -   `written_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
--   `result_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in the result.
--   `result_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of bytes in the result.
+-   `result_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
+-   `result_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — RAM volume in bytes used to store a query result.
 -   `memory_usage` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
 -   `query` ([String](../sql-reference/data-types/string.md)) — Query string.
 -   `exception` ([String](../sql-reference/data-types/string.md)) — Exception message.
 -   `exception_code` ([Int32](../sql-reference/data-types/int-uint.md)) — Code of an exception. 
--   `stack_trace` ([String](../sql-reference/data-types/string.md)) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
+-   `stack_trace` ([String](../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
 -   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
     -   1 — Query was initiated by the client.
     -   0 — Query was initiated by another query as part of distributed query execution.
@@ -729,13 +727,13 @@ Settings.Values:      ['0','random','1','10000000000']
 ```
 **See Also**
 
--   [system.query_thread_log](#system_tables-query-thread-log) — This table contains information about each query execution thread.
+-   [system.query_thread_log](#system_tables-query_thread_log) — This table contains information about each query execution thread.
 
-## system.query_thread_log {#system_tables-query-thread-log}
+## system.query_thread_log {#system_tables-query_thread_log}
 
 The table contains information about each query execution thread.
 
-ClickHouse creates this table only if the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+ClickHouse creates this table only if the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
 To enable query logging, set the [log\_query\_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
@@ -787,14 +785,14 @@ Columns:
 -   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
 -   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
 When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
 
 !!! note "Note"
     The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
-You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) server setting (see the `partition_by` parameter).
+You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server setting (see the `partition_by` parameter).
 
 ## system.trace\_log {#system_tables-trace_log}
 
