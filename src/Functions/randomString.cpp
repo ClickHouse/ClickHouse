@@ -3,6 +3,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
+#include <Functions/FunctionsRandom.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 #include <common/unaligned.h>
@@ -19,12 +21,11 @@ namespace ErrorCodes
 
 
 /* Generate random string of specified length with fully random bytes (including zero). */
-class FunctionRandomString : public IFunction
+template <typename RandImpl>
+class FunctionRandomStringImpl : public IFunction
 {
 public:
     static constexpr auto name = "randomString";
-
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomString>(); }
 
     String getName() const override { return name; }
 
@@ -83,23 +84,43 @@ public:
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
-        pcg64_fast rng(randomSeed()); /// TODO It is inefficient. We should use SIMD PRNG instead.
-
-        auto * pos = data_to.data();
-        auto * end = pos + data_to.size();
-        while (pos < end)
-        {
-            unalignedStore<UInt64>(pos, rng());
-            pos += sizeof(UInt64); // We have padding in column buffers that we can overwrite.
-        }
+        RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
 
         /// Put zero bytes in between.
-        pos = data_to.data();
+        auto * pos = data_to.data();
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             pos[offsets_to[row_num] - 1] = 0;
 
         block.getByPosition(result).column = std::move(col_to);
     }
+};
+
+class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
+{
+public:
+    explicit FunctionRandomString(const Context & context) : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default,
+            FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
+        
+    #if USE_MULTITARGET_CODE
+        selector.registerImplementation<TargetArch::AVX2,
+            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
+    #endif
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        selector.selectAndExecute(block, arguments, result, input_rows_count);
+    }
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionRandomString>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
 };
 
 void registerFunctionRandomString(FunctionFactory & factory)
