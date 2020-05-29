@@ -154,55 +154,46 @@ struct PerfEventValue
     UInt64 time_running = 0;
 };
 
-struct PerfDescriptorsHolder;
-
-struct PerfEventsCounters
-{
-    static constexpr size_t NUMBER_OF_RAW_EVENTS = 16;
-    static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
-    static constexpr char ALL_EVENTS_NAME[] = "all";
-
-    static const PerfEventInfo raw_events_info[NUMBER_OF_RAW_EVENTS];
-
-    static void initializeProfileEvents(PerfEventsCounters & counters, const std::string & events_list);
-    static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
-    static void closeEventDescriptors();
-
-    PerfEventsCounters();
-
-private:
-    // must be unsigned to not cause undefined behaviour on increment
-    using Id = UInt64;
-    using ParsedEvents = std::pair<std::string, std::vector<size_t>>;
-
-    static std::atomic<Id> latest_counters_id;
-
-    static thread_local PerfDescriptorsHolder thread_events_descriptors_holder;
-    static thread_local std::optional<Id> current_thread_counters_id;
-    static thread_local std::optional<ParsedEvents> last_parsed_events;
-
-    Id id;
-    // temp array just to not create it each time event processing finishes
-    PerfEventValue raw_event_values[NUMBER_OF_RAW_EVENTS]{};
-
-    static Logger * getLogger();
-    static bool processThreadLocalChanges(const std::string & needed_events_list);
-    static std::vector<size_t> eventIndicesFromString(const std::string & events_list);
-};
+static constexpr size_t NUMBER_OF_RAW_EVENTS = 16;
 
 struct PerfDescriptorsHolder : boost::noncopyable
 {
-    int descriptors[PerfEventsCounters::NUMBER_OF_RAW_EVENTS]{};
+    int descriptors[NUMBER_OF_RAW_EVENTS]{};
 
     PerfDescriptorsHolder();
 
     ~PerfDescriptorsHolder();
 
     void releaseResources();
-
-private:
-    static Logger * getLogger();
 };
+
+struct PerfEventsCounters
+{
+    PerfDescriptorsHolder thread_events_descriptors_holder;
+
+    // time_enabled and time_running can't be reset, so we have to store the
+    // data from the previous profiling period and calculate deltas to them,
+    // to be able to properly account for counter multiplexing.
+    PerfEventValue previous_values[NUMBER_OF_RAW_EVENTS]{};
+
+
+
+    static constexpr Float64 FILE_DESCRIPTORS_THRESHOLD = 0.7;
+    static constexpr char ALL_EVENTS_NAME[] = "all";
+
+    void initializeProfileEvents(const std::string & events_list);
+    void finalizeProfileEvents(ProfileEvents::Counters & profile_events);
+    void closeEventDescriptors();
+
+    static Logger * getLogger();
+    bool processThreadLocalChanges(const std::string & needed_events_list);
+    std::vector<size_t> eventIndicesFromString(const std::string & events_list);
+};
+
+// Perf event creation is moderately heavy, so we create them once per thread and
+// then reuse.
+extern thread_local PerfEventsCounters current_thread_counters;
+
 
 #else
 
