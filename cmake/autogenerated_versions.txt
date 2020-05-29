@@ -1,0 +1,9 @@
+# This strings autochanged from release_lib.sh:
+set(VERSION_REVISION 54434)
+set(VERSION_MAJOR 20)
+set(VERSION_MINOR 4)
+set(VERSION_PATCH 5)
+set(VERSION_GITHASH 512687f1a3fd9708c44a8d5d2d11c7bf7e33a8d1)
+set(VERSION_DESCRIBE v20.4.5.1-stable)
+set(VERSION_STRING 20.4.5.1)
+# end of autochange
