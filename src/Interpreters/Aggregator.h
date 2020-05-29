@@ -902,7 +902,8 @@ public:
             tmp_volume(tmp_volume_), max_threads(max_threads_),
             min_free_disk_space(min_free_disk_space_)
         {
-            method_chosen = chooseAggregationMethod(*this);
+            if (src_header)
+                method_chosen = chooseAggregationMethod(*this);
         }
 
         /// Only parameters that matter during merge.
@@ -911,6 +912,7 @@ public:
             : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0)
         {
             intermediate_header = intermediate_header_;
+            method_chosen = chooseAggregationMethod(*this);
         }
 
         AggregatedDataVariants::Type getMethod() const { return method_chosen; }
