@@ -1,14 +1,8 @@
-SELECT
-  fuzzBits(toString('string'), 1);
--- { serverError 43 }
-SELECT
-  fuzzBits('', 0.3);
-SELECT
-  length(fuzzBits(randomString(100), 0.5));
-SELECT
-  toTypeName(fuzzBits(randomString(100), 0.5));
-SELECT
-  toTypeName(fuzzBits(toFixedString('abacaba', 10), 0.9));
+SELECT fuzzBits(toString('string'), 1); -- { serverError 43 }
+SELECT fuzzBits('', 0.3);
+SELECT length(fuzzBits(randomString(100), 0.5));
+SELECT toTypeName(fuzzBits(randomString(100), 0.5));
+SELECT toTypeName(fuzzBits(toFixedString('abacaba', 10), 0.9));
 
 SELECT
   (
