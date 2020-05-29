@@ -168,8 +168,9 @@ public:
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 
-    /// Convert query pipeline to single pipe.
+    /// Convert query pipeline to single or several pipes.
     Pipe getPipe() &&;
+    Pipes getPipes() &&;
 
 private:
     /// Destruction order: processors, header, locks, temporary storages, local contexts
