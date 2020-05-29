@@ -26,7 +26,6 @@ ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
 {
     last_rusage = std::make_unique<RUsageCounters>();
-    perf_events = std::make_unique<PerfEventsCounters>();
 
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");

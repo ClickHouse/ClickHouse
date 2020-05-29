@@ -157,7 +157,8 @@ void ThreadStatus::initPerformanceCounters()
         {
             try
             {
-                PerfEventsCounters::initializeProfileEvents(*perf_events, settings.metrics_perf_events_list);
+                current_thread_counters.initializeProfileEvents(
+                    settings.metrics_perf_events_list);
             }
             catch (...)
             {
@@ -195,9 +196,9 @@ void ThreadStatus::finalizePerformanceCounters()
 
     try
     {
-        PerfEventsCounters::finalizeProfileEvents(*perf_events, performance_counters);
+        current_thread_counters.finalizeProfileEvents(performance_counters);
         if (close_perf_descriptors)
-            PerfEventsCounters::closeEventDescriptors();
+            current_thread_counters.closeEventDescriptors();
     }
     catch (...)
     {

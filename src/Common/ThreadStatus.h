@@ -199,7 +199,6 @@ protected:
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> taskstats;
-    std::unique_ptr<PerfEventsCounters> perf_events;
 
 private:
     void setupState(const ThreadGroupStatusPtr & thread_group_);
