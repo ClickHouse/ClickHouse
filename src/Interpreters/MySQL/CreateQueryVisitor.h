@@ -2,14 +2,33 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
-#include <Parsers/MySQL/ASTDeclareIndex.h>
+#include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
+#include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Parsers/MySQL/ASTDeclarePartitionOptions.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
+
+struct MySQLTableStruct
+{
+    bool if_not_exists;
+    String table_name;
+    String database_name;
+    ASTs primary_keys;
+    ASTs partition_keys;
+    NamesAndTypesList columns_name_and_type;
+
+    MySQLTableStruct() {}
+
+    MySQLTableStruct(const ASTs & primary_keys_, const ASTs & partition_keys_, const NamesAndTypesList & columns_name_and_type_)
+        : primary_keys(primary_keys_), partition_keys(partition_keys_), columns_name_and_type(columns_name_and_type_)
+    {}
+
+    bool operator==(const MySQLTableStruct & other) const;
+};
 
 namespace MySQLVisitor
 {
@@ -20,25 +39,17 @@ class CreateQueryMatcher
 public:
     using Visitor = InDepthNodeVisitor<CreateQueryMatcher, false>;
 
-    struct Data
+    struct Data : public MySQLTableStruct
     {
-        /// SETTINGS
-        WriteBuffer & out;
         const Context & context;
         size_t max_ranges;
         size_t min_rows_pre_range;
 
-        ASTs primary_keys;
-        ASTs partition_keys;
-        NamesAndTypesList columns_name_and_type;
+        Data(const Context & context_) : MySQLTableStruct(), context(context_) {}
 
         void addPrimaryKey(const ASTPtr & primary_key);
 
         void addPartitionKey(const ASTPtr & partition_key);
-
-        ASTPtr getFormattedOrderByExpression();
-
-        ASTPtr getFormattedPartitionByExpression();
     };
 
     static void visit(ASTPtr & ast, Data & data);
@@ -56,10 +67,12 @@ private:
     static void visit(const MySQLParser::ASTDeclarePartitionOptions & declare_partition_options, const ASTPtr &, Data & data);
 };
 
-using CreateQueryConvertVisitor = CreateQueryMatcher::Visitor;
+using CreateQueryVisitor = CreateQueryMatcher::Visitor;
 
 }
 
+MySQLTableStruct visitCreateQuery(ASTPtr & create_query, const Context & context, const std::string & new_database);
 
+MySQLTableStruct visitCreateQuery(const String & create_query, const Context & context, const std::string & new_database);
 
 }

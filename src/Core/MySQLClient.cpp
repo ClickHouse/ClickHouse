@@ -17,6 +17,12 @@ MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user
     client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }
 
+MySQLClient::MySQLClient(MySQLClient && other)
+    : host(other.host), port(other.port), user(other.user), password(other.password)
+    , client_capability_flags(other.client_capability_flags)
+{
+}
+
 void MySQLClient::connect()
 {
     if (connected)

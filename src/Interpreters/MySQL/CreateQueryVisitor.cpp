@@ -1,13 +1,13 @@
-#include <Interpreters/MySQL/CreateQueryConvertVisitor.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
+#include <Interpreters/MySQL/CreateQueryVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Parsers/MySQL/ASTDeclareOption.h>
+#include <Parsers/queryToString.h>
 #include <Poco/String.h>
+#include <Common/quoteString.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -94,14 +94,9 @@ void CreateQueryMatcher::visit(const MySQLParser::ASTCreateQuery & create, const
     if (create.partition_options)
         visit(*create.partition_options->as<MySQLParser::ASTDeclarePartitionOptions>(), create.partition_options, data);
 
-    auto expression_list = std::make_shared<ASTExpressionList>();
-    expression_list->children = data.primary_keys;
-
-    data.out << "CREATE TABLE " << (create.if_not_exists ? "IF NOT EXISTS" : "")
-        << (create.database.empty() ? "" : backQuoteIfNeed(create.database) + ".") << backQuoteIfNeed(create.table)
-        << "(" << queryToString(InterpreterCreateQuery::formatColumns(data.columns_name_and_type)) << ") ENGINE = MergeTree()"
-        " PARTITION BY " << queryToString(data.getFormattedPartitionByExpression())
-        << " ORDER BY " << queryToString(data.getFormattedOrderByExpression());
+    data.table_name = create.table;
+    data.database_name = create.database;
+    data.if_not_exists = create.if_not_exists;
 }
 
 void CreateQueryMatcher::visit(const MySQLParser::ASTDeclareIndex & declare_index, const ASTPtr &, Data & data)
@@ -201,111 +196,39 @@ void CreateQueryMatcher::Data::addPartitionKey(const ASTPtr & partition_key)
         partition_keys.emplace_back(partition_key);
 }
 
-ASTPtr CreateQueryMatcher::Data::getFormattedOrderByExpression()
-{
-    if (primary_keys.empty())
-        return makeASTFunction("tuple");
-
-    /// TODO: support unique key & key
-    const auto function = std::make_shared<ASTFunction>();
-    function->name = "tuple";
-    function->arguments = std::make_shared<ASTExpressionList>();
-    function->children.push_back(function->arguments);
-    function->arguments->children = primary_keys;
-
-    return function;
 }
 
-template <typename TType>
-Field choiceBetterRangeSize(TType min, TType max, size_t max_ranges, size_t min_size_pre_range)
+bool MySQLTableStruct::operator==(const MySQLTableStruct & other) const
 {
-    UInt64 interval = UInt64(max) - min;
-    size_t calc_rows_pre_range = std::ceil(interval / double(max_ranges));
-    size_t rows_pre_range = std::max(min_size_pre_range, calc_rows_pre_range);
+    const auto & this_expression = std::make_shared<ASTExpressionList>();
+    this_expression->children.insert(this_expression->children.begin(), primary_keys.begin(), primary_keys.end());
+    this_expression->children.insert(this_expression->children.begin(), partition_keys.begin(), partition_keys.end());
 
-    if (rows_pre_range >= interval)
-        return Null();
+    const auto & other_expression = std::make_shared<ASTExpressionList>();
+    other_expression->children.insert(other_expression->children.begin(), other.primary_keys.begin(), other.primary_keys.end());
+    other_expression->children.insert(other_expression->children.begin(), other.partition_keys.begin(), other.partition_keys.end());
 
-    return rows_pre_range > std::numeric_limits<TType>::max() ? Field(UInt64(rows_pre_range)) : Field(TType(rows_pre_range));
+    return queryToString(this_expression) == queryToString(other_expression) && columns_name_and_type == other.columns_name_and_type;
 }
 
-ASTPtr CreateQueryMatcher::Data::getFormattedPartitionByExpression()
+MySQLTableStruct visitCreateQuery(ASTPtr & create_query, const Context & context, const std::string & new_database)
 {
-    ASTPtr partition_columns = std::make_shared<ASTExpressionList>();
-
-    if (!partition_keys.empty())
-        partition_columns->children = partition_keys;
-    else if (!primary_keys.empty())
-    {
-        ASTPtr expr_list = std::make_shared<ASTExpressionList>();
-        expr_list->children = primary_keys;
-
-        auto syntax = SyntaxAnalyzer(context).analyze(expr_list, columns_name_and_type);
-        auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
-        const NamesAndTypesList & required_names_and_types = index_expr->getRequiredColumnsWithTypes();
-
-        const auto & addPartitionColumn = [&](const String & column_name, const DataTypePtr & type, Field better_pre_range_size)
-        {
-            partition_columns->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-
-            if (type->isNullable())
-                partition_columns->children.back() = makeASTFunction("assumeNotNull", partition_columns->children.back());
-
-            if (!better_pre_range_size.isNull())
-                partition_columns->children.back()
-                    = makeASTFunction("divide", partition_columns->children.back(), std::make_shared<ASTLiteral>(better_pre_range_size));
-        };
-
-        for (const auto & required_name_and_type : required_names_and_types)
-        {
-            DataTypePtr assume_not_null = required_name_and_type.type;
-            if (assume_not_null->isNullable())
-                assume_not_null = (static_cast<const DataTypeNullable &>(*assume_not_null)).getNestedType();
-
-            WhichDataType which(assume_not_null);
-            if (which.isInt8())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<Int8>(
-                    std::numeric_limits<Int8>::min(), std::numeric_limits<Int8>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isInt16())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<Int16>(
-                    std::numeric_limits<Int16>::min(), std::numeric_limits<Int16>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isInt32())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<Int32>(
-                    std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isInt64())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<Int64>(
-                    std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isUInt8())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<UInt8>(
-                    std::numeric_limits<UInt8>::min(), std::numeric_limits<UInt8>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isUInt16())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<UInt16>(
-                    std::numeric_limits<UInt16>::min(), std::numeric_limits<UInt16>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isUInt32())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<UInt32>(
-                    std::numeric_limits<UInt32>::min(), std::numeric_limits<UInt32>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isUInt64())
-                addPartitionColumn(required_name_and_type.name, required_name_and_type.type, choiceBetterRangeSize<UInt64>(
-                    std::numeric_limits<UInt64>::min(), std::numeric_limits<UInt64>::max(), max_ranges, min_rows_pre_range));
-            else if (which.isDateOrDateTime())
-            {
-                partition_columns->children.emplace_back(std::make_shared<ASTIdentifier>(required_name_and_type.name));
-
-                if (required_name_and_type.type->isNullable())
-                    partition_columns->children.back() = makeASTFunction("assumeNotNull", partition_columns->children.back());
-
-                partition_columns->children.back() = makeASTFunction("toYYYYMM", partition_columns->children.back());
-            }
-        }
-    }
-
-    const auto function = std::make_shared<ASTFunction>();
-    function->name = "tuple";
-    function->arguments = partition_columns;
-    function->children.push_back(function->arguments);
-    return function;
+    create_query->as<MySQLParser::ASTCreateQuery>()->database = new_database;
+    MySQLVisitor::CreateQueryVisitor::Data table_struct(context);
+    MySQLVisitor::CreateQueryVisitor visitor(table_struct);
+    visitor.visit(create_query);
+    return std::move(table_struct);
 }
 
+MySQLTableStruct visitCreateQuery(const String & create_query, const Context & context, const std::string & new_database)
+{
+    MySQLParser::ParserCreateQuery p_create_query;
+    ASTPtr ast_create_query = parseQuery(p_create_query, create_query.data(), create_query.data() + create_query.size(), "", 0, 0);
+
+    if (!ast_create_query || !ast_create_query->as<MySQLParser::ASTCreateQuery>())
+        throw Exception("LOGICAL ERROR: ast cannot cast to MySQLParser::ASTCreateQuery.", ErrorCodes::LOGICAL_ERROR);
+
+    return visitCreateQuery(ast_create_query, context, new_database);
 }
 
 }

@@ -28,6 +28,8 @@ class MySQLClient
 {
 public:
     MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_);
+    MySQLClient(MySQLClient && other);
+
     void connect();
     void disconnect();
     void ping();

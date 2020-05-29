@@ -4,15 +4,13 @@
 #include <Databases/MySQL/MasterStatusInfo.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <Common/quoteString.h>
+#include <Poco/File.h>
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
 
 namespace DB
 {
-/*MasterStatusInfo::MasterStatusInfo(
-    String binlog_file_, UInt64 binlog_position_, String binlog_do_db_, String binlog_ignore_db_, String executed_gtid_set_)
-    : binlog_file(binlog_file_), binlog_position(binlog_position_), binlog_do_db(binlog_do_db_), binlog_ignore_db(binlog_ignore_db_),
-    executed_gtid_set(executed_gtid_set_)
-{
-}*/
 
 static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection, const std::string & database)
 {
@@ -31,9 +29,99 @@ static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entr
 
     return tables_in_db;
 }
-
-MasterStatusInfo::MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection, const String & database)
+void MasterStatusInfo::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection)
 {
+    Block header{
+        {std::make_shared<DataTypeString>(), "File"},
+        {std::make_shared<DataTypeUInt64>(), "Position"},
+        {std::make_shared<DataTypeString>(), "Binlog_Do_DB"},
+        {std::make_shared<DataTypeString>(), "Binlog_Ignore_DB"},
+        {std::make_shared<DataTypeString>(), "Executed_Gtid_Set"},
+    };
+
+    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, DEFAULT_BLOCK_SIZE);
+    Block master_status = input.read();
+
+    if (!master_status || master_status.rows() != 1)
+        throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
+
+    binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
+    binlog_position = (*master_status.getByPosition(1).column)[0].safeGet<UInt64>();
+    binlog_do_db = (*master_status.getByPosition(2).column)[0].safeGet<String>();
+    binlog_ignore_db = (*master_status.getByPosition(3).column)[0].safeGet<String>();
+    executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
+}
+
+bool MasterStatusInfo::checkBinlogFileExists(mysqlxx::PoolWithFailover::Entry & connection)
+{
+    Block header{
+        {std::make_shared<DataTypeString>(), "Log_name"},
+        {std::make_shared<DataTypeUInt64>(), "File_size"},
+        {std::make_shared<DataTypeString>(), "Encrypted"}
+    };
+
+    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", header, DEFAULT_BLOCK_SIZE);
+
+    while (Block block = input.read())
+    {
+        for (size_t index = 0; index < block.rows(); ++index)
+        {
+            const auto & log_name = (*block.getByPosition(0).column)[index].safeGet<String>();
+            if (log_name == binlog_file)
+                return true;
+        }
+    }
+    return false;
+}
+void MasterStatusInfo::finishDump()
+{
+    WriteBufferFromFile out(persistent_path);
+    out << "Version:\t1\n"
+        << "Binlog File:\t" << binlog_file << "\nBinlog Position:\t" << binlog_position << "\nBinlog Do DB:\t" << binlog_do_db
+        << "\nBinlog Ignore DB:\t" << binlog_ignore_db << "\nExecuted GTID SET:\t" << executed_gtid_set;
+
+    out.next();
+    out.sync();
+}
+
+void MasterStatusInfo::transaction(const MySQLReplication::Position & position, const std::function<void()> & fun)
+{
+    binlog_file = position.binlog_name;
+    binlog_position = position.binlog_pos;
+
+    {
+        Poco::File temp_file(persistent_path + ".temp");
+        if (temp_file.exists())
+            temp_file.remove();
+    }
+
+    WriteBufferFromFile out(persistent_path + ".temp");
+    out << "Version:\t1\n"
+        << "Binlog File:\t" << binlog_file << "\nBinlog Position:\t" << binlog_position << "\nBinlog Do DB:\t" << binlog_do_db
+        << "\nBinlog Ignore DB:\t" << binlog_ignore_db << "\nExecuted GTID SET:\t" << executed_gtid_set;
+    out.next();
+    out.sync();
+
+    fun();
+    Poco::File(persistent_path + ".temp").renameTo(persistent_path);
+}
+
+MasterStatusInfo::MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection, const String & path_, const String & database)
+    : persistent_path(path_)
+{
+    if (Poco::File(persistent_path).exists())
+    {
+        ReadBufferFromFile in(persistent_path);
+        in >> "Version:\t1\n" >> "Binlog File:\t" >> binlog_file >> "\nBinlog Position:\t" >> binlog_position >> "\nBinlog Do DB:\t"
+            >> binlog_do_db >> "\nBinlog Ignore DB:\t" >> binlog_ignore_db >> "\nExecuted GTID SET:\t" >> executed_gtid_set;
+
+        if (checkBinlogFileExists(connection))
+        {
+            std::cout << "Load From File \n";
+            return;
+        }
+    }
+
     bool locked_tables = false;
 
     try
@@ -48,6 +136,7 @@ MasterStatusInfo::MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection
 
         need_dumping_tables = fetchTablesInDB(connection, database);
         connection->query("UNLOCK TABLES;").execute();
+        /// TODO: 拉取建表语句, 解析并构建出表结构(列列表, 主键, 唯一索引, 分区键)
     }
     catch (...)
     {
@@ -56,29 +145,6 @@ MasterStatusInfo::MasterStatusInfo(mysqlxx::PoolWithFailover::Entry & connection
 
         throw;
     }
-}
-void MasterStatusInfo::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & connection)
-{
-    Block header
-        {
-            {std::make_shared<DataTypeString>(), "File"},
-            {std::make_shared<DataTypeUInt64>(), "Position"},
-            {std::make_shared<DataTypeString>(), "Binlog_Do_DB"},
-            {std::make_shared<DataTypeString>(), "Binlog_Ignore_DB"},
-            {std::make_shared<DataTypeString>(), "Executed_Gtid_Set"},
-        };
-
-    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, DEFAULT_BLOCK_SIZE);
-    Block master_status = input.read();
-
-    if (!master_status || master_status.rows() != 1)
-        throw Exception("Unable to get master status from MySQL.", ErrorCodes::LOGICAL_ERROR);
-
-    binlog_file = (*master_status.getByPosition(0).column)[0].safeGet<String>();
-    binlog_position = (*master_status.getByPosition(1).column)[0].safeGet<UInt64>();
-    binlog_do_db = (*master_status.getByPosition(2).column)[0].safeGet<String>();
-    binlog_ignore_db = (*master_status.getByPosition(3).column)[0].safeGet<String>();
-    executed_gtid_set = (*master_status.getByPosition(4).column)[0].safeGet<String>();
 }
 
 }
