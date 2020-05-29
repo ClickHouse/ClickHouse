@@ -45,8 +45,8 @@ void ExecutionSpeedLimits::throttle(
 {
     if ((min_execution_rps != 0 || max_execution_rps != 0
          || min_execution_bps != 0 || max_execution_bps != 0
-         || (total_rows_to_read != 0 && timeout_before_checking_execution_speed != 0)) &&
-        (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
+         || (total_rows_to_read != 0 && timeout_before_checking_execution_speed != 0))
+        && (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
     {
         /// Do not count sleeps in throttlers
         UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
