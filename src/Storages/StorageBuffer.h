@@ -75,7 +75,7 @@ public:
     {
         if (!destination_id)
             return false;
-        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id);
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;

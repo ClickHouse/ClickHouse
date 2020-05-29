@@ -59,7 +59,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
 
         ASTPtr query;
         BlockOutputStreamPtr out;
