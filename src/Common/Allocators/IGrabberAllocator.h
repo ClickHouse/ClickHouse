@@ -537,6 +537,8 @@ public:
         {
             onSharedValueCreate<true>(*region);
 
+            std::lock_guard attempt_lock(attempt->mutex);
+
             attempt->value = std::shared_ptr<Value>( //NOLINT: see line 589
                 region->value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
 
