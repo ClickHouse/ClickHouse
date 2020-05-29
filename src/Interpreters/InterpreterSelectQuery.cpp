@@ -73,6 +73,7 @@
 #include <DataStreams/materializeBlock.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 
 
 namespace DB
@@ -443,6 +444,16 @@ BlockIO InterpreterSelectQuery::execute()
     executeImpl(res.pipeline, input, std::move(input_pipe));
     res.pipeline.addInterpreterContext(context);
     res.pipeline.addStorageHolder(storage);
+
+    /// We must guarantee that result structure is the same as in getSampleBlock()
+    if (!blocksHaveEqualStructure(res.pipeline.getHeader(), result_header))
+    {
+        res.pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ConvertingTransform>(header, result_header, ConvertingTransform::MatchColumnsMode::Name);
+        });
+    }
+
     return res;
 }
 
