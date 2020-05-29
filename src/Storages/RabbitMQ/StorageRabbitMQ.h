@@ -79,6 +79,10 @@ private:
     Poco::Logger * log;
     std::pair<std::string, UInt16> parsed_address;
 
+    event_base * evbase;
+    RabbitMQHandler eventHandler;
+    AMQP::TcpConnection connection;
+
     Poco::Semaphore semaphore;
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers

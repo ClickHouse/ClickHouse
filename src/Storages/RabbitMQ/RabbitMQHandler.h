@@ -17,12 +17,14 @@ public:
     RabbitMQHandler(event_base * evbase_, Poco::Logger * log_);
 
     void onError(AMQP::TcpConnection * connection, const char * message) override;
-    void start(); 
+    void start(std::atomic<bool> & check_param); 
     void stop();
 
 private:
     event_base * evbase;
     Poco::Logger * log;
+
+    std::mutex mutex;
 };
 
 }

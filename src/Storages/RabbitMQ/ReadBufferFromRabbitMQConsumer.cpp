@@ -7,17 +7,12 @@
 #include <amqpcpp.h>
 
 
-enum
-{
-    Connection_setup_sleep = 200,
-    Connection_setup_retries_max = 1000
-};
-
 namespace DB
 {
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
-        std::pair<std::string, UInt16> & parsed_address,
+        ChannelPtr consumer_channel_,
+        RabbitMQHandler & eventHandler_,
         const String & exchange_name_,
         const String & routing_key_,
         const size_t channel_id_,
@@ -28,10 +23,8 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         const size_t num_queues_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
-        , evbase(event_base_new())
-        , eventHandler(evbase, log)
-        , connection(&eventHandler, 
-          AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
+        , consumer_channel(std::move(consumer_channel_))
+        , eventHandler(eventHandler_)
         , exchange_name(exchange_name_)
         , routing_key(routing_key_)
         , channel_id(channel_id_)
@@ -41,29 +34,9 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , hash_exchange(hash_exchange_)
         , num_queues(num_queues_)
         , stopped(stopped_)
+        , exchange_declared(false)
+        , false_param(false)
 {
-    /* It turned out to be very important to make a different connection each time the object of this class is created,
-     * because in case when num_consumers > 1 - inputStreams run asynchronously and if they share the same connection,
-     * then they also will share the same event loop. But it will mean that if one stream's consumer starts event loop,
-     * then it will run all callbacks on the connection - including other stream's consumer's callbacks - 
-     * as a result local variables can be updated both by the current thread and in callbacks by another thread during
-     * event loop, which is blocking only to the thread that has started the loop. Therefore sharing the connection
-     * (== sharing event loop) results in occasional seg faults in case of asynchronous run of objects that share the connection.
-     */
-    size_t cnt_retries = 0;
-    while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
-    {
-        event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
-        std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
-    }
-
-    if (!connection.ready())
-    {
-        LOG_ERROR(log, "Cannot set up connection for consumer");
-    }
-
-    consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
-
     messages.clear();
     current = messages.begin();
 
@@ -79,7 +52,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
-    connection.close();
+    consumer_channel->close();
 
     messages.clear();
     current = messages.begin();
@@ -139,7 +112,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
         exchange_declared = true;
     }
 
-    bool bindings_created = false, bindings_error = false;
+    std::atomic<bool> bindings_created = false, bindings_error = false;
 
     consumer_channel->declareQueue(AMQP::exclusive)
     .onSuccess([&](const std::string &  queue_name_, int /* msgcount */, int /* consumercount */)
@@ -189,7 +162,7 @@ void ReadBufferFromRabbitMQConsumer::initQueueBindings(const size_t queue_id)
     while (!bindings_created && !bindings_error)
     {
         /// No need for timeouts as this event loop is blocking for the current thread and quits in case there are no active events
-        startEventLoop();
+        startEventLoop(bindings_created);
     }
 }
 
@@ -212,7 +185,7 @@ void ReadBufferFromRabbitMQConsumer::subscribeConsumer()
 
 void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 {
-    bool consumer_created = false, consumer_error = false;
+    std::atomic<bool> consumer_created = false, consumer_error = false;
 
     consumer_channel->consume(queue_name, AMQP::noack)
     .onSuccess([&](const std::string & /* consumer */)
@@ -224,7 +197,6 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
     .onReceived([&](const AMQP::Message & message, uint64_t /* deliveryTag */, bool /* redelivered */)
     {
         size_t message_size = message.bodySize();
-
         if (message_size && message.body() != nullptr)
         {
             String message_received = std::string(message.body(), message.body() + message_size);
@@ -232,8 +204,10 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
             if (row_delimiter != '\0')
                 message_received += row_delimiter;
 
-            //LOG_TRACE(log, "Consumer " + consumerTag + " received the message " + message_received);
-
+            /* Needed because this vector can be used at the same time by another thread in nextImpl() (below).
+             * So we lock mutex here and there so that they do not use it asynchronosly.
+             */
+            std::lock_guard lock(mutex);
             received.push_back(message_received);
         }
     })
@@ -245,14 +219,15 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & queue_name)
 
     while (!consumer_created && !consumer_error)
     {
-        startEventLoop();
+        /// No need for timeouts as this event loop is blocking for the current thread and quits in case there are no active events
+        startEventLoop(consumer_created);
     }
 }
 
 
-void ReadBufferFromRabbitMQConsumer::startEventLoop()
+void ReadBufferFromRabbitMQConsumer::startEventLoop(std::atomic<bool> & check_param)
 {
-    eventHandler.start();
+    eventHandler.start(check_param);
 }
 
 
@@ -265,9 +240,8 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     {
         if (received.empty())
         {
-            /* Run the onReceived callbacks to save the messages that have been received by now
-             */
-            startEventLoop();
+            /// Run the onReceived callbacks to save the messages that have been received by now
+            startEventLoop(false_param);
         }
 
         if (received.empty())
@@ -277,6 +251,12 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
         }
 
         messages.clear();
+
+        /* Needed because this vector can be used at the same time by another thread in onReceived callback (above).
+         * So we lock mutex here and there so that they do not use it asynchronosly.
+         */
+        std::lock_guard lock(mutex);
+
         messages.swap(received);
         current = messages.begin();
     }
