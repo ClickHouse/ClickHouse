@@ -1583,7 +1583,7 @@ private:
         if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
             text.resize(embedded_stack_trace_pos);
 
-        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
+        std::cerr << "\nReceived exception from server (version " << server_version << "):" << std::endl
             << "Code: " << e.code() << ". " << text << std::endl;
     }
 
