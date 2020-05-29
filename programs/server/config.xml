@@ -42,6 +42,12 @@
         -->
     </logger>
 
+    <send_crash_reports>
+        <!-- Changing <enabled> to true allows sending crash reports to ClickHouse core developers team -->
+        <!-- Doing so at least in pre-production environments is highly appreciated -->
+        <enabled>false</enabled>
+    </send_crash_reports>
+
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
