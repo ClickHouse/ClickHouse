@@ -650,7 +650,6 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                     ++next_pos;
             }();
 
-
             appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
 
