@@ -948,7 +948,7 @@ bool TCPHandler::receiveData(bool scalar)
                 else
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns});
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
