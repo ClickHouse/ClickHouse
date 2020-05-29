@@ -3,35 +3,38 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 
-#include <Common/config.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/logger_useful.h>
 #if !defined(ARCADIA_BUILD)
-#   include "Common/config_version.h"
+#    include "Common/config_version.h"
+#    include <Common/config.h>
 #endif
 
 #if USE_SENTRY
-#include <sentry.h>
+#    include <sentry.h>
 #endif
 
 
-namespace {
-    static bool initialized = false;
+namespace
+{
+static bool initialized = false;
 
-    void setExtras() {
+void setExtras()
+{
 #if USE_SENTRY
-        sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
-        sentry_set_extra("version_describe", sentry_value_new_string(VERSION_DESCRIBE));
-        sentry_set_extra("version_integer", sentry_value_new_int32(VERSION_INTEGER));
-        sentry_set_extra("version_revision", sentry_value_new_int32(VERSION_REVISION));
-        sentry_set_extra("version_major", sentry_value_new_int32(VERSION_MAJOR));
-        sentry_set_extra("version_minor", sentry_value_new_int32(VERSION_MINOR));
-        sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
+    sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
+    sentry_set_extra("version_describe", sentry_value_new_string(VERSION_DESCRIBE));
+    sentry_set_extra("version_integer", sentry_value_new_int32(VERSION_INTEGER));
+    sentry_set_extra("version_revision", sentry_value_new_int32(VERSION_REVISION));
+    sentry_set_extra("version_major", sentry_value_new_int32(VERSION_MAJOR));
+    sentry_set_extra("version_minor", sentry_value_new_int32(VERSION_MINOR));
+    sentry_set_extra("version_patch", sentry_value_new_int32(VERSION_PATCH));
 #endif
-    }
+}
 }
 
-void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
+void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
+{
 #if USE_SENTRY
     bool enabled = false;
     bool debug = config.getBool("send_crash_reports.debug", false);
@@ -44,14 +47,10 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
     }
     if (enabled)
     {
-        const std::string & endpoint = config.getString(
-            "send_crash_reports.endpoint",
-            "https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277"
-        );
-        const std::string & temp_folder_path = config.getString(
-            "send_crash_reports.tmp_path",
-            config.getString("tmp_path", Poco::Path::temp()) + "sentry/"
-        );
+        const std::string & endpoint
+            = config.getString("send_crash_reports.endpoint", "https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277");
+        const std::string & temp_folder_path
+            = config.getString("send_crash_reports.tmp_path", config.getString("tmp_path", Poco::Path::temp()) + "sentry/");
         Poco::File(temp_folder_path).createDirectories();
 
         sentry_options_t * options = sentry_options_new();
@@ -62,9 +61,12 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
         }
         sentry_options_set_dsn(options, endpoint.c_str());
         sentry_options_set_database_path(options, temp_folder_path.c_str());
-        if (strstr(VERSION_DESCRIBE, "-stable") || strstr(VERSION_DESCRIBE, "-lts")) {
+        if (strstr(VERSION_DESCRIBE, "-stable") || strstr(VERSION_DESCRIBE, "-lts"))
+        {
             sentry_options_set_environment(options, "prod");
-        } else {
+        }
+        else
+        {
             sentry_options_set_environment(options, "test");
         }
         int init_status = sentry_init(options);
@@ -75,14 +77,12 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
                 &Logger::get("SentryWriter"),
                 "Sending crash reports is initialized with {} endpoint and {} temp folder",
                 endpoint,
-                temp_folder_path
-            );
+                temp_folder_path);
         }
         else
         {
             LOG_WARNING(&Logger::get("SentryWriter"), "Sending crash reports failed to initialized with {} status", init_status);
         }
-
     }
     else
     {
@@ -91,20 +91,17 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
 #endif
 }
 
-void SentryWriter::shutdown() {
+void SentryWriter::shutdown()
+{
 #if USE_SENTRY
-    if (initialized) {
+    if (initialized)
+    {
         sentry_shutdown();
     }
 #endif
 }
 
-void SentryWriter::onFault(
-    int sig,
-    const siginfo_t & info,
-    const ucontext_t & context,
-    const StackTrace & stack_trace
-    )
+void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & context, const StackTrace & stack_trace)
 {
 #if USE_SENTRY
     if (initialized)

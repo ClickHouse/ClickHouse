@@ -1,12 +1,12 @@
 #include <Common/StackTrace.h>
 
+#include <Core/Defines.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
-#include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
+#include <Common/SymbolIndex.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
-#include <Core/Defines.h>
 
 #include <cstring>
 #include <filesystem>
@@ -26,8 +26,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
     std::stringstream error;
     switch (sig)
     {
-        case SIGSEGV:
-        {
+        case SIGSEGV: {
             /// Print info about address and reason.
             if (nullptr == info.si_addr)
                 error << "Address: NULL pointer.";
@@ -59,8 +58,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGBUS:
-        {
+        case SIGBUS: {
             switch (info.si_code)
             {
                 case BUS_ADRALN:
@@ -92,8 +90,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGILL:
-        {
+        case SIGILL: {
             switch (info.si_code)
             {
                 case ILL_ILLOPC:
@@ -127,8 +124,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGFPE:
-        {
+        case SIGFPE: {
             switch (info.si_code)
             {
                 case FPE_INTDIV:
@@ -162,8 +158,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGTSTP:
-        {
+        case SIGTSTP: {
             error << "This is a signal used for debugging purposes by the user.";
             break;
         }
@@ -176,13 +171,13 @@ static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
-#if defined(__FreeBSD__)
+#    if defined(__FreeBSD__)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-#elif defined(__APPLE__)
+#    elif defined(__APPLE__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
-#else
+#    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
-#endif
+#    endif
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
 #else
@@ -197,7 +192,8 @@ static void symbolize(const void * const * frame_pointers, size_t offset, size_t
     const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    for (size_t i = 0; i < offset; ++i) {
+    for (size_t i = 0; i < offset; ++i)
+    {
         frames.value()[i].virtual_addr = frame_pointers[i];
     }
 
@@ -217,7 +213,8 @@ static void symbolize(const void * const * frame_pointers, size_t offset, size_t
                 auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST)) {
+                if (dwarf_it->second.findAddress(uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
+                {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
                 }
@@ -239,8 +236,9 @@ static void symbolize(const void * const * frame_pointers, size_t offset, size_t
             current_frame.symbol = "?";
         }
     }
-# else
-    for (size_t i = 0; i < size; ++i) {
+#else
+    for (size_t i = 0; i < size; ++i)
+    {
         frames.value()[i].virtual_addr = frame_pointers[i];
     }
     UNUSED(offset);
@@ -308,14 +306,16 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 
 const StackTrace::Frames & StackTrace::getFrames() const
 {
-    if (!frames.has_value()) {
+    if (!frames.has_value())
+    {
         frames = {{}};
         symbolize(frame_pointers.data(), offset, size, frames);
     }
     return frames;
 }
 
-static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
+static void
+toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offset, size_t size, std::function<void(const std::string &)> callback)
 {
     if (size == 0)
         return callback("<Empty trace>");
@@ -324,7 +324,7 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
 
     for (size_t i = offset; i < size; ++i)
     {
-        const StackTrace::Frame& current_frame = frames.value()[i];
+        const StackTrace::Frame & current_frame = frames.value()[i];
         out << i << ". ";
 
         if (current_frame.file.has_value() && current_frame.line.has_value())
@@ -338,7 +338,8 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         }
 
         out << " @ " << current_frame.physical_addr;
-        if (current_frame.object.has_value()) {
+        if (current_frame.object.has_value())
+        {
             out << " in " << current_frame.object.value();
         }
 
@@ -362,7 +363,8 @@ void StackTrace::toStringEveryLine(std::function<void(const std::string &)> call
     toStringEveryLineImpl(getFrames(), offset, size, std::move(callback));
 }
 
-void StackTrace::resetFrames() {
+void StackTrace::resetFrames()
+{
     frames.reset();
 }
 
