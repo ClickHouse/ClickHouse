@@ -55,9 +55,12 @@ void PartialSortingTransform::transform(Chunk & chunk)
     ColumnRawPtrs block_columns;
     UInt64 rows_num = block.rows();
 
+    /** If we've saved columns from previously blocks we could filter all rows from current block
+      * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.
+      */
     if (!threshold_block_columns.empty())
     {
-        IColumn::Filter filter(rows_num, 0);
+        IColumn::Filter filter(rows_num, 1);
         block_columns = extractColumns(block, description);
         size_t filtered_count = 0;
 
@@ -66,7 +69,7 @@ void PartialSortingTransform::transform(Chunk & chunk)
             if (less(threshold_block_columns, limit - 1, block_columns, i, description))
             {
                 ++filtered_count;
-                filter[i] = 1;
+                filter[i] = 0;
             }
         }
 
@@ -74,14 +77,22 @@ void PartialSortingTransform::transform(Chunk & chunk)
         {
             for (auto & column : block.getColumns())
             {
-                column = column->filter(filter, filtered_count);
+                column = column->filter(filter, rows_num - filtered_count);
             }
         }
     }
 
     sortBlock(block, description, limit);
 
-    if (limit && limit < block.rows() &&
+    if (!threshold_block_columns.empty())
+    {
+        block_columns = extractColumns(block, description);
+    }
+
+    /** If this is the first processed block or (limit - 1)'th row of the current block
+      * is less than current threshold row then we could update threshold.
+      */
+    if (limit && limit <= block.rows() &&
         (threshold_block_columns.empty() || less(block_columns, limit - 1, threshold_block_columns, limit - 1, description)))
     {
         threshold_block = block.cloneWithColumns(block.getColumns());
