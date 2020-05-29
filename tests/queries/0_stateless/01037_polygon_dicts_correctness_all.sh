@@ -50,7 +50,7 @@ do
    )
    PRIMARY KEY key
    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
-   LIFETIME(MIN 1 MAX 10)
+   LIFETIME(0)
    LAYOUT($type());"
 
    outputFile="${TMP_DIR}/results${type}.out"
@@ -60,7 +60,7 @@ do
       dictGet(dict_name, 'value', key) from test_01037.points order by x, y;
    " > $outputFile
 
-   diff -q "${CURDIR}/01037_polygon_search_test.ans" "$outputFile"
+   diff -q "${CURDIR}/01037_polygon_dicts_correctness_all.ans" "$outputFile"
 
    $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
 done

@@ -62,7 +62,7 @@ do
     )
     PRIMARY KEY key
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_array' PASSWORD '' DB 'test_01037'))
-    LIFETIME(MIN 1 MAX 10)
+    LIFETIME(0)
     LAYOUT($type());
     "
 
@@ -77,7 +77,7 @@ do
     )
     PRIMARY KEY key
     SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'polygons_tuple' PASSWORD '' DB 'test_01037'))
-    LIFETIME(MIN 1 MAX 10)
+    LIFETIME(0)
     LAYOUT($type());
     "
 
@@ -124,7 +124,7 @@ do
         dictHas(dict_name, key) from test_01037.points order by x, y;
     "  >> $outputFile
 
-    diff -q "${CURDIR}/01037_polygon_simple_test.ans" "$outputFile"
+    diff -q "${CURDIR}/01037_polygon_dicts_simple_functions.ans" "$outputFile"
 done
 
 $CLICKHOUSE_CLIENT --query="DROP DICTIONARY test_01037.dict_array;"
