@@ -840,18 +840,18 @@ def test_kafka_virtual_columns2(kafka_cluster):
                      kafka_format = 'JSONEachRow';
 
         CREATE MATERIALIZED VIEW test.view Engine=Log AS
-        SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms) FROM test.kafka;
+        SELECT value, _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp), toUnixTimestamp64Milli(_timestamp_ms), _headers.name, _headers.value FROM test.kafka;
         ''')
 
     producer = KafkaProducer(bootstrap_servers="localhost:9092")
 
-    producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801001)
-    producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802002)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 1}), partition=0, key='k1', timestamp_ms=1577836801001, headers=[('content-encoding', b'base64')])
+    producer.send(topic='virt2_0', value=json.dumps({'value': 2}), partition=0, key='k2', timestamp_ms=1577836802002, headers=[('empty_value', ''),('', 'empty name'), ('',''), ('repetition', '1'), ('repetition', '2')])
     producer.flush()
     time.sleep(1)
 
-    producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803003)
-    producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804004)
+    producer.send(topic='virt2_0', value=json.dumps({'value': 3}), partition=1, key='k3', timestamp_ms=1577836803003, headers=[('b', 'b'),('a', 'a')])
+    producer.send(topic='virt2_0', value=json.dumps({'value': 4}), partition=1, key='k4', timestamp_ms=1577836804004, headers=[('a', 'a'),('b', 'b')])
     producer.flush()
     time.sleep(1)
 
@@ -869,14 +869,14 @@ def test_kafka_virtual_columns2(kafka_cluster):
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
     expected = '''\
-1	k1	virt2_0	0	0	1577836801	1577836801001
-2	k2	virt2_0	0	1	1577836802	1577836802002
-3	k3	virt2_0	1	0	1577836803	1577836803003
-4	k4	virt2_0	1	1	1577836804	1577836804004
-5	k5	virt2_1	0	0	1577836805	1577836805005
-6	k6	virt2_1	0	1	1577836806	1577836806006
-7	k7	virt2_1	1	0	1577836807	1577836807007
-8	k8	virt2_1	1	1	1577836808	1577836808008
+1	k1	virt2_0	0	0	1577836801	1577836801001	['content-encoding']	['base64']
+2	k2	virt2_0	0	1	1577836802	1577836802002	['empty_value','','','repetition','repetition']	['','empty name','','1','2']
+3	k3	virt2_0	1	0	1577836803	1577836803003	['b','a']	['b','a']
+4	k4	virt2_0	1	1	1577836804	1577836804004	['a','b']	['a','b']
+5	k5	virt2_1	0	0	1577836805	1577836805005	[]	[]
+6	k6	virt2_1	0	1	1577836806	1577836806006	[]	[]
+7	k7	virt2_1	1	0	1577836807	1577836807007	[]	[]
+8	k8	virt2_1	1	1	1577836808	1577836808008	[]	[]
 '''
 
     assert TSV(result) == TSV(expected)

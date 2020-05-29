@@ -20,8 +20,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage.getSampleBlockNonMaterialized())
-    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms"}))
-
+    , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp","_timestamp_ms","_headers.name","_headers.value"}))
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -141,6 +140,21 @@ Block KafkaBlockInputStream::readImpl()
         auto offset        = buffer->currentOffset();
         auto partition     = buffer->currentPartition();
         auto timestamp_raw = buffer->currentTimestamp();
+        auto header_list   = buffer->currentHeaderList();
+
+        Array headers_names;
+        Array headers_values;
+
+        if (!header_list.empty())
+        {
+            headers_names.reserve(header_list.size());
+            headers_values.reserve(header_list.size());
+            for (const auto & header : header_list)
+            {
+                headers_names.emplace_back(header.get_name());
+                headers_values.emplace_back(static_cast<std::string>(header.get_value()));
+            }
+        }
 
         for (size_t i = 0; i < new_rows; ++i)
         {
@@ -159,6 +173,8 @@ Block KafkaBlockInputStream::readImpl()
                 virtual_columns[4]->insertDefault();
                 virtual_columns[5]->insertDefault();
             }
+            virtual_columns[6]->insert(headers_names);
+            virtual_columns[7]->insert(headers_values);
         }
 
         total_rows = total_rows + new_rows;
