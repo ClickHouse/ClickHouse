@@ -81,6 +81,9 @@ struct SelectQueryInfo
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
 
+    /// Different aggregation methods may be broken for different revisions.
+    size_t max_revision_supporting_selected_aggregation_method = 0;
+
     /// Temporary flag is needed to support old pipeline with input streams.
     /// If enabled, then pipeline returned by storage must be a tree.
     /// Processors from the tree can't return ExpandPipeline status.

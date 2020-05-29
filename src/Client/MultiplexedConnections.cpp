@@ -95,7 +95,8 @@ void MultiplexedConnections::sendQuery(
     const String & query_id,
     UInt64 stage,
     const ClientInfo & client_info,
-    bool with_pending_data)
+    bool with_pending_data,
+    size_t max_revision_supporting_selected_aggregation_method)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -104,12 +105,15 @@ void MultiplexedConnections::sendQuery(
 
     Settings modified_settings = settings;
 
+    if (max_revision_supporting_selected_aggregation_method == 0)
+        max_revision_supporting_selected_aggregation_method = DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+
     for (auto & replica : replica_states)
     {
         if (!replica.connection)
             throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-        if (replica.connection->getServerRevision(timeouts) < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+        if (replica.connection->getServerRevision(timeouts) < max_revision_supporting_selected_aggregation_method)
         {
             /// Disable two-level aggregation due to version incompatibility.
             modified_settings.group_by_two_level_threshold = 0;

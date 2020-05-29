@@ -39,7 +39,8 @@ public:
         const String & query_id,
         UInt64 stage,
         const ClientInfo & client_info,
-        bool with_pending_data);
+        bool with_pending_data,
+        size_t max_revision_supporting_selected_aggregation_method);
 
     /// Get packet from any replica.
     Packet receivePacket();

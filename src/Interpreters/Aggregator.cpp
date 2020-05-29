@@ -190,14 +190,15 @@ Aggregator::Aggregator(const Params & params_)
             all_aggregates_has_trivial_destructor = false;
     }
 
-    method_chosen = chooseAggregationMethod();
+    method_chosen = params.getMethod();
+    key_sizes = params.getKeySizes();
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 }
 
 
-AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
+AggregatedDataVariants::Type Aggregator::Params::chooseAggregationMethod(Aggregator::Params & params)
 {
     /// If no keys. All aggregating to single row.
     if (params.keys_size == 0)
@@ -235,7 +236,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     size_t keys_bytes = 0;
     size_t num_fixed_contiguous_keys = 0;
 
-    key_sizes.resize(params.keys_size);
+    params.key_sizes.resize(params.keys_size);
     for (size_t j = 0; j < params.keys_size; ++j)
     {
         if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
@@ -243,8 +244,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
                 ++num_fixed_contiguous_keys;
-                key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
-                keys_bytes += key_sizes[j];
+                params.key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
+                keys_bytes += params.key_sizes[j];
             }
         }
     }
@@ -359,6 +360,23 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     }
 
     return AggregatedDataVariants::Type::serialized;
+}
+
+
+void Aggregator::Params::updateMaxRevisionSupportingSelectedAggregationMethod(size_t & revision) const
+{
+    size_t current_revision = DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+
+    if (method_chosen == AggregatedDataVariants::Type::key_string ||
+        method_chosen == AggregatedDataVariants::Type::key_fixed_string)
+    {
+        current_revision = DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_FOR_STRING_KEY;
+    }
+
+    if (revision == 0)
+        revision = current_revision;
+    else
+        revision = std::max(revision, current_revision);
 }
 
 

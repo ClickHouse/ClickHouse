@@ -27,8 +27,11 @@ namespace ErrorCodes
 RemoteBlockInputStream::RemoteBlockInputStream(
         Connection & connection,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_,
+        size_t max_revision_supporting_selected_aggregation_method_)
+    : header(header_), query(query_), context(context_)
+    , max_revision_supporting_selected_aggregation_method(max_revision_supporting_selected_aggregation_method_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -42,8 +45,11 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 RemoteBlockInputStream::RemoteBlockInputStream(
         std::vector<IConnectionPool::Entry> && connections,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_,
+        size_t max_revision_supporting_selected_aggregation_method_)
+    : header(header_), query(query_), context(context_)
+    , max_revision_supporting_selected_aggregation_method(max_revision_supporting_selected_aggregation_method_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);
@@ -58,8 +64,11 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 RemoteBlockInputStream::RemoteBlockInputStream(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, const Context & context_, const Settings * settings,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_,
+        size_t max_revision_supporting_selected_aggregation_method_)
+    : header(header_), query(query_), context(context_)
+    , max_revision_supporting_selected_aggregation_method(max_revision_supporting_selected_aggregation_method_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     if (settings)
         context.setSettings(*settings);

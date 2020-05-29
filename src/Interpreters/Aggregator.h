@@ -902,6 +902,7 @@ public:
             tmp_volume(tmp_volume_), max_threads(max_threads_),
             min_free_disk_space(min_free_disk_space_)
         {
+            method_chosen = chooseAggregationMethod(*this);
         }
 
         /// Only parameters that matter during merge.
@@ -911,6 +912,18 @@ public:
         {
             intermediate_header = intermediate_header_;
         }
+
+        AggregatedDataVariants::Type getMethod() const { return method_chosen; }
+        Sizes getKeySizes() const { return key_sizes; }
+        void updateMaxRevisionSupportingSelectedAggregationMethod(size_t & revision) const;
+
+    private:
+        AggregatedDataVariants::Type method_chosen;
+        Sizes key_sizes;
+
+        /// This method is so strange to make diff as small as possible.
+        /// TODO: refactor it later.
+        static AggregatedDataVariants::Type chooseAggregationMethod(Params & params);
     };
 
     Aggregator(const Params & params_);

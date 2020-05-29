@@ -26,7 +26,8 @@ public:
             Connection & connection,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+            size_t max_revision_supporting_selected_aggregation_method_ = 0);
 
     /// Accepts several connections already taken from pool.
     /// If `settings` is nullptr, settings will be taken from context.
@@ -34,7 +35,8 @@ public:
             std::vector<IConnectionPool::Entry> && connections,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+            size_t max_revision_supporting_selected_aggregation_method_ = 0);
 
     /// Takes a pool and gets one or several connections from it.
     /// If `settings` is nullptr, settings will be taken from context.
@@ -42,7 +44,8 @@ public:
             const ConnectionPoolWithFailoverPtr & pool,
             const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+            QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+            size_t max_revision_supporting_selected_aggregation_method_ = 0);
 
     ~RemoteBlockInputStream() override;
 
@@ -105,6 +108,9 @@ private:
     const String query;
     String query_id = "";
     Context context;
+
+    /// If remote server has revision smaller than that, we will disable two level aggregation for it.
+    size_t max_revision_supporting_selected_aggregation_method = 0;
 
     /// Scalars needed to be sent to remote servers
     Scalars scalars;
