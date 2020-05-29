@@ -4,6 +4,8 @@
 
 #include <cstring>
 
+#include <sys/time.h>
+
 
 namespace DB
 {
@@ -133,7 +135,10 @@ int LDAPClient::openConnection(const bool graceful_bind_failure)
     }
 
     diag(ldap_set_option(handle, LDAP_OPT_RESTART, LDAP_OPT_ON));
+
+#ifdef LDAP_OPT_KEEPCONN
     diag(ldap_set_option(handle, LDAP_OPT_KEEPCONN, LDAP_OPT_ON));
+#endif
 
     {
         ::timeval operation_timeout;
