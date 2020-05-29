@@ -10,23 +10,24 @@
 namespace DB
 {
 
-struct TTLSetPartDescription
+/// Assignment expression in TTL with GROUP BY
+struct TTLAggregateDescription
 {
-    /// Name of column in set part of ttl expression
+    /// Name of column in assignment
     /// x = sum(y)
     /// ^
     String column_name;
 
-    /// Name of column on the right hand of the set part of TTL expression
+    /// Name of column on the right hand of the assignment
     /// x = sum(y)
     ///    ^~~~~~^
     String expression_result_column_name;
 
-    /// Expressions to calculate the value of set expression
+    /// Expressions to calculate the value of assignment expression
     ExpressionActionsPtr expression;
 };
 
-using TTLSetPartDescriptions = std::vector<TTLSetPartDescription>;
+using TTLAggregateDescriptions = std::vector<TTLAggregateDescription>;
 
 /// Common struct for TTL record in storage
 struct TTLDescription
@@ -58,7 +59,7 @@ struct TTLDescription
     Names group_by_keys;
 
     /// SET parts of TTL expression
-    TTLSetPartDescriptions set_parts;
+    TTLAggregateDescriptions set_parts;
 
     /// Aggregate descriptions for GROUP BY in TTL
     AggregateDescriptions aggregate_descriptions;

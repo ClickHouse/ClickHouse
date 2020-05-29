@@ -180,7 +180,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 auto syntax_result = SyntaxAnalyzer(context).analyze(value, columns.getAllPhysical(), {}, true);
                 auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, context);
 
-                result.set_parts.emplace_back(TTLSetPartDescription{
+                result.set_parts.emplace_back(TTLAggregateDescription{
                     name, value->getColumnName(), expr_analyzer.getActions(false)});
 
                 for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
