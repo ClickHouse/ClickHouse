@@ -450,7 +450,7 @@ BlockIO InterpreterSelectQuery::execute()
     {
         res.pipeline.addSimpleTransform([&](const Block & header)
         {
-            return std::make_shared<ConvertingTransform>(header, result_header, ConvertingTransform::MatchColumnsMode::Name);
+            return std::make_shared<ConvertingTransform>(header, result_header, ConvertingTransform::MatchColumnsMode::Position);
         });
     }
 
