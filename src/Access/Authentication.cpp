@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+
 Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 {
     switch (type)
@@ -38,8 +39,8 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
         case DOUBLE_SHA1_PASSWORD:
             return password_hash;
 
-        case LDAP_PASSWORD:
-            throw Exception("Cannot get password double SHA1 for user with 'LDAP_PASSWORD' authentication.", ErrorCodes::BAD_ARGUMENTS);
+        case LDAP_SERVER:
+            throw Exception("Cannot get password double SHA1 for user with 'LDAP_SERVER' authentication.", ErrorCodes::BAD_ARGUMENTS);
 
         case MAX_TYPE:
             break;
@@ -79,9 +80,9 @@ bool Authentication::isCorrectPassword(const String & password_, const String & 
             return encodeSHA1(first_sha1) == password_hash;
         }
 
-        case LDAP_PASSWORD:
+        case LDAP_SERVER:
         {
-            auto ldap_server_params = external_authenticators.getLDAPServerParams(ldap_server_name);
+            auto ldap_server_params = external_authenticators.getLDAPServerParams(server_name);
             ldap_server_params.user = user_;
             ldap_server_params.password = password_;
             LDAPSimpleAuthClient ldap_client(ldap_server_params);

@@ -60,8 +60,8 @@ namespace
                     if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
                     {
                         type = check_type;
-                        expect_password = (check_type != Authentication::NO_PASSWORD && check_type != Authentication::LDAP_PASSWORD);
-                        expect_server = (check_type == Authentication::LDAP_PASSWORD);
+                        expect_password = (check_type != Authentication::NO_PASSWORD && check_type != Authentication::LDAP_SERVER);
+                        expect_server = (check_type == Authentication::LDAP_SERVER);
                         break;
                     }
                 }
@@ -105,7 +105,7 @@ namespace
             else if (expect_hash)
                 authentication->setPasswordHashHex(value);
             else if (expect_server)
-                authentication->setLDAPServerName(value);
+                authentication->setServerName(value);
 
             return true;
         });

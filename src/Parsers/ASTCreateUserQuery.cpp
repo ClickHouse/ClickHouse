@@ -34,7 +34,7 @@ namespace
         String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
         std::optional<String> password;
 
-        if (show_password || authentication_type == Authentication::LDAP_PASSWORD)
+        if (show_password || authentication_type == Authentication::LDAP_SERVER)
         {
             switch (authentication_type)
             {
@@ -55,10 +55,9 @@ namespace
                     password = authentication.getPasswordHashHex();
                     break;
                 }
-                case Authentication::LDAP_PASSWORD:
+                case Authentication::LDAP_SERVER:
                 {
-                    authentication_type_name = "ldap";
-                    password = authentication.getLDAPServerName();
+                    password = authentication.getServerName();
                     break;
                 }
 

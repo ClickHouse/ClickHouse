@@ -89,8 +89,8 @@ namespace
 
             const auto ldap_server_name = config.getString(user_config + ".ldap.server");
 
-            user->authentication = Authentication{Authentication::LDAP_PASSWORD};
-            user->authentication.setLDAPServerName(ldap_server_name);
+            user->authentication = Authentication{Authentication::LDAP_SERVER};
+            user->authentication.setServerName(ldap_server_name);
         }
 
         const auto profile_name_config = user_config + ".profile";

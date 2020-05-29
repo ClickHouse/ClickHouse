@@ -4,7 +4,17 @@
 #include <Core/Types.h>
 
 #include <map>
+#include <memory>
 #include <mutex>
+
+
+namespace Poco {
+    class Logger;
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 
 namespace DB
@@ -20,5 +30,7 @@ private:
     mutable std::mutex mutex;
     std::map<String, LDAPServerParams> ldap_server_params;
 };
+
+std::unique_ptr<ExternalAuthenticators> parseExternalAuthenticators(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
 }

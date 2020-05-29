@@ -30,13 +30,13 @@ public:
     LDAPClient & operator= (LDAPClient &&) = delete;
 
 protected:
-    int openConnection(const bool graceful_bind_failure = false);
-    MAYBE_NORETURN void openConnection();
-    void closeConnection() noexcept;
     MAYBE_NORETURN void diag(const int rc);
+    MAYBE_NORETURN void openConnection();
+    int openConnection(const bool graceful_bind_failure = false);
+    void closeConnection() noexcept;
 
 protected:
-    LDAPServerParams params;
+    const LDAPServerParams params;
 #if USE_LDAP
     LDAP * handle = nullptr;
 #endif
