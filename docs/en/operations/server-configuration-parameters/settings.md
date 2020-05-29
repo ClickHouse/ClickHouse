@@ -586,11 +586,11 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
 Setting for logging threads of queries received with the [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) setting.
 
-Queries are logged in the [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query-thread-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query\_thread\_log](../../operations/system-tables.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
