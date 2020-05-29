@@ -223,9 +223,10 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     data.check(real_column_names);
 
     const Settings & settings = context.getSettingsRef();
-    Names primary_key_columns = data.primary_key_columns;
+    const auto & primary_key = data.getPrimaryKey();
+    Names primary_key_columns = primary_key.column_names;
 
-    KeyCondition key_condition(query_info, context, primary_key_columns, data.primary_key_expr);
+    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -388,7 +389,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        DataTypePtr sampling_column_type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
+        const auto & sampling_key = data.getSamplingKey();
+        DataTypePtr sampling_column_type = sampling_key.data_types[0];
 
         if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
@@ -457,17 +459,17 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             /// The first time it was calculated for final, because sample key is a part of the PK.
             /// So, assume that we already have calculated column.
             ASTPtr sampling_key_ast = data.getSamplingKeyAST();
+
             if (select.final())
             {
-                sampling_key_ast = std::make_shared<ASTIdentifier>(data.sampling_expr_column_name);
-
+                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
                 /// We do spoil available_real_columns here, but it is not used later.
-                available_real_columns.emplace_back(data.sampling_expr_column_name, std::move(sampling_column_type));
+                available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
             }
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(data.sampling_expr_column_name, Range::createLeftBounded(lower, true)))
+                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createLeftBounded(lower, true)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -484,7 +486,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(data.sampling_expr_column_name, Range::createRightBounded(upper, false)))
+                if (!key_condition.addCondition(sampling_key.column_names[0], Range::createRightBounded(upper, false)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
@@ -612,7 +614,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     if (select.final())
     {
         /// Add columns needed to calculate the sorting expression and the sign.
-        std::vector<String> add_columns = data.sorting_key_expr->getRequiredColumns();
+        std::vector<String> add_columns = data.getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
         if (!data.merging_params.sign_column.empty())
@@ -638,7 +640,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
     else if (settings.optimize_read_in_order && query_info.input_sorting_info)
     {
         size_t prefix_size = query_info.input_sorting_info->order_key_prefix_descr.size();
-        auto order_key_prefix_ast = data.sorting_key_expr_ast->clone();
+        auto order_key_prefix_ast = data.getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
 
         auto syntax_result = SyntaxAnalyzer(context).analyze(order_key_prefix_ast, data.getColumns().getAllPhysical());
@@ -1023,7 +1025,7 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         {
             SortDescription sort_description;
             for (size_t j = 0; j < input_sorting_info->order_key_prefix_descr.size(); ++j)
-                sort_description.emplace_back(data.sorting_key_columns[j],
+                sort_description.emplace_back(data.getSortingKey().column_names[j],
                     input_sorting_info->direction, 1);
 
             /// Drop temporary columns, added by 'sorting_key_prefix_expr'
@@ -1096,11 +1098,11 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         if (!out_projection)
             out_projection = createProjection(pipe, data);
 
-        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr));
+        pipe.addSimpleTransform(std::make_shared<ExpressionTransform>(pipe.getHeader(), data.getSortingKey().expression));
         pipes.emplace_back(std::move(pipe));
     }
 
-    Names sort_columns = data.sorting_key_columns;
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -1293,11 +1295,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
         /// If there are no monotonic functions, there is no need to save block reference.
         /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
+        const auto & primary_key = data.getPrimaryKey();
         if (key_condition.hasMonotonicFunctionsChain())
         {
             auto index_block = std::make_shared<Block>();
             for (size_t i = 0; i < used_key_size; ++i)
-                index_block->insert({index[i], data.primary_key_data_types[i], data.primary_key_columns[i]});
+                index_block->insert({index[i], primary_key.data_types[i], primary_key.column_names[i]});
 
             create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
             {
@@ -1328,7 +1331,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     create_field_ref(range.begin, i, index_left[i]);
 
                 may_be_true = key_condition.mayBeTrueAfter(
-                    used_key_size, index_left.data(), data.primary_key_data_types);
+                    used_key_size, index_left.data(), primary_key.data_types);
             }
             else
             {
@@ -1342,7 +1345,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
 
                 may_be_true = key_condition.mayBeTrueInRange(
-                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
+                    used_key_size, index_left.data(), index_right.data(), primary_key.data_types);
             }
 
             if (!may_be_true)

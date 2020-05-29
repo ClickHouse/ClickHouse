@@ -565,7 +565,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
     {
         /// First, find any processor to execute.
         /// Just travers graph and prepare any processor.
-        while (!finished)
+        while (!finished && state == nullptr)
         {
             {
                 std::unique_lock lock(task_queue_mutex);
