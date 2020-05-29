@@ -7,8 +7,9 @@
 #
 # Sets values of:
 #   OPENLDAP_FOUND              - TRUE if found
-#   OPENLDAP_INCLUDE_DIRS       - list of paths to the include directories
-#   OPENLDAP_LIBRARIES          - paths to the libldap and liblber libraries
+#   OPENLDAP_INCLUDE_DIRS       - paths to the include directories
+#   OPENLDAP_LIBRARIES          - paths to the libldap and liblber libraries; libsasl2 (Cyrus SASL) and libgssapi (GSSAPI) libraries
+#                                 will be listed here too, if found, if static OpenLDAP libraries are requested
 #   OPENLDAP_LDAP_LIBRARY       - paths to the libldap library
 #   OPENLDAP_LBER_LIBRARY       - paths to the liblber library
 #
@@ -31,15 +32,33 @@ if(OPENLDAP_ROOT_DIR)
     find_path(OPENLDAP_INCLUDE_DIRS NAMES "ldap.h" "lber.h" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "include" NO_DEFAULT_PATH)
     find_library(OPENLDAP_LDAP_LIBRARY NAMES "ldap${_r_suffix}" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "lib" NO_DEFAULT_PATH)
     find_library(OPENLDAP_LBER_LIBRARY NAMES "lber" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "lib" NO_DEFAULT_PATH)
+    if(OPENLDAP_USE_STATIC_LIBS)
+        find_library(_cyrus_sasl_lib NAMES "sasl2" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "lib" NO_DEFAULT_PATH)
+        find_library(_gssapi_lib NAMES "gssapi" PATHS "${OPENLDAP_ROOT_DIR}" PATH_SUFFIXES "lib" NO_DEFAULT_PATH)
+    endif()
 else()
     find_path(OPENLDAP_INCLUDE_DIRS NAMES "ldap.h" "lber.h")
     find_library(OPENLDAP_LDAP_LIBRARY NAMES "ldap${_r_suffix}")
     find_library(OPENLDAP_LBER_LIBRARY NAMES "lber")
+    if(OPENLDAP_USE_STATIC_LIBS)
+        find_library(_cyrus_sasl_lib NAMES "sasl2")
+        find_library(_gssapi_lib NAMES "gssapi")
+    endif()
 endif()
 
 unset(_r_suffix)
 
 set(OPENLDAP_LIBRARIES ${OPENLDAP_LDAP_LIBRARY} ${OPENLDAP_LBER_LIBRARY})
+
+if(_cyrus_sasl_lib)
+    list(APPEND OPENLDAP_LIBRARIES ${_cyrus_sasl_lib})
+    unset(_cyrus_sasl_lib)
+endif()
+
+if(_gssapi_lib)
+    list(APPEND OPENLDAP_LIBRARIES ${_gssapi_lib})
+    unset(_gssapi_lib)
+endif()
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(
