@@ -82,7 +82,7 @@ public:
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
-    
+
     #if USE_MULTITARGET_CODE
         selector.registerImplementation<TargetArch::AVX2,
             FunctionRandomFixedStringImpl<TargetSpecific::AVX2::RandImpl>>();
