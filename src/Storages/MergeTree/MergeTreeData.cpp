@@ -2021,6 +2021,9 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
 
         if (part->state != IMergeTreeDataPart::State::Outdated)
             modifyPartState(part,IMergeTreeDataPart::State::Outdated);
+
+        if (isInMemoryPart(part) && write_ahead_log)
+            write_ahead_log->dropPart(part->name);
     }
 }
 
@@ -3317,6 +3320,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     if (disk->exists(dst_part_path))
         throw Exception("Part in " + fullPath(disk, dst_part_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
+    /// If source part is in memory, flush it to disk and clone it already in on-disk format
+    if (auto * src_part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(src_part.get()))
+    {
+        auto flushed_part_path = tmp_part_prefix + src_part_in_memory->name;
+        src_part_in_memory->flushToDisk(relative_data_path, flushed_part_path);
+        src_part_path = src_part_in_memory->storage.relative_data_path + flushed_part_path + "/";
+    }
+
     LOG_DEBUG(log, "Cloning part " << fullPath(disk, src_part_path) << " to " << fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
     disk->removeIfExists(dst_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
@@ -3404,7 +3415,11 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
         LOG_DEBUG(log, "Freezing part " << part->name << " snapshot will be placed at " + backup_path);
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
-        localBackup(part->disk, part->getFullRelativePath(), backup_part_path);
+        if (auto part_in_memory = dynamic_cast<const MergeTreeDataPartInMemory *>(part.get()))
+            part_in_memory->flushToDisk(backup_path + relative_data_path, part->relative_path);
+        else
+            localBackup(part->disk, part->getFullRelativePath(), backup_part_path);
+
         part->disk->removeIfExists(backup_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 
         part->is_frozen.store(true, std::memory_order_relaxed);

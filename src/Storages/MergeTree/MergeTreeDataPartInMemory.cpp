@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
 
@@ -60,13 +61,12 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     return std::make_unique<MergeTreeDataPartWriterInMemory>(ptr, columns_list, writer_settings);
 }
 
-void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix) const
+void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const String & new_relative_path) const
 {
-    String detached_path = getRelativePathForDetachedPart(prefix);
-    String destination_path = storage.getRelativeDataPath() + getRelativePathForDetachedPart(prefix);
+    String destination_path = base_path + new_relative_path;
 
     auto new_type = storage.choosePartTypeOnDisk(block.bytes(), rows_count);
-    auto new_data_part = storage.createPart(name, new_type, info, disk, detached_path);
+    auto new_data_part = storage.createPart(name, new_type, info, disk, new_relative_path);
 
     new_data_part->setColumns(columns);
     new_data_part->partition.value.assign(partition.value);
@@ -74,8 +74,8 @@ void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix) const
 
     if (disk->exists(destination_path))
     {
-        LOG_WARNING(&Logger::get(storage.getLogName()), "Removing old temporary directory " + disk->getPath() + destination_path);
-        disk->removeRecursive(destination_path);
+        throw Exception("Could not flush part " + quoteString(getFullPath())
+            + ". Part in " + fullPath(disk, destination_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
     }
 
     disk->createDirectories(destination_path);
@@ -85,9 +85,12 @@ void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix) const
     out.writePrefix();
     out.write(block);
     out.writeSuffixAndFinalizePart(new_data_part);
+}
 
-    if (storage.getSettings()->in_memory_parts_enable_wal)
-        storage.getWriteAheadLog()->dropPart(name);
+void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix) const
+{
+    String detached_path = getRelativePathForDetachedPart(prefix);
+    flushToDisk(storage.getRelativeDataPath(), detached_path);
 }
 
 bool MergeTreeDataPartInMemory::waitUntilMerged(size_t timeout) const
