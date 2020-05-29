@@ -324,10 +324,10 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     }
 
     // No need to add any prefix, messages can be distinguished
-    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & /* facility */, const std::string & message)
+    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
     {
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-        LOG_IMPL(log, client_logs_level, poco_level, message);
+        LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
     // Configure interceptor to change thread name
