@@ -5,6 +5,7 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/SHA1Engine.h>
 #include <boost/algorithm/hex.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
 
 
 namespace DB
@@ -14,6 +15,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class ExternalAuthenticators;
@@ -39,6 +41,15 @@ public:
 
         /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
         LDAP_PASSWORD,
+
+        MAX_TYPE,
+    };
+
+    struct TypeInfo
+    {
+        const char * const raw_name;
+        const String name; /// Lowercased with underscores, e.g. "sha256_password".
+        static const TypeInfo & get(Type type_);
     };
 
     using Digest = std::vector<uint8_t>;
@@ -95,6 +106,53 @@ private:
 };
 
 
+inline const Authentication::TypeInfo & Authentication::TypeInfo::get(Type type_)
+{
+    static constexpr auto make_info = [](const char * raw_name_)
+    {
+        String init_name = raw_name_;
+        boost::to_lower(init_name);
+        return TypeInfo{raw_name_, std::move(init_name)};
+    };
+
+    switch (type_)
+    {
+        case NO_PASSWORD:
+        {
+            static const auto info = make_info("NO_PASSWORD");
+            return info;
+        }
+        case PLAINTEXT_PASSWORD:
+        {
+            static const auto info = make_info("PLAINTEXT_PASSWORD");
+            return info;
+        }
+        case SHA256_PASSWORD:
+        {
+            static const auto info = make_info("SHA256_PASSWORD");
+            return info;
+        }
+        case DOUBLE_SHA1_PASSWORD:
+        {
+            static const auto info = make_info("DOUBLE_SHA1_PASSWORD");
+            return info;
+        }
+        case LDAP_PASSWORD:
+        {
+            static const auto info = make_info("LDAP");
+            return info;
+        }
+        case MAX_TYPE: break;
+    }
+    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type_)), ErrorCodes::LOGICAL_ERROR);
+}
+
+inline String toString(Authentication::Type type_)
+{
+    return Authentication::TypeInfo::get(type_).raw_name;
+}
+
+
 inline Authentication::Digest Authentication::encodeSHA256(const std::string_view & text [[maybe_unused]])
 {
 #if USE_SSL
@@ -135,8 +193,10 @@ inline void Authentication::setPassword(const String & password_)
 
         case LDAP_PASSWORD:
             throw Exception("Cannot specify password for the 'LDAP_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
+
+        case MAX_TYPE: break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
@@ -204,8 +264,10 @@ inline void Authentication::setPasswordHashBinary(const Digest & hash)
 
         case LDAP_PASSWORD:
             throw Exception("Cannot specify password for the 'LDAP_PASSWORD' authentication type", ErrorCodes::LOGICAL_ERROR);
+
+        case MAX_TYPE: break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 inline const String & Authentication::getLDAPServerName() const
