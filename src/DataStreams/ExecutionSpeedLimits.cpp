@@ -30,7 +30,8 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
     {
         UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
 
-        /// Never sleep more than one second (it should be enough to limit speed for a reasonable amount, and otherwise it's too easy to make query hang).
+        /// Never sleep more than one second (it should be enough to limit speed for a reasonable amount,
+        /// and otherwise it's too easy to make query hang).
         sleep_microseconds = std::min(UInt64(1000000), sleep_microseconds);
 
         sleepForMicroseconds(sleep_microseconds);
