@@ -839,9 +839,10 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 {
     String path = getFullRelativePath();
 
+    const auto & pk = storage.getPrimaryKey();
     if (!checksums.empty())
     {
-        if (storage.hasPrimaryKey() && !checksums.files.count("primary.idx"))
+        if (!pk.column_names.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -875,7 +876,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         };
 
         /// Check that the primary key index is not empty.
-        if (storage.hasPrimaryKey())
+        if (!pk.column_names.empty())
             check_file_not_empty(volume->getDisk(), path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
