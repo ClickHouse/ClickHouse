@@ -596,7 +596,7 @@ private:
 
         {
             std::lock_guard used(used_regions_mutex);
-            used_regions.push_back(metadata);
+            used_regions.push_back(metadata); // TODO fails here
         }
 
         {
@@ -640,7 +640,7 @@ private:
             /// Deleting last reference.
             value_to_region.erase(it);
 
-            unused_regions.push_back(*metadata);
+            unused_regions.push_back(*metadata); //TODO Fails here
         }
 
         --metadata->chunk->used_refcount; //atomic here.

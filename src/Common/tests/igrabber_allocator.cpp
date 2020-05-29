@@ -23,11 +23,12 @@ int main() noexcept
 
    std::vector<std::thread> thread_pool;
 
-   for (size_t k = 0; k < 4; k++)
+   for (size_t k = 0; k < 8; k++)
        thread_pool.emplace_back([&cache] {
-           for (int i = 1; i < 10; ++i) {
+           for (int i = 1; i < 10000; ++i) {
                Holder inc(cache, i);
                Holder last(cache, i - 1);
+               Holder next(cache, i + 1);
            }});
 
    for (auto& t : thread_pool) t.join();
