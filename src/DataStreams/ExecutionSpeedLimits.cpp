@@ -52,7 +52,7 @@ void ExecutionSpeedLimits::throttle(
         UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
 
         double elapsed_seconds = 0;
-        if (throttler_sleep_microseconds > total_elapsed_microseconds)
+        if (total_elapsed_microseconds > throttler_sleep_microseconds)
             elapsed_seconds = static_cast<double>(total_elapsed_microseconds - throttler_sleep_microseconds) / 1000000.0;
 
         if (elapsed_seconds > 0)
