@@ -9,5 +9,4 @@ target_link_libraries (daemon PUBLIC loggers PRIVATE clickhouse_common_io clickh
 if (USE_SENTRY)
     target_link_libraries (daemon PRIVATE curl)
     target_link_libraries (daemon PRIVATE ${SENTRY_LIBRARY})
-#    target_include_directories (daemon SYSTEM BEFORE PRIVATE ${SENTRY_INCLUDE_DIR})
 endif ()
