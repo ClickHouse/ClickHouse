@@ -7,6 +7,7 @@
 
 #include <string>
 
+/// Sends crash reports to ClickHouse core developer team via https://sentry.io
 class SentryWriter
 {
 public:
