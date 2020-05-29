@@ -775,6 +775,7 @@ void IMergeTreeDataPart::remove() const
     }
 }
 
+
 String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
     /// Do not allow underscores in the prefix because they are used as separators.
