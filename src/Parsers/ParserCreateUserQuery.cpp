@@ -35,111 +35,78 @@ namespace
     }
 
 
-    bool parseByPassword(IParserBase::Pos & pos, Expected & expected, String & password)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserKeyword{"BY"}.ignore(pos, expected))
-                return false;
-
-            ASTPtr ast;
-            if (!ParserStringLiteral{}.parse(pos, ast, expected))
-                return false;
-
-            password = ast->as<const ASTLiteral &>().value.safeGet<String>();
-            return true;
-        });
-    }
-
-
     bool parseAuthentication(IParserBase::Pos & pos, Expected & expected, std::optional<Authentication> & authentication)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            if (ParserKeyword{"NOT IDENTIFIED"}.ignore(pos, expected))
+            {
+                authentication = Authentication{Authentication::NO_PASSWORD};
+                return true;
+            }
+
             if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected))
                 return false;
 
-            if (!ParserKeyword{"WITH"}.ignore(pos, expected))
-            {
-                String password;
-                if (!parseByPassword(pos, expected, password))
-                    return false;
+            std::optional<Authentication::Type> type;
+            bool expect_password = false;
+            bool expect_hash = false;
+            bool expect_server = false;
 
-                authentication = Authentication{Authentication::SHA256_PASSWORD};
-                authentication->setPassword(password);
-                return true;
+            if (ParserKeyword{"WITH"}.ignore(pos, expected))
+            {
+                for (auto check_type : ext::range(Authentication::MAX_TYPE))
+                {
+                    if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
+                    {
+                        type = check_type;
+                        expect_password = (check_type != Authentication::NO_PASSWORD && check_type != Authentication::LDAP_PASSWORD);
+                        expect_server = (check_type == Authentication::LDAP_PASSWORD);
+                        break;
+                    }
+                }
+
+                if (!type)
+                {
+                    if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
+                    {
+                        type = Authentication::SHA256_PASSWORD;
+                        expect_hash = true;
+                    }
+                    else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
+                    {
+                        type = Authentication::DOUBLE_SHA1_PASSWORD;
+                        expect_hash = true;
+                    }
+                    else
+                        return false;
+                }
             }
 
-            if (ParserKeyword{"PLAINTEXT_PASSWORD"}.ignore(pos, expected))
+            if (!type)
             {
-                String password;
-                if (!parseByPassword(pos, expected, password))
-                    return false;
-
-                authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
-                authentication->setPassword(password);
-                return true;
+                type = Authentication::SHA256_PASSWORD;
+                expect_password = true;
             }
 
-            if (ParserKeyword{"SHA256_PASSWORD"}.ignore(pos, expected))
+            String value;
+            if (expect_password || expect_hash || expect_server)
             {
-                String password;
-                if (!parseByPassword(pos, expected, password))
+                ASTPtr ast;
+                if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
 
-                authentication = Authentication{Authentication::SHA256_PASSWORD};
-                authentication->setPassword(password);
-                return true;
+                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
             }
 
-            if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
-            {
-                String hash;
-                if (!parseByPassword(pos, expected, hash))
-                    return false;
+            authentication = Authentication{*type};
+            if (expect_password)
+                authentication->setPassword(value);
+            else if (expect_hash)
+                authentication->setPasswordHashHex(value);
+            else if (expect_server)
+                authentication->setLDAPServerName(value);
 
-                authentication = Authentication{Authentication::SHA256_PASSWORD};
-                authentication->setPasswordHashHex(hash);
-                return true;
-            }
-
-            if (ParserKeyword{"DOUBLE_SHA1_PASSWORD"}.ignore(pos, expected))
-            {
-                String password;
-                if (!parseByPassword(pos, expected, password))
-                    return false;
-
-                authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-                authentication->setPassword(password);
-                return true;
-            }
-
-            if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
-            {
-                String hash;
-                if (!parseByPassword(pos, expected, hash))
-                    return false;
-
-                authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-                authentication->setPasswordHashHex(hash);
-                return true;
-            }
-
-            if (ParserKeyword{"LDAP"}.ignore(pos, expected))
-            {
-                String server_name;
-                if (!parseByPassword(pos, expected, server_name))
-                    return false;
-
-                authentication = Authentication{Authentication::LDAP_PASSWORD};
-                authentication->setLDAPServerName(server_name);
-                return true;
-            }
-
-            if (!ParserKeyword{"NO_PASSWORD"}.ignore(pos, expected))
-                return false;
-
-            authentication = Authentication{Authentication::NO_PASSWORD};
             return true;
         });
     }

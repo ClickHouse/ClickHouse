@@ -9,8 +9,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 Authentication::Digest Authentication::getPasswordDoubleSHA1() const
@@ -40,8 +40,11 @@ Authentication::Digest Authentication::getPasswordDoubleSHA1() const
 
         case LDAP_PASSWORD:
             throw Exception("Cannot get password double SHA1 for user with 'LDAP_PASSWORD' authentication.", ErrorCodes::BAD_ARGUMENTS);
+
+        case MAX_TYPE:
+            break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("getPasswordDoubleSHA1(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
@@ -84,8 +87,11 @@ bool Authentication::isCorrectPassword(const String & password_, const String & 
             LDAPSimpleAuthClient ldap_client(ldap_server_params);
             return ldap_client.check();
         }
+
+        case MAX_TYPE:
+            break;
     }
-    throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Cannot check if the password is correct for authentication type " + toString(type), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

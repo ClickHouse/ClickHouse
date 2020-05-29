@@ -9,7 +9,7 @@ namespace DB
 PullingPipelineExecutor::PullingPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
     pulling_format = std::make_shared<PullingOutputFormat>(pipeline.getHeader(), has_data_flag);
-    pipeline.setOutput(pulling_format);
+    pipeline.setOutputFormat(pulling_format);
 }
 
 PullingPipelineExecutor::~PullingPipelineExecutor()
