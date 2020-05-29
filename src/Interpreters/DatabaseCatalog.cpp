@@ -101,7 +101,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id));
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), *global_context);
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
@@ -112,7 +112,7 @@ void DatabaseCatalog::loadDatabases()
 {
     drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 
     loadMarkedAsDroppedTables();
@@ -163,6 +163,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
+    const Context & context,
     std::optional<Exception> * exception) const
 {
     if (!table_id)
@@ -210,7 +211,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(table_id.table_name);
+    auto table = database->tryGetTable(table_id.table_name, context);
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
@@ -323,7 +324,7 @@ Databases DatabaseCatalog::getDatabases() const
     return databases;
 }
 
-bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id) const
+bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, const Context & context) const
 {
     if (table_id.hasUUID())
         return tryGetByUUID(table_id.uuid).second != nullptr;
@@ -335,12 +336,12 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id) const
         if (iter != databases.end())
             db = iter->second;
     }
-    return db && db->isTableExist(table_id.table_name);
+    return db && db->isTableExist(table_id.table_name, context);
 }
 
-void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id) const
+void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, const Context & context) const
 {
-    if (isTableExist(table_id))
+    if (isTableExist(table_id, context))
         throw Exception("Table " + table_id.getNameForLogs() + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
@@ -472,32 +473,32 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
     return db && db->isDictionaryExist(table_id.getTableName());
 }
 
-StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
+StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, const Context & context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, &exc);
+    auto res = getTableImpl(table_id, context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
 }
 
-StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
+StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, const Context & context) const
 {
-    return getTableImpl(table_id, nullptr).second;
+    return getTableImpl(table_id, context, nullptr).second;
 }
 
-DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id) const
+DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, const Context & context) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, &exc);
+    auto res = getTableImpl(table_id, context, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
 }
 
-DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id) const
+DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, const Context & context) const
 {
-    return getTableImpl(table_id, nullptr);
+    return getTableImpl(table_id, context, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()

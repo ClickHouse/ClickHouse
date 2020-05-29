@@ -70,7 +70,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     }
 
     query.table_id = context.resolveStorageID(query.table_id);
-    return DatabaseCatalog::instance().getTable(query.table_id);
+    return DatabaseCatalog::instance().getTable(query.table_id, context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
