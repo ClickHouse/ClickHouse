@@ -1,5 +1,8 @@
 # Системные таблицы {#system-tables}
 
+
+## Введение {#system-tables-introduction}
+
 Системные таблицы используются для реализации части функциональности системы, а также предоставляют доступ к информации о работе системы.
 Вы не можете удалить системную таблицу (хотя можете сделать DETACH).
 Для системных таблиц нет файлов с данными на диске и файлов с метаданными. Сервер создаёт все системные таблицы при старте.
@@ -551,17 +554,17 @@ CurrentMetric_ReplicatedChecks:                             0
 !!! note "Внимание"
     Таблица не содержит входных данных для запросов `INSERT`.
 
-Чтобы ваши запросы логгировались, вам следует:
+Настойки логгирования можно изменить в секции серверной конфигурации [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
 
-1. Настроить секцию [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) в конфигурации сервера.
-2. Установить значение параметра [log_queries](settings/settings.md#settings-log-queries) равным 1. 
+Можно отключить логгирование настройкой [log_queries = 0](settings/settings.md#settings-log-queries). По-возможности, не отключайте логгирование, поскольку информация из таблицы важна при решении проблем.
 
-Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
+Период сброса логов в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
+
+ClickHouse не удаляет логи из таблица автоматически. Смотрите [Введение](#system-tables-introduction).
 
 Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (параметр `partition_by`).
 
 
-По умолчанию, строки добавляются в таблицу с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../sql-reference/statements/system.md#query_language-system-flush_logs).
 
 Если таблицу удалить вручную, она создается заново автоматически «на лету». При этом все логи на момент удаления таблицы будут убраны.
 
@@ -570,11 +573,11 @@ CurrentMetric_ReplicatedChecks:                             0
 1.  Первоначальные запросы, которые были выполнены непосредственно клиентом.
 2.  Дочерние запросы, инициированные другими запросами (для выполнения распределенных запросов). Для дочерних запросов информация о первоначальном запросе содержится в столбцах `initial_*`.
 
-В зависимости от статуса каждый запрос создаёт одну или две строки в таблице `query_log`:
+В зависимости от статуса (столбец `type`) каждый запрос создаёт одну или две строки в таблице `query_log`:
 
-1.  Если запрос выполнен успешно, создаются два события типа 1 и 2 (смотрите столбец `type`).
-2.  Если во время обработки запроса возникла ошибка, создаются два события с типами 1 и 4.
-3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом 3.
+1.  Если запрос выполнен успешно, создаются два события типа `QueryStart` и `QueryFinish`.
+2.  Если во время обработки запроса возникла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
+3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом `ExceptionBeforeStart`.
 
 Столбцы:
 
@@ -586,21 +589,21 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `event_date` ([Date](../sql-reference/data-types/date.md)) — дата начала запроса.
 -   `event_time` ([DateTime](../sql-reference/data-types/datetime.md)) — время начала запроса.
 -   `query_start_time` ([DateTime](../sql-reference/data-types/datetime.md)) — время начала обработки запроса.
--   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — длительность обработки запроса.
--   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных строк.
--   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных байтов.
+-   `query_duration_ms` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — длительность выполнения запроса в миллисекундах.
+-   `read_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Общее количество строк, считанных из всех таблиц и табличных функций, участвующих в запросе. Включает в себя обычные подзапросы, подзапросы для `IN` и `JOIN`. Для распределенных запросов `read_rows` включает в себя общее количество строк, прочитанных на всех репликах. Каждая реплика передает собственное значение `read_rows`, а сервер-инициатор запроса суммирует все полученные и локальные значения. Объемы кэша не учитываюся.
+-   `read_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — Общее количество байтов, считанных из всех таблиц и табличных функций, участвующих в запросе. Включает в себя обычные подзапросы, подзапросы для `IN` и `JOIN`. Для распределенных запросов `read_bytes` включает в себя общее количество байтов, прочитанных на всех репликах. Каждая реплика передает собственное значение `read_bytes`, а сервер-инициатор запроса суммирует все полученные и локальные значения. Объемы кэша не учитываюся.
 -   `written_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
 -   `written_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
--   `result_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество строк в результате.
--   `result_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — объём результата в байтах.
+-   `result_rows` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — количество строк в результате запроса `SELECT` или количество строк в запросе `INSERT`.
+-   `result_bytes` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — объём RAM в байтах, использованный для хранения результата запроса.
 -   `memory_usage` ([UInt64](../sql-reference/data-types/int-uint.md#uint-ranges)) — потребление RAM запросом.
 -   `query` ([String](../sql-reference/data-types/string.md)) — текст запроса.
 -   `exception` ([String](../sql-reference/data-types/string.md)) — сообщение исключения, если запрос завершился по исключению.
 -   `exception_code` ([Int32](../sql-reference/data-types/int-uint.md)) — код исключения. 
--   `stack_trace` ([String](../sql-reference/data-types/string.md)) — трассировка (список функций, последовательно вызванных перед ошибкой). Пустая строка, если запрос успешно завершен.
+-   `stack_trace` ([String](../sql-reference/data-types/string.md)) — [stack trace](https://en.wikipedia.org/wiki/Stack_trace). Пустая строка, если запрос успешно завершен.
 -   `is_initial_query` ([UInt8](../sql-reference/data-types/int-uint.md)) — вид запроса. Возможные значения:
     -   1 — запрос был инициирован клиентом.
-    -   0 — запрос был инициирован другим запросом при распределенном запросе.
+    -   0 — запрос был инициирован другим запросом при выполнении распределенного запроса.
 -   `user` ([String](../sql-reference/data-types/string.md)) — пользователь, запустивший текущий запрос.
 -   `query_id` ([String](../sql-reference/data-types/string.md)) — ID запроса.
 -   `address` ([IPv6](../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел запрос.
@@ -612,7 +615,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   `interface` ([UInt8](../sql-reference/data-types/int-uint.md)) — интерфейс, с которого ушёл запрос. Возможные значения:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` ([String](../sql-reference/data-types/string.md)) — имя пользователя в OS, который запустил [clickhouse-client](../interfaces/cli.md).
+-   `os_user` ([String](../sql-reference/data-types/string.md)) — имя пользователя операционной системы, который запустил [clickhouse-client](../interfaces/cli.md).
 -   `client_hostname` ([String](../sql-reference/data-types/string.md)) — имя сервера, с которого присоединился [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 -   `client_name` ([String](../sql-reference/data-types/string.md)) — [clickhouse-client](../interfaces/cli.md) или другой TCP клиент.
 -   `client_revision` ([UInt32](../sql-reference/data-types/int-uint.md)) — ревизия [clickhouse-client](../interfaces/cli.md) или другого TCP клиента.
@@ -687,13 +690,13 @@ Settings.Values:      ['0','random','1','10000000000']
 ```
 **Смотрите также**
 
--   [system.query_thread_log](#system_tables-query-thread-log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
+-   [system.query_thread_log](#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
 
-## system.query_thread_log {#system_tables-query-thread-log}
+## system.query_thread_log {#system_tables-query_thread_log}
 
 Содержит информацию о каждом потоке выполняемых запросов.
 
-ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
 
 Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md#settings).
 
@@ -744,16 +747,16 @@ ClickHouse создаёт таблицу только в том случае, к
 -   `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
 -   `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
 
-По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
 
 Если таблицу удалить вручную, она пересоздастся автоматически «на лету». При этом все логи на момент удаления таблицы будут удалены.
 
 !!! note "Примечание"
     Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
-Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) (параметр `partition_by`).
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) (параметр `partition_by`).
 
-## system.query_thread_log {#system_tables-query-thread-log}
+## system.query_thread_log {#system_tables-query_thread_log}
 
 Содержит информацию о каждом потоке исполнения запроса.
 
