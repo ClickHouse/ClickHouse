@@ -1690,7 +1690,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().in);
+    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().getInputStream());
 
     std::set<String> res;
     if (block)
