@@ -35,7 +35,9 @@
 
 enum
  {
-     RESCHEDULE_WAIT = 500
+    RESCHEDULE_WAIT = 500,
+    Connection_setup_sleep = 200,
+    Connection_setup_retries_max = 1000
  };
 
 namespace DB
@@ -75,10 +77,26 @@ StorageRabbitMQ::StorageRabbitMQ(
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
+        , evbase(event_base_new())
+        , eventHandler(evbase, log)
+        , connection(&eventHandler, 
+          AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
 {
-    rabbitmq_context.makeQueryContext();
+    size_t cnt_retries = 0;
+    while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
+    {
+        event_base_loop(evbase, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(Connection_setup_sleep));
+    }
 
+    if (!connection.ready())
+    {
+        LOG_ERROR(log, "Cannot set up connection for consumer");
+    }
+
+    rabbitmq_context.makeQueryContext();
     setColumns(columns_);
+
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
@@ -184,7 +202,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     update_channel_id = true;
 
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-            parsed_address, exchange_name, routing_key, next_channel_id, 
+            std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, exchange_name, routing_key, next_channel_id, 
             log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
 }
 

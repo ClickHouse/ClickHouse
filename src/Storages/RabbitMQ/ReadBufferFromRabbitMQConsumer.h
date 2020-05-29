@@ -22,7 +22,8 @@ class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 
 public:
     ReadBufferFromRabbitMQConsumer(
-            std::pair<std::string, UInt16> & parsed_address,
+            ChannelPtr consumer_channel_,
+            RabbitMQHandler & eventHandler_,
             const String & exchange_name_,
             const String & routing_key_,
             const size_t channel_id_,
@@ -42,10 +43,8 @@ private:
     using Messages = std::vector<String>;
     using Queues = std::vector<String>;
 
-    event_base * evbase;
-    RabbitMQHandler eventHandler;
-    AMQP::TcpConnection connection;
     ChannelPtr consumer_channel;
+    RabbitMQHandler & eventHandler;
 
     const String & exchange_name;
     const String & routing_key;
@@ -59,7 +58,8 @@ private:
     bool allowed = true;
     const std::atomic<bool> & stopped;
 
-    bool exchange_declared = false;
+    std::atomic<bool> exchange_declared;
+    std::atomic<bool> false_param;
     const size_t num_queues;
     Queues queues;
     bool subscribed = false;
@@ -69,12 +69,14 @@ private:
     Messages messages;
     Messages::iterator current;
 
+    std::mutex mutex;
+
     bool nextImpl() override;
 
     void initExchange();
     void initQueueBindings(const size_t queue_id);
     void subscribe(const String & queue_name);
-    void startEventLoop();
+    void startEventLoop(std::atomic<bool> & check_param);
 
 };
 }
