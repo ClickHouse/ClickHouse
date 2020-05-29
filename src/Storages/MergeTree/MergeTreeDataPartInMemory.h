@@ -43,6 +43,8 @@ public:
     void renameTo(const String & /*new_relative_path*/, bool /*remove_new_dir_if_exists*/) const override {}
     void makeCloneInDetached(const String & prefix) const override;
 
+    void flushToDisk(const String & base_path, const String & new_relative_path) const;
+
     bool waitUntilMerged(size_t timeout) const override;
     void notifyMerged() const override;
 
