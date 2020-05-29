@@ -161,7 +161,8 @@ void SelectStreamFactory::createForShard(
     auto emplace_remote_stream = [&]()
     {
         auto stream = std::make_shared<RemoteBlockInputStream>(
-            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
+            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage,
+            query_info.max_revision_supporting_selected_aggregation_method);
         stream->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             stream->setMainTable(main_table);
@@ -266,7 +267,8 @@ void SelectStreamFactory::createForShard(
         auto lazily_create_stream = [
                 pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast, context, throttler,
                 main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
-                stage = processed_stage, local_delay, add_totals_port, add_extremes_port]()
+                stage = processed_stage, local_delay, add_totals_port, add_extremes_port,
+                max_revision_supporting_selected_aggregation_method = query_info.max_revision_supporting_selected_aggregation_method]()
             -> BlockInputStreamPtr
         {
             auto current_settings = context.getSettingsRef();
@@ -307,7 +309,8 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 return std::make_shared<RemoteBlockInputStream>(
-                    std::move(connections), modified_query, header, context, nullptr, throttler, scalars, external_tables, stage);
+                    std::move(connections), modified_query, header, context, nullptr, throttler, scalars, external_tables, stage,
+                    max_revision_supporting_selected_aggregation_method);
             }
         };
 

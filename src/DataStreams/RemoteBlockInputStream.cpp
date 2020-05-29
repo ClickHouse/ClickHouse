@@ -359,7 +359,8 @@ void RemoteBlockInputStream::sendQuery()
     ClientInfo modified_client_info = context.getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
+    multiplexed_connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true,
+                                       max_revision_supporting_selected_aggregation_method);
 
     established = false;
     sent_query = true;
