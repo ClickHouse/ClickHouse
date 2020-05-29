@@ -89,7 +89,7 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     if (metric_log)
         logs.emplace_back(metric_log.get());
 
-    bool lazy_load = config.getBool("system_tables_lazy_load", false);
+    bool lazy_load = config.getBool("system_tables_lazy_load", true);
 
     try
     {
