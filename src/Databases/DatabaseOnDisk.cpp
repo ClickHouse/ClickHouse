@@ -123,10 +123,9 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 }
 
 DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
-    : DatabaseWithOwnTablesBase(name, logger)
+    : DatabaseWithOwnTablesBase(name, logger, context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
-    , global_context(context.getGlobalContext())
 {
     Poco::File(context.getPath() + data_path).createDirectories();
     Poco::File(metadata_path).createDirectories();
@@ -160,7 +159,7 @@ void DatabaseOnDisk::createTable(
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
             ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(table_name))
+    if (isTableExist(table_name, global_context))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     if (create.attach_short_syntax)
@@ -267,7 +266,7 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name);
+    StoragePtr table = tryGetTable(table_name, global_context);
     detachTable(table_name);
     try
     {
@@ -304,10 +303,10 @@ void DatabaseOnDisk::renameTable(
     Poco::File(table_metadata_path).remove();
 }
 
-ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool has_table = tryGetTable(table_name) != nullptr;
+    bool has_table = tryGetTable(table_name, global_context) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {

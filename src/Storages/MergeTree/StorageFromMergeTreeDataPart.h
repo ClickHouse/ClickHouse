@@ -39,9 +39,6 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
-    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
-    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
-
     ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
     {
         return part->storage.getColumnDependencies(updated_columns);
@@ -51,10 +48,6 @@ public:
     {
         return part->storage.getInMemoryMetadata();
     }
-
-    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
-
-    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
     NamesAndTypesList getVirtuals() const override
     {
@@ -68,6 +61,9 @@ protected:
     {
         setColumns(part_->storage.getColumns());
         setIndices(part_->storage.getIndices());
+        setSortingKey(part_->storage.getSortingKey());
+        setColumnTTLs(part->storage.getColumnTTLs());
+        setTableTTLs(part->storage.getTableTTLs());
     }
 
 private:

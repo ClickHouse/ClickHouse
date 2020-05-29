@@ -18,9 +18,9 @@ static void test1()
 {
     using namespace DB;
 
-    static constexpr size_t initial_size = 8;
-    static constexpr size_t stack_threshold = 32;
-    using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
+    static constexpr size_t initial_bytes = 32;
+    using Array = PODArray<UInt64, initial_bytes,
+        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
 
     bool res = true;
 
@@ -139,9 +139,9 @@ static void test2()
 {
     using namespace DB;
 
-    static constexpr size_t initial_size = 8;
-    static constexpr size_t stack_threshold = 32;
-    using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
+    static constexpr size_t initial_bytes = 32;
+    using Array = PODArray<UInt64, initial_bytes,
+        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
 
     bool res = true;
 
@@ -389,9 +389,9 @@ static void test3()
 {
     using namespace DB;
 
-    static constexpr size_t initial_size = 8;
-    static constexpr size_t stack_threshold = 32;
-    using Array = PODArray<UInt64, initial_size, AllocatorWithStackMemory<Allocator<false>, stack_threshold>>;
+    static constexpr size_t initial_bytes = 32;
+    using Array = PODArray<UInt64, initial_bytes,
+        AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
 
     bool res = true;
 

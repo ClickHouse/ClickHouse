@@ -247,6 +247,50 @@ def test_kafka_consumer_hang(kafka_cluster):
     assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
 
 @pytest.mark.timeout(180)
+def test_kafka_consumer_hang2(kafka_cluster):
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang2',
+                     kafka_group_name = 'consumer_hang2',
+                     kafka_format = 'JSONEachRow';
+
+        CREATE TABLE test.kafka2 (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'consumer_hang2',
+                     kafka_group_name = 'consumer_hang2',
+                     kafka_format = 'JSONEachRow';
+        ''')
+
+    # first consumer subscribe the topic, try to poll some data, and go to rest
+    instance.query('SELECT * FROM test.kafka')
+
+    # second consumer do the same leading to rebalance in the first
+    # consumer, try to poll some data
+    instance.query('SELECT * FROM test.kafka2')
+
+#echo 'SELECT * FROM test.kafka; SELECT * FROM test.kafka2; DROP TABLE test.kafka;' | clickhouse client -mn &
+#    kafka_cluster.open_bash_shell('instance')
+
+    # first consumer has pending rebalance callback unprocessed (no poll after select)
+    # one of those queries was failing because of
+    # https://github.com/edenhill/librdkafka/issues/2077
+    # https://github.com/edenhill/librdkafka/issues/2898
+    instance.query('DROP TABLE test.kafka')
+    instance.query('DROP TABLE test.kafka2')
+
+
+    # from a user perspective: we expect no hanging 'drop' queries
+    # 'dr'||'op' to avoid self matching
+    assert int(instance.query("select count() from system.processes where position(lower(query),'dr'||'op')>0")) == 0
+
+
+@pytest.mark.timeout(180)
 def test_kafka_csv_with_delimiter(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
@@ -973,7 +1017,10 @@ def test_kafka_flush_by_block_size(kafka_cluster):
 
     time.sleep(1)
 
-    result = instance.query('SELECT count() FROM test.view')
+    # TODO: due to https://github.com/ClickHouse/ClickHouse/issues/11216
+    # second flush happens earlier than expected, so we have 2 parts here instead of one
+    # flush by block size works correctly, so the feature checked by the test is working correctly
+    result = instance.query("SELECT count() FROM test.view WHERE _part='all_1_1_0'")
     # print(result)
 
     # kafka_cluster.open_bash_shell('instance')
@@ -1130,12 +1177,25 @@ def test_kafka_rebalance(kafka_cluster):
 
     print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
 
+    # Some queries to debug...
     # SELECT * FROM test.destination where key in (SELECT key FROM test.destination group by key having count() <> 1)
     # select number + 1 as key from numbers(4141) left join test.destination using (key) where  test.destination.key = 0;
     # SELECT * FROM test.destination WHERE key between 2360 and 2370 order by key;
     # select _partition from test.destination group by _partition having count() <> max(_offset) + 1;
     # select toUInt64(0) as _partition, number + 1 as _offset from numbers(400) left join test.destination using (_partition,_offset) where test.destination.key = 0 order by _offset;
     # SELECT * FROM test.destination WHERE _partition = 0 and _offset between 220 and 240 order by _offset;
+
+    # CREATE TABLE test.reference (key UInt64, value UInt64) ENGINE = Kafka SETTINGS kafka_broker_list = 'kafka1:19092',
+    #             kafka_topic_list = 'topic_with_multiple_partitions',
+    #             kafka_group_name = 'rebalance_test_group_reference',
+    #             kafka_format = 'JSONEachRow',
+    #             kafka_max_block_size = 100000;
+    #
+    # CREATE MATERIALIZED VIEW test.reference_mv Engine=Log AS
+    #     SELECT  key, value, _topic,_key,_offset, _partition, _timestamp, 'reference' as _consumed_by
+    # FROM test.reference;
+    #
+    # select * from test.reference_mv left join test.destination using (key,_topic,_offset,_partition) where test.destination._consumed_by = '';
 
     result = int(instance.query('SELECT count() == uniqExact(key) FROM test.destination'))
 
@@ -1331,6 +1391,41 @@ def test_commits_of_unprocessed_messages_on_drop(kafka_cluster):
 
     kafka_thread.join()
     assert TSV(result) == TSV('{0}\t{0}\t{0}'.format(i[0]-1)), 'Missing data!'
+
+
+
+@pytest.mark.timeout(120)
+def test_bad_reschedule(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(20000)]
+    kafka_produce('test_bad_reschedule', messages)
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'test_bad_reschedule',
+                    kafka_group_name = 'test_bad_reschedule',
+                    kafka_format = 'JSONEachRow',
+                    kafka_max_block_size = 1000;
+
+        CREATE MATERIALIZED VIEW test.destination Engine=Log AS
+        SELECT
+            key,
+            now() as consume_ts,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+    while int(instance.query("SELECT count() FROM test.destination")) < 20000:
+        print("Waiting for consume")
+        time.sleep(1)
+
+    assert int(instance.query("SELECT max(consume_ts) - min(consume_ts) FROM test.destination")) < 8
 
 
 @pytest.mark.timeout(1200)

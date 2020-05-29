@@ -143,6 +143,14 @@ const IAccessStorage & MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
+void MultipleAccessStorage::addStorage(std::unique_ptr<Storage> nested_storage)
+{
+    /// Note that IStorage::storage_name is not changed. It is ok as this method
+    /// is considered as a temporary solution allowing third-party Arcadia applications
+    /// using CH as a library to register their own access storages. Do not remove
+    /// this method without providing any alternative :)
+    nested_storages.emplace_back(std::move(nested_storage));
+}
 
 AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id) const
 {
