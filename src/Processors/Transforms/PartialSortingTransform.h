@@ -29,6 +29,10 @@ private:
     SortDescription description;
     UInt64 limit;
     RowsBeforeLimitCounterPtr read_rows;
+    /** threshold_block is using for saving columns from previously processed block.
+      * threshold_block_columns contains pointers to columns from threshold_block which used for comparison.
+      * That's all for PartialSort optimization
+      */
     Block threshold_block;
     ColumnRawPtrs threshold_block_columns;
 };
