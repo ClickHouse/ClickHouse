@@ -249,7 +249,6 @@ private:
         UInt32 thread_num,
         const std::string & query_id) const
     {
-        SentryWriter::onFault(sig, info, context, stack_trace);
         LOG_FATAL(log, "########################################");
 
         {
@@ -282,6 +281,9 @@ private:
 
         /// Write symbolized stack trace line by line for better grep-ability.
         stack_trace.toStringEveryLine([&](const std::string & s) { LOG_FATAL(log, s); });
+
+        /// Send crash report if configured
+        SentryWriter::onFault(sig, info, context, stack_trace);
     }
 };
 
