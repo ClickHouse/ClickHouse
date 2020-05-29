@@ -565,12 +565,14 @@ public:
 private:
     inline ValuePtr getImpl(const Key& key)
     {
-        std::lock_guard used(used_regions_mutex);
+        {
+            std::lock_guard used(used_regions_mutex);
 
-        auto it = used_regions.find(key, RegionCompareByKey());
+            auto it = used_regions.find(key, RegionCompareByKey());
 
-        if (used_regions.end() == it)
-            return nullptr;
+            if (used_regions.end() == it)
+                return nullptr;
+        }
 
         RegionMetadata& metadata = *it;
 
