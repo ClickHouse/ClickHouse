@@ -532,7 +532,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     reloadConfiguration();
-    SentryWriter::initialize(config());
 
     /// This must be done before creation of any files (including logs).
     mode_t umask_num = 0027;
@@ -658,6 +657,7 @@ void BaseDaemon::initialize(Application & self)
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
+    SentryWriter::initialize(config());
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.

@@ -1,7 +1,11 @@
 #include <daemon/SentryWriter.h>
 
+#include <Poco/File.h>
+#include <Poco/Util/Application.h>
+
 #include <Common/config.h>
 #include <common/getFQDNOrHostName.h>
+#include <common/logger_useful.h>
 #if !defined(ARCADIA_BUILD)
 #   include "Common/config_version.h"
 #endif
@@ -44,20 +48,45 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config) {
             "send_crash_reports.endpoint",
             "https://6f33034cfe684dd7a3ab9875e57b1c8d@o388870.ingest.sentry.io/5226277"
         );
+        const std::string & temp_folder_path = config.getString(
+            "send_crash_reports.tmp_path",
+            config.getString("tmp_path", Poco::Path::temp()) + "sentry/"
+        );
+        Poco::File(temp_folder_path).createDirectories();
+
         sentry_options_t * options = sentry_options_new();
         sentry_options_set_release(options, VERSION_STRING);
         if (debug)
         {
             sentry_options_set_debug(options, 1);
         }
-        sentry_init(options);
         sentry_options_set_dsn(options, endpoint.c_str());
+        sentry_options_set_database_path(options, temp_folder_path.c_str());
         if (strstr(VERSION_DESCRIBE, "-stable") || strstr(VERSION_DESCRIBE, "-lts")) {
             sentry_options_set_environment(options, "prod");
         } else {
             sentry_options_set_environment(options, "test");
         }
-        initialized = true;
+        int init_status = sentry_init(options);
+        if (!init_status)
+        {
+            initialized = true;
+            LOG_INFO(
+                &Logger::get("SentryWriter"),
+                "Sending crash reports is initialized with {} endpoint and {} temp folder",
+                endpoint,
+                temp_folder_path
+            );
+        }
+        else
+        {
+            LOG_WARNING(&Logger::get("SentryWriter"), "Sending crash reports failed to initialized with {} status", init_status);
+        }
+
+    }
+    else
+    {
+        LOG_INFO(&Logger::get("SentryWriter"), "Sending crash reports is disabled");
     }
 #endif
 }
@@ -140,8 +169,13 @@ void SentryWriter::onFault(
 
         sentry_value_set_by_key(event, "threads", threads);
 
+        LOG_INFO(&Logger::get("SentryWriter"), "Sending crash report");
         sentry_capture_event(event);
         shutdown();
+    }
+    else
+    {
+        LOG_INFO(&Logger::get("SentryWriter"), "Not sending crash report");
     }
 #endif
 }
