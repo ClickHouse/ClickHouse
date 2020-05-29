@@ -13,6 +13,13 @@ class MergeTreeData;
 class MergeTreeWriteAheadLog
 {
 public:
+    /// Append-only enum. It is serialized to WAL
+    enum class ActionType : UInt8
+    {
+        ADD_PART = 0,
+        DROP_PART = 1,
+    };
+
     constexpr static auto WAL_FILE_NAME = "wal";
     constexpr static auto WAL_FILE_EXTENSION = ".bin";
     constexpr static auto DEFAULT_WAL_FILE = "wal.bin";
@@ -20,7 +27,8 @@ public:
     MergeTreeWriteAheadLog(const MergeTreeData & storage_, const DiskPtr & disk_,
         const String & name = DEFAULT_WAL_FILE);
 
-    void write(const Block & block, const String & part_name);
+    void addPart(const Block & block, const String & part_name);
+    void dropPart(const String & part_name);
     std::vector<MergeTreeMutableDataPartPtr> restore();
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;

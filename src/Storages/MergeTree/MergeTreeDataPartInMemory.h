@@ -38,12 +38,10 @@ public:
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return false; }
-
     bool hasColumnFiles(const String & column_name, const IDataType & /* type */) const override { return !!getColumnPosition(column_name); }
-
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
-
     void renameTo(const String & /*new_relative_path*/, bool /*remove_new_dir_if_exists*/) const override {}
+    void makeCloneInDetached(const String & prefix) const override;
 
     bool waitUntilMerged(size_t timeout) const override;
     void notifyMerged() const override;
