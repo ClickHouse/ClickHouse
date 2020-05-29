@@ -386,26 +386,14 @@ public:
      */
     inline ValuePtr get(const Key& key)
     {
-        std::lock_guard used(used_regions_mutex);
+        ValuePtr res = getImpl(key);
 
-        auto it = used_regions.find(key, RegionCompareByKey());
+        if (res)
+            ++hits;
+        else
+            ++misses;
 
-        if (used_regions.end() == it)
-            return nullptr;
-
-        ++hits; // No more relaxed model (not locking the global mutex).
-
-        RegionMetadata& metadata = *it;
-
-        onSharedValueCreate<false>(metadata);
-
-        BOOST_ASSERT(metadata.TUsedRegionHook::is_linked());
-        BOOST_ASSERT(metadata.TAllRegionsHook::is_linked());
-        BOOST_ASSERT(!metadata.TFreeRegionHook::is_linked());
-        BOOST_ASSERT(!metadata.TUnusedRegionHook::is_linked());
-
-        return std::shared_ptr<Value>( // NOLINT: not a nullptr
-                metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
+        return res;
     }
 
     using GetOrSetRet = std::pair<ValuePtr, bool>;
@@ -469,8 +457,11 @@ public:
     template <class Init, class Size>
     inline GetOrSetRet getOrSet(const Key & key, Size && get_size, Init && initialize)
     {
-        if (ValuePtr out = get(key); out)
+        if (ValuePtr out = getImpl(key); out)
+        {
+            ++hits;
             return {out, false}; // value was found in the cache.
+        }
 
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
@@ -572,6 +563,28 @@ public:
  * Get implementation, value deleter for shared_ptr.
  */
 private:
+    inline ValuePtr getImpl(const Key& key)
+    {
+        std::lock_guard used(used_regions_mutex);
+
+        auto it = used_regions.find(key, RegionCompareByKey());
+
+        if (used_regions.end() == it)
+            return nullptr;
+
+        RegionMetadata& metadata = *it;
+
+        onSharedValueCreate<false>(metadata);
+
+        BOOST_ASSERT(metadata.TUsedRegionHook::is_linked());
+        BOOST_ASSERT(metadata.TAllRegionsHook::is_linked());
+        BOOST_ASSERT(!metadata.TFreeRegionHook::is_linked());
+        BOOST_ASSERT(!metadata.TUnusedRegionHook::is_linked());
+
+        return std::shared_ptr<Value>( // NOLINT: not a nullptr
+                metadata.value(), std::bind(&IGrabberAllocator::onValueDelete, this, std::placeholders::_1));
+    }
+
     template <bool MayBeInUnused>
     void onSharedValueCreate(RegionMetadata& metadata) noexcept
     {
@@ -679,14 +692,14 @@ private:
 
         IGrabberAllocator & alloc;
 
-        /// Protects #is_disposed, #value and #refcount.
+        /// Protects #is_disposed, and #value
         std::mutex mutex;
 
         /// @c true if this attempt is holding a value.
         bool is_disposed{false};
 
         /// How many InsertionAttemptDisposer's want to remove this attempt.
-        size_t refcount {0};
+        std::atomic_size_t refcount {0};
 
         ValuePtr value;
     };
