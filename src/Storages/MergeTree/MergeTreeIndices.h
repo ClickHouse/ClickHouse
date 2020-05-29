@@ -112,7 +112,7 @@ public:
     MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
 
     void registerCreator(const std::string & index_type, Creator creator);
-    void registerValidator(const std::string & index_type, Validator creator);
+    void registerValidator(const std::string & index_type, Validator validator);
 
 protected:
     MergeTreeIndexFactory();
