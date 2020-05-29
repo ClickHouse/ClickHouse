@@ -63,6 +63,12 @@ timeout $TIMEOUT bash -c restart_thread_2 2> /dev/null &
 wait
 sleep 3
 
+for i in `seq 4`; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_$i" >/dev/null 2>&1
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_${i}_tmp" >/dev/null 2>&1
+done
+
+$CLICKHOUSE_CLIENT -q "SHOW TABLES LIKE 'replica\\_01108\\_%'"
 $CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^replica_01108_') GROUP BY position(_table, 'tmp')"
 
 
