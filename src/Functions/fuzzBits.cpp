@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
 }
@@ -65,13 +64,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0].type))
             throw Exception(
                 "First argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1].column || !isFloat(arguments[1].type) || !isColumnConst(*arguments[1].column))
+        if (!arguments[1].column || !isFloat(arguments[1].type))
             throw Exception("Second argument of function " + getName() + " must be constant float", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0].type;
@@ -82,9 +83,13 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto col_in_untyped = block.getByPosition(arguments[0]).column;
+        auto col_in_untyped = block.getByPosition(arguments[0]).column;
         const double inverse_probability = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[1]).column).getValue<double>();
 
+        if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
+        {
+            col_in_untyped = col_in_untyped_const->getDataColumnPtr();
+        }
 
         if (const ColumnString * col_in = checkAndGetColumn<ColumnString>(col_in_untyped.get()))
         {
@@ -108,9 +113,9 @@ public:
 
             block.getByPosition(result).column = std::move(col_to);
         }
-        else if (const ColumnFixedString * col_fixed_in = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
+        else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
-            const auto n = col_fixed_in->getN();
+            const auto n = col_in_fixed->getN();
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
@@ -120,9 +125,11 @@ public:
 
             chars_to.resize(total_size);
 
-            const auto * ptr_in = col_fixed_in->getChars().data();
+            const auto * ptr_in = col_in_fixed->getChars().data();
             auto * ptr_to = chars_to.data();
             fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+
+            block.getByPosition(result).column = std::move(col_to);
         }
         else
         {
