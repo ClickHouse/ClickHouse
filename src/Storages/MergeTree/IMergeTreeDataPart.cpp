@@ -794,15 +794,11 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
-    assertOnDisk();
     renameTo(getRelativePathForDetachedPart(prefix));
 }
 
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 {
-    assertOnDisk();
-    LOG_INFO(storage.log, "Detaching " << relative_path);
-
     String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
 
     /// Backup is not recursive (max_level is 0), so do not copy inner directories

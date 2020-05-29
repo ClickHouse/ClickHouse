@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS in_memory;
 CREATE TABLE in_memory (a UInt32, b UInt32)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS min_rows_for_compact_part = 1000;
+    SETTINGS min_rows_for_compact_part = 1000, min_rows_for_compact_part = 1000;
 
 INSERT INTO in_memory SELECT number, number % 3 FROM numbers(100);
 SELECT DISTINCT part_type, marks FROM system.parts WHERE database = currentDatabase() AND table = 'in_memory' AND active;

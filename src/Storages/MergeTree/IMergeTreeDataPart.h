@@ -287,9 +287,10 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
     String getFullRelativePath() const;
     String getFullPath() const;
-    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
+
     void renameToDetached(const String & prefix) const;
-    void makeCloneInDetached(const String & prefix) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
+    virtual void makeCloneInDetached(const String & prefix) const;
 
     /// Makes full clone of part in detached/ on another disk
     void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
@@ -324,6 +325,8 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
+    String getRelativePathForDetachedPart(const String & prefix) const;
+
 private:
     /// In compact parts order of columns is necessary
     NameToPosition column_name_to_position;
@@ -348,8 +351,6 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
-
-    String getRelativePathForDetachedPart(const String & prefix) const;
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

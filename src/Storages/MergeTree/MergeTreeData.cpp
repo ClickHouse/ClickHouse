@@ -896,11 +896,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
             part_names_with_disks.emplace_back(it->name(), disk_ptr);
 
-            if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+            /// Create and correctly initialize global WAL object, if it's needed
+            if (it->name() == MergeTreeWriteAheadLog::DEFAULT_WAL_FILE && settings->in_memory_parts_enable_wal)
+            {
+                write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk_ptr, it->name());
+                for (auto && part : write_ahead_log->restore())
+                    parts_from_wal.push_back(std::move(part));
+            }
+            else if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
             {
                 MergeTreeWriteAheadLog wal(*this, disk_ptr, it->name());
-                auto current_parts = wal.restore();
-                for (auto & part : current_parts)
+                for (auto && part : wal.restore())
                     parts_from_wal.push_back(std::move(part));
             }
         }
@@ -1120,7 +1126,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
     }
 
-    if (settings->in_memory_parts_enable_wal)
+    if (settings->in_memory_parts_enable_wal && !write_ahead_log)
     {
         auto disk = makeEmptyReservationOnLargestDisk()->getDisk();
         write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, std::move(disk));
@@ -1976,7 +1982,7 @@ void MergeTreeData::renameTempPartAndReplace(
     if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
     {
         auto wal = getWriteAheadLog();
-        wal->write(part_in_memory->block, part_in_memory->name);
+        wal->addPart(part_in_memory->block, part_in_memory->name);
     }
 
     if (out_covered_parts)
