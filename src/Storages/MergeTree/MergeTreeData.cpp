@@ -259,8 +259,8 @@ StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
     if (isPrimaryKeyDefined())
         metadata.primary_key_ast = getPrimaryKeyAST()->clone();
 
-    if (ttl_table_ast)
-        metadata.ttl_for_table_ast = ttl_table_ast->clone();
+    if (hasAnyTableTTL())
+        metadata.ttl_for_table_ast = getTableTTLs().definition_ast->clone();
 
     if (isSamplingKeyDefined())
         metadata.sample_by_ast = getSamplingKeyAST()->clone();
@@ -580,151 +580,16 @@ void MergeTreeData::initPartitionKey(ASTPtr partition_by_ast)
     setPartitionKey(new_partition_key);
 }
 
-namespace
-{
-
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
-{
-    for (const auto & action : ttl_expression->getActions())
-    {
-        if (action.type == ExpressionAction::APPLY_FUNCTION)
-        {
-            IFunctionBase & func = *action.function_base;
-            if (!func.isDeterministic())
-                throw Exception("TTL expression cannot contain non-deterministic functions, "
-                    "but contains function " + func.getName(), ErrorCodes::BAD_ARGUMENTS);
-        }
-    }
-
-    const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
-
-    if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
-    {
-        throw Exception("TTL expression result column should have DateTime or Date type, but has "
-            + result_column.type->getName(), ErrorCodes::BAD_TTL_EXPRESSION);
-    }
-}
-
-}
-
 
 void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
 
-    auto new_column_ttls = new_columns.getColumnTTLs();
+    auto new_column_ttls_asts = new_columns.getColumnTTLs();
 
-    auto create_ttl_entry = [this, &new_columns](ASTPtr ttl_expr_ast)
-    {
-        TTLEntry result;
+    TTLColumnsDescription new_column_ttl_by_name = getColumnTTLs();
 
-        auto ttl_syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_expr_ast, new_columns.getAllPhysical());
-        result.expression = ExpressionAnalyzer(ttl_expr_ast, ttl_syntax_result, global_context).getActions(false);
-        result.result_column = ttl_expr_ast->getColumnName();
-
-        result.destination_type = PartDestinationType::DELETE;
-        result.mode = TTLMode::DELETE;
-
-        checkTTLExpression(result.expression, result.result_column);
-        return result;
-    };
-
-    auto create_rows_ttl_entry = [this, &new_columns, &create_ttl_entry](const ASTTTLElement * ttl_element)
-    {
-        auto result = create_ttl_entry(ttl_element->ttl());
-        result.mode = ttl_element->mode;
-
-        if (ttl_element->mode == TTLMode::DELETE)
-        {
-            if (ASTPtr where_expr_ast = ttl_element->where())
-            {
-                auto where_syntax_result = SyntaxAnalyzer(global_context).analyze(where_expr_ast, new_columns.getAllPhysical());
-                result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, global_context).getActions(false);
-                result.where_result_column = where_expr_ast->getColumnName();
-            }
-        }
-        else if (ttl_element->mode == TTLMode::GROUP_BY)
-        {
-            if (ttl_element->group_by_key.size() > this->getPrimaryKey().column_names.size())
-                throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
-
-            NameSet primary_key_columns_set(this->getPrimaryKey().column_names.begin(), this->getPrimaryKey().column_names.end());
-            NameSet aggregation_columns_set;
-
-            for (const auto & column : this->getPrimaryKey().expression->getRequiredColumns())
-                primary_key_columns_set.insert(column);
-
-            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
-            {
-                if (ttl_element->group_by_key[i]->getColumnName() != this->getPrimaryKey().column_names[i])
-                    throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
-            }
-            for (const auto & [name, value] : ttl_element->group_by_aggregations)
-            {
-                if (primary_key_columns_set.count(name))
-                    throw Exception("Can not set custom aggregation for column in primary key in TTL Expression", ErrorCodes::BAD_TTL_EXPRESSION);
-                aggregation_columns_set.insert(name);
-            }
-            if (aggregation_columns_set.size() != ttl_element->group_by_aggregations.size())
-                throw Exception("Multiple aggregations set for one column in TTL Expression", ErrorCodes::BAD_TTL_EXPRESSION);
-
-            result.group_by_keys = Names(this->getPrimaryKey().column_names.begin(), this->getPrimaryKey().column_names.begin() + ttl_element->group_by_key.size());
-
-            auto aggregations = ttl_element->group_by_aggregations;
-            for (size_t i = 0; i < this->getPrimaryKey().column_names.size(); ++i)
-            {
-                ASTPtr value = this->getPrimaryKey().expression_list_ast->children[i]->clone();
-
-                if (i >= ttl_element->group_by_key.size())
-                {
-                    ASTPtr value_max = makeASTFunction("max", value->clone());
-                    aggregations.emplace_back(value->getColumnName(), std::move(value_max));
-                }
-
-                if (value->as<ASTFunction>())
-                {
-                    auto syntax_result = SyntaxAnalyzer(global_context).analyze(value, new_columns.getAllPhysical(), {}, true);
-                    auto expr_actions = ExpressionAnalyzer(value, syntax_result, global_context).getActions(false);
-                    for (const auto & column : expr_actions->getRequiredColumns())
-                    {
-                        if (i < ttl_element->group_by_key.size())
-                        {
-                            ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column));
-                            aggregations.emplace_back(column, std::move(expr));
-                        }
-                        else
-                        {
-                            ASTPtr expr = makeASTFunction("argMax", std::make_shared<ASTIdentifier>(column), value->clone());
-                            aggregations.emplace_back(column, std::move(expr));
-                        }
-                    }
-                }
-            }
-            for (const auto & column : new_columns.getAllPhysical())
-            {
-                if (!primary_key_columns_set.count(column.name) && !aggregation_columns_set.count(column.name))
-                {
-                    ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
-                    aggregations.emplace_back(column.name, std::move(expr));
-                }
-            }
-
-            for (auto [name, value] : aggregations)
-            {
-                auto syntax_result = SyntaxAnalyzer(global_context).analyze(value, new_columns.getAllPhysical(), {}, true);
-                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, global_context);
-
-                result.group_by_aggregations.emplace_back(name, value->getColumnName(), expr_analyzer.getActions(false));
-
-                for (const auto & descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
-                    result.aggregate_descriptions.push_back(descr);
-            }
-        }
-        return result;
-    };
-
-    if (!new_column_ttls.empty())
+    if (!new_column_ttls_asts.empty())
     {
         NameSet columns_ttl_forbidden;
 
@@ -736,23 +601,24 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             for (const auto & col : getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
-        for (const auto & [name, ast] : new_column_ttls)
+        for (const auto & [name, ast] : new_column_ttls_asts)
         {
             if (columns_ttl_forbidden.count(name))
                 throw Exception("Trying to set TTL for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
             else
             {
-                auto new_ttl_entry = create_ttl_entry(ast);
-                if (!only_check)
-                    column_ttl_entries_by_name[name] = new_ttl_entry;
+                auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_columns, global_context, getPrimaryKey());
+                new_column_ttl_by_name[name] = new_ttl_entry;
             }
         }
+        if (!only_check)
+            setColumnTTLs(new_column_ttl_by_name);
     }
 
     if (new_ttl_table_ast)
     {
-        std::vector<TTLEntry> update_move_ttl_entries;
-        TTLEntry update_rows_ttl_entry;
+        TTLDescriptions update_move_ttl_entries;
+        TTLDescription update_rows_ttl_entry;
 
         bool seen_delete_ttl = false;
         for (const auto & ttl_element_ptr : new_ttl_table_ast->children)
@@ -761,48 +627,46 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             if (!ttl_element)
                 throw Exception("Unexpected AST element in TTL expression", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-            if (ttl_element->destination_type == PartDestinationType::DELETE)
+            if (ttl_element->destination_type == DataDestinationType::DELETE)
             {
                 if (seen_delete_ttl)
                 {
                     throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                auto new_rows_ttl_entry = create_rows_ttl_entry(ttl_element);
-                if (!only_check)
-                    update_rows_ttl_entry = new_rows_ttl_entry;
+                update_rows_ttl_entry = TTLDescription::getTTLFromAST(ttl_element_ptr, new_columns, global_context, getPrimaryKey());
 
                 seen_delete_ttl = true;
             }
             else
             {
-                auto new_ttl_entry = create_rows_ttl_entry(ttl_element);
+                auto new_ttl_entry = TTLDescription::getTTLFromAST(ttl_element_ptr, new_columns, global_context, getPrimaryKey());
 
-                new_ttl_entry.entry_ast = ttl_element_ptr;
-                new_ttl_entry.destination_type = ttl_element->destination_type;
-                new_ttl_entry.destination_name = ttl_element->destination_name;
-                if (!new_ttl_entry.getDestination(getStoragePolicy()))
+                if (!getDestinationForTTL(new_ttl_entry))
                 {
                     String message;
-                    if (new_ttl_entry.destination_type == PartDestinationType::DISK)
+                    if (new_ttl_entry.destination_type == DataDestinationType::DISK)
                         message = "No such disk " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
                     else
                         message = "No such volume " + backQuote(new_ttl_entry.destination_name) + " for given storage policy.";
                     throw Exception(message, ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                if (!only_check)
-                    update_move_ttl_entries.emplace_back(std::move(new_ttl_entry));
+                update_move_ttl_entries.emplace_back(std::move(new_ttl_entry));
             }
         }
 
         if (!only_check)
         {
-            rows_ttl_entry = update_rows_ttl_entry;
-            ttl_table_ast = new_ttl_table_ast;
+            TTLTableDescription new_table_ttl
+            {
+                .definition_ast = new_ttl_table_ast,
+                .rows_ttl = update_rows_ttl_entry,
+                .move_ttl = update_move_ttl_entries,
+            };
 
             auto move_ttl_entries_lock = std::lock_guard<std::mutex>(move_ttl_entries_mutex);
-            move_ttl_entries = update_move_ttl_entries;
+            setTableTTLs(new_table_ttl);
         }
     }
 }
@@ -2617,9 +2481,6 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         }), parts.end());
 
     if (parts.empty())
-        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
-
-    if (parts.empty())
     {
         String no_parts_to_move_message;
         if (moving_part)
@@ -3009,12 +2870,12 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     auto ttl_entry = selectTTLEntryForTTLInfos(ttl_infos, time_of_move);
     if (ttl_entry)
     {
-        SpacePtr destination_ptr = ttl_entry->getDestination(getStoragePolicy());
+        SpacePtr destination_ptr = getDestinationForTTL(*ttl_entry);
         if (!destination_ptr)
         {
-            if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+            if (ttl_entry->destination_type == DataDestinationType::VOLUME)
                 LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found", ttl_entry->destination_name, log_name);
-            else if (ttl_entry->destination_type == PartDestinationType::DISK)
+            else if (ttl_entry->destination_type == DataDestinationType::DISK)
                 LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found", ttl_entry->destination_name, log_name);
         }
         else
@@ -3023,9 +2884,9 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
             if (reservation)
                 return reservation;
             else
-                if (ttl_entry->destination_type == PartDestinationType::VOLUME)
+                if (ttl_entry->destination_type == DataDestinationType::VOLUME)
                     LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space", ttl_entry->destination_name, log_name);
-                else if (ttl_entry->destination_type == PartDestinationType::DISK)
+                else if (ttl_entry->destination_type == DataDestinationType::DISK)
                     LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space", ttl_entry->destination_name, log_name);
         }
     }
@@ -3035,37 +2896,39 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(UInt64 expected_
     return reservation;
 }
 
-SpacePtr MergeTreeData::TTLEntry::getDestination(StoragePolicyPtr policy) const
+SpacePtr MergeTreeData::getDestinationForTTL(const TTLDescription & ttl) const
 {
-    if (destination_type == PartDestinationType::VOLUME)
-        return policy->getVolumeByName(destination_name);
-    else if (destination_type == PartDestinationType::DISK)
-        return policy->getDiskByName(destination_name);
+    auto policy = getStoragePolicy();
+    if (ttl.destination_type == DataDestinationType::VOLUME)
+        return policy->getVolumeByName(ttl.destination_name);
+    else if (ttl.destination_type == DataDestinationType::DISK)
+        return policy->getDiskByName(ttl.destination_name);
     else
         return {};
 }
 
-bool MergeTreeData::TTLEntry::isPartInDestination(StoragePolicyPtr policy, const IMergeTreeDataPart & part) const
+bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMergeTreeDataPart & part) const
 {
-    if (destination_type == PartDestinationType::VOLUME)
+    auto policy = getStoragePolicy();
+    if (ttl.destination_type == DataDestinationType::VOLUME)
     {
-        for (const auto & disk : policy->getVolumeByName(destination_name)->getDisks())
+        for (const auto & disk : policy->getVolumeByName(ttl.destination_name)->getDisks())
             if (disk->getName() == part.volume->getDisk()->getName())
                 return true;
     }
-    else if (destination_type == PartDestinationType::DISK)
-        return policy->getDiskByName(destination_name)->getName() == part.volume->getDisk()->getName();
+    else if (ttl.destination_type == DataDestinationType::DISK)
+        return policy->getDiskByName(ttl.destination_name)->getName() == part.volume->getDisk()->getName();
     return false;
 }
 
-std::optional<MergeTreeData::TTLEntry> MergeTreeData::selectTTLEntryForTTLInfos(
-        const IMergeTreeDataPart::TTLInfos & ttl_infos,
-        time_t time_of_move) const
+std::optional<TTLDescription>
+MergeTreeData::selectTTLEntryForTTLInfos(const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t time_of_move) const
 {
     time_t max_max_ttl = 0;
-    std::vector<DB::MergeTreeData::TTLEntry>::const_iterator best_entry_it;
+    TTLDescriptions::const_iterator best_entry_it;
 
     auto lock = std::lock_guard(move_ttl_entries_mutex);
+    const auto & move_ttl_entries = getMoveTTLs();
     for (auto ttl_entry_it = move_ttl_entries.begin(); ttl_entry_it != move_ttl_entries.end(); ++ttl_entry_it)
     {
         auto ttl_info_it = ttl_infos.moves_ttl.find(ttl_entry_it->result_column);
@@ -3079,7 +2942,7 @@ std::optional<MergeTreeData::TTLEntry> MergeTreeData::selectTTLEntryForTTLInfos(
         }
     }
 
-    return max_max_ttl ? *best_entry_it : std::optional<MergeTreeData::TTLEntry>();
+    return max_max_ttl ? *best_entry_it : std::optional<TTLDescription>();
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -3498,7 +3361,7 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     if (policy->getVolumes().size() > 1)
         return true;
 
-    return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1 && !move_ttl_entries.empty();
+    return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1 && hasAnyMoveTTL();
 }
 
 bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)
@@ -3637,7 +3500,7 @@ ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_
 
     if (hasRowsTTL())
     {
-        if (add_dependent_columns(rows_ttl_entry.expression, required_ttl_columns))
+        if (add_dependent_columns(getRowsTTL().expression, required_ttl_columns))
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -3645,13 +3508,13 @@ ColumnDependencies MergeTreeData::getColumnDependencies(const NameSet & updated_
         }
     }
 
-    for (const auto & [name, entry] : column_ttl_entries_by_name)
+    for (const auto & [name, entry] : getColumnTTLs())
     {
         if (add_dependent_columns(entry.expression, required_ttl_columns))
             updated_ttl_columns.insert(name);
     }
 
-    for (const auto & entry : move_ttl_entries)
+    for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
 
     for (const auto & column : indices_columns)

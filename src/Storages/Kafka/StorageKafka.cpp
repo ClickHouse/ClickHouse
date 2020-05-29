@@ -324,10 +324,10 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     }
 
     // No need to add any prefix, messages can be distinguished
-    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & /* facility */, const std::string & message)
+    conf.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
     {
         auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-        LOG_IMPL(log, client_logs_level, poco_level, message);
+        LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
     // Configure interceptor to change thread name
@@ -361,7 +361,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab);
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, global_context);
         if (!table)
             return false;
 
@@ -429,7 +429,7 @@ void StorageKafka::threadFunc()
 bool StorageKafka::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id);
+    auto table = DatabaseCatalog::instance().getTable(table_id, global_context);
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
