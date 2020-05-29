@@ -53,13 +53,13 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
-#include "HTTPHandlerFactory.h"
+#include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
-#include "TCPHandlerFactory.h"
+#include <Server/TCPHandlerFactory.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
-#include "MySQLHandlerFactory.h"
+#include <Server/MySQLHandlerFactory.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"

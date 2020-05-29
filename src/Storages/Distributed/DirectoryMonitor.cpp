@@ -110,8 +110,9 @@ void StorageDistributedDirectoryMonitor::flushAllData()
 {
     if (!quit)
     {
+        CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
         std::unique_lock lock{mutex};
-        processFiles();
+        processFiles(metric_pending_files);
     }
 }
 
@@ -131,6 +132,9 @@ void StorageDistributedDirectoryMonitor::run()
 {
     std::unique_lock lock{mutex};
 
+    /// This metric will be updated with the number of pending files later.
+    CurrentMetrics::Increment metric_pending_files{CurrentMetrics::DistributedFilesToInsert, 0};
+
     bool do_sleep = false;
     while (!quit)
     {
@@ -139,7 +143,7 @@ void StorageDistributedDirectoryMonitor::run()
         {
             try
             {
-                do_sleep = !processFiles();
+                do_sleep = !processFiles(metric_pending_files);
             }
             catch (...)
             {
@@ -222,7 +226,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-bool StorageDistributedDirectoryMonitor::processFiles()
+bool StorageDistributedDirectoryMonitor::processFiles(CurrentMetrics::Increment & metric_pending_files)
 {
     std::map<UInt64, std::string> files;
 
@@ -236,14 +240,16 @@ bool StorageDistributedDirectoryMonitor::processFiles()
             files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
     }
 
+    /// Note: the value of this metric will be kept if this function will throw an exception.
+    /// This is needed, because in case of exception, files still pending.
+    metric_pending_files.changeTo(files.size());
+
     if (files.empty())
         return false;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedFilesToInsert, CurrentMetrics::Value(files.size())};
-
     if (should_batch_inserts)
     {
-        processFilesWithBatching(files);
+        processFilesWithBatching(files, metric_pending_files);
     }
     else
     {
@@ -252,14 +258,14 @@ bool StorageDistributedDirectoryMonitor::processFiles()
             if (quit)
                 return true;
 
-            processFile(file.second);
+            processFile(file.second, metric_pending_files);
         }
     }
 
     return true;
 }
 
-void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
+void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path, CurrentMetrics::Increment & metric_pending_files)
 {
     LOG_TRACE(log, "Started processing `{}`", file_path);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context->getSettingsRef());
@@ -289,6 +295,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     }
 
     Poco::File{file_path}.remove();
+    metric_pending_files.sub();
 
     LOG_TRACE(log, "Finished processing `{}`", file_path);
 }
@@ -584,7 +591,9 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
     return task_handle->scheduleAfter(ms, false);
 }
 
-void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
+void StorageDistributedDirectoryMonitor::processFilesWithBatching(
+    const std::map<UInt64, std::string> & files,
+    CurrentMetrics::Increment & metric_pending_files)
 {
     std::unordered_set<UInt64> file_indices_to_skip;
 
@@ -596,6 +605,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.readText(in);
         file_indices_to_skip.insert(batch.file_indices.begin(), batch.file_indices.end());
         batch.send();
+        metric_pending_files.sub(batch.file_indices.size());
     }
 
     std::unordered_map<BatchHeader, Batch, BatchHeader::Hash> header_to_batch;
@@ -656,13 +666,17 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.total_bytes += total_bytes;
 
         if (batch.isEnoughSize())
+        {
             batch.send();
+            metric_pending_files.sub(batch.file_indices.size());
+        }
     }
 
     for (auto & kv : header_to_batch)
     {
         Batch & batch = kv.second;
         batch.send();
+        metric_pending_files.sub(batch.file_indices.size());
     }
 
     /// current_batch.txt will not exist if there was no send
