@@ -479,20 +479,23 @@ public:
 
         attempt = disposer.attempt.get();
 
-        std::lock_guard attempt_lock(attempt->mutex);
-
-        disposer.attempt_disposed = attempt->is_disposed;
-
-        if (attempt->value)
         {
-            /// Another thread already produced the value while we were acquiring the attempt's mutex.
-            ++hits;
-            ++concurrent_hits;
+            std::lock_guard attempt_lock(attempt->mutex);
 
-            disposer.dispose();
+            disposer.attempt_disposed = attempt->is_disposed;
 
-            return {attempt->value, false};
+            if (attempt->value)
+            {
+                /// Another thread already produced the value while we were acquiring the attempt's mutex.
+                ++hits;
+                ++concurrent_hits;
+
+                disposer.dispose(true);
+
+                return {attempt->value, false};
+            }
         }
+
 
         ++misses;
 
@@ -692,6 +695,7 @@ private:
 
         ~InsertionAttemptDisposer() noexcept
         {
+            std::lock_guard attempt_lock(attempt->mutex);
             dispose();
         }
 
@@ -710,9 +714,6 @@ private:
 
         /**
          * @brief Disposes the handled InsertionAttempt if possible.
-         *
-         * - Requires a @e read access to #attempt.
-         * - May require a @e write access to #attempt and a @e write attempt to #insertion_attempts via dispose().
          */
         void dispose() noexcept
         {
@@ -721,8 +722,6 @@ private:
 
             if (attempt_disposed)
                 return;
-
-            std::lock_guard attempt_lock(attempt->mutex);
 
             if (attempt->is_disposed)
                 return;
