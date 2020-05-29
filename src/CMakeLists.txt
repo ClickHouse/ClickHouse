@@ -325,7 +325,7 @@ if (OPENSSL_CRYPTO_LIBRARY)
 endif ()
 
 if (USE_LDAP)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIR})
+    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${OPENLDAP_INCLUDE_DIRS})
     dbms_target_link_libraries (PRIVATE ${OPENLDAP_LIBRARIES})
 endif ()
 

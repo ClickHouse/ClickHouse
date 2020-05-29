@@ -2,6 +2,8 @@
 #include <Common/Exception.h>
 #include <ext/scope_guard.h>
 
+#include <cstring>
+
 
 namespace DB
 {
