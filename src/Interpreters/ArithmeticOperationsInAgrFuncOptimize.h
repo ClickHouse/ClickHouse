@@ -6,17 +6,15 @@
 namespace DB
 {
 
-/// It converts some arithmetic .
+/// It converts some arithmetic. Optimization due to the linearity property of some aggregate functions.
+/// Function collects const and not const nodes and rebuilds old tree.
 class ArithmeticOperationsInAgrFuncMatcher
 {
 public:
-    struct Data
-    {
-        bool dont_know_why_I_need_it = false;
-    };
-    ArithmeticOperationsInAgrFuncMatcher() = default;
+    struct Data {};
 
-    static void visit(ASTPtr & ast, Data & data);
+    static void visit(const ASTPtr & ast);
+    static void visit(ASTFunction * f_n);
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 };

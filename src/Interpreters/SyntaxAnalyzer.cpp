@@ -23,6 +23,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
+#include <Interpreters/AnyInputOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -435,7 +436,7 @@ void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_
     if (optimize_arithmetic_operations_in_agr_func)
     {
         /// Removing arithmetic operations from functions
-        ArithmeticOperationsInAgrFuncVisitor::Data data = {false};
+        ArithmeticOperationsInAgrFuncVisitor::Data data = {};
         ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
     }
 }
