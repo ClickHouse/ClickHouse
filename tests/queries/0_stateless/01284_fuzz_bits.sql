@@ -6,8 +6,8 @@ SELECT toTypeName(fuzzBits(toFixedString('abacaba', 10), 0.9));
 
 SELECT
   (
-    (0.3 * 0.99) * 8 * 10000 < sum
-    AND sum < (0.3 * 1.01) * 8 * 10000
+    0.29 * 8 * 10000 < sum
+    AND sum < 0.31 * 8 * 10000
   ) AS res
 FROM
   (
