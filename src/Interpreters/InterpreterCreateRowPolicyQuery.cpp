@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
@@ -16,15 +17,15 @@ namespace
     void updateRowPolicyFromQueryImpl(
         RowPolicy & policy,
         const ASTCreateRowPolicyQuery & query,
-        const std::optional<ExtendedRoleSet> & roles_from_query = {})
+        const RowPolicy::NameParts & override_name,
+        const std::optional<ExtendedRoleSet> & override_to_roles)
     {
-        if (query.alter)
-        {
-            if (!query.new_short_name.empty())
-                policy.setShortName(query.new_short_name);
-        }
-        else
-            policy.setNameParts(query.name_parts);
+        if (!override_name.empty())
+            policy.setNameParts(override_name);
+        else if (!query.new_short_name.empty())
+            policy.setShortName(query.new_short_name);
+        else if (query.names->name_parts.size() == 1)
+            policy.setNameParts(query.names->name_parts.front());
 
         if (query.is_restrictive)
             policy.setRestrictive(*query.is_restrictive);
@@ -36,15 +37,10 @@ namespace
                 policy.conditions[condition_type] = *condition ? serializeAST(**condition) : String{};
         }
 
-        const ExtendedRoleSet * roles = nullptr;
-        std::optional<ExtendedRoleSet> temp_role_set;
-        if (roles_from_query)
-            roles = &*roles_from_query;
+        if (override_to_roles)
+            policy.to_roles = *override_to_roles;
         else if (query.roles)
-            roles = &temp_role_set.emplace(*query.roles);
-
-        if (roles)
-            policy.to_roles = *roles;
+            policy.to_roles = *query.roles;
     }
 }
 
@@ -61,40 +57,46 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 
+    assert(query.names->cluster.empty());
     std::optional<ExtendedRoleSet> roles_from_query;
     if (query.roles)
         roles_from_query = ExtendedRoleSet{*query.roles, access_control, context.getUserID()};
 
-    if (query.name_parts.database.empty())
-        query.name_parts.database = context.getCurrentDatabase();
+    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
 
     if (query.alter)
     {
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_policy = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());
-            updateRowPolicyFromQueryImpl(*updated_policy, query, roles_from_query);
+            updateRowPolicyFromQueryImpl(*updated_policy, query, {}, roles_from_query);
             return updated_policy;
         };
+        Strings names = query.names->toStrings();
         if (query.if_exists)
         {
-            if (auto id = access_control.find<RowPolicy>(query.name_parts.getName()))
-                access_control.tryUpdate(*id, update_func);
+            auto ids = access_control.find<RowPolicy>(names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            access_control.update(access_control.getID<RowPolicy>(query.name_parts.getName()), update_func);
+            access_control.update(access_control.getIDs<RowPolicy>(names), update_func);
     }
     else
     {
-        auto new_policy = std::make_shared<RowPolicy>();
-        updateRowPolicyFromQueryImpl(*new_policy, query, roles_from_query);
+        std::vector<AccessEntityPtr> new_policies;
+        for (const auto & name_parts : query.names->name_parts)
+        {
+            auto new_policy = std::make_shared<RowPolicy>();
+            updateRowPolicyFromQueryImpl(*new_policy, query, name_parts, roles_from_query);
+            new_policies.emplace_back(std::move(new_policy));
+        }
 
         if (query.if_not_exists)
-            access_control.tryInsert(new_policy);
+            access_control.tryInsert(new_policies);
         else if (query.or_replace)
-            access_control.insertOrReplace(new_policy);
+            access_control.insertOrReplace(new_policies);
         else
-            access_control.insert(new_policy);
+            access_control.insert(new_policies);
     }
 
     return {};
@@ -103,7 +105,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 
 void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query)
 {
-    updateRowPolicyFromQueryImpl(policy, query);
+    updateRowPolicyFromQueryImpl(policy, query, {}, {});
 }
 
 }

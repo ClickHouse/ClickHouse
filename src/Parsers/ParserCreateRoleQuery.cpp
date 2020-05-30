@@ -84,8 +84,8 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             or_replace = true;
     }
 
-    String name;
-    if (!parseRoleName(pos, expected, name))
+    Strings names;
+    if (!parseRoleNames(pos, expected, names))
         return false;
 
     String new_name;
@@ -94,7 +94,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (alter && parseRenameTo(pos, expected, new_name))
+        if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
         if (parseSettings(pos, expected, attach_mode, settings))
@@ -115,7 +115,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
     query->cluster = std::move(cluster);
-    query->name = std::move(name);
+    query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
 

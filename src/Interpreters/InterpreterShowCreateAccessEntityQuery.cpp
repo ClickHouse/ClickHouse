@@ -6,8 +6,10 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -42,7 +44,8 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateUserQuery>();
-        query->name = user.getName();
+        query->names = std::make_shared<ASTUserNamesWithHost>();
+        query->names->push_back(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -77,7 +80,7 @@ namespace
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControlManager * manager, bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRoleQuery>();
-        query->name = role.getName();
+        query->names.emplace_back(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())
@@ -95,7 +98,7 @@ namespace
     ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControlManager * manager, bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
-        query->name = profile.getName();
+        query->names.emplace_back(profile.getName());
         query->attach = attach_mode;
 
         if (!profile.elements.empty())
@@ -126,7 +129,7 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateQuotaQuery>();
-        query->name = quota.getName();
+        query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
 
         query->key_type = quota.key_type;
@@ -160,7 +163,8 @@ namespace
         bool attach_mode)
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
-        query->name_parts = policy.getNameParts();
+        query->names = std::make_shared<ASTRowPolicyNames>();
+        query->names->name_parts.emplace_back(policy.getNameParts());
         query->attach = attach_mode;
 
         if (policy.isRestrictive())
@@ -228,17 +232,17 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
 
-    /// Build a create query.
-    ASTPtr create_query = getCreateQuery(show_query);
+    /// Build a create queries.
+    ASTs create_queries = getCreateQueries(show_query);
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    if (create_query)
+    std::stringstream create_query_ss;
+    for (const auto & create_query : create_queries)
     {
-        std::stringstream create_query_ss;
         formatAST(*create_query, create_query_ss, false, true);
-        String create_query_str = create_query_ss.str();
-        column->insert(create_query_str);
+        column->insert(create_query_ss.str());
+        create_query_ss.str("");
     }
 
     /// Prepare description of the result column.
@@ -253,38 +257,49 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 }
 
 
-ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(ASTShowCreateAccessEntityQuery & show_query) const
+ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries(ASTShowCreateAccessEntityQuery & show_query) const
 {
     const auto & access_control = context.getAccessControlManager();
     context.checkAccess(getRequiredAccess());
+    show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
 
     if (show_query.current_user)
     {
         auto user = context.getUser();
         if (!user)
-            return nullptr;
-        return getCreateQueryImpl(*user, &access_control, false);
+            return {};
+        return {getCreateQueryImpl(*user, &access_control, false)};
     }
 
     if (show_query.current_quota)
     {
         auto usage = context.getQuotaUsage();
         if (!usage)
-            return nullptr;
+            return {};
         auto quota = access_control.read<Quota>(usage->quota_id);
-        return getCreateQueryImpl(*quota, &access_control, false);
+        return {getCreateQueryImpl(*quota, &access_control, false)};
     }
+
+    ASTs list;
 
     if (show_query.type == EntityType::ROW_POLICY)
     {
-        if (show_query.row_policy_name_parts.database.empty())
-            show_query.row_policy_name_parts.database = context.getCurrentDatabase();
-        RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name_parts.getName());
-        return getCreateQueryImpl(*policy, &access_control, false);
+        for (const String & name : show_query.row_policy_names->toStrings())
+        {
+            RowPolicyPtr policy = access_control.read<RowPolicy>(name);
+            list.push_back(getCreateQueryImpl(*policy, &access_control, false));
+        }
+    }
+    else
+    {
+        for (const String & name : show_query.names)
+        {
+            auto entity = access_control.read(access_control.getID(show_query.type, name));
+            list.push_back(getCreateQueryImpl(*entity, &access_control, false));
+        }
     }
 
-    auto entity = access_control.read(access_control.getID(show_query.type, show_query.name));
-    return getCreateQueryImpl(*entity, &access_control, false);
+    return list;
 }
 
 

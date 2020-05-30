@@ -240,8 +240,8 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             or_replace = true;
     }
 
-    String name;
-    if (!parseIdentifierOrStringLiteral(pos, expected, name))
+    Strings names;
+    if (!parseIdentifiersOrStringLiterals(pos, expected, names))
         return false;
 
     String new_name;
@@ -251,7 +251,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     while (true)
     {
-        if (alter && new_name.empty() && parseRenameTo(pos, expected, new_name))
+        if (alter && new_name.empty() && (names.size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
         if (!key_type && parseKeyType(pos, expected, key_type))
@@ -280,7 +280,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
     query->cluster = std::move(cluster);
-    query->name = std::move(name);
+    query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->key_type = key_type;
     query->all_limits = std::move(all_limits);

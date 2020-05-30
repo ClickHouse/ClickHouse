@@ -1,10 +1,25 @@
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
 
 
 namespace DB
 {
-using EntityTypeInfo = IAccessEntity::TypeInfo;
+namespace
+{
+    using EntityTypeInfo = IAccessEntity::TypeInfo;
+
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    {
+        bool need_comma = false;
+        for (const auto & name : names)
+        {
+            if (std::exchange(need_comma, true))
+                settings.ostr << ',';
+            settings.ostr << ' ' << backQuoteIfNeed(name);
+        }
+    }
+}
 
 
 String ASTShowCreateAccessEntityQuery::getID(char) const
@@ -30,14 +45,18 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
     }
     else if (type == EntityType::ROW_POLICY)
     {
-        const String & database = row_policy_name_parts.database;
-        const String & table_name = row_policy_name_parts.table_name;
-        const String & short_name = row_policy_name_parts.short_name;
-        settings.ostr << ' ' << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                      << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
-                      << backQuoteIfNeed(table_name);
+        settings.ostr << " ";
+        row_policy_names->format(settings);
     }
     else
-        settings.ostr << " " << backQuoteIfNeed(name);
+        formatNames(names, settings);
 }
+
+
+void ASTShowCreateAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
+{
+    if (row_policy_names)
+        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
+}
+
 }

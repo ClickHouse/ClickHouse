@@ -16,7 +16,9 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (ParserKeyword{"FOR"}.ignore(pos, expected))
     {
-        if (!parseUserNameOrCurrentUserTag(pos, expected, name, current_user))
+        if (parseCurrentUserTag(pos, expected))
+            current_user = true;
+        else if (!parseUserName(pos, expected, name))
             return false;
     }
     else

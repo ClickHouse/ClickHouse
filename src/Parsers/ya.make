@@ -37,6 +37,7 @@ SRCS(
     ASTQueryWithOnCluster.cpp
     ASTQueryWithOutput.cpp
     ASTQueryWithTableAndOutput.cpp
+    ASTRowPolicyName.cpp
     ASTSampleRatio.cpp
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
@@ -51,6 +52,7 @@ SRCS(
     ASTSystemQuery.cpp
     ASTTablesInSelectQuery.cpp
     ASTTTLElement.cpp
+    ASTUserNameWithHost.cpp
     ASTWithAlias.cpp
     CommonParsers.cpp
     ExpressionElementParsers.cpp
@@ -88,6 +90,7 @@ SRCS(
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
+    ParserRowPolicyName.cpp
     ParserSampleRatio.cpp
     ParserSelectQuery.cpp
     ParserSelectWithUnionQuery.cpp
@@ -104,6 +107,7 @@ SRCS(
     ParserTablesInSelectQuery.cpp
     ParserUnionQueryElement.cpp
     ParserUseQuery.cpp
+    ParserUserNameWithHost.cpp
     ParserWatchQuery.cpp
     parseUserName.cpp
     queryToString.cpp
