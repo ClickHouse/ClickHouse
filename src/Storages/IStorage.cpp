@@ -397,25 +397,6 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settin
     }
 }
 
-BlockInputStreams IStorage::readStreams(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    unsigned num_streams)
-{
-    ForceTreeShapedPipeline enable_tree_shape(query_info);
-    auto pipes = read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
-
-    BlockInputStreams res;
-    res.reserve(pipes.size());
-
-    for (auto & pipe : pipes)
-        res.emplace_back(std::make_shared<TreeExecutorBlockInputStream>(std::move(pipe)));
-
-    return res;
-}
 
 StorageID IStorage::getStorageID() const
 {
@@ -444,9 +425,14 @@ void IStorage::setPartitionKey(const StorageMetadataKeyField & partition_key_)
     partition_key = partition_key_;
 }
 
+bool IStorage::isPartitionKeyDefined() const
+{
+    return partition_key.definition_ast != nullptr;
+}
+
 bool IStorage::hasPartitionKey() const
 {
-    return partition_key.expression != nullptr;
+    return !partition_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPartitionKey() const
@@ -466,9 +452,14 @@ void IStorage::setSortingKey(const StorageMetadataKeyField & sorting_key_)
     sorting_key = sorting_key_;
 }
 
+bool IStorage::isSortingKeyDefined() const
+{
+    return sorting_key.definition_ast != nullptr;
+}
+
 bool IStorage::hasSortingKey() const
 {
-    return sorting_key.expression != nullptr;
+    return !sorting_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSortingKey() const
@@ -502,7 +493,7 @@ bool IStorage::isPrimaryKeyDefined() const
 
 bool IStorage::hasPrimaryKey() const
 {
-    return primary_key.expression != nullptr;
+    return !primary_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForPrimaryKey() const
@@ -529,9 +520,15 @@ void IStorage::setSamplingKey(const StorageMetadataKeyField & sampling_key_)
     sampling_key = sampling_key_;
 }
 
+
+bool IStorage::isSamplingKeyDefined() const
+{
+    return sampling_key.definition_ast != nullptr;
+}
+
 bool IStorage::hasSamplingKey() const
 {
-    return sampling_key.expression != nullptr;
+    return !sampling_key.column_names.empty();
 }
 
 Names IStorage::getColumnsRequiredForSampling() const
@@ -539,6 +536,56 @@ Names IStorage::getColumnsRequiredForSampling() const
     if (hasSamplingKey())
         return sampling_key.expression->getRequiredColumns();
     return {};
+}
+
+const TTLTableDescription & IStorage::getTableTTLs() const
+{
+    return table_ttl;
+}
+
+void IStorage::setTableTTLs(const TTLTableDescription & table_ttl_)
+{
+    table_ttl = table_ttl_;
+}
+
+bool IStorage::hasAnyTableTTL() const
+{
+    return hasAnyMoveTTL() || hasRowsTTL();
+}
+
+const TTLColumnsDescription & IStorage::getColumnTTLs() const
+{
+    return column_ttls_by_name;
+}
+
+void IStorage::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
+{
+    column_ttls_by_name = column_ttls_by_name_;
+}
+
+bool IStorage::hasAnyColumnTTL() const
+{
+    return !column_ttls_by_name.empty();
+}
+
+const TTLDescription & IStorage::getRowsTTL() const
+{
+    return table_ttl.rows_ttl;
+}
+
+bool IStorage::hasRowsTTL() const
+{
+    return table_ttl.rows_ttl.expression != nullptr;
+}
+
+const TTLDescriptions & IStorage::getMoveTTLs() const
+{
+    return table_ttl.move_ttl;
+}
+
+bool IStorage::hasAnyMoveTTL() const
+{
+    return !table_ttl.move_ttl.empty();
 }
 
 }

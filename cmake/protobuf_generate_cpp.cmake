@@ -55,6 +55,7 @@ function(protobuf_generate_cpp_impl SRCS HDRS MODES OUTPUT_FILE_EXTS PLUGIN)
     endif()
 
     set (intermediate_dir ${CMAKE_CURRENT_BINARY_DIR}/intermediate)
+    file (MAKE_DIRECTORY ${intermediate_dir})
 
     set (protoc_args)
     foreach (mode ${MODES})
@@ -112,16 +113,21 @@ if (PROTOBUF_GENERATE_CPP_SCRIPT_MODE)
     set (intermediate_dir ${DIR}/intermediate)
     set (intermediate_output "${intermediate_dir}/${FILENAME}")
 
-    if (COMPILER_ID STREQUAL "GNU")
+    if (COMPILER_ID MATCHES "Clang")
+        set (pragma_push "#pragma clang diagnostic push\n")
+        set (pragma_pop "#pragma clang diagnostic pop\n")
+        set (pragma_disable_warnings "#pragma clang diagnostic ignored \"-Weverything\"\n")
+    elseif (COMPILER_ID MATCHES "GNU")
         set (pragma_push "#pragma GCC diagnostic push\n")
         set (pragma_pop "#pragma GCC diagnostic pop\n")
         set (pragma_disable_warnings "#pragma GCC diagnostic ignored \"-Wall\"\n"
                                      "#pragma GCC diagnostic ignored \"-Wextra\"\n"
-                                     "#pragma GCC diagnostic ignored \"-Warray-bounds\"\n")
-    elseif (COMPILER_ID MATCHES "Clang")
-        set (pragma_push "#pragma clang diagnostic push\n")
-        set (pragma_pop "#pragma clang diagnostic pop\n")
-        set (pragma_disable_warnings "#pragma clang diagnostic ignored \"-Weverything\"\n")
+                                     "#pragma GCC diagnostic ignored \"-Warray-bounds\"\n"
+                                     "#pragma GCC diagnostic ignored \"-Wold-style-cast\"\n"
+                                     "#pragma GCC diagnostic ignored \"-Wshadow\"\n"
+                                     "#pragma GCC diagnostic ignored \"-Wsuggest-override\"\n"
+                                     "#pragma GCC diagnostic ignored \"-Wcast-qual\"\n"
+                                     "#pragma GCC diagnostic ignored \"-Wunused-parameter\"\n")
     endif()
 
     if (${FILENAME} MATCHES ".*\\.h")

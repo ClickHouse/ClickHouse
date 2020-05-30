@@ -864,6 +864,8 @@ def test_double_move_while_select(started_cluster, name, positive):
         thread = threading.Thread(target=long_select)
         thread.start()
 
+        time.sleep(1)
+
         node1.query("ALTER TABLE {name} MOVE PART '{part}' TO DISK 'jbod1'".format(name=name, part=parts[0]))
 
         # Fill jbod1 to force ClickHouse to make move of partition 1 to external.
