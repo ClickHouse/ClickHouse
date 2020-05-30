@@ -23,7 +23,7 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     : description(std::move(description_)), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
-    , log(&Logger::get("MergingSortedBlockInputStream"))
+    , log(&Poco::Logger::get("MergingSortedBlockInputStream"))
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
     header = children.at(0)->getHeader();

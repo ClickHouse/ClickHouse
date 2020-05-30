@@ -116,7 +116,7 @@ void ReplicatedMergeTreeQueue::initialize(
     zookeeper_path = zookeeper_path_;
     replica_path = replica_path_;
     logger_name = logger_name_;
-    log = &Logger::get(logger_name);
+    log = &Poco::Logger::get(logger_name);
 
     addVirtualParts(parts);
 }

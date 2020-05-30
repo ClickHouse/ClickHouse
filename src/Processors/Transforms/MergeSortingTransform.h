@@ -41,7 +41,7 @@ private:
     size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
 
-    Logger * log = &Logger::get("MergeSortingTransform");
+    Poco::Logger * log = &Poco::Logger::get("MergeSortingTransform");
 
     /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
     bool remerge_is_useful = true;
