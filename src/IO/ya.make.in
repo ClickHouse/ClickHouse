@@ -1,0 +1,15 @@
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/brotli/dec
+    contrib/libs/brotli/enc
+    contrib/libs/poco/NetSSL_OpenSSL
+)
+
+# "Arcadia" build is slightly deficient. It lacks many libraries that we need.
+SRCS(
+<? find . -name '*.cpp' | grep -v tests | grep -v -P 'HDFS|S3' | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

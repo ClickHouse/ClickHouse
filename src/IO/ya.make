@@ -7,19 +7,23 @@ PEERDIR(
     contrib/libs/poco/NetSSL_OpenSSL
 )
 
+# "Arcadia" build is slightly deficient. It lacks many libraries that we need.
 SRCS(
-    AIO.cpp
     AIOContextPool.cpp
+    AIO.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
+    ConcatReadBuffer.cpp
     copyData.cpp
     createReadBufferFromFileBase.cpp
     createWriteBufferFromFileBase.cpp
     DoubleConverter.cpp
     HashingWriteBuffer.cpp
     HexWriteBuffer.cpp
+    HTTPChunkedReadBuffer.cpp
+    HTTPChunkedWriteBuffer.cpp
     HTTPCommon.cpp
     LimitReadBuffer.cpp
     MemoryReadWriteBuffer.cpp
@@ -30,8 +34,8 @@ SRCS(
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferAIO.cpp
-    ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
+    ReadBufferFromFile.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
@@ -41,8 +45,8 @@ SRCS(
     ReadWriteBufferFromHTTP.cpp
     UseSSL.cpp
     WriteBufferAIO.cpp
-    WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
+    WriteBufferFromFile.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp
@@ -54,6 +58,7 @@ SRCS(
     WriteHelpers.cpp
     ZlibDeflatingWriteBuffer.cpp
     ZlibInflatingReadBuffer.cpp
+
 )
 
 END()
