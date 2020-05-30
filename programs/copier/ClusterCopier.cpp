@@ -1403,7 +1403,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
                 BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                input = io_select.in;
+                input = io_select.getInputStream();
                 output = io_insert.out;
             }
 
