@@ -204,7 +204,7 @@ BlockIO InterpreterInsertQuery::execute()
         {
             /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
             InterpreterSelectWithUnionQuery interpreter_select{ query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-            res.pipeline = interpreter_select.executeWithProcessors();
+            res = interpreter_select.execute();
 
             if (table->supportsParallelInsert() && settings.max_insert_threads > 1)
                 out_streams_size = std::min(size_t(settings.max_insert_threads), res.pipeline.getNumStreams());
