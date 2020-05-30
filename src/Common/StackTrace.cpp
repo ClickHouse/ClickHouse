@@ -26,7 +26,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
     std::stringstream error;
     switch (sig)
     {
-        case SIGSEGV: {
+        case SIGSEGV:
+        {
             /// Print info about address and reason.
             if (nullptr == info.si_addr)
                 error << "Address: NULL pointer.";
@@ -58,7 +59,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGBUS: {
+        case SIGBUS:
+        {
             switch (info.si_code)
             {
                 case BUS_ADRALN:
@@ -90,7 +92,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGILL: {
+        case SIGILL:
+        {
             switch (info.si_code)
             {
                 case ILL_ILLOPC:
@@ -124,7 +127,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGFPE: {
+        case SIGFPE:
+        {
             switch (info.si_code)
             {
                 case FPE_INTDIV:
@@ -158,7 +162,8 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext
             break;
         }
 
-        case SIGTSTP: {
+        case SIGTSTP:
+        {
             error << "This is a signal used for debugging purposes by the user.";
             break;
         }
