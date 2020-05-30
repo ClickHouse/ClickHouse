@@ -34,6 +34,10 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/HTTPChunkedReadBuffer.h>
+#include <IO/HTTPChunkedWriteBuffer.h>
+#include <IO/LimitReadBuffer.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/QueryParameterVisitor.h>
@@ -243,8 +247,6 @@ void HTTPHandler::processQuery(
 
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
-    std::istream & istr = request.stream();
-
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
     std::string user = request.get("X-ClickHouse-User", "");
@@ -405,9 +407,20 @@ void HTTPHandler::processQuery(
     }
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
+    std::unique_ptr<ReadBuffer> in_raw = std::make_unique<ReadBufferFromPocoSocket>(
+        dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket());
+
+    std::unique_ptr<ReadBuffer> in_decoded;
+    if (request.getChunkedTransferEncoding())
+        in_decoded = std::make_unique<HTTPChunkedReadBuffer>(*in_raw);
+    else if (request.hasContentLength())
+        in_decoded = std::make_unique<LimitReadBuffer>(*in_raw, request.getContentLength(), true, "Client has sent more data than Content-Length");
+    else
+        in_decoded = std::move(in_raw);
+
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     std::unique_ptr<ReadBuffer> in_post = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromIStream>(istr), chooseCompressionMethod({}, http_request_compression_method_str));
+        std::move(in_decoded), chooseCompressionMethod({}, http_request_compression_method_str));
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
