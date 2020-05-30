@@ -15,7 +15,6 @@ namespace DB
 class ClusterCopier
 {
 public:
-
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
@@ -187,8 +186,8 @@ protected:
     UInt64 executeQueryOnCluster(
             const ClusterPtr & cluster,
             const String & query,
-            const ASTPtr & query_ast_ = nullptr,
-            const Settings * settings = nullptr,
+            const ASTPtr & query_ast_,
+            const Settings & current_settings,
             PoolMode pool_mode = PoolMode::GET_ALL,
             ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
             UInt64 max_successful_executions_per_shard = 0) const;
