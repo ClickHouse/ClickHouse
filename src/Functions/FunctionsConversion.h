@@ -146,7 +146,7 @@ struct ConvertImpl
                     else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                         vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                     else
-                        throw Exception("Unsupported data type in conversion function", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
