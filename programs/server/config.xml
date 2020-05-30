@@ -46,6 +46,8 @@
         <!-- Changing <enabled> to true allows sending crash reports to the ClickHouse core developers team -->
         <!-- Doing so at least in pre-production environments is highly appreciated -->
         <enabled>false</enabled>
+        <!-- Change <anonymize> to true if you don't feel comfortable attaching the server hostname to the crash report -->
+        <anonymize>false</anonymize>
     </send_crash_reports>
 
     <!--display_name>production</display_name--> <!-- It is the name that will be shown in the client -->
