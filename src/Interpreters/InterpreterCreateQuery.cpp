@@ -382,6 +382,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const A
     return res;
 }
 
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(ASTCreateQuery & create) const
 {
     TableProperties properties;
