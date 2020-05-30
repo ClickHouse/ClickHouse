@@ -49,11 +49,13 @@ MemoryTracker::~MemoryTracker()
 
 void MemoryTracker::logPeakMemoryUsage() const
 {
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
     LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), formatReadableSizeWithBinarySuffix(peak));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
+    const auto * description = description_ptr.load(std::memory_order_relaxed);
     LOG_DEBUG(&Logger::get("MemoryTracker"), "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), formatReadableSizeWithBinarySuffix(current));
 }
 
@@ -85,7 +87,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory tracker";
-        if (description)
+        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
         message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"
@@ -117,7 +119,7 @@ void MemoryTracker::alloc(Int64 size)
 
         std::stringstream message;
         message << "Memory limit";
-        if (description)
+        if (const auto * description = description_ptr.load(std::memory_order_relaxed))
             message << " " << description;
         message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
             << " (attempt to allocate chunk of " << size << " bytes)"

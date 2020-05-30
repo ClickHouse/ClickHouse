@@ -77,12 +77,6 @@ public:
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
 
-    /// Execute the query and return multuple streams for parallel processing.
-    BlockInputStreams executeWithMultipleStreams(QueryPipeline & parent_pipeline);
-
-    QueryPipeline executeWithProcessors() override;
-    bool canExecuteWithProcessors() const override { return true; }
-
     bool ignoreLimits() const override { return options.ignore_limits; }
     bool ignoreQuota() const override { return options.ignore_quota; }
 
@@ -108,89 +102,16 @@ private:
 
     Block getSampleBlockImpl();
 
-    struct Pipeline
-    {
-        /** Streams of data.
-          * The source data streams are produced in the executeFetchColumns function.
-          * Then they are converted (wrapped in other streams) using the `execute*` functions,
-          *  to get the whole pipeline running the query.
-          */
-        BlockInputStreams streams;
-
-        /** When executing FULL or RIGHT JOIN, there will be a data stream from which you can read "not joined" rows.
-          * It has a special meaning, since reading from it should be done after reading from the main streams.
-          * It is appended to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
-          */
-        BlockInputStreamPtr stream_with_non_joined_data;
-        bool union_stream = false;
-
-        /// Cache value of InterpreterSelectQuery::max_streams
-        size_t max_threads = 1;
-
-        BlockInputStreamPtr & firstStream() { return streams.at(0); }
-
-        template <typename Transform>
-        void transform(Transform && transformation)
-        {
-            for (auto & stream : streams)
-                transformation(stream);
-
-            if (stream_with_non_joined_data)
-                transformation(stream_with_non_joined_data);
-        }
-
-        bool hasMoreThanOneStream() const
-        {
-            return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
-        }
-
-        /// Resulting stream is mix of other streams data. Distinct and/or order guaranties are broken.
-        bool hasMixedStreams() const
-        {
-            return hasMoreThanOneStream() || union_stream;
-        }
-
-        bool hasDelayedStream() const { return stream_with_non_joined_data != nullptr; }
-        bool initialized() const { return !streams.empty(); }
-
-        /// Compatibility with QueryPipeline (Processors)
-        void   setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
-        size_t getNumThreads() const { return max_threads; }
-    };
-
-    template <typename TPipeline>
-    void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
+    void executeImpl(QueryPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
 
-    /// dry_run - don't read from table, use empty header block instead.
-    void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
-
-    template <typename TPipeline>
-    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, TPipeline & pipeline,
+    void executeFetchColumns(
+        QueryProcessingStage::Enum processing_stage,
+        QueryPipeline & pipeline,
         const PrewhereInfoPtr & prewhere_info,
-        const Names & columns_to_remove_after_prewhere,
-        QueryPipeline & save_context_and_storage);
+        const Names & columns_to_remove_after_prewhere);
 
-    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
-    void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
-    void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
-    void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
-    void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    static void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(Pipeline & pipeline, InputOrderInfoPtr sorting_info);
-    void executeWithFill(Pipeline & pipeline);
-    void executeMergeSorted(Pipeline & pipeline);
-    void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline, Block header);
-    void executeLimitBy(Pipeline & pipeline);
-    void executeLimit(Pipeline & pipeline);
-    void executeOffset(Pipeline & pipeline);
-    static void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
-    void executeExtremes(Pipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
     void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
@@ -213,16 +134,11 @@ private:
 
     String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
-    /// Add ConvertingBlockInputStream to specified header.
-    static void unifyStreams(Pipeline & pipeline, Block header);
-
     enum class Modificator
     {
         ROLLUP = 0,
         CUBE = 1
     };
-
-    void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
 
     void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
 

@@ -1293,7 +1293,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             local_context.setSettings(task_cluster->settings_pull);
             local_context.setSetting("skip_unavailable_shards", true);
 
-            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().in);
+            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().getInputStream());
             count = (block) ? block.safeGetByPosition(0).column->getUInt(0) : 0;
         }
 
@@ -1403,7 +1403,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
                 BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                input = io_select.in;
+                input = io_select.getInputStream();
                 output = io_insert.out;
             }
 
@@ -1690,7 +1690,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().in);
+    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().getInputStream());
 
     std::set<String> res;
     if (block)
@@ -1735,7 +1735,7 @@ const auto & settings = context.getSettingsRef();
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    return InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows() != 0;
+    return InterpreterFactory::get(query_ast, local_context)->execute().getInputStream()->read().rows() != 0;
 }
 
 bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
@@ -1774,7 +1774,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    auto result = InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows();
+    auto result = InterpreterFactory::get(query_ast, local_context)->execute().getInputStream()->read().rows();
     if (result != 0)
         LOG_DEBUG(log, "Partition {} piece number {} is PRESENT on shard {}", partition_quoted_name, std::to_string(current_piece_number), task_shard.getDescription());
     else
