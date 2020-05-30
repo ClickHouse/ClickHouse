@@ -1,9 +1,0 @@
-<test>
-    <tags>
-        <tag>sorting</tag>
-        <tag>comparison</tag>
-    </tags>
-
-    <query>SELECT rand64() AS n FROM numbers(1000000) ORDER BY n DESC LIMIT 500</query>
-
-</test>
