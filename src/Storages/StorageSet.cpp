@@ -192,7 +192,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(&Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
-        file_path, backup_stream.getProfileInfo().rows, formatReadableSizeWithBinarySuffix(backup_stream.getProfileInfo().bytes), getSize());
+        file_path, backup_stream.getProfileInfo().rows, ReadableSize(backup_stream.getProfileInfo().bytes), getSize());
 }
 
 

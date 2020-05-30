@@ -269,7 +269,7 @@ void MergingSortedBlockInputStream::readSuffixImpl()
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
             profile_info.blocks, profile_info.rows, seconds,
             profile_info.rows / seconds,
-            formatReadableSizeWithBinarySuffix(profile_info.bytes / seconds));
+            ReadableSize(profile_info.bytes / seconds));
 }
 
 }

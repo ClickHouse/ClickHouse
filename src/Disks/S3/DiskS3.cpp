@@ -617,7 +617,7 @@ bool DiskS3::tryReserve(UInt64 bytes)
     if (unreserved_space >= bytes)
     {
         LOG_DEBUG(&Logger::get("DiskS3"), "Reserving {} on disk {}, having unreserved {}.",
-            formatReadableSizeWithBinarySuffix(bytes), backQuote(name), formatReadableSizeWithBinarySuffix(unreserved_space));
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return true;

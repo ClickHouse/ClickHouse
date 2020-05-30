@@ -53,7 +53,7 @@ void MergingSortedTransform::onFinish()
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",
             merged_data.totalChunks(), merged_data.totalMergedRows(), seconds,
             merged_data.totalMergedRows() / seconds,
-            formatReadableSizeWithBinarySuffix(merged_data.totalAllocatedBytes() / seconds));
+            ReadableSize(merged_data.totalAllocatedBytes() / seconds));
 }
 
 }
