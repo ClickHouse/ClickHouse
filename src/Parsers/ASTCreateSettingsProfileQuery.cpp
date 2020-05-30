@@ -1,6 +1,6 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTSettingsProfileElement.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 
 
@@ -32,7 +32,7 @@ namespace
         settings.format(format);
     }
 
-    void formatToRoles(const ASTExtendedRoleSet & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);

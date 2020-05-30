@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Parsers/ASTShowGrantsQuery.h>
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
@@ -29,7 +29,7 @@ namespace
     {
         ASTs res;
 
-        std::shared_ptr<ASTExtendedRoleSet> to_roles = std::make_shared<ASTExtendedRoleSet>();
+        std::shared_ptr<ASTRolesOrUsersSet> to_roles = std::make_shared<ASTRolesOrUsersSet>();
         to_roles->names.push_back(grantee.getName());
 
         auto grants_and_partial_revokes = grantee.access.getGrantsAndPartialRevokes();
@@ -87,9 +87,9 @@ namespace
             grant_query->admin_option = admin_option;
             grant_query->to_roles = to_roles;
             if (attach_mode)
-                grant_query->roles = ExtendedRoleSet{roles}.toAST();
+                grant_query->roles = RolesOrUsersSet{roles}.toAST();
             else
-                grant_query->roles = ExtendedRoleSet{roles}.toASTWithNames(*manager);
+                grant_query->roles = RolesOrUsersSet{roles}.toASTWithNames(*manager);
             res.push_back(std::move(grant_query));
         }
 

@@ -9,7 +9,7 @@
 namespace DB
 {
 class ASTUserNamesWithHost;
-class ASTExtendedRoleSet;
+class ASTRolesOrUsersSet;
 class ASTSettingsProfileElements;
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
@@ -45,7 +45,7 @@ public:
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    std::shared_ptr<ASTExtendedRoleSet> default_roles;
+    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 

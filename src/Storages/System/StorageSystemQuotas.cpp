@@ -8,7 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
 #include <Access/AccessFlags.h>
@@ -72,7 +72,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
                        const String & storage_name,
                        const std::vector<Quota::Limits> & all_limits,
                        KeyType key_type,
-                       const ExtendedRoleSet & apply_to)
+                       const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id);

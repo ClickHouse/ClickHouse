@@ -9,7 +9,7 @@ namespace DB
 
 class Context;
 class ASTSetRoleQuery;
-struct ExtendedRoleSet;
+struct RolesOrUsersSet;
 struct User;
 
 
@@ -20,7 +20,7 @@ public:
 
     BlockIO execute() override;
 
-    static void updateUserSetDefaultRoles(User & user, const ExtendedRoleSet & roles_from_query);
+    static void updateUserSetDefaultRoles(User & user, const RolesOrUsersSet & roles_from_query);
 
 private:
     void setRole(const ASTSetRoleQuery & query);

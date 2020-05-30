@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/ExtendedRoleSet.h>
+#include <Access/RolesOrUsersSet.h>
 #include <array>
 
 
@@ -91,7 +91,7 @@ struct RowPolicy : public IAccessEntity
     Type getType() const override { return TYPE; }
 
     /// Which roles or users should use this row policy.
-    ExtendedRoleSet to_roles;
+    RolesOrUsersSet to_roles;
 
 private:
     void setName(const String & name_) override;

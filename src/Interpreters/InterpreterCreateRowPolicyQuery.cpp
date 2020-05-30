@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTRowPolicyName.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
@@ -18,7 +18,7 @@ namespace
         RowPolicy & policy,
         const ASTCreateRowPolicyQuery & query,
         const RowPolicy::NameParts & override_name,
-        const std::optional<ExtendedRoleSet> & override_to_roles)
+        const std::optional<RolesOrUsersSet> & override_to_roles)
     {
         if (!override_name.empty())
             policy.setNameParts(override_name);
@@ -58,9 +58,9 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     }
 
     assert(query.names->cluster.empty());
-    std::optional<ExtendedRoleSet> roles_from_query;
+    std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
-        roles_from_query = ExtendedRoleSet{*query.roles, access_control, context.getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.roles, access_control, context.getUserID()};
 
     query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
 

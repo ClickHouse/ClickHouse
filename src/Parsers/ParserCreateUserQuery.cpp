@@ -7,9 +7,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTUserNameWithHost.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ParserUserNameWithHost.h>
-#include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
 #include <ext/range.h>
@@ -186,7 +186,7 @@ namespace
     }
 
 
-    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & default_roles)
+    bool parseDefaultRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & default_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -194,11 +194,13 @@ namespace
                 return false;
 
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected))
+            ParserRolesOrUsersSet default_roles_p;
+            default_roles_p.allowAll().allowRoleNames().useIDMode(id_mode);
+            if (!default_roles_p.parse(pos, ast, expected))
                 return false;
 
-            default_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
-            default_roles->can_contain_users = false;
+            default_roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
+            default_roles->allow_user_names = false;
             return true;
         });
     }
@@ -212,7 +214,9 @@ namespace
                 return false;
 
             ASTPtr new_settings_ast;
-            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected))
+            ParserSettingsProfileElements elements_p;
+            elements_p.useInheritKeyword(true).useIDMode(id_mode);
+            if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
             if (!settings)
@@ -276,7 +280,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
-    std::shared_ptr<ASTExtendedRoleSet> default_roles;
+    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     String cluster;
 

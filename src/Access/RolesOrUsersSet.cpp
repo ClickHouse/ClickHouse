@@ -1,9 +1,8 @@
-
-#include <Access/ExtendedRoleSet.h>
+#include <Access/RolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -20,51 +19,51 @@ namespace ErrorCodes
 }
 
 
-ExtendedRoleSet::ExtendedRoleSet() = default;
-ExtendedRoleSet::ExtendedRoleSet(const ExtendedRoleSet & src) = default;
-ExtendedRoleSet & ExtendedRoleSet::operator =(const ExtendedRoleSet & src) = default;
-ExtendedRoleSet::ExtendedRoleSet(ExtendedRoleSet && src) = default;
-ExtendedRoleSet & ExtendedRoleSet::operator =(ExtendedRoleSet && src) = default;
+RolesOrUsersSet::RolesOrUsersSet() = default;
+RolesOrUsersSet::RolesOrUsersSet(const RolesOrUsersSet & src) = default;
+RolesOrUsersSet & RolesOrUsersSet::operator =(const RolesOrUsersSet & src) = default;
+RolesOrUsersSet::RolesOrUsersSet(RolesOrUsersSet && src) = default;
+RolesOrUsersSet & RolesOrUsersSet::operator =(RolesOrUsersSet && src) = default;
 
 
-ExtendedRoleSet::ExtendedRoleSet(AllTag)
+RolesOrUsersSet::RolesOrUsersSet(AllTag)
 {
     all = true;
 }
 
-ExtendedRoleSet::ExtendedRoleSet(const UUID & id)
+RolesOrUsersSet::RolesOrUsersSet(const UUID & id)
 {
     add(id);
 }
 
 
-ExtendedRoleSet::ExtendedRoleSet(const std::vector<UUID> & ids_)
+RolesOrUsersSet::RolesOrUsersSet(const std::vector<UUID> & ids_)
 {
     add(ids_);
 }
 
 
-ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast)
 {
     init(ast, nullptr);
 }
 
-ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const std::optional<UUID> & current_user_id)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::optional<UUID> & current_user_id)
 {
     init(ast, nullptr, current_user_id);
 }
 
-ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager)
 {
     init(ast, &manager);
 }
 
-ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
 {
     init(ast, &manager, current_user_id);
 }
 
-void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlManager * manager, const std::optional<UUID> & current_user_id)
+void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControlManager * manager, const std::optional<UUID> & current_user_id)
 {
     all = ast.all;
 
@@ -73,20 +72,20 @@ void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlMa
         if (ast.id_mode)
             return parse<UUID>(name);
         assert(manager);
-        if (ast.can_contain_users && ast.can_contain_roles)
+        if (ast.allow_user_names && ast.allow_role_names)
         {
             auto id = manager->find<User>(name);
             if (id)
                 return *id;
             return manager->getID<Role>(name);
         }
-        else if (ast.can_contain_users)
+        else if (ast.allow_user_names)
         {
             return manager->getID<User>(name);
         }
         else
         {
-            assert(ast.can_contain_roles);
+            assert(ast.allow_role_names);
             return manager->getID<Role>(name);
         }
     };
@@ -122,9 +121,9 @@ void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlMa
 }
 
 
-std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 {
-    auto ast = std::make_shared<ASTExtendedRoleSet>();
+    auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->id_mode = true;
     ast->all = all;
 
@@ -148,9 +147,9 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
 }
 
 
-std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControlManager & manager) const
 {
-    auto ast = std::make_shared<ASTExtendedRoleSet>();
+    auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->all = all;
 
     if (!ids.empty())
@@ -181,21 +180,21 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toASTWithNames(const Access
 }
 
 
-String ExtendedRoleSet::toString() const
+String RolesOrUsersSet::toString() const
 {
     auto ast = toAST();
     return serializeAST(*ast);
 }
 
 
-String ExtendedRoleSet::toStringWithNames(const AccessControlManager & manager) const
+String RolesOrUsersSet::toStringWithNames(const AccessControlManager & manager) const
 {
     auto ast = toASTWithNames(manager);
     return serializeAST(*ast);
 }
 
 
-Strings ExtendedRoleSet::toStringsWithNames(const AccessControlManager & manager) const
+Strings RolesOrUsersSet::toStringsWithNames(const AccessControlManager & manager) const
 {
     if (!all && ids.empty())
         return {};
@@ -233,13 +232,13 @@ Strings ExtendedRoleSet::toStringsWithNames(const AccessControlManager & manager
 }
 
 
-bool ExtendedRoleSet::empty() const
+bool RolesOrUsersSet::empty() const
 {
     return ids.empty() && !all;
 }
 
 
-void ExtendedRoleSet::clear()
+void RolesOrUsersSet::clear()
 {
     ids.clear();
     all = false;
@@ -247,26 +246,26 @@ void ExtendedRoleSet::clear()
 }
 
 
-void ExtendedRoleSet::add(const UUID & id)
+void RolesOrUsersSet::add(const UUID & id)
 {
     ids.insert(id);
 }
 
 
-void ExtendedRoleSet::add(const std::vector<UUID> & ids_)
+void RolesOrUsersSet::add(const std::vector<UUID> & ids_)
 {
     for (const auto & id : ids_)
         add(id);
 }
 
 
-bool ExtendedRoleSet::match(const UUID & id) const
+bool RolesOrUsersSet::match(const UUID & id) const
 {
     return (all || ids.count(id)) && !except_ids.count(id);
 }
 
 
-bool ExtendedRoleSet::match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
+bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     if (!all && !ids.count(user_id))
     {
@@ -285,7 +284,7 @@ bool ExtendedRoleSet::match(const UUID & user_id, const boost::container::flat_s
 }
 
 
-std::vector<UUID> ExtendedRoleSet::getMatchingIDs() const
+std::vector<UUID> RolesOrUsersSet::getMatchingIDs() const
 {
     if (all)
         throw Exception("getAllMatchingIDs() can't get ALL ids without manager", ErrorCodes::LOGICAL_ERROR);
@@ -295,7 +294,7 @@ std::vector<UUID> ExtendedRoleSet::getMatchingIDs() const
 }
 
 
-std::vector<UUID> ExtendedRoleSet::getMatchingIDs(const AccessControlManager & manager) const
+std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControlManager & manager) const
 {
     if (!all)
         return getMatchingIDs();
@@ -316,7 +315,7 @@ std::vector<UUID> ExtendedRoleSet::getMatchingIDs(const AccessControlManager & m
 }
 
 
-bool operator ==(const ExtendedRoleSet & lhs, const ExtendedRoleSet & rhs)
+bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs)
 {
     return (lhs.all == rhs.all) && (lhs.ids == rhs.ids) && (lhs.except_ids == rhs.except_ids);
 }

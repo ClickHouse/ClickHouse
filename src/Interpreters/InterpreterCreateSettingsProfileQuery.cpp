@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
@@ -17,7 +17,7 @@ namespace
         const ASTCreateSettingsProfileQuery & query,
         const String & override_name,
         const std::optional<SettingsProfileElements> & override_settings,
-        const std::optional<ExtendedRoleSet> & override_to_roles)
+        const std::optional<RolesOrUsersSet> & override_to_roles)
     {
         if (!override_name.empty())
             profile.setName(override_name);
@@ -58,9 +58,9 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     if (query.settings)
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
-    std::optional<ExtendedRoleSet> roles_from_query;
+    std::optional<RolesOrUsersSet> roles_from_query;
     if (query.to_roles)
-        roles_from_query = ExtendedRoleSet{*query.to_roles, access_control, context.getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, context.getUserID()};
 
     if (query.alter)
     {

@@ -3,8 +3,8 @@
 #include <Access/RowPolicy.h>
 #include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/ParserRowPolicyName.h>
-#include <Parsers/ParserExtendedRoleSet.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ParserRolesOrUsersSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -173,16 +173,20 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
-                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
+            ParserRolesOrUsersSet roles_p;
+            roles_p.allowAll().allowRoleNames().allowUserNames().allowCurrentUser().useIDMode(id_mode);
+            if (!roles_p.parse(pos, ast, expected))
+                return false;
+
+            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -259,7 +263,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         break;
     }
 
-    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
 
     if (cluster.empty())
