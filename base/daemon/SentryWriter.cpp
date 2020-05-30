@@ -18,10 +18,16 @@
 namespace
 {
 static bool initialized = false;
+static bool anonymize = false;
 
 void setExtras()
 {
 #if USE_SENTRY
+    if (!anonymize)
+    {
+        sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
+    }
+    sentry_set_tag("version", VERSION_STRING_SHORT);
     sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
     sentry_set_extra("version_describe", sentry_value_new_string(VERSION_DESCRIBE));
     sentry_set_extra("version_integer", sentry_value_new_int32(VERSION_INTEGER));
@@ -69,15 +75,19 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
         {
             sentry_options_set_environment(options, "test");
         }
+
         int init_status = sentry_init(options);
         if (!init_status)
         {
             initialized = true;
+            anonymize = config.getBool("send_crash_reports.anonymize", false);
+            const std::string& anonymize_status = anonymize ? " (anonymized)" : "";
             LOG_INFO(
                 &Logger::get("SentryWriter"),
-                "Sending crash reports is initialized with {} endpoint and {} temp folder",
+                "Sending crash reports is initialized with {} endpoint and {} temp folder{}",
                 endpoint,
-                temp_folder_path);
+                temp_folder_path,
+                anonymize_status);
         }
         else
         {
@@ -109,7 +119,6 @@ void SentryWriter::onFault(int sig, const siginfo_t & info, const ucontext_t & c
         const std::string & error_message = signalToErrorMessage(sig, info, context);
         sentry_value_t event = sentry_value_new_message_event(SENTRY_LEVEL_FATAL, "fault", error_message.c_str());
         sentry_set_tag("signal", strsignal(sig));
-        sentry_set_tag("server_name", getFQDNOrHostName().c_str());
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
         setExtras();
 
