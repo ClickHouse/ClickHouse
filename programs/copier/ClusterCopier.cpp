@@ -1774,7 +1774,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    auto result = InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows();
+    auto result = InterpreterFactory::get(query_ast, local_context)->execute().getInputStream()->read().rows();
     if (result != 0)
         LOG_DEBUG(log, "Partition {} piece number {} is PRESENT on shard {}", partition_quoted_name, std::to_string(current_piece_number), task_shard.getDescription());
     else
