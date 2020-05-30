@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
@@ -154,13 +155,11 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     else if (or_replace)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
 
-    const String & database = name_parts.database;
-    const String & table_name = name_parts.table_name;
-    const String & short_name = name_parts.short_name;
-    settings.ostr << " " << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                  << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << table_name;
+    settings.ostr << " ";
+    names->format(settings);
 
     formatOnCluster(settings);
+    assert(names->cluster.empty());
 
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, settings);
@@ -179,5 +178,11 @@ void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & curre
 {
     if (roles)
         roles->replaceCurrentUserTagWithName(current_user_name);
+}
+
+void ASTCreateRowPolicyQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
+{
+    if (names)
+        names->replaceEmptyDatabaseWithCurrent(current_database);
 }
 }

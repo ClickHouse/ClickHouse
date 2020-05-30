@@ -29,7 +29,7 @@ public:
 
 private:
     BlockInputStreamPtr executeImpl();
-    ASTPtr getCreateQuery(ASTShowCreateAccessEntityQuery & show_query) const;
+    ASTs getCreateQueries(ASTShowCreateAccessEntityQuery & show_query) const;
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;

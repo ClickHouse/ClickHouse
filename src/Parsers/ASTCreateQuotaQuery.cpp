@@ -23,6 +23,19 @@ namespace
     }
 
 
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << " ";
+        bool need_comma = false;
+        for (const String & name : names)
+        {
+            if (std::exchange(need_comma, true))
+                settings.ostr << ", ";
+            settings.ostr << backQuoteIfNeed(name);
+        }
+    }
+
+
     void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
@@ -130,8 +143,7 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
     else if (or_replace)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << " " << backQuoteIfNeed(name);
-
+    formatNames(names, settings);
     formatOnCluster(settings);
 
     if (!new_name.empty())

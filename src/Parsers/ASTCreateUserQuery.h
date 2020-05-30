@@ -8,6 +8,7 @@
 
 namespace DB
 {
+class ASTUserNamesWithHost;
 class ASTExtendedRoleSet;
 class ASTSettingsProfileElements;
 
@@ -34,7 +35,7 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    String name;
+    std::shared_ptr<ASTUserNamesWithHost> names;
     String new_name;
 
     std::optional<Authentication> authentication;

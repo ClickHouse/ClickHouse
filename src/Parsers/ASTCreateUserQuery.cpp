@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
@@ -212,7 +213,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     else if (or_replace)
         format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    format.ostr << " " << backQuoteIfNeed(name);
+    format.ostr << " ";
+    names->format(format);
 
     formatOnCluster(format);
 

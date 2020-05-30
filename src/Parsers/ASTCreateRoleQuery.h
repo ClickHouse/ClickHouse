@@ -26,7 +26,7 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    String name;
+    Strings names;
     String new_name;
 
     std::shared_ptr<ASTSettingsProfileElements> settings;

@@ -38,7 +38,7 @@ public:
     using KeyType = Quota::KeyType;
     using ResourceAmount = Quota::ResourceAmount;
 
-    String name;
+    Strings names;
     String new_name;
     std::optional<KeyType> key_type;
 
