@@ -634,7 +634,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                    storage = DatabaseCatalog::instance().tryGetTable(table_id);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 
                 /// For some reason we check consistency of cluster definition only

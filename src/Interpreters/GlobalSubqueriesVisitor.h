@@ -103,7 +103,7 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns});
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns}, ConstraintsDescription{});
             StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.

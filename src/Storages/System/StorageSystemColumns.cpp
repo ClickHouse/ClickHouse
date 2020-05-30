@@ -301,7 +301,7 @@ Pipes StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 const String & table_name = iterator->name();
                 storages.emplace(std::piecewise_construct,

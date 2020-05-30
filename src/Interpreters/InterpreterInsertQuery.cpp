@@ -70,7 +70,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     }
 
     query.table_id = context.resolveStorageID(query.table_id);
-    return DatabaseCatalog::instance().getTable(query.table_id);
+    return DatabaseCatalog::instance().getTable(query.table_id, context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table) const
@@ -233,6 +233,21 @@ BlockIO InterpreterInsertQuery::execute()
             else
                 out = std::make_shared<PushingToViewsBlockOutputStream>(table, context, query_ptr, no_destination);
 
+            /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
+
+            /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
+            if (const auto & constraints = table->getConstraints(); !constraints.empty())
+                out = std::make_shared<CheckConstraintsBlockOutputStream>(
+                    query.table_id, out, out->getHeader(), table->getConstraints(), context);
+
+            /// Actually we don't know structure of input blocks from query/table,
+            /// because some clients break insertion protocol (columns != header)
+            out = std::make_shared<AddingDefaultBlockOutputStream>(
+                out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
+
+            /// It's important to squash blocks as early as possible (before other transforms),
+            ///  because other transforms may work inefficient if block size is small.
+
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
             if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
@@ -243,15 +258,6 @@ BlockIO InterpreterInsertQuery::execute()
                     context.getSettingsRef().min_insert_block_size_rows,
                     context.getSettingsRef().min_insert_block_size_bytes);
             }
-
-            /// Actually we don't know structure of input blocks from query/table,
-            /// because some clients break insertion protocol (columns != header)
-            out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, out->getHeader(), table->getColumns().getDefaults(), context);
-
-            if (const auto & constraints = table->getConstraints(); !constraints.empty())
-                out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, query_sample_block, table->getConstraints(), context);
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(context.getProcessListElement());

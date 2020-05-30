@@ -333,6 +333,19 @@ def run_tests_array(all_tests_with_params):
 server_logs_level = "warning"
 
 
+def check_server_started(client, retry_count):
+    while retry_count > 0:
+        clickhouse_proc = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (stdout, stderr) = clickhouse_proc.communicate("SELECT 1")
+        if clickhouse_proc.returncode != 0 or not stdout.startswith("1"):
+            retry_count -= 1
+            sleep(0.5)
+        else:
+            return True
+
+    return False
+
+
 def main(args):
     global SERVER_DIED
     global exit_code
@@ -345,6 +358,9 @@ def main(args):
             raise CalledProcessError(clickhouse_proc.returncode, args.client, stderr)
 
         return stdout.startswith('1')
+
+    if not check_server_started(args.client, args.server_check_retries):
+        raise Exception("clickhouse-server is not responding. Cannot execute 'SELECT 1' query.")
 
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
@@ -362,7 +378,7 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -572,6 +588,7 @@ if __name__ == '__main__':
     parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
+    parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')

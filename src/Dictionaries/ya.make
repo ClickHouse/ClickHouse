@@ -24,8 +24,8 @@ SRCS(
     ComplexKeyCacheDictionary_generate3.cpp
     ComplexKeyCacheDictionary_setAttributeValue.cpp
     ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
-    ComplexKeyHashedDictionary.cpp
     ComplexKeyDirectDictionary.cpp
+    ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
     DictionarySourceFactory.cpp
