@@ -11,7 +11,7 @@
 #endif
 
 #if USE_SENTRY
-#    include <sentry.h>
+#    include <sentry.h> // Y_IGNORE
 #endif
 
 
