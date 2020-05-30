@@ -596,6 +596,11 @@ private:
 
         {
             std::lock_guard used(used_regions_mutex);
+
+            printf("Thread %lf acquired used_regions_mutex, 599\n",
+                    std::this_thread::get_id());
+
+            BOOST_ASSERT(!metadata.TUsedRegionHook::is_linked());
             used_regions.push_back(metadata); // TODO fails here
         }
 
@@ -622,6 +627,9 @@ private:
         {
             std::lock_guard global_lock(mutex);
 
+            printf("Thread %lf acquired mutex, 630\n",
+                    std::this_thread::get_id());
+
             auto it = value_to_region.find(value);
 
             /// Normally it != value_to_region.end() because there exists at least one shared_ptr using this value (the one
@@ -640,6 +648,10 @@ private:
             /// Deleting last reference.
             value_to_region.erase(it);
 
+            printf("Thread %lf modifying unused_regions, 651\n",
+                    std::this_thread::get_id());
+
+            BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
             unused_regions.push_back(*metadata); //TODO Fails here
         }
 
@@ -648,6 +660,10 @@ private:
 
         std::lock_guard used(used_regions_mutex);
 
+        printf("Thread %lf modifying unused_regions, 663\n",
+                std::this_thread::get_id());
+
+        BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
         used_regions.erase(used_regions.iterator_to(*metadata));
 
         /// No delete value here because we do not need to (it will be unmmap'd on MemoryChunk disposal).
