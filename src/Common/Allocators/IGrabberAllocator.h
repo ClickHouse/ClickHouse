@@ -597,8 +597,8 @@ private:
         {
             std::lock_guard used(used_regions_mutex);
 
-            printf("Thread %lf acquired used_regions_mutex, 599\n",
-                    std::this_thread::get_id());
+            printf("Thread %lu acquired used_regions_mutex, 599\n",
+                    pthread_self());
 
             BOOST_ASSERT(!metadata.TUsedRegionHook::is_linked());
             used_regions.push_back(metadata); // TODO fails here
@@ -627,8 +627,8 @@ private:
         {
             std::lock_guard global_lock(mutex);
 
-            printf("Thread %lf acquired mutex, 630\n",
-                    std::this_thread::get_id());
+            printf("Thread %lu acquired mutex, 630\n",
+                    pthread_self());
 
             auto it = value_to_region.find(value);
 
@@ -648,8 +648,8 @@ private:
             /// Deleting last reference.
             value_to_region.erase(it);
 
-            printf("Thread %lf modifying unused_regions, 651\n",
-                    std::this_thread::get_id());
+            printf("Thread %lu modifying unused_regions, 651\n",
+                    pthread_self());
 
             BOOST_ASSERT(!metadata->TUnusedRegionHook::is_linked());
             unused_regions.push_back(*metadata); //TODO Fails here
@@ -660,8 +660,8 @@ private:
 
         std::lock_guard used(used_regions_mutex);
 
-        printf("Thread %lf modifying unused_regions, 663\n",
-                std::this_thread::get_id());
+        printf("Thread %lu modifying unused_regions, 663\n",
+                pthread_self());
 
         BOOST_ASSERT(metadata->TUsedRegionHook::is_linked());
         used_regions.erase(used_regions.iterator_to(*metadata));
