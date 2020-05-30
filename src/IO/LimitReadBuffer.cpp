@@ -13,9 +13,10 @@ namespace ErrorCodes
 
 bool LimitReadBuffer::nextImpl()
 {
-    /// Let underlying buffer calculate read bytes in `next()` call.
+    /// Let underlying buffer calculate read bytes on `next()` call.
     in.position() = position();
 
+    /// If limit amount of bytes was already read.
     if (bytes >= limit)
     {
         if (throw_exception)

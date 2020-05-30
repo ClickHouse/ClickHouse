@@ -414,7 +414,7 @@ void HTTPHandler::processQuery(
     if (request.getChunkedTransferEncoding())
         in_decoded = std::make_unique<HTTPChunkedReadBuffer>(*in_raw);
     else if (request.hasContentLength())
-        in_decoded = std::make_unique<LimitReadBuffer>(*in_raw, request.getContentLength(), true, "Client has sent more data than Content-Length");
+        in_decoded = std::make_unique<LimitReadBuffer>(*in_raw, request.getContentLength(), false);
     else
         in_decoded = std::move(in_raw);
 

@@ -49,7 +49,7 @@ public:
       */
     bool next()
     {
-        bytes += offset();
+        bytes += working_buffer.size();
         bool res = nextImpl();
         if (!res)
             working_buffer.resize(0);
