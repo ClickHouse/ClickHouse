@@ -15,13 +15,7 @@ namespace
 
 class DataTypeCustomPointSerialization : public DataTypeCustomSimpleTextSerialization
 {
-private:
-    DataTypePtr tuple;
-
 public:
-    DataTypeCustomPointSerialization()
-    {}
-
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         nestedDataType()->serializeAsText(column, row_num, ostr, settings);
@@ -34,18 +28,15 @@ public:
 
     static DataTypePtr nestedDataType()
     {
-        static auto dataType = DataTypePtr(std::make_unique<DataTypeTuple>(
+        static auto data_type = DataTypePtr(std::make_unique<DataTypeTuple>(
             DataTypes({std::make_unique<DataTypeFloat64>(), std::make_unique<DataTypeFloat64>()})));
-        return dataType;
+        return data_type;
     }
 };
 
 class DataTypeCustomRingSerialization : public DataTypeCustomSimpleTextSerialization
 {
 public:
-    DataTypeCustomRingSerialization()
-    {}
-
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         nestedDataType()->serializeAsText(column, row_num, ostr, settings);
@@ -58,17 +49,14 @@ public:
 
     static DataTypePtr nestedDataType()
     {
-        static auto dataType = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType()));
-        return dataType;
+        static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType()));
+        return data_type;
     }
 };
 
 class DataTypeCustomPolygonSerialization : public DataTypeCustomSimpleTextSerialization
 {
 public:
-    DataTypeCustomPolygonSerialization()
-    {}
-
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         nestedDataType()->serializeAsText(column, row_num, ostr, settings);
@@ -81,17 +69,14 @@ public:
 
     static DataTypePtr nestedDataType()
     {
-        static auto dataType = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType()));
-        return dataType;
+        static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType()));
+        return data_type;
     }
 };
 
 class DataTypeCustomMultiPolygonSerialization : public DataTypeCustomSimpleTextSerialization
 {
 public:
-    DataTypeCustomMultiPolygonSerialization()
-    {}
-
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         nestedDataType()->serializeAsText(column, row_num, ostr, settings);
@@ -104,8 +89,8 @@ public:
 
     static DataTypePtr nestedDataType()
     {
-        static auto dataType = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType()));
-        return dataType;
+        static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType()));
+        return data_type;
     }
 };
 
