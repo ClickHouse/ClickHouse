@@ -201,7 +201,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , storage(storage_)
     , input(input_)
     , input_pipe(std::move(input_pipe_))
-    , log(&Logger::get("InterpreterSelectQuery"))
+    , log(&Poco::Logger::get("InterpreterSelectQuery"))
 {
     checkStackSize();
 

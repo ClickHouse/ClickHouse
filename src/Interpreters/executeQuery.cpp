@@ -105,7 +105,7 @@ static void logQuery(const String & query, const Context & context, bool interna
 {
     if (internal)
     {
-        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) {}", joinLines(query));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {}", joinLines(query));
     }
     else
     {
@@ -113,7 +113,7 @@ static void logQuery(const String & query, const Context & context, bool interna
         const auto & initial_query_id = context.getClientInfo().initial_query_id;
         const auto & current_user = context.getClientInfo().current_user;
 
-        LOG_DEBUG(&Logger::get("executeQuery"), "(from {}{}{}) {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}) {}",
             context.getClientInfo().current_address.toString(),
             (current_user != "default" ? ", user: " + context.getClientInfo().current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
@@ -145,10 +145,10 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 static void logException(Context & context, QueryLogElement & elem)
 {
     if (elem.stack_trace.empty())
-        LOG_ERROR(&Logger::get("executeQuery"), "{} (from {}) (in query: {})",
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})",
             elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query));
     else
-        LOG_ERROR(&Logger::get("executeQuery"), "{} (from {}) (in query: {})"
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), "{} (from {}) (in query: {})"
             ", Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception, context.getClientInfo().current_address.toString(), joinLines(elem.query), elem.stack_trace);
 }
@@ -505,7 +505,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (elem.read_rows != 0)
                 {
-                    LOG_INFO(&Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                    LOG_INFO(&Poco::Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                         elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
                         static_cast<size_t>(elem.read_rows / elapsed_seconds),
                         ReadableSize(elem.read_bytes / elapsed_seconds));
@@ -585,7 +585,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 std::stringstream log_str;
                 log_str << "Query pipeline:\n";
                 res.in->dumpTree(log_str);
-                LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), log_str.str());
             }
         }
     }

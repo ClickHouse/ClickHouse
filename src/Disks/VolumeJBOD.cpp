@@ -20,7 +20,7 @@ VolumeJBOD::VolumeJBOD(
     DiskSelectorPtr disk_selector
 ) : IVolume(name_, config, config_prefix, disk_selector)
 {
-    Logger * logger = &Logger::get("StorageConfiguration");
+    Poco::Logger * logger = &Poco::Logger::get("StorageConfiguration");
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");

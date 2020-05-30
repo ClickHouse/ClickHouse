@@ -29,7 +29,7 @@ public:
             max_block_size,
             out_row_sources_buf_,
             use_average_block_sizes,
-            &Logger::get("CollapsingSortedTransform"))
+            &Poco::Logger::get("CollapsingSortedTransform"))
     {
     }
 

@@ -278,7 +278,7 @@ StorageDistributed::StorageDistributed(
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , global_context(std::make_unique<Context>(context_))
-    , log(&Logger::get("StorageDistributed (" + id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , cluster_name(global_context->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , storage_policy(storage_policy_)

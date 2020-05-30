@@ -43,7 +43,7 @@ void MergingSortedTransform::onFinish()
 
     const auto & merged_data = algorithm.getMergedData();
 
-    auto * log = &Logger::get("MergingSortedTransform");
+    auto * log = &Poco::Logger::get("MergingSortedTransform");
 
     double seconds = total_stopwatch.elapsedSeconds();
 
