@@ -64,19 +64,23 @@ namespace
 
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            if (ParserCreateUserQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateRoleQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateRowPolicyQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateQuotaQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserCreateSettingsProfileQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            if (ParserGrantQuery{}.enableAttachMode(true).parse(pos, node, expected))
-                return true;
-            return false;
+            ParserCreateUserQuery create_user_p;
+            ParserCreateRoleQuery create_role_p;
+            ParserCreateRowPolicyQuery create_policy_p;
+            ParserCreateQuotaQuery create_quota_p;
+            ParserCreateSettingsProfileQuery create_profile_p;
+            ParserGrantQuery grant_p;
+
+            create_user_p.useAttachMode();
+            create_role_p.useAttachMode();
+            create_policy_p.useAttachMode();
+            create_quota_p.useAttachMode();
+            create_profile_p.useAttachMode();
+            grant_p.useAttachMode();
+
+            return create_user_p.parse(pos, node, expected) || create_role_p.parse(pos, node, expected)
+                || create_policy_p.parse(pos, node, expected) || create_quota_p.parse(pos, node, expected)
+                || create_profile_p.parse(pos, node, expected) || grant_p.parse(pos, node, expected);
         }
     };
 

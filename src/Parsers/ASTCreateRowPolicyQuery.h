@@ -10,7 +10,7 @@
 namespace DB
 {
 class ASTRowPolicyNames;
-class ASTExtendedRoleSet;
+class ASTRolesOrUsersSet;
 
 /** CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] name ON [database.]table
   *      [AS {PERMISSIVE | RESTRICTIVE}]
@@ -43,7 +43,7 @@ public:
     std::optional<bool> is_restrictive;
     std::array<std::optional<ASTPtr>, RowPolicy::MAX_CONDITION_TYPE> conditions; /// `nullopt` means "not set", `nullptr` means set to NONE.
 
-    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

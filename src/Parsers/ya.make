@@ -21,7 +21,6 @@ SRCS(
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
-    ASTExtendedRoleSet.cpp
     ASTFunction.cpp
     ASTFunctionWithKeyValueArguments.cpp
     ASTGrantQuery.cpp
@@ -37,6 +36,7 @@ SRCS(
     ASTQueryWithOnCluster.cpp
     ASTQueryWithOutput.cpp
     ASTQueryWithTableAndOutput.cpp
+    ASTRolesOrUsersSet.cpp
     ASTRowPolicyName.cpp
     ASTSampleRatio.cpp
     ASTSelectQuery.cpp
@@ -81,7 +81,6 @@ SRCS(
     ParserDictionaryAttributeDeclaration.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
-    ParserExtendedRoleSet.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp
@@ -90,6 +89,7 @@ SRCS(
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
+    ParserRolesOrUsersSet.cpp
     ParserRowPolicyName.cpp
     ParserSampleRatio.cpp
     ParserSelectQuery.cpp

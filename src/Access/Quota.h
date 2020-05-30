@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/ExtendedRoleSet.h>
+#include <Access/RolesOrUsersSet.h>
 #include <boost/lexical_cast.hpp>
 #include <chrono>
 
@@ -91,7 +91,7 @@ struct Quota : public IAccessEntity
     KeyType key_type = KeyType::NONE;
 
     /// Which roles or users should use this quota.
-    ExtendedRoleSet to_roles;
+    RolesOrUsersSet to_roles;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Quota>(); }

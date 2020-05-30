@@ -4,7 +4,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/ContextAccess.h>
@@ -19,7 +19,7 @@ namespace
         User & user,
         const ASTCreateUserQuery & query,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
-        const std::optional<ExtendedRoleSet> & override_default_roles,
+        const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<SettingsProfileElements> & override_settings)
     {
         if (override_name)
@@ -45,7 +45,7 @@ namespace
         if (query.add_hosts)
             user.allowed_client_hosts.add(*query.add_hosts);
 
-        auto set_default_roles = [&](const ExtendedRoleSet & default_roles_)
+        auto set_default_roles = [&](const RolesOrUsersSet & default_roles_)
         {
             if (!query.alter && !default_roles_.all)
                 user.granted_roles.grant(default_roles_.getMatchingIDs());
@@ -73,10 +73,10 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto access = context.getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 
-    std::optional<ExtendedRoleSet> default_roles_from_query;
+    std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
-        default_roles_from_query = ExtendedRoleSet{*query.default_roles, access_control};
+        default_roles_from_query = RolesOrUsersSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {
             for (const UUID & role : default_roles_from_query->getMatchingIDs())

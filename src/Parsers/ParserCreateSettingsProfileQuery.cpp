@@ -5,8 +5,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
-#include <Parsers/ParserExtendedRoleSet.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ParserRolesOrUsersSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
@@ -33,7 +33,9 @@ namespace
                 return false;
 
             ASTPtr new_settings_ast;
-            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).enableInheritKeyword(true).parse(pos, new_settings_ast, expected))
+            ParserSettingsProfileElements elements_p;
+            elements_p.useInheritKeyword(true).useIDMode(id_mode);
+            if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
             if (!settings)
@@ -44,16 +46,20 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
-                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
+            ParserRolesOrUsersSet roles_p;
+            roles_p.allowAll().allowRoleNames().allowUserNames().allowCurrentUser().useIDMode(id_mode);
+            if (!roles_p.parse(pos, ast, expected))
+                return false;
+
+            roles = std::static_pointer_cast<ASTRolesOrUsersSet>(ast);
             return true;
         });
     }
@@ -122,7 +128,7 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         break;
     }
 
-    std::shared_ptr<ASTExtendedRoleSet> to_roles;
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
     parseToRoles(pos, expected, attach_mode, to_roles);
 
     if (cluster.empty())

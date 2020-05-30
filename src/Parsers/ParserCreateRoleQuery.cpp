@@ -31,7 +31,9 @@ namespace
                 return false;
 
             ASTPtr new_settings_ast;
-            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected))
+            ParserSettingsProfileElements elements_p;
+            elements_p.useIDMode(id_mode);
+            if (!elements_p.parse(pos, new_settings_ast, expected))
                 return false;
 
             if (!settings)

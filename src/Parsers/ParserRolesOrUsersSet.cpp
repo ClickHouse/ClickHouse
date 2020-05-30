@@ -1,8 +1,8 @@
-#include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/parseUserName.h>
 #include <boost/range/algorithm/find.hpp>
 
@@ -39,8 +39,8 @@ namespace
         IParserBase::Pos & pos,
         Expected & expected,
         bool id_mode,
-        bool all_keyword_enabled,
-        bool current_user_keyword_enabled,
+        bool allow_all,
+        bool allow_current_user_tag,
         Strings & names,
         bool & all,
         bool & current_user)
@@ -56,7 +56,7 @@ namespace
                 {
                 }
                 else if (
-                    current_user_keyword_enabled
+                    allow_current_user_tag
                     && (ParserKeyword{"CURRENT_USER"}.ignore(pos, expected) || ParserKeyword{"currentUser"}.ignore(pos, expected)))
                 {
                     if (ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
@@ -66,7 +66,7 @@ namespace
                     }
                     res_current_user = true;
                 }
-                else if (all_keyword_enabled && ParserKeyword{"ALL"}.ignore(pos, expected))
+                else if (allow_all && ParserKeyword{"ALL"}.ignore(pos, expected))
                 {
                     res_all = true;
                 }
@@ -93,7 +93,7 @@ namespace
         IParserBase::Pos & pos,
         Expected & expected,
         bool id_mode,
-        bool current_user_keyword_enabled,
+        bool allow_current_user_tag,
         Strings & except_names,
         bool & except_current_user)
     {
@@ -103,13 +103,13 @@ namespace
                 return false;
 
             bool dummy;
-            return parseBeforeExcept(pos, expected, id_mode, false, current_user_keyword_enabled, except_names, dummy, except_current_user);
+            return parseBeforeExcept(pos, expected, id_mode, false, allow_current_user_tag, except_names, dummy, except_current_user);
         });
     }
 }
 
 
-bool ParserExtendedRoleSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserRolesOrUsersSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Strings names;
     bool current_user = false;
@@ -117,21 +117,23 @@ bool ParserExtendedRoleSet::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     Strings except_names;
     bool except_current_user = false;
 
-    if (!parseBeforeExcept(pos, expected, id_mode, all_keyword, current_user_keyword, names, all, current_user))
+    if (!parseBeforeExcept(pos, expected, id_mode, allow_all, allow_current_user, names, all, current_user))
         return false;
 
-    parseExceptAndAfterExcept(pos, expected, id_mode, current_user_keyword, except_names, except_current_user);
+    parseExceptAndAfterExcept(pos, expected, id_mode, allow_current_user, except_names, except_current_user);
 
     if (all)
         names.clear();
 
-    auto result = std::make_shared<ASTExtendedRoleSet>();
+    auto result = std::make_shared<ASTRolesOrUsersSet>();
     result->names = std::move(names);
     result->current_user = current_user;
     result->all = all;
     result->except_names = std::move(except_names);
     result->except_current_user = except_current_user;
     result->id_mode = id_mode;
+    result->allow_user_names = allow_user_names;
+    result->allow_role_names = allow_role_names;
     node = result;
     return true;
 }

@@ -7,7 +7,7 @@
 
 namespace DB
 {
-class ASTExtendedRoleSet;
+class ASTRolesOrUsersSet;
 
 
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
@@ -51,7 +51,7 @@ public:
     };
     std::vector<Limits> all_limits;
 
-    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

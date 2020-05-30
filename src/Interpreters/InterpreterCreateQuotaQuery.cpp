@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
@@ -19,7 +19,7 @@ namespace
         Quota & quota,
         const ASTCreateQuotaQuery & query,
         const String & override_name,
-        const std::optional<ExtendedRoleSet> & override_to_roles)
+        const std::optional<RolesOrUsersSet> & override_to_roles)
     {
         if (!override_name.empty())
             quota.setName(override_name);
@@ -82,9 +82,9 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 
-    std::optional<ExtendedRoleSet> roles_from_query;
+    std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
-        roles_from_query = ExtendedRoleSet{*query.roles, access_control, context.getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.roles, access_control, context.getUserID()};
 
     if (query.alter)
     {

@@ -7,7 +7,7 @@
 namespace DB
 {
 class ASTSettingsProfileElements;
-class ASTExtendedRoleSet;
+class ASTRolesOrUsersSet;
 
 
 /** CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
@@ -34,7 +34,7 @@ public:
 
     std::shared_ptr<ASTSettingsProfileElements> settings;
 
-    std::shared_ptr<ASTExtendedRoleSet> to_roles;
+    std::shared_ptr<ASTRolesOrUsersSet> to_roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

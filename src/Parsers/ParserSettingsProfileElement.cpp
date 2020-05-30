@@ -109,7 +109,7 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
     std::optional<bool> readonly;
 
     if (ParserKeyword{"PROFILE"}.ignore(pos, expected) ||
-        (enable_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected)))
+        (use_inherit_keyword && ParserKeyword{"INHERIT"}.ignore(pos, expected)))
     {
         if (!parseProfileNameOrID(pos, expected, id_mode, parent_profile))
             return false;
@@ -140,7 +140,7 @@ bool ParserSettingsProfileElement::parseImpl(Pos & pos, ASTPtr & node, Expected 
     result->max_value = std::move(max_value);
     result->readonly = readonly;
     result->id_mode = id_mode;
-    result->use_inherit_keyword = enable_inherit_keyword;
+    result->use_inherit_keyword = use_inherit_keyword;
     node = result;
     return true;
 }
@@ -155,10 +155,12 @@ bool ParserSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Expected
     }
     else
     {
+        ParserSettingsProfileElement element_p;
+        element_p.useIDMode(id_mode).useInheritKeyword(use_inherit_keyword);
         do
         {
             ASTPtr ast;
-            if (!ParserSettingsProfileElement{}.useIDMode(id_mode).enableInheritKeyword(enable_inherit_keyword).parse(pos, ast, expected))
+            if (!element_p.parse(pos, ast, expected))
                 return false;
             auto element = typeid_cast<std::shared_ptr<ASTSettingsProfileElement>>(ast);
             elements.push_back(std::move(element));

@@ -7,7 +7,7 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
-#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -51,7 +51,7 @@ namespace
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
             query->hosts = user.allowed_client_hosts;
 
-        if (user.default_roles != ExtendedRoleSet::AllTag{})
+        if (user.default_roles != RolesOrUsersSet::AllTag{})
         {
             if (attach_mode)
                 query->default_roles = user.default_roles.toAST();
