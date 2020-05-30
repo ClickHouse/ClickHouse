@@ -170,15 +170,18 @@ static void getNotEnoughMemoryMessage(std::string & msg)
 #if defined(__linux__)
     try
     {
+        static constexpr size_t buf_size = 4096;
+        char buf[buf_size];
+
         UInt64 max_map_count = 0;
         {
-            ReadBufferFromFile file("/proc/sys/vm/max_map_count");
+            ReadBufferFromFile file("/proc/sys/vm/max_map_count", buf_size, -1, buf);
             readText(max_map_count, file);
         }
 
         UInt64 num_maps = 0;
         {
-            ReadBufferFromFile file("/proc/self/maps");
+            ReadBufferFromFile file("/proc/self/maps", buf_size, -1, buf);
             while (!file.eof())
             {
                 char * next_pos = find_first_symbols<'\n'>(file.position(), file.buffer().end());
@@ -201,7 +204,8 @@ static void getNotEnoughMemoryMessage(std::string & msg)
                 "\nIt looks like that the process is near the limit on number of virtual memory mappings."
                 "\nCurrent number of mappings (/proc/self/maps): {}."
                 "\nLimit on number of mappings (/proc/sys/vm/max_map_count): {}."
-                "\nYou should increase the limit for vm.max_map_count in /etc/sysctl.conf",
+                "\nYou should increase the limit for vm.max_map_count in /etc/sysctl.conf"
+                "\n",
                 num_maps, max_map_count);
         }
     }
