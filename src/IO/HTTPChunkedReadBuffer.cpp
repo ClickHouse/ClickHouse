@@ -43,24 +43,31 @@ HTTPChunkedReadBuffer::HTTPChunkedReadBuffer(ReadBuffer & in_)
 
 size_t HTTPChunkedReadBuffer::readChunkHeader()
 {
+    if (in.eof())
+        throw Exception("Unexpected end of file while reading chunk header of HTTP chunked data", ErrorCodes::UNEXPECTED_END_OF_FILE);
+
+    if (!isHexDigit(*in.position()))
+        throw Exception("Unexpected data instead of HTTP chunk header", ErrorCodes::CORRUPTED_DATA);
+
     size_t res = 0;
-    while (!in.eof() && isHexDigit(*in.position()))
+    do
     {
         res *= 16;
         res += unhex(*in.position());
+        ++in.position();
 
         if (res > max_chunk_size)
-            throw Exception("Too large chunk size in HTTPChunkedReadBuffer", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
-    }
+            throw Exception("Too large chunk size in HTTPChunkedReadBuffer: " + std::to_string(res), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+    } while (!in.eof() && isHexDigit(*in.position()));
 
     if (in.eof())
-        throw Exception("Too large chunk size in HTTPChunkedReadBuffer", ErrorCodes::UNEXPECTED_END_OF_FILE);
+        throw Exception("Unexpected end of file while reading chunk header of HTTP chunked data", ErrorCodes::UNEXPECTED_END_OF_FILE);
 
     /// Chunk extensions. We must skip all unknown extensions (and we don't know any).
     if (*in.position() == ';')
         skipToCarriageReturnOrEOF(in);
     else if (in.eof())
-        throw Exception("Too large chunk size in HTTPChunkedReadBuffer", ErrorCodes::UNEXPECTED_END_OF_FILE);
+        throw Exception("Unexpected end of file while reading chunk header of HTTP chunked data", ErrorCodes::UNEXPECTED_END_OF_FILE);
 
     assertString("\r\n", in);
     return res;
@@ -74,7 +81,7 @@ void HTTPChunkedReadBuffer::readChunkFooter()
 bool HTTPChunkedReadBuffer::nextImpl()
 {
     /// The footer of previous chunk.
-    if (count())
+    if (in.count())
         readChunkFooter();
 
     size_t chunk_size = readChunkHeader();
@@ -84,10 +91,11 @@ bool HTTPChunkedReadBuffer::nextImpl()
         return false;
     }
 
-    if (available() >= chunk_size)
+    if (in.available() >= chunk_size)
     {
         /// Zero-copy read from input.
         working_buffer = Buffer(in.position(), in.position() + chunk_size);
+        in.position() += chunk_size;
     }
     else
     {
