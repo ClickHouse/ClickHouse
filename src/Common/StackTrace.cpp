@@ -378,13 +378,13 @@ std::string StackTrace::toString() const
     return func_cached(frame_pointers.data(), offset, size);
 }
 
-std::string StackTrace::toString(void ** frame_pointers, size_t offset, size_t size)
+std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
 {
-    __msan_unpoison(frames_, size * sizeof(*frames_));
+    __msan_unpoison(frame_pointers_, size * sizeof(*frame_pointers_));
 
     StackTrace::FramePointers frame_pointers_copy{};
     for (size_t i = 0; i < size; ++i)
-        frame_pointers_copy[i] = frame_pointers[i];
+        frame_pointers_copy[i] = frame_pointers_[i];
 
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
     return func_cached(frame_pointers_copy.data(), offset, size);
