@@ -76,6 +76,12 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
             sentry_options_set_environment(options, "test");
         }
 
+        const std::string & http_proxy = config.getString("send_crash_reports.http_proxy", "");
+        if (!http_proxy.empty())
+        {
+            sentry_options_set_http_proxy(options, http_proxy.c_str());
+        }
+
         int init_status = sentry_init(options);
         if (!init_status)
         {

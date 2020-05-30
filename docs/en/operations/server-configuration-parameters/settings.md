@@ -359,7 +359,8 @@ Keys:
 
 -   `enabled` – Boolean flag to enable the feature. Set to `true` to allow sending crash reports.
 -   `endpoint` – Overrides the Sentry endpoint.
--   `anonymize` - Avoid attaching the server hostname to crash report. 
+-   `anonymize` - Avoid attaching the server hostname to crash report.
+-   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.
 
