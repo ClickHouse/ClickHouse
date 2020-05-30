@@ -11,6 +11,8 @@ SRCS(
     InterserverIOHTTPHandler.cpp
     MySQLHandler.cpp
     MySQLHandlerFactory.cpp
+    PostgreSQLHandler.cpp
+    PostgreSQLHandlerFactory.cpp
     NotFoundHandler.cpp
     PrometheusMetricsWriter.cpp
     PrometheusRequestHandler.cpp
