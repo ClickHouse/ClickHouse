@@ -1,7 +1,9 @@
 #pragma once
 
-#include "IServer.h"
 #include <Poco/Net/TCPServerConnectionFactory.h>
+#include <atomic>
+#include <memory>
+#include <Server/IServer.h>
 #include <Core/PostgreSQLProtocol.h>
 
 namespace DB

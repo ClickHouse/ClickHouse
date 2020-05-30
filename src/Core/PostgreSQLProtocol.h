@@ -8,6 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <common/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
@@ -800,7 +801,7 @@ protected:
         const Poco::Net::SocketAddress & address)
     {
         try {
-            context.setUser(user_name, password, address, "");
+            context.setUser(user_name, password, address);
         }
         catch (const Exception &)
         {
@@ -897,7 +898,7 @@ public:
         {
             type_to_method[user_auth_type]->authenticate(user_name, context, mt, address);
             mt.send(Messaging::AuthenticationOk(), true);
-            LOG_INFO(log, "Authentication for user " << user_name << " was successful.");
+            LOG_INFO(log, "Authentication for user {} was successful.", user_name);
             return;
         }
 
