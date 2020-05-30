@@ -191,7 +191,7 @@ void SelectStreamFactory::createForShard(
         else
         {
             auto resolved_id = context.resolveStorageID(main_table);
-            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id);
+            main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
         }
 
 
