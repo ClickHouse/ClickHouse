@@ -615,7 +615,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
             size_t num_nodes = executeQueryOnCluster(
                     task_table.cluster_push,
                     query_alter_ast_string,
-                    nullptr,
                     settings_push,
                     PoolMode::GET_MANY,
                     ClusterExecutionMode::ON_EACH_NODE);
@@ -644,7 +643,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                 UInt64 num_nodes = executeQueryOnCluster(
                         task_table.cluster_push,
                         query_deduplicate_ast_string,
-                        nullptr,
                         task_cluster->settings_push,
                         PoolMode::GET_MANY);
 
@@ -824,7 +822,6 @@ bool ClusterCopier::tryDropPartitionPiece(
         /// We have to drop partition_piece on each replica
         size_t num_shards = executeQueryOnCluster(
                 cluster_push, query,
-                nullptr,
                 settings_push,
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
@@ -1362,9 +1359,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query,
-                                              create_query_push_ast, task_cluster->settings_push,
-                                              PoolMode::GET_MANY);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
         LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
     }
 
@@ -1485,9 +1480,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query = queryToString(create_query_push_ast);
 
         LOG_DEBUG(log, "Create destination tables. Query: {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query,
-                                              create_query_push_ast, task_cluster->settings_push,
-                                              PoolMode::GET_MANY);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, PoolMode::GET_MANY);
         LOG_DEBUG(log, "Destination tables {} have been created on {} shards of {}", getQuotedTable(task_table.table_push), shards, task_table.cluster_push->getShardCount());
     }
     catch (...)
@@ -1554,7 +1547,6 @@ void ClusterCopier::dropHelpingTables(const TaskTable & task_table)
         /// We have to drop partition_piece on each replica
         UInt64 num_nodes = executeQueryOnCluster(
                 cluster_push, query,
-                nullptr,
                 settings_push,
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
@@ -1581,7 +1573,6 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
         /// We have to drop partition_piece on each replica
         UInt64 num_nodes = executeQueryOnCluster(
                 cluster_push, query,
-                nullptr,
                 settings_push,
                 PoolMode::GET_MANY,
                 ClusterExecutionMode::ON_EACH_NODE);
@@ -1794,7 +1785,6 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 UInt64 ClusterCopier::executeQueryOnCluster(
         const ClusterPtr & cluster,
         const String & query,
-        const ASTPtr & query_ast_,
         const Settings & current_settings,
         PoolMode pool_mode,
         ClusterExecutionMode execution_mode,
@@ -1803,14 +1793,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     auto num_shards = cluster->getShardsInfo().size();
     std::vector<UInt64> per_shard_num_successful_replicas(num_shards, 0);
 
-    ASTPtr query_ast;
-    if (query_ast_ == nullptr)
-    {
-        ParserQuery p_query(query.data() + query.size());
-        query_ast = parseQuery(p_query, query, current_settings.max_query_size, current_settings.max_parser_depth);
-    }
-    else
-        query_ast = query_ast_;
+    ParserQuery p_query(query.data() + query.size());
+    ASTPtr query_ast = parseQuery(p_query, query, current_settings.max_query_size, current_settings.max_parser_depth);
 
     /// We will have to execute query on each replica of a shard.
     if (execution_mode == ClusterExecutionMode::ON_EACH_NODE)

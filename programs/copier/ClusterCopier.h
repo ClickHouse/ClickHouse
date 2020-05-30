@@ -186,7 +186,6 @@ protected:
     UInt64 executeQueryOnCluster(
             const ClusterPtr & cluster,
             const String & query,
-            const ASTPtr & query_ast_,
             const Settings & current_settings,
             PoolMode pool_mode = PoolMode::GET_ALL,
             ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
