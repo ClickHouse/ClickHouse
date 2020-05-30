@@ -13,6 +13,7 @@ limitations under the License. */
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
@@ -38,7 +39,12 @@ protected:
 
         Block res = *it;
         ++it;
-        return Chunk(res.getColumns(), res.rows());
+
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = res.info.bucket_num;
+        info->is_overflows = res.info.is_overflows;
+
+        return Chunk(res.getColumns(), res.rows(), std::move(info));
     }
 
 private:
