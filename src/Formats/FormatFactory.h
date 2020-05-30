@@ -201,6 +201,7 @@ void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
 void registerOutputFormatProcessorNull(FormatFactory & factory);
 void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
 void registerOutputFormatProcessorMarkdown(FormatFactory & factory);
+void registerOutputFormatProcessorPostgreSQLWrite(FormatFactory & factory);
 
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
