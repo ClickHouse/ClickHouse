@@ -1293,7 +1293,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             local_context.setSettings(task_cluster->settings_pull);
             local_context.setSetting("skip_unavailable_shards", true);
 
-            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().in);
+            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().getInputStream());
             count = (block) ? block.safeGetByPosition(0).column->getUInt(0) : 0;
         }
 
@@ -1735,7 +1735,7 @@ const auto & settings = context.getSettingsRef();
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
-    return InterpreterFactory::get(query_ast, local_context)->execute().in->read().rows() != 0;
+    return InterpreterFactory::get(query_ast, local_context)->execute().getInputStream()->read().rows() != 0;
 }
 
 bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
