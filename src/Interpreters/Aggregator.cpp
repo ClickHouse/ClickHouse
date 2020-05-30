@@ -768,14 +768,14 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
         " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
         elapsed_seconds,
         rows,
-        formatReadableSizeWithBinarySuffix(uncompressed_bytes),
-        formatReadableSizeWithBinarySuffix(compressed_bytes),
+        ReadableSize(uncompressed_bytes),
+        ReadableSize(compressed_bytes),
         uncompressed_bytes / rows,
         compressed_bytes / rows,
         uncompressed_bytes / compressed_bytes,
         rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(uncompressed_bytes / elapsed_seconds),
-        formatReadableSizeWithBinarySuffix(compressed_bytes / elapsed_seconds));
+        ReadableSize(uncompressed_bytes / elapsed_seconds),
+        ReadableSize(compressed_bytes / elapsed_seconds));
 }
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 {
@@ -871,7 +871,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, formatReadableSizeWithBinarySuffix(max_temporary_block_size_bytes));
+    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, ReadableSize(max_temporary_block_size_bytes));
 }
 
 
@@ -943,9 +943,9 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     size_t rows = result.sizeWithoutOverflowRow();
 
     LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({} rows/sec., {}/sec.)",
-        src_rows, rows, formatReadableSizeWithBinarySuffix(src_bytes),
+        src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, src_rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(src_bytes / elapsed_seconds));
+        ReadableSize(src_bytes / elapsed_seconds));
 }
 
 
@@ -1313,9 +1313,9 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_TRACE(log,
         "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
-        rows, formatReadableSizeWithBinarySuffix(bytes),
+        rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
+        ReadableSize(bytes / elapsed_seconds));
 
     return blocks;
 }
@@ -2178,9 +2178,9 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
     LOG_TRACE(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
-        rows, formatReadableSizeWithBinarySuffix(bytes),
+        rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
-        formatReadableSizeWithBinarySuffix(bytes / elapsed_seconds));
+        ReadableSize(bytes / elapsed_seconds));
 
     if (isCancelled())
         return {};

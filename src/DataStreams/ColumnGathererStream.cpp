@@ -105,7 +105,7 @@ void ColumnGathererStream::readSuffixImpl()
     else
         LOG_DEBUG(log, "Gathered column {} ({} bytes/elem.) in {} sec., {} rows/sec., {}/sec.",
             column_name, static_cast<double>(profile_info.bytes) / profile_info.rows, seconds,
-            profile_info.rows / seconds, formatReadableSizeWithBinarySuffix(profile_info.bytes / seconds));
+            profile_info.rows / seconds, ReadableSize(profile_info.bytes / seconds));
 }
 
 }

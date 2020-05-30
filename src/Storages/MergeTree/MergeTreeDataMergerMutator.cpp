@@ -371,14 +371,13 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
                 ", {} required now (+{}% on overhead); suppressing similar warnings for the next hour",
                 parts.front()->name,
                 (*prev_it)->name,
-                formatReadableSizeWithBinarySuffix(available_disk_space),
-                formatReadableSizeWithBinarySuffix(sum_bytes),
+                ReadableSize(available_disk_space),
+                ReadableSize(sum_bytes),
                 static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100));
         }
 
         if (out_disable_reason)
-            *out_disable_reason = "Insufficient available disk space, required " +
-                formatReadableSizeWithDecimalSuffix(required_disk_space);
+            *out_disable_reason = fmt::format("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
 
         return false;
     }
@@ -949,7 +948,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {
         double elapsed_seconds = merge_entry->watch.elapsedSeconds();
-        LOG_DEBUG(log, "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",             merge_entry->rows_read, all_column_names.size(), merging_column_names.size(), gathering_column_names.size(),             elapsed_seconds, merge_entry->rows_read / elapsed_seconds,             formatReadableSizeWithBinarySuffix(merge_entry->bytes_read_uncompressed / elapsed_seconds));
+        LOG_DEBUG(log,
+            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
+            merge_entry->rows_read,
+            all_column_names.size(),
+            merging_column_names.size(),
+            gathering_column_names.size(),
+            elapsed_seconds,
+            merge_entry->rows_read / elapsed_seconds,
+            ReadableSize(merge_entry->bytes_read_uncompressed / elapsed_seconds));
     }
 
     if (merge_alg != MergeAlgorithm::Vertical)

@@ -506,9 +506,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (elem.read_rows != 0)
                 {
                     LOG_INFO(&Logger::get("executeQuery"), "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
-                        elem.read_rows, formatReadableSizeWithBinarySuffix(elem.read_bytes), elapsed_seconds,
+                        elem.read_rows, ReadableSize(elem.read_bytes), elapsed_seconds,
                         static_cast<size_t>(elem.read_rows / elapsed_seconds),
-                        formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds));
+                        ReadableSize(elem.read_bytes / elapsed_seconds));
                 }
 
                 elem.thread_ids = std::move(info.thread_ids);

@@ -50,13 +50,13 @@ MemoryTracker::~MemoryTracker()
 void MemoryTracker::logPeakMemoryUsage() const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), formatReadableSizeWithBinarySuffix(peak));
+    LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
 }
 
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
-    LOG_DEBUG(&Logger::get("MemoryTracker"), "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), formatReadableSizeWithBinarySuffix(current));
+    LOG_DEBUG(&Logger::get("MemoryTracker"), "Current memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(current));
 }
 
 

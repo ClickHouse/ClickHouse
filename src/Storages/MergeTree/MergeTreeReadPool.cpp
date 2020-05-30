@@ -169,7 +169,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     ProfileEvents::increment(ProfileEvents::SlowRead);
     LOG_DEBUG(log, "Slow read, event №{}: read {} bytes in {} sec., {}/s.",
         backoff_state.num_events, info.bytes_read, info.nanoseconds / 1e9,
-        formatReadableSizeWithBinarySuffix(throughput));
+        ReadableSize(throughput));
 
     if (backoff_state.num_events < backoff_settings.min_events)
         return;
