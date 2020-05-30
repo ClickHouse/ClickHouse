@@ -32,7 +32,8 @@ public:
         nestedDataType()->deserializeAsWholeText(column, istr, settings);
     }
 
-    static DataTypePtr nestedDataType() {
+    static DataTypePtr nestedDataType()
+    {
         static auto dataType = DataTypePtr(std::make_unique<DataTypeTuple>(
             DataTypes({std::make_unique<DataTypeFloat64>(), std::make_unique<DataTypeFloat64>()})));
         return dataType;
@@ -55,7 +56,8 @@ public:
         nestedDataType()->deserializeAsWholeText(column, istr, settings);
     }
 
-    static DataTypePtr nestedDataType() {
+    static DataTypePtr nestedDataType()
+    {
         static auto dataType = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType()));
         return dataType;
     }
@@ -77,7 +79,8 @@ public:
         nestedDataType()->deserializeAsWholeText(column, istr, settings);
     }
 
-    static DataTypePtr nestedDataType() {
+    static DataTypePtr nestedDataType()
+    {
         static auto dataType = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType()));
         return dataType;
     }
@@ -99,7 +102,8 @@ public:
         nestedDataType()->deserializeAsWholeText(column, istr, settings);
     }
 
-    static DataTypePtr nestedDataType() {
+    static DataTypePtr nestedDataType()
+    {
         static auto dataType = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType()));
         return dataType;
     }
