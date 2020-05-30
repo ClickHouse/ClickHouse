@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 
