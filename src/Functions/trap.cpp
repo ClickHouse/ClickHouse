@@ -7,11 +7,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
+#include <ext/scope_guard.h>
 
 #include <thread>
 #include <memory>
 #include <cstdlib>
 #include <unistd.h>
+#include <sys/mman.h>
 
 
 namespace DB
@@ -131,6 +133,25 @@ public:
             else if (mode == "access context")
             {
                 (void)context.getCurrentQueryId();
+            }
+            else if (mode == "mmap many")
+            {
+                std::vector<void *> maps;
+                SCOPE_EXIT(
+                {
+                    //for (void * map : maps)
+                    //    munmap(map, 4096);
+                });
+
+                while (true)
+                {
+                    void * hint = reinterpret_cast<void *>(
+                        std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(thread_local_rng));
+                    void * map = mmap(hint, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                    if (MAP_FAILED == map)
+                        throwFromErrno("Allocator: Cannot mmap", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                    maps.push_back(map);
+                }
             }
             else
                 throw Exception("Unknown trap mode", ErrorCodes::BAD_ARGUMENTS);
