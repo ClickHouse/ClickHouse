@@ -209,6 +209,8 @@ static void getNotEnoughMemoryMessage(std::string & msg)
     {
         msg += "\nCannot obtain additional info about memory usage.";
     }
+#else
+    (void)msg;
 #endif
 }
 
