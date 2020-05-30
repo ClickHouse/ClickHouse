@@ -171,7 +171,6 @@ SRCS(
     FunctionsRound.cpp
     FunctionsStringArray.cpp
     FunctionsStringSimilarity.cpp
-    FunctionUnixTimestamp64.h
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
@@ -285,10 +284,10 @@ SRCS(
     rand64.cpp
     randConstant.cpp
     rand.cpp
+    randomFixedString.cpp
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
-    randomFixedString.cpp
     regexpQuoteMeta.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -308,8 +307,8 @@ SRCS(
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
     registerFunctionsTuple.cpp
-    registerFunctionsVisitParam.cpp
     registerFunctionsUnixTimestamp64.cpp
+    registerFunctionsVisitParam.cpp
     reinterpretAsFixedString.cpp
     reinterpretAsString.cpp
     reinterpretStringAs.cpp
@@ -390,10 +389,10 @@ SRCS(
     toTime.cpp
     toTimeZone.cpp
     toTypeName.cpp
-    toValidUTF8.cpp
     toUnixTimestamp64Micro.cpp
     toUnixTimestamp64Milli.cpp
     toUnixTimestamp64Nano.cpp
+    toValidUTF8.cpp
     toYear.cpp
     toYYYYMM.cpp
     toYYYYMMDD.cpp
@@ -424,8 +423,8 @@ SRCS(
     URL/fragment.cpp
     URL/path.cpp
     URL/pathFull.cpp
-    URL/protocol.cpp
     URL/port.cpp
+    URL/protocol.cpp
     URL/queryStringAndFragment.cpp
     URL/queryString.cpp
     URL/registerFunctionsURL.cpp
