@@ -32,7 +32,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     const Block & header, const Chunk & chunk,
     WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths)
 {
-    size_t num_rows = chunk.getNumRows();
+    size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
 
@@ -57,8 +57,9 @@ void PrettyBlockOutputFormat::calculateWidths(
                 elem.type->serializeAsText(*column, j, out_serialize, format_settings);
             }
 
-            widths[i][j] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
-                UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix));
+            widths[i][j] = std::min<UInt64>(format_settings.pretty.max_column_pad_width + 1,
+                std::min(format_settings.pretty.max_value_width,
+                    UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix)));
             max_widths[i] = std::max(max_widths[i], widths[i][j]);
         }
 
@@ -203,14 +204,25 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             writeChar(' ', out);
     };
 
+    String serialized_value;
+    {
+        WriteBufferFromString out_serialize(serialized_value);
+        type.serializeAsText(column, row_num, out_serialize, format_settings);
+    }
+    if (serialized_value.size() > format_settings.pretty.max_value_width)
+    {
+        serialized_value.resize(format_settings.pretty.max_value_width);
+        serialized_value += "⋯";
+    }
+
     if (type.shouldAlignRightInPrettyFormats())
     {
         write_padding();
-        type.serializeAsText(column, row_num, out, format_settings);
+        out.write(serialized_value.data(), serialized_value.size());
     }
     else
     {
-        type.serializeAsText(column, row_num, out, format_settings);
+        out.write(serialized_value.data(), serialized_value.size());
         write_padding();
     }
 }
