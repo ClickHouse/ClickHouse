@@ -143,7 +143,7 @@ static size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, s
             ++i;
         }
 
-        if (mode == BytesBeforLimit && width >= limit)
+        if (mode == BytesBeforLimit && width > limit)
             return i - (width - limit);
 
         switch (decoder.decode(data[i]))
@@ -172,7 +172,7 @@ static size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, s
                 else
                     next_width += wcwidth(decoder.codepoint);
 
-                if (mode == BytesBeforLimit && next_width >= limit)
+                if (mode == BytesBeforLimit && next_width > limit)
                     return i - rollback;
                 width = next_width;
 

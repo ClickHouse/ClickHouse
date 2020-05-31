@@ -99,6 +99,9 @@ int queryConvert(const CharT * bytes, int length)
 /// and include `\t` to the nearest longer length with multiple of eight.
 size_t computeWidth(const UInt8 * data, size_t size, size_t prefix = 0) noexcept;
 
+/// Calculate the maximum number of bytes, so that substring of this size fits in 'limit' width.
+size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept;
+
 }
 
 
