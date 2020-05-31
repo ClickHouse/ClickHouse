@@ -279,8 +279,9 @@ void maxOptimize(ASTFunction * f_n)
 }
 
 /// optimize for min, max, sum is ready, ToDo: groupBitAnd, groupBitOr, groupBitXor
-void ArithmeticOperationsInAgrFuncMatcher::visit(ASTFunction * function_node)
+void ArithmeticOperationsInAgrFuncMatcher::visit(ASTFunction * function_node, Data data)
 {
+    data = {};
     if (function_node->name == "sum")
         sumOptimize(function_node);
     else if (function_node->name == "min")
@@ -289,13 +290,13 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(ASTFunction * function_node)
         maxOptimize(function_node);
 }
 
-void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTPtr & current_ast)
+void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTPtr & current_ast, Data data)
 {
     if (!current_ast)
         return;
 
     if (auto * function_node = current_ast->as<ASTFunction>())
-        visit(function_node);
+        visit(function_node, data);
 }
 
 bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)

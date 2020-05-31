@@ -13,8 +13,8 @@ class ArithmeticOperationsInAgrFuncMatcher
 public:
     struct Data {};
 
-    static void visit(const ASTPtr & ast);
-    static void visit(ASTFunction * f_n);
+    static void visit(const ASTPtr & ast, Data data);
+    static void visit(ASTFunction * f_n, Data data);
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 
 };
