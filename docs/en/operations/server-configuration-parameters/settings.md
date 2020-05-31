@@ -364,7 +364,6 @@ Keys:
 -   `debug` - Sets the Sentry client into debug mode.
 -   `tmp_path` - Filesystem path for temporary crash report state.
 
-
 **Recommended way to use**
 
 ``` xml
