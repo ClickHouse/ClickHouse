@@ -124,6 +124,11 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     part_info.level = max_level + 1;
     part_info.mutation = max_mutation;
 
+    assignName();
+}
+
+void FutureMergedMutatedPart::assignName()
+{
     if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
@@ -145,6 +150,12 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     }
     else
         name = part_info.getPartName();
+}
+
+void FutureMergedMutatedPart::incrementLevel()
+{
+    ++part_info.level;
+    assignName();
 }
 
 void FutureMergedMutatedPart::updatePath(const MergeTreeData & storage, const ReservationPtr & reservation)

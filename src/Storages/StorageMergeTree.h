@@ -98,7 +98,7 @@ private:
 
     /// Parts that currently participate in merge or mutation.
     /// This set have to be used with `currently_processing_in_background_mutex`.
-    DataParts currently_merging_mutating_parts;
+    std::map<DataPartPtr, size_t, LessDataPart> currently_merging_mutating_parts;
 
 
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;

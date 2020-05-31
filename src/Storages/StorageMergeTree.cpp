@@ -283,7 +283,9 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_, bool is_mutation)
+    CurrentlyMergingPartsTagger(
+        FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_,
+        bool is_mutation, bool allow_concurrent_merges)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -315,10 +317,10 @@ public:
 
         for (const auto & part : future_part.parts)
         {
-            if (storage.currently_merging_mutating_parts.count(part))
+            if (!allow_concurrent_merges && storage.currently_merging_mutating_parts.count(part))
                 throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+            ++storage.currently_merging_mutating_parts[part];
         }
-        storage.currently_merging_mutating_parts.insert(future_part.parts.begin(), future_part.parts.end());
     }
 
     ~CurrentlyMergingPartsTagger()
@@ -329,7 +331,8 @@ public:
         {
             if (!storage.currently_merging_mutating_parts.count(part))
                 std::terminate();
-            storage.currently_merging_mutating_parts.erase(part);
+            if (0 == --storage.currently_merging_mutating_parts[part])
+                storage.currently_merging_mutating_parts.erase(part);
         }
 
         /// Update the information about failed parts in the system.mutations table.
@@ -596,7 +599,12 @@ bool StorageMergeTree::merge(
         else
         {
             UInt64 disk_space = getStoragePolicy()->getMaxUnreservedFreeSpace();
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+            selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+
+            /// Concurrent merge of the same range.
+            if (final_whole_partition && currently_merging_mutating_parts.count(future_part.part_info))
+                future_part.incrementLevel();
         }
 
         if (!selected)
@@ -612,7 +620,9 @@ bool StorageMergeTree::merge(
             return false;
         }
 
-        merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, false);
+        merging_tagger.emplace(
+            future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts),
+            *this, false, final_whole_partition);
     }
 
     auto table_id = getStorageID();
@@ -752,7 +762,7 @@ bool StorageMergeTree::tryMutatePart()
             future_part.name = part->getNewName(new_part_info);
             future_part.type = part->getType();
 
-            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true);
+            tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, true, false);
             break;
         }
     }

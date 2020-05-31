@@ -40,6 +40,9 @@ struct FutureMergedMutatedPart
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeDataPartType future_part_type);
 
     void updatePath(const MergeTreeData & storage, const ReservationPtr & reservation);
+
+    void assignName();
+    void incrementLevel();
 };
 
 
