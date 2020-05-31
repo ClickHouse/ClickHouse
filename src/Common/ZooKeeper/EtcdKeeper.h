@@ -156,9 +156,8 @@ private:
             clock::time_point time;
         };
 
-        String host;
-
         String root_path;
+        String host;
         ACLs default_acls;
 
         Poco::Timespan operation_timeout;
@@ -218,9 +217,7 @@ private:
 
         void callWatchRequest(
             const std::string & key,
-            bool list_watch,
-            std::unique_ptr<Watch::Stub> & stub,
-            CompletionQueue & cq);
+            bool list_watch);
 
         void readWatchResponse();
 
