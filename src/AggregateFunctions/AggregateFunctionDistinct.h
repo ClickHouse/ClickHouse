@@ -106,7 +106,8 @@ public:
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         SipHash hash;
-        for (size_t i = 0; i < num_arguments; ++i) {
+        for (size_t i = 0; i < num_arguments; ++i)
+        {
             columns[i]->updateHashWithValue(row_num, hash);
         }
 
