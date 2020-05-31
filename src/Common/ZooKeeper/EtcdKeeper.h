@@ -14,7 +14,17 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/StringUtils/StringUtils.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #include <grpcpp/grpcpp.h>
+#pragma GCC diagnostic pop
+
 #include <Common/ZooKeeper/rpc.grpc.pb.h>
 
 using etcdserverpb::PutRequest;
