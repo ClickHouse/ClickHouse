@@ -22,7 +22,7 @@
 <meta name="description" content="{{ description }}" />
 <meta name="keywords"
       content="ClickHouse, DBMS, OLAP, SQL, {{ _('open-source') }}, {{ _('relational') }}, {{ _('analytics') }}, {{ _('analytical') }}, {{ _('Big Data') }}, {{ _('web-analytics') }}" />
-{% if config.extra.single_page or config.extra.version_prefix %}
+{% if config and (config.extra.single_page or config.extra.version_prefix) %}
 <meta name="robots" content="noindex,follow" />
 {% endif %}
 
