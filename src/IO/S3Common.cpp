@@ -10,10 +10,10 @@
 #    include <aws/core/utils/logging/LogSystemInterface.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
-#    include <IO/S3/PocoHttpClientFactory.h>
-#    include <IO/S3/PocoHttpClientFactory.cpp>
-#    include <IO/S3/PocoHttpClient.h>
-#    include <IO/S3/PocoHttpClient.cpp>
+#    include <IO/S3/PocoHTTPClientFactory.h>
+#    include <IO/S3/PocoHTTPClientFactory.cpp>
+#    include <IO/S3/PocoHTTPClient.h>
+#    include <IO/S3/PocoHTTPClient.cpp>
 #    include <boost/algorithm/string.hpp>
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
@@ -76,7 +76,7 @@ namespace S3
         aws_options = Aws::SDKOptions{};
         Aws::InitAPI(aws_options);
         Aws::Utils::Logging::InitializeAWSLogging(std::make_shared<AWSLogger>());
-        Aws::Http::SetHttpClientFactory(std::make_shared<PocoHttpClientFactory>());
+        Aws::Http::SetHttpClientFactory(std::make_shared<PocoHTTPClientFactory>());
     }
 
     ClientFactory::~ClientFactory()
