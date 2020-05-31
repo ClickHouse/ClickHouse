@@ -30,7 +30,7 @@ SELECT
 
 将Date或DateTime转换为包含季度编号的UInt8类型的数字。
 
-## 转换为月份 {#tomonth}
+## toMonth {#tomonth}
 
 将Date或DateTime转换为包含月份编号（1-12）的UInt8类型的数字。
 
