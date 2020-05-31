@@ -280,7 +280,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
     String query(begin, query_end);
     BlockIO res;
-    QueryPipeline & pipeline = res.pipeline;
 
     String query_for_logging;
 
@@ -338,7 +337,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.resetInputCallbacks();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
-        bool use_processors = interpreter->canExecuteWithProcessors();
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
@@ -358,10 +356,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
-        if (use_processors)
-            pipeline = interpreter->executeWithProcessors();
-        else
-            res = interpreter->execute();
+        res = interpreter->execute();
+        QueryPipeline & pipeline = res.pipeline;
+        bool use_processors = pipeline.initialized();
 
         if (res.pipeline.initialized())
             use_processors = true;

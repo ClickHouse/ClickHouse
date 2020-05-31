@@ -238,20 +238,9 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
     if (!storage)
     {
-        if (query_info.force_tree_shaped_pipeline)
-        {
-            /// This flag means that pipeline must be tree-shaped,
-            /// so we can't enable processors for InterpreterSelectQuery here.
-            auto stream = InterpreterSelectQuery(modified_query_info.query, *modified_context, std::make_shared<OneBlockInputStream>(header),
-                                                 SelectQueryOptions(processed_stage).analyze()).execute().in;
-
-            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
-            return pipes;
-        }
-
         auto pipe = InterpreterSelectQuery(modified_query_info.query, *modified_context,
                                              std::make_shared<OneBlockInputStream>(header),
-                                             SelectQueryOptions(processed_stage).analyze()).executeWithProcessors().getPipe();
+                                             SelectQueryOptions(processed_stage).analyze()).execute().pipeline.getPipe();
         pipe.addInterpreterContext(modified_context);
         pipes.emplace_back(std::move(pipe));
         return pipes;
@@ -276,15 +265,8 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
         InterpreterSelectQuery interpreter{modified_query_info.query, *modified_context, SelectQueryOptions(processed_stage)};
 
-        if (query_info.force_tree_shaped_pipeline)
         {
-            BlockInputStreamPtr stream = interpreter.execute().in;
-            Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
-            pipes.emplace_back(std::move(pipe));
-        }
-        else
-        {
-            Pipe pipe = interpreter.executeWithProcessors().getPipe();
+            Pipe pipe = interpreter.execute().pipeline.getPipe();
             pipes.emplace_back(std::move(pipe));
         }
 
