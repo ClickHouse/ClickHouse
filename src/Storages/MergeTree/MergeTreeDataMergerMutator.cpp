@@ -715,13 +715,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         Pipe pipe(std::move(input));
 
-        if (data.hasPrimaryKey() || data.hasSkipIndices())
+        if (data.hasSortingKey())
         {
-            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_and_skip_indices_expr);
+            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr);
             pipe.addSimpleTransform(std::move(expr));
-
-            auto materializing = std::make_shared<MaterializingTransform>(pipe.getHeader());
-            pipe.addSimpleTransform(std::move(materializing));
         }
 
         pipes.emplace_back(std::move(pipe));
@@ -795,6 +792,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (need_remove_expired_values)
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge, force_ttl);
+
+    if (data.hasSkipIndices())
+    {
+        merged_stream = std::make_shared<ExpressionBlockInputStream>(merged_stream, data.skip_indices_expr);
+        merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
+    }
 
     MergedBlockOutputStream to{
         new_data_part,
