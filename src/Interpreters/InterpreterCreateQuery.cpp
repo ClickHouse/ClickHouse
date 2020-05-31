@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -472,6 +473,21 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                                     "due to expected negative impact on performance. "
                                     "It can be enabled with the \"allow_suspicious_low_cardinality_types\" setting.",
                                     ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY);
+            }
+        }
+    }
+
+    if (!create.attach && !context.getSettingsRef().allow_experimental_geo_types)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            const auto& type = name_and_type_pair.type->getName();
+            if (type == "MultiPolygon" || type == "Polygon" || type == "Ring" || type == "Point")
+            {
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type + "' because experimental geo types are not allowed. "
+                                 + "Set setting allow_experimental_geo_types = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }
     }
