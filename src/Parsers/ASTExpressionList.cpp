@@ -37,9 +37,7 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
         {
             if (separator)
                 settings.ostr << separator;
-            settings.ostr << ' ';
         }
-
 
         if (children.size() > 1)
             settings.ostr << indent_str;
