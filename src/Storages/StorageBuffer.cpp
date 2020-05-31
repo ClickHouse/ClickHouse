@@ -234,7 +234,7 @@ Pipes StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & pipe : pipes_from_buffers)
-            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).executeWithProcessors().getPipe();
+            pipe = InterpreterSelectQuery(query_info.query, context, std::move(pipe), SelectQueryOptions(processed_stage)).execute().pipeline.getPipe();
 
     if (query_info.prewhere_info)
     {
