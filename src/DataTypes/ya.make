@@ -9,8 +9,8 @@ SRCS(
     convertMySQLDataType.cpp
     DataTypeAggregateFunction.cpp
     DataTypeArray.cpp
+    DataTypeCustomGeo.cpp
     DataTypeCustomIPv4AndIPv6.cpp
-    DataTypeCustomPoint.cpp
     DataTypeCustomSimpleAggregateFunction.cpp
     DataTypeCustomSimpleTextSerialization.cpp
     DataTypeDate.cpp
