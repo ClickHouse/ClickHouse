@@ -121,6 +121,7 @@ if (PROTOBUF_GENERATE_CPP_SCRIPT_MODE)
         set (pragma_push "#pragma GCC diagnostic push\n")
         set (pragma_pop "#pragma GCC diagnostic pop\n")
         set (pragma_disable_warnings "#pragma GCC diagnostic ignored \"-Wall\"\n"
+		                     "#pragma GCC diagnostic ignored \"-Wmaybe-uninitialized\"\n"
                                      "#pragma GCC diagnostic ignored \"-Wextra\"\n"
                                      "#pragma GCC diagnostic ignored \"-Warray-bounds\"\n"
                                      "#pragma GCC diagnostic ignored \"-Wold-style-cast\"\n"
