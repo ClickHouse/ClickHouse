@@ -18,7 +18,7 @@ SELECT
 
 仅支持与UTC相差一整小时的时区。
 
-## 转换为时区 {#totimezone}
+## toTimeZone {#totimezone}
 
 将Date或DateTime转换为指定的时区。
 
