@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -85,6 +86,11 @@ public:
     {
         auto col_in_untyped = block.getByPosition(arguments[0]).column;
         const double inverse_probability = assert_cast<const ColumnConst &>(*block.getByPosition(arguments[1]).column).getValue<double>();
+
+        if (inverse_probability < 0.0 || 1.0 < inverse_probability)
+        {
+            throw Exception("Second argument of function " + getName() + " must be from `0.0` to `1.0`", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        }
 
         if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
         {
