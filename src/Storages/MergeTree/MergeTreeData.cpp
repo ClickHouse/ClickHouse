@@ -406,6 +406,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     }
 
     ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
+    ASTPtr skip_indices_expr_list = new_primary_key_expr_list->clone();
     ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
 
     MergeTreeIndices new_indices;
@@ -435,6 +436,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
             {
                 skip_indices_with_primary_key_expr_list->children.push_back(expr->clone());
                 skip_indices_with_sorting_key_expr_list->children.push_back(expr->clone());
+                skip_indices_expr_list->children.push_back(expr->clone());
             }
 
             indices_names.insert(new_indices.back()->name);
@@ -445,7 +447,12 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
     auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
             skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
 
-    auto syntax_sorting = SyntaxAnalyzer(global_context, {}).analyze(
+    auto syntax_indices = SyntaxAnalyzer(global_context, {}).analyze(
+            skip_indices_with_primary_key_expr_list, all_columns);
+    auto new_indices_expr = ExpressionAnalyzer(
+            skip_indices_expr_list, syntax_indices, global_context).getActions(false);
+
+    auto syntax_sorting = SyntaxAnalyzer(global_context).analyze(
             skip_indices_with_sorting_key_expr_list, all_columns);
     auto new_indices_with_sorting_key_expr = ExpressionAnalyzer(
             skip_indices_with_sorting_key_expr_list, syntax_sorting, global_context).getActions(false);
@@ -471,6 +478,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
 
         setConstraints(metadata.constraints);
 
+        skip_indices_expr = new_indices_expr;
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
         sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
     }
