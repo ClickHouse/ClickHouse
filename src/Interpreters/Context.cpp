@@ -2017,7 +2017,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>(*this);
 
     return shared->action_locks_manager;
 }
