@@ -2181,7 +2181,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
         auto zookeeper = getZooKeeper();
 
-        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
+        ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, false);
 
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
@@ -3136,6 +3136,11 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         return true;
     }
 
+    /// If we are doing OPTIMIZE PARTITION FINAL, we can skip checks on currently merging parts,
+    /// Because merging of whole partition is legal nevertheless (it won't introduce intersecting parts).
+    /// This logic greatly simplifies testing and user experience, when it's expected that the query will force merge.
+    bool final_whole_partition = partition && final;
+
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
@@ -3143,7 +3148,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
         auto zookeeper = getZooKeeper();
-        ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
+        ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper, final_whole_partition);
 
         auto handle_noop = [&] (const String & message)
         {

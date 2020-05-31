@@ -565,16 +565,21 @@ bool StorageMergeTree::merge(
     /// You must call destructor with unlocked `currently_processing_in_background_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
+    /// If we are doing OPTIMIZE PARTITION FINAL, we can skip checks on currently merging parts,
+    /// Because merging of whole partition is legal nevertheless (it won't introduce intersecting parts).
+    /// This logic greatly simplifies testing and user experience, when it's expected that the query will force merge.
+    bool final_whole_partition = !partition_id.empty() && final;
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
+        auto can_merge = [this, &lock, final_whole_partition] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
             /// This predicate is checked for the first part of each partition.
             /// (left = nullptr, right = "first part of partition")
             if (!left)
-                return !currently_merging_mutating_parts.count(right);
-            return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
+                return final_whole_partition || !currently_merging_mutating_parts.count(right);
+            return (final_whole_partition || (!currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)))
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };
 
@@ -915,7 +920,7 @@ bool StorageMergeTree::optimize(
 
         for (const String & partition_id : partition_ids)
         {
-            if (!merge(true, partition_id, true, deduplicate, &disable_reason))
+            if (!merge(true, partition_id, final, deduplicate, &disable_reason))
             {
                 std::stringstream message;
                 message << "Cannot OPTIMIZE table";

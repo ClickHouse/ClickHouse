@@ -70,6 +70,7 @@ public:
     /// If not found, return an empty string.
     String getContainingPart(const MergeTreePartInfo & part_info) const;
     String getContainingPart(const String & name) const;
+    MergeTreePartInfo getContainingPartInfo(const MergeTreePartInfo & part_info) const;
 
     Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
 

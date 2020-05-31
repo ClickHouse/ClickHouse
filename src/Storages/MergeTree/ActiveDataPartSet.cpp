@@ -75,6 +75,15 @@ String ActiveDataPartSet::getContainingPart(const String & name) const
 }
 
 
+MergeTreePartInfo ActiveDataPartSet::getContainingPartInfo(const MergeTreePartInfo & part_info) const
+{
+    auto it = getContainingPartImpl(part_info);
+    if (it != part_info_to_name.end())
+        return it->first;
+    return {};
+}
+
+
 std::map<MergeTreePartInfo, String>::const_iterator
 ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) const
 {

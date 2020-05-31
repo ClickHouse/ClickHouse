@@ -1298,9 +1298,9 @@ size_t ReplicatedMergeTreeQueue::countFinishedMutations() const
 }
 
 
-ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper)
+ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, bool allow_currently_merging)
 {
-    return ReplicatedMergeTreeMergePredicate(*this, zookeeper);
+    return ReplicatedMergeTreeMergePredicate(*this, zookeeper, allow_currently_merging);
 }
 
 
@@ -1395,7 +1395,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     else
         LOG_DEBUG(log, "Trying to finalize {} mutations", candidates.size());
 
-    auto merge_pred = getMergePredicate(zookeeper);
+    auto merge_pred = getMergePredicate(zookeeper, false);
 
     std::vector<const ReplicatedMergeTreeMutationEntry *> finished;
     for (const ReplicatedMergeTreeMutationEntryPtr & candidate : candidates)
@@ -1562,9 +1562,10 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 }
 
 ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
-    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper)
+    ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper, bool allow_currently_merging_)
     : queue(queue_)
     , prev_virtual_parts(queue.format_version)
+    , allow_currently_merging(allow_currently_merging_)
 {
     {
         std::lock_guard lock(queue.state_mutex);
@@ -1740,16 +1741,28 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
     {
         /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
         /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-        String containing_part = queue.virtual_parts.getContainingPart(part->info);
-        if (containing_part != part->name)
+        MergeTreePartInfo containing_part = queue.virtual_parts.getContainingPartInfo(part->info);
+
+        if (allow_currently_merging)
+        {
+            /// Only check for intersecting parts.
+            if (containing_part.min_block < part->info.min_block || containing_part.max_block > part->info.max_block)
+            {
+                if (out_reason)
+                    *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part.getPartName()
+                        + " that is intersecting proposed merge range";
+                return false;
+            }
+        }
+        else if (containing_part != part->info)
         {
             if (out_reason)
-                *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
+                *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part.getPartName();
             return false;
         }
     }
 
-    if (left_max_block + 1 < right_min_block)
+    if (!allow_currently_merging && (left_max_block + 1 < right_min_block))
     {
         /// Fake part which will appear as merge result
         MergeTreePartInfo gap_part_info(
