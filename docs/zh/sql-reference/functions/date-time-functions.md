@@ -26,7 +26,7 @@ SELECT
 
 将Date或DateTime转换为包含年份编号（AD）的UInt16类型的数字。
 
-## 转换为季度 {#toquarter}
+## toQuarter {#toquarter}
 
 将Date或DateTime转换为包含季度编号的UInt8类型的数字。
 
