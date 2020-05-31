@@ -1,6 +1,9 @@
 #include <utility>
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <atomic>
+#include <memory>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <common/logger_useful.h>
