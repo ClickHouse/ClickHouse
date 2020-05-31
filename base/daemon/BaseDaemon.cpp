@@ -290,7 +290,7 @@ static void sanitizerDeathCallback()
 {
     Poco::Logger * log = &Poco::Logger::get("BaseDaemon");
 
-    StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
+    StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
 
     {
         std::stringstream message;
