@@ -89,7 +89,7 @@ namespace CurrentMetrics
 namespace
 {
 
-void setupTmpPath(Logger * log, const std::string & path)
+void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -212,7 +212,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
-    Logger * log = &logger();
+    Poco::Logger * log = &logger();
     UseSSL use_ssl;
 
     ThreadStatus thread_status;
