@@ -574,11 +574,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-## query\_thread\_log {#server_configuration_parameters-query-thread-log}
+## query\_thread\_log {#server_configuration_parameters-query_thread_log}
 
 Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
 
-Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query-thread-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query\_thread\_log](../../operations/server-configuration-parameters/settings.md#system_tables-query_thread_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 

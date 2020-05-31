@@ -278,13 +278,15 @@ private:
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
-template <typename Base, size_t N, size_t Alignment>
+template <typename Base, size_t _initial_bytes, size_t Alignment>
 class AllocatorWithStackMemory : private Base
 {
 private:
-    alignas(Alignment) char stack_memory[N];
+    alignas(Alignment) char stack_memory[_initial_bytes];
 
 public:
+    static constexpr size_t initial_bytes = _initial_bytes;
+
     /// Do not use boost::noncopyable to avoid the warning about direct base
     /// being inaccessible due to ambiguity, when derived classes are also
     /// noncopiable (-Winaccessible-base).
@@ -295,10 +297,10 @@ public:
 
     void * alloc(size_t size)
     {
-        if (size <= N)
+        if (size <= initial_bytes)
         {
             if constexpr (Base::clear_memory)
-                memset(stack_memory, 0, N);
+                memset(stack_memory, 0, initial_bytes);
             return stack_memory;
         }
 
@@ -307,18 +309,18 @@ public:
 
     void free(void * buf, size_t size)
     {
-        if (size > N)
+        if (size > initial_bytes)
             Base::free(buf, size);
     }
 
     void * realloc(void * buf, size_t old_size, size_t new_size)
     {
         /// Was in stack_memory, will remain there.
-        if (new_size <= N)
+        if (new_size <= initial_bytes)
             return buf;
 
         /// Already was big enough to not fit in stack_memory.
-        if (old_size > N)
+        if (old_size > initial_bytes)
             return Base::realloc(buf, old_size, new_size, Alignment);
 
         /// Was in stack memory, but now will not fit there.
@@ -330,9 +332,19 @@ public:
 protected:
     static constexpr size_t getStackThreshold()
     {
-        return N;
+        return initial_bytes;
     }
 };
+
+// A constant that gives the number of initially available bytes in
+// the allocator. Used to check that this number is in sync with the
+// initial size of array or hash table that uses the allocator.
+template<typename TAllocator>
+constexpr size_t allocatorInitialBytes = 0;
+
+template<typename Base, size_t initial_bytes, size_t Alignment>
+constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
+    Base, initial_bytes, Alignment>> = initial_bytes;
 
 
 #if !__clang__

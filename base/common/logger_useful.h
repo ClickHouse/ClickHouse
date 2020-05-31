@@ -15,15 +15,27 @@ using Poco::Message;
 using DB::LogsLevel;
 using DB::CurrentThread;
 
-/// Logs a message to a specified logger with that level.
 
-#define LOG_IMPL(logger, priority, PRIORITY, ...) do                    \
+namespace
+{
+    template <typename... Ts> constexpr size_t numArgs(Ts &&...) { return sizeof...(Ts); }
+    template <typename T, typename... Ts> constexpr auto firstArg(T && x, Ts &&...) { return std::forward<T>(x); }
+}
+
+
+/// Logs a message to a specified logger with that level.
+/// If more than one argument is provided,
+///  the first argument is interpreted as template with {}-substitutions
+///  and the latter arguments treat as values to substitute.
+/// If only one argument is provided, it is threat as message without substitutions.
+
+#define LOG_IMPL(logger, priority, PRIORITY, ...) do                              \
 {                                                                                 \
     const bool is_clients_log = (CurrentThread::getGroup() != nullptr) &&         \
             (CurrentThread::getGroup()->client_logs_level >= (priority));         \
     if ((logger)->is((PRIORITY)) || is_clients_log)                               \
     {                                                                             \
-        std::string formatted_message = fmt::format(__VA_ARGS__);                 \
+        std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
         if (auto channel = (logger)->getChannel())                                \
         {                                                                         \
             std::string file_function;                                            \

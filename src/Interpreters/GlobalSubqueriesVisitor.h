@@ -103,7 +103,7 @@ public:
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
-            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns});
+            auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, ColumnsDescription{columns}, ConstraintsDescription{});
             StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
@@ -134,7 +134,7 @@ public:
                 ast = database_and_table_name;
 
             external_tables[external_table_name] = external_storage_holder;
-            subqueries_for_sets[external_table_name].source = interpreter->execute().in;
+            subqueries_for_sets[external_table_name].source = interpreter->execute().getInputStream();
             subqueries_for_sets[external_table_name].table = external_storage;
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,

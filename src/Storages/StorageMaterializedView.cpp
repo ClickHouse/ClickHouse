@@ -149,7 +149,7 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table})->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, global_context)->getStorageID();
     }
 
     if (!select_table_id.empty())
@@ -204,7 +204,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -362,12 +362,12 @@ void StorageMaterializedView::shutdown()
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return DatabaseCatalog::instance().getTable(target_table_id);
+    return DatabaseCatalog::instance().getTable(target_table_id, global_context);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    return DatabaseCatalog::instance().tryGetTable(target_table_id);
+    return DatabaseCatalog::instance().tryGetTable(target_table_id, global_context);
 }
 
 Strings StorageMaterializedView::getDataPaths() const

@@ -86,7 +86,7 @@ public:
     {}
 
     /// Analyze and rewrite not select query
-    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, ConstStoragePtr storage = {}) const;
+    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, ConstStoragePtr storage = {}, bool allow_aggregations = false) const;
 
     /// Analyze and rewrite select query
     SyntaxAnalyzerResultPtr analyzeSelect(
