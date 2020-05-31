@@ -32,16 +32,14 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <amqpcpp.h>
 
-
-enum
- {
-    RESCHEDULE_WAIT = 500,
-    Connection_setup_sleep = 200,
-    Connection_setup_retries_max = 1000
- };
-
 namespace DB
 {
+
+enum
+{
+    Connection_setup_sleep = 200,
+    Connection_setup_retries_max = 1000
+};
 
 namespace ErrorCodes
 {
@@ -77,8 +75,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , evbase(event_base_new())
         , eventHandler(evbase, log)
-        , connection(&eventHandler, 
-          AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
+        , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
 {
     size_t cnt_retries = 0;
     while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
@@ -136,9 +133,10 @@ void StorageRabbitMQ::startup()
             pushReadBuffer(createReadBuffer());
             ++num_created_consumers;
         }
-        catch (const AMQP::Exception &)
+        catch (const AMQP::Exception & e)
         {
-            tryLogCurrentException(log);
+            std::cerr << e.what();
+            throw;
         }
     }
 
@@ -202,9 +200,8 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
     ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-            consumer_channel, eventHandler, exchange_name, routing_key, next_channel_id, 
-            log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(consumer_channel, eventHandler, exchange_name,
+            routing_key, next_channel_id, log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
 }
 
 
@@ -266,7 +263,7 @@ void StorageRabbitMQ::threadFunc()
 
     /// Wait for attached views
     if (!stream_cancelled)
-        task->scheduleAfter(RESCHEDULE_WAIT);
+        task->activateAndSchedule();
 }
 
 
@@ -462,8 +459,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         return StorageRabbitMQ::create(
-                args.table_id, args.context, args.columns, host_port, routing_key, exchange, 
-                format, row_delimiter, num_consumers, num_queues, hash_exchange);
+                args.table_id, args.context, args.columns,
+                host_port, routing_key, exchange, format, row_delimiter, num_consumers, num_queues, hash_exchange);
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
