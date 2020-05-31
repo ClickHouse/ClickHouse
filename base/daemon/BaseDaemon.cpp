@@ -288,7 +288,7 @@ extern "C" void __sanitizer_set_death_callback(void (*)());
 
 static void sanitizerDeathCallback()
 {
-    Logger * log = &Logger::get("BaseDaemon");
+    Poco::Logger * log = &Poco::Logger::get("BaseDaemon");
 
     StringRef query_id = CurrentThread::getQueryId();   /// This is signal safe.
 
@@ -498,10 +498,10 @@ void debugIncreaseOOMScore()
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(&Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
+        LOG_WARNING(&Poco::Logger::root(), "Failed to adjust OOM score: '{}'.", e.displayText());
         return;
     }
-    LOG_INFO(&Logger::root(), "Set OOM score adjustment to {}", new_score);
+    LOG_INFO(&Poco::Logger::root(), "Set OOM score adjustment to {}", new_score);
 }
 #else
 void debugIncreaseOOMScore() {}
