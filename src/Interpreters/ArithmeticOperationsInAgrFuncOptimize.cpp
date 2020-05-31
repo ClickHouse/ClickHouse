@@ -289,7 +289,8 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(ASTFunction * function_node)
         maxOptimize(function_node);
 }
 
-void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTPtr & current_ast) {
+void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTPtr & current_ast)
+{
     if (!current_ast)
         return;
 
