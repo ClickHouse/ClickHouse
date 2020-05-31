@@ -1,6 +1,8 @@
 #include <Common/UTF8Helpers.h>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <widechar_width.h>
+
 
 namespace DB
 {
@@ -94,6 +96,13 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
     {
+        /// Quickly skip regular ASCII
+        while (i < size && isPrintableASCII(data[i]))
+        {
+            ++width;
+            ++i;
+        }
+
         switch (decoder.decode(data[i]))
         {
             case UTF8Decoder::REJECT:
