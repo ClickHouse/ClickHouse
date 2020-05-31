@@ -1175,7 +1175,7 @@ private:
                 /// Poll for changes after a cancellation check, otherwise it never reached
                 /// because of progress updates from server.
                 if (connection->poll(poll_interval))
-                  break;
+                    break;
             }
 
             if (!receiveAndProcessPacket())
