@@ -1,5 +1,6 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
@@ -18,18 +19,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger)
-        : IDatabase(name_), log(&Logger::get(logger))
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, const Context & context)
+        : IDatabase(name_), log(&Logger::get(logger)), global_context(context.getGlobalContext())
 {
 }
 
-bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name) const
+bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, const Context &) const
 {
     std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name) const
+StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, const Context &) const
 {
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
@@ -38,7 +39,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name) con
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)

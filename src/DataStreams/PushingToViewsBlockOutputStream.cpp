@@ -59,7 +59,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
 
         ASTPtr query;
         BlockOutputStreamPtr out;
@@ -274,7 +274,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
                 StorageValues::create(
                     storage->getStorageID(), storage->getColumns(), block, storage->getVirtuals()));
             select.emplace(view.query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select->execute().in);
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

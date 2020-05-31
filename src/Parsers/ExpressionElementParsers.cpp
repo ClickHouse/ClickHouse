@@ -1471,18 +1471,18 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     TTLMode mode;
-    PartDestinationType destination_type = PartDestinationType::DELETE;
+    DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 
     if (s_to_disk.ignore(pos))
     {
         mode = TTLMode::MOVE;
-        destination_type = PartDestinationType::DISK;
+        destination_type = DataDestinationType::DISK;
     }
     else if (s_to_volume.ignore(pos))
     {
         mode = TTLMode::MOVE;
-        destination_type = PartDestinationType::VOLUME;
+        destination_type = DataDestinationType::VOLUME;
     }
     else if (s_group_by.ignore(pos))
     {

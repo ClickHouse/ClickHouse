@@ -598,7 +598,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) server configuration parameter.
+Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Example:
 
