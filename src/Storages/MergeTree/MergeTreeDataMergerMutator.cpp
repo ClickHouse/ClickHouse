@@ -717,7 +717,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (data.hasSortingKey())
         {
-            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_expr);
+            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.getSortingKey().expression);
             pipe.addSimpleTransform(std::move(expr));
         }
 
