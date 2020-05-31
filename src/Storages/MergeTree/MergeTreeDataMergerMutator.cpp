@@ -799,7 +799,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
     }
 
-
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
