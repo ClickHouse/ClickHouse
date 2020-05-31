@@ -4,6 +4,8 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
+    <settings><optimize_aggregation_in_order>1</optimize_aggregation_in_order></settings>
+
     <substitutions>
         <substitution>
            <name>table</name>
@@ -14,9 +16,8 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT avg(length(URL)) as x from {table} GROUP BY CounterID FORMAT Null settings optimize_aggregation_in_order = 1</query>
-    <query>SELECT avg(length(URL)) as x from {table} GROUP BY -CounterID FORMAT Null settings optimize_aggregation_in_order = 1</query>
-    <query>SELECT avg(length(URL)) as x from {table} GROUP BY CounterID, EventDate FORMAT Null settings optimize_aggregation_in_order = 1</query>
-    <query>SELECT avg(length(URL)) as x from hits_10m_single GROUP BY CounterID, EventDate, intHash32(UserID) FORMAT Null settings optimize_aggregation_in_order = 1</query>
+    <query>SELECT avg(length(URL)) as x from hits_100m_single GROUP BY CounterID FORMAT Null</query>
+    <query>SELECT avg(length(URL)) as x from {table} GROUP BY CounterID, EventDate FORMAT Null</query>
+    <query>SELECT avg(length(URL)) as x from hits_10m_single GROUP BY CounterID, EventDate, intHash32(UserID) FORMAT Null</query>
 
 </test>
