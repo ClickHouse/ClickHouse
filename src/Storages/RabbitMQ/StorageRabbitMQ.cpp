@@ -45,10 +45,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -157,6 +155,7 @@ void StorageRabbitMQ::shutdown()
         popReadBuffer();
     }
 
+    connection.close();
     task->deactivate();
 }
 
@@ -201,8 +200,10 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
         next_channel_id += num_queues;
     update_channel_id = true;
 
+    ChannelPtr consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-            std::make_shared<AMQP::TcpChannel>(&connection), eventHandler, exchange_name, routing_key, next_channel_id, 
+            consumer_channel, eventHandler, exchange_name, routing_key, next_channel_id, 
             log, row_delimiter, bind_by_id, hash_exchange, num_queues, stream_cancelled);
 }
 
@@ -460,7 +461,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             }
         }
 
-        return StorageRabbitMQ::create(args.table_id, args.context, args.columns, host_port, routing_key, exchange, 
+        return StorageRabbitMQ::create(
+                args.table_id, args.context, args.columns, host_port, routing_key, exchange, 
                 format, row_delimiter, num_consumers, num_queues, hash_exchange);
     };
 
