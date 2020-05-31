@@ -13,8 +13,8 @@ SRCS(
     DataTypeCustomSimpleAggregateFunction.cpp
     DataTypeCustomSimpleTextSerialization.cpp
     DataTypeDate.cpp
-    DataTypeDateTime.cpp
     DataTypeDateTime64.cpp
+    DataTypeDateTime.cpp
     DataTypeDecimalBase.cpp
     DataTypeEnum.cpp
     DataTypeFactory.cpp
@@ -36,6 +36,7 @@ SRCS(
     getMostSubtype.cpp
     IDataType.cpp
     NestedUtils.cpp
+
 )
 
 END()
