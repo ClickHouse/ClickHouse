@@ -383,7 +383,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
         return false;
     }
 
-    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {} (all parts within partition)", parts.size(), parts.front()->name, parts.back()->name);
     future_part.assign(std::move(parts));
     available_disk_space -= required_disk_space;
     return true;
@@ -1234,7 +1234,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     + " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
     }
 
-    LOG_TRACE(log, "Merged {} parts: from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    LOG_TRACE(log, "Merged {} parts: from {} to {} into {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
 }
 
