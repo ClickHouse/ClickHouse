@@ -404,6 +404,35 @@ Possible values:
 
 Default value: 0.
 
+## partial_merge_join_optimizations {#partial_merge_join_optimizations}
+
+Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
+
+By default, this setting enables improvements that could lead to wrong results. If you see suspicious results in your queries, disable optimizations by this setting. Optimizations can be different in different versions of the ClickHouse server. 
+
+Possible values:
+
+-   0 — Optimizations disabled.
+-   1 — Optimizations enabled.
+
+Default value: 1.
+
+## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
+
+Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
+
+ClickHouse server:
+
+1. Splits right-hand join data into blocks with up to the specified number of rows.
+2. Indexes each block with their minimum and maximum values
+3. Unloads prepared blocks to disk if possible.
+
+Possible values:
+
+- Any positive integer. Recommended range of values: [1000, 100000].
+
+Default value: 65536.
+
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 Enables legacy ClickHouse server behavior in `ANY INNER|LEFT JOIN` operations.
@@ -569,7 +598,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-thread-log) server configuration parameter.
+Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Example:
 

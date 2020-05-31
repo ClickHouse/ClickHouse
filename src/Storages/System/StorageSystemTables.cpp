@@ -232,7 +232,7 @@ protected:
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator();
+                tables_it = database->getTablesIterator(context);
 
             const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
 
@@ -331,7 +331,7 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name);
+                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
