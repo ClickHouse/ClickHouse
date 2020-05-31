@@ -49,3 +49,12 @@ namespace
 #define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, __VA_ARGS__)
 #define LOG_ERROR(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, __VA_ARGS__)
 #define LOG_FATAL(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, __VA_ARGS__)
+
+
+/// Compatibility for external projects.
+#if defined(ARCADIA_BUILD)
+    using Poco::Logger;
+    using Poco::Message;
+    using DB::LogsLevel;
+    using DB::CurrentThread;
+#endif
