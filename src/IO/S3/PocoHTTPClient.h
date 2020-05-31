@@ -11,11 +11,11 @@ class StandardHttpResponse;
 namespace DB::S3
 {
 
-class PocoHttpClient : public Aws::Http::HttpClient
+class PocoHTTPClient : public Aws::Http::HttpClient
 {
 public:
-    explicit PocoHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration);
-    ~PocoHttpClient() override = default;
+    explicit PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration);
+    ~PocoHTTPClient() override = default;
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(
         Aws::Http::HttpRequest & request,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,

@@ -1,4 +1,4 @@
-#include "PocoHttpClient.h"
+#include "PocoHTTPClient.h"
 
 #include <utility>
 #include <IO/HTTPCommon.h>
@@ -14,7 +14,7 @@
 
 namespace DB::S3
 {
-PocoHttpClient::PocoHttpClient(const Aws::Client::ClientConfiguration & clientConfiguration)
+PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & clientConfiguration)
     : per_request_configuration(clientConfiguration.perRequestConfiguration)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
@@ -24,34 +24,36 @@ PocoHttpClient::PocoHttpClient(const Aws::Client::ClientConfiguration & clientCo
 {
 }
 
-std::shared_ptr<Aws::Http::HttpResponse> PocoHttpClient::MakeRequest(
+std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     Aws::Http::HttpRequest & request,
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHttpClient", request);
+    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
     MakeRequestInternal(request, response, readLimiter, writeLimiter);
     return response;
 }
 
-std::shared_ptr<Aws::Http::HttpResponse> PocoHttpClient::MakeRequest(
+std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     const std::shared_ptr<Aws::Http::HttpRequest> & request,
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
-    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHttpClient", request);
+    auto response = Aws::MakeShared<Aws::Http::Standard::StandardHttpResponse>("PocoHTTPClient", request);
     MakeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
 
-void PocoHttpClient::MakeRequestInternal(
+void PocoHTTPClient::MakeRequestInternal(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<Aws::Http::Standard::StandardHttpResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
+    Poco::Logger * log = &Poco::Logger::get("AWSClient");
+
     auto uri = request.GetUri().GetURIString();
-    LOG_DEBUG(&Logger::get("AWSClient"), "Make request to: {}", uri);
+    LOG_DEBUG(log, "Make request to: {}", uri);
 
     const int MAX_REDIRECT_ATTEMPTS = 10;
     try
@@ -102,27 +104,27 @@ void PocoHttpClient::MakeRequestInternal(
 
             if (request.GetContentBody())
             {
-                LOG_DEBUG(&Logger::get("AWSClient"), "Writing request body...");
+                LOG_DEBUG(log, "Writing request body.");
                 if (attempt > 0) /// rewind content body buffer.
                 {
                     request.GetContentBody()->clear();
                     request.GetContentBody()->seekg(0);
                 }
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                LOG_DEBUG(&Logger::get("AWSClient"), "Written {} bytes to request body", size);
+                LOG_DEBUG(log, "Written {} bytes to request body", size);
             }
 
-            LOG_DEBUG(&Logger::get("AWSClient"), "Receiving response...");
+            LOG_DEBUG(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             int status_code = static_cast<int>(poco_response.getStatus());
-            LOG_DEBUG(&Logger::get("AWSClient"), "Response status: {}, {}", status_code, poco_response.getReason());
+            LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
                 auto location = poco_response.get("location");
                 uri = location;
-                LOG_DEBUG(&Logger::get("AWSClient"), "Redirecting request to new location: {}", location);
+                LOG_DEBUG(log, "Redirecting request to new location: {}", location);
 
                 continue;
             }
@@ -134,9 +136,9 @@ void PocoHttpClient::MakeRequestInternal(
             for (const auto & [header_name, header_value] : poco_response)
             {
                 response->AddHeader(header_name, header_value);
-                headers_ss << header_name << " : " << header_value << "; ";
+                headers_ss << header_name << ": " << header_value << "; ";
             }
-            LOG_DEBUG(&Logger::get("AWSClient"), "Received headers: {}", headers_ss.str());
+            LOG_DEBUG(log, "Received headers: {}", headers_ss.str());
 
             if (status_code >= 300)
             {
@@ -155,7 +157,7 @@ void PocoHttpClient::MakeRequestInternal(
     }
     catch (...)
     {
-        tryLogCurrentException(&Logger::get("AWSClient"), "Failed to make request to: " + uri);
+        tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
     }
