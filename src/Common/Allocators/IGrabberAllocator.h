@@ -434,7 +434,7 @@ public:
      *       Another thread from the set of concurrent threads will then try to call its callbacks et cetera.
      *
      * @note This function does NOT throw on invalid input (e.g. when #get_size result is 0). It simply returns a
-     *       {nullptr, false}. However, there is a special case when the allocator failed to allocate the desired size 
+     *       {nullptr, false}. However, there is a special case when the allocator failed to allocate the desired size
      *       (e.g. when #get_size result is greater than #max_cache_size). In this case {nullptr, true} is returned.
      *
      * @note During insertion, each key is locked - to avoid parallel initialization of regions for same key.
