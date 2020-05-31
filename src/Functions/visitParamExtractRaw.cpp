@@ -26,9 +26,7 @@ struct ExtractRaw
             {
                 /// skip backslash
                 if (*pos == '\\' && pos + 1 < end && pos[1] == '"')
-                {
-                    pos++;
-                }
+                    ++pos;
             }
             else
             {
