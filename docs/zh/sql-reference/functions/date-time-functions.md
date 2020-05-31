@@ -22,7 +22,7 @@ SELECT
 
 将Date或DateTime转换为指定的时区。
 
-## 转换为年 {#toyear}
+## toYear {#toyear}
 
 将Date或DateTime转换为包含年份编号（AD）的UInt16类型的数字。
 
