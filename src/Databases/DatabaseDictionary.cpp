@@ -32,7 +32,7 @@ namespace
 
 DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & global_context_)
     : IDatabase(name_)
-    , log(&Logger::get("DatabaseDictionary(" + database_name + ")"))
+    , log(&Poco::Logger::get("DatabaseDictionary(" + database_name + ")"))
     , global_context(global_context_.getGlobalContext())
 {
 }

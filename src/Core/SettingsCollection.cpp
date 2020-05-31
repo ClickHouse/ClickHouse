@@ -598,7 +598,7 @@ namespace details
 
     void SettingsCollectionUtils::warningNameNotFound(const StringRef & name)
     {
-        static auto * log = &Logger::get("Settings");
+        static auto * log = &Poco::Logger::get("Settings");
         LOG_WARNING(log, "Unknown setting {}, skipping", name);
     }
 

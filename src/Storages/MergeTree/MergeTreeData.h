@@ -698,7 +698,7 @@ protected:
     BrokenPartCallback broken_part_callback;
 
     String log_name;
-    Logger * log;
+    Poco::Logger * log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.

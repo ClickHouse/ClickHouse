@@ -140,7 +140,7 @@ StorageKafka::StorageKafka(
     , schema_name(global_context.getMacros()->expand(schema_name_))
     , num_consumers(num_consumers_)
     , max_block_size(max_block_size_)
-    , log(&Logger::get("StorageKafka (" + table_id_.table_name + ")"))
+    , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers_)
     , skip_broken(skip_broken_)
     , intermediate_commit(intermediate_commit_)

@@ -74,7 +74,7 @@ StorageBuffer::StorageBuffer(
     , max_thresholds(max_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
-    , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     setColumns(columns_);
