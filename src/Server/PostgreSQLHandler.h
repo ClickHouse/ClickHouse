@@ -70,7 +70,7 @@ private:
 
     void processQuery();
 
-    bool isEmptyQuery(const String & query);
+    static bool isEmptyQuery(const String & query);
 };
 
 }
