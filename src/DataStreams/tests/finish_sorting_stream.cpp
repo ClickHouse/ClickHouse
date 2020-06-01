@@ -6,8 +6,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/SortDescription.h>
 
-#include <DataStreams/MergeSortingBlockInputStream.h>
-
 #include <Interpreters/sortBlock.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
