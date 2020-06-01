@@ -12,7 +12,7 @@ LAYOUT(FLAT())
 NOT_LOADED
 CREATE TABLE dict_db_01224_dictionary.`dict_db_01224.dict`
 (
-    `key` UInt64, 
+    `key` UInt64,
     `val` UInt64
 )
 ENGINE = Dictionary(`dict_db_01224.dict`)
