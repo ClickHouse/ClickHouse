@@ -164,6 +164,7 @@ SRCS(
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
+    StorageS3Settings.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
     StorageTinyLog.cpp
