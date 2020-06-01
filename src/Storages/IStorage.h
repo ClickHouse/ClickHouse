@@ -146,6 +146,7 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     void setIndices(IndicesDescription indices_);
     const IndicesDescription & getIndices() const;
+    /// Has at least one non primary index
     bool hasIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
