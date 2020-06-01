@@ -24,10 +24,8 @@ void ASTNameTypePair::formatImpl(const FormatSettings & settings, FormatState & 
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.ostr << '#';
     settings.ostr << indent_str << backQuoteIfNeed(name) << ' ';
     type->formatImpl(settings, state, frame);
-    settings.ostr << '#';
 }
 
 }
