@@ -72,7 +72,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , num_consumers(num_consumers_)
         , num_queues(num_queues_)
         , hash_exchange(hash_exchange_)
-        , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
+        , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
         , parsed_address(parseAddress(global_context.getMacros()->expand(host_port_), 5672))
         , evbase(event_base_new())

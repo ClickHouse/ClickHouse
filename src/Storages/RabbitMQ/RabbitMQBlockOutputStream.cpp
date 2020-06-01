@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern int CANNOT_CREATE_IO_BUFFER;
+    extern const int CANNOT_CREATE_IO_BUFFER;
 }
 
 

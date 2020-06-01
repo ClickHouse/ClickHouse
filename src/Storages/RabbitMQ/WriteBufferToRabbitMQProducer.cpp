@@ -6,6 +6,7 @@
 #include <amqpcpp.h>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 
 namespace DB
@@ -15,7 +16,7 @@ enum
 {
     Connection_setup_sleep = 200,
     Connection_setup_retries_max = 1000,
-    Buffer_limit_to_flush = 10000 /// It is important to keep it low in order not to kill consumers
+    Buffer_limit_to_flush = 5000 /// It is important to keep it low in order not to kill consumers
 };
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
@@ -44,8 +45,8 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , connection(&eventHandler, AMQP::Address(parsed_address.first, parsed_address.second, AMQP::Login("root", "clickhouse"), "/"))
 {
     /* The reason behind making a separate connection for each concurrent producer is explained here:
-     * https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086
-     * - publishing from different threads (as outputStreams are asynchronous) leads to internal libary errors.
+     * https://github.com/CopernicaMarketingSoftware/AMQP-CPP/issues/128#issuecomment-300780086 - publishing from
+     * different threads (as outputStreams are asynchronous) with the same connection leads to internal libary errors.
      */
     size_t cnt_retries = 0;
     while (!connection.ready() && ++cnt_retries != Connection_setup_retries_max)
@@ -107,9 +108,9 @@ void WriteBufferToRabbitMQProducer::count_row()
 
 void WriteBufferToRabbitMQProducer::flush()
 {
-    /* Why accumulating payloads and not publishing each of them at once in count_row()? Because publishing needs to 
-     * be wrapped inside declareExchange() callback and it is too expensive in terms of time to declare it each time
-     * we publish. Declaring it once and then publishing without wrapping inside onSuccess callback leads to
+    /* The reason for accumulating payloads and not publishing each of them at once in count_row() is that publishing
+     * needs to be wrapped inside declareExchange() callback and it is too expensive in terms of time to declare it
+     * each time we publish. Declaring it once and then publishing without wrapping inside onSuccess callback leads to
      * exchange becoming inactive at some point and part of messages is lost as a result.
      */
     std::atomic<bool> exchange_declared = false, exchange_error = false;
