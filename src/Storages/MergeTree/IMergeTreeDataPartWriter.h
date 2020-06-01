@@ -89,10 +89,7 @@ public:
 
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
 
-    Columns releaseIndexColumns()
-    {
-        return Columns(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
-    }
+    Columns releaseIndexColumns();
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
@@ -149,14 +146,7 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 
-    MutableColumns index_columns;
-    DataTypes index_types;
-    /// Index columns values from the last row from the last block
-    /// It's written to index file in the `writeSuffixAndFinalizePart` method
-    Row last_index_row;
-
     bool data_written = false;
-    bool primary_index_initialized = false;
     bool skip_indices_initialized = false;
 
     /// To correctly write Nested elements column-by-column.
@@ -167,8 +157,6 @@ private:
     size_t current_mark = 0;
     /// The offset to the first row of the block for which you want to write the index.
     size_t index_offset = 0;
-    /// Index is already serialized up to this mark.
-    size_t index_mark = 0;
 };
 
 }

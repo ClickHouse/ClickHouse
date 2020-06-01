@@ -81,9 +81,11 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     if (settings.blocks_are_granules_size && !index_granularity.empty())
         throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
-    auto disk = data_part->volume->getDisk();
-    if (!disk->exists(part_path))
-        disk->createDirectories(part_path);
+    for (auto &disk: data_part->volume->getDisks())
+    {
+        if (!disk->exists(part_path))
+            disk->createDirectories(part_path);
+    }
 }
 
 IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
@@ -160,6 +162,11 @@ void IMergeTreeDataPartWriter::next()
 {
     current_mark = next_mark;
     index_offset = next_index_offset;
+}
+
+Columns IMergeTreeDataPartWriter::releaseIndexColumns()
+{
+    return index_writer->releaseIndexColumns();
 }
 
 void IMergeTreeDataPartWriter::initPrimaryIndex()

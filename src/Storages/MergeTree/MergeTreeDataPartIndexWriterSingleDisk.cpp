@@ -33,22 +33,22 @@ void MergeTreeDataPartIndexWriterSingleDisk::initPrimaryIndex()
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
-    part_writer.primary_index_initialized = true;
+    primary_index_initialized = true;
 }
 
 void MergeTreeDataPartIndexWriterSingleDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows)
 {
-    if (!part_writer.primary_index_initialized)
+    if (!primary_index_initialized)
         throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
 
     size_t primary_columns_num = primary_index_block.columns();
-    if (part_writer.index_columns.empty())
+    if (index_columns.empty())
     {
-        part_writer.index_types = primary_index_block.getDataTypes();
-        part_writer.index_columns.resize(primary_columns_num);
-        part_writer.last_index_row.resize(primary_columns_num);
+        index_types = primary_index_block.getDataTypes();
+        index_columns.resize(primary_columns_num);
+        last_index_row.resize(primary_columns_num);
         for (size_t i = 0; i < primary_columns_num; ++i)
-            part_writer.index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
+            index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
     }
 
     /** While filling index (index_columns), disable memory tracker.
@@ -64,26 +64,26 @@ void MergeTreeDataPartIndexWriterSingleDisk::calculateAndSerializePrimaryIndex(c
     size_t current_row = part_writer.index_offset;
     size_t total_marks = part_writer.index_granularity.getMarksCount();
 
-    while (part_writer.index_mark < total_marks && current_row < rows)
+    while (index_mark < total_marks && current_row < rows)
     {
         if (part_writer.storage.hasPrimaryKey())
         {
             for (size_t j = 0; j < primary_columns_num; ++j)
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
-                part_writer.index_columns[j]->insertFrom(*primary_column.column, current_row);
+                index_columns[j]->insertFrom(*primary_column.column, current_row);
                 primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
             }
         }
 
-        current_row += part_writer.index_granularity.getMarkRows(part_writer.index_mark++);
+        current_row += part_writer.index_granularity.getMarkRows(index_mark++);
     }
 
     /// store last index row to write final mark at the end of column
     for (size_t j = 0; j < primary_columns_num; ++j)
     {
         const IColumn & primary_column = *primary_index_block.getByPosition(j).column.get();
-        primary_column.get(rows - 1, part_writer.last_index_row[j]);
+        primary_column.get(rows - 1, last_index_row[j]);
     }
 }
 
@@ -98,13 +98,13 @@ void MergeTreeDataPartIndexWriterSingleDisk::finishPrimaryIndexSerialization(Mer
     {
         if (write_final_mark)
         {
-            for (size_t j = 0; j < part_writer.index_columns.size(); ++j)
+            for (size_t j = 0; j < index_columns.size(); ++j)
             {
-                part_writer.index_columns[j]->insert(part_writer.last_index_row[j]);
-                part_writer.index_types[j]->serializeBinary(part_writer.last_index_row[j], *index_stream);
+                index_columns[j]->insert(last_index_row[j]);
+                index_types[j]->serializeBinary(last_index_row[j], *index_stream);
             }
 
-            part_writer.last_index_row.clear();
+            last_index_row.clear();
         }
 
         index_stream->next();
