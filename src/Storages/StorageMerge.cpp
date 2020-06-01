@@ -1,4 +1,3 @@
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>

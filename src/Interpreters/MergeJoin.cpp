@@ -8,8 +8,12 @@
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/join_common.h>
 #include <DataStreams/materializeBlock.h>
-#include <DataStreams/MergeSortingBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
 namespace DB
 {
@@ -442,8 +446,19 @@ void MergeJoin::mergeInMemoryRightBlocks()
     Blocks blocks_to_merge = blocksListToBlocks(right_blocks.blocks);
     right_blocks.clear();
 
+    Pipes sources;
+    for (auto & block : blocks_to_merge)
+    {
+        sources.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<OneBlockInputStream>(std::move(block))));
+    }
+
+    QueryPipeline pipeline;
+    pipeline.init(std::move(sources));
+
     /// TODO: there should be no splitted keys by blocks for RIGHT|FULL JOIN
-    MergeSortingBlocksBlockInputStream sorted_input(blocks_to_merge, right_sort_description, max_rows_in_right_block);
+    pipeline.addPipe({std::make_shared<MergeSortingTransform>(pipeline.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, nullptr, 0)});
+
+    auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
 
     while (Block block = sorted_input.read())
     {

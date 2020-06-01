@@ -1,5 +1,4 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/AggregatingBlockInputStream.h>
 #include <DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
