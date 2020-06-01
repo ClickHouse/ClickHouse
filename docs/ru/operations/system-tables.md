@@ -129,15 +129,15 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 Для каждой базы данных, о которой знает сервер, будет присутствовать соответствующая запись в таблице.
 Эта системная таблица используется для реализации запроса `SHOW DATABASES`.
 
-## system.data_type-families {#system_tables-data_type_families}
+## system.data_type_families {#system_tables-data_type_families}
 
 Содержит информацию о поддерживаемых [типах данных](../sql-reference/data-types/).
 
 Столбцы:
 
--   `name` ([String](../sql-reference/data-types/string.md)) — Имя типа данных.
--   `case_insensitive` ([UInt8](../sql-reference/data-types/int-uint.md)) — Свойство, которое показывает, зависит ли имя типа данных в запросе от регистра. Например, допустимы и `Date`, и `date`.
--   `alias_to` ([String](../sql-reference/data-types/string.md)) — Тип данных, для которого `name` является алиасом.
+-   `name` ([String](../sql-reference/data-types/string.md)) — имя типа данных.
+-   `case_insensitive` ([UInt8](../sql-reference/data-types/int-uint.md)) — свойство, которое показывает, зависит ли имя типа данных в запросе от регистра. Например, допустимы и `Date`, и `date`.
+-   `alias_to` ([String](../sql-reference/data-types/string.md)) — тип данных, для которого `name` является алиасом.
 
 **Пример**
 
