@@ -607,7 +607,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        storage_columns, data.getSortingKey().expression, data.getIndices(),
+        storage_columns, data.getSortingKey().expression, data.getSecondaryIndices(),
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part.name, disk);
@@ -793,7 +793,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge, force_ttl);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    if (data.hasIndices())
+    if (data.hasSecondaryIndices())
     {
         merged_stream = std::make_shared<ExpressionBlockInputStream>(merged_stream, data.primary_key_and_skip_indices_expr);
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
@@ -802,7 +802,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
-        index_factory.getMany(data.getIndices()),
+        index_factory.getMany(data.getSecondaryIndices()),
         compression_codec,
         merged_column_to_size,
         data_settings->min_merge_bytes_to_use_direct_io,
@@ -1074,7 +1074,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// All columns from part are changed and may be some more that were missing before in part
     if (isCompactPart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
-        auto part_indices = getIndicesForNewDataPart(data.getIndices(), for_file_renames);
+        auto part_indices = getIndicesForNewDataPart(data.getSecondaryIndices(), for_file_renames);
         mutateAllPartColumns(
             new_data_part,
             part_indices,
@@ -1520,7 +1520,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & col : updated_columns.getNames())
     {
-        const auto & indices = data.getIndices();
+        const auto & indices = data.getSecondaryIndices();
         for (size_t i = 0; i < indices.size(); ++i)
         {
             const auto & index = indices[i];
@@ -1584,7 +1584,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-    if (data.hasPrimaryKey() || data.hasIndices())
+    if (data.hasPrimaryKey() || data.hasSecondaryIndices())
         mutating_stream = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.primary_key_and_skip_indices_expr));
 

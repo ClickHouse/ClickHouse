@@ -144,10 +144,10 @@ public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
-    void setIndices(IndicesDescription indices_);
-    const IndicesDescription & getIndices() const;
+    void setSecondaryIndices(IndicesDescription indices_);
+    const IndicesDescription & getSecondaryIndices() const;
     /// Has at least one non primary index
-    bool hasIndices() const;
+    bool hasSecondaryIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
     void setConstraints(ConstraintsDescription constraints_);

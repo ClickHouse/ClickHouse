@@ -55,7 +55,7 @@ protected:
         , part(part_)
     {
         setColumns(part_->storage.getColumns());
-        setIndices(part_->storage.getIndices());
+        setSecondaryIndices(part_->storage.getSecondaryIndices());
         setPrimaryKey(part_->storage.getPrimaryKey());
         setSortingKey(part_->storage.getSortingKey());
         setColumnTTLs(part->storage.getColumnTTLs());

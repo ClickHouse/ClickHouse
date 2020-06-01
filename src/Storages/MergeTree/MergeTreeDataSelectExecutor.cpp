@@ -549,7 +549,7 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     std::vector<std::pair<MergeTreeIndexPtr, MergeTreeIndexConditionPtr>> useful_indices;
 
-    for (const auto & index : data.getIndices())
+    for (const auto & index : data.getSecondaryIndices())
     {
         auto index_helper = MergeTreeIndexFactory::instance().get(index);
         auto condition = index_helper->createIndexCondition(query_info, context);
