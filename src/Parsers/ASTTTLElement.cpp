@@ -28,11 +28,11 @@ ASTPtr ASTTTLElement::clone() const
 void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ttl()->formatImpl(settings, state, frame);
-    if (mode == TTLMode::MOVE && destination_type == PartDestinationType::DISK)
+    if (mode == TTLMode::MOVE && destination_type == DataDestinationType::DISK)
     {
         settings.ostr << " TO DISK " << quoteString(destination_name);
     }
-    else if (mode == TTLMode::MOVE && destination_type == PartDestinationType::VOLUME)
+    else if (mode == TTLMode::MOVE && destination_type == DataDestinationType::VOLUME)
     {
         settings.ostr << " TO VOLUME " << quoteString(destination_name);
     }

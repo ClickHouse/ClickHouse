@@ -16,8 +16,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
+DatabaseMemory::DatabaseMemory(const String & name_, const Context & context)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context)
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
@@ -64,7 +64,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     return create_query;
 }
 
-ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, const Context &, bool throw_on_error) const
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
@@ -80,7 +80,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, bool t
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name))
+    if (auto table = tryGetTable(table_name, global_context))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

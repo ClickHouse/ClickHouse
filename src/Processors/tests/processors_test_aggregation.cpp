@@ -184,8 +184,8 @@ try
     auto thread_group = CurrentThread::getGroup();
 
     Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
-    Logger::root().setChannel(channel);
-    Logger::root().setLevel("trace");
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
 
     registerAggregateFunctions();
     auto & factory = AggregateFunctionFactory::instance();

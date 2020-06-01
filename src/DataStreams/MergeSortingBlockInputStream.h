@@ -104,7 +104,7 @@ private:
     String codec;
     size_t min_free_disk_space;
 
-    Logger * log = &Logger::get("MergeSortingBlockInputStream");
+    Poco::Logger * log = &Poco::Logger::get("MergeSortingBlockInputStream");
 
     Blocks blocks;
     size_t sum_rows_in_blocks = 0;

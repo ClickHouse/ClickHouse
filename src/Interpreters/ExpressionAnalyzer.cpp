@@ -297,13 +297,13 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
-    BlockIO res = interpreter_subquery->execute();
+    auto stream = interpreter_subquery->execute().getInputStream();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
-    set->setHeader(res.in->getHeader());
+    set->setHeader(stream->getHeader());
 
-    res.in->readPrefix();
-    while (Block block = res.in->read())
+    stream->readPrefix();
+    while (Block block = stream->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
         if (!set->insertFromBlock(block))
@@ -311,7 +311,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     }
 
     set->finishInsert();
-    res.in->readSuffix();
+    stream->readSuffix();
 
     prepared_sets[set_key] = std::move(set);
 }
@@ -322,7 +322,7 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     if (!table)
         return nullptr;
     auto table_id = context.resolveStorageID(subquery_or_table_name);
-    const auto storage = DatabaseCatalog::instance().getTable(table_id);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id, context);
     if (storage->getName() != "Set")
         return nullptr;
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
