@@ -149,8 +149,6 @@ protected:
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 
-    std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
-    std::unique_ptr<HashingWriteBuffer> index_stream;
     MutableColumns index_columns;
     DataTypes index_types;
     /// Index columns values from the last row from the last block

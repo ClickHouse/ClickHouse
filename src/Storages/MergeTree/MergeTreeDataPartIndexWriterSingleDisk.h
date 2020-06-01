@@ -21,6 +21,10 @@ public:
     void initSkipIndices() override;
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows) override;
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) override;
+
+private:
+    std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
+    std::unique_ptr<HashingWriteBuffer> index_stream;
 };
 
 }

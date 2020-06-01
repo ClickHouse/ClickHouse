@@ -27,10 +27,10 @@ void MergeTreeDataPartIndexWriterSingleDisk::initPrimaryIndex()
 {
     if (part_writer.storage.hasPrimaryKey())
     {
-        part_writer.index_file_stream = part_writer.data_part->volume->getDisk()->writeFile(
+        index_file_stream = part_writer.data_part->volume->getDisk()->writeFile(
             part_writer.part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite
         );
-        part_writer.index_stream = std::make_unique<HashingWriteBuffer>(*part_writer.index_file_stream);
+        index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
     part_writer.primary_index_initialized = true;
@@ -72,7 +72,7 @@ void MergeTreeDataPartIndexWriterSingleDisk::calculateAndSerializePrimaryIndex(c
             {
                 const auto & primary_column = primary_index_block.getByPosition(j);
                 part_writer.index_columns[j]->insertFrom(*primary_column.column, current_row);
-                primary_column.type->serializeBinary(*primary_column.column, current_row, *part_writer.index_stream);
+                primary_column.type->serializeBinary(*primary_column.column, current_row, *index_stream);
             }
         }
 
@@ -94,23 +94,23 @@ void MergeTreeDataPartIndexWriterSingleDisk::finishPrimaryIndexSerialization(Mer
 
         part_writer.index_granularity.appendMark(0);
 
-    if (part_writer.index_stream)
+    if (index_stream)
     {
         if (write_final_mark)
         {
             for (size_t j = 0; j < part_writer.index_columns.size(); ++j)
             {
                 part_writer.index_columns[j]->insert(part_writer.last_index_row[j]);
-                part_writer.index_types[j]->serializeBinary(part_writer.last_index_row[j], *part_writer.index_stream);
+                part_writer.index_types[j]->serializeBinary(part_writer.last_index_row[j], *index_stream);
             }
 
             part_writer.last_index_row.clear();
         }
 
-        part_writer.index_stream->next();
-        checksums.files["primary.idx"].file_size = part_writer.index_stream->count();
-        checksums.files["primary.idx"].file_hash = part_writer.index_stream->getHash();
-        part_writer.index_stream = nullptr;
+        index_stream->next();
+        checksums.files["primary.idx"].file_size = index_stream->count();
+        checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        index_stream = nullptr;
     }
 }
 
