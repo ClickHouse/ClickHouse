@@ -15,7 +15,7 @@ enum
 {
     Connection_setup_sleep = 200,
     Connection_setup_retries_max = 1000,
-    Buffer_limit_to_flush = 50000
+    Buffer_limit_to_flush = 10000 /// It is important to keep it low in order not to kill consumers
 };
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
